@@ -25,7 +25,7 @@ function savedPlace(place, seed) {
 
 // From the door to a live room: the reading, then domain, layout and the first view, then the reading follows each
 // change; a retry runs it again. With `replica` the room reads the device's copy through the sync engine
-// (`ReplicaReading`), the demo as a reader's; without it, it reads as it does today (`LatticeReading`).
+// (`ReplicaReading`), the demo as a reader's; without it, through roadmap's own sync (`LatticeReading`).
 export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica = false, breakpoint, placeKept, room, scene, framing, structure, progressActs, activity, legend, workspace, selection, showToast, dismissToast, desktopEditorRef, onRemoteProgress, onLanding }) {
   const { sceneRef, sessionRef, replicaRef, projectionRef, treeRef, seedRef } = room;
   const [placeStore] = useState(() => new PlaceStore());

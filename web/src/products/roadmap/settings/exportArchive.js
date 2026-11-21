@@ -103,8 +103,8 @@ export async function readReplicaRoadmaps(collaborators = {}) {
   }
 }
 
-// The person's roadmaps as roadmap's own sync keeps them, which retires at the move (§8.4): the server's list and this
-// device's own, each read from the server or the device's store, null where it could not be.
+// The person's roadmaps as roadmap's own sync keeps them, read where the replica's switch is off (§8.4): the server's
+// list and this device's own, each read from the server or the device's store, null where it could not be.
 export async function readAccountRoadmaps() {
   const roadmaps = [];
   for (const tree of await listAllTrees()) roadmaps.push(await loadForExport(tree));

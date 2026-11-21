@@ -3,7 +3,7 @@
 // browser engine over HTTP, under the composed registry, against windmill_server serving roadmap's scopes on :$PORT over
 // a THROWAWAY Postgres that windmill_roadmap_adopt adopted from roadmap_adopt_fixture.sql.
 // - The owner's replica pulls their roadmaps as the move adopted them: every `tree` record, the deleted ones dead, and the
-//   cello roadmap's meta, steps in today's order, links, kinds, marks and pointer, each scope matching the server's digest.
+//   cello roadmap's meta, steps in the old server's order, links, kinds, marks and pointer, each scope matching the server's digest.
 // - A change of the owner's lands on an adopted roadmap: its seq continues above the old head, and the activity feed keeps
 //   the lines the rooms wrote and tells the new one after them.
 // - The reader reads the same public roadmap and their own mark on it, and never the owner's pointer.

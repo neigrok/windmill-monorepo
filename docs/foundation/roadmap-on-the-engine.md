@@ -6,19 +6,19 @@ so reviews, code and roadmap nodes can cite them.
 
 ## §0 Status and scope
 
-**Status:** Approved by the owner on 2026-11-17. The release that teaches the roadmap room what a
-retired build is told (§8.3) is live. Engine prerequisites, roadmap's registry and the rest of this
-build are under development in [draft PR #290](https://github.com/neigrok/windmill-monorepo/pull/290):
-there the registry is pinned (`packages/api-contract/sync/roadmap.registry.json`, composed beside
-gym's and journal's) and the engine's JavaScript reference model server carries its rules
-([engine](engine.md) Appendix A.1). Roadmap syncs through a sync of its own:
-a lattice and a socket described in [graph sync](../GRAPH_SYNC_DESIGN.md) and
-[the roadmap tree engine](../../backend/SPEC.md), on the web only. The [sync engine](engine.md)
-serves gym and journal in production; on the review branch the C++ server binds roadmap
-(`backend/products/roadmap/sync/`) and serves its scopes only where `ROADMAP_ENGINE_ENABLED` is set,
-which production's configuration leaves unset. The
-build order lives in the Roadmap on the engine roadmap tree, which the dogfood tree
-(`t_9362d9bc883e0a1e`) opens from the node `roadmap-on-the-engine`.
+**Status:** Approved by the owner on 2026-11-17. In production roadmap syncs through the
+[sync engine](engine.md), beside gym and journal: the registry is pinned
+(`packages/api-contract/sync/roadmap.registry.json`, composed beside gym's and journal's), the
+engine's JavaScript reference model server carries its rules ([engine](engine.md) Appendix A.1), the
+C++ server binds roadmap (`backend/products/roadmap/sync/`) and serves its scopes where
+`ROADMAP_ENGINE_ENABLED` is set, as production's host sets it, and the web's room reads the device's
+copy (§8.4). Production's roadmaps were adopted by §8.1's cutover, whose record is in
+[the deploy runbook](../../backend/deploy/README.md#roadmaps-cutover-onto-the-sync-engine). Roadmap's
+own sync, a lattice and a socket described in [graph sync](../GRAPH_SYNC_DESIGN.md) and
+[the roadmap tree engine](../../backend/SPEC.md), serves only where the switch is unset; its code and
+tables remain until their deletion (§12). The build order, that deletion included, lives in the
+Roadmap on the engine roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node
+`roadmap-on-the-engine`; the deletion is its node `m5-delete-roadmaps-own-sync`.
 
 **Scope:** Roadmap's move onto the sync engine and the [domain kit](domain-kit.md): the registry,
 the rules every surface shares, what the engine and the kit must gain first, the server's side, the
@@ -460,7 +460,7 @@ items it carried, and each record it set aside for §6's one list.
   names those waiting with their changes (§5), and its Discard takes exactly those, while their
   entries hold what it counted; one it did not name waits for the account's next sign-in. An
   account's closure takes every one whose index row names it.
-- **Marks** a device roadmap holds, and marks left undrained from before roadmap's present sync,
+- **Marks** a device roadmap holds, and marks left undrained from before roadmap's own sync,
   are carried as marks; a step a claim would have marked from its seed is marked. A mark left
   undrained or found on a seed stands only where the person holds no mark of the step.
 - **Workspaces** become `subtask`, `stepLink` and `stepNote` records, in the account the device's
@@ -484,10 +484,9 @@ items it carried, and each record it set aside for §6's one list.
 
 ### §8.3 Old bundles
 
-- A release before the cutover teaches the roadmap room what a retired build is told, and to save
-  what it holds and reload when it is. It ships long enough before the cutover for open tabs to
-  take it.
-- After the cutover, `/v1/socket` answers both its upgrade and a plain `GET` with `410` and the JSON
+- The roadmap room knows what a retired build is told, and saves what it holds and reloads when it
+  is. Production served the release that taught it this before the cutover.
+- In production `/v1/socket` answers both its upgrade and a plain `GET` with `410` and the JSON
   body code `client-update-required`, and so do the reads and writes §7's table retires, all before
   authentication or parsing. A browser cannot read why an upgrade failed, so a room whose socket
   never opens reads the plain `GET`: that answer is how it learns its build is retired. The server
@@ -535,8 +534,9 @@ What changes is built only from boards marked ✅ Ready for dev:
   from the device's copy, one gesture, and sign-in. A budget it misses is fixed in the engine first.
 - **The move** runs against a copy of production in rehearsal, with fixtures for an interrupted run
   and a corrupted row, and the audit of §8.1.
-- **The browser's carry-over** is tested from stores written by the last bundle before the cutover:
-  a claim cut short, two tabs at once, a tab that never reloaded, and a second run.
+- **The browser's carry-over** is tested from stores written by the old bundle's own code, roadmap's
+  own sync, as a browser that last loaded before the cutover holds them: a claim cut short, two tabs
+  at once, a tab that never reloaded, and a second run.
 
 ## §11 Observability
 
@@ -576,8 +576,6 @@ What changes is built only from boards marked ✅ Ready for dev:
   warning, both against canon.
 - The server and the browser break a tie between two marks differently.
 - A step's workspace lives in one browser.
-- The engine's tree and overlay scopes have run only against its test product, and production serves
-  no composition but gym and journal.
 - Roadmap's MCP write tools take no `requestId`.
 
 ## §15 Rulings

@@ -1,6 +1,7 @@
 # By hand only, from main, with the owner's word: run a roadmap cutover's restore again where it stopped, for the run whose
-# restore did not finish (backend/deploy/README.md, "Roadmap's cutover onto the sync engine"). The host refuses once that
-# run wrote roadmap's switch; what the run kept on the host is sealed to the owner as the cutover seals it.
+# restore did not finish (backend/deploy/README.md, "Roadmap's cutover onto the sync engine"). The host refuses once a
+# run wrote roadmap's floor, as production's names one; what the run kept on the host is sealed to the owner as the
+# cutover seals it.
 name: Ops · roadmap restore
 
 on:

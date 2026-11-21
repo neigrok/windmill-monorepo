@@ -84,8 +84,8 @@ function render({ hash, pathname, search }) {
 }
 
 // Explicit sign-out, account replacement and account closure take what the browser kept of every roadmap but the
-// anonymous ones, Keep or Discard. Today's sync also wipes stamped work; on the device's copy the engine's Keep or
-// Discard decides what is unsent, a Discard takes the old stores its question named, and the rest of today's stores are
+// anonymous ones, Keep or Discard. Roadmap's own sync also wipes stamped work; on the device's copy the engine's Keep or
+// Discard decides what is unsent, a Discard takes the old stores its question named, and the rest of the old stores are
 // the carry-over's to empty once carried (INV-4). A session lapse never calls this hook.
 async function forgetDevice({ previous = null, next, navigation }) {
   // Sweep BEFORE confirming the arriving owner, or unstamped work is attributed to them.

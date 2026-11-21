@@ -187,7 +187,7 @@ struct OrderedStep {
   sync::Stamp created;
 };
 std::map<std::string, std::string> stepKeys(const std::vector<OrderedStep>& steps);
-// A roadmap's kinds in today's order, by rank then id, as order keys a0, a1, …
+// A roadmap's kinds in the old server's order, by rank then id, as order keys a0, a1, …
 std::map<std::string, std::string> kindKeys(const std::vector<OldKind>& kinds);
 
 // ── Where each roadmap stands ───────────────────────────────────────────────────────────────────────────────────────

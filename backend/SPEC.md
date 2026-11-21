@@ -2,7 +2,11 @@
 
 The collaboration engine behind the roadmap product: the loose-graph domain, the CRDT lattice
 that syncs it, the HTTP and socket surfaces, and the tables underneath. Code lives in
-`products/roadmap/`.
+`products/roadmap/`. The lattice, the rooms and the socket serve where `ROADMAP_ENGINE_ENABLED` is
+unset. Production sets it: there the sync engine holds roadmap's records
+([roadmap on the engine](../docs/foundation/roadmap-on-the-engine.md)), the routes and the socket it
+retires answer `410` (HTTP surface), and roadmap's own sync and its tables stay only until the
+Roadmap on the engine tree's node `m5-delete-roadmaps-own-sync` deletes them.
 
 Other references: `AUTH.md` (sign-in) · `AUTHZ.md` (authorization) · `RUNNING.md` (local run) ·
 `db/schema.sql` (schema) · `CLAUDE.md` (build, pool, CI).

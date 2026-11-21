@@ -1,9 +1,10 @@
 # MCP adapter (`adapters/mcp/`)
 
 An AI agent reads and authors Windmill roadmaps through the same application core an HTTP or
-WebSocket client drives. Edits route through the tree's `TreeRoom`, so they are merged, sequenced,
-logged to `tree_ops`, and persisted to the per-entry lattice tables (`tree_nodes` / `tree_edges` /
-`tree_kinds`) like any other edit.
+WebSocket client drives. Where `ROADMAP_ENGINE_ENABLED` serves roadmap's scopes, as production's does, every
+edit is a call of roadmap's door into the sync engine (The door, below). Elsewhere edits route through the
+tree's `TreeRoom`, so they are merged, sequenced, logged to `tree_ops`, and persisted to the per-entry lattice
+tables (`tree_nodes` / `tree_edges` / `tree_kinds`) like any other edit.
 
 ## Layout
 
@@ -141,8 +142,9 @@ both speak JSON-RPC 2.0, protocol version `2025-06-18`:
     the liveness probe is the app root (`deploy/docker-compose.yml`).
 
 The deployed HTTP transport is `windmill_server`: `main.cpp` registers `McpHttpEndpoint` on the
-REST host's `WINDMILL_MCP_PATH`, over the *same* `RoomRegistry` REST and the collab socket use, so
-an agent's edit fans out to connected browsers through `WsPresenceBus` as it lands.
+REST host's `WINDMILL_MCP_PATH`. In production its roadmap tools are the door's, so an agent's edit reaches
+browsers through the engine's live feed as it lands; where `ROADMAP_ENGINE_ENABLED` is unset they run over the
+*same* `RoomRegistry` REST and the collab socket use, and an edit fans out through `WsPresenceBus`.
 `windmill_mcp_http` is the standalone build of that endpoint — its own process, its own
 `RoomRegistry`, a null presence bus — for local and single-purpose runs only (see *Operating
 notes*).

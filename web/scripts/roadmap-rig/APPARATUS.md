@@ -27,8 +27,8 @@ The cookie must belong to that same user. `seed.mjs` defaults to the committed f
 `get_tree` reply. The default MCP bearer is `devtoken`; `--mcpToken` overrides it.
 
 Seeding plants the roadmap through MCP (`planter.mjs`, which `web/scripts/benchmark-board.mjs` plants with too): MCP is
-the door every server write for a person takes on both sides of roadmap's move onto the engine, so the seed runs against
-a backend with or without `ROADMAP_ENGINE_ENABLED`. `create_tree` makes it with the fixture's legend, `import_subgraph`
+the door every server write for a person takes with roadmap's switch on, as production's is, or off, so the seed runs
+against a backend with or without `ROADMAP_ENGINE_ENABLED`. `create_tree` makes it with the fixture's legend, `import_subgraph`
 plants its steps under their own ids, so `--select` names a fixture step, and `update_nodes` writes the private progress.
 The server mints the roadmap's id, which the seed prints; capture takes it as `--tree`. The seed then reads the copy back,
 its steps, links and legend through MCP `get_tree` and its marks through `GET /v1/trees/{id}/progress`, and checks the
@@ -90,8 +90,8 @@ accounts, SQL/REST readers, artifacts and Graph camera internals belong to each 
 - Install `installRoadmapObserver({ origins })` before navigation with `context.addInitScript` or
   CDP's `Page.addScriptToEvaluateOnNewDocument`. It ignores non-HTTP documents and child frames,
   preserves real WebSockets and `fetch`, and observes, on the exact supplied origins only, the
-  session of either room: today's on `/v1/socket`, and the room on the device's copy through the
-  sync engine's `POST /v1/sync/pull` and `/v1/sync/live`.
+  session of either room: the one with the switch off on `/v1/socket`, and the room on the device's
+  copy, which production's build reads, through the sync engine's `POST /v1/sync/pull` and `/v1/sync/live`.
   `window.__roadmapProof.waitForBaseline({ treeId, reach, timeoutMs })` accepts the first of these to
   hold. On the socket, a `subgraph` with `intent: delta` replying to the current subscribe on an open
   socket: live frames, unrelated trees and superseded subscriptions cannot satisfy it, and replies

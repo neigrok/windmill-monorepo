@@ -1,6 +1,6 @@
-// The room on the device's copy against the room as it reads today, in Chromium: the real browser engine syncs with the
-// JavaScript reference server under roadmap's binding, served by this test; today's room reads the same roadmap over
-// its HTTP routes and its own session. Both must show the same screens and emit the same events.
+// The room on the device's copy against the room with the switch off, in Chromium: the real browser engine syncs with
+// the JavaScript reference server under roadmap's binding, served by this test; the room with the switch off reads the
+// same roadmap over its HTTP routes and its own session. Both must show the same screens and emit the same events.
 
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -64,7 +64,8 @@ window.connect = (state) => {
   online = state;
   window.dispatchEvent(new Event(state ? 'online' : 'offline'));
 };
-// Today's room: its own session stands on the roadmap the server answers, the owner's marks set as the server holds them.
+// The room with the switch off: its own session stands on the roadmap the server answers, the owner's marks set as the
+// server holds them.
 SyncSession.prototype.start = async function () {
   this.store = new SyncStore();
   this.scheduleReconnect = () => {};
@@ -183,7 +184,7 @@ const { output } = await build({ configFile: false, root, logLevel: 'silent', mo
 const files = new Map(output.map((file) => ['/' + file.fileName, file.type === 'chunk' ? file.code : file.source]));
 const stylesheet = [...files.keys()].find((path) => path.endsWith('.css'));
 
-// The model server: roadmap's records as the engine's reference server keeps them, and today's routes over the same
+// The model server: roadmap's records as the engine's reference server keeps them, and the rooms' routes over the same
 // roadmap. The owner's marks, and what each subtree its steps own has come to, are what both rooms show a reader.
 let state = null;
 // The rows the reference server holds of every scope whose key names `part`, as it stands after the last push.
@@ -575,7 +576,7 @@ test('with the switch on the owner’s step gestures, their toasts’ Undo and t
       columns: ['locked: Leave the dock', 'upNext: Read the wind, Reef the sail', 'done: Choose a course'],
       events, issues: [], failures: [],
     });
-    // Today's room tells the intake nothing of what an Undo or a Redo came to.
+    // The room with the switch off tells the intake nothing of what an Undo or a Redo came to.
     assert.deepEqual(lattice, { ...onCopy, events: events.filter((event) => !event.startsWith('roadmap_undo ')) });
   } finally {
     await replica.close();
@@ -878,7 +879,7 @@ test('with the switch on the Graph’s gestures land on the device’s copy as t
       'roadmap_view_switch {"view":"board"}',
     ];
     assert.deepEqual(onCopy, { columns: ['locked: Leave the dock', 'upNext: Read the wind, ', 'done: Choose a course'], events, issues: [], failures: [] });
-    // Today's room tells the intake nothing of what an Undo came to.
+    // The room with the switch off tells the intake nothing of what an Undo came to.
     assert.deepEqual(lattice, { ...onCopy, events: events.filter((event) => !event.startsWith('roadmap_undo ')) });
   } finally {
     await replica.close();

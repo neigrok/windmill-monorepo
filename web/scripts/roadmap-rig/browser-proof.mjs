@@ -58,8 +58,9 @@ export async function evalJson(cdp, expression) {
   return value === undefined ? undefined : JSON.parse(value);
 }
 
-// A roadmap's session as the server answers it, on either room: today's on its socket (`/v1/socket`), and the room on the
-// device's copy through the sync engine, which pulls the roadmap's `tree/<id>` scope and follows it on `/v1/sync/live`.
+// A roadmap's session as the server answers it, on either room: the one with the switch off on its socket (`/v1/socket`),
+// and the room on the device's copy through the sync engine, which pulls the roadmap's `tree/<id>` scope and follows it
+// on `/v1/sync/live`.
 export function installRoadmapObserver({ origins = [location.origin] } = {}) {
   if (!/^https?:$/.test(location.protocol) || self !== top) return;
   if (window.__roadmapProof) return;

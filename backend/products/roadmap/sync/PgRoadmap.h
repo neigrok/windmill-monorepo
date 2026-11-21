@@ -11,8 +11,8 @@
 namespace wm::roadmap::engine {
 
 // Roadmap on Postgres: a PgTableType per registry type over the roadmap_* tables of db/schema.sql's "Roadmap on the
-// engine" section, beside the tables roadmap's own sync keeps until the cutover (roadmap-on-the-engine.md §8.1), the
-// activity's deeds in tree_ops, and the product that binds them to a catalog.
+// engine" section, beside the tables of roadmap's own sync, from which the cutover adopted them
+// (roadmap-on-the-engine.md §8.1), the activity's deeds in tree_ops, and the product that binds them to a catalog.
 class PgRoadmap {
 public:
   explicit PgRoadmap(const sync::Registry& registry);

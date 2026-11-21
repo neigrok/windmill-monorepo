@@ -36,8 +36,8 @@ export function resumeSummary({ name, tended }, progress) {
 // (replicaRoom.js), the copy's list once the device can say what each roadmap is, signed in or out, and again as it
 // changes; elsewhere the server's list (`GET /v1/trees`), read once while `signedIn`. `list` is null until the first
 // answer and while the copy's list is unread, so a surface keeps what it held; `waiting` says that answer is still due:
-// today's list while it is asked, and the copy's until it is listed, or the copy did not open within the bound, or could
-// not open at all. A copy that opens after its bound is listed then. The copy's reading loads with its first use, so
+// the server's list while it is asked, and the copy's until it is listed, or the copy did not open within the bound,
+// or could not open at all. A copy that opens after its bound is listed then. The copy's reading loads with its first use, so
 // neither surface carries the room's modules where the switch is off.
 export function useYourRoadmaps(signedIn) {
   const [list, setList] = useState(null);

@@ -139,8 +139,9 @@ contents. Native acceptance and a same-key update check precede publication. See
   abilities run on the browser's copy of a roadmap, and
   [Gym Coach on the AI service](docs/foundation/gym-coach-on-ai-service.md), which moves gym Coach onto
   that engine on every surface, are specified and not built.
-  Four more are specified and not built: [Roadmap on the sync engine](docs/foundation/roadmap-on-the-engine.md),
-  which moves roadmap's records and rules onto the engine and the domain kit;
+  [Roadmap on the sync engine](docs/foundation/roadmap-on-the-engine.md), which moves roadmap's records and rules
+  onto the engine and the domain kit, is built, and production's roadmaps sync through the engine; the deletion of
+  roadmap's own sync remains. Three more are specified and not built:
   [Roadmap on iOS](docs/foundation/roadmap-ios.md), the iPhone's Roadmap room on them;
   [Journal Talk](docs/foundation/journal-talk.md), live speech to text through the AI service; and
   [the web as a device](docs/foundation/web-device-parity.md), which makes gym and journal on the web

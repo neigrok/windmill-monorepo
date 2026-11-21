@@ -14,8 +14,8 @@ journal), iOS (journal, gym) and Android (gym) write through replicas, a phone's
 the web's Coach and gym's import door admit as the server (A.2). Production's gym and journal rows were adopted in place
 (Appendices C and D). `windmill_server_probe` carries the test-only contract. The source composition also
 names roadmap (A.1), whose rules the JS reference model server and the C++ binding carry; `windmill_server` binds
-roadmap and withholds its scopes (§9.2) unless its deployment serves them, which production does not until roadmap's
-cutover.
+roadmap and withholds its scopes (§9.2) unless its deployment serves them, as production's does. Production's roadmaps
+were adopted by [Roadmap on the sync engine](roadmap-on-the-engine.md) §8.1.
 
 **Registry contract:** The composed source registry is version 13 with minimum version 11. Gym's
 finite normalized loads have no fixed kg bounds; exact zero is a load and an absent target remains
@@ -25,9 +25,8 @@ equipment values and load counts remain stored without migration. `other` counts
 and signed set values remain unchanged. Gym also retains the additive `thread` and `message`
 records and `runningTurn` and `picture:<id>` device rows. `composition.json` composes gym, journal and
 roadmap, whose versions rise together (§2.4); journal's field shape is unchanged. Production's hello advertised
-schema 12 / minimum 11 when last verified; the [coordinated release runbook](../../backend/deploy/README.md#coordinated-client-cutoff)
-holds the receipts. Roadmap's rows are to be adopted by
-[Roadmap on the sync engine](roadmap-on-the-engine.md) §8.1. Every other product starts from empty stores.
+schema 13 / minimum 11 when last verified; the [coordinated release runbook](../../backend/deploy/README.md#coordinated-client-cutoff)
+holds the receipts. Every other product starts from empty stores.
 
 **Retired REST writes:** gym's former REST write paths answer `410`
 `{"error":"This version of the app can no longer save; update it.","code":"client-update-required"}`

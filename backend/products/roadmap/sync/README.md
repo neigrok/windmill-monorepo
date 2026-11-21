@@ -23,8 +23,8 @@ Postgres. `roadmap/client.json` belongs to the client role.
   steps a kind's recolour repaints are no deed of their own; an annotation, a move, a title and what only the server
   writes are none.
 - `PgRoadmap` stores each type in a `roadmap_*` table of `db/schema.sql` through the engine's `PgTableType`, beside
-  `trees`, `tree_nodes`, `tree_edges`, `tree_kinds` and `node_progress`, which roadmap's own sync writes until the
-  cutover (§8.1) fills these. Each row goes with its `sync_scopes` row, so an account's erasure takes it. It keeps the
+  `trees`, `tree_nodes`, `tree_edges`, `tree_kinds` and `node_progress`, the tables of roadmap's own sync, from which
+  the cutover (§8.1) adopted these. Each row goes with its `sync_scopes` row, so an account's erasure takes it. It keeps the
   deeds in `tree_ops`, inside the admitting transaction: one row a gesture leaves a deed in a roadmap, made by the
   intent's account (the roadmap's owner, the only writer of a tree scope) at the roadmap's seq as the gesture's latest
   intent there committed it. A later intent of the gesture folds its deed into the row and moves it to its own seq, so a
@@ -36,8 +36,8 @@ Postgres. `roadmap/client.json` belongs to the client role.
 serves roadmap's scopes only where `ROADMAP_ENGINE_ENABLED` is `true` or `1`; otherwise the catalog withholds the
 product (`SyncCatalog::withhold`): hello says it holds nothing, `self/roadmap` pulls empty, its trees and overlays are
 not found, and an intent is refused `forbidden` in `self/roadmap` and `not-found` elsewhere. Production reads it only from
-the host's `roadmap-engine.env`, which roadmap's cutover writes and every later deploy keeps
-(`backend/deploy/README.md`; `test/deploy/deploy_production_test.py` holds deploys to it).
+the host's `roadmap-engine.env`, which holds `ROADMAP_ENGINE_ENABLED=1` and every deploy keeps, so production serves
+roadmap's scopes (`backend/deploy/README.md`; `test/deploy/deploy_production_test.py` holds deploys to it).
 
 Every admission logs its one `sync.admit` line and each command its `sync.command.<name>` line, with product
 `roadmap`, door, outcome or refusal code and duration, and reports an unexpected failure to Sentry under those static

@@ -1,8 +1,8 @@
-// The public demo on the engine against today's demo, in Chromium. Two builds of the route table: one with the room's
-// replica switch on, served by a server past the cutover that refuses every retired route (410) and keeps the demo as an
-// ordinary public roadmap of its house account, on the JavaScript reference server under roadmap's binding; and today's,
-// served today's routes and standing on its own session. Both must open, read and play the same demo and emit the same
-// events, and the switch's build must ask nothing of a retired route.
+// The public demo on the engine against the demo of roadmap's own sync, in Chromium. Two builds of the route table: one
+// with the room's replica switch on, served by a server past the cutover that refuses every retired route (410) and
+// keeps the demo as an ordinary public roadmap of its house account, on the JavaScript reference server under roadmap's
+// binding; and one with it off, served the rooms' routes and standing on its own session. Both must open, read and play
+// the same demo and emit the same events, and the switch's build must ask nothing of a retired route.
 
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,7 +27,8 @@ const root = fileURLToPath(new URL('../../../', import.meta.url));
 const registryJson = readFileSync(new URL('../../../../packages/api-contract/sync/roadmap.registry.json', import.meta.url), 'utf8');
 const registry = new Registry(JSON.parse(registryJson));
 
-// The demo as `backend/db/schema.sql` seeds it: its kinds, and its steps in today's order (by id), each with what it follows.
+// The demo as `backend/db/schema.sql` seeds it: its kinds, and its steps in the rooms' order (by id), each with what it
+// follows.
 const KINDS = [['build', 'terracotta', 'Milestones', 'The days you’ll remember'], ['learn', 'olive', 'Practice', 'Hands on the boat — drills until they’re reflex'],
   ['milestone', 'gold', 'Theory', 'What you learn ashore — wind, rules, weather']];
 const STEPS = [
@@ -49,9 +50,9 @@ const STEPS = [
   ['water-rules', 'Rules of the water', 'scale', 'gold', ['points-of-sail']],
   ['wind-basics', 'How wind moves a boat', 'wind', 'gold', ['dream']],
 ];
-// Each step's order key in today's order, as the move gives a step that holds none (§8.1).
+// Each step's order key in the rooms' order, as the move gives a step that holds none (§8.1).
 const ORDS = STEPS.reduce((keys) => [...keys, between(keys.at(-1) ?? null, null)], []);
-// Today's answer of `GET /v1/trees/{demo}`, which its session stands on too.
+// The rooms' answer of `GET /v1/trees/{demo}`, which its session stands on too.
 const TODAYS_DEMO = {
   id: DEMO_TREE_ID, title: 'Learn to sail', kinds: KINDS.map(([id, hue, label, description]) => ({ id, hue, label, description })),
   nodes: STEPS.map(([id, label, icon, color, prerequisites], index) => ({ id, label, icon, color, order: ORDS[index], prerequisites })),
@@ -186,7 +187,8 @@ const product = new RoadmapProduct();
 let progressAfterMs = 0;
 
 // A server of one build: past the cutover (`cutover`), where every retired route answers 410 and the owner's progress
-// is read from the house account's overlay as the server keeps it, or today's, which answers the demo over its routes.
+// is read from the house account's overlay as the server keeps it, or the rooms' one, which answers the demo over its
+// routes.
 function serve(files, { cutover }) {
   const stylesheet = [...files.keys()].find((path) => path.endsWith('.css'));
   return createServer(async (request, response) => {

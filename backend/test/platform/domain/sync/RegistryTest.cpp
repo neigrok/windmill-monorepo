@@ -603,7 +603,8 @@ TEST(the_deployment_composition_embeds_every_manifest_member_in_order) {
   CHECK(catalog->registry().command("journal.claimPage") != nullptr);
   CHECK(catalog->registry().command("roadmap.createSubtree") != nullptr);
   for (const auto& type : catalog->registry().types()) CHECK_EQ(catalog->store(type.name).def().name, type.name);
-  // Production's catalog withholds roadmap's scopes until its cutover; a test stack's serves them.
+  // The default catalog withholds roadmap's scopes, as a deployment that leaves ROADMAP_ENGINE_ENABLED unset does; a
+  // served one, as production's is, serves them.
   const auto served = productCatalog(RoadmapServing::served);
   for (const char* product : {"gym", "journal"}) {
     CHECK(catalog->serves(std::string(product)));

@@ -239,7 +239,7 @@ test('with the switch on, Settings and the row export a roadmap with a subtree, 
   await a.sync();
   const session = { getSnapshot: () => ({ engine: a.engine, ready: true, online: true, error: false }), subscribe: () => () => {} };
 
-  // Today's server answers for the same roadmaps, as its routes send them: a document's steps in id order, each step's
+  // The rooms' routes answer for the same roadmaps, as they send them: a document's steps in id order, each step's
   // prerequisites in the order of the ids they come from, a subtree named by its owning step, and the owner's marks.
   const genesis = [
     { id: 'build', hue: 'terracotta', label: 'Build', description: 'Things you make' },
@@ -304,7 +304,8 @@ test('with the switch on, Settings and the row export a roadmap with a subtree, 
   assert.deepEqual(replica, today);
   assert.deepEqual(settings.replica[0], settings.today[0], 'the two archives are the same bytes');
 
-  // The row exports the room's own picture: today's reading's, and the reading of the device's copy where the switch is on.
+  // The row exports the room's own picture: the reading's of roadmap's own sync, and the reading of the device's copy
+  // where the switch is on.
   const verbs = await closuresIn('room/useRowVerbs.js');
   const exportFromRow = ({ seed, overlay }) => {
     const files = [];
@@ -355,10 +356,10 @@ test('Settings’ export of the device’s copy says nothing where the copy does
   assert.equal(await buildExportArchive(() => readReplicaRoadmaps({ session }), () => assert.fail('nothing downloads')), null);
 });
 
-// What the device's copy holds otherwise than today's server does, read as the room reads it: steps in the roadmap's own
-// order (§4 Order) where the server listed them by id, a step that followed a step deleted elsewhere following what that
-// step followed (D-5) where the server lost its link, and completion from the owner's marks alone (§5 Complete and Reset)
-// where the server fell back to a step's seed status.
+// What the device's copy holds otherwise than the rooms' routes do, read as the room reads it: steps in the roadmap's
+// own order (§4 Order) where the server listed them by id, a step that followed a step deleted elsewhere following what
+// that step followed (D-5) where the server lost its link, and completion from the owner's marks alone (§5 Complete and
+// Reset) where the server fell back to a step's seed status.
 test('where the device’s copy reads a roadmap otherwise than today’s server, the export says what the room shows', async () => {
   const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
   try {

@@ -24,8 +24,8 @@ Intents, and the reminder switch.
 
 **Depends on:**
 
-- [Roadmap on the sync engine](roadmap-on-the-engine.md): its registry and shared domain, and its
-  cutover, since the server serves no roadmap through the engine before it;
+- [Roadmap on the sync engine](roadmap-on-the-engine.md): its registry and shared domain, and the
+  server serving roadmap through the engine, as production's does;
 - for Coach, the [Coach engine](coach-engine.md)'s Swift libraries merged, and the day gym's server
   Coach closes, before which Roadmap Coach is open to no one (Roadmap Coach R-11).
 

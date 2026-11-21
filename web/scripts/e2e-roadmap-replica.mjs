@@ -1,34 +1,36 @@
 // The roadmap room's writes end to end on a local stack, once with the server's roadmap engine and the web's switch on
-// (the room on the device's copy) and once with both off (today's room). One owner on several devices, each a browser
-// context with its own store: Undo and Redo, edits made offline syncing once the connection returns, Settings' export of
-// every roadmap read from the device's copy with no connection (with the switch on), a change made without knowing of
-// another device's delete (INV-1), a change made on a device that already holds that delete (INV-1, the server keeping
-// the step's other fields), the line that tells the person once of a link of theirs that reached the server after another
-// device's delete of its step, named from the device's note in a room opened after a reload (§6), a roadmap's deletion and
-// a sign-out that leave no step's name in the device's store (§6), a roadmap's deletion from the switcher, a change to a
-// roadmap another device deleted, kept in the one list of what cannot land (§6, flow 49), and the sign-in and sign-out
-// questions of flow 50 (§5 Signed out): a browser's signed-out roadmaps added without asking to an account that holds
-// none, Add, Discard and Escape where it holds some, and Keep and Discard at a sign-out with a change unsent, only with the
-// switch on; with it off, today's silent claim and plain sign-out; and the carry-over of what the last old bundle kept in
-// a browser (§8.2), its stores written by the old bundle's own code: with the switch on, a roadmap made signed out, its
-// marks and workspace carried and kept through a sign-in, its old stores kept until the server takes it, and a signed-in
-// browser's unsent changes carried to the server, its old stores gone once carried; with it off, the old stores untouched.
-// With the switch on, also readers and signed-out births (§5): a stranger, signed out and signed in, opening a public
-// roadmap and its subtree by link, the card of the step that owns it showing how far the subtree is, each followed on the
-// live socket as the room opens it (a signed-in reader's own overlay with it), and dropped as the signed-in one leaves; a private roadmap no stranger can read; a browser that keeps nothing shown the
-// room's load error (E-5 is not built); and a roadmap made at the birth door signed out, held in the browser's anon replica
-// and joining at sign-in an account that holds none. The home card, the landing and the room's switcher list the person's
-// roadmaps: with the switch on from the device's copy, the account's signed in and the browser's own signed out; with it
-// off from today's list, which holds none signed out. The public demo, opened signed out and signed in as a stranger, its
-// coach played and its Board and step read, shows the same in both runs, with the switch on from the engine's copy the
-// cutover's `demo` stage adopted before the server started. With the switch on every page meets the server as the move leaves it
-// (§7, §8.3): the server, with its engine on, answers each route the move retires 410 and the old socket refuses, and
-// the run holds, from the server's own refusal lines, that no page asked for one. Last, every person leaves the app, and
-// the run waits, within its bound, until the local intake holds the room's events, those only the switch emits only with
-// it on. Each run has its own database, server and built app on the given ports, and stops and drops them.
-// It prints no id and no roadmap text: a check that passes prints its name, and a failure prints the failing check's
-// name, the words of the assertion that failed (none of which names a roadmap, a step or an id) or else only the kind of
-// error, and the path of the stack log, which holds the full error and the stack's output and stays on this machine.
+// (the room on the device's copy) and once with both off (roadmap's own sync). One owner on several devices, each a
+// browser context with its own store: Undo and Redo, edits made offline syncing once the connection returns, Settings'
+// export of every roadmap read from the device's copy with no connection (with the switch on), a change made without
+// knowing of another device's delete (INV-1), a change made on a device that already holds that delete (INV-1, the
+// server keeping the step's other fields), the line that tells the person once of a link of theirs that reached the
+// server after another device's delete of its step, named from the device's note in a room opened after a reload (§6),
+// a roadmap's deletion and a sign-out that leave no step's name in the device's store (§6), a roadmap's deletion from
+// the switcher, a change to a roadmap another device deleted, kept in the one list of what cannot land (§6, flow 49),
+// and the sign-in and sign-out questions of flow 50 (§5 Signed out): a browser's signed-out roadmaps added without
+// asking to an account that holds none, Add, Discard and Escape where it holds some, and Keep and Discard at a sign-out
+// with a change unsent, only with the switch on; with it off, the silent claim and plain sign-out of roadmap's own
+// sync; and the carry-over of what the last old bundle kept in a browser (§8.2), its stores written by the old bundle's
+// own code: with the switch on, a roadmap made signed out, its marks and workspace carried and kept through a sign-in,
+// its old stores kept until the server takes it, and a signed-in browser's unsent changes carried to the server, its
+// old stores gone once carried; with it off, the old stores untouched. With the switch on, also readers and signed-out
+// births (§5): a stranger, signed out and signed in, opening a public roadmap and its subtree by link, the card of the
+// step that owns it showing how far the subtree is, each followed on the live socket as the room opens it (a signed-in
+// reader's own overlay with it), and dropped as the signed-in one leaves; a private roadmap no stranger can read; a
+// browser that keeps nothing shown the room's load error (E-5 is not built); and a roadmap made at the birth door
+// signed out, held in the browser's anon replica and joining at sign-in an account that holds none. The home card, the
+// landing and the room's switcher list the person's roadmaps: with the switch on from the device's copy, the account's
+// signed in and the browser's own signed out; with it off from the server's list, which holds none signed out. The
+// public demo, opened signed out and signed in as a stranger, its coach played and its Board and step read, shows the
+// same in both runs, with the switch on from the engine's copy the cutover's `demo` stage adopted before the server
+// started. With the switch on every page meets the server as the move leaves it (§7, §8.3): the server, with its engine
+// on, answers each route the move retires 410 and the old socket refuses, and the run holds, from the server's own
+// refusal lines, that no page asked for one. Last, every person leaves the app, and the run waits, within its bound,
+// until the local intake holds the room's events, those only the switch emits only with it on. Each run has its own
+// database, server and built app on the given ports, and stops and drops them. It prints no id and no roadmap text: a
+// check that passes prints its name, and a failure prints the failing check's name, the words of the assertion that
+// failed (none of which names a roadmap, a step or an id) or else only the kind of error, and the path of the stack
+// log, which holds the full error and the stack's output and stays on this machine.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -88,7 +90,7 @@ async function stopped(children) {
 const source = (path) => import(pathToFileURL(resolve(path)).href);
 
 // Two roadmaps of the owner's: three steps in a line, and one of a single step. With the engine on they are planted
-// through roadmap's domain actions on a device of the owner's; with it off, through today's routes.
+// through roadmap's domain actions on a device of the owner's; with it off, through the rooms' routes.
 async function seed(mode, secret, account) {
   const planted = { sail: 'Learn to sail', knot: 'Learn to knot' };
   if (mode === 'off') {
@@ -266,8 +268,9 @@ class Device {
       new MutationObserver((records) => {
         for (const record of records) for (const node of record.addedNodes) if (node.classList?.contains('wm-decision')) window.decisionsShown += 1;
       }).observe(document, { childList: true, subtree: true });
-      // Whether today's room has taken its socket's first answer, the subscribe's graft, after which it takes a write: unset
-      // as the room opens or closes a socket, and set once the room's own handler has run on the graft.
+      // Whether the room with the switch off has taken its socket's first answer, the subscribe's graft, after which it
+      // takes a write: unset as the room opens or closes a socket, and set once the room's own handler has run on the
+      // graft.
       const Socket = window.WebSocket;
       window.WebSocket = class extends Socket {
         constructor(...args) {
@@ -306,7 +309,8 @@ class Device {
       });
       socket.on('close', () => device.following.clear());
     });
-    // Today's room reads its roadmap over `GET /v1/trees/{id}`; the room on the device's copy never does.
+    // The room with the switch off reads its roadmap over `GET /v1/trees/{id}`; the room on the device's copy never
+    // does.
     page.on('framenavigated', (frame) => { if (frame === page.mainFrame()) device.todaysRoom = false; });
     page.on('request', (request) => {
       if (request.method() === 'GET' && /^\/v1\/trees\/t_[0-9a-f]+$/.test(new URL(request.url()).pathname)) device.todaysRoom = true;
@@ -378,7 +382,7 @@ class Device {
     this.errors = [];
     // The scopes this page's live socket follows, as the frames it sent say: each it sent `sub` for and no `unsub` since.
     this.following = new Set();
-    // Whether the page holds today's room.
+    // Whether the page holds the room with the switch off.
     this.todaysRoom = false;
   }
 
@@ -515,8 +519,8 @@ class Device {
   }
 
   // The connection cut once the service worker controls the page and has primed the offline shell, so the room's
-  // lazy chunks still load, and once today's room has its socket's first answer, so it takes a write: the run waits for
-  // what a person's second visit already has.
+  // lazy chunks still load, and once the room with the switch off has its socket's first answer, so it takes a write:
+  // the run waits for what a person's second visit already has.
   async offline() {
     const end = Date.now() + 30_000;
     const ready = () => this.page.evaluate(async () => !!navigator.serviceWorker.controller
@@ -637,7 +641,7 @@ const replicasIn = (store) => store.records.filter(({ key }) => key.startsWith('
   const unsent = store.records.filter(({ key: other, value: entry }) => other.startsWith('["outbox"') && JSON.parse(other)[1] === handle && entry.state !== 'acked');
   return [value.state, unsent.length];
 }).sort();
-// The titles of an account's roadmaps as the server lists them today (GET /v1/trees).
+// The titles of an account's roadmaps as the server lists them with the switch off (GET /v1/trees).
 async function listedTitles(secret) {
   const response = await fetch(`${backend}/v1/trees`, { headers: { Authorization: `Bearer ${secret}` }, signal: AbortSignal.timeout(10_000) });
   assert.ok(response.ok, 'the server listed the account\'s roadmaps');
@@ -1111,7 +1115,7 @@ async function accountChoices(browser, { session, empty }, account, check, devic
   });
 }
 
-// Flow 50's questions with the switch off: today's room claims a roadmap planted signed out at sign-in without a question,
+// Flow 50's questions with the switch off: the room claims a roadmap planted signed out at sign-in without a question,
 // and asks the shell's plain question at a sign-out after a change made offline.
 async function todaysAccountChoices(browser, { secret, session }, check, devices) {
   await check('today: a roadmap planted signed out is claimed at sign-in, and no question is asked', async () => {
@@ -1254,8 +1258,8 @@ async function readersAndBirths(browser, { session, stranger, climber }, account
 // §7 The public demo, the house account's sample: opened at #/demo by a browser signed out and by one signed in as a
 // stranger, its coach played and its Board and coached step read, the two shown alike. With the switch on its room reads
 // the engine's copy, which the cutover's `demo` stage adopted, and its pages meet the server's refusals with the rest of
-// the run; with it off, today's room. Its coach stands on the Graph, so the visits run in a browser that draws WebGL2.
-// Answers what the demo showed, which the two runs compare.
+// the run; with it off, the room reads roadmap's own sync. Its coach stands on the Graph, so the visits run in a
+// browser that draws WebGL2. Answers what the demo showed, which the two runs compare.
 async function demoVisits({ session, demoer }, check) {
   const drawing = await chromium.launch({ headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const shown = {};
@@ -1284,8 +1288,8 @@ async function demoVisits({ session, demoer }, check) {
 
 // §7, §8.4 The person's roadmaps where the home card, the landing and the room's switcher list them. With the switch on,
 // every page of the run meeting the server as the move leaves it, they are the device's copy's: the
-// account's signed in and the browser's own signed out. With it off they are today's list signed in, and signed out it
-// holds none. An account holds two roadmaps, the newer planted last; a browser signed out holds one.
+// account's signed in and the browser's own signed out. With it off they are the server's list signed in, and signed
+// out it holds none. An account holds two roadmaps, the newer planted last; a browser signed out holds one.
 async function yourRoadmaps(mode, browser, { session, lister }, check, devices) {
   const planted = [['Learn to sail', ['Choose a course']], ['Learn to row', ['Grip the oars', 'Pull together']]];
   const trees = [];

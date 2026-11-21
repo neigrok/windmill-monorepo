@@ -10,10 +10,10 @@
 #include "test/platform/adapters/postgres/PgSyncWorld.h"
 #include "test/testing.h"
 
-// Roadmap in the production composition over Postgres (roadmap-on-the-engine.md §7, §8.1): withheld, as production
-// runs it until the cutover, the account's roadmap reads as holding nothing and takes no write; served, as a test stack
-// runs it, the same tables answer what they hold and admit a person's roadmap. Gym's and journal's answers are their
-// own suites': this database keeps what those wrote.
+// Roadmap in the production composition over Postgres (roadmap-on-the-engine.md §7, §8.1): withheld, as a deployment
+// that leaves ROADMAP_ENGINE_ENABLED unset runs it, the account's roadmap reads as holding nothing and takes no write;
+// served, as production runs it, the same tables answer what they hold and admit a person's roadmap. Gym's and
+// journal's answers are their own suites': this database keeps what those wrote.
 
 using namespace wm;
 using namespace wm::sync;

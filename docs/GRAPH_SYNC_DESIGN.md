@@ -2,7 +2,10 @@
 
 Roadmap replicas exchange partial stamped state through one server. The server model, admission
 limits, routes and persistence are specified in [the backend spec](../backend/SPEC.md). This
-contract covers the shared wire format, browser coverage and offline storage.
+contract covers the shared wire format, browser coverage and offline storage. It is roadmap's own
+sync, which serves only where `ROADMAP_ENGINE_ENABLED` is unset: production serves roadmap through
+[the sync engine](foundation/roadmap-on-the-engine.md), and this sync stays only until the Roadmap on
+the engine tree's node `m5-delete-roadmaps-own-sync` deletes it.
 
 ## State and clocks
 

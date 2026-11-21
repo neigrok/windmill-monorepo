@@ -1,7 +1,7 @@
-// The home card and the landing on the device's copy against the two as they read today, in Chromium: with the room's
+// The home card and the landing on the device's copy against the two with the switch off, in Chromium: with the room's
 // replica switch on they read the person's roadmaps from the real browser engine, synced with the JavaScript reference
-// server under roadmap's binding, while every `/v1/trees` route answers 410 as it will after the move (§7); with it off
-// they read today's list from the server. Both must offer the same roadmap in the same words.
+// server under roadmap's binding, while every `/v1/trees` route answers 410 as it does in production (§7); with it off
+// they read the server's list. Both must offer the same roadmap in the same words.
 
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -109,7 +109,7 @@ const { output } = await build({ configFile: false, root, logLevel: 'silent', mo
 const files = new Map(output.map((file) => ['/' + file.fileName, file.type === 'chunk' ? file.code : file.source]));
 const stylesheet = [...files.keys()].find((path) => path.endsWith('.css'));
 
-// The model server: roadmap's records as the engine's reference server keeps them, and today's list of the same two
+// The model server: roadmap's records as the engine's reference server keeps them, and the rooms' list of the same two
 // roadmaps for a person signed in, unless the page's cookie says the move has happened, when every `/v1/trees` route
 // answers 410 and is counted.
 let state = null;
