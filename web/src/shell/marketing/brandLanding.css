@@ -71,7 +71,7 @@
 /* ---- a room's section ---- */
 .front-room > .front-wrap { padding: 112px 0; }
 .front-room-head { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 64px; align-items: start; }
-.front-title { font-weight: 500; font-size: clamp(28px, 3.334vw, 48px); line-height: 1.084; letter-spacing: -.022em; }
+.front-title { font-weight: 500; font-size: clamp(28px, 3.334vw, 48px); line-height: calc(13 / 12); letter-spacing: -.022em; }
 .front-text { font-size: 17px; line-height: 26px; color: var(--look-ink-2); }
 .front-room-head .front-link { margin-top: 16px; }
 
@@ -185,6 +185,7 @@
   .front-runs p { padding: 24px 0; }
 
   .front-sitemap { display: block; padding: 40px 0 36px; }
+  .front-sitemap > .front-brand { display: flex; }
   .front-sitemap-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; row-gap: 36px; margin-top: 32px; }
   .front-sitemap-columns ul { gap: 18px; margin-top: 16px; font-size: 16px; line-height: 22px; }
   .front-sitemap-columns a { display: block; }
