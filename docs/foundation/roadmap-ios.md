@@ -364,7 +364,8 @@ makes it false.
 - Activity and History have no read (§3): no case states one, and neither the web's domain nor Swift's gives it.
 - `RoadmapLayout` draws the picture and nothing draws it on a screen; its time at 5,000 steps is not measured
   against the budget of §5.
-- The app's one runner deletes at once, in every room.
+- Roadmap's runner holds a removal for the engine's nine seconds (`AppRuntime.roadmapRunner`), and the room runs
+  nothing through it: it offers no delete and no *Undo*.
 - The plan grammar has no Swift port: the web's (`web/src/products/roadmap/paste/`) is its one
   implementation, and the web alone runs its cases (`packages/api-contract/roadmap/plan/`).
 - The grammar's writer does not write every roadmap so that it reads back the same, as §7.3 needs.
