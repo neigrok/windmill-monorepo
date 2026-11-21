@@ -84,6 +84,24 @@ struct RoadmapsTests {
     #expect(try phone.notices(RoadmapRefusal.self).isEmpty)
   }
 
+  // `tree.subtreeStep` is the server's to decide where the device does not hold the pointer another device set first.
+  @Test func aSubtreeOnAStepAnotherDeviceMadeOpenARoadmapComesBackRefused() throws {
+    let first = Self.phone()
+    let second = first.device()
+    let (tree, step) = try Self.rooted(on: first)
+    let (other, _) = try Self.rooted(on: first)
+    guard case .committed = try first.runner.runAct(PointStep.set(tree: tree, step: step, opens: other)),
+          case .committed = try second.runner.runAct(CreateSubtree(tree: tree, step: step)) else {
+      Issue.record("the pointer or the subtree was not committed")
+      return
+    }
+    first.sync()
+    let refused = Refused(Roadmap.Codes.stepOpensATree, subject: nil, path: .notice)
+    #expect(try second.notices(RoadmapRefusal.self).map(\.refusal) == [.stepOpensARoadmap(refused)])
+    #expect(try second.drawn(RoadmapStep.self, in: tree.tree).map(\.branch) == [nil])
+    #expect(try second.drawn(RoadmapEntry.self).map(\.id) == [tree, other].sorted())
+  }
+
   @Test func aRootsVisibilityIsDrawnAcrossItsStandingSubtreesAsTheServerThenWritesIt() throws {
     let phone = Self.phone()
     let (tree, step) = try Self.rooted(on: phone)
