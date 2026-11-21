@@ -241,6 +241,11 @@ struct Boards: ServerRules {
      }}
     """#
 
+  func discoverEffectScopes(in context: RuleContext, command: CheckedCommand?) -> Set<ScopeKey> {
+    guard let command, let destination = try? command.args["dst"]?.asString() else { return [] }
+    return [ScopeKey(.tree(destination))]
+  }
+
   func replays(_ command: CheckedCommand, in context: RuleContext) -> Bool { false }
 
   func run(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
@@ -249,7 +254,11 @@ struct Boards: ServerRules {
       .filter { $0.isAlive && ($0.key.type == "doc" || (command.args["folders"] == true && $0.key.type == "folder")) }
     return CommandOutcome(
       deltas: [.serverCreate(destination)], write: [WriteClaim(key: destination, born: .minted)], product: context.product,
-      created: [ScopeKey(.tree(destination.id.description)): copied.map(PlannedDelta.copy(of:))])
+      into: [ScopeKey(.tree(destination.id.description)): copied.map(PlannedDelta.copy(of:))])
+  }
+
+  func effects(_ changes: [RecordChange], in context: inout RuleContext) throws(Refusal) -> Effects {
+    Effects(byScope: [context.scope: try check(changes, in: &context)])
   }
 
   func check(_ changes: [RecordChange], in context: inout RuleContext) throws(Refusal) -> [PlannedDelta] {
@@ -408,7 +417,7 @@ struct Creators: ServerRules {
 
   func replays(_ command: CheckedCommand, in context: RuleContext) -> Bool { probe.replays(command, in: context) }
 
-  func run(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
+  func run(_ command: CheckedCommand, in context: RuleContext) throws -> CommandOutcome {
     try probe.run(command, in: context)
   }
 

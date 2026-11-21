@@ -298,3 +298,122 @@ test('Graph movement clears a cancelled pending hold but retains an accepted hol
     assert.equal(controller.longPressFired, false);
   }
 });
+
+function activationController(ToolClass = NavigateTool, overrides = {}) {
+  const ownerDocument = new EventTarget();
+  const canvas = Object.assign(new EventTarget(), {
+    ownerDocument,
+    setPointerCapture() {},
+    hasPointerCapture: () => false,
+    getBoundingClientRect: () => ({ left: 0, top: 0 }),
+  });
+  const actions = [];
+  const context = {
+    camera: { stopMotion() {}, pan() {}, launchInertia() {}, zoom: 1, workingZoom: 1, glideZoomAround: () => actions.push('zoom') },
+    pick: () => 'wind',
+    select: (id) => actions.push(['select', id]),
+    activate: (id) => { controller.claimActivationClick(); actions.push(['open', id]); },
+    ...overrides,
+  };
+  const controller = new InputController(canvas, context, new ToolClass(context));
+  controller.bind();
+  const pointer = { pointerId: 2, pointerType: 'touch', clientX: 100, clientY: 100 };
+  const emit = (type, properties = {}) => {
+    const event = Object.assign(new Event(type, { cancelable: true }), properties);
+    ownerDocument.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  return { controller, ownerDocument, actions, pointer, emit };
+}
+
+test('node activation owns only its matching residual click, before document handlers, in both pointer tools', () => {
+  for (const ToolClass of [NavigateTool, ReadOnlyTool]) {
+    for (const pointerType of ['touch', 'mouse']) {
+      const { controller, ownerDocument, actions, pointer, emit } = activationController(ToolClass);
+      const delivered = [];
+      ownerDocument.addEventListener('click', (event) => delivered.push(event.pointerId));
+      controller.onDown({ ...pointer, pointerType });
+      controller.onUp({ ...pointer, pointerType });
+      assert.deepEqual(actions, [['select', 'wind'], ['open', 'wind']]);
+      assert.equal(emit('click', { pointerId: 9, detail: 1 }), false);
+      assert.equal(emit('click', { pointerId: -1, detail: 0 }), false);
+      assert.equal(emit('click', { detail: 0 }), false);
+      assert.equal(emit('click', { pointerId: 2, detail: 1 }), true);
+      assert.equal(emit('click', { pointerId: 2, detail: 1 }), false);
+      assert.deepEqual(delivered, [9, -1, undefined, 2]);
+      controller.unbind();
+    }
+  }
+});
+
+test('a legacy trailing click is consumed once, but fresh pointer and keyboard actions retire the claim', () => {
+  for (const nextAction of [null, 'pointerdown', 'keydown']) {
+    const { controller, pointer, emit } = activationController();
+    controller.onDown(pointer);
+    controller.onUp(pointer);
+    if (nextAction) emit(nextAction);
+    assert.equal(emit('click', { detail: 1 }), nextAction === null);
+    assert.equal(emit('click', { detail: 1 }), false);
+    controller.unbind();
+  }
+});
+
+test('a keyboard activation outside the pointer release cannot claim a later click', () => {
+  const { controller, emit } = activationController();
+  controller.context.activate('wind');
+  assert.equal(emit('click', { detail: 1 }), false);
+  controller.unbind();
+});
+
+test('a touch or pen compatibility mouse click uses the pending sequence when its pointer identity changes', () => {
+  for (const pointerType of ['touch', 'pen']) {
+    const { controller, pointer, emit } = activationController();
+    controller.onDown({ ...pointer, pointerId: 0, pointerType });
+    controller.onUp({ ...pointer, pointerId: 0, pointerType });
+    assert.equal(emit('click', { pointerId: 1, pointerType: 'mouse', detail: 0 }), false);
+    assert.equal(emit('click', { pointerId: 1, pointerType: 'mouse', detail: 1 }), true);
+    controller.onDown({ ...pointer, pointerId: 0, pointerType });
+    controller.onUp({ ...pointer, pointerId: 0, pointerType });
+    emit('pointerdown', { pointerId: 1, pointerType: 'mouse' });
+    assert.equal(emit('click', { pointerId: 1, pointerType: 'mouse', detail: 1 }), false);
+    controller.unbind();
+  }
+});
+
+test('drag, cancellation, modified selection, and tablet edit ownership do not claim a node activation click', () => {
+  for (const mode of ['drag', 'cancel', 'modified', 'tablet']) {
+    const { controller, actions, pointer, emit } = activationController(
+      mode === 'tablet' ? ReadOnlyTool : NavigateTool,
+      mode === 'tablet' ? { editTap: () => true } : {},
+    );
+    controller.onDown(pointer);
+    if (mode === 'drag') controller.onMove({ ...pointer, clientX: 120 });
+    controller.onUp({ ...pointer, type: mode === 'cancel' ? 'pointercancel' : 'pointerup', shiftKey: mode === 'modified' });
+    assert.deepEqual(actions, mode === 'modified' ? [['select', 'wind']] : []);
+    assert.equal(emit('click', { pointerId: 2, detail: 1 }), false);
+    controller.unbind();
+  }
+});
+
+test('consecutive activated taps each own one click and never also become a double-tap zoom', () => {
+  const { controller, actions, pointer, emit } = activationController();
+  for (const pointerId of [2, 3]) {
+    emit('pointerdown', { pointerId });
+    controller.onDown({ ...pointer, pointerId });
+    controller.onUp({ ...pointer, pointerId });
+    assert.equal(emit('click', { pointerId, detail: 1 }), true);
+  }
+  assert.deepEqual(actions, [['select', 'wind'], ['open', 'wind'], ['select', 'wind'], ['open', 'wind']]);
+  controller.unbind();
+});
+
+test('unbinding removes a pending click claim and all document interception', () => {
+  const { controller, pointer, emit } = activationController();
+  controller.onDown(pointer);
+  controller.onUp(pointer);
+  controller.unbind();
+  assert.equal(emit('click', { pointerId: 2, detail: 1 }), false);
+  controller.bind();
+  assert.equal(emit('click', { detail: 1 }), false);
+  controller.unbind();
+});

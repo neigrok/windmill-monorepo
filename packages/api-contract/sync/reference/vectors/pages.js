@@ -111,10 +111,10 @@ class PullScript {
     );
   }
 
-  pushRound(deviceNow) {
+  pushRound(deviceNow, account = 'A') {
     this.add({ op: 'push', deviceNow });
     const { request } = this.lastRequest('push');
-    const out = push({ state: this.server, registry, product, account: 'A', request, serverNow: deviceNow });
+    const out = push({ state: this.server, registry, product, account, request, serverNow: deviceNow });
     this.server = out.state;
     return this.add({ op: 'pushResponse', response: out.response, deviceNow, tSend: deviceNow, tRecv: deviceNow });
   }
@@ -600,6 +600,71 @@ function seats() {
   return [script.vector('a boot answered after a sign-out applies nothing: the dormant replica stays purged, and the anon replica takes no rows')];
 }
 
+function readerSubscriptions() {
+  const overlay = `self/overlay/${BOARD}`;
+  const shared = serverState({
+    scopes: {
+      'acct:A/probe': productScope('A'), 'acct:B/probe': productScope('B'),
+      [`tree:${BOARD}`]: treeScope('A', BOARD),
+      [`acct:A/overlay/${BOARD}`]: overlayScope('A', BOARD),
+    },
+    rows: {
+      'acct:A/probe': [BOARD_ROW],
+      [`tree:${BOARD}`]: [row({ ...TREE_ROWS[0], f: { ...TREE_ROWS[0].f, visibility: ['public', st(1000)] } }), TREE_ROWS[1]],
+      [`acct:A/overlay/${BOARD}`]: [row({ t: 'mark', id: 'oak', f: { done: [true, st(1000)] }, seq: 1 })],
+    },
+  });
+  const reader = () => new PullScript({ device: device({ meta: { account: 'B' } }), server: shared })
+    .add({ op: 'subscribe', scope: TREE, deviceNow: 5000 }, { op: 'subscriptions', deviceNow: 5000 })
+    .pullRound(undefined, { serverNow: 5001, account: 'B' });
+  const marked = () => reader()
+    .add({ op: 'view', scope: overlay, withHeld: true, deviceNow: 5002 })
+    .add({ op: 'commit', scope: overlay, changes: [{ op: 'write', t: 'mark', id: 'oak', f: { done: false } }], deviceNow: 5002 })
+    .pushRound(5003, 'B')
+    .add({ op: 'view', scope: overlay, withHeld: true, deviceNow: 5004 });
+  const switched = new PullScript({ device: { active: REPLICA, replicas: [{ meta: freshMeta(REPLICA, 'anon') }] }, server: shared });
+  switched.input.ids = ['rp_00000000000000000000000000000002', 'rp_00000000000000000000000000000003'];
+  switched.add({ op: 'subscribe', scope: TREE, deviceNow: 5000 }, { op: 'subscriptions', deviceNow: 5000 })
+    .pullRound(undefined, { serverNow: 5001, account: null })
+    .add({ op: 'signIn', account: 'B', holdsRecords: {}, deviceNow: 5002 }, { op: 'subscriptions', deviceNow: 5002 })
+    .pullRound(undefined, { serverNow: 5003, account: 'B' })
+    .add({ op: 'signOut', choice: 'keep', deviceNow: 5004 }, { op: 'subscriptions', deviceNow: 5004 })
+    .add({ op: 'signIn', account: 'A', holdsRecords: {}, deviceNow: 5005 }, { op: 'subscriptions', deviceNow: 5005 })
+    .pullRound(undefined, { serverNow: 5006, account: 'A' })
+    .add({ op: 'view', scope: overlay, withHeld: true, deviceNow: 5007 });
+  const revoked = (op) => marked()
+    .add({ op: 'subscribe', scope: overlay, deviceNow: 5004 })
+    .add({ op: 'frame', frame: { op, as: 'B', scope: TREE }, deviceNow: 5005 })
+    .add({ op: 'subscriptions', deviceNow: 5006 }, { op: 'view', scope: overlay, withHeld: true, deviceNow: 5006 });
+  return [
+    marked().pullRound(undefined, { serverNow: 5005, account: 'B' })
+      .add({ op: 'view', scope: overlay, withHeld: true, deviceNow: 5006 })
+      .add({ op: 'unsubscribe', scope: TREE, deviceNow: 5007 }, { op: 'subscriptions', deviceNow: 5007 })
+      .add({ op: 'view', scope: overlay, withHeld: true, deviceNow: 5008 })
+      .vector('opening another account’s tree subscribes the reader’s overlay; its mark survives ack and pull and leaves with the tree'),
+    marked().pullRound(undefined, { serverNow: 5005, account: 'B' })
+      .add({ op: 'subscribe', scope: overlay, deviceNow: 5006 }, { op: 'unsubscribe', scope: TREE, deviceNow: 5007 })
+      .add({ op: 'subscriptions', deviceNow: 5007 }, { op: 'view', scope: overlay, withHeld: true, deviceNow: 5008 })
+      .add({ op: 'unsubscribe', scope: overlay, deviceNow: 5009 }, { op: 'subscriptions', deviceNow: 5009 })
+      .vector('a separately opened native overlay survives voluntary tree release until its own release'),
+    revoked('not-found').add({ op: 'subscribe', scope: TREE, deviceNow: 5007 }, { op: 'subscriptions', deviceNow: 5007 })
+      .pullRound(undefined, { serverNow: 5008, account: 'B' })
+      .add({ op: 'view', scope: overlay, withHeld: true, deviceNow: 5009 })
+      .vector('a reader’s tree access denial atomically forgets its explicit overlay and acked mark; reopening clears both not-found records'),
+    marked().add({ op: 'commit', scope: overlay, changes: [{ op: 'write', t: 'mark', id: 'oak', x: { memo: 'Queued' } }], deviceNow: 5004 })
+      .pullRound(undefined, { serverNow: 5005, account: 'B', edit: (response) => ({ ...response, body: { ...response.body,
+        pages: response.body.pages.map((page) => page.scope === TREE ? { scope: TREE, kind: 'not-found' } : page) } }) })
+      .add({ op: 'subscriptions', deviceNow: 5006 })
+      .vector('a denied tree page also ends its overlay before a later overlay page can arrive; only acknowledged work resolves'),
+    revoked('gone').add({ op: 'subscribe', scope: TREE, deviceNow: 5007 }, { op: 'subscriptions', deviceNow: 5007 })
+      .vector('a tree death ends its reader overlay and cannot be reopened'),
+    bootedOnProbe().add({ op: 'subscribe', scope: TREE, deviceNow: 5001 }, { op: 'unsubscribe', scope: TREE, deviceNow: 5002 })
+      .add({ op: 'subscriptions', deviceNow: 5002 })
+      .vector('releasing an explicit tree leaves its owner-derived tree and overlay subscribed'),
+    switched.vector('an open tree is tree-only anonymously and gains only the active bound account’s overlay after each account change'),
+  ];
+}
+
 export function files() {
-  return { 'pull/pages.json': [...boots(), ...answers(), ...lives(), ...digests(), ...frames(), ...principals(), ...revivals(), ...epochs(), ...chunks(), ...settling(), ...outside(), ...heldWindow(), ...seats()] };
+  return { 'pull/pages.json': [...boots(), ...answers(), ...lives(), ...digests(), ...frames(), ...principals(), ...revivals(), ...epochs(), ...chunks(), ...settling(), ...outside(), ...heldWindow(), ...seats(), ...readerSubscriptions()] };
 }

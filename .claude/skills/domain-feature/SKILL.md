@@ -1,6 +1,6 @@
 ---
 name: domain-feature
-description: Build or change a gym or journal feature's domain logic on the Windmill domain kit, in Swift (apps/ios/Domain, GymDomain or JournalDomain), Kotlin (apps/android/gym/domain) or JavaScript (web/src/platform/domain-kit, web/src/products/<p>/domain) — entities, value specs, rules and the product refusal, reads, actions, drafts and their one save, keyed records saved whole, moves, held deletes and Undo, Coach executors, their harness tests and the shared vectors every implementation reproduces. Pure logic, no UI. Use when asked to add or change a gym or journal feature's entities, rules, actions, drafts or saves on iOS, Android or web, or to make another implementation claim a shared vector.
+description: Build or change a gym or journal feature's domain logic on the Windmill domain kit, in Swift (apps/ios/Domain, GymDomain or JournalDomain), Kotlin (apps/android/gym/domain) or JavaScript (web/src/platform/domain-kit and the product domain directories) — entities, value specs, rules and the product refusal, reads, actions, drafts and their one save, keyed records saved whole, moves, held deletes and Undo, Coach executors, their harness tests and the shared vectors every implementation reproduces. Pure logic, no UI. Use when asked to add or change a gym or journal feature's entities, rules, actions, drafts or saves on iOS, Android or web, or to make another implementation claim a shared vector.
 ---
 
 # A feature domain on the domain kit
@@ -14,13 +14,13 @@ ordered, capped, guarded) and gym **Bodyweight** (keyed by day, one fact saved w
 | | Swift | Kotlin | Web |
 |---|---|---|---|
 | kit | `apps/ios/Domain/Sources/DomainKit/` | `apps/android/domain-kit/` | `web/src/platform/domain-kit/` |
-| domain | `apps/ios/Domain/Sources/GymDomain/{Notes,Bodyweight,GymRules}.swift` | `apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/{Notes,Bodyweight,GymRules}.kt` | `web/src/products/<p>/domain/` — none yet |
-| tests | `apps/ios/Domain/Tests/GymDomainTests/` | `apps/android/gym/domain/src/test/kotlin/works/windmill/gym/domain/sync/` | `web/test/products/<p>/domain/` — none yet |
+| domain | `apps/ios/Domain/Sources/GymDomain/{Notes,Bodyweight,GymRules}.swift` | `apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/sync/{Notes,Bodyweight,GymRules}.kt` | `web/src/products/<p>/domain/` |
+| tests | `apps/ios/Domain/Tests/GymDomainTests/` | `apps/android/gym/domain/src/test/kotlin/works/windmill/gym/domain/sync/` | `web/test/products/<p>/domain/` |
 | vectors | `packages/api-contract/gym/` — shared, written once, claimed by every runner | | |
 
-Gym is carried by Swift and Kotlin; journal by Swift only (`JournalDomain`). Web carries both products; its kit is
-built and claims the kit corpus, while gym and journal still hand-write their rules in `web/src/products/{gym,journal}/`
-and claim no product vector; see [Web](#web-web). The shared path below is written in Swift, the spec's own language,
+Gym is carried by Swift, Kotlin and web; journal by Swift (`JournalDomain`) and web. Each carries its product's
+domain on the kit and claims the shared vectors applicable to its surface; see [Web](#web-web).
+The shared path below is written in Swift, the spec's own language,
 with the Kotlin name beside it where the two differ and the web's spellings in its own section; each platform's section
 then gives its paths, commands and the layering rules it enforces.
 
@@ -62,6 +62,11 @@ in `apps/ios/Sync`, `python3 tools/schema_gen.py` in `apps/android`), never a do
 
 ### 2. The entity, its checks and specs (§3, §4)
 
+`Entity` declares type, id and decoding. Fixed Swift product entities also conform to `ProductEntity`;
+Kotlin and JavaScript declarations use a fixed scope or `null` for an explicitly bound tree/overlay.
+The reader, action and plan each use one actual scope, checked against the registry and any fixed
+declaration. See the kit spec §3 for the scope contract.
+
 A value type. Its decoder (Swift `init(_ r: Fields) throws(DecodeError)`; Kotlin `decode(f: Fields)` on the companion)
 is lenient — a default or an optional for what may be absent, `r.text(f)` for a `text` field, any id the registry admits
 — and decodes what `fields` builds. `fields` lists every client field it writes, a nil as `.null`, never the order
@@ -70,7 +75,7 @@ field or a serial. `checks` run in the order violations are reported: a `Check("
 write. Specs are data named by their registry path. The keyed whole shape, in Swift:
 
 ```swift
-public struct WeighIn: Draftable, Removable, Timestamped {
+public struct WeighIn: ProductEntity, Draftable, Removable, Timestamped {
   public static let type = Gym.Types.weighin
   public static let scope = Gym.scope
   public static let savesGuarded = false
@@ -173,6 +178,9 @@ and `override val refusals = GymRefusal`), its stored properties its input:
 
 ### 6. Drafts and their one save (§10)
 
+The calls below are fixed-product conveniences. Dynamic drafts take an explicit scope and retain it
+through edits, rebasing and saves; a supplied save scope must match the draft's binding.
+
 An editor holds one `Draft` of one record: `Draft(new: Note(id: runner.mint(Note.self)), placed: .bottom)` for a new
 minted ordered record (`Draft(new:)` unordered), `runner.open(id)` for one the person sees (nil when `drawn` lacks it),
 or, for a keyed or singleton record, the record or a new draft of its blank:
@@ -266,8 +274,8 @@ result's form a test extension of the read. The corpus `README.md` states each a
 
 **One corpus, every runner.** A new vector file or case is claimed on every implementation that carries the product
 in the same change: Swift's `everySharedFileHasARunner` and Kotlin's `everyProductFileIsClaimedAndEveryVectorPasses`
-each list every file under `packages/api-contract/gym/` and fail on one they do not run; the web's product runner will
-claim the same way once its first domain lands (its kit runner already does for `packages/api-contract/domain-kit/`). A case one implementation
+each list every file under `packages/api-contract/gym/` and fail on one they do not run; the web's product runners
+claim their files and name surface-specific exclusions explicitly. A case one implementation
 cannot reproduce is a bug in that implementation or in the vector, settled by the spec — never a per-platform
 exception, and never a vector written to one language's quirk.
 
@@ -282,12 +290,13 @@ exception, and never a vector written to one language's quirk.
 | `Tests/LayeringTests/` | §2.4 over every package under `apps/ios`, with one fixture per rule under `Fixtures/` |
 
 `JournalDomain` has its library, target and test target in `Package.swift`; a new product domain is added there
-exactly as `GymDomain`'s are. Before handing back, run everything (about two minutes; `LayeringTests` runs
+exactly as `GymDomain`'s are. Select the CI compiler as the [iOS README](../../../apps/ios/README.md) describes.
+Before handing back, run everything (`LayeringTests` runs
 `swift package dump-package` on every package and, where `xcodegen` is installed, resolves each app project):
 
 ```sh
 cd apps/ios/Domain
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --explicit-target-dependency-import-check error
+xcrun swift test --explicit-target-dependency-import-check error
 ```
 
 That is CI's command (`.github/workflows/ios.yml`). A second checkout or worktree building beside the main one adds
@@ -408,8 +417,8 @@ Both tests hold attack fixtures that must stay rejected; a new rule gets a fixtu
 |---|---|
 | `src/platform/domain-kit/` | the kit, one file per spec part: `values`, `time`, `entities`, `validation`, `rules`, `reading`, `plans`, `translation`, `actions`, `drafts`, `standardActions`, `refusals`, and `runner` — the one impure file, holding `ActionRunner` and `EngineReplica`, the port over `platform/sync/engine.js`; its `README.md` maps files to spec sections |
 | `test/platform/domain-kit/` | `probe.js` (the kit corpus README's probe declarations), `vectors.js` (`Contract`, `vectorViews`, `VectorReplica`, the JSON forms), `corpus.test.js` (the kit corpus), `runner.test.js` (the runner over the real engine on fake IndexedDB) |
-| `src/products/<p>/domain/` | a product's domain, one file per feature plus `<p>Rules.js`; none exists yet |
-| `test/products/<p>/domain/` | its corpus runner and harness tests, arriving with its first domain, as do the product checks (`ProductCorpus`, `RegistryCheck`, `RuleBookCheck`, `RuleBookParity`) and the harness |
+| `src/products/<p>/domain/` | a product's domain, one file per feature plus `<p>Rules.js` |
+| `test/products/<p>/domain/` | its corpus runner and harness tests; shared `ProductCorpus`, `RegistryCheck`, `RuleBookCheck`, `RuleBookParity` and the harness live under `test/platform/domain-kit/` |
 | `test/domain-layering.test.js` | the layering check, one fixture per rule under `test/fixtures/domain-layering/` |
 | `tsconfig.domain.json` | `npm run check:domain`: `tsc` over the kit, the domains and their tests, strict, with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` |
 
@@ -422,11 +431,13 @@ npm run check:domain                                                            
 npm test && npm run build                                                                   # CI's gate (.github/workflows/web.yml): the suite, check:domain, then Vite
 ```
 
-The first prints `kit corpus: 12/12 files, 475 vectors` and `13 kit files and 0 domain files scanned, 0 findings`.
+The first reports complete kit-corpus coverage and no layering findings.
 
 **Spellings.** An entity is a class with `id` (an `Id`) and `fields()`; its declaration is one `EntityType`, whose
 members are the protocols: `new EntityType({ type: 'weighin', scope: 'self/gym', decode, checks, heldRemoval: true,
 savesGuarded: false, timestampField: 'recordedAt' })` (`orderField: 'ord'` makes it Ordered; `checks` makes it Writable).
+Annotate fixed declarations as `EntityType<Value, string>`. A dynamic declaration uses `scope: null`;
+the [kit README's Binding section](../../../web/src/platform/domain-kit/README.md#binding) lists its explicit APIs.
 Ids: `new Id(record, WeighIn)`, `Id.ofDay(day, WeighIn)`, `id.equals(other)`, `Id.compare`. Decoders read `Fields`:
 `f.id`, `f.optionalDouble('kg')`, `f.string('name', '')`, `f.text('body')`, `f.ref('exerciseId', Exercise)`,
 `f.list('entries', Entry.decode)`. Checks: `new Check('kg', (w, moment) => new WeighIn(w.id, WeighInRules.kg.apply(kg,

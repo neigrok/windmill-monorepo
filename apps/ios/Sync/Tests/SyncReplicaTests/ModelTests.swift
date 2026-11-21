@@ -7,6 +7,58 @@ import Testing
 // notice is a loader bug, and the process traps instead of deciding from what it never saw.
 
 struct ModelTests {
+  @Test func bulkEntryMetadataMatchesIndividualUpdatesExactly() throws {
+    let states: [EntryState] = [.held, .ready, .sent, .acked]
+    let scopes: [ScopeRef] = [.product("probe"), .product("probe"), .tree("b_00000001"), .overlay("b_00000001")]
+    let ids = ["caf\u{E9}/0", "cafe\u{301}/0", "third/0", "fourth/0"]
+    let account = "cafe\u{301}"
+    let entries = try states.enumerated().map { index, state in
+      var entry = OutboxEntry(localId: ids[index], gestureId: "g\(index)", lineage: index == 1 ? account : "caf\u{E9}",
+        scope: scopes[index], state: state, commitOrder: Int64(index + 1) * 10, releaseAt: 7,
+        stamp: try Stamp("10:\(index):r_aaaaaaaaaaaa"),
+        intent: Intent(n: index > 1 ? Int64(index - 1) : nil, scope: scopes[index],
+          deltas: [Delta(key: RecordKey("tag", RecordID("step\(index)")))]),
+        predict: [Delta(key: RecordKey("tag", RecordID("next\(index)")))])
+      if state == .acked { entry.resultEpoch = "ep-1"; entry.resultSeq = 4 }
+      return entry
+    }
+    var individual = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), outbox: Array(entries.reversed()), wholeScopes: true)
+    var bulk = individual
+    for entry in individual.outbox { individual.update(entry: entry.localId) { $0.lineage = account } }
+    bulk.updateEntries { $0.lineage = account }
+    #expect(bulk.outbox == entries.map { entry in var changed = entry; changed.lineage = account; return changed })
+    #expect(bulk.json == individual.json)
+    #expect(bulk.batch.writes == individual.batch.writes)
+    #expect(bulk.batch.events == individual.batch.events)
+    #expect(bulk.batch.change == individual.batch.change)
+    #expect(bulk.batch.writes.count == 3)
+    bulk.updateEntries { $0.lineage = account }
+    #expect(bulk.batch.writes == individual.batch.writes)
+    #expect(bulk.batch.change == individual.batch.change)
+  }
+
+  @Test func aThrowingBulkTransformKeepsTheSameCompletedWritesAsIndividualUpdates() throws {
+    enum Stop: Error { case now }
+    let entries = try (1...2).map { index in
+      OutboxEntry(localId: "g\(index)/0", gestureId: "g\(index)", lineage: "anon", scope: .product("probe"), state: .ready,
+        commitOrder: Int64(index), releaseAt: 0, stamp: try Stamp("10:0:r_aaaaaaaaaaaa"), intent: Intent(scope: .product("probe")))
+    }
+    var individual = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), outbox: entries, wholeScopes: true)
+    var bulk = individual
+    let change: (inout OutboxEntry) throws -> Void = { entry in
+      entry.lineage = "A"
+      if entry.commitOrder == 2 { throw Stop.now }
+    }
+    #expect(throws: Stop.self) {
+      for entry in individual.outbox { try individual.update(entry: entry.localId, change) }
+    }
+    #expect(throws: Stop.self) { try bulk.updateEntries(change) }
+    #expect(bulk.json == individual.json)
+    #expect(bulk.batch.writes == individual.batch.writes)
+    #expect(bulk.batch.events == individual.batch.events)
+    #expect(bulk.batch.change == individual.batch.change)
+  }
+
   @Test func readingARowTheLoadDidNotCoverTraps() async {
     await #expect(processExitsWith: .failure) {
       let rows = Rows(loaded: [], keys: [RecordKey("card", "card0001")], types: [], empty: false)

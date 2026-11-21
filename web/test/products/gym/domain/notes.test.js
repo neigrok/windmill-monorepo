@@ -137,7 +137,7 @@ test('a held note keeps its cap slot and place through Undo and releases them wh
   assert.deepEqual(await a.runner.run(DeleteNote(first.id)), { kind: 'unchanged', result: null });
   await a.sync();
   assert.deepEqual(ids(b), order);
-  assert.equal(await a.runner.undo(removed.receipt.gestureId), true);
+  assert.equal(await a.runner.cancelHeld(removed.receipt.gestureId), true);
   assert.deepEqual(ids(a), order);
   const again = await a.runner.run(DeleteNote(first.id));
   assert.equal(again.kind, 'committed');
@@ -146,7 +146,7 @@ test('a held note keeps its cap slot and place through Undo and releases them wh
   assert.equal(a.undoOffers().length, 1);
   await a.advance(1);
   assert.deepEqual(a.undoOffers(), []);
-  assert.equal(await a.runner.undo(again.receipt.gestureId), false);
+  assert.equal(await a.runner.cancelHeld(again.receipt.gestureId), false);
   assert.equal((await a.runner.save(extra, GymRefusals)).result.kind, 'saved');
   await a.sync();
   assert.deepEqual(ids(a), [...order.slice(1), extra.id.record]);
@@ -163,7 +163,7 @@ test('a new note is placed below the last stored note while that note is held', 
   const three = await add(a, 'Three');
   assert.deepEqual(ids(a), [one.id.record, three.id.record]);
   assert.deepEqual(ids(a, 'stored'), [one.id.record, two.id.record, three.id.record]);
-  assert.equal(await a.runner.undo(removed.receipt.gestureId), true);
+  assert.equal(await a.runner.cancelHeld(removed.receipt.gestureId), true);
   assert.deepEqual(ids(a), [one.id.record, two.id.record, three.id.record]);
 });
 
@@ -314,7 +314,7 @@ test('a drag across a held note keeps its place and Undo, while a drawn drop in 
   assert.deepEqual(a.undoOffers(), [{ id: removed.receipt.gestureId, releaseAt: removed.receipt.releaseAt, records: [two.id.ref] }]);
   await a.sync();
   assert.deepEqual(ids(b), [two.id.record, three.id.record, one.id.record]);
-  assert.equal(await a.runner.undo(removed.receipt.gestureId), true);
+  assert.equal(await a.runner.cancelHeld(removed.receipt.gestureId), true);
   assert.deepEqual(fields(a), fields(b));
   assert.deepEqual(a.undoOffers(), []);
 });
@@ -348,7 +348,7 @@ test('a note call reuses identical stored words at the cap and during a held del
   const extra = new SaveNoteCall(new NoteValue(noteId(), 'Knee'));
   const refused = await a.runner.run(extra);
   assert.deepEqual(refused.kind === 'refused' && refusalForm(refused.refusal), { full: { type: 'note', cap: 10, path: 'predicted' } });
-  assert.equal(await a.runner.undo(removed.receipt.gestureId), true);
+  assert.equal(await a.runner.cancelHeld(removed.receipt.gestureId), true);
   assert.deepEqual(ids(a), notes.map((note) => note.id.record));
 });
 

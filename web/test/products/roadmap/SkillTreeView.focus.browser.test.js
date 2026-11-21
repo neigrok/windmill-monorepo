@@ -214,13 +214,13 @@ hostTest('Chromium: Ask AI dims and covers navigation outside the real shell roo
       const rect = overlay.getBoundingClientRect();
       const head = document.querySelector('.wm-head').getBoundingClientRect();
       return {
-        parent: overlay.parentElement.className,
+        parentIsShell: overlay.parentElement === document.querySelector('.wm-shell'),
         frame: [rect.left, rect.top, rect.right, rect.bottom],
         viewport: [0, 0, window.innerWidth, window.innerHeight],
         dims: getComputedStyle(overlay).backgroundColor !== 'rgba(0, 0, 0, 0)',
         coversNavigation: document.elementFromPoint(head.left + head.width / 2, head.top + head.height / 2) === overlay,
       };
-    }), { parent: 'wm-shell', frame: [0, 0, 1440, 1000], viewport: [0, 0, 1440, 1000], dims: true, coversNavigation: true });
+    }), { parentIsShell: true, frame: [0, 0, 1440, 1000], viewport: [0, 0, 1440, 1000], dims: true, coversNavigation: true });
     assert.deepEqual(errors, []);
   } finally { await page.close(); }
 });

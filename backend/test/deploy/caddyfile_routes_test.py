@@ -30,6 +30,8 @@ class CaddyfileRoutesTest(unittest.TestCase):
         self.stand_in("subscriptions", ":8082-8083")
         class AiHandler(http.server.BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
+            def do_PUT(self):
+                self.do_GET()
             def log_message(self, *_):
                 pass
 
@@ -47,7 +49,7 @@ class CaddyfileRoutesTest(unittest.TestCase):
                     self.wfile.write(bytes([0x81, len(body)]) + body)
                     self.wfile.flush()
                     return
-                body = json.dumps({key: self.headers.get(key) for key in ("Cookie", "X-Windmill-Installation", "Authorization", "Sec-WebSocket-Protocol")}) if self.path == "/v1/calls/headers" else "ai:8084"
+                body = json.dumps({key: self.headers.get(key) for key in ("Cookie", "X-Windmill-Installation", "Authorization", "Sec-WebSocket-Protocol")}) if self.path in {"/v1/calls/headers", "/v1/pictures/headers"} else "ai:8084"
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(body.encode())))
                 self.end_headers()
@@ -65,6 +67,9 @@ class CaddyfileRoutesTest(unittest.TestCase):
             "--add-host", "host.docker.internal:host-gateway", "-v", str(config) + ":/etc/caddy/Caddyfile:ro", "caddy:2")
         self.addCleanup(self.docker, "rm", "-f", self.ai_container)
         self.edges = {}
+        maintenance = tempfile.TemporaryDirectory(prefix="caddy-maintenance-")
+        self.addCleanup(maintenance.cleanup)
+        self.maintenance = Path(maintenance.name)
 
     def docker(self, *arguments):
         result = subprocess.run(["docker", *arguments], capture_output=True, text=True, timeout=120, check=True)
@@ -79,7 +84,8 @@ class CaddyfileRoutesTest(unittest.TestCase):
         container = self.docker("run", "-d", "--network", self.network, "-p", "127.0.0.1::443",
                                 "-e", "DOMAIN_APP=app.localhost", "-e", "DOMAIN_API=api.localhost",
                                 "-e", "ACME_EMAIL=ops@example.invalid", "-e", "CF_IPS=" + cloudflare_ranges,
-                                "-v", str(CADDYFILE) + ":/etc/caddy/Caddyfile:ro", "caddy:2")
+                                "-v", str(CADDYFILE) + ":/etc/caddy/Caddyfile:ro",
+                                "-v", str(self.maintenance) + ":/srv/windmill-maintenance:ro", "caddy:2")
         self.addCleanup(self.docker, "rm", "-f", container)
         port = self.docker("port", container, "443/tcp").splitlines()[0].rsplit(":", 1)[1]
         for attempt in range(60):
@@ -108,6 +114,8 @@ class CaddyfileRoutesTest(unittest.TestCase):
                     ("app.localhost", "GET", "/internal/v1/feed"),
                     ("api.localhost", "GET", "/internal/v1/feed"),
                     ("app.localhost", "GET", "/v1/allowance"),
+                    ("api.localhost", "PUT", "/v1/pictures/example"),
+                    ("api.localhost", "POST", "/v1/ai/passes"),
                     ("api.localhost", "GET", "/v1/calls/example/result"),
                     ("app.localhost", "GET", "/v1/allowance-extra"),
                     ("app.localhost", "GET", "/v1/calls"),
@@ -128,10 +136,33 @@ class CaddyfileRoutesTest(unittest.TestCase):
             ("app.localhost", "GET", "/internal/v1/feed"): (404, ""),
             ("api.localhost", "GET", "/internal/v1/feed"): (200, "server:8080"),
             ("app.localhost", "GET", "/v1/allowance"): (200, "ai:8084"),
+            ("api.localhost", "PUT", "/v1/pictures/example"): (200, "ai:8084"),
+            ("api.localhost", "POST", "/v1/ai/passes"): (200, "server:8080"),
             ("api.localhost", "GET", "/v1/calls/example/result"): (200, "ai:8084"),
             ("app.localhost", "GET", "/v1/allowance-extra"): (200, "server:8080"),
             ("app.localhost", "GET", "/v1/calls"): (200, "server:8080"),
             ("app.localhost", "GET", "/internal/v1/budgets"): (404, "")})
+
+    def test_a_pause_answers_every_path_on_both_hosts_503_until_it_is_lifted_and_the_gate_still_answers_first(self):
+        port = self.edge("0.0.0.0/0 ::/0")
+        routes = self.routes(port)
+        paused = "Windmill is down for a planned update and will be back shortly."
+        (self.maintenance / "on").write_text("roadmap cutover 1-1\n")
+
+        self.assertEqual(self.routes(port), {request: (503, paused) for request in routes})
+        for host, path in (("app.localhost", "/"), ("app.localhost", "/roadmap"), ("app.localhost", "/mcp"), ("api.localhost", "/robots.txt")):
+            self.assertEqual(self.answer(port, host, "GET", path), (503, paused))
+        headers = subprocess.run(["curl", "-sk", "--max-time", "5", "-o", "/dev/null", "-D", "-", "--resolve",
+                                  f"app.localhost:{port}:127.0.0.1", "-H", "CF-Connecting-IP: 17.58.0.1",
+                                  f"https://app.localhost:{port}/v1/sync/hello"], capture_output=True, text=True, timeout=30).stdout.lower()
+        self.assertIn("\nretry-after: 600\n", headers)
+        self.assertIn("\ncache-control: no-store\n", headers)
+        self.assertEqual(self.answer(port, "app.localhost", "GET", "/.well-known/acme-challenge/token")[0], 404)
+        outside = self.edge("192.0.2.0/24")
+        self.assertEqual(set(self.routes(outside).values()), {(403, "")})
+
+        (self.maintenance / "on").unlink()
+        self.assertEqual(self.routes(port), routes)
 
     def test_the_app_store_door_answers_apple_s_subnet_alone(self):
         port = self.edge("0.0.0.0/0 ::/0")
@@ -165,7 +196,7 @@ class CaddyfileRoutesTest(unittest.TestCase):
         result = subprocess.run(["curl", "-sk", "--max-time", "5", "--resolve", f"app.localhost:{port}:127.0.0.1",
             "-H", "Cookie: session=" + marker, "-H", "X-Windmill-Installation: " + marker,
             "-H", "Authorization: Bearer " + marker, "-H", "Sec-WebSocket-Protocol: wm-live.v1," + marker,
-            f"https://app.localhost:{port}/v1/calls/headers"], capture_output=True, text=True, timeout=10, check=True)
+            f"https://app.localhost:{port}/v1/pictures/headers"], capture_output=True, text=True, timeout=10, check=True)
         self.assertEqual(json.loads(result.stdout), {"Cookie": None, "X-Windmill-Installation": None,
             "Authorization": "Bearer " + marker, "Sec-WebSocket-Protocol": "wm-live.v1," + marker})
         self.docker("stop", self.ai_container)

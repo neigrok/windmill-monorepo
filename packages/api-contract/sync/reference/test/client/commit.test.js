@@ -121,3 +121,24 @@ test('§7.1 step 5: a create without an id mints one and draws again while it is
   commit(replica, ctx([...Array(16).fill(0), ...Array(15).fill(0), 1]), 'self/probe', [{ op: 'create', t: 'card', f: { title: 'New' } }]);
   assert.equal(replica.entry('g1/0').intent.d[0].id, '0000000000000001');
 });
+
+test('derived commits fit their ID domain and roll back when a suffix cannot fit', () => {
+  for (const max of [8, 1]) {
+    const custom = new Registry({ registry: 'bounded', version: 1, minVersion: 1, products: { p: {} }, commands: [], types: [{
+      type: 'node', scope: 'product:p', identity: 'derived', idSpace: 'scope', idDomain: { type: 'string', unit: 'chars', min: 1, max },
+      derive: { fallback: 'a'.repeat(max) }, mint: { prefix: '', alphabet: 'ab', length: 1 },
+      life: true, revivable: true, deadRows: 'keep', origins: ['replica'], fields: {},
+    }] });
+    const replica = bound();
+    const before = replica.toJSON();
+    const context = { ...ctx(), registry: custom };
+    const changes = ['abcdefgh'.repeat(25), '', ''].map((label) => ({ op: 'create', t: 'node', label, f: {} }));
+    if (max === 1) {
+      assert.throws(() => commit(replica, context, 'self/p', changes), CommitError);
+      assert.deepEqual(replica.toJSON(), before);
+      continue;
+    }
+    const answer = commit(replica, context, 'self/p', changes);
+    assert.deepEqual(answer.localIds.flatMap((id) => replica.entry(id).intent.d.map((delta) => delta.id)), ['abcdefgh', 'aaaaaaaa', 'aaaaaa-2']);
+  }
+});

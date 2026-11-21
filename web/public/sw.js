@@ -12,7 +12,13 @@ const ICON_PATHS = [
 ];
 let priming;
 
-self.addEventListener('install', () => { self.skipWaiting(); });
+// A request sent as the page hides cannot wait on the fetch handler: it would fall back to the network after the page is gone.
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+  if (event.addRoutes) {
+    event.waitUntil(event.addRoutes({ condition: { urlPattern: new URLPattern({ pathname: '/v1/*' }) }, source: 'network' }).catch(() => {}));
+  }
+});
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     await primeShell().catch(() => {});

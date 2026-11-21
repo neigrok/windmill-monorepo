@@ -107,8 +107,10 @@ public enum RegistryCheck {
 
   // Steps 1–3.
   static func declaration(of entity: any Entity.Type, in registry: Registry) throws -> TypeDef {
-    guard let definition = registry.type(entity.type), let product = definition.scope.productName, entity.scope == .product(product)
-    else { throw failure(1, entity.type, "the registry declares no \(entity.type) in the product scope \(entity.scope)") }
+    guard let definition = registry.type(entity.type) else { throw failure(1, entity.type, "the registry declares no such type") }
+    if let fixed = entity as? any ProductEntity.Type, !registry.lives(entity.type, in: fixed.scope) {
+      throw failure(1, entity.type, "the registry declares no type in its fixed scope")
+    }
     if entity is any Removable.Type && !definition.life { throw failure(2, entity.type, "a removable type without life") }
     if let orderField = (entity as? any Ordered.Type)?.orderField {
       guard let field = definition.field(orderField), field.writer == .client, case .lww = field.kind,

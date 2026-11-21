@@ -32,6 +32,13 @@ import { LocalTreeRegistry } from '/src/products/roadmap/persistence/LocalTreeRe
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
 import { SkillTreeView } from '/src/products/roadmap/SkillTreeView.jsx';
 import { Shell } from '/src/shell/chrome/Shell.jsx';
+import { StepDraftProvider, StepDraftNotice } from '/src/products/roadmap/step/StepDraftProvider.jsx';
+import { ProductSessions } from '/src/shell/ProductSessions.jsx';
+import { PageFrame } from '/src/shell/PageFrame.jsx';
+import { setAppearance } from '/src/shell/appearance.js';
+import { DocumentDataScope } from '/src/shell/auth/accountChange.js';
+import { stepDraftSession } from '/src/products/roadmap/step/StepDraftSession.js';
+import { requestNavigation, navigate, readNavigation, subscribeNavigation } from '/src/shell/navigation.js';
 import { ErrorBoundary } from '/src/design-system/feedback/ErrorBoundary.jsx';
 import { getRoomStatus } from '/src/shell/roomStatus.js';
 import '/src/styles/fonts.js';
@@ -60,6 +67,7 @@ if (params.has('crashBoard') || params.has('runtimeBoardCrash')) {
     return among.apply(this, args);
   };
 }
+window.startActualSyncSession = SyncSession.prototype.start;
 SyncSession.prototype.start = async function () {
   this.store = new SyncStore();
   this.scheduleReconnect = () => {};
@@ -72,7 +80,7 @@ SyncSession.prototype.start = async function () {
   this.ackedServerVector = this.lattice.frontier();
   window.serverTree = this.lattice.toFrame();
   window.serverProgress = this.progress.toFrame();
-  this.receiveState({ ...window.serverTree, seq: 1 });
+  this.receiveState({ ...window.serverTree, seq: 1, reach: params.get('role') === 'owner' ? 'writer' : 'reader' });
   this.receiveProgressGraft(window.serverProgress);
   this.ready = false;
   await this.persistNow();
@@ -108,6 +116,11 @@ const props = { treeId: 't_sail', demo: params.has('demo') };
 const content = params.has('shell')
   ? React.createElement(Shell, { location: { pathname: '/app', hash: location.hash, search: location.search }, neutral: { Component: SkillTreeView, props } })
   : React.createElement(SkillTreeView, props);
+function DraftNavigationHost() {
+  const location = React.useSyncExternalStore(subscribeNavigation, readNavigation);
+  if (location.pathname === '/draft-destination') return React.createElement(PageFrame, null, React.createElement('main', null, React.createElement('h1', null, 'Destination')));
+  return content;
+}
 async function mount() {
   if (params.has('deviceTrees')) {
     const registry = new LocalTreeRegistry();
@@ -122,7 +135,17 @@ async function mount() {
     await local.persistNow();
     local.close();
   }
-  createRoot(document.getElementById('root')).render(params.has('sceneFailure') ? React.createElement(ErrorBoundary, null, content) : content);
+  const scope = new DocumentDataScope({ invalidate: () => stepDraftSession(document, { create: false })?.invalidate() });
+  scope.reconcile({ device: { meta: {}, activeReplica: { meta: { state: 'bound', account: 'u_fixture' } } } });
+  window.draftScope = scope;
+  window.draftStore = stepDraftSession(document);
+  window.fixtureRegistry = new LocalTreeRegistry();
+  window.fixtureNavigate = navigate;
+  window.fixtureTheme = setAppearance;
+  window.fixtureSignOut = () => requestNavigation({ key: 'fixture:signout', context: { kind: 'sign-out' }, run: () => { window.signOuts = (window.signOuts ?? 0) + 1; } });
+  createRoot(document.getElementById('root')).render(React.createElement(ProductSessions, {
+    dataScope: scope.read, products: [{ session: { Provider: StepDraftProvider, Notice: StepDraftNotice } }],
+  }, params.has('draftNavigation') ? React.createElement(DraftNavigationHost) : params.has('sceneFailure') ? React.createElement(ErrorBoundary, null, content) : content));
 }
 mount();
 `;
@@ -285,7 +308,7 @@ export function hostTest(name, run) {
   });
 }
 
-export async function openHost({ browserName = 'chromium', width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, runtimeBoardCrash = false, demo = false, clipboardRefused = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false, storageRefused = false, longTitle = false, noWebgl2 = false, born = false, sceneFailure = false, address = null, auth = null, loadFailure = false, deviceTrees = false, workspace = null } = {}) {
+export async function openHost({ browserName = 'chromium', width = 1440, height = 1000, role = 'owner', surface = 'tree', milestone = false, single = false, crash = false, crashBoard = false, runtimeBoardCrash = false, demo = false, clipboardRefused = false, draftNavigation = false, large = false, empty = false, shell = false, legend = false, fixedClock = false, described = false, allDone = false, broad = false, coached = false, manyTrees = false, touch = false, motion = false, appUrl = false, pathOnly = false, storageRefused = false, longTitle = false, noWebgl2 = false, born = false, sceneFailure = false, address = null, auth = null, loadFailure = false, deviceTrees = false, workspace = null } = {}) {
   await ready;
   const page = await browsers.get(browserName).newPage({ viewport: { width, height }, reducedMotion: motion ? 'no-preference' : 'reduce', hasTouch: touch });
   page.setDefaultTimeout(firstPage ? 15000 : 5000);
@@ -351,7 +374,7 @@ export async function openHost({ browserName = 'chromium', width = 1440, height 
   if (auth) params.set('auth', auth);
   if (address === '?view') params.set('view', '1');
   if (role === 'reader' && !appUrl) params.set('view', '1');
-  for (const [name, enabled] of Object.entries({ milestone, single, crash, crashBoard, runtimeBoardCrash, demo, clipboardRefused, large, empty, shell, legend, described, allDone, broad, coached, longTitle, noWebgl2, born, sceneFailure, deviceTrees })) {
+  for (const [name, enabled] of Object.entries({ milestone, single, crash, crashBoard, runtimeBoardCrash, demo, clipboardRefused, draftNavigation, large, empty, shell, legend, described, allDone, broad, coached, longTitle, noWebgl2, born, sceneFailure, deviceTrees })) {
     if (enabled) params.set(name, '1');
   }
   if (noWebgl2) {

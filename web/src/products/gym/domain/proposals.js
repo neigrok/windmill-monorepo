@@ -228,7 +228,7 @@ export class ProposalValue {
   }
 }
 
-/** @type {EntityType<ProposalValue>} */
+/** @type {EntityType<ProposalValue, string>} */
 export const Proposal = new EntityType({
   type: 'proposal', scope: 'self/gym',
   decode: (fields) => new ProposalValue({ id: new Id(fields.id, Proposal), routineId: fields.ref('routineId', Routine),
@@ -266,7 +266,7 @@ export class RoutineCreationValue {
   }
 }
 
-/** @type {EntityType<RoutineCreationValue>} */
+/** @type {EntityType<RoutineCreationValue, string>} */
 export const RoutineCreation = new EntityType({ type: 'routineCreation', scope: 'self/gym',
   decode: (fields) => new RoutineCreationValue(new Id(fields.id, RoutineCreation), fields.json('snapshot') ?? null) });
 

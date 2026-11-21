@@ -24,17 +24,18 @@ function roomProps(treeId) {
   const scene = new Proxy({}, { get: () => nothing });
   return {
     treeId, demo: false, shared: false, demotion: null, breakpoint: 'desktop', placeKept: false,
-    room: { sceneRef: handle(scene), sessionRef: handle(), projectionRef: handle(), treeRef: handle(), seedRef: handle(), peersRef: handle(new Map()) },
+    room: { sceneRef: handle(scene), sessionRef: handle(), replicaRef: handle(), projectionRef: handle(), treeRef: handle(), seedRef: handle(), peersRef: handle(new Map()) },
     scene: null, framing: { firstFrameRef: handle(), insetsRef: handle() }, structure: { layoutRef: handle(), layoutPositions: () => new Map(), install: nothing },
-    progressActs: { adoptLoaded: nothing }, activity: { seedActivity: nothing }, legend: { hydrateLegend: nothing },
-    workspace: { hydrateWorkspaces: nothing, pushArcs: nothing }, selection: { selectedId: null, selectedIdRef: handle(), setSelectedId: nothing },
+    progressActs: { adoptLoaded: nothing }, activity: { seedActivity: nothing, addServerActivity: nothing }, legend: { hydrateLegend: nothing },
+    workspace: { hydrateWorkspaces: nothing, adoptWorkspaces: nothing, pushArcs: nothing }, selection: { selectedId: null, selectedIdRef: handle(), setSelectedId: nothing },
     dismissToast: nothing, desktopEditorRef: handle(false), onRemoteProgress: nothing,
   };
 }
 
-// Bundle the real read boundary with a counting Sentry sink, sharing React and device state with the harness.
+// Bundle the real read boundary with a counting Sentry sink and an event sink, sharing React and device state with the harness.
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
-const bundled = new Set(['products/roadmap/room/useRoomLoad.js', 'products/roadmap/persistence/HttpTreeRepository.js', 'products/roadmap/reportFailure.js']
+const bundled = new Set(['products/roadmap/room/useRoomLoad.js', 'products/roadmap/room/LatticeReading.js', 'products/roadmap/room/ReplicaReading.js',
+  'products/roadmap/persistence/HttpTreeRepository.js', 'products/roadmap/reportFailure.js']
   .map((path) => resolve(root, 'src', path)));
 const require = createRequire(import.meta.url);
 const result = await build({ configFile: false, root, logLevel: 'silent', plugins: [{
@@ -44,6 +45,7 @@ const result = await build({ configFile: false, root, logLevel: 'silent', plugin
     if (id === 'react') return { id: pathToFileURL(require.resolve('react')).href, external: true };
     const file = id.startsWith('.') && importer ? resolve(dirname(importer), id) : id;
     if (file.endsWith('/telemetry/sentry.js')) return 'room-load-sentry';
+    if (file.endsWith('/telemetry/beacon.js')) return 'room-load-beacon';
     if (bundled.has(file)) return file;
     if (file.startsWith('/')) return { id: pathToFileURL(file).href, external: true };
   },
@@ -51,6 +53,7 @@ const result = await build({ configFile: false, root, logLevel: 'silent', plugin
     if (id === 'room-load-entry') return `export { useRoomLoad } from ${JSON.stringify(resolve(root, 'src/products/roadmap/room/useRoomLoad.js'))};
       export { HttpTreeRepository } from ${JSON.stringify(resolve(root, 'src/products/roadmap/persistence/HttpTreeRepository.js'))};`;
     if (id === 'room-load-sentry') return 'export function captureError(kind, operation, stack) { globalThis.roomLoadIssues.push({ operation, stack }); }';
+    if (id === 'room-load-beacon') return 'export function track(name, props) { globalThis.roomLoadEvents?.push([name, props]); }';
   },
 }], build: { write: false, minify: false, rollupOptions: { input: 'room-load-entry', preserveEntrySignatures: 'strict', output: { format: 'es', inlineDynamicImports: true } } } });
 const captured = await import(`data:text/javascript;base64,${Buffer.from(result.output[0].code).toString('base64')}`);
@@ -82,6 +85,33 @@ for (const demo of [false, true]) {
       { error: false, owner: false, title: 'Shared roadmap', reads: 1 });
   });
 }
+
+test('a room on the device’s copy tells once a visit why it cannot show its roadmap, though a sign-in reads it again; its recovery list cannot say which roadmaps are the person’s, and its picker reads an address from the copy alone, once while asked twice', async (t) => {
+  const asked = t.mock.method(globalThis, 'fetch', async () => ({ ok: false, status: 410, json: async () => ({ code: 'client-update-required' }) }));
+  const events = [];
+  globalThis.roomLoadEvents = events;
+  t.after(() => { delete globalThis.roomLoadEvents; });
+  const previous = globalThis.window;
+  globalThis.window = { location: { search: '', hash: '#/app/t_kept' }, localStorage: { getItem: () => null, setItem() {} } };
+  t.after(() => { globalThis.window = previous; });
+  t.mock.method(platformSession, 'getSnapshot', () => ({ engine: null, ready: false, online: true, error: true }));
+  const readings = t.mock.method(platformSession, 'subscribe', () => () => {});
+  let accountId = null;
+  const props = roomProps('t_kept');
+  const view = renderHook(t, () => captured.useRoomLoad({ ...props, replica: true, accountId }));
+  await until(() => view.tree.loadError);
+  confirmDeviceOwner('A');
+  accountId = 'A';
+  view.redraw();
+  await until(() => readings.mock.callCount() === 2 && view.tree.loadError);
+  await settle();
+  assert.deepEqual({ reloads: view.tree.reloadKey, readings: readings.mock.callCount(), events, list: await view.tree.heldTrees.list() }, {
+    reloads: 1, readings: 2, events: [['roadmap_load', { outcome: 'unkept' }]], list: { rows: [], authoritative: false, status: 0, reported: true },
+  });
+  const addresses = await Promise.all(['t_00000000000000aa', 't_00000000000000aa'].map((id) => view.tree.heldTrees.read(id).then(() => 'read', (error) => error.status)));
+  assert.deepEqual({ addresses, readings: readings.mock.callCount(), asked: asked.mock.callCount(), events: events.length },
+    { addresses: [0, 0], readings: 3, asked: 0, events: 1 });
+});
 
 test('a lapsed cold room loads its owned replica and presents the existing signed-out device line', async (t) => {
   globalThis.roomLoadIssues = [];

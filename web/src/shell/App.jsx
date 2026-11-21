@@ -7,7 +7,9 @@ import { verifyToken } from './auth/AuthClient.js';
 import { BrandLanding } from './marketing/BrandLanding.jsx';
 import { pendingTransactionId, openCheckout } from './billing/checkout.js';
 import { PRODUCTS, activeProduct } from './products.js';
-import { navigate, rememberHashNavigation, replaceLocation } from './navigation.js';
+import { ProductSessions } from './ProductSessions.jsx';
+import { PageFrame } from './PageFrame.jsx';
+import { navigate, readNavigation, subscribeNavigation, replaceLocation } from './navigation.js';
 
 const Showcase = lazy(() => import('../showcase/Showcase.jsx'));
 const AuthLanding = lazy(() => import('./auth/AuthLanding.jsx').then((m) => ({ default: m.AuthLanding })));
@@ -38,26 +40,6 @@ function legacyDoorTarget(pathname, hash) {
   return target;
 }
 
-function useHashRoute() {
-  // The tick re-routes when the hash itself is unchanged.
-  const [, setTick] = React.useState(0);
-  const [hash, setHash] = React.useState(() => window.location.hash);
-  React.useEffect(() => {
-    rememberHashNavigation();
-    const onChange = (event) => {
-      if (event.type === 'hashchange') rememberHashNavigation(event);
-      React.startTransition(() => { setHash(window.location.hash); setTick((n) => n + 1); });
-    };
-    window.addEventListener('hashchange', onChange);
-    window.addEventListener('popstate', onChange);
-    return () => {
-      window.removeEventListener('hashchange', onChange);
-      window.removeEventListener('popstate', onChange);
-    };
-  }, []);
-  return hash;
-}
-
 function ownRoute(pathname) {
   if (pathname === '/' || pathname === '/app' || pathname.startsWith('/app/')) return true;
   return PRODUCTS.some((product) => pathname === product.landing.href);
@@ -86,9 +68,9 @@ function useOwnNavigation() {
       if (!anchor || anchor.target || anchor.hasAttribute('download')) return;
       const url = new URL(anchor.href, window.location.href);
       if (url.origin !== window.location.origin) return;
-      if (!ownRoute(url.pathname)) return;
+      if (!ownRoute(url.pathname) && !(url.pathname === readNavigation().pathname && url.hash.startsWith('#/'))) return;
       if (url.pathname === window.location.pathname && url.search === window.location.search
-        && !['#/connect', '#/settings'].some((prefix) => url.hash.startsWith(prefix))) return;
+        && !url.hash.startsWith('#/')) return;
       event.preventDefault();
       navigate(url.href);
     };
@@ -111,6 +93,10 @@ function useOwnNavigation() {
 
 // mark={false} is bare ground, no logo.
 function RouteFallback({ mark = true }) {
+  return <PageFrame><RouteFallbackContent mark={mark} /></PageFrame>;
+}
+
+function RouteFallbackContent({ mark = true }) {
   const [waited, setWaited] = React.useState(false);
   React.useEffect(() => {
     if (!mark) return undefined;
@@ -139,41 +125,42 @@ function RouteFallback({ mark = true }) {
 }
 
 function AppRoutes() {
-  const route = useHashRoute();
+  const accepted = React.useSyncExternalStore(subscribeNavigation, readNavigation, readNavigation);
+  const route = accepted.hash;
   const { signIn } = useAuth();
   const openSignInDoor = useSignInDoor();
   useOwnNavigation();
 
   // A pushState hop does not reset scroll; do it after the commit.
-  const landedOn = React.useRef(window.location.pathname);
+  const landedOn = React.useRef(accepted.pathname);
   React.useEffect(() => {
-    if (landedOn.current === window.location.pathname) return;
-    landedOn.current = window.location.pathname;
+    if (landedOn.current === accepted.pathname) return;
+    landedOn.current = accepted.pathname;
     window.scrollTo(0, 0);
   });
 
   // The door upgrades during this render; the effect only catches the URL bar up.
-  const upgraded = legacyDoorTarget(window.location.pathname, route);
+  const upgraded = legacyDoorTarget(accepted.pathname, route);
   React.useLayoutEffect(() => {
-    if (upgraded) replaceLocation(upgraded + window.location.search + window.location.hash);
+    if (upgraded) replaceLocation(upgraded + accepted.search + accepted.hash);
   }, [upgraded, route]);
-  const pathname = upgraded ?? window.location.pathname;
+  const pathname = upgraded ?? accepted.pathname;
 
   if (route.startsWith('#/auth')) {
     return (
       <Suspense fallback={<RouteFallback />}>
-        <AuthLanding
+        <PageFrame><AuthLanding
           onVerify={verifyToken}
           onSignedIn={(user, forkedTree) => { signIn(user); window.location.hash = activeProduct(route).landingAfterSignIn(forkedTree); }}
           onOpenDoor={() => { window.location.hash = activeProduct(route).switchHash; openSignInDoor(); }}
-        />
+        /></PageFrame>
       </Suspense>
     );
   }
 
   // /oauth/authorize redirects here with the PKCE params in the hash; #/auth would drop them.
   if (route.startsWith('#/oauth/authorize')) {
-    return <Suspense fallback={<RouteFallback />}><OAuthConsent /></Suspense>;
+    return <Suspense fallback={<RouteFallback />}><PageFrame><OAuthConsent /></PageFrame></Suspense>;
   }
 
   if (pathname === '/app' || pathname.startsWith('/app/')) {
@@ -185,7 +172,8 @@ function AppRoutes() {
     return (
       <Suspense fallback={<RouteFallback mark={false} />}>
         <Shell
-          location={{ pathname, hash: route, search: window.location.search }}
+          location={{ pathname, hash: route, search: accepted.search }}
+          acceptedPathname={accepted.pathname}
           neutral={neutral}
         />
       </Suspense>
@@ -193,17 +181,17 @@ function AppRoutes() {
   }
 
   if (route === '#/showcase') {
-    return <Suspense fallback={<RouteFallback />}><Showcase /></Suspense>;
+    return <Suspense fallback={<RouteFallback />}><PageFrame><Showcase /></PageFrame></Suspense>;
   }
 
   // The first product whose route table claims this URL wins.
-  const location = { hash: route, pathname: window.location.pathname, search: window.location.search };
+  const location = accepted;
   for (const product of PRODUCTS) {
     const match = product.render(location);
     if (match) {
       const { Component, props, inRoom } = match;
       if (inRoom) return <Suspense fallback={<RouteFallback mark={false} />}><Shell location={location} roomProduct={product} /></Suspense>;
-      return <Suspense fallback={<RouteFallback />}><Component {...props} /></Suspense>;
+      return <Suspense fallback={<RouteFallback />}><PageFrame><Component {...props} /></PageFrame></Suspense>;
     }
   }
 
@@ -232,13 +220,18 @@ function ResumeCheckout() {
   return null;
 }
 
+function AppSession() {
+  const { dataScope } = useAuth();
+  return <Suspense fallback={<RouteFallback />}><ProductSessions products={PRODUCTS} dataScope={dataScope}><AppRoutes /></ProductSessions></Suspense>;
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <EntitlementsProvider>
         <SignInDoorProvider>
           <ResumeCheckout />
-          <AppRoutes />
+          <AppSession />
         </SignInDoorProvider>
       </EntitlementsProvider>
     </AuthProvider>

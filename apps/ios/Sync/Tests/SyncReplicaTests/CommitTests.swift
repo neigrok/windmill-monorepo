@@ -57,6 +57,35 @@ struct CommitTests {
     Instance(actor: try! Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: deviceNow, appVersion: "1")
   }
 
+  @Test(arguments: [8, 1])
+  func derivedCommitsFitTheirIDDomainOrLeaveTheReplicaUnchanged(_ max: Int) throws {
+    let registry = try Registry(json: [
+      "registry": "bounded", "version": 1, "minVersion": 1, "products": ["p": [:]], "commands": [],
+      "types": [["type": "node", "scope": "product:p", "identity": "derived", "idSpace": "scope",
+                 "idDomain": ["type": "string", "unit": "chars", "min": 1, "max": JSON(max)],
+                 "derive": ["fallback": .string(String(repeating: "a", count: max))],
+                 "mint": ["prefix": "", "alphabet": "ab", "length": 1], "life": true, "revivable": true,
+                 "deadRows": "keep", "origins": ["replica"], "fields": [:]]],
+    ])
+    let planner = CommitPlanner(registry: registry)
+    var replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), wholeScopes: true)
+    let before = replica.json
+    var gesture = Gesture(changes: [String(repeating: "abcdefgh", count: 25), "", ""].map { .create("node", id: .derived(label: $0)) })
+    gesture.gestureId = "bounded"
+    if max == 1 {
+      #expect(throws: CommitFailure.self) {
+        try planner.commit(gesture, in: .product("p"), to: &replica, as: Self.instance(5000),
+                           identities: QueuedIdentities([:]), gestureIdTaken: false)
+      }
+      #expect(replica.json == before)
+      return
+    }
+    let outcome = try planner.commit(gesture, in: .product("p"), to: &replica, as: Self.instance(5000),
+                                     identities: QueuedIdentities([:]), gestureIdTaken: false)
+    guard case .committed(let receipt) = outcome else { Issue.record("the bounded commit was refused"); return }
+    #expect(receipt.ids.compactMap { $0?.string } == ["abcdefgh", "aaaaaaaa", "aaaaaa-2"])
+  }
+
   @Test func undoLeavesTheStoreAsTheCommitFoundItButForTheClock() throws {
     var random = SeededRandom.fromEnvironment()
     let planner = CommitPlanner(registry: Self.probe)

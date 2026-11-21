@@ -20,6 +20,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import works.windmill.sync.api.*
 import works.windmill.sync.core.*
+import works.windmill.sync.core.Command
 import works.windmill.sync.core.RecordID
 
 class SyncRuntimeTests {
@@ -50,9 +51,10 @@ class SyncRuntimeTests {
     }
     private class Clock : EngineClock {
         @Volatile var wall = 5_000L
+        @Volatile var fixedMono: Long? = null
         @Volatile var beforeReading: () -> Unit = {}
         override fun now() = wall
-        override fun reading(): ClockReading { beforeReading(); return ClockReading(wall, wall, "boot-1") }
+        override fun reading(): ClockReading { beforeReading(); return ClockReading(wall, fixedMono ?: wall, "boot-1") }
     }
     // Time the test moves: an engine sleep ends once the clock has passed its end. The clock moves only to the end of a sleep
     // the test names, once that sleep is pending, so each step lands exactly where the engine scheduled it.
@@ -187,6 +189,53 @@ class SyncRuntimeTests {
     private suspend fun until(body: () -> Boolean) = withTimeout(2_000) { while (!body()) delay(5) }
     private suspend fun <T> settles(expected: T, actual: () -> T) { withTimeoutOrNull(2_000) { while (actual() != expected) delay(5) }; assertEquals(expected, actual()) }
     private val upgradeRequired = SyncResponse(426, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"), "error" to Json.of("upgrade-required")))
+
+    @Test fun freshnessRequiresClockSampleCompletedPullAndActualLiveScope() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.clock.wall = 9_000
+            fixture.transport.controlPulls = true
+            val handshake = CompletableDeferred<Reply<LiveConnection>>()
+            fixture.transport.liveAnswer = handshake
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(product))
+            fixture.runtime.enter()
+            val pull = fixture.pull()
+            until { fixture.transport.opening.get() == 1 }
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(product))
+            pull.answer.complete(pages(pull.request, more = false))
+            until { fixture.runtime.pulls.value.caughtUp == 1L }
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(product))
+            handshake.complete(Reply.Answer(fixture.transport.socket))
+            until { fixture.runtime.freshness(product).syncLive }
+            assertEquals(SyncFreshness(true, 5_000), fixture.runtime.freshness(product))
+            fixture.clock.wall += 100
+            assertEquals(SyncFreshness(true, 5_100), fixture.runtime.freshness(product))
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(ScopeRef.tree("unfollowed")))
+            fixture.runtime.connectivity(false)
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(product))
+        }
+    }
+
+    @Test fun freshnessRejectsClockJumpsAuthPauseAndTheSeatFence() = runBlocking {
+        val permitted = AtomicBoolean(true)
+        Fixture(activityAllowed = permitted::get).use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            val pull = fixture.pull()
+            pull.answer.complete(pages(pull.request, more = false))
+            until { fixture.runtime.freshness(product).syncLive }
+            permitted.set(false)
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(product))
+            permitted.set(true)
+            fixture.engine.write(EngineOperation.lifecycle) { it.meta = it.meta.with("authPaused" to Json.of(true)) }
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(product))
+            fixture.engine.write(EngineOperation.lifecycle) { it.meta = it.meta.with("authPaused" to Json.of(false)) }
+            fixture.clock.fixedMono = fixture.clock.wall
+            fixture.clock.wall += 600_000
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(product))
+            fixture.runtime.close()
+            assertEquals(SyncFreshness(false, null), fixture.runtime.freshness(product))
+        }
+    }
 
     @Test fun pendingDiscardDoesNotLaunchPruneReleaseOrSendBeforeExactRecovery() = runBlocking {
         val permitted = AtomicBoolean(false)
@@ -978,6 +1027,21 @@ class SyncRuntimeTests {
         }
     }
 
+    // §7.4: the server holds the write, so an ok whose receipt the replica cannot read still acknowledges its entry. Its projections end at
+    // once, sync goes on, and the malformed push is reported without its content.
+    @Test fun anOkWithoutTheReceiptItsOptedCommandNeedsAcknowledgesItsEntryAndReportsTheMalformedPush() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.engine.commit(product, Gesture(emptyList(), command = Command("probe.capture", Json.objectOf())))
+            val step = async { fixture.runtime.senderStep(leaving = true) }
+            val push = fixture.push()
+            push.answer.complete(ok(push.request))
+            assertTrue(step.await())
+            assertEquals(emptyList<Entry>(), fixture.engine.device.current().entries())
+            settles(true) { EngineEvent(EngineOperation.sync, EngineOutcome.failure, "sync-push-malformed") in fixture.events }
+            assertEquals(emptyMap<String, Map<ScopeRef, PushFailure>>(), fixture.engine.pushFailures)
+        }
+    }
+
     @Test fun pushServedAsAnotherAccountPausesWithoutApplyingItsResults() = runBlocking {
         Fixture().use { fixture ->
             fixture.create()
@@ -1080,13 +1144,13 @@ class SyncRuntimeTests {
         }
     }
 
-    @Test fun boundReplicaRetainsExplicitTreeAlongsideItsProductSubscriptions() = runBlocking {
+    @Test fun boundReplicaPairsAnExplicitTreeWithItsOwnOverlay() = runBlocking {
         Fixture().use { fixture ->
             val tree = ScopeRef.tree("b_00000001")
             fixture.transport.controlPulls = true
             fixture.engine.subscribe(tree); fixture.runtime.enter()
             val request = fixture.pull()
-            assertEquals(setOf(product.text, tree.text), request.request.member("scopes").arr().map { it.member("scope").str() }.toSet())
+            assertEquals(setOf(product.text, tree.text, "self/overlay/b_00000001"), request.request.member("scopes").arr().map { it.member("scope").str() }.toSet())
             request.answer.complete(Reply.Unreachable)
             Unit
         }
@@ -1110,7 +1174,7 @@ class SyncRuntimeTests {
             fixture.clock.wall += 10_000
             val due = async { fixture.runtime.pullerStep() }
             val next = fixture.pull()
-            assertEquals(setOf(product.text, "tree/b_00000001"), next.request.member("scopes").arr().map { it.member("scope").str() }.toSet())
+            assertEquals(setOf(product.text, "tree/b_00000001", "self/overlay/b_00000001"), next.request.member("scopes").arr().map { it.member("scope").str() }.toSet())
             next.answer.complete(Reply.Unreachable); due.await(); Unit
         }
     }
@@ -2332,7 +2396,7 @@ class SyncRuntimeTests {
             fixture.transport.controlPulls = true
             fixture.runtime.enter()
             val ordinary = fixture.pull()
-            assertEquals(listOf(product.text), ordinary.request.member("scopes").arr().map { it.member("scope").str() })
+            assertEquals(listOf("self/overlay/b_00000001", product.text), ordinary.request.member("scopes").arr().map { it.member("scope").str() })
             ordinary.answer.complete(Reply.Unreachable)
             val repull = fixture.pull()
             assertEquals(listOf(tree.text), repull.request.member("scopes").arr().map { it.member("scope").str() })

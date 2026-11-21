@@ -7,9 +7,8 @@ const PAGE_SIZE = 20;
 const PICKER_COLUMNS = ['done', 'upNext', 'locked'];
 
 export class StepDraft {
-  constructor({ id = crypto.randomUUID(), name = '', description = '', color = DEFAULT_DRAFT_COLOR, prerequisites = [], baseline } = {}) {
+  constructor({ id = crypto.randomUUID(), name = '', description = '', color = DEFAULT_DRAFT_COLOR, prerequisites = [] } = {}) {
     this.id = id;
-    if (baseline) this.baseline = baseline;
     this.name = name;
     this.description = description;
     this.color = color;
@@ -17,26 +16,11 @@ export class StepDraft {
     Object.freeze(this);
   }
 
-  static forStep(step) {
-    const baseline = Object.freeze({
-      name: step.label ?? '',
-      description: step.description ?? '',
-      color: step.color ?? DEFAULT_NODE_COLOR,
-      prerequisites: Object.freeze([...step.prerequisites]),
-    });
-    return new StepDraft({ id: step.id, ...baseline, baseline });
-  }
-
   with(change) {
-    return new StepDraft({ ...this, ...change, id: this.id, baseline: this.baseline });
+    return new StepDraft({ ...this, ...change, id: this.id });
   }
 
   get dirty() {
-    if (this.baseline) {
-      return this.name !== this.baseline.name || this.description !== this.baseline.description
-        || this.color !== this.baseline.color || this.prerequisites.length !== this.baseline.prerequisites.length
-        || this.prerequisites.some((id) => !this.baseline.prerequisites.includes(id));
-    }
     return this.name !== '' || this.description !== '' || this.color !== DEFAULT_DRAFT_COLOR || this.prerequisites.length > 0;
   }
 
@@ -45,21 +29,14 @@ export class StepDraft {
   }
 
   reconcile(tree) {
-    const blocked = blockedPrerequisites(tree, this.baseline ? this.id : null);
-    const prerequisites = this.prerequisites.filter((id) => tree.nodesById.has(id) && !blocked.has(id));
-    const baselineIds = this.baseline?.prerequisites.filter((id) => tree.nodesById.has(id) && !blocked.has(id));
-    const baselineChanged = baselineIds && baselineIds.length !== this.baseline.prerequisites.length;
-    if (prerequisites.length === this.prerequisites.length && !baselineChanged) return this;
-    const baseline = baselineChanged
-      ? Object.freeze({ ...this.baseline, prerequisites: Object.freeze(baselineIds) })
-      : this.baseline;
-    return new StepDraft({ ...this, prerequisites, baseline });
+    const prerequisites = this.prerequisites.filter((id) => tree.nodesById.has(id));
+    if (prerequisites.length === this.prerequisites.length) return this;
+    return new StepDraft({ ...this, prerequisites });
   }
 
   placement(tree, completed) {
     const draft = this.reconcile(tree);
-    if (this.baseline && !tree.nodesById.has(this.id)) return { column: null, body: null };
-    const nodes = this.baseline ? tree.nodes.map((step) => (step.id === draft.id ? { ...step, prerequisites: draft.prerequisites } : step)) : [...tree.nodes, draft];
+    const nodes = [...tree.nodes, draft];
     const states = UnlockRules.derive({ nodes }, { completed });
     const prerequisites = draft.prerequisites.map((id) => tree.nodesById.get(id));
     const unmet = prerequisites.filter((step) => states.get(step.id) !== 'complete');
@@ -69,11 +46,6 @@ export class StepDraft {
     return { column, body: column === 'done' ? null : preview.body };
   }
 
-  toEditRequest(tree) {
-    const draft = this.reconcile(tree);
-    return new EditStepRequest({ ...draft, label: draft.name });
-  }
-
   toCreateRequest(tree) {
     const draft = tree ? this.reconcile(tree) : this;
     return new CreateStepRequest({ ...draft, label: draft.name });
@@ -81,19 +53,6 @@ export class StepDraft {
 }
 
 export class CreateStepRequest {
-  constructor({ id, label, description, color, prerequisites }) {
-    const name = label.trim();
-    if (!name) throw new TypeError('A step requires a non-empty label');
-    this.id = id;
-    this.label = name;
-    this.description = description;
-    this.color = color;
-    this.prerequisites = Object.freeze([...prerequisites]);
-    Object.freeze(this);
-  }
-}
-
-export class EditStepRequest {
   constructor({ id, label, description, color, prerequisites }) {
     const name = label.trim();
     if (!name) throw new TypeError('A step requires a non-empty label');

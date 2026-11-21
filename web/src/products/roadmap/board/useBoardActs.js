@@ -1,40 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { HeldDelete, StepSelection, completionOutcome, creationOutcome, countBucket, deletable, editGesture, receiptUndo, recolorOutcome } from './acts.js';
+import { HeldDelete, StepSelection, completionOutcome, creationOutcome, countBucket, deletable, editGesture, onceLanded, receiptUndo, recolorOutcome } from './acts.js';
 import { sharedKind } from '../model/bulkSelection.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules, takesMark } from '../model/UnlockRules.js';
 import { LABELS, SAVE_FAILURE, TREE_TOAST, deleteFailedToast, openTreeLabel, treeBand } from '../copy.js';
+import { fieldValue, sameFieldValue } from '../step/InlineStepDraft.js';
 import { BoardQuery } from './Board.js';
-
-export class BoardComposer {
-  constructor({ owner, view = 'board', detailId, composer, acts, onOpen }) {
-    this.available = owner;
-    this.editable = this.available && detailId != null;
-    this.view = view;
-    this.detailId = detailId;
-    this.composer = composer;
-    this.acts = acts;
-    this.onOpen = onOpen;
-  }
-
-  get shown() {
-    if (!this.available) return null;
-    if (this.composer?.view && this.composer.view !== this.view) return null;
-    if (this.composer?.editing && !this.editable) return null;
-    if (this.composer?.editing && this.composer.editing !== this.detailId) return null;
-    return this.composer;
-  }
-
-  openEdit(id) {
-    if (!this.editable || id === null || id !== this.detailId) return;
-    this.onOpen({ door: 'detail', editing: id });
-  }
-
-  saveEdit(request) {
-    if (!this.shown?.editing || request.id !== this.detailId) return { ok: false };
-    return this.acts.edit(request);
-  }
-}
 
 export class BoardActs {
   constructor(collaborators) {
@@ -63,56 +34,68 @@ export class BoardActs {
       return { ok: false };
     }
     if (!receipt) return { ok: false };
-    const outcome = recolorOutcome(selection.ids);
-    c.showToast(outcome.message, {
-      surface: 'board', act: 'recolor', reveal: null, holdMs: 6000,
-      action: receiptUndo({
-        session: c.session, receipt,
-        before: () => this.collaborators.onQuiet(),
-        onReverted: () => this.collaborators.track('roadmap_board_undo', { act: 'recolor' }),
-        onFailure: (error) => this.collaborators.report('roadmap-board-recolor', error),
-      }),
+    onceLanded(receipt, () => {
+      const outcome = recolorOutcome(selection.ids);
+      c.showToast(outcome.message, {
+        surface: 'board', act: 'recolor', reveal: null, holdMs: 6000,
+        action: receiptUndo({
+          session: c.session, receipt,
+          before: () => this.collaborators.onQuiet(),
+          onReverted: () => this.collaborators.track('roadmap_board_undo', { act: 'recolor' }),
+          onFailure: (error) => this.collaborators.report('roadmap-board-recolor', error),
+        }),
+      });
+      c.track('roadmap_board_bulk', { step: 'recolor', count: countBucket(selection.count) });
     });
-    c.track('roadmap_board_bulk', { step: 'recolor', count: countBucket(selection.count) });
     return { ok: true, changed: true };
   }
 
   edit(request) {
     const c = this.collaborators;
-    if ((!c.active && !c.graphActive) || !c.owner || !c.tree) return { ok: false };
-    const tree = this.held ? this.held.projected(c.tree) : c.tree;
-    if (!tree.nodesById.has(request.id)) return { ok: false };
-    const gesture = editGesture(tree, request);
+    const authority = c.readEditAuthority?.() ?? { tree: c.tree, editable: c.owner, session: c.session };
+    if ((!c.active && !c.graphActive) || !authority.editable || !authority.tree) return { ok: false, ...(request.field ? { reason: 'unavailable' } : {}) };
+    if (request.field && authority.savingBlocked) return { ok: false, reason: 'blocked' };
+    const tree = this.held ? this.held.projected(authority.tree) : authority.tree;
+    const id = request.stepId ?? request.id;
+    const step = tree.nodesById.get(id);
+    if (!step) return { ok: false, ...(request.field ? { reason: 'unavailable' } : {}) };
+    if (request.field && !request.matches(c.readInlineDraft?.())) return { ok: false, reason: 'stale' };
+    if (request.field && sameFieldValue(request.field, request.value, fieldValue(step, request.field))) return { ok: true, changed: false };
+    if (request.field && !sameFieldValue(request.field, request.expectedCurrentValue, fieldValue(step, request.field)))
+      return { ok: false, reason: 'conflict', currentValue: fieldValue(step, request.field) };
+    const gesture = editGesture(tree, request.field ? request.sparse : request);
     if (gesture === false) return { ok: false };
     if (!gesture) return { ok: true };
-    if (!c.session) {
+    if (!authority.session) {
       c.report('roadmap-board-edit', new Error('Missing Board session'));
       return { ok: false };
     }
     let receipt;
     try {
       c.onQuiet();
-      receipt = c.session.dispatch(gesture);
+      receipt = authority.session.dispatch(gesture);
     } catch (error) {
       c.report('roadmap-board-edit', error);
       return { ok: false };
     }
     if (!receipt) return { ok: false };
-    if ('label' in gesture) {
+    onceLanded(receipt, () => {
+      if ('label' in gesture) {
+        try {
+          c.emit({ verb: 'renamed', nodeId: id, label: gesture.label, kind: gesture.color ?? step.color }, { silent: true });
+        } catch (error) {
+          c.report('roadmap-board-edit', error);
+        }
+      }
       try {
-        c.emit({ verb: 'renamed', nodeId: request.id, label: request.label, kind: request.color }, { silent: true });
+        c.track('roadmap_board_edit', {
+          step: 'saved', name: 'label' in gesture, description: 'description' in gesture,
+          kind: 'color' in gesture, prerequisites: (gesture.addPrerequisites?.length ?? 0) > 0 || (gesture.removePrerequisites?.length ?? 0) > 0,
+        });
       } catch (error) {
         c.report('roadmap-board-edit', error);
       }
-    }
-    try {
-      c.track('roadmap_board_edit', {
-        step: 'saved', name: 'label' in gesture, description: 'description' in gesture,
-        kind: 'color' in gesture, prerequisites: gesture.addPrerequisites.length > 0 || gesture.removePrerequisites.length > 0,
-      });
-    } catch (error) {
-      c.report('roadmap-board-edit', error);
-    }
+    });
     return { ok: true };
   }
 
@@ -186,16 +169,18 @@ export class BoardActs {
       return { ok: false };
     }
     const detached = mark === 'kept' ? TREE_TOAST.detachedMarkBack : TREE_TOAST.detached;
-    c.showToast(opens ? TREE_TOAST.attached : detached, {
-      act: opens ? 'attach' : 'detach', reveal: null, holdMs: 6000,
-      action: receiptUndo({
-        session: c.session, receipt,
-        before: () => this.collaborators.onQuiet(),
-        onReverted: () => this.collaborators.track('roadmap_tree_attach', { step: 'undo', band: this.collaborators.band, view, place: this.collaborators.place }),
-        onFailure: (error) => this.collaborators.report('roadmap-tree-attach', error),
-      }),
+    onceLanded(receipt, () => {
+      c.showToast(opens ? TREE_TOAST.attached : detached, {
+        act: opens ? 'attach' : 'detach', reveal: null, holdMs: 6000,
+        action: receiptUndo({
+          session: c.session, receipt,
+          before: () => this.collaborators.onQuiet(),
+          onReverted: () => this.collaborators.track('roadmap_tree_attach', { step: 'undo', band: this.collaborators.band, view, place: this.collaborators.place }),
+          onFailure: (error) => this.collaborators.report('roadmap-tree-attach', error),
+        }),
+      });
+      c.track('roadmap_tree_attach', { step: !opens ? 'detach' : step.opens ? 'change' : 'attach', band: c.band, view, place: c.place, mark });
     });
-    c.track('roadmap_tree_attach', { step: !opens ? 'detach' : step.opens ? 'change' : 'attach', band: c.band, view, place: c.place, mark });
     return { ok: true };
   }
 
@@ -220,25 +205,27 @@ export class BoardActs {
       return { ok: false };
     }
     if (!receipt) return { ok: false };
-    if (outcome.filterCleared) c.setQuery(outcome.query);
-    const reveal = graph ? c.onGraphReveal : c.onReveal;
-    reveal(outcome.reveal);
-    c.showToast(outcome.message, {
-      surface: graph ? 'graph' : 'board', act: 'create', reveal: outcome.reveal, holdMs: 6000,
-      ...(graph ? { focusTarget: c.graphFocusTarget } : {}),
-      action: receiptUndo({
-        session: c.session, receipt,
-        onReverted: () => {
-          const current = this.collaborators;
-          current.onQuiet();
-          if (graph) current.track('roadmap_graph_toast', { act: 'create', step: 'undo' });
-          else current.track('roadmap_board_undo', { act: 'create' });
-        },
-        onFailure: (error) => this.collaborators.report('roadmap-board-create', error),
-      }),
+    onceLanded(receipt, () => {
+      if (outcome.filterCleared) c.setQuery(outcome.query);
+      const reveal = graph ? c.onGraphReveal : c.onReveal;
+      reveal(outcome.reveal);
+      c.showToast(outcome.message, {
+        surface: graph ? 'graph' : 'board', act: 'create', reveal: outcome.reveal, holdMs: 6000,
+        ...(graph ? { focusTarget: c.graphFocusTarget } : {}),
+        action: receiptUndo({
+          session: c.session, receipt,
+          onReverted: () => {
+            const current = this.collaborators;
+            current.onQuiet();
+            if (graph) current.track('roadmap_graph_toast', { act: 'create', step: 'undo' });
+            else current.track('roadmap_board_undo', { act: 'create' });
+          },
+          onFailure: (error) => this.collaborators.report('roadmap-board-create', error),
+        }),
+      });
+      if (graph) c.track('roadmap_graph_toast', { act: 'create', step: 'shown' });
+      c.track('roadmap_board_create', { step: 'saved', column: outcome.column, filterCleared: outcome.filterCleared });
     });
-    if (graph) c.track('roadmap_graph_toast', { act: 'create', step: 'shown' });
-    c.track('roadmap_board_create', { step: 'saved', column: outcome.column, filterCleared: outcome.filterCleared });
     return { ok: true };
   }
 
@@ -314,7 +301,7 @@ export class BoardActs {
     let outcome = null;
     try {
       const receipt = pending.session.dispatch({ kind: 'BulkDelete', nodeIds: pending.held.ids });
-      if (receipt) c.track('roadmap_board_delete', { step: 'sent', via, view: pending.surface });
+      if (receipt) onceLanded(receipt, () => c.track('roadmap_board_delete', { step: 'sent', via, view: pending.surface }));
       if (!receipt) c.onQuiet();
       if (!receipt && !pending.session.ready) outcome = 'not_ready';
     } catch (error) {

@@ -1,0 +1,622 @@
+[
+  {
+    "name": "Subtree takes precedence, pointers target roots, and unknown is not dangling",
+    "input": {
+      "operation": "account",
+      "trees": [
+        {
+          "id": "R",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "R", "guide": "", "guideInherited": false, "root": "R", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "own", "present": true, "born": null, "rc": null, "ru": null, "label": "Owned", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": "S"},
+            {"id": "ptr", "present": true, "born": null, "rc": null, "ru": null, "label": "ptr", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+            {"id": "bad", "present": true, "born": null, "rc": null, "ru": null, "label": "bad", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+            {"id": "unknown", "present": true, "born": null, "rc": null, "ru": null, "label": "unknown", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+            {"id": "unread", "present": true, "born": null, "rc": null, "ru": null, "label": "unread", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [
+            {"node": "own", "status": "complete", "outOfOrder": false, "recordedAt": 10, "deviceAt": 9},
+            {"node": "ptr", "status": "complete", "outOfOrder": false, "recordedAt": 10, "deviceAt": 9},
+            {"node": "bad", "status": "complete", "outOfOrder": false, "recordedAt": 10, "deviceAt": 9},
+            {"node": "unknown", "status": "complete", "outOfOrder": false, "recordedAt": 10, "deviceAt": 9},
+            {"node": "unread", "status": "complete", "outOfOrder": false, "recordedAt": 10, "deviceAt": 9}
+          ],
+          "pointers": [
+            {"node": "own", "present": true, "opens": "Q"},
+            {"node": "ptr", "present": true, "opens": "Q"},
+            {"node": "bad", "present": true, "opens": "S"},
+            {"node": "unknown", "present": true, "opens": "missing"},
+            {"node": "unread", "present": true, "opens": "U"}
+          ]
+        },
+        {
+          "id": "S",
+          "present": true,
+          "read": "loaded",
+          "parent": {"tree": "R", "step": "own"},
+          "meta": {
+            "title": "Ignored title",
+            "guide": "",
+            "guideInherited": false,
+            "root": "R",
+            "depth": 1,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {"id": "s", "present": true, "born": null, "rc": null, "ru": null, "label": "s", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "Q",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "Q", "guide": "", "guideInherited": false, "root": "Q", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "q", "present": true, "born": null, "rc": null, "ru": null, "label": "q", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [{"node": "q", "status": "complete", "outOfOrder": false, "recordedAt": 1, "deviceAt": 1}],
+          "pointers": []
+        },
+        {"id": "U", "present": true, "read": "unread", "parent": null, "meta": {"title": "U", "guide": "", "guideInherited": false, "root": "U", "depth": 0, "visibility": "private", "reach": "private"}, "nodes": [], "edges": [], "kinds": [], "marks": [], "pointers": []}
+      ]
+    },
+    "expect": {
+      "trees": [
+        {"id": "Q", "standing": "standing", "read": "loaded", "place": {"root": "Q", "parent": null, "path": [], "depth": 0}, "title": "Q", "counts": {"done": 1, "total": 1}, "complete": true, "openings": []},
+        {
+          "id": "R",
+          "standing": "standing",
+          "read": "loaded",
+          "place": {"root": "R", "parent": null, "path": [], "depth": 0},
+          "title": "R",
+          "counts": {"done": 2, "total": 5},
+          "complete": false,
+          "openings": [
+            {"node": "bad", "kind": "pointer", "tree": "S", "status": "dangling", "complete": false, "counts": null, "loop": false},
+            {
+              "node": "own",
+              "kind": "subtree",
+              "tree": "S",
+              "status": "loaded",
+              "complete": false,
+              "counts": {"done": 0, "total": 1},
+              "loop": false
+            },
+            {
+              "node": "ptr",
+              "kind": "pointer",
+              "tree": "Q",
+              "status": "loaded",
+              "complete": true,
+              "counts": {"done": 1, "total": 1},
+              "loop": false
+            },
+            {"node": "unknown", "kind": "pointer", "tree": "missing", "status": "unknown", "complete": false, "counts": null, "loop": false},
+            {"node": "unread", "kind": "pointer", "tree": "U", "status": "unread", "complete": false, "counts": null, "loop": false}
+          ]
+        },
+        {"id": "S", "standing": "standing", "read": "loaded", "place": {"root": "R", "parent": {"tree": "R", "step": "own"}, "path": [{"tree": "R", "step": "own", "title": "R"}], "depth": 1}, "title": "Owned", "counts": {"done": 0, "total": 1}, "complete": false, "openings": []},
+        {"id": "U", "standing": "standing", "read": "unread", "place": {"root": "U", "parent": null, "path": [], "depth": 0}, "title": null, "counts": null, "complete": false, "openings": []}
+      ],
+      "loops": []
+    }
+  },
+  {
+    "name": "Absent owning step hides every descendant and its address",
+    "input": {
+      "operation": "account",
+      "trees": [
+        {
+          "id": "R",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "R", "guide": "", "guideInherited": false, "root": "R", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "own", "present": false, "born": null, "rc": null, "ru": null, "label": "own", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": "S"}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "S",
+          "present": true,
+          "read": "loaded",
+          "parent": {"tree": "R", "step": "own"},
+          "meta": {
+            "title": "Ignored title",
+            "guide": "",
+            "guideInherited": false,
+            "root": "R",
+            "depth": 1,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {"id": "s", "present": true, "born": null, "rc": null, "ru": null, "label": "s", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "expect": {
+      "trees": [
+        {"id": "R", "standing": "standing", "read": "loaded", "place": {"root": "R", "parent": null, "path": [], "depth": 0}, "title": "R", "counts": {"done": 0, "total": 0}, "complete": false, "openings": []},
+        {"id": "S", "standing": "hidden", "read": "loaded", "place": null, "title": null, "counts": null, "complete": false, "openings": []}
+      ],
+      "loops": []
+    }
+  },
+  {
+    "name": "Unknown parent leaves standing unknown rather than absent",
+    "input": {
+      "operation": "account",
+      "trees": [
+        {
+          "id": "S",
+          "present": true,
+          "read": "loaded",
+          "parent": {"tree": "R", "step": "own"},
+          "meta": {
+            "title": "Ignored title",
+            "guide": "",
+            "guideInherited": false,
+            "root": "R",
+            "depth": 1,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {"id": "s", "present": true, "born": null, "rc": null, "ru": null, "label": "s", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "expect": {
+      "trees": [
+        {"id": "S", "standing": "unknown", "read": "loaded", "place": null, "title": null, "counts": null, "complete": false, "openings": []}
+      ],
+      "loops": []
+    }
+  },
+  {
+    "name": "Completion is the least fixed point, pointer loops and empty trees stay incomplete",
+    "input": {
+      "operation": "account",
+      "trees": [
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "A", "guide": "", "guideInherited": false, "root": "A", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [{"node": "a", "status": "complete", "outOfOrder": false, "recordedAt": 1, "deviceAt": 1}],
+          "pointers": [{"node": "a", "present": true, "opens": "B"}]
+        },
+        {
+          "id": "B",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "B", "guide": "", "guideInherited": false, "root": "B", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "b", "present": true, "born": null, "rc": null, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "b", "present": true, "opens": "A"}]
+        },
+        {"id": "E", "present": true, "read": "loaded", "parent": null, "meta": {"title": "E", "guide": "", "guideInherited": false, "root": "E", "depth": 0, "visibility": "private", "reach": "private"}, "nodes": [], "edges": [], "kinds": [], "marks": [], "pointers": []}
+      ]
+    },
+    "expect": {
+      "trees": [
+        {"id": "A", "standing": "standing", "read": "loaded", "place": {"root": "A", "parent": null, "path": [], "depth": 0}, "title": "A", "counts": {"done": 0, "total": 1}, "complete": false, "openings": [{"node": "a", "kind": "pointer", "tree": "B", "status": "loaded", "complete": false, "counts": {"done": 0, "total": 1}, "loop": true}]},
+        {"id": "B", "standing": "standing", "read": "loaded", "place": {"root": "B", "parent": null, "path": [], "depth": 0}, "title": "B", "counts": {"done": 0, "total": 1}, "complete": false, "openings": [{"node": "b", "kind": "pointer", "tree": "A", "status": "loaded", "complete": false, "counts": {"done": 0, "total": 1}, "loop": true}]},
+        {"id": "E", "standing": "standing", "read": "loaded", "place": {"root": "E", "parent": null, "path": [], "depth": 0}, "title": "E", "counts": {"done": 0, "total": 0}, "complete": false, "openings": []}
+      ],
+      "loops": [["A", "B"]]
+    }
+  },
+  {
+    "name": "A known deleted pointer target is dangling and the personal mark counts",
+    "input": {
+      "operation": "account",
+      "trees": [
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "A", "guide": "", "guideInherited": false, "root": "A", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [{"node": "a", "status": "complete", "outOfOrder": false, "recordedAt": 1, "deviceAt": 1}],
+          "pointers": [{"node": "a", "present": true, "opens": "D"}]
+        },
+        {"id": "D", "present": false, "read": "loaded", "parent": null, "meta": {"title": "D", "guide": "", "guideInherited": false, "root": "D", "depth": 0, "visibility": "private", "reach": "private"}, "nodes": [], "edges": [], "kinds": [], "marks": [], "pointers": []}
+      ]
+    },
+    "expect": {
+      "trees": [
+        {"id": "A", "standing": "standing", "read": "loaded", "place": {"root": "A", "parent": null, "path": [], "depth": 0}, "title": "A", "counts": {"done": 1, "total": 1}, "complete": true, "openings": [{"node": "a", "kind": "pointer", "tree": "D", "status": "dangling", "complete": false, "counts": null, "loop": false}]},
+        {"id": "D", "standing": "hidden", "read": "loaded", "place": null, "title": null, "counts": null, "complete": false, "openings": []}
+      ],
+      "loops": []
+    }
+  },
+  {
+    "name": "A known deleted branch falls back to a valid pointer with a different completion",
+    "input": {
+      "operation": "account",
+      "trees": [
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "A", "guide": "", "guideInherited": false, "root": "A", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": "S"}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "B"}]
+        },
+        {
+          "id": "S",
+          "present": false,
+          "read": "loaded",
+          "parent": {"tree": "A", "step": "p"},
+          "meta": {"title": "S", "guide": "", "guideInherited": false, "root": "S", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "s", "present": true, "born": null, "rc": null, "ru": null, "label": "s", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "B",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "B", "guide": "", "guideInherited": false, "root": "B", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "b", "present": true, "born": null, "rc": null, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [{"node": "b", "status": "complete", "outOfOrder": false, "recordedAt": 10, "deviceAt": 9}],
+          "pointers": []
+        }
+      ]
+    },
+    "expect": {
+      "trees": [
+        {"id": "A", "standing": "standing", "read": "loaded", "place": {"root": "A", "parent": null, "path": [], "depth": 0}, "title": "A", "counts": {"done": 1, "total": 1}, "complete": true, "openings": [{"node": "p", "kind": "pointer", "tree": "B", "status": "loaded", "complete": true, "counts": {"done": 1, "total": 1}, "loop": false}]},
+        {"id": "B", "standing": "standing", "read": "loaded", "place": {"root": "B", "parent": null, "path": [], "depth": 0}, "title": "B", "counts": {"done": 1, "total": 1}, "complete": true, "openings": []},
+        {"id": "S", "standing": "hidden", "read": "loaded", "place": null, "title": null, "counts": null, "complete": false, "openings": []}
+      ],
+      "loops": []
+    }
+  },
+  {
+    "name": "An unknown branch keeps precedence over a complete pointer target and a personal mark",
+    "input": {
+      "operation": "account",
+      "trees": [
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "A", "guide": "", "guideInherited": false, "root": "A", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": "S"}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [{"node": "p", "status": "complete", "outOfOrder": false, "recordedAt": 99, "deviceAt": 9}],
+          "pointers": [{"node": "p", "present": true, "opens": "B"}]
+        },
+        {
+          "id": "B",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "B", "guide": "", "guideInherited": false, "root": "B", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "b", "present": true, "born": null, "rc": null, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [{"node": "b", "status": "complete", "outOfOrder": false, "recordedAt": 10, "deviceAt": 9}],
+          "pointers": []
+        }
+      ]
+    },
+    "expect": {
+      "trees": [
+        {"id": "A", "standing": "standing", "read": "loaded", "place": {"root": "A", "parent": null, "path": [], "depth": 0}, "title": "A", "counts": {"done": 0, "total": 1}, "complete": false, "openings": [{"node": "p", "kind": "subtree", "tree": "S", "status": "unknown", "complete": false, "counts": null, "loop": false}]},
+        {"id": "B", "standing": "standing", "read": "loaded", "place": {"root": "B", "parent": null, "path": [], "depth": 0}, "title": "B", "counts": {"done": 1, "total": 1}, "complete": true, "openings": []}
+      ],
+      "loops": []
+    }
+  },
+  {
+    "name": "An unread owned subtree keeps precedence over a completed root pointer",
+    "input": {
+      "operation": "account",
+      "trees": [
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "A", "guide": "", "guideInherited": false, "root": "A", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "p", "present": true, "born": null, "rc": null, "ru": null, "label": "p", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": "S"}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [{"node": "p", "present": true, "opens": "B"}]
+        },
+        {
+          "id": "B",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {"title": "B", "guide": "", "guideInherited": false, "root": "B", "depth": 0, "visibility": "private", "reach": "private"},
+          "nodes": [
+            {"id": "b", "present": true, "born": null, "rc": null, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [{"node": "b", "status": "complete", "outOfOrder": false, "recordedAt": 10, "deviceAt": 9}],
+          "pointers": []
+        },
+        {"id": "S", "present": true, "read": "unread", "parent": {"tree": "A", "step": "p"}, "meta": {"title": "S", "guide": "", "guideInherited": false, "root": "S", "depth": 0, "visibility": "private", "reach": "private"}, "nodes": [], "edges": [], "kinds": [], "marks": [], "pointers": []}
+      ]
+    },
+    "expect": {
+      "trees": [
+        {"id": "A", "standing": "standing", "read": "loaded", "place": {"root": "A", "parent": null, "path": [], "depth": 0}, "title": "A", "counts": {"done": 0, "total": 1}, "complete": false, "openings": [{"node": "p", "kind": "subtree", "tree": "S", "status": "unread", "complete": false, "counts": null, "loop": false}]},
+        {"id": "B", "standing": "standing", "read": "loaded", "place": {"root": "B", "parent": null, "path": [], "depth": 0}, "title": "B", "counts": {"done": 1, "total": 1}, "complete": true, "openings": []},
+        {"id": "S", "standing": "standing", "read": "unread", "place": {"root": "A", "parent": {"tree": "A", "step": "p"}, "path": [{"tree": "A", "step": "p", "title": "A"}], "depth": 1}, "title": "p", "counts": null, "complete": false, "openings": []}
+      ],
+      "loops": []
+    }
+  },
+  {
+    "name": "A root whose tree scope holds no meta does not stand: no title, count or address, its subtrees hidden and a pointer at it dangling; an unread root still stands",
+    "input": {
+      "operation": "account",
+      "trees": [
+        {
+          "id": "F",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": null,
+          "nodes": [
+            {
+              "id": "own",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "own",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "G"
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "G",
+          "present": true,
+          "read": "loaded",
+          "parent": {
+            "tree": "F",
+            "step": "own"
+          },
+          "meta": {
+            "title": "G",
+            "guide": "",
+            "guideInherited": false,
+            "root": "F",
+            "depth": 1,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "g",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "g",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "Q",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {
+            "title": "Q",
+            "guide": "",
+            "guideInherited": false,
+            "root": "Q",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "p",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "p",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": [
+            {
+              "node": "p",
+              "present": true,
+              "opens": "F"
+            }
+          ]
+        },
+        {
+          "id": "U",
+          "present": true,
+          "read": "unread",
+          "parent": null,
+          "meta": null,
+          "nodes": [],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "expect": {
+      "trees": [
+        {
+          "id": "F",
+          "standing": "hidden",
+          "read": "loaded",
+          "place": null,
+          "title": null,
+          "counts": null,
+          "complete": false,
+          "openings": []
+        },
+        {
+          "id": "G",
+          "standing": "hidden",
+          "read": "loaded",
+          "place": null,
+          "title": null,
+          "counts": null,
+          "complete": false,
+          "openings": []
+        },
+        {
+          "id": "Q",
+          "standing": "standing",
+          "read": "loaded",
+          "place": {
+            "root": "Q",
+            "parent": null,
+            "path": [],
+            "depth": 0
+          },
+          "title": "Q",
+          "counts": {
+            "done": 0,
+            "total": 1
+          },
+          "complete": false,
+          "openings": [
+            {
+              "node": "p",
+              "kind": "pointer",
+              "tree": "F",
+              "status": "dangling",
+              "complete": false,
+              "counts": null,
+              "loop": false
+            }
+          ]
+        },
+        {
+          "id": "U",
+          "standing": "standing",
+          "read": "unread",
+          "place": {
+            "root": "U",
+            "parent": null,
+            "path": [],
+            "depth": 0
+          },
+          "title": null,
+          "counts": null,
+          "complete": false,
+          "openings": []
+        }
+      ],
+      "loops": []
+    }
+  }
+]

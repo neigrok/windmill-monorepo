@@ -1,6 +1,6 @@
 #pragma once
 
-#include "products/roadmap/application/RoomRegistry.h"
+#include "products/roadmap/ports/TreeRepository.h"
 #include "products/roadmap/domain/Ids.h"
 #include "products/roadmap/domain/Tending.h"
 #include "platform/ports/Clock.h"
@@ -13,6 +13,7 @@
 #include <trantor/net/EventLoopThreadPool.h>
 
 #include <cstdint>
+#include <functional>
 #include "platform/application/WriteObservation.h"
 
 #include <optional>
@@ -26,7 +27,11 @@ namespace wm {
 // never a drogon request loop; an exception escaping a worker becomes a `failed` run.
 class TendingService {
 public:
-  TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools, RoomRegistry& rooms, Clock& clock,
+  // Who may write a tree, as the store its records live in holds it: roadmap's rooms, or the engine's tables where
+  // ROADMAP_ENGINE_ENABLED serves them. Nothing for a tree that is not there.
+  using AccessOf = std::function<std::optional<TreeAccess>(const TreeId&)>;
+
+  TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools, AccessOf accessOf, Clock& clock,
                  TokenGenerator& tokens, Entitlements& entitlements, bool enabled);
   ~TendingService();
   void stop();
@@ -55,7 +60,7 @@ private:
   TendRunRepository& runs_;
   PlanAgent& agent_;
   ToolHost& tools_;
-  RoomRegistry& rooms_;
+  AccessOf accessOf_;
   Clock& clock_;
   TokenGenerator& tokens_;
   Entitlements& entitlements_;

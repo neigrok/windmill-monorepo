@@ -26,8 +26,9 @@ struct PackagePlacement: Sendable {
     PackagePlacement(
       name: "WindmillDomain", directory: "Domain", dependencies: ["Sync": .any, "swift-syntax": .onlyByTarget("LayeringTests")],
       modules: ["DomainKitNFC", "DomainKit", "DomainKitTesting", "GymDomain", "JournalDomain", "GymCatalogGen"]),
+    PackagePlacement(name: "WindmillAgent", directory: "Agent", dependencies: ["Sync": .onlyProduct("SyncCore")], modules: ["Agent"]),
     PackagePlacement(
-      name: "WindmillKit", directory: "WindmillKit", dependencies: ["Domain": .any, "Sync": .any],
+      name: "WindmillKit", directory: "WindmillKit", dependencies: ["Domain": .any, "Sync": .any, "Agent": .onlyProduct("Agent")],
       modules: ["WindmillPlatform", "WindmillGym", "WindmillJournal"]),
     PackagePlacement(
       name: "SyncTestingSurface", directory: "SyncTestingSurface", dependencies: ["Sync": .onlyProduct("SyncTesting")], modules: []),

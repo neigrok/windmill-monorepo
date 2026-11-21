@@ -3,14 +3,23 @@
 The browser engine injects telemetry through `syncTelemetry`. Its defaults send events through
 `src/telemetry/beacon.js` and technical failures through `src/telemetry/sentry.js`. A telemetry failure
 cannot stop synchronization. The beacon adapter encodes the spec's hyphenated event labels with
-underscores because `/v1/events` accepts snake_case names. Each engine instance permits at most 30 reports per rolling minute;
-injected limits are capped at 100. No raw exception, stack, body, field value, ID, scope reference,
+underscores because `/v1/events` accepts snake_case names. Each engine instance gives failures, step events
+and `sync-writer` timings separate allowances per minute, so a burst of writes crowds out neither a failure
+nor a step: at most 30 failures and 30 step events, and the timings of the first 10 writes that change
+the store, each minute; injected limits are capped at 100. No raw exception, stack, body, field value, ID, scope reference,
 account, email or token is forwarded.
 
-The beacon keeps up to 200 newest queued events in memory while the browser is offline and flushes
-them on reconnect in batches of at most 50. It adds no content or properties and stores no queue on
-disk, keeping best-effort delivery independent of browser storage and leaving no behavioral history on a
-possibly shared device. Reloading loses that queue; failed attempted sends remain fire-and-forget.
+The beacon sends what it has queued in batches of at most 50: as keepalive requests once 20 events wait, five
+seconds after the first and on reconnect, and through `navigator.sendBeacon` when the page hides (a keepalive
+request where the browser refuses the beacon). Both outlive the page, so a batch sent before or as the page
+leaves still lands when it navigates, reloads or closes (`test/telemetry/beacon.browser.test.js` and
+`test/sw-browser.test.mjs` prove it in Chromium and WebKit). Where the browser takes service worker routes
+(Chromium), `public/sw.js` routes `/v1/` straight to the network: the worker's fetch handler would hand a
+request sent as the page hides back to the network only after the page was gone. While the browser is offline
+it keeps up to 200 newest queued events in memory and sends them on reconnect. It adds no content or
+properties and stores no queue on disk, keeping best-effort delivery independent of browser storage and
+leaving no behavioral history on a possibly shared device. Reloading or closing the page while offline loses
+that queue; failed attempted sends remain fire-and-forget.
 
 Only a deployed build reports as `environment: production`. `scripts/test.mjs` drops the build's DSN, so a test run never reaches
 Sentry, though a branch that predates that rule can still report from CI as `development`: read production's failures under
@@ -26,26 +35,49 @@ refusal text never enter telemetry properties.
 | Events | Meaning |
 |---|---|
 | `sync-start`, `sync-commit`, `sync-release`, `sync-undo` | Local engine and gesture steps |
-| `sync-signin`, `sync-signout`, `sync-auth-paused` | Lineage decisions and authentication transitions |
-| `sync-upgrade`, `sync-persist`, `sync-leader` | Upgrade stop, persistence request result and lock ownership |
-| `sync-refused`, `sync-push-malformed` | Terminal refusals and malformed push responses |
-| `sync-writer` | Transaction enqueue-to-durability latency and initial queue/read latency |
+| `sync-inverse` | An Undo or Redo of a journaled act (engine.md §7.3 Undo of an act). When requested: `ok` when cancelled in place or already settled, `pending` while its slots wait or travel, `unavailable` for an act it cannot invert, `failed` when the transaction did not commit. When a pending request settles: `settled`, with its `applied` and `skipped` operation counts. At the first tab's engine start, while requests still wait: `pending`, with how many are `waiting` and the oldest one's `ageMs` |
+| `sync-signin`, `sync-signout` | Lineage decisions and authentication transitions |
+| `sync-auth-paused` | The active replica's sync stopping for its credential, told once by the transaction that makes the change: `paused` (a `401`, an answer or frame served as another principal, or the shell reading that the browser no longer holds the account's credential), `released` (a sign-in, a sign-out, the shell reading that the browser holds no credential, or a credential deletion that leaves none) |
+| `sync-upgrade` | Sync stopping for an upgrade: `paused` at a `426` or a hello's `minSchema` above the registry; `superseded` when a bundle of a newer store version opens the device store, closing it under this tab (engine.md §7.8), which releases its locks at once (`sync-leader` `released` when it led); `reloaded` as that tab reloads itself, only when that loses nothing on its screen |
+| `sync-persist`, `sync-leader` | Persistence request result and lock ownership |
+| `sync-refused`, `sync-push-malformed` | Terminal refusals, and malformed push responses or receipts: a 400, or a `200` whose receipt or inverse outcomes the replica cannot read, which still acknowledges its entry |
+| `sync-writer` | Transaction enqueue-to-durability latency and initial queue/read latency, sampled: the first 10 writes of each minute that change the store |
 | `sync-digest-mismatch` | Confirmed scope digest disagreed with the server |
 
 Properties are restricted to `scopeKind` (`product`, `tree`, `overlay`, `device`), a nonnegative safe
-integer `seq`, `durationMs` and `queueMs` (capped at 60,000), and `outcome` (`ok`, `denied`, `unavailable`, `pending`, `paused`, `failed`, `acquired`,
-`released`). Failures use only the static operations `storage`, `transport`, `live`, `leadership`,
-`observer` and `auth`. Storage denial is explicit; no volatile fallback replaces durable work. A write
-the device's store cannot commit reports `storage` once and reaches its caller as a `CommitError` of
-kind `store`; an error a caller's read-and-commit function throws passes through unreported.
+integer `seq`, `durationMs` and `queueMs` (capped at 60,000), `applied`, `skipped` and `waiting` (capped at
+1,000), `ageMs` (capped at 30 days), and `outcome` (`ok`, `denied`, `unavailable`, `pending`, `settled`,
+`paused`, `failed`, `acquired`, `released`, `superseded`, `reloaded`). No id or value of an act, request or record enters them.
+Failures reach Sentry with kind `sync`, route `/sync` and no stack, under these static operations only:
 
-The shell reports cookie cleanup, session transition and auth-hint storage failures under static
-`auth` operations. Opening and warming the offline shell reports `offline-shell` to Sentry.
+| Failure | When |
+|---|---|
+| `sync-storage` | The device store did not open, commit or read; an engine step no caller hears (a release, a cleanup, a peer's refresh) failed; a persisted restore failed. A store a newer store version's upgrade closed reports nothing: that is `sync-upgrade` `superseded`, and a write the tab tries afterwards reaches its caller as a `CommitError` of kind `store` |
+| `sync-transport` | A hello, push or pull failed or answered what the engine cannot read, while the replica could sync; a store failure on the way is `sync-storage` alone |
+| `sync-live` | The live socket ended or failed while it was wanted |
+| `sync-leadership` | The tab lock or the channel between tabs failed |
+| `sync-observer` | A listener of the engine, of a scope's observation or of its events threw |
+| `sync-auth` | A sign-in whose hello did not answer as the account signing in, or that threw (a sign-out still open is no failure); a credential deletion the session owner's `clear` could not make |
+
+Storage denial is explicit; no volatile fallback replaces durable work. A write
+the device's store cannot commit reports `storage` once and reaches its caller as a `CommitError` of
+kind `store`; an error a caller's read-and-commit function throws passes through unreported. The engine
+asks no one whose credential the browser holds: the shell tells it what each read of `/v1/me` finds (its
+20-second poll among them), and that read is what releases a paused anon replica.
+
+The shell reports session transition failures as `auth-session`, a refused auth-hint storage write as
+`auth-hint-storage` and a read of `/v1/me` the engine could not take as `auth-credential-held`, each with
+kind `auth`; a cookie cleanup that fails is the engine's `sync-auth`. Opening and warming the offline shell reports `offline-shell` to Sentry.
 The update-required reload emits `sync_upgrade` with `pending`, `ok` or `failed`; a failed
 shell update reports the static `offline-shell-update` operation. A persisted page restore
 reports storage failures and keeps its local records available for a retry.
 Add/Discard and sign-out emit `sync_signin`/`sync_signout` with `outcome: pending`; the engine reports
-completed transitions. Revoking this session uses the sign-out question before clearing its cookie.
+completed transitions. A product that words its own question (`sync.signInWords`, `sync.signOutWords`) tells its steps
+through the words' `onStep` (roadmap's `roadmap_signin` and `roadmap_signout` below); the shell adds none of its own. A
+product's hook into a question that throws (`adoptionAnswer`, `adoptionCount`, `signInWords`, `signOutWords`, the words'
+`onStep`, `signOutNotice`) reports `auth-product-words`, and the shell asks as it would of a product that says nothing. Escape
+on such a sign-in question cancels the sign-in: one write drops the pending sign-in and records the cookie's cleanup, a
+cancel that fails reports `auth-session` and keeps the question, and the cookie is let go as a finished sign-out's is. Revoking this session uses the sign-out question before clearing its cookie.
 Account closure persists its account and current session before the server request and discards local
 account data after it succeeds. The request names the confirmed account; `account-mismatch` retains
 its local data and reports the auth-session failure. A failed local discard reports the same failure; reload and
@@ -62,6 +94,16 @@ the read actually used, so ordinary signed-in cold loads do not repeat a read or
 expected unavailable tree or offline transport failure is not a Sentry Issue.
 Offline copy identifies the REST features that need a connection.
 No account identifier or decision content is included.
+
+The accepted-navigation coordinator reports technical failures to Sentry with kind `navigation`,
+route `/app`, and only `navigation-commit`, `navigation-guard`, `navigation-restore`,
+`navigation-traverse`, `navigation-retain`, `navigation-observer` or `navigation-reconcile`. No URL, history state, key, token, exception text or draft
+is included. Admission creates no product events: existing room and sign-out events occur inside the
+admitted action. A late asynchronous action failure still reports `navigation-commit` after native
+fallback or disposal has revoked its navigation capability; each action reports that failure once and
+cannot revive parked writes. Applied history remains owned until reconciliation or a handoff to newer
+navigation; an error does not drop that responsibility. Admission context carries only the frozen `navigation` or
+`sign-out` kind and is not a telemetry payload. Roadmap registers its shared-field draft blocker and reports its bounded decisions below.
 
 The shell's reporter, `reportError` in `src/telemetry/beacon.js`, takes window errors and unhandled
 rejections from `main.jsx`, render crashes from an `ErrorBoundary` with no `onCrash`, and failed paste
@@ -155,7 +197,10 @@ what a person wrote: `demo_open`'s `treeId` is the one constant the bundle ships
 `test/products/roadmap/observability.test.mjs` reads the code's syntax tree. It fails when a roadmap event name or Sentry
 operation in the code is missing from these tables or a name in the tables is missing from the code, when an event's props
 fit no row of its event or a value reads a content field such as a title or an email, when a count goes around `countBucket`,
-and when a report's operation is not a literal or its error message is built at run time.
+when a report's operation is not a literal or its error message is built at run time, and when a row lists other values than
+the code gives a prop only running code knows: the doors into a step's tree, what an owner's room knows of its trees, why a
+room cannot show its roadmap (`UNSHOWN`) and why a birth planted nothing (`BirthFailure`), with the reasons `roadmap-plant`
+reports under.
 
 ### Events
 
@@ -165,6 +210,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Step | Event | Allowlisted props |
 |---|---|---|
 | Open a roadmap, first resolved view of the visit. `tree` is a tree gone into through a step and `back` the roadmap come back to, each once: a reload of that entry opens by the other doors. An owner's room adds what it knows of the trees its steps open: `none` opens one, every one was `read`, or one stands `unread` | `roadmap_view_open` | `view: board/graph`, `band: phone/tablet/desktop`, `role: owner/reader/demo`, `door: saved/default/link/empty/born/no_graph/tree/back`, `trees?: none/read/unread` |
+| A build whose room reads the device's copy: the room shows its load error instead of a roadmap, once a visit, and why: `unkept` where the browser's copy could not open, as in a browser that keeps nothing (the web holds no replica in memory yet, so such a reader cannot be shown a roadmap), `unopened` where it did not open within ten seconds, `missing` where the device, having its answer, holds no roadmap the person may read at the address (one that is not there, a private one a stranger opens, a hidden subtree), and `unanswered` where the server went ten seconds without an answer before the device held a whole copy of the roadmap, or cannot be reached and the device holds no whole copy of it. A reading a sign-in or Try again runs in the same visit tells nothing more. The bare `#/app` door tells it too, `unkept` or `unopened`, where the copy cannot open and the door stays, unable to say which roadmap is the person's newest | `roadmap_load` | `outcome: unkept/unopened/missing/unanswered` |
 | Switch Board and Graph | `roadmap_view_switch` | `view: board/graph` |
 | Phone column tab | `roadmap_board_column` | `column: locked/upNext/done` |
 | Tablet rail's Show | `roadmap_board_rail` | `column: locked/done` |
@@ -208,13 +254,14 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Create on the canvas, the tablet panel or the empty Graph | `roadmap_board_create` | `step: saved`, `door: canvas/empty`, `view: graph` |
 | Add a pasted plan to the roadmap | `roadmap_board_create` | `step: saved`, `door: paste`, `view: board/graph`, `count: 0/1/2-5/6-20/21+` |
 | Composer's other outcomes | `roadmap_board_create` | `step: failed/retry/discard/cancel` |
-| Planting a new roadmap failed | `roadmap_board_create` | `step: failed`, `door: blank/import/quest` |
-| Edit saved in the composer | `roadmap_board_edit` | `step: saved`, `name: true/false`, `description: true/false`, `kind: true/false`, `prerequisites: true/false` |
-| Edit composer's other outcomes | `roadmap_board_edit` | `step: failed/retry/discard/cancel/unchanged` |
+| Planting a new roadmap failed; where the room reads the device's copy, why nothing was planted: the browser's copy could not open (`unkept`), did not open within ten seconds (`unopened`), or the domain refused the plan, as a name past 200 characters or two kinds of one hue (`refused`) | `roadmap_board_create` | `step: failed`, `door: blank/import/quest`, `reason?: unkept/unopened/refused` |
+| Shared field saved in the step document | `roadmap_board_edit` | `step: saved`, `name: true/false`, `description: true/false`, `kind: true/false`, `prerequisites: true/false` |
+| Shared-field editor actions and outcomes | `roadmap_step_edit` | `step: open/change/guard/keep/discard/cancel/saved/unchanged/invalid/failed/retry/conflict/load_latest/selection_updated/unavailable`, `field: label/description/color/prerequisites` |
+| Retained one-field draft and read-only recovery | `roadmap_step_draft` | `step: retained/view/close/copy/copied/copy_failed/return/return_failed/adopted/unavailable/collision/signout_prompt/discard_prompt/keep/discard/select` |
 | Rename, recolor, link, unlink, reconnect or reorder on the Graph | `roadmap_board_edit` | `step: saved`, `view: graph`, `name: true/false`, `description: true/false`, `kind: true/false`, `prerequisites: true/false`, `order: true/false` |
 | Change a kind in the Graph's legend | `roadmap_board_edit` | `step: saved`, `view: graph`, `legend: rename/describe/add/remove/recolor` |
-| Prerequisite picker | `roadmap_board_picker` | `step: open/cancel/more/revalidated`, `mode: create/edit` |
-| Picker applied | `roadmap_board_picker` | `step: apply`, `mode: create/edit`, `count: 0/1/2-5/6-20/21+` |
+| Prerequisite picker | `roadmap_board_picker` | `step: open/cancel/more/revalidated`, `mode: create` |
+| Picker applied | `roadmap_board_picker` | `step: apply`, `mode: create`, `count: 0/1/2-5/6-20/21+` |
 | Delete's confirmation | `roadmap_board_delete` | `step: confirm/cancel`, `view: board/graph` |
 | Delete held for nine seconds | `roadmap_board_delete` | `step: held`, `door: menu/key/bulk`, `view: board/graph` |
 | Held delete released | `roadmap_board_delete` | `step: sent`, `via: timer/replaced/left`, `view: board/graph` |
@@ -225,6 +272,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Phone selection ends | `roadmap_board_select` | `step: end`, `via: done/back/acted/emptied/left` |
 | Graph multi-select starts or ends | `roadmap_board_select` | `step: start/end`, `view: graph` |
 | Reveal the bulk bar's kinds | `roadmap_board_bulk` | `step: kinds` |
+| Attempt phone bulk Delete with every root selected; nudge the reason | `roadmap_board_bulk` | `step: delete_refused`, `reason: last_root` |
 | Bulk act on the Board | `roadmap_board_bulk` | `step: recolor/delete`, `count: 0/1/2-5/6-20/21+` |
 | Bulk act on the Graph | `roadmap_board_bulk` | `step: recolor/delete`, `count: 0/1/2-5/6-20/21+`, `view: graph` |
 | Workspace in the shared step document | `roadmap_board_workspace` | `action: subtaskAdd/subtaskToggle/subtaskDelete/linkAdd/linkDelete/noteSave/noteDiscard/undo` |
@@ -249,6 +297,10 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Tablet Board load-error recovery switcher | `roadmap_recovery` | `step: open/close/search/expand/collapse/switch/new/browse/retry`, `place: account/device` |
 | Recovery list result; no roadmap IDs, titles, query or counts | `roadmap_recovery` | `step: list`, `place: account/device`, `outcome: available/empty/failed` |
 | Tablet and desktop roadmap switcher; a rename once the request succeeded | `roadmap_sheet` | `step: open/switch/new/browse/rename`, `door: switcher` |
+| The person's roadmaps on the device's copy, once each visit as the list first reads | `roadmap_your_roadmaps` | `step: shown`, `count: 0/1/2-5/6-20/21+` |
+| The person's roadmaps on the device's copy: a row pressed | `roadmap_your_roadmaps` | `step: open` |
+| A roadmap's deletion held on the device's copy, its Undo shown on the person's roadmaps | `roadmap_deletion` | `step: held` |
+| That Undo pressed: `cancelled` within the hold, `released` once the hold had ended and nothing came back | `roadmap_deletion` | `step: undo`, `outcome: cancelled/released` |
 | The switcher's delete once the request succeeded, or for a tree that lives only on this device once the device let it go, and whether its confirmation said that steps in the person's other trees open the tree: `some`, or `none`, as for a row from a server that sends no `openers` or one whose device read failed. `place` is where the deleted tree lived | `roadmap_sheet` | `step: delete`, `door: switcher`, `openers: none/some`, `place: device/account` |
 | The switcher's rename failed | `roadmap_sheet` | `step: rename`, `door: switcher`, `outcome: failed` |
 | The switcher's delete failed, a device tree's refused among them where the device could not read its trees | `roadmap_sheet` | `step: delete`, `door: switcher`, `outcome: failed`, `place: device/account` |
@@ -257,13 +309,13 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Start writing the guide: a click or a tap on its text, Enter, its pencil, or Add guide | `roadmap_guide` | `step: edit`, `via: click/tap/key/pencil/add` |
 | Leave an unchanged Guide edit through Cancel, Close, Escape or the backdrop | `roadmap_guide` | `step: cancel` |
 | Save the guide, its length in code points as a bucket | `roadmap_guide` | `step: save`, `outcome: saved/cleared/unchanged`, `length: 0/1-500/501-2000/2001-4500/4501-5000` |
-| A guide save no door took, and why: `offline` when the request never arrived and the browser reports no connection; `refused` for a 4xx that trying again cannot change, text a door would not admit, or a save by someone who is no longer the owner, which writes through no door; `server` for the server's failure, a 408 or 429, or a request lost while the browser reports a connection; `device` for this device's store or session | `roadmap_guide` | `step: save`, `outcome: failed`, `length: 0/1-500/501-2000/2001-4500/4501-5000`, `reason: offline/refused/server/device` |
+| A guide save no door took, and why: `offline` when the request never arrived and the browser reports no connection; `refused` for a 4xx that trying again cannot change or text a door would not admit; `not-owner` for the owner guard before any write door; `server` for the server's failure, a 408 or 429, or a request lost while the browser reports a connection; `device` for this device's store or session | `roadmap_guide` | `step: save`, `outcome: failed`, `length: 0/1-500/501-2000/2001-4500/4501-5000`, `reason: offline/refused/not-owner/server/device` |
 | Try again on the line a failed guide save left, by its button or by ⌘↩ while Try again stands: the same save runs again, and its own `save` row follows. A held key is one press, so its repeats emit nothing | `roadmap_guide` | `step: retry`, `reason: offline/server/device` |
-| Copy draft on the line a refused guide save left: the whole draft reached the clipboard, or the clipboard refused it | `roadmap_guide` | `step: copy`, `outcome: copied/failed` |
+| Each Copy draft attempt after a server or local ownership refusal, including retries: the current whole draft reached the clipboard, or copying failed. Every attempt emits once when it settles, even if editing, Load latest, leaving or a newer attempt made its UI result stale | `roadmap_guide` | `step: copy`, `outcome: copied/failed` |
 | A guide save that replaced a guide changed elsewhere since its writing began | `roadmap_guide` | `step: conflict` |
 | Discard a changed guide draft, by choice or because the room closed the note over it (the tree changed or the guide stopped being shown), or take the guide saved elsewhere with Load latest | `roadmap_guide` | `step: discard/loadLatest` |
 | Export this roadmap | `roadmap_export` | `outcome: done/failed`, `door: more/sheet` |
-| Settings' Export all | `roadmap_export` | `outcome: done/partial/failed`, `door: settings` |
+| Settings' Export all: `done` where the zip holds every roadmap of the list (a list with none among them), `partial` where it holds some, `failed` where it holds none of several, and `unopened` where the device's copy did not open in time to read the list | `roadmap_export` | `outcome: done/partial/failed/unopened`, `door: settings` |
 | Shortcut help | `roadmap_shortcuts_open` | `view: board/graph` |
 | Fork submitted | `fork_attempt` | `mode: email/instant/browse` |
 | Fork's email answered with a refusal or a failure | `fork_attempt` | `mode: email`, `outcome: invalid/rate_limited/failed` |
@@ -273,15 +325,32 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Gallery Show more or Try again pressed; a page retry emits only its retry press | `roadmap_gallery` | `step: more/retry`, `read: initial/page` |
 | Fork landed | `fork_claim` | `mode: email/instant/browse` |
 | Sync status: offline episode | `roadmap_sync_offline` | `step: shown/cleared`, `pending: 0/1/2-5/6-20/21+` |
+| The server retired this build: the socket's path or a roadmap write route answered `410` `client-update-required`, once per page load, by the door that said it first | `roadmap_sync_retired` | `step: detected`, `door: socket/write` |
+| The retired build's reload: `deferred` when no room was open, or the page was in view or held something open, as the build was retired; `ran` as the page reloads; `suppressed` when this tab already reloaded for it within ten minutes (tried again as the ten minutes end), cannot keep that mark, or a save did not reach a store kept on the device, and the page stays offline | `roadmap_sync_retired` | `step: reload`, `door: socket/write`, `outcome: ran/deferred/suppressed` |
 | Refusal shown, retried or discarded from Board, Graph or the owner step document | `roadmap_sync_refused` | `step: shown/retry/discard`, `lane: structure/progress`, `code: tree-too-large/bad-frame/no-such-tree/server-error/other` |
+| A room on the device's copy: a landing line (§6, flow 48) shown for the first time this visit, under its step's card on a Board that stands uncovered or on the step's page, once per line; the device then clears it from its note. `cameBack` where the person's edit brought the step back, `follows` where a step they made or linked now follows past a step deleted elsewhere. A later opening is quiet | `roadmap_landing` | `rule: cameBack/follows`, `place: board/step` |
+| A build whose room reads the device's copy: a change of the person's that cannot land (§6), one notice of roadmap's that the one list holds or one record the carry-over set aside in its ledger (§8.2), told once per notice or record, however often the engine republishes them: once a page load, and once on this browser where it keeps storage (`localStorage` keeps the ids of the told notices the engine still holds, never their content, and sign-out clears them; a browser that refuses storage tells each again on its next page load), whether or not the list shows it yet | `roadmap_write_cannot_land` | `reason: roadmapDeleted/capFilled/accessEnded/noteTooLong/pastBound` |
+| The one list of what cannot land (flow 49) opened from the account menu's Kept here, with how many changes it shows | `roadmap_kept` | `step: open`, `count: 0/1/2-5/6-20/21+` |
+| A kept change's Copy: its text reached the clipboard, or the clipboard refused it or failed | `roadmap_kept` | `step: copy`, `reason: roadmapDeleted/capFilled/accessEnded/noteTooLong`, `outcome: copied/failed` |
+| Select text, after a kept change's copy failed | `roadmap_kept` | `step: select`, `reason: roadmapDeleted/capFilled/accessEnded/noteTooLong` |
+| A kept change discarded: asked once, and the engine dismissed its notice, or the carry-over's ledger let go of its record. One the engine or the ledger no longer holds, discarded in another tab, closes quietly and emits nothing | `roadmap_kept` | `step: discard`, `reason: roadmapDeleted/capFilled/accessEnded/noteTooLong` |
+| A room on the device's copy: what an Undo or a Redo of the room's own stack came to, once the engine knows; one the server still settles is told when it has. `applied` where it changed what the device holds, `skipped` where it changed nothing, a write the device had not seen standing in its way, `unavailable` where there was nothing to take back (the gesture wrote nothing, or its Undo had nothing). No text and no id leave; the person is shown nothing of a skip | `roadmap_undo` | `action: undo/redo`, `outcome: applied/skipped/unavailable` |
+| A room on the device's copy: a write the domain refused, decided before anything was written (or, rarely, at its commit); a roadmap at its cap and a link that would close a loop are said in the words of the room with the switch off, and any other shows what that room shows for that gesture's failure. No success is shown or emitted for it: a gesture's success toast and `saved` event wait until its write has landed | `roadmap_write_refused` | `write: mark/title/guide/visibility/workspace/note/landing/CreateNode/RenameNode/DescribeNode/SetNodeColor/EditNode/SetNodeOrder/AddEdge/RemoveEdge/ReconnectEdge/DeleteNode/BulkDelete/BulkRecolor/ImportSubgraph/SetNodeTree/AddKind/RenameKind/DescribeKind/RecolorKind/RemoveKind/deleteRoadmap`, `refusal: invalid/gone/taken/tooLarge/full/roadmapGone/unreachable/notARoot/stepOpensARoadmap/depthLimit/other` |
 | Device line shown | `roadmap_device_line` | `step: shown`, `line: anonymous/lapsed`, `place: row/shell` |
 | Device line's phone row tapped | `roadmap_device_line` | `step: sign_in`, `line: anonymous/lapsed`, `place: row` |
 | The demo's roadmap opened | `demo_open` | `treeId: t_9e407a96b5330ebe` |
 | WebGL2 unavailable, once per room visit | `webgl_init_fail` | `band: phone/tablet/desktop` |
 | Press the unavailable Graph option | `roadmap_graph_unavailable` | `band: phone/tablet/desktop` |
-| A roadmap planted from a quest | `birth` | `quest: <authored quest id>`, `steps: 0/1/2-5/6-20/21+`, `local?: true` |
-| A roadmap planted blank or from an import | `birth` | `import?: true`, `steps?: 0/1/2-5/6-20/21+`, `local?: true` |
-| Device roadmaps claimed at sign-in | `claim` | `treeCount: 0/1/2-5/6-20/21+` |
+| A roadmap planted from a quest. `local` where it was planted on this browser signed out: in the browser's anon replica where the room reads the device's copy, which a sign-in adds to the account, else in this device's index for a claim | `birth` | `quest: <authored quest id>`, `steps: 0/1/2-5/6-20/21+`, `local?: true` |
+| A roadmap planted blank or from an import, `local` as a quest's | `birth` | `import?: true`, `steps?: 0/1/2-5/6-20/21+`, `local?: true` |
+| A build whose room reads the device's copy: a run of the carry-over (§8.2), on a load, again as another replica becomes active or the active one is bound to another account, and again as the connection returns to a run that left roadmaps waiting, found what roadmap's old bundle kept in this browser, as counts: the roadmaps made signed out, the server's roadmaps holding changes it had not sent, and the roadmaps with a workspace or with marks left undrained. Emitted with each run that tells something below; a run that writes nothing, deletes nothing and leaves waiting the roadmaps the last run left (a digest of their ids in `localStorage` says which) emits nothing, so old stores that wait on the same thing are told once, not on every load. A browser whose old stores hold nothing emits nothing | `roadmap_carry` | `stage: found`, `roadmaps: 0/1/2-5/6-20/21+`, `changed: 0/1/2-5/6-20/21+`, `workspaces: 0/1/2-5/6-20/21+`, `marks: 0/1/2-5/6-20/21+` |
+| What that run wrote into the replica through the domain's actions, as counts: the roadmaps it created, those of them under a fresh id, the changes, marks and workspace items it wrote, and the records it set aside for the one list | `roadmap_carry` | `stage: carried`, `roadmaps: 0/1/2-5/6-20/21+`, `moved: 0/1/2-5/6-20/21+`, `changes: 0/1/2-5/6-20/21+`, `marks: 0/1/2-5/6-20/21+`, `items: 0/1/2-5/6-20/21+`, `kept: 0/1/2-5/6-20/21+` |
+| The roadmaps that run left in the old stores, where they are others than the last run left: waiting on the account's list or a roadmap's first pull, on the server's answer to whether an id exists, on the server taking a roadmap the carry-over created (the anon replica sends nothing, so one carried there waits until a sign-in adds it to an account), on the replica they belong to (the anon replica's while an account is signed in, an account's while another is active or nobody is), on a load after an index row found with no record, or after a write that failed. A run that its replica's change ended (a sign-in or a sign-out under it) tells no waiting: the next replica's run does | `roadmap_carry` | `stage: waiting`, `roadmaps: 0/1/2-5/6-20/21+` |
+| A Discard answered on roadmap's own question, or an account's closure, took old roadmaps uncarried: a sign-in's Discard, once the sign-in completed with the work it counted gone, the old roadmaps the carry-over had carried into that work; an account's sign-out Discard, through the account's sweep, the old roadmaps that question named; each while its entries held what its question saw. For a closure, every old roadmap whose index row names the account | `roadmap_carry` | `stage: discarded`, `roadmaps: 0/1/2-5/6-20/21+` |
+| The old stores' entries that run deleted once the ledger showed them carried (INV-4), and the server had taken a roadmap the carry-over created, or an index row a load before it found with no record | `roadmap_carry` | `stage: cleared`, `stores: 0/1/2-5/6-20/21+` |
+| Device roadmaps claimed at sign-in, where the room reads roadmap's own sync (the switch off) | `claim` | `treeCount: 0/1/2-5/6-20/21+` |
+| A build whose room reads the device's copy: the sign-in question for the browser's signed-out roadmaps where the account already holds roadmaps (flow 50.01, 50.03), shown, then answered Add or Discard, or cancelled by Escape, which signs the account out and leaves the roadmaps on the browser unsent. `roadmaps` counts the browser's own roadmaps it names; it also names, by their changes, the roadmaps of others the work changes, which its Discard takes too. An account that holds none takes them without a question, and so does one whose signed-out work changes no roadmap of the browser's own: nothing is emitted here, and the engine's `sync-signin` says the sign-in completed | `roadmap_signin` | `step: shown/add/discard/cancel`, `roadmaps: 0/1/2-5/6-20/21+` |
+| A build whose room reads the device's copy: the sign-out question where every unsent change is roadmap's (flow 50.02, 50.04), shown, then answered Keep or Discard, or cancelled by Escape, which stays signed in. `changes` counts the unsent changes, one an act of the person's (a gesture), however many entries it commits, and the changes of the account's roadmaps waiting in the old stores (§8.2), which it names and its Discard takes; it is asked where only those wait. A sign-out with nothing unsent and nothing waiting, or with another product's work or notice, asks in the shell's words and emits nothing here | `roadmap_signout` | `step: shown/keep/discard/cancel`, `changes: 0/1/2-5/6-20/21+` |
 | Roadmap landing opened | `land` | `signedIn: true/false` |
 
 A guide's `saved` and `cleared` mean the session or this device's store took the write: durability on this device, not the
@@ -315,15 +384,17 @@ A step is a thing a reader did or was told. These emit nothing:
 - The read that follows a pointer set or changed while the roadmap is open, when it succeeds or is cut off at its
   ten-second limit: a read cut off reports nothing and leaves the step with nothing said of its tree until a reload.
 - Dismissing a menu, a sheet, Fork or Ask AI; re-picking the order or the shared kind in force; a recolor the session refused;
-  a clean Save, which writes nothing and emits `unchanged` from the edit composer and the guide alone.
+  a clean Save, which writes nothing and emits `unchanged` from the inline field editor and the guide alone.
 - Moving back to a step already open in the visit, closing a step, and system Back or a remote change dropping a note draft.
 - The Prerequisites row with no candidates.
 - The unavailable Graph option's reason opening on hover or focus.
-- A Delete key on a selection that takes every root a roadmap has left, on either view: Delete is not offered, so nothing
-  happened.
+- A Delete key on a selection that takes every root a roadmap has left, on either view. Activating the phone Board's
+  disabled Delete button separately emits `delete_refused` when it nudges the reason.
 - A rebaseline's pending records, an online discard, Saving and Saved. Refusal counts stay local.
 - The camera, the minimap, the legend's highlight and folding, selecting one step, hovering and focus moves.
 - Closing the guide, reading it, its counter appearing and a guide set elsewhere arriving.
+- What the browser kept beside the roadmaps a sign-in's Discard took, swept once the sign-in completes: `roadmap_signin`'s
+  `discard` is the step, and a storage that refuses holds nothing to sweep.
 - The read of the guides above a tree: asked, answered, aborted as the room leaves the tree, or refused with a 4xx. A
   reader, a shared or demo route, a signed-out device, a tree that lives only on this device and a lapsed session make
   no such read.
@@ -335,6 +406,9 @@ A progress-lane rebaseline disables progress controls until its baseline arrives
 change no optimistic marks or ledger and emit no success event; a structure-only rebaseline keeps progress available.
 The existing `roadmap-sync-discard` boundary reports unexpected replacement failures; readers receive no owner
 recovery controls. `roadmap_sync_offline` fires once per offline episode. `roadmap_device_line` `shown` fires once per visit.
+A retired build emits `roadmap_sync_retired` `detected` once per page load, then one reload outcome, or `deferred` followed by
+`ran` or `suppressed`; a page suppressed by the window emits its outcome again as the window ends. A write door it no longer
+sends through fails as a lost request does, with no Issue.
 
 ### Technical failures
 
@@ -347,35 +421,46 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-identity` | The identity row's render | `ViewSwitch` at the row's position |
 | `roadmap-board-step` | The shared step document's render | The step closes |
 | `roadmap-board-composer` | The composer's render | The composer closes |
-| `roadmap-board-create` | A create exception, its toast's Undo failing, or no session on an editable surface | The draft and its Retry stay; the failed Undo's toast closes |
+| `roadmap-board-create` | A create exception, its toast's Undo failing, or no session on an editable surface of a room that reads roadmap's own sync (a room on the replica has none to find) | The draft and its Retry stay; the failed Undo's toast closes |
 | `roadmap-board-edit` | An edit exception, or no session on an editable surface | The draft and its Retry stay |
-| `roadmap-board-recolor` | A recolor exception, its Undo failing, or no session | Selection stays |
+| `roadmap-step-draft-copy` | An unexpected clipboard exception; browser permission and security refusals emit only the failed attempt | The draft stays selectable with Select text and Try again |
+| `roadmap-step-draft-return` | Navigation or matching-editor adoption failed | The retained draft stays available with Try again; nothing is saved |
+| `roadmap-board-recolor` | A recolor exception, its Undo failing, or no session in a room that reads roadmap's own sync | Selection stays |
 | `roadmap-board-delete` | An unexpected held-delete release | The step returns, and its toast says *Couldn't delete* with Retry |
 | `roadmap-step-copy` | An unexpected clipboard exception. Browser permission and security refusals (`NotAllowedError`, `SecurityError`) emit the failed attempt without an Issue; other failures report only the static operation and sanitized stack | *Couldn’t copy link*, Try again and Show link; a failed retry keeps the card, and success uses *Link copied*. Copy and Try again stay disabled while a write is pending, including across step navigation. A newer interaction keeps its focus when failure arrives; nested modal boundaries cover the recovery. A step or link change, dismissal or unmount makes a late result silent |
 | `roadmap-step-restore` | A completion's Undo: a Board or Graph toast, or the step document's inline offer | The offer leaves |
 | `roadmap-graph-undo` | A Graph toast's Undo, or the Board's Undo of a pasted plan, reverting its receipt | The toast closes |
 | `roadmap-tend-undo` | Undo on an Ask AI answer | The toast closes |
 | `roadmap-export` | Building or downloading an export | `roadmap_export` `failed`, no file |
-| `roadmap-export-load` | Settings' Export all reading a roadmap or its marks, by the rules of `roadmap-tree-load` | *Exported 1 of 2 roadmaps.*, or the export's error when none could be read |
+| `roadmap-export-load` | Settings' Export all reading a roadmap or its marks, by the rules of `roadmap-tree-load`; where it reads the device's copy, a roadmap whose read through the domain threw. A roadmap the device has not read and could not read within ten seconds, and a copy that did not open within them, are no Issue, as they are none for the room's load of the device's copy; the sync engine reports its own failures, and `roadmap_export` tells a copy that did not open as `unopened` | *Exported 1 of 2 roadmaps.*, or the export's error when none could be read or the copy did not open |
 | `roadmap-tree-load` | The server answering 5xx or a 200 with no tree or one that does not say where the tree sits (`root`, `parent`, `path`, `depth`), or a request lost while visible, online and still wanted (a refused connection), on the load or on the read that follows a pointer set while the roadmap is open | The load error. On the later read: the step keeps the tree's mark with nothing said of it until a reload |
 | `roadmap-opens-load` | The server could not follow the trees an owner's steps open (`503 opens-unavailable`), on the load or on the read that follows a pointer set while the roadmap is open | On the load: this device's copy of the roadmap, each such step shown as opening a tree with nothing said of it, or the load error where the device holds none. On the later read: the step keeps the tree's mark with nothing said of it until a reload |
-| `roadmap-progress-load` | A server tree's marks, by the rules of `roadmap-tree-load`, or a 200 that is not JSON | The load error and Try again, never a false count |
-| `roadmap-activity-load` | A server tree's activity, by the rules of `roadmap-tree-load`, or a 200 that is not JSON | The room opens with an empty feed |
-| `roadmap-load` | Anything else stopping a load, except a tree neither the server nor this device has | The load error |
-| `roadmap-tree-picker-load` | The tree picker's reads, tagged `read: list` (the person's roadmaps, `GET /v1/trees`) or `read: paste` (the roadmap an address names, `GET /v1/trees/{id}`) and `reason`: `server` for a 5xx, `network` for a request lost while visible and online, `shape` for a 200 that is not a list or a roadmap. At most once per read and reason for each opening of the picker, through `reportUnexpectedFailure` as the guides' read is (`shape` through `reportRoadmapFailure`). None while offline or hidden, for a 403 or another 4xx, or for a 401, which is the room's lapse (the picker tells the room as a refused write does, and the controls go with the session) | For the list, *Couldn’t load your trees* with Try again, never the empty list; for an address, *Couldn’t load this roadmap* with Try again in its place, the rest of the picker standing. No Try again after a 401 |
+| `roadmap-progress-load` | A server tree's marks, by the rules of `roadmap-tree-load`, or a 200 that is not JSON. Where the room reads the device's copy, a reader's read of the owner's marks (`GET /v1/trees/{id}/progress`), by the same rules, once a visit | The load error and Try again, never a false count. Where the room reads the device's copy, the reader's room opens on the steps' seeds, and the demo on its staged marks |
+| `roadmap-activity-load` | A server tree's activity, by the rules of `roadmap-tree-load`, or a 200 that is not JSON; where the room reads the device's copy, once a visit, for a roadmap the server holds: a reader's, or one of the account's. A browser's own roadmap signed out, which the server never held, asks for none | The room opens with an empty feed |
+| `roadmap-load` | Anything else stopping a load, except a tree its reading does not find: neither the server nor this device has it, or the replica holds none the person may read | The load error |
+| `roadmap-tree-picker-load` | The tree picker's reads, tagged `read: list` (the person's roadmaps, `GET /v1/trees`) or `read: paste` (the roadmap an address names, `GET /v1/trees/{id}`) and `reason`: `server` for a 5xx, `network` for a request lost while visible and online, `shape` for a 200 that is not a list or a roadmap. Where the room reads the device's copy both reads are the copy's, an address read by a reading of its own, and `network` is a list read before the copy opened, or an address whose copy did not open or got no answer within `FIRST_COPY_MS`, while visible. At most once per read and reason for each opening of the picker, through `reportUnexpectedFailure` as the guides' read is (`shape` through `reportRoadmapFailure`). None while offline or hidden, for a 403 or another 4xx, or for a 401, which is the room's lapse (the picker tells the room as a refused write does, and the controls go with the session) | For the list, *Couldn’t load your trees* with Try again, never the empty list; for an address, *Couldn’t load this roadmap* with Try again in its place, the rest of the picker standing. No Try again after a 401 |
 | `roadmap-tree-attach` | Attaching, changing or detaching a step's tree throwing before the write applied, or its toast's Undo throwing | The act: *Couldn’t change the tree. Try again.*, the step as it was and the picker open. The Undo: the toast closes |
-| `roadmap-recovery-list` | Tablet Board recovery account/index list read failed; static operation and bounded `place: account/device`, `reason: auth/network/shape/server/read/index`. No IDs, bodies, titles, queries or raw error messages. Device database and corrupt-record failures already judged by `roadmap-device-opens-read` are not reported twice | The list says *Couldn’t load your roadmaps.* and keeps Retry list; no failed account list is combined with device rows. A failed eligibility read shows no device switcher |
+| `roadmap-recovery-list` | Tablet Board recovery account/index list read failed; static operation and bounded `place: account/device`, `reason: auth/network/shape/server/read/index`. No IDs, bodies, titles, queries or raw error messages. Device database and corrupt-record failures already judged by `roadmap-device-opens-read` are not reported twice, nor, where the room reads the device's copy, a list it cannot read before the copy opens, which `roadmap_load` has told | The list says *Couldn’t load your roadmaps.* and keeps Retry list; no failed account list is combined with device rows. A failed eligibility read shows no device switcher |
 | `roadmap-device-opens-read` | A read of the trees that live only on this device, under one tag, `name`: the browser's name for what failed (`QuotaExceededError`, `AbortError`, `UnknownError`, …), `corrupt` for a stored record that does not join, or `other`; never a message. A record that does not join reports once per read and stands unread while the rest are read. A device that cannot read its trees at all (its database will not open, or a record cannot be read) reports once per read: as a device tree's room opens or one of its pointers changes, for the tree picker's list there, for the switcher's list, or as a device tree is deleted. The picker's own `roadmap-tree-picker-load` and the switcher's `roadmap-switcher-delete` do not report it again | A corrupt record: its tree is left out of the picker, a pointer at it is unread, and it is neither counted nor taken from by a delete. A device that cannot read at all: each step that opens a tree keeps the tree's mark and Open tree with nothing said of it until a pointer changes or a reload; the picker says *Couldn’t load your trees* with Try again; the switcher's delete asks its question alone, and pressing Delete removes nothing (`roadmap_sheet` `outcome: failed`), the row standing to try again |
 | `roadmap-device-cascade` | Removing a tree that lives only on this device: the write that takes the steps opening it from one of the other trees here, read, joined or saved, the tree this tab has open included, once per removal however many trees failed, under one tag, `name`, as `roadmap-device-opens-read` has it | The tree is gone and the other trees' steps with it. A tree whose write failed keeps its steps on disk, each now opening a tree that is not found and following its mark; on the tree this tab has open they vanish at once and come back after a reload, to detach or delete by hand |
 | `roadmap-fork` | Fork, from a roadmap or the gallery: a server failure, or a request lost while visible and online | Fork's own error |
 | `roadmap-gallery-load` | A still-wanted initial gallery read or page failed, tagged `read: initial/page` and `reason: server/network/shape`. Server failures and transport loss, including an interrupted body after successful headers, report through `reportUnexpectedFailure`; 4xx and offline or hidden transport loss do not. A fully read successful response whose JSON parse or entry projection throws reports as `shape` through `reportRoadmapFailure`. Only static labels leave; no bodies, cursors, URLs, names or raw messages | The gallery's existing error and Try again; a failed page retains its cards, count and cursor for retry |
-| `roadmap-share` | Publishing or making private: a server failure, or a request lost while visible and online | The dialog's own error |
-| `roadmap-switcher-rename` | The switcher's rename: a server failure, a request lost while visible and online, or an exception | The old name returns |
-| `roadmap-switcher-delete` | The switcher's delete: a server failure, a request lost while visible and online, or an exception | The row stays |
+| `roadmap-share` | Publishing or making private: a server failure, or a request lost while visible and online; on the device's copy, a write the door below reported is not reported again (`BoundaryFailure`) | The dialog's own error |
+| `roadmap-replica-landing` | A room on the device's copy: reading what the device tells of the owner's own changes (§6) threw, once per visit | The room tells no landing line this visit and reads on; the device's note keeps what it holds for the next opening |
+| `roadmap-replica-write` | A room on the device's copy: a write its store did not take, or an Undo, Redo or release of one that threw, its one report (the share dialog and the switcher pass such a failure on unreported), tagged `write` with what it wrote (`mark/title/guide/visibility/workspace/note/landing`, a gesture's kind such as `CreateNode` or `BulkDelete`, or `deleteRoadmap/undeleteRoadmap/undo/redo/release`) | Nothing of that write is drawn: the room shows what the device holds, and a switcher's rename puts the old name back |
+| `roadmap-kept` | The one list's render | The list closes; the account menu still offers it, and opening it again renders it afresh |
+| `roadmap-kept-copy` | A kept change's Copy throwing anything but the browser's refusal (`NotAllowedError`, `SecurityError`) or a missing clipboard, which emit only the failed attempt; only the static operation and sanitized stack frames, never the change's words | Below 1024px *Copy failed. Select the text to copy it.* with Select text; from 1024px nothing is said yet (the board draws no such state) and the text stays selectable |
+| `roadmap-kept-discard` | The engine's dismiss of a kept change's notice throwing, once a Discard; a dismiss the engine answers `false`, the notice no longer held, is no failure and closes the change quietly | The change stays in the list, back on its page with Discard; nothing is said yet (the board draws no such state) |
+| `roadmap-carry-read` | A read of the carry-over that failed, tagged `store` and `name`, as `roadmap-device-opens-read` has it (`corrupt` for a record that does not join): an entry of the old bundle's stores (§8.2) it could not read (`sync`, `index` for the whole index or one row of it, `workspace` or `marks`), once on this browser per entry, a digest of the store and its roadmap kept in `localStorage` so a later load that still cannot read it reports nothing (a browser that refuses storage reports it once a page load); the server's answer to whether an id exists (`server`); or a run that stopped (`replica`). Never a message, an id or a roadmap's words | An unread entry stays where it is, neither carried nor deleted, and every later load tries it again; a roadmap whose record or index row cannot be read is left out whole, and every other row is read. A roadmap whose question failed waits for a later run. A run that stopped stops there: what it carried before stays carried, the ledger showing it, every roadmap after it waits for the next load, and no old store is deleted that the ledger does not show carried |
+| `roadmap-carry-write` | A write of the carry-over that failed, tagged `stage` and `name` as above: `carry`, the act that carries one roadmap, refused by the store, or a roadmap's own creation refused; `clear`, deleting an old store's entry; `notice`, dismissing the notice of a creation the server refused once the roadmap is carried again; `discard`, a sign-in's Discard taking the old roadmaps carried into the work it counted, or the account's sweep taking the old roadmaps its sign-out's Discard named | `carry`: nothing of that roadmap is written, the act being all or nothing, so its old stores stay whole for the next load, which carries it again. `clear`: the entry stays, and the next load deletes it, its ledger showing it carried. `notice`: the refused creation stays in the engine as a notice no list shows. `discard`: the old roadmaps stay; a sign-out's wait for the account's next sign-in, and a sign-in's are carried again into the next anon replica |
+| `roadmap-kept-unexpected` | A notice of roadmap's that no rule of the one list names (the domain's `unexpected`), each notice once as `roadmap_write_cannot_land` tells a kept change, and at most once per code a page load, tagged `code` (`other` where the code is not one a refusal spells) | Nothing: the list does not show it, and the engine keeps it |
+| `roadmap-switcher-rename` | The switcher's rename: a server failure, a request lost while visible and online, or an exception; on the device's copy, a write the door below reported is not reported again (`BoundaryFailure`) | The old name returns |
+| `roadmap-switcher-delete` | The switcher's delete: a server failure, a request lost while visible and online, or an exception; on the device's copy, a write the door below reported is not reported again (`BoundaryFailure`) | The row stays |
 | `roadmap-guide` | The render of the guide's entry on the tree or of its open note | A failed entry is not drawn; a failed note closes |
-| `roadmap-guides-load` | The read of the guides above a tree for its holder (`GET /v1/trees/{id}/guides`), once per read, under the tag `reason`: `unavailable` (`503 guides-unavailable`), `server` (any other 5xx), `network` (a request lost while visible and online) or `shape` (a 200 that is not JSON, holds no array `guides`, or holds an entry without a tree id or a text) | From 744px the entry and viewer keep parent status unknown while retaining the own guide; phones keep the own guide standing. Under `shape` the well-formed guides above still show. What a read brought is dropped when the room leaves the tree or its holder goes, so nothing read earlier stands after a failure |
+| `roadmap-guides-load` | The read of the guides above a tree for its holder (`GET /v1/trees/{id}/guides`), once per read, under the tag `reason`: `unavailable` (`503 guides-unavailable`), `server` (any other 5xx), `network` (a request lost while visible and online) or `shape` (a 200 that is not JSON, holds no array `guides`, or holds an entry without a tree id or a text). A room on the device's copy reads none: its guides above come with its roadmap | From 744px the entry and viewer keep parent status unknown while retaining the own guide; phones keep the own guide standing. Under `shape` the well-formed guides above still show. What a read brought is dropped when the room leaves the tree or its holder goes, so nothing read earlier stands after a failure |
 | `roadmap-guide-save` | A guide save the session could not take, written to this device's store or through `PATCH /v1/trees/{id}`: a server failure, a request lost while visible and online, or an exception | The draft stays open under one line that says why, with Try again, or Copy draft for a refusal; a guide the session takes reports as any structure write does, under `roadmap-sync-*` |
-| `roadmap-plant` | Planting a roadmap, blank, pasted or from a quest: a server failure, a request lost while visible and online, or an exception | The door's own error, or a device roadmap when the server can't be reached |
+| `roadmap-guide-copy` | An unexpected clipboard exception; `NotAllowedError`, `SecurityError` and unavailable clipboard support are expected and report no Issue. Only the static operation and sanitized stack frames reach Sentry, with no draft, identifiers or raw message | The draft stays open with the copy-failure line and Copy draft; stale results leave the current UI unchanged |
+| `roadmap-plant` | Planting a roadmap, blank, pasted or from a quest: a server failure, a request lost while visible and online, or an exception. Where the room reads the device's copy, under the tag `reason: unopened/marks`: a copy that did not open within ten seconds, or a roadmap born whose done steps could not be marked, refused or failed after its creation committed. A browser that keeps nothing and a plan the domain refused are answers, which `roadmap_board_create` tells with its `reason`, and report nothing | The door's own error, or a device roadmap when the server can't be reached; under `marks`, the roadmap opens without the marks its plan brought |
 | `roadmap-tend` | Ask AI's reads and its send: a server failure, a request lost while visible and online, or a 200 that is not JSON | Ask AI's `failed` answer; the bar reopens with its sentence unless explicitly dismissed during the run, and announces the same failure copy when opened |
 | `roadmap-sync-notify` | Notifying after a local write, a server frame, an epoch change or a discard projection | The write's receipt stays |
 | `roadmap-sync-persist` | Storing a local write or mark on a database that opened | The receipt stays; durability is at risk |
@@ -383,21 +468,50 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-sync-progress-mark` | Each invalid progress row skipped while reading server frames, stored records or legacy residue, with only `lane: progress`; shared Sentry deduplication and rate limits apply | Valid marks remain available and sync; invalid rows stay off the wire |
 | `roadmap-sync-restore` | A stored lane or record that cannot be read, once per session | That lane stays out until the server's graft fills it |
 | `roadmap-sync-socket` | A socket with no inbound frame for ten seconds while online and in view, once per session | The Shell's sync status; reconnects keep trying |
+| `roadmap-sync-retire` | A session that throws as the build is retired, reported by the door that said so; the other sessions are retired and the reload is still arranged | That session's room may not stand offline until it is left |
+| `roadmap-sync-probe` | The plain read of the socket's path that follows a socket that never opened, failing for any reason but a lost connection or its ten-second limit. At most one read a minute for the page, none offline | The socket keeps reconnecting, and the next probe waits its minute |
 | `roadmap-sync-dropped` | A write reply or heartbeat pong proves an earlier frame unanswered, once per session, tagged with the first affected `lane: structure/progress` | The write stays pending and is sent again |
 | `roadmap-sync-unlandable` | The socket closed five times running with the lane's first structure frame unanswered, and that frame is heavier than 64 KiB: one the path drops the connection for, as the server does a message past its size limit. A lighter frame is never judged. Once per session, tagged `lane: structure` and the frame's `size` bucket (`under-128k`, `under-256k`, `under-1m`, `over-1m`) | The refused card of a write this browser cannot send; that frame's writes, and the other parts of the acts it carries, stay unsent until Retry, and other writes go on |
 | `roadmap-sync-frame` | A server frame that cannot be parsed or joined, a subscribe answer among them whose `subtrees` holds an entry with no step or no id, or a `subtree` frame that names no step or no subtree, or a step the tree has never held; once per session | The frame is dropped; a lane frame resubscribes. A `subtree` frame's seq is taken and the subtree kept nowhere, until a subscribe answer says which steps own one |
 | `roadmap-sync-discard` | An unexpected discard failure | The refusal stays |
 | `roadmap-sync-refused` | An unexpected refusal, once per bounded code per session, with `code` as a tag | The refusal notice |
 | `auth-session` | An unexpected account refresh failure | The session's existing path |
+| `auth-credential-held` | Telling the engine whose credential a read of `/v1/me` found threw, its store having failed or closed underneath it (a store failure the engine reports as `sync-storage` too); once a page, stack frames only | The read goes on: the shell settles the account it read, and the engine hears the next read, 20 seconds on at most |
+| `auth-product-words` | A product's hook into an account-change question threw, tagged `question`: `adoption` (`adoptionAnswer`, the product's own answer to a sign-in question), `signin` (`signInWords` or `adoptionCount`, the sign-in question's words or its count of the product's records), `signout` (`signOutWords`), `step` (the words' `onStep`, a step of the question told to the product) or `notice` (`signOutNotice`, the product's line on what signing out discards from this tab). Stack frames only: never the product's words, a count or an account | The shell asks as it would of a product that says nothing: the person answers the sign-in question, in the shell's words with the engine's count, and the sign-out question in the next product's words or the shell's, without that product's line or its step event, so signing in and out go on |
 | `billing-subscription` | The subscription read (`GET /v1/subscription`), kind `billing`, under the tag `reason`: `server` for a 5xx, `shape` for a 200 that is not a SubscriptionResponse. A request lost and a 4xx report nothing | The page reads as holding no Windmill One until the next read, at the next focus |
 
 Expected answers are not Issues: a null receipt, a not-ready session on create or delete, a capacity or missing-tree
 refusal, a refused clipboard, a browser refusing storage (one `[sync]` console warning per document, and writes still reach
 the server), a socket unanswered while offline or hidden, a 4xx, a load aborted because the roadmap was left, a request lost offline or behind a hidden
-page. Session expiry, including the 20-second account poll, keeps device work and reaches the lapsed line.
+page, a write a retired build no longer sends. Session expiry, including the 20-second account poll, keeps device work and reaches the lapsed line.
 
 A render failure with no boundary of its own, an uncaught error and an unhandled rejection go through `reportError`, which
 sends the labels and frames the shell's reporter above describes and no exception text.
 
 `scripts/smoke-roadmap.mjs` sends nothing: it blocks the intake and Sentry at the network layer. Any Sentry attempt or
 `client_error` beacon it blocks fails its walk.
+
+Roadmap's one-field recovery reports unexpected clipboard failures as `roadmap-step-draft-copy` and failed
+return/adoption as `roadmap-step-draft-return`, through the existing sanitized Roadmap reporter. Expected
+clipboard permission refusals emit only `roadmap_step_draft` with `step: copy_failed`. Scope-invalidated or
+superseded callbacks cannot expose content, change recovery state or restore focus. Draft values, field contents,
+step and tree identifiers, account identifiers, URLs and raw exception messages are absent from these events.
+Auth reports each throwing product session invalidator as `auth-document-data-invalidate` with a static auth
+operation and no exception stack or message. One invalidator cannot stop the scope fence or the remaining cleanup callbacks.
+
+## Device Coach libraries
+
+The product-neutral Coach engine and AI client are available as libraries; released products do
+not call them yet. The engine's injected telemetry port emits one turn outcome (state, seat kind,
+code, counts, answer byte count and duration) and each ability's bounded name and outcome. Product
+adapters supply event names through the first-party intake when they integrate the library.
+`AiClient` reports defects and unreadable answers through `telemetry/sentry.js` under static
+`ai-call`, and pass-door defects under `ai-pass`. Expected actionable refusals return as outcomes.
+Transport loss, unvalidated HTTP error envelopes or status/code pairs, temporary pass unavailability, a missing host
+record at the seat barrier, and recovery `call_unknown` are quiet. A live `call_unknown` and malformed
+successful protocol replies remain defects; retrying cannot erase admission evidence. Sign-in
+refused while sign-out is pending does not report an auth failure. Stop during preparation or a
+repeated request's headers/error body reports the stopped turn outcome without a technical failure.
+Unexpected host write failures report `agent-host` once per turn. A seat-barrier write failure reports
+before the barrier rejects, without waiting for an in-flight provider to finish.
+No telemetry includes seat keys, call IDs, credentials, prompts, questions, answers or tool results.

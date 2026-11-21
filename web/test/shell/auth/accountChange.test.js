@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DeviceSeat, restoredDeviceHolder } from '../../../src/shell/auth/accountChange.js';
+import { DeviceSeat, ProductQuestions, restoredDeviceHolder } from '../../../src/shell/auth/accountChange.js';
 
 const A = { id: 'u_A', email: 'a@example.com' };
 const B = { id: 'u_B', email: 'b@example.com' };
@@ -192,3 +192,84 @@ for (const guard of ['none', 'anon', 'dormant', 'closed', 'signingOut', 'signOut
       { previous: null, account: null, confirmed: false, lapsed: false });
   });
 }
+
+test('the seat tells the engine whose credential each read found, and a tell that throws is reported once a page while the reads go on', async () => {
+  const told = [], reported = [];
+  let failing = false;
+  const engine = { credentialHeld: async (held) => {
+    told.push(held);
+    if (failing) throw new Error('store closed');
+  } };
+  const seat = new DeviceSeat([], (error) => reported.push(error.message));
+  await seat.tellCredential(engine, A);
+  await seat.tellCredential(engine, null);
+  await seat.tellCredential(engine, undefined);
+  failing = true;
+  await seat.tellCredential(engine, null);
+  await seat.tellCredential(engine, B);
+  assert.deepEqual({ told, reported }, { told: ['u_A', null, undefined, null, 'u_B'], reported: ['store closed'] });
+});
+
+test('a product hook that throws is asked of as one that says nothing, and each throw reports the question it was asked', async () => {
+  const thrown = new Error('the product chunk did not load');
+  const broken = { id: 'broken', sync: {
+    adoptionAnswer: async () => { throw thrown; },
+    adoptionCount: () => { throw thrown; },
+    signInWords: async () => { throw thrown; },
+    signOutWords: () => { throw thrown; },
+  } };
+  const wording = { id: 'wording', sync: { signOutWords: async () => ({ title: 'Sign out?' }) } };
+  const reported = [];
+  const questions = new ProductQuestions([broken, wording], (question, error) => reported.push([question, error]));
+  const due = { kind: 'signed-out', product: 'broken', count: { page: 1 }, counted: ['p1'] };
+  const question = { complete: false, unsent: 0, ready: 0, sent: 0, counted: [] };
+  const answer = await questions.adoptionAnswer({}, due);
+  const count = await questions.adoptionCount({}, due);
+  const words = await questions.signInWords({}, due);
+  const { words: { onStep, ...worded }, ...signOut } = await questions.signOutWords({}, question);
+  assert.deepEqual({
+    answer, count, words,
+    signOut: { ...signOut, words: worded, told: typeof onStep },
+    alone: await new ProductQuestions([broken], (asked, error) => reported.push([asked, error])).signOutWords({}, question),
+  }, { answer: undefined, count: undefined, words: undefined, signOut: { ...question, words: { title: 'Sign out?' }, told: 'function' }, alone: question });
+  assert.deepEqual(reported, [['adoption', thrown], ['signin', thrown], ['signin', thrown], ['signout', thrown], ['signout', thrown]]);
+});
+
+test('a product whose sign-out notice or whose words\' steps throw is heard as one that says nothing there, and each throw reports the question it was asked', async () => {
+  const thrown = new Error('the product chunk did not load');
+  const notice = { line: 'A recording waiting in Talk will be discarded.', download: { label: 'Download recording' } };
+  const steps = [];
+  const broken = { id: 'broken', signOutNotice: () => { throw thrown; },
+    sync: { signInWords: async () => ({ title: 'Add?', onStep: () => { throw thrown; } }) } };
+  const talking = { id: 'talking', signOutNotice: () => notice,
+    sync: { signOutWords: async () => ({ title: 'Sign out?', onStep: (step) => steps.push(step) }) } };
+  const reported = [];
+  const questions = new ProductQuestions([broken, talking, { id: 'quiet', signOutNotice: () => null }],
+    (question, error) => reported.push([question, error]));
+  const notices = questions.signOutNotices();
+  const signIn = await questions.signInWords({}, { kind: 'signed-out', product: 'broken', count: {}, counted: [] });
+  const signOut = await questions.signOutWords({}, { unsent: 0 });
+  signIn.onStep('shown');
+  signOut.words.onStep('keep');
+  assert.deepEqual({ notices, steps, reported, titles: [signIn.title, signOut.words.title] },
+    { notices: [notice], steps: ['keep'], reported: [['notice', thrown], ['step', thrown]], titles: ['Add?', 'Sign out?'] });
+});
+
+test('what products say passes through unchanged, each step told back to it, and a product with no hook leaves the question to the engine and the shell', async () => {
+  const steps = [];
+  const said = { title: 'Add your pages?' };
+  const journal = { id: 'journal', sync: { adoptionAnswer: () => 'add', adoptionCount: () => 0,
+    signInWords: async () => ({ ...said, onStep: (step) => steps.push(step) }) } };
+  const reported = [];
+  const questions = new ProductQuestions([journal, { id: 'gym' }], (question) => reported.push(question));
+  const due = (product) => ({ kind: 'signed-out', product, count: {}, counted: [] });
+  const { onStep, ...words } = await questions.signInWords({}, due('journal'));
+  onStep('shown');
+  assert.deepEqual({
+    journal: [await questions.adoptionAnswer({}, due('journal')), await questions.adoptionCount({}, due('journal')), words],
+    gym: [await questions.adoptionAnswer({}, due('gym')), await questions.adoptionCount({}, due('gym')), await questions.signInWords({}, due('gym'))],
+    signOut: await questions.signOutWords({}, { unsent: 0 }),
+    steps,
+    reported,
+  }, { journal: ['add', 0, said], gym: [undefined, undefined, undefined], signOut: { unsent: 0 }, steps: ['shown'], reported: [] });
+});

@@ -27,15 +27,45 @@ fun Engine.pullRequest(scopes: Collection<ScopeRef>): Json? = write(EngineOperat
         Json.objectOf("scopes" to Json.Arr(pulled.map { Json.objectOf("scope" to Json.of(it.text), "cursor" to replica.cursorOf(it).member("cursor")) }))
     }
 }
+internal fun Engine.endScope(replica: ReplicaState, scope: ScopeRef, kind: String) {
+    val scopes = if (replica.state == "bound" && scope.kind is ScopeRef.Kind.Tree) listOf(scope, ScopeRef.overlay(scope.tree!!)) else listOf(scope)
+    for (endedScope in scopes) {
+        forgetScope(replica, endedScope)
+        replica.forgetJournalScope(endedScope, ended)
+        if (replica.known[endedScope.text] != Json.of("gone")) replica.known[endedScope.text] = Json.of(kind)
+    }
+}
+// §7.5 step 2: what a scope's stored cursor has received whole: its seq, one less while it carries a key, and nothing while booting or without one.
+internal fun ReplicaState.cleanSeq(scope: ScopeRef): Long? = cursorOf(scope).cursor()?.takeIf { it.mode == "live" }?.let { it.seq - if (it.key == null) 0 else 1 }
+// Whether an acked entry of the current epoch is covered: its scope's cursor holds its seq. An opted command's projections are covered one by
+// one, each by its own scope's cursor or its scope's end, and recorded as found, so a later reset never draws one again; the command is
+// covered once every projection is.
 internal fun ReplicaState.covers(entry: Entry): Boolean {
-    val cursor = cursorOf(entry.scope).cursor() ?: return false
-    return cursor.mode == "live" && entry.state == "acked" && entry.json["resultEpoch"] == meta["serverEpoch"] && entry.json.member("resultSeq").long() <= cursor.seq - if (cursor.key == null) 0 else 1
+    if (entry.state != "acked" || entry.json["resultEpoch"] != meta["serverEpoch"]) return false
+    val predictions = entry.predictions ?: return entry.json.member("resultSeq").long().let { seq -> cleanSeq(entry.scope)?.let { seq <= it } } == true
+    val settled = predictions.map { projection ->
+        val clean = cleanSeq(projection.scope)
+        if (known[projection.scope.text] == Json.of("gone") || projection.resultSeq != null && clean != null && projection.resultSeq <= clean) projection.copy(covered = true) else projection
+    }
+    if (settled != predictions) entry.predictions = settled
+    return settled.all { it.covered }
 }
 internal fun Engine.resolveIfCovered(replica: ReplicaState, entry: Entry) { if (replica.covers(entry)) replica.move(entry, "resolve", ended) }
+// One settling transaction of `scope`: the first `count` acked entries it now covers resolve, in commit order. Answers whether covered entries are left.
 internal fun Engine.settle(replica: ReplicaState, scope: ScopeRef, count: Int): Boolean {
-    val covered = replica.entries().filter { it.scope == scope && replica.covers(it) }
+    val covered = replica.entries().filter { entry -> (entry.scope == scope || entry.predictions?.any { it.scope == scope } == true) && replica.covers(entry) }
     covered.take(count).forEach { replica.move(it, "resolve", ended) }
     return covered.size > count
+}
+// A scope the replica no longer holds ends what waits on it: an acked entry of that scope resolves, and an opted command's projection there is covered.
+internal fun Engine.endScopeProjections(replica: ReplicaState, scope: ScopeRef) {
+    for (entry in replica.entries()) {
+        if (entry.state != "acked" || entry !in replica.outbox) continue
+        val predictions = entry.predictions
+        if (predictions == null) { if (entry.scope == scope) replica.move(entry, "resolve", ended); continue }
+        if (predictions.any { it.scope == scope && !it.covered }) entry.predictions = predictions.map { if (it.scope == scope) it.copy(covered = true) else it }
+        resolveIfCovered(replica, entry)
+    }
 }
 internal fun Engine.checkDigest(replica: ReplicaState, scope: ScopeRef, received: Json, seq: Json, appVersion: String) {
     var record = replica.cursorOf(scope)
@@ -60,9 +90,10 @@ internal fun Engine.receiveRows(replica: ReplicaState, scope: ScopeRef, rows: Li
         if (row.lattice.life?.isAlive == false) {
             if (type?.identity == "derived") {
                 val spent = replica.spent[scope.text]?.arr().orEmpty().filter { it.recordKey != row.key }
-                replica.spent[scope.text] = Json.Arr((spent + Json.objectOf("t" to Json.of(row.key.type), "id" to row.key.id.json, "born" to row.lattice.born!!.json)).sortedWith { a, b -> a.recordKey.compareTo(b.recordKey) })
+                val spentId = Json.objectOf("t" to Json.of(row.key.type), "id" to row.key.id.json, "born" to row.lattice.born!!.json, "seq" to Json.of(row.seq))
+                replica.spent[scope.text] = Json.Arr((spent + spentId).sortedWith { a, b -> a.recordKey.compareTo(b.recordKey) })
             }
-            governed.forEach { replica.known[it.text] = Json.of("gone") }
+            governed.forEach { replica.known[it.text] = Json.of("gone"); replica.forgetJournalScope(it, ended); endScopeProjections(replica, it) }
             if (staging) { store.removeStaging(replica.id, scope, row.key) } else store.remove(replica.id, scope, row.key)
             digest = digest.replacing(previous?.json, null)
         } else {
@@ -134,7 +165,7 @@ fun Engine.onPullResponse(request: Json, response: SyncResponse, timing: Request
             else if (replica.cursorOf(scope).member("cursor") != requested) "stale"
             else when (val kind = page.member("kind").str()) {
                 "reset" -> { replica.cursors[scope.text] = replica.cursorOf(scope).with("cursor" to Json.Null); replica.staging.remove(scope.text); store.dropStaging(replica.id, scope); left--; "reset" }
-                "gone", "not-found" -> if (ignoresEnd(replica, scope, kind)) "ignored" else { forgetScope(replica, scope); replica.known[scope.text] = Json.of(kind); left--; kind }
+                "gone", "not-found" -> if (ignoresEnd(replica, scope, kind)) "ignored" else { endScope(replica, scope, kind); left--; kind }
                 else -> null
             }
         }
@@ -198,7 +229,7 @@ fun Engine.onFrame(frame: Json, appVersion: String = "1", replicaID: String = ac
     if (scope.text in replica.known || selectedScopes?.let { scope !in it } == true) return@write "outside"
     if (op in setOf("gone", "not-found")) {
         if (ignoresEnd(replica, scope, op)) return@write "ignored"
-        forgetScope(replica, scope); replica.known[scope.text] = Json.of(op); return@write op
+        endScope(replica, scope, op); return@write op
     }
     val record = replica.cursorOf(scope); val cursor = record.cursor()
     val inline = cursor != null && cursor.mode == "live" && cursor.key == null && !record.flag("behind") && frame["epoch"] == replica.meta["serverEpoch"] && frame.member("seq").long() == cursor.seq + 1 && frame["rows"] != null

@@ -5,6 +5,7 @@ import SyncCore
 // its own plan (§9.3).
 
 public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
+  public let scope: ScopeRef
   let recordID: ID<E>
   let base: E
   let current: E
@@ -16,6 +17,7 @@ public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
   // Only `ActionRunner.save` builds a draft's save, and the kit's test support, which runs one over a product's vectors.
   package init(_ draft: Draft<E>) {
     precondition(draft.current.id == draft.id, "a draft saves its own record \(draft.id), and its current names \(draft.current.id)")
+    scope = draft.scope
     recordID = draft.id
     base = draft.base
     current = draft.current
@@ -26,11 +28,13 @@ public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
   }
 
   // An executor's own new record of a minted type, every field touched.
-  public init(creating value: E) {
-    self.init(creating: value, placement: nil)
+  public init(creating value: E, in scope: ScopeRef) {
+    self.init(creating: value, in: scope, placement: nil)
   }
 
-  init(creating value: E, placement: Placement?) {
+  init(creating value: E, in scope: ScopeRef, placement: Placement?) {
+    precondition(EntityFacts(E.self).scope.map { $0 == scope } ?? true, "\(E.type) cannot be rebound to \(scope)")
+    self.scope = scope
     recordID = value.id
     base = value
     current = value
@@ -41,16 +45,22 @@ public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
   }
 
   public var id: ID<E> { recordID }
-  public var scope: ScopeRef { E.scope }
+
+  // §10.2 Reversible: a save of a type that saves reversibly runs as a one-segment act (§9.6), whose Undo its plan names.
+  public var reversible: Bool { E.savesReversibly }
 
   public func load(_ read: Reader) throws -> SaveDraftLoaded<E> {
+    precondition(read.scope == scope, "a decider loads its bound scope")
     guard let definition = read.registry.type(E.type) else { preconditionFailure("the registry holds no type \(E.type)") }
+    let restore = read.registry.commands.first { $0.engine == .restore && $0.scope == definition.scope && $0.predicts.contains(E.type) }
+    precondition(!reversible || restore != nil, "\(E.type): a reversible save needs its scope kind's restore command")
     let repository = read.repository(E.self)
     let folded = try repository.record(id.record, in: .stored).map { record throws in try E(Fields(record)) }
     let orderField = (E.self as? any Ordered.Type)?.orderField
     let anchor = try orderField.flatMap { field in isNew ? try repository.anchor(placement ?? .bottom, orderField: field) : nil }
     return SaveDraftLoaded(drawn: try repository.find(id, in: .drawn), stored: try repository.find(id, in: .stored), folded: folded,
-                           anchor: anchor, moment: read.moment, definition: definition)
+                           anchor: anchor, moment: read.moment, definition: definition,
+                           restoreCommand: reversible ? restore?.name : nil, creationUndoable: read.registry.creatableFault(definition) == nil)
   }
 
   // §10.2, in order: taken (a creating save), whole, unchanged, gone, create, present again, update.
@@ -69,6 +79,7 @@ public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
   // `Timestamped` entity's at the moment's now, and written with a fresh life. So it is never unchanged, gone or stale,
   // and it retires this device's held removal of it: the newest save wins whole.
   func whole(_ loaded: SaveDraftLoaded<E>) throws(Violation) -> Decision<Saved, R> {
+    precondition(!reversible, "\(E.type): a whole-put save is not reversible")
     let valid = try Valid(current, at: loaded.moment)
     var plan = Plan()
     plan.create(valid)
@@ -94,6 +105,7 @@ public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
     } else {
       plan.create(valid)
     }
+    optInto(&plan, loaded, written: Array(valid.value.fields.keys).uniqueInByteOrder)
     let stamped = valid.value.fields.map { name, value in
       (name, value.isNull && loaded.definition.field(name)?.isTime == true ? JSON(loaded.moment.now.ms) : value)
     }
@@ -106,6 +118,7 @@ public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
     let valid = isNew ? try Valid(current, at: loaded.moment) : try Valid(current, fields: touched, at: loaded.moment)
     var plan = Plan()
     plan.create(valid, fields: touched, from: base)
+    optInto(&plan, loaded, written: touched)
     let written = valid.value.fields
     let values = (loaded.folded ?? base).fields.merging(touched.map { ($0, written[$0] ?? .null) }) { _, touched in touched }
     return .write(plan, Saved(values: values, exists: true))
@@ -123,7 +136,33 @@ public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
     }
     var plan = Plan()
     plan.update(valid, fields: changed, from: base, guarded: E.savesGuarded)
+    optInto(&plan, loaded, written: changed)
     return .write(plan, Saved(values: settled, exists: true))
+  }
+
+  // §10.2 Reversible: the save's Undo, named on its plan. A record the save creates where no record was, and a delete can
+  // take it back, goes again while its own writes are all that changed it. Otherwise each written field or text takes
+  // back its earlier value, an unset one the draft base's, and a record the save brings back to life takes back its life,
+  // dead when unset.
+  func optInto(_ plan: inout Plan, _ loaded: SaveDraftLoaded<E>, written: [String]) {
+    guard let restore = loaded.restoreCommand else { return }
+    let definition = loaded.definition
+    if loaded.drawn == nil && loaded.folded == nil && loaded.creationUndoable {
+      plan.undoBy(.createdRecord(restoreCommand: restore, record: .of(id)))
+      return
+    }
+    let revives = loaded.drawn == nil && definition.life && (definition.identity == .keyed || definition.revivable == true)
+    let before = base.fields
+    let life: [(target: UndoTarget, default: JSON?)] = revives ? [(.life(id), "dead")] : []
+    let fields = written.map { (name: String) -> (target: UndoTarget, default: JSON?) in
+      let field = definition.field(name)
+      switch (field?.writer, field?.kind) {
+      case (.client?, .lww?): return (.field(id, name), before[name] ?? .null)
+      case (.client?, .text?): return (.text(id, name), before[name] ?? .null)
+      default: preconditionFailure("\(E.type).\(name): a reversible save writes client fields and texts")
+      }
+    }
+    plan.undoBy(.fields(restoreCommand: restore, targets: life + fields))
   }
 
   func refusal(_ code: RefusalCode) -> R {
@@ -132,24 +171,30 @@ public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
 }
 
 extension SaveDraft where E: Ordered {
-  public init(creating value: E, placed: Placement) {
-    self.init(creating: value, placement: placed)
+  public init(creating value: E, in scope: ScopeRef, placed: Placement) {
+    self.init(creating: value, in: scope, placement: placed)
   }
 }
 
-// §10.2's load: the record in each view, the stored record visible or not, the anchor of a new ordered draft, the moment.
+// §10.2's load: the record in each view, the stored record visible or not, the anchor of a new ordered draft, the moment;
+// for a reversible save, the restore command of the type's scope kind and whether a delete can take a creation back.
 public struct SaveDraftLoaded<E: Draftable>: Sendable {
   public let drawn: E?, stored: E?, folded: E?, anchor: RecordID?
   public let moment: Moment
   let definition: TypeDef
+  let restoreCommand: String?
+  let creationUndoable: Bool
 
-  init(drawn: E?, stored: E?, folded: E?, anchor: RecordID?, moment: Moment, definition: TypeDef) {
+  init(drawn: E?, stored: E?, folded: E?, anchor: RecordID?, moment: Moment, definition: TypeDef, restoreCommand: String?,
+       creationUndoable: Bool) {
     self.drawn = drawn
     self.stored = stored
     self.folded = folded
     self.anchor = anchor
     self.moment = moment
     self.definition = definition
+    self.restoreCommand = restoreCommand
+    self.creationUndoable = creationUndoable
   }
 }
 
@@ -157,14 +202,17 @@ public struct SaveDraftLoaded<E: Draftable>: Sendable {
 public struct Remove<E: Removable, R: ProductRefusal>: Action {
   let id: ID<E>
 
-  public init(_ id: ID<E>) {
+  public let scope: ScopeRef
+
+  public init(_ id: ID<E>, in scope: ScopeRef) {
+    precondition(EntityFacts(E.self).scope.map { $0 == scope } ?? true, "\(E.type) cannot be rebound to \(scope)")
+    self.scope = scope
     self.id = id
   }
 
-  public var scope: ScopeRef { E.scope }
-
   public func load(_ read: Reader) throws -> E? {
-    try read.repository(E.self).find(id, in: .drawn)
+    precondition(read.scope == scope, "a decider loads its bound scope")
+    return try read.repository(E.self).find(id, in: .drawn)
   }
 
   public func decide(_ loaded: E?, ids: IDSource) throws(Violation) -> Decision<Void, R> {
@@ -181,14 +229,17 @@ public struct Move<E: Ordered, R: ProductRefusal>: Action {
   let id: ID<E>
   let below: ID<E>?
 
-  public init(_ id: ID<E>, below: ID<E>?) {
+  public let scope: ScopeRef
+
+  public init(_ id: ID<E>, in scope: ScopeRef, below: ID<E>?) {
+    precondition(EntityFacts(E.self).scope.map { $0 == scope } ?? true, "\(E.type) cannot be rebound to \(scope)")
+    self.scope = scope
     self.id = id
     self.below = below
   }
 
-  public var scope: ScopeRef { E.scope }
-
   public func load(_ read: Reader) throws -> (moving: E?, above: ID<E>?) {
+    precondition(read.scope == scope, "a decider loads its bound scope")
     let members = try read.repository(E.self).all(in: .drawn)
     guard let index = members.firstIndex(where: { $0.id == id }) else { return (nil, nil) }
     return (members[index], index == members.startIndex ? nil : members[index - 1].id)
@@ -201,4 +252,20 @@ public struct Move<E: Ordered, R: ProductRefusal>: Action {
     plan.move(id, below: below)
     return .write(plan)
   }
+}
+
+extension SaveDraft where E: ProductEntity {
+  public init(creating value: E) { self.init(creating: value, in: E.scope) }
+}
+
+extension SaveDraft where E: ProductEntity & Ordered {
+  public init(creating value: E, placed: Placement) { self.init(creating: value, in: E.scope, placed: placed) }
+}
+
+extension Remove where E: ProductEntity {
+  public init(_ id: ID<E>) { self.init(id, in: E.scope) }
+}
+
+extension Move where E: ProductEntity {
+  public init(_ id: ID<E>, below: ID<E>?) { self.init(id, in: E.scope, below: below) }
 }

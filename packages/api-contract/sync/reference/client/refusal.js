@@ -3,11 +3,14 @@
 // Clock-skew recovery also lowers the stamps no unacked entry is the source of (step 1.5).
 
 import { Clock, maxPair } from '../core/clock.js';
-import { sameJson } from '../core/jcs.js';
+import { jcs, sameJson } from '../core/jcs.js';
 import { moveEntry } from '../core/machines.js';
 import { Stamp } from '../core/stamp.js';
+import { RecordMap } from '../core/references.js';
 import { baseTextKey } from './commit.js';
-import { Dependents, commandRefs, deltasOf, isEmpty, removeDependent } from './dependents.js';
+import { Dependents, deltasOf, isEmpty, removeDependent } from './dependents.js';
+import { remapJournal, settleEnded } from './journal.js';
+import { effectsOf, mergePredictions, predictionsOf } from './projections.js';
 
 function isQueued(entry) {
   return entry.state === 'held' || entry.state === 'ready';
@@ -17,29 +20,33 @@ function laterUnacked(replica, entry) {
   return replica.entries().filter((other) => other.commitOrder > entry.commitOrder && (isQueued(other) || other.state === 'sent'));
 }
 
-// `register`: 'life' or a field name. A create's born moves with its life; a later delta carrying the
-// life register unchanged (a keyed put that keeps presence, §7.1 step 4) follows it.
-function moveRegister(replica, entry, delta, register, n) {
+// `register`: 'life' or a field name of `delta`, which writes `scope`: an opted entry's projection is its own
+// scope's. A create's born moves with its life; a later delta carrying the life register unchanged (a keyed put
+// that keeps presence, §7.1 step 4) follows it.
+function moveRegister(replica, entry, scope, delta, register, n, queuedOnly = false) {
   const current = register === 'life' ? delta.life : delta.f?.[register];
   if (!current || current[1] === n) return;
   const o = current[1];
-  if (register === 'life') {
-    const createsRecord = delta.life[0] === 'alive' && delta.born === o;
-    delta.life = [delta.life[0], n];
-    if (createsRecord) delta.born = n;
-    for (const later of laterUnacked(replica, entry)) {
-      for (const other of deltasOf(later)) {
-        if (other.t !== delta.t || !sameJson(other.id, delta.id)) continue;
+  const createsRecord = register === 'life' && delta.life[0] === 'alive' && delta.born === o;
+  if (register === 'life') delta.life = [delta.life[0], n];
+  else delta.f[register] = [delta.f[register][0], n];
+  if (createsRecord) delta.born = n;
+  followRegister(replica, entry, scope, delta, register, o, n, { createsRecord, queuedOnly: queuedOnly || entry.predictions !== undefined });
+}
+
+// What follows a record's register from stamp `o` to `n` in the entries after `entry`, in `scope`: the
+// borns of a record it creates and the lives that carry it, or the guards on a field.
+function followRegister(replica, entry, scope, record, register, o, n, { createsRecord = false, queuedOnly = false } = {}) {
+  const sameRecord = (other) => other.t === record.t && sameJson(other.id, record.id);
+  for (const later of laterUnacked(replica, entry)) {
+    if (queuedOnly && !isQueued(later)) continue;
+    if (register === 'life') {
+      for (const other of effectsOf(later).filter((effect) => effect.scope === scope).flatMap(({ d }) => d).filter(sameRecord)) {
         if (createsRecord && other.born === o) other.born = n;
         if (other.life?.[1] === o) other.life = [other.life[0], n];
       }
-    }
-    return;
-  }
-  delta.f[register] = [delta.f[register][0], n];
-  for (const later of laterUnacked(replica, entry)) {
-    for (const guard of later.intent.guard ?? []) {
-      if (guard.t === delta.t && sameJson(guard.id, delta.id) && guard.field === register && guard.stamp === o) guard.stamp = n;
+    } else if (later.scope === scope) {
+      for (const guard of later.intent.guard ?? []) if (sameRecord(guard) && guard.field === register && guard.stamp === o) guard.stamp = n;
     }
   }
 }
@@ -55,7 +62,7 @@ function ownRegisters(entry) {
   return own;
 }
 
-const lifeKey = (t, id, stamp) => `${t}|${JSON.stringify(id)}|${stamp}`;
+const lifeKey = (scope, t, id, stamp) => `${scope}|${t}|${JSON.stringify(id)}|${stamp}`;
 
 // The borns and carried life registers of queued entries above admittedHigh whose source no unacked
 // entry holds: no held, ready or sent entry wrote that life register, by a delta or a prediction. Such a
@@ -64,15 +71,15 @@ function unsourced(replica) {
   const unadmitted = (stamp) => Stamp.less(replica.meta.admittedHigh, stamp);
   const written = new Set();
   for (const entry of replica.entries().filter((other) => isQueued(other) || other.state === 'sent')) {
-    for (const [delta, register] of ownRegisters(entry)) if (register === 'life') written.add(lifeKey(delta.t, delta.id, delta.life[1]));
-    for (const delta of entry.predict ?? []) if (delta.life) written.add(lifeKey(delta.t, delta.id, delta.life[1]));
+    for (const [delta, register] of ownRegisters(entry)) if (register === 'life') written.add(lifeKey(entry.scope, delta.t, delta.id, delta.life[1]));
+    for (const { scope, d } of predictionsOf(entry)) for (const delta of d) if (delta.life) written.add(lifeKey(scope, delta.t, delta.id, delta.life[1]));
   }
   const carried = [];
   for (const entry of replica.entries().filter(isQueued)) {
     for (const delta of entry.intent.d ?? []) {
       const creates = delta.life?.[0] === 'alive' && delta.life[1] === delta.born;
-      if (delta.born !== undefined && !creates && unadmitted(delta.born) && !written.has(lifeKey(delta.t, delta.id, delta.born))) carried.push({ delta, key: 'born' });
-      if (delta.life && Stamp.less(delta.life[1], entry.stamp) && unadmitted(delta.life[1]) && !written.has(lifeKey(delta.t, delta.id, delta.life[1]))) {
+      if (delta.born !== undefined && !creates && unadmitted(delta.born) && !written.has(lifeKey(entry.scope, delta.t, delta.id, delta.born))) carried.push({ delta, key: 'born' });
+      if (delta.life && Stamp.less(delta.life[1], entry.stamp) && unadmitted(delta.life[1]) && !written.has(lifeKey(entry.scope, delta.t, delta.id, delta.life[1]))) {
         carried.push({ delta, key: 'life' });
       }
     }
@@ -97,7 +104,7 @@ function recoverSkew(replica, ctx, refused, lastN) {
   const lowered = unsourced(replica);
   for (const { entry, own } of plan) {
     const n = clock.tick();
-    for (const [delta, register] of own) moveRegister(replica, entry, delta, register, n);
+    for (const [delta, register] of own) moveRegister(replica, entry, entry.scope, delta, register, n);
     entry.stamp = n;
     high = Stamp.max(high, n);
   }
@@ -125,19 +132,20 @@ function recoverBase(replica, ctx, refused) {
 // its own dependents are held back (§7.4) until its result, and fold only when it is refused.
 function foldDependents(replica, ctx, source, origin) {
   const dependents = new Dependents(ctx.registry);
-  dependents.absorb(source.scope, deltasOf(source), source.stamp);
+  dependents.absorbEntry(source);
   const folded = [];
   for (const entry of replica.entries().filter((other) => other.commitOrder > source.commitOrder)) {
     const part = dependents.of(entry);
     if (!part.any) continue;
     if (entry.state === 'sent') {
-      folded.push(contentOf(entry));
+      folded.push({ ...contentOf(entry), ...(source.predictions || entry.predictions ? { scope: entry.scope } : {}) });
       entry.orphanOf = origin;
       continue;
     }
     if (!isQueued(entry)) continue;
     dependents.absorbPart(entry, part);
-    folded.push(removeDependent(entry, part));
+    const scoped = source.predictions || entry.predictions;
+    folded.push({ ...removeDependent(entry, part), ...(scoped ? { scope: entry.scope } : {}) });
     if (isEmpty(entry)) {
       entry.orphanOf = origin;
       moveEntry(replica, ctx.ended, entry, 'fold');
@@ -152,6 +160,7 @@ function contentOf(entry) {
   const content = {};
   if (entry.intent.d?.length) content.d = structuredClone(entry.intent.d);
   if (entry.intent.cmd) content.cmd = structuredClone(entry.intent.cmd);
+  if (entry.predictions) content.predictions = structuredClone(entry.predictions);
   return content;
 }
 
@@ -163,6 +172,7 @@ function refuse(replica, ctx, entry, event, { code, detail }) {
   if (detail !== undefined) notice.detail = detail;
   if (dependents.length) notice.content.dependents = dependents;
   replica.notices.push(notice);
+  settleEnded(replica, code);
 }
 
 // An orphan's refusal, by the server or as outgrown, ends it with no notice of its own; its held-back
@@ -171,6 +181,7 @@ function refuse(replica, ctx, entry, event, { code, detail }) {
 function refuseOrphan(replica, ctx, orphan, event = 'refuse') {
   moveEntry(replica, ctx.ended, orphan, event);
   const dependents = foldDependents(replica, ctx, orphan, orphan.orphanOf);
+  settleEnded(replica, 'refused');
   if (dependents.length === 0) return;
   const notice = replica.notices.find((candidate) => candidate.id === `notice:${orphan.orphanOf}`);
   if (!notice) throw new Error(`notice:${orphan.orphanOf}, which ${orphan.localId}'s orphanOf names, is gone (D-17 keeps it)`);
@@ -178,11 +189,41 @@ function refuseOrphan(replica, ctx, orphan, event = 'refuse') {
   delete notice.dismissed;
 }
 
-// D-17: a product dismisses a notice, which hides it until content folds into it.
+// D-17: a product dismisses a notice, which hides it until content folds into it; true iff the replica holds it. A
+// notice the replica does not hold is left alone: dismissing it changes nothing and is no failure.
 export function dismiss(replica, noticeId) {
   const notice = replica.notices.find((candidate) => candidate.id === noticeId);
-  if (!notice) throw new Error(`${noticeId} is not a notice of ${replica.id}`);
+  if (!notice) return false;
   notice.dismissed = true;
+  return true;
+}
+
+// §7.6: one product's notices in every scope, each the durable notice whole, but those dismissed (D-17). It reads no
+// scope's rows, so a notice of a scope the device no longer holds or observes, one known gone among them, is still read.
+export function noticesOfProduct(replica, registry, product) {
+  return replica.notices.filter((notice) => !notice.dismissed && registry.productOfRef(notice.scope) === product);
+}
+
+// Observed-scope copy only; the durable notice retains its origin and complete content for discard/copy.
+export function noticesInScope(replica, scope) {
+  const project = (content, origin) => {
+    const here = content.scope ?? origin;
+    const d = [...(here === scope ? content.d ?? [] : []), ...(content.predictions ?? []).filter((item) => item.scope === scope).flatMap(({ d }) => d)];
+    const dependents = (content.dependents ?? []).map((child) => project(child, here)).filter(Boolean);
+    if (here !== scope && d.length === 0 && dependents.length === 0) return null;
+    const out = {};
+    if (d.length) out.d = structuredClone(d);
+    // Command argument references belong to the origin, never a target's repeated singleton id.
+    if (here === scope && content.cmd) out.cmd = structuredClone(content.cmd);
+    if (dependents.length) out.dependents = dependents;
+    return out;
+  };
+  return replica.notices.flatMap((notice) => {
+    const scoped = notice.content.predictions || notice.content.dependents?.some((content) => content.scope || content.predictions);
+    if (!scoped) return notice.scope === scope ? [notice] : [];
+    const content = project(notice.content, notice.scope);
+    return content ? [{ ...notice, content }] : [];
+  });
 }
 
 // §7.4: a ready entry that grew after commit past a request alone ends too-large before it is numbered,
@@ -200,86 +241,111 @@ export function onRefused(replica, ctx, entry, result, response) {
   refuse(replica, ctx, entry, 'refuse', result);
 }
 
-function rewriteId(registry, delta, w) {
-  if (delta.t === w.t && sameJson(delta.id, w.from)) delta.id = w.id;
-  const type = registry.type(delta.t);
-  if (type.key?.ref === w.t && sameJson(delta.id, w.from)) delta.id = w.id;
-  if (type.key?.tuple) delta.id = delta.id.map((part, index) => (type.key.tuple[index].ref === w.t && part === w.from ? w.id : part));
-  for (const [name, register] of Object.entries(delta.f ?? {})) {
-    if (type.field(name)?.ref === w.t && register[0] === w.from) delta.f[name] = [w.id, register[1]];
-  }
-}
-
-function rewriteEntry(registry, entry, w, replay = false) {
-  if (replay && entry.intent.cmd) {
+// §7.7 write map and E-8: one queued entry renamed by one logical map, atomically. Every delta, guard,
+// receipt row, argument and base text key is renamed by its compiled leaves, global mappings first and then scoped ones
+// in the scopes the governor mappings leave; then its ScopeRefs follow the governors. `replayed` are
+// the mappings that re-address a retained command (step 0): an argument naming its own source moves to
+// the record that source now resolves to, even a proposed creation.
+function rewriteEntry(registry, entry, map, { predictionOnly = false, replayed = [] } = {}) {
+  const { references } = registry;
+  const scope = entry.scope;
+  const moves = new Map();
+  for (const mapping of predictionOnly ? [] : replayed) {
+    if (registry.type(mapping.t)?.idSpace !== 'global' && map.scope(mapping.scope) !== map.scope(scope)) continue;
     for (const target of entry.writeTargets ?? []) {
-      if (target.t !== w.t || !sameJson(target.id, w.from)) continue;
-      const refs = commandRefs(registry, entry.intent.cmd).filter((ref) => ref.t === w.t && sameJson(ref.id, target.from));
-      for (const ref of refs) entry.intent.cmd.args[ref.name] = w.id;
-      if (refs.length) target.from = w.id;
+      if (target.t === mapping.t && sameJson(target.id, mapping.from)) moves.set(`${target.t}|${jcs(target.from)}`, mapping.id);
     }
   }
-  for (const delta of deltasOf(entry)) rewriteId(registry, delta, w);
-  for (const guard of entry.intent.guard ?? []) if (guard.t === w.t && sameJson(guard.id, w.from)) guard.id = w.id;
-  if (entry.intent.cmd) {
-    for (const ref of commandRefs(registry, entry.intent.cmd)) if (ref.t === w.t && ref.id === w.from) entry.intent.cmd.args[ref.name] = w.id;
+  const named = predictionOnly || !entry.intent.cmd ? []
+    : [...references.ofCommand(scope, entry.intent.cmd), ...references.ofCommand(scope, entry.intent.cmd, 'creation')];
+  for (const group of predictionOnly ? predictionsOf(entry) : effectsOf(entry)) {
+    for (const delta of group.d) references.remapRecord(group.scope, delta, map);
   }
-  for (const target of entry.writeTargets ?? []) {
-    if (target.t !== w.t) continue;
-    if (sameJson(target.from, w.from)) target.from = w.id;
-    if (sameJson(target.id, w.from)) target.id = w.id;
+  for (const effect of entry.acceptedEffects ?? []) for (const row of effect.rows) references.remapRecord(effect.scope, row, map);
+  if (!predictionOnly) {
+    for (const guard of entry.intent.guard ?? []) references.remapRecord(scope, guard, map);
+    if (entry.baseTexts) {
+      entry.baseTexts = Object.fromEntries(Object.entries(entry.baseTexts).map(([key, text]) => {
+        const [t, id, field] = JSON.parse(key);
+        const record = { t, id };
+        references.remapRecord(scope, record, map);
+        return [baseTextKey(t, record.id, field), text];
+      }));
+    }
+    if (entry.intent.cmd) references.remapCommand(scope, entry.intent.cmd, map, moves);
+    const renamed = (t, id) => (registry.type(t)?.idSpace === 'global' ? map.globalTarget(t, id) : map.scopedTarget(map.scope(scope), t, id)) ?? id;
+    for (const target of entry.writeTargets ?? []) {
+      const moved = moves.get(`${target.t}|${jcs(target.from)}`);
+      const argued = moved !== undefined && named.some((ref) => ref.t === target.t && sameJson(ref.id, target.from));
+      target.from = argued ? structuredClone(moved) : structuredClone(renamed(target.t, target.from));
+      target.id = structuredClone(renamed(target.t, target.id));
+    }
   }
+  if (map.governors.size === 0) return;
+  if (!predictionOnly) entry.intent.scope = entry.scope = map.scope(entry.scope);
+  for (const projection of entry.predictions ?? []) projection.scope = map.scope(projection.scope);
+  for (const effect of entry.acceptedEffects ?? []) effect.scope = map.scope(effect.scope);
+  mergePredictions(entry);
 }
 
-// §7.7 write map: an ok result's map applies in the result's transaction.
+const isEnded = (replica, entry) => replica.entry(entry.localId) !== entry;
+
+// §7.7 write map: an ok result's map applies in the result's transaction. Its target-merged refusals are
+// read first, from the queue as it stood; then the map renames every queued entry at once; then each
+// mapped record's born, predicted registers and retained target follow.
 export function applyWriteMap(replica, ctx, command, write) {
+  if (command.predictions) return applyScopedWriteMap(replica, ctx, command, write);
   const { registry } = ctx;
   const retained = command.writeTargets !== undefined;
   const targets = command.writeTargets ??= [];
-  for (const w of write) {
+  const items = write.map((w) => {
     const source = w.from ?? w.id;
-    const previous = targets.find((target) => target.t === w.t && sameJson(target.from, source));
-    if (previous) {
-      const remap = { ...w, from: previous.id };
-      for (const entry of laterUnacked(replica, command).filter(isQueued)) rewriteEntry(registry, entry, remap, true);
-      if (!sameJson(previous.id, w.id)) {
-        for (const delta of command.predict ?? []) rewriteId(registry, delta, remap);
-      }
-      if (previous.born !== undefined && w.born !== undefined && previous.born !== w.born) {
-        for (const entry of laterUnacked(replica, command)) {
-          for (const delta of deltasOf(entry)) {
-            if (delta.t !== w.t || !sameJson(delta.id, w.id)) continue;
-            if (delta.born === previous.born) delta.born = w.born;
-            if (delta.life?.[1] === previous.born) delta.life[1] = w.born;
-          }
-        }
-      }
-    } else if (retained && w.born !== undefined) {
-      const predicted = (command.predict ?? []).filter((delta) => delta.t === w.t);
-      for (const entry of laterUnacked(replica, command).filter(isQueued)) {
-        if (!replica.entry(entry.localId)) continue;
-        const unmapped = (entry.intent.d ?? []).some((delta) => delta.t === w.t && delta.life?.[0] === 'dead'
-          && !sameJson(delta.id, source) && !sameJson(delta.id, w.id)
-          && (predicted.length === 0 || predicted.some((known) => sameJson(known.id, delta.id))));
-        if (unmapped) refuse(replica, ctx, entry, 'target-merged', { code: 'target-merged' });
-      }
+    return { w, source, previous: targets.find((target) => target.t === w.t && sameJson(target.from, source)) };
+  });
+  for (const { w, source, previous } of items) {
+    if (previous || !retained || w.born === undefined) continue;
+    const predicted = (command.predict ?? []).filter((delta) => delta.t === w.t);
+    for (const entry of laterUnacked(replica, command).filter(isQueued)) {
+      if (isEnded(replica, entry)) continue;
+      const unmapped = (entry.intent.d ?? []).some((delta) => delta.t === w.t && delta.life?.[0] === 'dead'
+        && !sameJson(delta.id, source) && !sameJson(delta.id, w.id)
+        && (predicted.length === 0 || predicted.some((known) => sameJson(known.id, delta.id))));
+      if (unmapped) refuse(replica, ctx, entry, 'target-merged', { code: 'target-merged' });
     }
-    if (!previous && w.from !== undefined) {
-      for (const entry of replica.entries().filter(isQueued)) {
-        if (replica.entry(entry.localId) !== entry) continue; // ended by an earlier target-merged fold
-        const deletesTarget = (entry.intent.d ?? []).some((delta) => delta.t === w.t && sameJson(delta.id, w.from) && delta.life?.[0] === 'dead');
-        if (deletesTarget) {
-          refuse(replica, ctx, entry, 'target-merged', { code: 'target-merged' });
-          continue;
+  }
+  for (const { w, previous } of items) {
+    if (previous || w.from === undefined) continue;
+    for (const entry of replica.entries().filter(isQueued)) {
+      if (isEnded(replica, entry)) continue;
+      const deletesTarget = (entry.intent.d ?? []).some((delta) => delta.t === w.t && sameJson(delta.id, w.from) && delta.life?.[0] === 'dead');
+      if (deletesTarget) refuse(replica, ctx, entry, 'target-merged', { code: 'target-merged' });
+    }
+  }
+  const joins = items.filter(({ w, previous }) => !previous && w.from !== undefined).map(({ w }) => ({ t: w.t, from: w.from, id: w.id, scope: command.scope }));
+  const replayed = items.filter(({ previous }) => previous).map(({ w, previous }) => ({ t: w.t, from: previous.id, id: w.id, scope: command.scope }));
+  const later = new Set(laterUnacked(replica, command));
+  for (const entry of replica.entries().filter(isQueued)) {
+    const mappings = later.has(entry) ? [...joins, ...replayed] : joins;
+    if (mappings.length) rewriteEntry(registry, entry, new RecordMap(registry, mappings), { replayed: later.has(entry) ? replayed : [] });
+  }
+  if (joins.length || replayed.length) remapJournal(registry, replica, new RecordMap(registry, [...joins, ...replayed]));
+  const own = new RecordMap(registry, [...joins, ...replayed.filter(({ from, id }) => !sameJson(from, id))]);
+  for (const delta of command.predict ?? []) registry.references.remapRecord(command.scope, delta, own);
+
+  for (const { w, source, previous } of items) {
+    if (previous?.born !== undefined && w.born !== undefined && previous.born !== w.born) {
+      for (const entry of laterUnacked(replica, command)) {
+        for (const delta of effectsOf(entry).filter(({ scope }) => scope === command.scope).flatMap(({ d }) => d)) {
+          if (delta.t !== w.t || !sameJson(delta.id, w.id)) continue;
+          if (delta.born === previous.born) delta.born = w.born;
+          if (delta.life?.[1] === previous.born) delta.life[1] = w.born;
         }
-        rewriteEntry(registry, entry, w);
       }
-      for (const delta of command.predict ?? []) rewriteId(registry, delta, w);
     }
     for (const delta of command.predict ?? []) {
       if (delta.t !== w.t || !sameJson(delta.id, w.id)) continue;
-      for (const [name, stamp] of Object.entries(w.f ?? {})) moveRegister(replica, command, delta, name, stamp);
-      if (w.born !== undefined) moveRegister(replica, command, delta, 'life', w.born);
+      for (const [name, stamp] of Object.entries(w.f ?? {})) moveRegister(replica, command, command.scope, delta, name, stamp);
+      if (w.born !== undefined) moveRegister(replica, command, command.scope, delta, 'life', w.born);
     }
     const target = previous ?? { t: w.t, from: structuredClone(source), id: structuredClone(w.id) };
     target.id = structuredClone(w.id);
@@ -294,7 +360,7 @@ export function applyWriteMap(replica, ctx, command, write) {
   const clock = new Clock(replica.meta.hlc, ctx.actor, () => physNow);
   for (const entry of replica.entries().filter(isQueued)) {
     const named = [];
-    for (const delta of deltasOf(entry)) {
+    for (const delta of effectsOf(entry).filter(({ scope }) => scope === command.scope).flatMap(({ d }) => d)) {
       for (const w of write) {
         if (delta.t !== w.t || !sameJson(delta.id, w.id)) continue;
         for (const name of Object.keys(w.f ?? {})) if (delta.f?.[name]) named.push([delta, name]);
@@ -303,8 +369,108 @@ export function applyWriteMap(replica, ctx, command, write) {
     }
     if (named.length === 0) continue;
     const n = clock.tick();
-    for (const [delta, register] of named) moveRegister(replica, entry, delta, register, n);
+    for (const [delta, register] of named) moveRegister(replica, entry, command.scope, delta, register, n);
     replica.meta.hlcHigh = Stamp.max(replica.meta.hlcHigh, n);
+  }
+  replica.meta.hlc = clock.pair;
+}
+
+function applyScopedWriteMap(replica, ctx, command, write) {
+  const { registry } = ctx;
+  const retained = command.writeTargets !== undefined;
+  const targets = command.writeTargets ??= [];
+  const items = write.map((item) => {
+    const source = item.from ?? item.id;
+    const previous = targets.find((target) => target.t === item.t && sameJson(target.from, source));
+    return { item, source, previous, from: previous?.id ?? source };
+  });
+  for (const { item, source, previous, from } of items) {
+    for (const entry of laterUnacked(replica, command).filter(isQueued)) {
+      if (isEnded(replica, entry)) continue;
+      const deletes = entry.scope === command.scope && (entry.intent.d ?? []).some((delta) => delta.t === item.t && delta.life?.[0] === 'dead'
+        && (!previous && item.from !== undefined && sameJson(delta.id, from)
+          || retained && !previous && item.born !== undefined && !sameJson(delta.id, source) && !sameJson(delta.id, item.id)));
+      if (deletes) refuse(replica, ctx, entry, 'target-merged', { code: 'target-merged' });
+    }
+  }
+  const moved = items.filter(({ item, from }) => !sameJson(from, item.id));
+  const mappings = moved.map(({ item, from }) => ({ t: item.t, from, id: item.id, scope: command.scope }));
+  const replayed = moved.filter(({ previous }) => previous).map(({ item, from }) => ({ t: item.t, from, id: item.id, scope: command.scope }));
+  if (mappings.length) {
+    const map = new RecordMap(registry, mappings);
+    for (const entry of laterUnacked(replica, command).filter(isQueued)) rewriteEntry(registry, entry, map, { replayed });
+    rewriteEntry(registry, command, map, { predictionOnly: true });
+    remapJournal(registry, replica, map);
+  }
+  for (const { item, source, previous } of items) {
+    if (previous?.born !== undefined && item.born !== undefined && previous.born !== item.born) {
+      for (const entry of laterUnacked(replica, command).filter(isQueued)) for (const group of effectsOf(entry)) {
+        if (group.scope !== command.scope) continue;
+        for (const delta of group.d) {
+          if (delta.t !== item.t || !sameJson(delta.id, item.id)) continue;
+          if (delta.born === previous.born) delta.born = item.born;
+          if (delta.life?.[1] === previous.born) delta.life[1] = item.born;
+        }
+      }
+    }
+    const target = previous ?? { t: item.t, from: structuredClone(source), id: structuredClone(item.id) };
+    target.id = structuredClone(item.id);
+    if (item.born !== undefined) target.born = item.born;
+    if (!previous) targets.push(target);
+  }
+}
+
+// The receipt's accepted versions reach what the command wrote at its own stamps: its predictions move
+// to them, and what later queued entries carry of its ordinary deltas, of its predictions and, on a
+// replay, of its previous receipt follows them. The numbered ordinary deltas themselves never change;
+// views draw them at these versions (effectsOf). Later queued writes of a versioned register reclock.
+export function applyAcceptedVersions(replica, ctx, command, effects, previous = []) {
+  const stamps = effects.flatMap(({ rows }) => rows.flatMap(({ slots }) => slots.filter(({ version }) => version.kind === 'stamp').map(({ version }) => version.stamp)));
+  replica.observe(stamps);
+  replica.raiseAdmittedHigh(stamps);
+  const later = laterUnacked(replica, command).filter(isQueued);
+  const own = new Map(later.map((entry) => [entry, effectsOf(entry).flatMap(({ scope, d }) => d.flatMap((delta) => {
+    const row = effects.find((effect) => effect.scope === scope)?.rows.find((row) => row.t === delta.t && sameJson(row.id, delta.id));
+    return (row?.slots ?? []).flatMap(({ slot }) => {
+      const register = slot.kind === 'life' ? 'life' : slot.kind === 'field' ? slot.name : null;
+      const stamp = register === 'life' ? delta.life?.[1] : delta.f?.[register]?.[1];
+      return stamp !== undefined && Stamp.compare(stamp, entry.stamp) >= 0 ? [{ delta, register, scope }] : [];
+    });
+  }))]));
+  const stampIn = (delta, slot) => slot.kind === 'born' ? delta.born : slot.kind === 'life' ? delta.life?.[1] : delta.f?.[slot.name]?.[1];
+  for (const { scope, rows } of effects) for (const row of rows) {
+    const matches = (delta) => delta.t === row.t && sameJson(delta.id, row.id);
+    const ordinary = scope === command.scope ? (command.intent.d ?? []).filter(matches) : [];
+    const predicted = predictionsOf(command).filter((group) => group.scope === scope).flatMap(({ d }) => d).filter(matches);
+    const prior = previous.find((effect) => effect.scope === scope)?.rows.find(matches)?.slots ?? [];
+    for (const { slot, version } of row.slots) {
+      if (version.kind !== 'stamp') continue;
+      const n = version.stamp;
+      const register = slot.kind === 'field' ? slot.name : 'life';
+      const follow = (o) => {
+        if (o !== undefined && o !== n) followRegister(replica, command, scope, row, register, o, n, { createsRecord: slot.kind === 'born', queuedOnly: true });
+      };
+      const before = prior.find((item) => item.slot.kind === slot.kind && item.slot.name === slot.name)?.version;
+      if (before?.kind === 'stamp') follow(before.stamp);
+      for (const delta of ordinary) follow(stampIn(delta, slot));
+      for (const delta of predicted) {
+        if (slot.kind !== 'born') moveRegister(replica, command, scope, delta, register, n, true);
+        else if (delta.born !== undefined) {
+          const old = delta.born;
+          delta.born = n;
+          if (delta.life?.[0] === 'alive' && delta.life[1] === old) delta.life = ['alive', n];
+          follow(old);
+        }
+      }
+    }
+  }
+  const clock = new Clock(replica.meta.hlc, ctx.actor, () => ctx.deviceNow + replica.meta.serverOffsetMs);
+  for (const entry of later) {
+    const named = own.get(entry);
+    if (!named.length) continue;
+    const stamp = clock.tick();
+    for (const { delta, register, scope } of named) moveRegister(replica, entry, scope, delta, register, stamp, true);
+    replica.meta.hlcHigh = Stamp.max(replica.meta.hlcHigh, stamp);
   }
   replica.meta.hlc = clock.pair;
 }

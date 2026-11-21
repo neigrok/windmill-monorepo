@@ -42,6 +42,16 @@ export function receiptUndo({ session, receipt, before, onReverted, onFailure })
   };
 }
 
+// What a write's success says, once the write has landed: at once on roadmap's own session, whose writes stand as they are
+// made; on the device's copy once every act of it is written, with their results, and never for one that was not.
+export function onceLanded(receipt, landed) {
+  if (!receipt.landed) {
+    landed(null);
+    return;
+  }
+  receipt.landed.then((results) => { if (results) landed(results); });
+}
+
 // A roadmap keeps a root: the one rule every door into a delete asks, on both views and every band, of the tree a hold leaves standing.
 export function takesEveryRoot(tree, ids) {
   const roots = tree?.roots() ?? [];
@@ -56,18 +66,20 @@ export function deletable(tree, ids) {
 export function editGesture(tree, request) {
   const step = tree.nodesById.get(request.id);
   if (!step) return null;
-  const blocked = blockedPrerequisites(tree, request.id);
-  if (request.prerequisites.some((id) => !tree.nodesById.has(id) || blocked.has(id))) return false;
   const gesture = { kind: 'EditNode', id: request.id };
-  if (request.label !== step.label) gesture.label = request.label;
-  if (request.description !== (step.description ?? '')) gesture.description = request.description;
-  if (request.color !== (step.color ?? DEFAULT_NODE_COLOR)) gesture.color = request.color;
-  const requested = new Set(request.prerequisites);
-  const existing = new Set(step.prerequisites);
-  gesture.addPrerequisites = [...requested].filter((id) => !existing.has(id));
-  gesture.removePrerequisites = [...existing].filter((id) => !requested.has(id));
+  if ('label' in request && request.label !== step.label) gesture.label = request.label;
+  if ('description' in request && request.description !== (step.description ?? '')) gesture.description = request.description;
+  if ('color' in request && request.color !== (step.color ?? DEFAULT_NODE_COLOR)) gesture.color = request.color;
+  if ('prerequisites' in request) {
+    const blocked = blockedPrerequisites(tree, request.id);
+    if (request.prerequisites.some((id) => !tree.nodesById.has(id) || blocked.has(id))) return false;
+    const requested = new Set(request.prerequisites);
+    const existing = new Set(step.prerequisites);
+    gesture.addPrerequisites = [...requested].filter((id) => !existing.has(id));
+    gesture.removePrerequisites = [...existing].filter((id) => !requested.has(id));
+  }
   const fieldsChanged = ['label', 'description', 'color'].some((field) => field in gesture);
-  const edgesChanged = gesture.addPrerequisites.length > 0 || gesture.removePrerequisites.length > 0;
+  const edgesChanged = (gesture.addPrerequisites?.length ?? 0) > 0 || (gesture.removePrerequisites?.length ?? 0) > 0;
   if (!fieldsChanged && !edgesChanged) return null;
   return gesture;
 }

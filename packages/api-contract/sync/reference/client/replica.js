@@ -4,6 +4,7 @@
 import { Offset, observedPair } from '../core/clock.js';
 import { CONSTANTS } from '../core/constants.js';
 import { ZERO_DIGEST } from '../core/digest.js';
+import { compareBytes, utf8 } from '../core/encoding.js';
 import { Stamp } from '../core/stamp.js';
 import { compactRow, compareRecords, recordKey, sortedMap } from '../core/rows.js';
 
@@ -18,6 +19,11 @@ function rowsJson(byScope) {
     if (rows.length) out[scope] = rows;
   }
   return out;
+}
+
+// K-3's records in the canonical form: by the UTF-8 bytes of their id.
+function byId(records, key) {
+  return structuredClone(records).sort((a, b) => compareBytes(utf8(a[key]), utf8(b[key])));
 }
 
 function rowsFrom(json) {
@@ -58,6 +64,9 @@ export class Replica {
     this.outbox = structuredClone(json.outbox ?? []);
     this.notices = structuredClone(json.notices ?? []);
     this.device = structuredClone(json.device ?? {});
+    this.journal = structuredClone(json.journal ?? []);
+    this.inverses = structuredClone(json.inverses ?? []);
+    this.cancellations = structuredClone(json.cancellations ?? []);
   }
 
   static fresh({ replica, state = 'anon', account }) {
@@ -86,6 +95,9 @@ export class Replica {
     const device = {};
     for (const product of sortedKeys(this.device)) if (Object.keys(this.device[product]).length) device[product] = sortedMap(this.device[product]);
     if (Object.keys(device).length) out.device = device;
+    if (this.journal.length) out.journal = byId(this.journal, 'actId');
+    if (this.inverses.length) out.inverses = byId(this.inverses, 'requestId');
+    if (this.cancellations.length) out.cancellations = byId(this.cancellations, 'inverseActId');
     return out;
   }
 
@@ -152,9 +164,16 @@ export class Replica {
     return this.spentIds[scope]?.[recordKey(t, id)]?.born;
   }
 
-  addSpent(scope, t, id, born) {
+  // The scope's spent ids as a read-and-commit function reads them (§7.1): `{t, id, born, seq?}` each, `seq` where the
+  // spent id keeps its dead row's.
+  spentRows(scope) {
+    return Object.values(this.spentIds[scope] ?? {}).map(({ t, id, born, seq }) => ({ t, id, born, ...(seq === undefined ? {} : { seq }) }));
+  }
+
+  // §7.5: a dead derived row leaves its record's spent id, which keeps the row's born and seq.
+  addSpent(scope, { t, id, born, seq }) {
     this.spentIds[scope] ??= {};
-    this.spentIds[scope][recordKey(t, id)] = { t, id, born };
+    this.spentIds[scope][recordKey(t, id)] = { t, id, born, seq };
   }
 
   cursorOf(scope) {
@@ -168,9 +187,10 @@ export class Replica {
     delete this.staging[scope];
   }
 
-  // The outbox in commit order.
+  // The outbox in commit order. Commits append in order, so the outbox is sorted unless it was assigned otherwise.
   entries(scope) {
-    const all = [...this.outbox].sort((a, b) => a.commitOrder - b.commitOrder);
+    const all = [...this.outbox];
+    if (all.some((entry, index) => index > 0 && all[index - 1].commitOrder > entry.commitOrder)) all.sort((a, b) => a.commitOrder - b.commitOrder);
     return scope === undefined ? all : all.filter((entry) => entry.scope === scope);
   }
 
@@ -179,17 +199,21 @@ export class Replica {
   }
 
   nextCommitOrder() {
-    return 1 + Math.max(0, ...this.outbox.map((entry) => entry.commitOrder));
+    return 1 + this.outbox.reduce((highest, entry) => Math.max(highest, entry.commitOrder), 0);
   }
 
   removeEntry(localId) {
     this.outbox = this.outbox.filter((entry) => entry.localId !== localId);
   }
 
-  // A gesture id an outbox entry or a notice (`notice:<gestureId>/<k>`) of this replica carries.
+  // A gesture id an outbox entry, a notice (`notice:<gestureId>/<k>`), a reversible act, an inverse request
+  // or a cancellation of this replica carries.
   carriesGesture(gestureId) {
     return this.outbox.some((entry) => entry.gestureId === gestureId)
-      || this.notices.some((notice) => notice.id.slice('notice:'.length, notice.id.lastIndexOf('/')) === gestureId);
+      || this.notices.some((notice) => notice.id.slice('notice:'.length, notice.id.lastIndexOf('/')) === gestureId)
+      || this.journal.some((act) => act.actId === gestureId)
+      || this.inverses.some((request) => request.requestId === gestureId || request.inverseActId === gestureId)
+      || this.cancellations.some((cancellation) => cancellation.inverseActId === gestureId);
   }
 
   deviceRows(product) {

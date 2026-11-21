@@ -7,8 +7,8 @@ pub use anthropic::{
 };
 pub use realtime::{LiveAuth, LiveClient, LiveConfig, LiveEvent, LiveSession};
 pub use text::{
-    AssistantMessage, Effort, Message, Output, Part, TextClass, TextRequest, Tool, ToolCall,
-    ToolResult, ValidationError,
+    AssistantMessage, Effort, Image, Message, Output, Part, Picture, TextClass, TextRequest, Tool,
+    ToolCall, ToolResult, ValidationError,
 };
 
 use serde::Serialize;

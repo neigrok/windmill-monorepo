@@ -14,7 +14,9 @@ namespace wm::sync {
 // D-26: a derived id from a label. Every UTF-8 byte outside [A-Za-z0-9] separates words, words join
 // lowercased with one '-', the base stops at 40 characters before a trailing '-' drops, an empty base
 // takes `fallback`, and a taken id takes the first free suffix -2, -3, ... on the base.
-std::string deriveId(std::string_view label, std::string_view fallback, const std::set<std::string>& taken);
+// A bound counts Unicode scalars and reserves suffix room, refusing a suffix without a nonempty stem.
+std::string deriveId(std::string_view label, std::string_view fallback, const std::set<std::string>& taken,
+                     std::optional<std::size_t> maxChars = std::nullopt);
 
 // D-8: a seeded id `<seed>-<n>`, as unique and unpredictable as its seed.
 struct SeededId {

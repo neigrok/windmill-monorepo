@@ -171,10 +171,9 @@ import XCTest
     XCTAssertTrue(app.staticTexts[count + logged < 4 ? "Ended early." : "Well done."].waitForExistence(timeout: 20))
     let options = app.buttons["workout-receipt-options"]
     XCTAssertTrue(options.waitForExistence(timeout: 5)); options.tap()
-    let discard = app.buttons["Discard workout"]
+    let discard = app.buttons["Discard workout"], around = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
     XCTAssertTrue(discard.waitForExistence(timeout: 5))
-    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-    XCTAssertTrue(discard.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.tap({ around.tap() }, until: { discard.waitForNonExistence(timeout: 5) }), "The open options must close")
     XCTAssertTrue(app.buttons["workout-share-coach"].exists)
     XCTAssertTrue(app.buttons["workout-done"].exists)
     if keep { XCTAssertEqual(app.buttons["workout-keep"].label, "Only on this phone · Keep it") }
@@ -301,10 +300,13 @@ import XCTest
     XCTAssertEqual(accessory.label, "Integration A, in progress")
     let routine = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "routine-", "Integration A,")).firstMatch
     XCTAssertTrue(routine.waitForExistence(timeout: 5)); routine.tap()
-    XCTAssertTrue(app.buttons["routine-close"].waitForExistence(timeout: 5))
+    let close = app.buttons["routine-close"]
+    XCTAssertTrue(close.waitForExistence(timeout: 5))
     XCTAssertFalse(accessory.isHittable)
-    app.buttons["routine-close"].tap()
-    XCTAssertTrue(accessory.wait(for: \.isHittable, toEqual: true, timeout: 5)); accessory.tap()
+    // The tab bar rebuilds its accessory as the summary leaves, so the accessory is asked once the summary has gone.
+    close.tap()
+    XCTAssertTrue(close.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(accessory.waitForHittable(timeout: 5)); accessory.tap()
     XCTAssertTrue(app.buttons["workout-log"].waitForExistence(timeout: 5))
   }
   func testAnonymousWorkoutAdoptedAtSignIn() throws {

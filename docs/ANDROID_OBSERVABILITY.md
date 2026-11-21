@@ -41,6 +41,15 @@ names something the code still sends.
 
 ## Failures
 
+The product-neutral Coach libraries have an opt-in `CoachTelemetry` adapter. Its static failure
+operations are `ai-pass` for unexpected credential failures, `ai-call` for malformed service
+answers and other call defects, and `agent-host` for unexpected runtime or storage failures.
+Expected offline, proxy responses without a valid service refusal, recognized temporary pass
+refusals, removed-record and stale-seat interruptions are quiet. Recovery `call_unknown` is also
+quiet because the mark may precede dispatch; a live `call_unknown` remains an `ai-call` defect. Products supply the
+adapter's turn and ability event callbacks, with bounded outcomes and counts; the libraries name
+no product event and are not connected to the released Coach screens.
+
 `telemetry.failure(operation, error, properties)` sends one `client_error` event and one Sentry
 Issue, both under the static operation. It sends neither for an expected answer:
 

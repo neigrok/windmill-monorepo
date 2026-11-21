@@ -89,12 +89,12 @@ TEST(write_http_a_retired_path_answers_410_before_auth_body_parsing_or_handler_w
   HttpWriteCapture capture;
   installWriteReporter(std::shared_ptr<FailureReporter>(&capture, [](FailureReporter*) {}));
   auto tombstone = [](const drogon::HttpRequestPtr&, WriteHttpCallback&& callback, const std::string&) {
-    callback(retiredWriteResponse());
+    callback(retiredRouteResponse());
   };
   Json::Value expected(Json::objectValue);
   expected["error"] = "This version of the app can no longer save; update it.";
   expected["code"] = "client-update-required";
-  for (const auto method : {drogon::Post, drogon::Put, drogon::Patch, drogon::Delete}) {
+  for (const auto method : {drogon::Get, drogon::Post, drogon::Put, drogon::Patch, drogon::Delete}) {
     const WriteRoute route{"/v1/test/retired/{id}", "test.retired", "gym", "rest", {method}, true};
     auto wrapped = detail::ObservedHttpHandler<decltype(&decltype(tombstone)::operator())>::wrap(route, tombstone);
     for (const char* authorization : {"", "Bearer PRIVATE TOKEN"}) {
@@ -116,10 +116,48 @@ TEST(write_http_a_retired_path_answers_410_before_auth_body_parsing_or_handler_w
       CHECK_EQ(std::string(response->getBody()), std::string(jsonResponse(expected)->getBody()));
     }
   }
-  REQUIRE_EQ(capture.lines.size(), std::size_t{8});
+  REQUIRE_EQ(capture.lines.size(), std::size_t{10});
   for (const auto& line : capture.lines) {
     CHECK_EQ(line.operation, std::string("test.retired"));
     CHECK_EQ(line.product, std::string("gym"));
+    CHECK_EQ(line.door, std::string("rest"));
+    CHECK_EQ(line.outcome, std::string("client-update-required"));
+  }
+  CHECK(capture.issues.empty());
+}
+
+TEST(write_http_a_retired_socket_refuses_its_upgrade_with_the_retired_answer_and_one_line_before_any_credential) {
+  HttpWriteCapture capture;
+  installWriteReporter(std::shared_ptr<FailureReporter>(&capture, [](FailureReporter*) {}));
+  declareWriteRoute({"/v1/test/retired-socket", "test.GET.v1.test.retired.socket", "platform", "rest", {drogon::Get}, true});
+  const auto gate = std::dynamic_pointer_cast<drogon::HttpFilterBase>(drogon::DrClassMap::getSingleInstance("wm::RetiredUpgradeGate"));
+  REQUIRE(gate);
+  Json::Value expected(Json::objectValue);
+  expected["error"] = "This version of the app can no longer save; update it.";
+  expected["code"] = "client-update-required";
+  for (const char* cookie : {"", "wm_session=PRIVATE SESSION"}) {
+    auto upgrade = drogon::HttpRequest::newHttpRequest();
+    upgrade->setMethod(drogon::Get);
+    upgrade->setPath("/v1/test/retired-socket");
+    upgrade->addHeader("Upgrade", "websocket");
+    upgrade->addHeader("Connection", "Upgrade");
+    upgrade->addHeader("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==");
+    if (*cookie) upgrade->addHeader("Cookie", cookie);
+    std::vector<drogon::HttpResponsePtr> refused;
+    bool passed = false;
+    gate->doFilter(upgrade, [&refused](const drogon::HttpResponsePtr& answer) { refused.push_back(answer); },
+                   [&passed] { passed = true; });
+    CHECK_FALSE(passed);
+    REQUIRE_EQ(refused.size(), std::size_t{1});
+    CHECK_EQ(refused[0]->statusCode(), drogon::k410Gone);
+    REQUIRE(refused[0]->getJsonObject());
+    CHECK_EQ(*refused[0]->getJsonObject(), expected);
+    CHECK(retiredRoute(upgrade));
+  }
+  REQUIRE_EQ(capture.lines.size(), std::size_t{2});
+  for (const auto& line : capture.lines) {
+    CHECK_EQ(line.operation, std::string("test.GET.v1.test.retired.socket"));
+    CHECK_EQ(line.product, std::string("platform"));
     CHECK_EQ(line.door, std::string("rest"));
     CHECK_EQ(line.outcome, std::string("client-update-required"));
   }
@@ -479,7 +517,7 @@ TEST(write_http_inventory_covers_every_registered_mutating_route) {
     CHECK(source.find("METHOD_ADD(") == std::string::npos);
     CHECK(source.find("ADD_METHOD_TO(") == std::string::npos);
     CHECK(source.find("registerHandlerViaRegex(") == std::string::npos);
-    if (relative != "platform/adapters/ws/SyncSocket.cpp")
+    if (relative != "platform/adapters/ws/SyncSocket.cpp" && relative != "products/roadmap/adapters/ws/TreeSocket.cpp")
       CHECK(source.find("registerController(") == std::string::npos);
     for (auto match = std::sregex_iterator(source.begin(), source.end(), call);
          match != std::sregex_iterator(); ++match) {
@@ -526,16 +564,6 @@ TEST(main_sets_the_socket_message_limit_from_the_roadmap_contracts_constant) {
   CHECK(std::regex_search(main, std::regex(R"(app\.setClientMaxWebSocketMessageSize\s*\(\s*kMaxSocketMessageBytes\s*\))")));
 }
 
-// A tree's document is written through its room alone, so `/v1/trees/{id}` registers no handler for PUT.
-TEST(roadmap_registers_no_handler_for_put_on_a_tree) {
-  const std::string routes = sourceText(backendPath() / "products/roadmap/routes.cpp");
-  const std::regex registration(R"re("/v1/trees/\{id\}",[\s\S]*?\{drogon::(\w+)\}\))re");
-  std::set<std::string> methods;
-  for (auto match = std::sregex_iterator(routes.begin(), routes.end(), registration); match != std::sregex_iterator(); ++match)
-    methods.insert((*match)[1].str());
-  CHECK(methods == (std::set<std::string>{"Delete", "Get", "Patch"}));
-}
-
 TEST(write_http_registered_retired_routes_equal_the_gym_retirement_ledger) {
   auto& app = drogon::app();
   gym::GymDeps gymDeps{};
@@ -545,7 +573,7 @@ TEST(write_http_registered_retired_routes_equal_the_gym_retirement_ledger) {
 
   std::map<std::string, std::set<std::pair<std::string, std::string>>> registered;
   for (const auto& route : registeredWriteRoutes()) {
-    if (!route.retired) continue;
+    if (!route.retired || (route.product != "gym" && route.product != "journal")) continue;
     CHECK_EQ(route.door, std::string("rest"));
     for (const auto method : route.methods) {
       CHECK(mutatingMethod(method));
@@ -564,4 +592,61 @@ TEST(write_http_registered_retired_routes_equal_the_gym_retirement_ledger) {
   }
   CHECK_EQ(registered["gym"].size(), std::size_t{20});
   CHECK_EQ(registered["gym"], ledger);
+}
+
+TEST(write_http_declared_operation_resolves_before_an_observation_exists) {
+  declareWriteRoute({"/v1/test/early/{id}", "test.early", "platform", "rest", {drogon::Post}});
+  auto request = drogon::HttpRequest::newHttpRequest();
+  request->setPath("/V1/Test/Early/value");
+  request->setMethod(drogon::Post);
+  CHECK_FALSE(request->attributes()->find(kWriteObservationAttribute));
+  CHECK_EQ(httpOperation(request), std::string("test.early"));
+  CHECK_FALSE(request->attributes()->find(kWriteObservationAttribute));
+  request->setMethod(drogon::Get);
+  CHECK_EQ(httpOperation(request), std::string{});
+}
+
+TEST(write_http_declared_policy_covers_early_responses_and_owns_technical_failure_names) {
+  HttpWriteCapture capture;
+  installWriteReporter(std::shared_ptr<FailureReporter>(&capture, [](FailureReporter*) {}));
+  const WriteRoute route{"/v1/test/policy", "test.policy", "platform", "rest", {drogon::Post}, false,
+      {"no-store", "test-issuer", {"test_unconfigured"}}};
+  declareWriteRoute(route);
+  for (const auto status : {drogon::k200OK, drogon::k429TooManyRequests, drogon::k503ServiceUnavailable}) {
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setPath("/V1/Test/Policy");
+    request->setMethod(drogon::Post);
+    auto response = error(status, "private", "test_unconfigured");
+    CHECK_FALSE(request->attributes()->find(kWriteObservationAttribute));
+    applyWriteResponsePolicy(request, response);
+    CHECK_EQ(response->getHeader("cache-control"), std::string("no-store"));
+    CHECK_FALSE(request->attributes()->find(kWriteObservationAttribute));
+    finishWriteRequest(request, response);
+    finishWriteRequest(request, response);
+  }
+  REQUIRE_EQ(capture.lines.size(), std::size_t{3});
+  CHECK_EQ(capture.lines[0].outcome, std::string("ok"));
+  CHECK_EQ(capture.lines[1].outcome, std::string("test_unconfigured"));
+  CHECK_EQ(capture.lines[2].outcome, std::string("test_unconfigured"));
+  CHECK(capture.issues.empty());
+  auto failed = drogon::HttpRequest::newHttpRequest();
+  failed->setPath(route.path);
+  failed->setMethod(drogon::Post);
+  const auto response = error(drogon::k500InternalServerError, "PRIVATE SECRET");
+  writeHttpFailure(failed, std::runtime_error("PRIVATE SECRET"));
+  finishWriteRequest(failed, response);
+  applyWriteResponsePolicy(failed, response);
+  CHECK_EQ(response->getHeader("cache-control"), std::string("no-store"));
+  REQUIRE_EQ(capture.lines.size(), std::size_t{4});
+  CHECK_EQ(capture.lines.back().operation, std::string("test.policy"));
+  CHECK_EQ(capture.lines.back().outcome, std::string("failed"));
+  REQUIRE_EQ(capture.issues.size(), std::size_t{1});
+  CHECK(capture.issues.front().find("test-issuer") != std::string::npos);
+  CHECK(capture.issues.front().find("PRIVATE") == std::string::npos);
+  auto other = drogon::HttpRequest::newHttpRequest();
+  other->setPath(route.path);
+  other->setMethod(drogon::Get);
+  const auto read = drogon::HttpResponse::newHttpResponse();
+  applyWriteResponsePolicy(other, read);
+  CHECK(read->getHeader("cache-control").empty());
 }

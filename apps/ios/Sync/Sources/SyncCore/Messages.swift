@@ -301,6 +301,14 @@ public struct WriteMapEntry: Sendable, Hashable {
 
   // Every stamp the map gives: the born, then each field's.
   public var stamps: [Stamp] { [born].compactMap { $0 } + fields.values }
+
+  public var json: JSON {
+    var object: JSON.Object = ["t": .string(key.type), "id": key.id.json]
+    object["from"] = from?.json
+    object["born"] = born?.json
+    object["f"] = JSON.object(from: fields) { $0.json }
+    return .object(object)
+  }
 }
 
 // D-16 the server's one final answer for an intent.
@@ -327,6 +335,21 @@ public struct PushResult: Sendable, Hashable {
       throw JSONError.shape("\(other) is not a result")
     }
   }
+
+  public var json: JSON {
+    var object: JSON.Object = ["n": JSON(n)]
+    switch verdict {
+    case .ok(let seq, let write):
+      object["s"] = "ok"
+      object["seq"] = JSON(seq)
+      object["write"] = write.map { .array($0.map(\.json)) }
+    case .refused(let code):
+      object["s"] = "refused"
+      object["code"] = code.json
+    }
+    object["detail"] = detail
+    return .object(object)
+  }
 }
 
 public struct PushResponse: Hashable, ResponseBody {
@@ -352,6 +375,22 @@ public struct PushResponse: Hashable, ResponseBody {
     lastN = try json.member("lastN").asInteger()
     results = try json.member("results").asArray().map { try PushResult(json: $0) }.sorted { $0.n < $1.n }
     retry = try json["retry"].map { Retry(n: try $0.member("n").asInteger(), retryAfterMs: try $0.member("retryAfterMs").asInteger()) }
+    guard lastN >= 0 else { throw JSONError.shape("a push response's lastN is negative") }
+    if let retry {
+      guard retry.n >= 1, retry.n <= lastN + 1, retry.retryAfterMs >= 0, results.allSatisfy({ $0.n < retry.n }) else {
+        throw JSONError.shape("a push response continues out of its bounds")
+      }
+    }
+  }
+
+  // The answer as the wire carries it, which an opted command's answer is bounded by (§9.3).
+  public var json: JSON {
+    var object: JSON.Object = [
+      "serverTime": JSON(serverTime), "epoch": .string(epoch), "as": servedAs.map(JSON.string) ?? .null, "lastN": JSON(lastN),
+      "results": .array(results.map(\.json)),
+    ]
+    object["retry"] = retry.map { ["n": JSON($0.n), "retryAfterMs": JSON($0.retryAfterMs)] }
+    return .object(object)
   }
 
   public static func == (lhs: PushResponse, rhs: PushResponse) -> Bool {

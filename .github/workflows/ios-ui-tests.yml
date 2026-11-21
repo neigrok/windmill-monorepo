@@ -15,8 +15,9 @@ on:
         type: string
         required: true
       timeout:
+        description: Total budget for simulator setup, compilation, test execution and cleanup.
         type: number
-        default: 40
+        default: 50
       nightly:
         type: boolean
         default: false

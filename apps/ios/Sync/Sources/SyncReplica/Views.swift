@@ -1,8 +1,9 @@
 import SyncAPI
 import SyncCore
 
-// §7.6 views: a scope's confirmed rows joined with its pending deltas and predictions in commit order. `drawn` folds
-// held entries too, `stored` leaves them out; texts and predicted serials replace the confirmed values.
+// §7.6 views: a scope's confirmed rows joined with its pending deltas and predictions in commit order, an opted entry's
+// only while its projection into the scope is uncovered. `drawn` folds held entries too, `stored` leaves them out; texts
+// and predicted serials replace the confirmed values.
 
 public struct ViewRecord: Sendable, Hashable {
   public var key: RecordKey
@@ -47,8 +48,8 @@ public struct ScopeView: Sendable {
     self.registry = registry
     coverage = replica.rows(scope)
     loaded = coverage.loaded.mapValues(ViewRecord.init)
-    for entry in replica.entriesTouchingReads where entry.scope == scope && (entry.state != .held || mode == .drawn) {
-      for delta in entry.drawnDeltas { try fold(delta) }
+    for entry in replica.entriesTouchingReads where entry.state != .held || mode == .drawn {
+      for delta in entry.deltas(in: scope, active: true) { try fold(delta) }
     }
   }
 

@@ -8,23 +8,25 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. Sections, 
 **Status:** The C++ server (`backend/platform/**/sync*`) carries the engine, with clients in JS
 (`packages/api-contract/sync/reference/core` and `client`, shared with the JS reference, with browser
 I/O in `web/src/platform/sync`), Swift (`apps/ios/Sync`) and Kotlin (`apps/android/sync-*`).
-`windmill_server` serves the gym and
-journal composition on `/v1/sync`, and the engine is the only writer of their records: web (gym,
+`windmill_server` serves gym and journal
+on `/v1/sync`, and the engine is the only writer of their records: web (gym,
 journal), iOS (journal, gym) and Android (gym) write through replicas, a phone's Coach among them, and MCP,
 the web's Coach and gym's import door admit as the server (A.2). Production's gym and journal rows were adopted in place
-(Appendices C and D). `windmill_server_probe` carries the test-only contract.
+(Appendices C and D). `windmill_server_probe` carries the test-only contract. The source composition also
+names roadmap (A.1), whose rules the JS reference model server and the C++ binding carry; `windmill_server` binds
+roadmap and withholds its scopes (§9.2) unless its deployment serves them, as production's does. Production's roadmaps
+were adopted by [Roadmap on the sync engine](roadmap-on-the-engine.md) §8.1.
 
-**Registry contract:** The composed source registry is version 12 with minimum version 11. Gym's
+**Registry contract:** The composed source registry is version 13 with minimum version 11. Gym's
 finite normalized loads have no fixed kg bounds; exact zero is a load and an absent target remains
 last time. Derived volume and estimates are explicit null when unavailable. Older clients must
 upgrade. The explicit `other` equipment value remains supported. All legacy
 equipment values and load counts remain stored without migration. `other` counts one external load,
 and signed set values remain unchanged. Gym also retains the additive `thread` and `message`
-records and `runningTurn` and `picture:<id>` device rows. `composition.json` composes gym and journal,
-whose versions rise together (§2.4); journal's field shape is unchanged. Production's hello advertised
-schema 12 / minimum 11 when last verified; the [coordinated release runbook](../../backend/deploy/README.md#coordinated-client-cutoff)
-holds the receipts. Every other product
-starts from empty stores.
+records and `runningTurn` and `picture:<id>` device rows. `composition.json` composes gym, journal and
+roadmap, whose versions rise together (§2.4); journal's field shape is unchanged. Production's hello advertised
+schema 13 / minimum 11 when last verified; the [coordinated release runbook](../../backend/deploy/README.md#coordinated-client-cutoff)
+holds the receipts. Every other product starts from empty stores.
 
 **Retired REST writes:** gym's former REST write paths answer `410`
 `{"error":"This version of the app can no longer save; update it.","code":"client-update-required"}`
@@ -38,17 +40,16 @@ echoes and nudges stay REST. `/v1/sync` has its own `426 upgrade-required` minim
 - stamps, the HLC and the merge;
 - per-intent admission, results and commands;
 - per-scope sequencing and digests, paged pull and the live channel;
-- the client replica: confirmed cache, durable outbox, undo holds and the device scope;
+- the client replica: confirmed cache, durable outbox, undo holds, the journal of reversible acts and the
+  device scope;
 - the replica lifecycle (claim, sign-out) and conformance.
 
 **Outside the engine** (none of these is a synced record):
-- Presence and remote cursors, carried as ephemeral live-socket messages (§9.5).
 - The global gym exercise seed catalog.
 - The server Coach's legacy gym conversations (`gym_ask_*`, A.2).
 - Gym session shares and log shares; the roadmap share page, images and gallery; the roadmap
   home-list done/total read.
 - Journal echoes, spans, nudges, voice and curation.
-- The roadmap per-node workspace, which is device-only.
 - Auth, billing, entitlements and reminders.
 - Account deletion and export, which remove every scope an account owns.
 
@@ -151,8 +152,12 @@ Every field also has:
 `lww`, `ranked`, `fww`, `const` and `time` fields, life and born are **lattice fields**. `text` and
 `serial` are **server-sequenced**.
 
-**D-10 Reference.** A field or command argument typed `ref<type>` holds an id of that type, or null
-where its domain is nullable. It drives dependent folding and the write map (§7.7).
+**D-10 Reference.** A record identity a registry declares inside a value: a key part of a keyed type, a
+field or command argument typed `ref<type>`, or a typed leaf that a `refPaths` entry names (§2.4
+References). It holds an id of its type, or null where it is nullable, and names the record
+`(scope, t, id)` in the scope it declares. It drives dependent folding and the write map (§7.7). Beyond
+the `parent` rule (§6.1 step 10), a reference requires no record to exist; it grants no access and adds
+no scope to admission's locks or effects.
 
 **D-11 Spent id.** An id whose record is dead, for a type whose death is terminal. A spent id is
 never alive again (INV-2).
@@ -182,8 +187,12 @@ Transitions are in §8.1.
 
 **D-17 Notice.** The durable, per-product client record of a refused intent, holding the code, the
 intent's content and the content of the dependents folded into it (§7.7). A product MAY dismiss a
-notice, which hides it; content that later folds into a dismissed notice shows it again. A notice
-that an outbox entry's `orphanOf` names is never deleted.
+notice, which hides it; content that later folds into a dismissed notice shows it again. A dismissal
+answers true when the active replica holds the notice, dismissed already or not, and leaves it
+dismissed. A notice the active replica does not hold (another replica's, once the active replica
+changed, or an id no notice has) is left alone: its dismissal answers false, as a release does for an
+entry no longer held, changes nothing and is no failure, neither throwing nor reporting. A notice that
+an outbox entry's `orphanOf` names is never deleted.
 
 **D-18 Seq, epoch, cursor.**
 - `seq`: a per-scope counter, incremented once per committed intent that changes the scope.
@@ -232,7 +241,7 @@ views (§7.6).
   its stored place. A member moved below itself is its own anchor: it takes a key between its
   drawn key and the first greater `stored` key, and keeps its place.
 
-**D-26 Derived id.** `derive(label, fallback, taken)`:
+**D-26 Derived id.** `derive(label, fallback, taken, maxChars?)`:
 
 ```
 base := ""
@@ -242,10 +251,26 @@ for each byte c of UTF-8(label):
   else if base ≠ "" and last(base) ≠ '-': append '-'
 remove trailing '-' from base
 if base = "": base := fallback
+if maxChars is present:
+  base := first maxChars Unicode scalars of base, with trailing '-' removed
+  if base = "": fail
 id := base; k := 2
-while id ∈ taken: id := base + "-" + decimal(k); k := k + 1
+while id ∈ taken:
+  suffix := "-" + decimal(k); k := k + 1
+  stem := base
+  if maxChars is present:
+    room := maxChars - |suffix|
+    if room < 1: fail
+    stem := first room Unicode scalars of base, with trailing '-' removed
+    if stem = "": fail
+  id := stem + suffix
 return id
 ```
+
+`maxChars` is the type's `idDomain.max` when it declares an ID domain, and absent for a pattern.
+A bounded derivation keeps the spelling of every retained Unicode scalar; it never normalizes.
+A bound with no room for a nonempty stem and a collision suffix fails as a malformed commit, before
+anything is saved.
 
 `taken` is every alive, spent and pending id of the type in the scope, plus ids already chosen in
 the same gesture.
@@ -334,6 +359,18 @@ class SyncType {
 The engine composes each id's state (§4.2) from `lock`, `elsewhere` and its own tables; a product
 adapter never reads a `sync_*` table. `maxSerial` serves §6.1 step 11.
 
+Rules return `Effects {byScope: Map<ScopeKey, Delta[]>}` with an explicit origin key; the local
+`check` adapter wraps its deltas at that key. `discoverEffectScopes(ctx)` is a pure, default-empty
+hook over the raw intent and stable owner reads. It declares the complete consequence scope
+closure before commands or joined checks run. Command discovery includes the closure of checks
+triggered by its generated deltas. The engine invokes each touched rules object once on the complete
+joined changes; it neither reruns discovery nor computes a recursive fixed point.
+The default local adapter derives its relevant scopes from changes to types bound to that rules
+object, including incoming no-op touches. A sole relevant scope rebinds the adapter's context and
+reader there while preserving the full changes, original intent and caller. More than one relevant
+scope is a technical contract failure unless the rules object supplies scoped effects. A scoped
+effects override retains the explicit origin context.
+
 ### §2.4 The registry
 
 The registry's format is `packages/api-contract/sync/registry.schema.json`, and that schema is
@@ -362,20 +399,32 @@ equipment rows and overrides are not migrated. The open workout's editable plan 
 (A.2): `session.plan` turns from a const server register into a guarded client `lww` register, which a
 client of version 11 never writes and reads as before, and the session's `planRevision` and
 `routineRevision`, the `workoutProposal` type, its two commands and the `plan-logged` code are additive.
-The journal registry carries version 12 with it, since the composed registries declare one version.
+Roadmap's registry joins the composition at version 13, minimum 11 (A.1): its product, types and commands are
+additive, and gym's and journal's registries carry version 13 with it, since the composed registries declare one
+version.
 
-- **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern`,
+- **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern` or `idDomain`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and
   the types their own keys name in turn, never lead back to the keyed type), `singletonId`,
   `derive.fallback` (D-26), `seeded` and `mint` (D-8), `life`, `wholePut`, `revivable`, `deadRows`,
   `governs`, `origins`, `fields`, `cap`, `visibleWhen`, `primary` and `headline`.
 - **Fields:** `kind` (D-9), `writer`, `ref`, `parent`, `unit`, `min`, `max`, `domain`, `default`,
-  `serialNext`, `rank` and `opens`.
+  `serialNext`, `rank`, `opens` and `refPaths`.
 - **Domains** are structured: `string` (`enum`, `pattern`, `unit`, `min`, `max`), `number`
   (`integer`, `min`, `max`, `quantum`), `boolean`, `fracKey` (D-25), `stamp`, `id`, `json`, `array`
   (`items`, `maxItems`) and `object` (`properties`, `required`), each `nullable` or not. Nested bounds
   are domain bounds, checked at §6.1 step 2. A string domain's `min` or `max` states its `unit`, as a
   field's bound does (D-9).
+- **IDs:** a scalar type declares exactly one `idPattern` or `idDomain`; a ref or tuple key
+  declares `key` instead and inherits every referenced type's ID validation. A singleton keeps
+  `singletonId` and its `idPattern`. Only a scope-local `derived` or `keyed` type MAY use
+  `idDomain: {type: "string", unit: "chars", min: 1, max: N}`, with no other domain members and
+  positive safe-integer `N`. It admits valid Unicode without NUL, counted in Unicode scalar values
+  (code points), including one for a non-BMP character. Empty ids, unpaired surrogates, malformed
+  UTF-8 and values above the bound are refused. Identity preserves the UTF-8 bytes without
+  normalization: composed and decomposed spellings remain distinct. The mint's prefix and every
+  scalar it draws from its alphabet MUST produce ids within the domain; `derive.fallback` MUST
+  satisfy it too. Minted and global ids, including every governing tree id, retain their patterns.
 - **Patterns** (`idPattern`, a string domain's `pattern`, a device row's `keyPattern`) are printable
   ASCII, in a portable subset of ECMAScript regular expressions. A value matches a pattern iff the
   pattern matches the whole value. A pattern is `^`, a body, then `$`. The body holds only literal
@@ -390,7 +439,42 @@ The journal registry carries version 12 with it, since the composed registries d
   honours them for the subset or with a matcher of its own, and never by a search, which in some
   dialects lets `$` match before a final line terminator.
 - **Commands:** `name`, `scope`, `origins`, `serverInternal`, `beforePull`, `args` (each of type
-  `json`, `time`, `instant` or `ref<t>`, `optional` or not, with a `domain`) and `predicts`.
+  `json`, `time`, `instant` or `ref<t>`, `optional` or not, with a `domain`), `predicts`, optional
+  `scopedEffects: true`, optional `engine: "capture" | "restore"`, optional `inverse: true` and optional
+  `refPaths`. The engine tag requires `scopedEffects` and empty `args`; the platform binds the command. Capture
+  runs the ordinary intent deltas, checks and consequences without a product command mutation. Restore
+  writes back earlier values under conditions (K-3, §6.4): its `predicts` names the types it restores,
+  each of its own scope kind and none governing a tree, and it declares no `refPaths`, its arguments being
+  §6.4's fixed shape. `inverse: true` marks a product command an Undo or Redo recipe runs: it requires
+  `scopedEffects` and no engine tag, and declares exactly one required `json` argument, `input`; its wire
+  arguments are `{input, evidence}`, the engine building `evidence` (§6.4). An opted command may predict
+  registered types outside its origin scope; whole-put types remain excluded.
+- **References** (E-8). A field of kind `lww`, `fww` or `const` without a scalar `ref`, and a command,
+  MAY declare `refPaths`: typed leaves `{path, type, scope, nullable?, role?}`. `path` is literal object
+  property names, relative to the field's value or to the command's `args`, whose first name is a `json`
+  argument; it holds no array index, wildcard or expression. A leaf holds a string id of `type`, a type
+  whose ids are not tuples, or null when `nullable: true`. `scope` names where the identity lives:
+  - `{kind: "origin"}`: where its type lives, seen from the holder's scope: its product scope, or the
+    tree or overlay of the holder's own tree; a holder in a product scope names no tree or overlay type
+    so. Every key part, `ref` field and `ref<t>` argument is a leaf of this kind;
+  - `{kind: "fixed", value: "self/<product>"}`: that declared product's scope, which holds `type`;
+  - `{kind: "treeFrom", path}`: `tree/<id>`, or the caller's `self/overlay/<id>` for an overlay type,
+    where `<id>` is what the leaf at `path` holds: an ordinary leaf of the same declaration (a
+    `ref<t>` argument included) whose type governs trees. `type` lives in a tree or an overlay.
+
+  `role: "creation"`, on a command's leaf only, proposes the id of a record the command creates, of a
+  minted or derived type it predicts. It is admitted as the command's own create, names no existing
+  record, is never a dependency and is renamed by no map but its own command's retained target (§7.7
+  step 0). A leaf is declared once and never inside another leaf, a scalar `ref` argument and a path to
+  the same name included. A path through an `object` domain names declared properties and ends at a
+  `string`, `id` or `json` domain; a `json` domain leaves the rest open. A registry that breaks any of
+  these is refused as it loads.
+
+  Each implementation compiles every leaf of a registry once, and that one traversal serves admission's
+  checks (§6.1 step 2), the commit's (§7.1 step 4), dependents (§7.7 step 3) and every id map (§7.7 write
+  map). A leaf is found by walking its path from the holder's value: absent, null under a null object on
+  the way (which names nothing), null, a value, or malformed where something other than an object stands
+  where the path continues. Unannotated JSON and text are never read.
 
 The engine applies:
 - `parent: true` marks the one `ref` field whose target must be alive (§6.1 step 10).
@@ -444,20 +528,56 @@ type ReplicaMeta = { replica: string, state: 'anon'|'bound'|'dormant', account?:
                      clockReading?: {wall: number, mono: number, boot: string},
                      serverEpoch: string | null, ackThrough: number, authPaused: boolean }
 type ConfirmedRow = Row                                  // keyed (replica, scope, type, id); replaced, never joined
-type SpentId = { replica, scope, type, id, born }        // derived types only
+type SpentId = { replica, scope, type, id, born, seq? }  // derived types only
 type CursorRec = { replica, scope, cursor: string | null, digest: string, booted: boolean,
                    behind?: true, mismatchReset?: true, digestStop?: string }
 type KnownScope = { replica, scope, kind: 'gone' | 'not-found' }
 type OutboxEntry = { localId, replica, gestureId, lineage: string /* account id | 'anon' */, scope,
                      state: 'held'|'ready'|'sent'|'acked', stamp: Stamp,
                      commitOrder: number, releaseAt: number, n?, digest?, intent: Intent,
-                     predict?: Delta[], baseTexts?: Record<string, string>,   // (t, id, field) → text edited from
+                     predict?: Delta[], predictions?: ScopedPrediction[], acceptedEffects?: EffectReceipt[],
+                     baseTexts?: Record<string, string>,   // (t, id, field) → text edited from
                      resultSeq?: number, resultEpoch?: string, orphanOf?: string,
                      writeTargets?: {t, from: Id, id: Id, born?: Stamp}[] }
-type Notice = { id, replica, scope, code: RefusalCode, detail?,
-                content: { d?: Delta[], cmd?: Cmd, dependents?: { d?: Delta[], cmd?: Cmd }[] }, at,
+type ScopedPrediction = { scope: ScopeRef, d: Delta[], resultSeq?: number, covered?: true }
+type NoticeContent = { scope?: ScopeRef, d?: Delta[], cmd?: Cmd, predictions?: ScopedPrediction[],
+                       dependents?: NoticeContent[] }
+type Notice = { id, replica, scope, code: RefusalCode, detail?, content: NoticeContent, at,
                 dismissed?: true }
 type DeviceRow = { replica, product, key, value: Json }  // device/<product>
+type ReversibleAct = { version: 1, replica, actId: string /* its gesture id */, retained: boolean,
+                       sourceEntries: { localId, originScope: ScopeRef, recipes: UndoRecipe[],
+                                        preimages: { target: Target, value: Json, rowSeq: number | null,
+                                                     epoch: string | null, record?: { born?, f?, x? } }[],
+                                        written: { target: Target, value: Json }[],
+                                        attempts: { epoch, n, outcome: 'ok' | 'refused',
+                                                    acceptedEffects?: EffectReceipt[] }[],
+                                        unavailable?: true }[] }
+type InverseRequest = { version: 1, replica, requestId, sourceActId, inverseActId,
+                        state: 'waiting' | 'materialized' | 'settled', requestedAt: number,
+                        localChanged?: boolean,
+                        slots: { localId, commitOrder, originScope: ScopeRef, recipe: SlotRecipe,
+                                 state: 'waiting' | 'materialized' | 'settled', skipped?: { code }[],
+                                 outcomes?: { index, s: 'applied' | 'skipped', code? }[], changed?: boolean }[],
+                        result?: InverseResult }
+type SlotRecipe = { kind: 'restore', command, operations: (
+                      | { kind: 'field', target: Target, before: Json, reference?: VersionReference,
+                          record?: { born?, f?, x? } }
+                      | { kind: 'createdRecord', record: RecordAddress }
+                      | { kind: 'createRecord', record: RecordAddress, values: { f?, x? },
+                          reference: { kind: 'recordAbsent', epoch: string | null } })[] }
+                | { kind: 'command', command, input: Json, evidence: EvidenceSelection }
+                | { kind: 'withdrawn', command }
+type CancellationReceipt = { version: 1, replica, inverseActId, cancelledActId, retained?: false,
+  sourceEntries: { localId, originScope: ScopeRef, command?: true }[], units: (
+  | { kind: 'field', ownerLocalId, target: Target, redoValue: Json, restored: VersionReference,
+      restoredValue?: Json }
+  | { kind: 'createdRecord', ownerLocalId, record: RecordAddress, redoValues: { f?, x? },
+      restored: { kind: 'recordAbsent', epoch: string | null } })[] }
+type VersionReference = { kind: 'accepted', epoch: string | null, version: E7Version }
+                      | { kind: 'pending', localId, target: Target }
+                      | { kind: 'unbound' }
+                      | { kind: 'fieldAbsent', epoch: string | null, recordBirth: VersionReference | null }
 ```
 
 - `replica`, in every record above but `ReplicaMeta`, names the replica by the store's handle, which
@@ -474,6 +594,8 @@ type DeviceRow = { replica, product, key, value: Json }  // device/<product>
 - `CursorRec.mismatchReset`: a digest mismatch reset the scope, and no check has matched since
   (§7.5).
 - `CursorRec.digestStop`: the app version at which digest checks of the scope stopped (§7.5).
+- `SpentId.seq`: the `seq` of the dead row the spent id came from (§7.5), which a preimage of the record
+  reads as its `rowSeq` (§7.3). A spent id that keeps no `seq` gives a preimage none.
 - `KnownScope`: a tree or overlay scope known gone or not-found (§7.5), which §7.1 step 2 refuses.
 - `Notice.dismissed`: the product dismissed the notice, and no content has folded into it since
   (D-17).
@@ -486,8 +608,27 @@ type DeviceRow = { replica, product, key, value: Json }  // device/<product>
   storage excluded from device backups (iOS `isExcludedFromBackup`, Android `noBackupFilesDir`). Web
   runs no fork guard.
 - `DeviceMeta.pendingSignIn`: an incomplete sign-in, resumed at the next engine start (§7.10).
+- `DeviceRow`: a product's own device work, which only its product reads and writes. The browser
+  engine answers the active replica's rows of a product (`readDeviceRows(product)`, frozen, the same
+  object while they stand), and drops one kind of them, the registry's device row `row` matched by
+  its `keyPattern`, from every replica, a dormant one's included, in one transaction
+  (`dropDeviceRows(product, row)`). A product reaches its rows through these, never into a replica.
 - `liveHint` (§7.4) is not stored: the product's view rule computes it when the sender backs off
   (Appendix A).
+- `ReversibleAct`: the journal of an act opted into Undo (§7.3 Undo of an act), in its replica's
+  namespace, never shared across replicas. Its preimages and written values are local user data and its
+  ids private sync data: neither enters telemetry, logs or reports. A preimage's `rowSeq` is the row it was
+  read over, the confirmed row or else the dead row the record's `SpentId` keeps (null where neither holds
+  one), counted in `epoch`; an inverse act's is the row its restore wrote over. A life's preimage keeps the
+  record it read (`record`), which a revival draws. `written` is the value the act left in each target, which
+  a Redo writes back. A source with no recipes was named for
+  evidence only. `unavailable`
+  marks a source whose history is lost: an epoch change took it, its `ok` came without a readable receipt,
+  or its scope ended, which also empties its recipes, preimages and written values. `InverseRequest`: one
+  Undo or Redo of an act; its slots are outbox entries (`OutboxEntry.inverseOf` names the request) whose
+  recipes hold the same private values until the slot settles, when its recipe becomes `withdrawn`.
+  `skipped` lists the codes of the operations a slot skipped before sending. A `CancellationReceipt`'s
+  `sourceEntries` are the cancelled entries, `command` marking one that ran a product command.
 
 **The writer.** The store runs one writing transaction at a time. A commit (§7.1) waits for the
 writer, and the person waits for the commit, so the engine's other transactions are short. This is a
@@ -899,6 +1040,10 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
      a losing delete plants nothing (§2.4).
    - The `<T>` of a `tree/<T>` or `self/overlay/<T>` reference matches the governing type's
      `idPattern`.
+   - Every typed leaf of a field value or of a command's arguments (§2.4 References) that is present
+     holds an id of its type, its pattern or domain and so E-2's bounds included; it is null only where
+     `nullable`, and lies under objects all the way down. A present `treeFrom` leaf's source is present
+     and not null.
    - No string of the intent, a key or a value at any depth, holds U+0000.
 
    Failure → `invalid`. Then a stamp with `ms > serverNow + MAX_SKEW_MS` in any delta's life, born
@@ -913,7 +1058,10 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
    The order has no cycle except through step 15's locks or an id locked on demand (3.6): every
    scope and tree row of 3.5 is taken in that one pass, and 3.4's shared mode conflicts only with a
    death. A deadlock through those is retried as transient (§6.6). No overlay outlives its tree.
-   1. Take the in-process mutex of the scope key with timeout `LOCK_TIMEOUT_MS`.
+   1. Every admission door takes the catalog's owner admission gate, then the in-process mutex of
+      the origin scope key, each with timeout `LOCK_TIMEOUT_MS`. Both remain held through commit
+      and publication. Target scopes acquire no process mutex. This contract has one active
+      admitting process; `ChangeFeed` is the boundary for a future multi-process relay.
    2. `BEGIN`; `SET LOCAL lock_timeout`.
    3. A replica origin locks its `sync_replicas` row, inserting it with `last_n = 0` when absent,
       and re-checks, in this order, that the row is bound to the origin's account, else the push
@@ -929,7 +1077,8 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
       scope row and, for each command argument typed `ref<t>` where `t` governs `tree`,
       `tree:<value>`, each row once in the stronger mode it needs: the scope row `FOR NO KEY
       UPDATE`, an argument tree `FOR SHARE`. A tree-scope intent's own row so takes its key's place
-      among its argument trees. An id that no scope has yet locks nothing.
+      among its argument trees. An id that no scope has yet locks nothing. A typed leaf of `refPaths`
+      locks nothing (D-10).
    6. Each fresh id of a global id space that the intent creates or deletes is locked by `(type, id)` (§4.2).
       An id that only a command's arguments or `check` reveal is locked on demand, just before its
       lookup.
@@ -949,17 +1098,32 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
    hold, else `stale` with detail `{t, id, field, current}`. A guard also holds when the stored
    register already carries the stamp this intent writes to it (a replay, for example after
    re-identify).
-8. **Command.** Run the handler (§6.4). Its deltas pass steps 5, 6 and 9.
+8. **Effect discovery and command.** Union the scopes declared by the incoming deltas' rules and
+   command discovery. Lock their governing global ids in the existing id-lock order before reading
+   target rows, so a declared absent tree cannot race another owner's governing create. After the
+   origin, lock declared target scope rows in ascending key order,
+   taking each overlay's governing tree `FOR KEY SHARE` before its overlay row. Authoritative scope
+   rows must be owned by the caller and alive (`forbidden` or `scope-dead` otherwise). An absent
+   target is allowed only when the exact tree has a governing create in this same intent;
+   otherwise the whole intent is `not-found`. A dead scope is never recreated. Run the command
+   once, normalize its local deltas and `into` into `Effects`, and load target records only after
+   these locks. Generated deltas pass target registration, domain, writer, identity and life rules,
+   then steps 5, 6 and 9. Generated text and text bases reject NUL.
+   All generated `{scope, delta}` JCS bytes, with internal replacements normalized (§6.4), share
+   `EFFECT_MAX_BYTES` (§9.7), independent of the input's `PUSH_MAX_BYTES`; maximal Unicode ids can make a bulk
+   effect larger than its command. Tests may shrink this budget. Dividing effects among targets
+   never increases it. An effect outside the declared set is a technical contract failure (§6.6), not a new lock pass or a user refusal.
 9. **Join.**
    - The server stamps of the deltas this pass joins are minted (§10.3). A later pass, for deltas
      step 10 appends, observes their registers and ticks again; the write map carries the first
      pass's stamp.
    - `after = joinRecord(before, δ)` for each delta, in order.
    - Text fields are merged or replaced by a command's internal replacement (§6.11).
-   - Each row the intent changes, in its scope or in one it creates, is measured as step 13 would
+   - Each row the intent changes, in any target scope, is measured as step 13 would
      store it, before step 11 gives a new alive record its serial: an encoding over `MAX_RECORD_BYTES` →
      `too-large`. Text bases do not count, and a row the intent leaves unchanged is not measured.
-10. **Product check.** `check` per type touched, on the joined records.
+10. **Product check.** Each touched rules object runs once on all joined records, including the
+    declared targets. Scoped reads and staged changes remain available inside these locked scopes.
     - A create from a replica is re-checked like any write: `check` re-computes and validates every
       value the product's rules derive (Appendix A).
     - Appendix A rules may refuse with their codes, or append server deltas, which pass steps 5, 6
@@ -971,7 +1135,7 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
 11. **Serial.** A new alive record without a serial value gets 1 plus the maximum over alive records
     sharing its `serialNext` fields, or 1 if there are none, in admission order (a command: in
     argument order). A value a command supplies is kept.
-12. **Caps.** For each capped type, `after = counters[type] + net alive change`. Refuse `cap`
+12. **Caps.** In each scope, for each capped type, `after = counters[type] + net alive change`. Refuse `cap`
     (detail `{type, cap}`) iff `after > cap ∧ after > counters[type]`.
 13. **Apply.** If any row changed:
     1. `seq := ++scope.seq`.
@@ -981,20 +1145,28 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
        row of a keyed record that became alive.
     5. `rc := serverNow` on rows that did not exist; `ru := serverNow` on every changed row.
     6. The scope digest takes every changed row (§6.12).
-14. **Command scopes.** Writes into a scope the same intent creates (a command that copies into a
-    new tree) are applied after step 15 creates it, and take that scope's seq and digest. A copied
+14. **Effect scopes.** Apply the remaining targets in key order, coalescing every contribution to a
+    scope into one advance and one frame. Each uses its own counters, seq, text revision and digest;
+    no-op and replayed effects advance none. A governing create first inserts
+    `sync_scopes(tree:<id>, alive, seq 0, digest 0)`; its effects follow, before lifecycle deaths. A copied
     minted or derived record takes its alive source's life, and `born :=` that life's stamp (a
     create, §4.1), so a revived source's copy keeps its life.
-15. **Lifecycle.**
-    - A governing create inserts `sync_scopes(tree:<id>, alive, seq 0, digest 0)`.
+15. **Lifecycle deaths.**
     - A governing death marks `tree:<id>` and every `acct:*/overlay/<id>` dead, with `dead_at`.
     - An overlay row stores `governed_by = tree:<id>`. These scope rows are locked in this order:
       `tree:<id>`, then overlays in ascending key order.
 16. **Result.** `ok {seq: scope.seq, write?, detail?}`. A command's result always carries `write`,
-    its write map, possibly empty.
+    its write map, possibly empty. A `scopedEffects` command also captures the committed version
+    footprint and watermarks (§6.4), after every scope's seq, row seq, text revision and stamp is
+    assigned. Check both receipt and complete response bounds (§9.7) before storing the result;
+    exceeding either refuses `too-large` and rolls back every scope and product mutation.
     - Replica origin: upsert `sync_results(replica, n, digest, result)` and set `last_n := n`.
     - Server origin with a `requestId`: store the result as the call's part `requestId#k` (§6.3).
-17. **`COMMIT`.** Publish the live frames (§6.8), then release the mutex.
+17. **`COMMIT`.** All scopes, product receipts and the result commit in one transaction. Publish
+    the origin's frame first, other changed scopes in key order, then lifecycle deaths (§6.8), and
+    release the origin mutex and owner gate. Any refusal or technical failure before commit rolls
+    back every effect and product receipt. Foreign read locks and lifecycle locks can still
+    deadlock; Postgres deadlock, serialization and lock timeout failures remain transient (§6.6).
 
 **Step R.**
 1. `ROLLBACK`.
@@ -1031,7 +1203,11 @@ The scope mutex is held until step R's transaction, or a fault path's (§6.6), e
    - Otherwise `admit`.
 5. **Bound the work.** Once the request has admitted an intent and `PUSH_WORK_MS` have passed, stop
    and return `retry {n, retryAfterMs: 0}` naming the first unprocessed intent. An answer from
-   `sync_results` is not an admission.
+   `sync_results` is not an admission. An opted command result occupies an exclusive response
+   batch: stop before it when ordinary results already occupy the batch, and after it before the
+   next distinct intent. Return `retry` naming that next intent. Apply this rule equally to stored
+   result replay; duplicate copies of the returned opted `n` verify its digest without repeating
+   its result. `lastN` still reports durable `last_n`, even beyond the returned batch.
 6. **Prune.** In a request answered `200`, delete this replica's `sync_results` rows with
    `n ≤ min(ackThrough, last_n)`.
 
@@ -1071,22 +1247,34 @@ MCP tools, REST writes, tending and server-internal commands call
   store it rolls back. A transient failure of a later admit leaves the row `running`, so a retry
   within `REQUEST_LEASE_MS` answers `request-running`.
 - **Builders** that read records (sibling order, derived ids, whole-graph edits) read under the
-  scope lock, from rows or from a cache whose seq equals `scope.seq`. A builder that finds nothing
-  to write admits nothing, and its call answers from what it read.
+  scope lock, from rows or from a cache whose seq equals `scope.seq`, in product, tree or overlay
+  scopes. Admission checks the origin's access and the call's replay before invoking the builder;
+  a server origin gains no access beyond its account. `self/overlay/<T>` always names that account's
+  own overlay of a readable tree. The built intent MUST resolve to the initial intent's scope,
+  otherwise `invalid`. Any tree named by a built command's governing-type argument MUST already
+  belong to the initial intent's §6.1 step 3.5 lock pass (including the intent's own tree scope),
+  otherwise `invalid`; a builder cannot add tree locks after that pass. An initial argument whose
+  tree is absent still declares that key. The built intent passes shape, origin and admission
+  checks in the same transaction. A builder that finds nothing to write advances neither seq nor
+  digest, publishes nothing, and its call answers from what it read.
 - **Server-built bulk writes** classify each incoming id as create, update or spent before building
   deltas, and report spent ids to the caller.
 
 ### §6.4 Commands
 
-`handler(txn, ctx, args) → {deltas, write, detail} | refuse(code)`:
+`handler(txn, ctx, args) → {deltas, into, write, detail} | refuse(code)`:
 - It is deterministic given the locked rows, `args` and `serverNow`.
 - It MAY lock more rows through the ports, and MAY write any field.
+- `into` names another declared, live scope owned by the caller, or an exact tree a governing
+  record creates in this intent. Discovery runs before the handler and declares every target of
+  both the command and its consequences. The handler runs once, with all declared scope locks held.
 - It resolves its own replays (Appendix A), comparing the raw arguments, or their digest, stored with
   its receipt, before the guards are checked (§6.1 step 7).
 - A command not in the registry is refused `invalid`.
 - A command MAY replace a text head: its internal text write is `{text, replace: true,
   archiveNonempty: boolean, archive: metadata}`. This is a handler output, never an intent's wire
   delta; a wire text write has only `text` and `base`, and any other member is refused `invalid`.
+  Omitted metadata normalizes to `archiveNonempty: false` and `archive: {}` before byte accounting.
   Replacement passes the field and
   record bounds, writes `merged = false` and a new head rev at the admitting seq, and keeps the
   previous head when that head has a rev, except an empty head when `archiveNonempty` is true.
@@ -1094,6 +1282,90 @@ MCP tools, REST writes, tending and server-internal commands call
   text. A replacement MUST accompany a
   changed register or changed text, so it cannot mint a rev without a changed row. A binding MAY
   retain revision metadata and prune revisions in the admitting transaction, as Appendix A states.
+
+
+**Scoped effect receipts.** Only a command with `scopedEffects: true` wraps its successful detail:
+
+```ts
+type EffectSlot = { slot: {kind: 'born'} | {kind: 'life'} | {kind: 'field'|'text', name: string},
+                    version: {kind: 'stamp', stamp: Stamp} | {kind: 'text', revision: number} }
+type EffectReceipt = { scope: ScopeRef, beforeSeq: number | null, seq: number | null,
+  rows: {t: string, id: Id, beforeRowSeq: number | null, rowSeq: number, slots: EffectSlot[]}[] }
+type ScopedDetail = { windmillKit: {v: 1, effects: EffectReceipt[]}, command?: Json }
+```
+
+`command` preserves the handler's original detail when present. Top-level `seq` and `write` keep
+D-20's meanings. The receipt records all caller-owned committed effects of the intent, including its
+ordinary `d`, checks and consequences, plus every declared target. It includes caller-owned created
+scopes and lifecycle deaths, even with no changed rows. Platform deaths of another reader's overlay
+are omitted: a caller's `self/overlay` never names that reader's data or discloses its existence.
+
+Scopes appear origin first, then by UTF-8 ScopeRef order; rows sort by type and the UTF-8 bytes of
+the ID's JCS. Slots appear born, life, sorted field names, sorted text names. Only changed rows
+appear. A newly created row has `beforeRowSeq: null` and its complete versioned footprint; an updated
+row lists only changed slot versions. A serial-only change still advances `rowSeq` and has `slots: []`.
+A changed text owns its actual committed revision after merge; unchanged text owns no slot.
+
+Watermarks are captured before and after this admission, with no artificial sequence advance.
+The origin always exists. An existing or killed scope has its actual final seq; a new empty scope
+has `beforeSeq: null, seq: 0`. An opted command may declare an absent no-op target, represented by
+`beforeSeq: null, seq: null, rows: []`; any actual delta there still requires the exact governing
+create and every admission check. Legacy commands retain their missing-target rule.
+
+The exact receipt is stored with the idempotency result and replayed, never reconstructed from later
+rows. It omits field and text values, but IDs may derive from user text: the entire receipt is private
+sync data and MUST NOT enter telemetry or log properties. The outbox's copy goes with its entry; a
+source entry of a reversible act keeps its own copy in the journal (§7.3 Undo of an act).
+
+**Restore and inverse commands** (K-3). An `engine: "restore"` command, bound by the platform, has these
+fixed arguments; the bound scope supplies the scope, operations name none, and the client sends no stamp:
+
+```ts
+type RestoreArgs = { expectedEpoch: string, operations: (
+  | { kind: 'field', t, id, slot, expected: E7Version | { kind: 'absent', born: Stamp | null }, before: Json }
+  | { kind: 'createdRecord', t, id, rowSeq: number, footprint: { slot, version: E7Version }[] }
+  | { kind: 'createRecord', t, id, values: { f?: Record<string, Json>, x?: Record<string, string> } })[] }
+type InverseDetail = { inverse: { outcomes: { index, s: 'applied' | 'skipped', code? }[] } }
+```
+
+- Every operation names a type the command `predicts`, one slot at most once. A `field` slot is a client
+  `lww` field, a client text or the life of a keyed type with life or a revivable type, and `before` is on
+  its domain (a life is `alive` or `dead`, a text within its bound). `absent` names no life, and its `born`
+  is the record's birth, or null for a type without one. A `createdRecord` or `createRecord` type has life,
+  governs no tree and is not whole-put; a footprint lists born, life, fields and texts in that order; a
+  create's values are client `lww`, `fww`, `const` or `time` fields and client texts, on their domains.
+  Anything else, an empty list included, is `invalid` at §6.1 step 2.
+- At step 8 each operation, in order, holds or skips by its own condition, read from the scope as stored
+  and as earlier operations of the command leave it. Another `expectedEpoch` skips every one
+  `epoch-changed`. A `field` holds while the slot's version is `expected` (a stamp, or a text's revision),
+  or, for `absent`, while the record of that birth exists with the slot unset; otherwise `version-changed`.
+  A non-life slot of a dead record of a type neither keyed nor revivable skips `record-dead`. A
+  `createdRecord` holds while the record is alive at `rowSeq` with exactly `footprint`; otherwise
+  `record-changed`. A `createRecord` holds while the id is wholly absent, no spent id among it; otherwise
+  `record-present`.
+- What holds becomes one server delta a record: a `field` writes `before` (a text by a replacement that
+  archives the head, §6.4 above), a `createdRecord` writes the record's death, a `createRecord` the
+  record with its values, all under the server stamp step 9 mints, newer than every register it joins. The
+  delta carries the record's born, and its stored life where a keyed type or a dead record needs one. Checks
+  and consequences run as for any command. The detail is `InverseDetail`, one outcome an operation, inside
+  the scoped detail's `command`.
+
+An `inverse: true` command's wire arguments are `{input, evidence}`. `input` passes the declared argument's
+domain and typed leaves; `evidence` is the engine's, and its shape is checked at §6.1 step 2:
+
+```ts
+type Evidence = { expectedEpoch: string,
+  ownedFields: { target: Target, version: E7Version }[],
+  unchangedCreatedRecords: { record: RecordAddress, rowSeq: number, footprint: { slot, version }[] }[],
+  unchangedCreatedScopes: { scope: ScopeRef /* tree or overlay */, seq: number }[] }
+```
+
+The product decides which evidence it needs and refuses `invalid` without it; its handler answers the same
+`InverseDetail` with one outcome, since its effect is all or nothing. A handler whose detail reports no such
+outcome is a technical contract fault, and the admission commits nothing. It holds while the epoch is the
+server's, every owned field is still at its version, every created record alive at its row sequence with
+its footprint, and every created scope at its seq; otherwise it skips `epoch-changed`, `version-changed`,
+`record-changed` or `scope-changed` and writes nothing. The probe's `probe.unbranch` undoes `probe.branch`.
 
 ### §6.5 Caps
 
@@ -1163,10 +1435,15 @@ snapshot is taken. An absent scope runs none.
 
 ### §6.8 Live push
 
-At step 17, after the commit and before the scope mutex is released, the server publishes
+At step 17, after the commit and before the owner gate and origin scope mutex are released, the server publishes
 `{op: change, scope, epoch, seq, digest, rows}` at once, with no debounce, to every socket
 subscribed to the scope that still holds read access. Frames of one scope so leave in seq order.
 `digest` is the scope digest committed with `seq`.
+- One intent's origin frame comes first, then the other changed scopes in key order. Its lifecycle
+  death frames follow; a terminal `gone` can never be followed by a valid live frame for that scope.
+  When the same intent changes and kills a scope, its authoritative owner receives the final change
+  before `gone`. Former readers receive only `not-found`, including when the final change makes
+  the tree private. This exception never admits a delayed change from another intent.
 - `rows` is omitted when the `jcs` of the rows array exceeds `LIVE_INLINE_BYTES`.
 - A scope that dies sends each subscriber the page kind a pull of it would answer (§6.7 step 1):
   `gone` to the tree's owner, for the tree and for that owner's overlay, and `not-found` to
@@ -1303,10 +1580,11 @@ entries and predictions never enter it.
 
 ### §7.1 `commit(scope, changes, opts) → {localIds, retired, superseded?, stamp} | Refused | none`
 
-`opts = {atomic, hold, guard, retire, supersede, cmd, predict, local, gestureId}`. `commit` is a synchronous
+`opts = {atomic, hold, guard, retire, supersede, cmd, predict, scopedPredict, local, gestureId}`. `commit` is a synchronous
 call on the local store. It MUST NOT be launched from a cancellable UI scope, and never awaits the
 network. It throws only before its local transaction commits, and every client API declares exactly
-three failures, told apart by where they arise:
+three failures, told apart by where they arise (the browser engine's `commitAct` adds `ReplicaChanged` to
+an act its caller guards, Ordered local acts below):
 - *not writable*: step 1, the replica's state forbids writes;
 - *malformed*, a programming error: every throw of steps 2 to 10, the checks before step 2 included
   (a type outside the commit's scope, an `opts.gestureId` that an outbox entry or a notice of any
@@ -1323,7 +1601,8 @@ result: a failure in the steps after the commit (below) is the engine's to log a
 reaches the caller.
 
 In the **read-and-commit** form, `changes` is a function of the views: `commit` calls it after step 1
-and before step 2, with `drawn` and `stored` read inside the same transaction, the commit's
+and before step 2, with `drawn` and `stored` read inside the same transaction, the scope's spent
+ids (`SpentId`, each `{t, id, born, seq?}`, `seq` where the spent id keeps one), the commit's
 `physNow()` reading (step 4) and the id of the replica the commit writes to, the active one (§7.12),
 so a read and the writes it decides are one transaction. The function
 returns the gesture (its changes and `opts`) or none, and MAY return a value of its own, which
@@ -1400,10 +1679,20 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
    - A text change names the text it was edited from. The entry keeps that text in `baseTexts`.
      The delta's base is `{rev}` when that text is the confirmed text at that rev; otherwise
      `{text}`.
+   - A typed leaf (§2.4 References) of a field value the gesture writes or predicts, or of its
+     command's arguments, that breaks §6.1 step 2's leaf rule throws: dependents and id maps read
+     every leaf of a queued entry. A scalar `ref` and a `ref<t>` argument are left for admission.
    - A command prediction MAY include server-written lattice fields, text and serial values.
      Predicted serials name declared serial fields and MUST be positive safe integers; otherwise
      the commit throws. Predictions fold locally, never entering wire deltas or the digest.
      The command's confirmed row supplies its actual text, rev and serials through result and pull.
+   - An opted command accepts `scopedPredict: [{scope, changes}]`. Nonempty `predict` and
+     `scopedPredict` cannot coexist; an opted command's legacy `predict` becomes its origin
+     projection. Group scopes uniquely, origin first then UTF-8 order, always retaining an empty
+     origin marker. Persist `predictions`; legacy entries retain `predict` and omit `predictions`.
+     The canonical grouped prediction bytes are bounded by `EFFECT_MAX_BYTES` (§9.7); exceeding it
+     refuses `too-large` atomically, leaving no entry, clock change or partial notice. Ordinary
+     `intent.d` stays in the origin and is active only while its origin marker is uncovered.
 5. **Ids.** Minted ids come from a CSPRNG by the type's `mint`, or are seeded (D-8). Label-based
    derived ids come from `derive` (D-26).
 6. **Guards.** `guard` lists registers `(t, id, field)`, and guards exactly those: each becomes
@@ -1447,6 +1736,61 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
 
 After the commit: notify tabs (§7.8), kick the sender, and schedule release timers.
 
+#### Ordered local acts
+
+`commitAct` commits ordered scope segments in one durable local transaction. Its prepare callback
+receives an initial-snapshot `ActContext` and returns `(ActRequest?, value)`. `ActRequest` names the
+ordered scopes, a hold flag and an optional gesture ID; repeated scopes are allowed. A nil request
+decides no write. The segment callback receives that value, the segment index and a `CommitContext`
+over the tentative projection through all earlier segments. It validates and produces that segment's
+gesture before the engine stages it. `ActContext.inScope` lends a reader of the immutable initial
+snapshot only during load. `finishLoad()` closes that phase and rethrows its first scope or read
+failure, including a failure the callback caught. It is idempotent; both identity methods call it
+before drawing randomness. Raw prepare callbacks call it before their pure decision, and the kit
+runner does so automatically. All reader loans expire when their bodies return.
+
+Browser storage may replay pure deterministic load after a missing-scope demand, under the same
+writer transaction and snapshot. After successful load, a prepared raw commit body and each prepared
+act segment are retained until commit: discovering a prediction target hydrates its scope without
+replaying decisions, identity draws or the segment callback. No decision, identity draw or device write precedes successful
+`finishLoad`. Native prepare loads once. Existing scopes used for minting must be borrowed during
+load; an unborrowed new tree or overlay requires no initial cache, cursor, known state, pending
+entry or governing record, and an earlier segment must create its governor before those IDs are used.
+
+A composed act (domain kit §9.7) decides in parts, each through what the parts before it plan.
+`ActContext.stage(scope, segment)` ends the current load, calls `segment` with a `CommitContext` over
+the act's tentative copy through every segment staged so far, commits its gesture to that copy as an
+act segment, and answers its local refusal `{refused, detail?}`, or nothing. `beginPart()` ends the
+current part and opens the next part's load: its `inScope` reads, and its identities are drawn,
+through the staged segments, so a part sees an earlier part's writes.
+Staging writes nothing durable: the tentative copy is thrown away, and the request's segments commit
+afresh in the segment phase, under the act's one hold. A storage replay re-runs prepare from the
+initial snapshot, staging included.
+
+All actual entries share one gesture ID and globally flat local IDs `<gestureId>/<ordinal>`, with
+consecutive commit order. Every segment uses the captured physical time; real segment stamps increase
+strictly. A segment with no write need not have a stamp. When any segment is held, every actual entry
+is held until the same deadline from the captured device time. One Undo covers every still-held entry.
+
+The transaction publishes only after all segments succeed. Any local refusal or thrown failure rolls
+back all segments, device rows, clocks, identity reservations, retirements and supersessions. A local
+too-large refusal leaves no partial notice. `ActReceipt` contains the shared gesture ID, ordered
+segment receipts `(scope, stamp, localIds, ids)`, flat `retired` and `superseded` lists, and `releaseAt`.
+`CommitReceipt` is unchanged. There is no generic record-count or half-request-size act limit.
+
+An act is local atomicity, not server atomicity. Its intents remain separately numbered and admitted
+in order, with the existing dependent-scope rejection rules. A later remote refusal does not reverse
+an earlier admitted intent.
+
+The browser engine's `commitAct(prepare, segment, {binding})` takes the `activeBinding()` (§7.12) its
+caller planned the act under, outside the transaction and across awaits, as a product's multi-step write
+does. In the write transaction, before the prepare callback runs, a binding that no longer stands
+throws `ReplicaChanged`, exported beside the engine, and the act writes nothing: a sign-in or a sign-out
+in between, in this tab or another, the sign-in that binds the anon replica in place included. The
+caller handles it, and the engine reports it as no failure.
+Without `binding` nothing is checked. The guard is the browser engine's; the Swift and Kotlin engines
+have none.
+
 ### §7.2 Send order
 
 Every committed gesture is sent as its own entries, in commit order: `commit` enqueues one entry per
@@ -1457,6 +1801,11 @@ Before its result, an entry changes only by a fold (§7.3, §7.7 step 3), a
 restamp or a write map (§7.7), or ends before binding by a supersede (§7.1 step 4).
 
 ### §7.3 Hold, release, undo
+
+An act whose request is held gives every actual entry the same release deadline, computed from its
+captured device time. One gesture ID names the whole hold. Undo eligibility examines every entry
+of that gesture across scopes; a released entry removes the offer in every scope. No-op segments
+create neither entries nor a hold of their own.
 
 ```
 release(entry): tx: if entry.state = held → state := ready; kick the sender
@@ -1494,13 +1843,153 @@ and likewise have never been sent.
 - No background timer, job or task keeps a hold. A released entry is sent like any ready entry, by
   the flush or by a later sender run.
 
+#### Undo of an act (K-3)
+
+`undo(gestureId)` above stays the held-only Undo. An act MAY also opt into Undo after its hold, by its
+`ActRequest.undo = {version: 1, segments: [{index, recipes}]}`: each named segment's recipes, a closed union
+over `Target = {scope, t, id, slot}` (`slot` in §6.4's encoding) and `RecordAddress = {scope, t, id}`:
+
+```ts
+type UndoRecipe =
+  | { kind: 'fields', restoreCommand, targets: { target: Target, defaultValue?: Json }[] }
+  | { kind: 'createdRecord', restoreCommand, record: RecordAddress }
+  | { kind: 'command', command, input: Json,
+      evidence: { ownedFields: Target[], unchangedCreatedRecords: RecordAddress[], unchangedCreatedScopes: ScopeRef[] } }
+```
+
+- A `fields` or `createdRecord` recipe names its segment scope's `engine: "restore"` command, and its targets
+  and record live in the segment's scope, of types that command restores. A field target's slot is a client
+  `lww` field, a client text, or the life of a keyed type with life or a revivable type; never born. A
+  created record's type has life, governs no tree and is not whole-put, and the record is absent from
+  `drawn` before the act. A `command` recipe names an `inverse: true` command of the segment's scope kind;
+  its evidence may name any scope. A segment named with no recipes (`recipes: []`) is named for evidence
+  only: it is journaled like any other, so its receipts join the act's history and can prove what another
+  segment's `command` recipe names, a scope the act created and this segment wrote among them. An act names at
+  least one recipe. Anything else throws malformed before the act changes anything.
+- **Capture.** Before any segment changes a projection, the act reads each field target's value in
+  `drawn`: its *first local preimage*, with the sequence of the row it was read over and the epoch that
+  sequence counts in: the confirmed row's, or, where no row of the record is confirmed, the dead row's its
+  `SpentId` keeps (§7.5), so the Undo of a revival from a spent id walks from the death the device pulled;
+  null where neither holds one. A life's preimage also keeps the record as read (`record`: its birth, field
+  registers and texts), which a revival draws. An unset slot takes the target's
+  `defaultValue`, the product's value equivalent to unset (`null` is a value); without one the act throws
+  malformed. A named segment runs as one
+  scoped intent: a segment with its own command needs `scopedEffects`, and any other gets its scope kind's
+  one `engine: "capture"` command when it writes a delta (none, or several, throws malformed). A capture
+  command does not stop a retire (§7.1 step 4) from matching its removal.
+- **Record.** The act's transaction writes its `ReversibleAct` (§2.5), `actId` its gesture id: one source
+  entry per named segment that left an entry, with its recipes, its preimages and the value the act left in
+  each target (`written`). A segment that writes nothing leaves none, and an act left with none records
+  nothing.
+- **Retention.** A source entry's `ok` stores `{epoch, n, outcome: 'ok', acceptedEffects}`, its receipt
+  after the result's maps, and a terminal refusal `{epoch, n, outcome: 'refused'}`, in the result's
+  transaction (§7.4), before the entry can settle or be collected. One attempt an epoch: a replayed answer
+  replaces it. A death before that transaction leaves the entry `sent`, and its resend's stored result is
+  retained. An `ok` whose receipt the replica cannot read (§7.4) retains none, and the source's history is
+  `unavailable`.
+- **Epochs.** An epoch change (§7.5 step 1) drops every attempt of another epoch. A source still in the
+  outbox replays and earns its own; a collected one has none, and an inverse never reconstructs it. A
+  changed-epoch answer that records its results before the change keeps those, which are the new epoch's.
+  Adopting a first epoch drops nothing.
+- **Maps.** A write map's logical map (§7.7) renames the journal's scopes, targets, records, typed inputs and
+  receipts with the queue, and so the scopes, targets, records, references and typed inputs of its inverse
+  requests and cancellation receipts: an Undo requested, or a held act cancelled, in a tree whose governor
+  the server redirects follows it into the redirected tree. A command input is renamed in the scope its
+  holder had, before that scope moves. A value recorded for a field (a preimage, a written value, a default,
+  an operation's earlier value, a redo value, a revival's registers) is renamed as that record's field
+  would be, so a typed reference it holds follows the map: an Undo of a `ref<tree>` field whose tree the
+  server redirects restores the redirected id.
+- **Release.** `releaseReversibleAct(actId)` says the product's stack no longer needs the act: its record and
+  values go, once no unsettled inverse request reads it, with a settled request whose inverse act it is. No
+  product stack outlives its process: engine start releases every act and cancellation that no unsettled
+  request reads.
+- **Scope end.** A scope that ends (§7.5 step 2, or a dead governing row) keeps none of its values in the
+  journal, in the same transaction: its sources lose their recipes, preimages and written values and become
+  `unavailable`, a cancellation's units there go, and a slot still waiting there vacates, skipped
+  `scope-gone`. A release (§7.9) is no end: the values stay the person's.
+
+`requestInverse(sourceActId, inverseSlots?)` asks for the inverse of a journaled act, in one transaction.
+`inverseSlots`, a complete `[{index, recipes}]` by source ordinal, replaces the stored recipes (a product's
+Redo); there are no callbacks. Each recipe is checked as at the act, and a field target must be one the act
+journaled a preimage of; anything else throws malformed. A cancellation journals none, so its replacement
+holds no field recipe. Asking again for the same act answers its existing request.
+1. **Held cancel.** An act every entry of which is still held is cancelled at once, as `undo` cancels it,
+   its dependents folded silently. The request settles `cancelled`, whether anything drawn changed, and the
+   act leaves the journal. In the same transaction a `CancellationReceipt` lists the cancelled entries and
+   keeps what the act's ordinary deltas actually took out of `drawn` (a product command's effects are its
+   own, and have no generic Redo): each register the act wrote that now reads otherwise, with the value the
+   act wrote, the value it reads now and the version it reads now (a pending entry's write, the confirmed
+   row's accepted version, or unset in the record's birth), and each record it created that is now absent,
+   with the act's own creation values. A later local edit that masks the act's write took nothing out and is
+   no unit. A reference taken before the replica held an epoch belongs to the epoch it then takes.
+2. **Reserve.** Otherwise the request takes an inverse act id and a request id, and one stamp. Walking the
+   act's sources backwards, each source's generic recipes become one restore slot in its origin scope, each
+   target in one slot only, restored to its first preimage; each `command` recipe becomes a slot of its own.
+   Each slot is an outbox entry at the next commit position, `ready`, its command's arguments still unbound,
+   carrying the optimistic projection of its restore (each value at the request's stamp, a created record
+   dead) as its origin prediction. A revived life draws its record even where `drawn` no longer holds it (its
+   death already pulled): with the values its preimage's `record` kept, so an Undo of a delete, or a Redo of a
+   creation, draws at once and offline. The inverse act journals each restore slot as a source whose recipes
+   put back the values the act wrote (`written`), never a later local edit's, and a created record's life
+   only where a write can bring it back, with the record as `drawn` held it. Its preimages are read at the
+   row each restore writes over, which the restore's ACK names.
+3. **Barrier.** The sender stops at a slot still waiting (§7.4); later entries keep their positions, and a
+   restart changes nothing.
+4. **Materialize.** Once every source of the act is authoritative (ended, or `acked` with this epoch's
+   attempt), in the request transaction or the numbering transaction. An Undo never erases a write the device
+   had not seen when it acted: each `field` operation takes the latest version the act's current-epoch
+   receipts own of its target only if nothing but this device's own receipted writes came between the row its
+   preimage was read over and the act's last write of the record. From the preimage's `rowSeq`, each next row
+   of the record the journal's receipts hold starts where the last ended (`beforeRowSeq` the previous
+   `rowSeq`), until the act's last; a write the device had not seen breaks the chain, and the operation skips
+   `history-changed`. The check is per row: an unseen write of another field of the record breaks it too. A
+   preimage of another epoch skips `epoch-changed`. An operation on a target no source owns is dropped, as
+   there is nothing to take back (a refused source owns nothing), unless a source's history is
+   `unavailable`, when it skips `history-changed`. A `createdRecord` is proven by its own receipts alone: its
+   creation (`beforeRowSeq: null`) and each later own write continuing it; a gap, or `unavailable` history,
+   skips it `history-changed`. A `command` slot gets its evidence: the latest owned version of each selected
+   field that has one, each created record proven so, and each created scope proven by its own receipts
+   (`beforeSeq: null`, then each next `beforeSeq` the previous `seq`); a created record or scope it cannot
+   prove skips the whole slot `history-changed`. `expectedEpoch` is the replica's epoch. The arguments bind
+   atomically; a skipped or dropped operation's projection is withdrawn; a slot left with nothing to send
+   ends `resolved` unnumbered. Numbered arguments never change: an epoch change replays the entry as it is,
+   and the server skips it.
+5. **Results.** A slot's `ok` records its outcomes, withdraws a skipped operation's projection and notes
+   whether its receipt changed a row; an `ok` whose outcomes the replica cannot read (§7.4), a refusal, or an
+   entry that ends without a result, settles it skipped by `invalid` or that code. The request settles with
+   its last slot: `changed` from accepted effects, `appliedCount` and `skippedCount` over every operation,
+   those skipped before sending included, an atomic product slot counting one. A settled slot keeps no values.
+   The restore's ACK reclocks every later queued write of a register it restored, so an edit queued after the
+   Undo stays the newest.
+
+A Redo of a cancellation is `requestInverse(inverseActId)` too, and reserves ordinary restore slots at once,
+one a scope: each field unit restores the value the act wrote expecting the version its reference binds to,
+an accepted version of this epoch, or an absence in that birth (`expected: {kind: 'absent', born}`); each
+created record is created again (`createRecord`) only while wholly absent. A pending reference binds in its
+entry's ACK transaction to the version that entry wrote: from its receipt, or an ordinary entry's own delta
+stamp, which the restore's condition checks; a text without a receipt binds nothing (`unbound`). The slots
+wait while an entry a reference names is queued; a reference left unbound, or whose entry ended without an
+ACK, skips its operation `reference-unbound`, never substituting what is visible now. A cancellation of an
+act that ran a product command has no generic Redo: without `inverseSlots` it answers `{kind:
+'unavailable', requestId: null, reason: 'product-redo-required'}`. The receipt, and the acts whose sources
+its references wait on, stay until the Redo settles or the product releases it.
+
+`readInverseResult(requestId)` answers `{kind: 'cancelled', requestId, inverseActId, changed}`,
+`{kind: 'pending', requestId, inverseActId, localChanged}`, `{kind: 'settled', requestId, inverseActId,
+changed, appliedCount, skippedCount}`, or `{kind: 'unavailable', requestId, reason}`. A transport failure
+stays pending. A Redo is `requestInverse(inverseActId)`: it writes back the values the act wrote, and only
+where the Undo applied, since it owns nothing else. Sign-in's Discard of a product settles that product's
+waiting slots skipped `discarded`, and takes that product's source entries, cancellation units and requests
+with its work; an Add carries them. Slots stay counted as unsent work until then.
+
 ### §7.4 Sender (one per replica: the web leader tab, or an app-scoped worker)
 
 ```
 loop while state = bound ∧ ¬authPaused ∧ online:
   tx: number ready entries in commitOrder, up to PUSH_MAX_INTENTS, and while the request body stays
       within PUSH_MAX_BYTES (the first entry of a request always goes), passing over held-back
-      entries, and stopping after the first command entry or at a held-back command entry:
+      entries, and stopping after the first command entry, at a held-back command entry, or at an
+      inverse slot still waiting once it is offered materialization (§7.3 Undo of an act):
       n := nextN++, digest, state := sent
           (no entry is numbered while a command entry is `sent`)
       an entry whose one-intent body, at that n and the current ackThrough, exceeds PUSH_MAX_BYTES
@@ -1532,7 +2021,8 @@ loop while state = bound ∧ ¬authPaused ∧ online:
   each result, in ascending n, in batches (below):
     ok      → acked, resultSeq := seq, resultEpoch := the response epoch; apply the write map (§7.7)
     refused → §7.7; after a `clock-skew` recovery, back off before the next push
-  in the last batch, once every result is recorded: ackThrough := the response's lastN
+  in the last batch, once every returned result is recorded:
+    ackThrough := retry ? min(lastN, retry.n - 1) : lastN
 backoff: sleep random(0, min(ceiling, 1 s · 2^k)), then k += 1; ceiling = liveHint ? 30 s : 300 s; k resets
          on a response with results, unless one of them is `clock-skew`
          (liveHint: computed now by the product's view rule, Appendix A)
@@ -1547,19 +2037,33 @@ server-requested wait: a 503's or a retry's retryAfterMs, from the response's re
 `authPaused`, `upgradeRequired` and `failedPushes`, the records of the unsent entries of each scope
 whose last push failed with anything but a `400`, `409` or `413`, until a push of that scope is
 answered `200` or one of those three (a `400` or `413` changes the next push, a `409` re-identifies or
-pauses). A malformed recovery `409` (below) is a failure. A product shows an unconfirmed record as
+pauses). An opted command's records are listed under every scope it predicts, as its origin's push
+ended. A malformed recovery `409` (below) is a failure. A product shows an unconfirmed record as
 unsent while any of the four holds it back; Kotlin's `SyncStatus.Snapshot.holdsBack(scope, key)`
 applies that rule, and holds nothing back signed out. `unansweredPushes` names the scopes of
 `failedPushes` whose last push got no answer the engine could read — no network, a refused connection,
 the request deadline, or a `200` whose body is not a push response (Kotlin also counts a reply over
-its size cap) — so a product can tell a server it never reached from one that answered with a failure.
+its size cap, and a `200` whose continuation metadata or scoped size the replica cannot accept) — so a product can tell a server
+it never reached from one that answered with a failure.
 Kotlin's `unavailablePushes` names the scopes of `failedPushes` whose last push the server answered
 with a `5xx`, so a product can tell the log's outage from a refusal.
 
 The principal check precedes epoch handling. A `409` used for recovery MUST carry a nonempty string
 `epoch`, a nonnegative safe-integer `serverTime`, and one of the three conflict codes above;
 a malformed envelope is a transport failure, leaving the replica, cursors and entries unchanged.
-An authenticated changed-epoch `200` triggers atomic recovery before ordinary result batches.
+An authenticated `200` validates every scoped receipt, and every inverse slot's outcomes, before any
+ACK-side mutation, including offset sampling, each against the sent entry at its result's `n`: an entry
+acknowledged under an earlier replica id keeps its old `n` until it settles, and no result answers it.
+Require the origin and every predicted scope after global-ID remaps; reject duplicate,
+unknown or invalid scopes, malformed slots, rows of a type outside their declared scope, and missing
+required markers. Additional well-formed discovered scopes are accepted and persisted as receipt-only
+empty-d markers. A response over `SCOPED_RESPONSE_MAX_BYTES` that answers a scoped entry is a transport
+failure. A rejected receipt never stops sync: its `ok` is *unreadable*, and still acknowledges its entry,
+since the server holds the write. The entry records no receipt, every projection of it ends at once (the
+pull brings its rows), its source's Undo history is `unavailable`, an inverse slot settles skipped
+`invalid`, and the response emits `sync-push-malformed`, with no receipt content. A continuation has positive safe-integer `n ≤ lastN + 1`, strictly after every
+returned result, and nonnegative safe-integer `retryAfterMs`; malformed metadata is a static transport
+failure with no ACK mutation. An authenticated changed-epoch `200` triggers atomic recovery before ordinary result batches.
 If the replica has no retained acknowledgement from an older epoch, record its successful results
 and their product receipts in that same transaction before the epoch change; these acknowledgements
 belong to the response epoch and are not requeued. No already accepted removal is reported as a
@@ -1583,6 +2087,12 @@ not moved, and the next push resends them. The server answers them from its stor
 step 4), or `replica-forked` for an entry an earlier batch's `clock-skew` recovery rewrote, which
 re-identifies with nothing lost (§7.7).
 
+An opted result applies global-ID remaps first, then stores scope-qualified `acceptedEffects` and
+projection watermarks in one receipt-application step within its ACK transaction, before settlement
+or garbage collection. In that step the journal retains a source entry's receipt, and a terminal
+refusal its refusal (§7.3 Undo of an act). A null scope seq immediately covers its uncreated target. Receipt-only
+markers are covered by the same rule as predicted ones.
+
 A null `serverEpoch` takes the answer's epoch in the first batch, so no entry is ever acked while
 `serverEpoch` is null. Were it taken later, a death before the take would leave entries acked in an
 epoch the replica never held. A null `serverEpoch` takes any answer's epoch silently, with no epoch
@@ -1595,7 +2105,7 @@ The puller runs on start, foreground, reconnect, a live gap, a subscribe (§7.9)
 scope in doubt (§7.9), a re-authentication that clears `authPaused` (§8.2), a sign-in, a sign-out or
 a re-identify of the active replica (§7.12), and every `PULL_FALLBACK_MS` in the foreground (§7.9
 **Timers**). Each run pulls the scopes of its trigger, each until `more = false`: a live gap its
-scope, a subscribe the scope subscribed, a re-pull its scope, and every other trigger every
+scope, a subscribe its resolved scopes (§7.9), a re-pull its scope, and every other trigger every
 subscribed scope, those in doubt included. A scope with a pull in flight is not pulled again by a
 trigger; the trigger marks it, and the answer's handling pulls it once more if it is marked or
 `more`. A request names at most `PULL_MAX_SCOPES` scopes; a run over more sends several, and a run
@@ -1674,15 +2184,15 @@ engine stops on any `426`.
    - **Boot rows** go to staging when the boot starts from a `null` cursor while confirmed rows
      exist, otherwise straight in; the first chunk of the page requested with the `null` cursor
      decides, and starts that staging afresh; a later boot page's chunks join it. A thin dead derived
-     row adds a `SpentId`. On the last chunk of the page that ends the boot's scan (its cursor turns
-     live):
+     row adds a `SpentId` with the row's `born` and `seq`. On the last chunk of the page that ends the
+     boot's scan (its cursor turns live):
      - staging replaces the scope's confirmed rows, and its digest replaces theirs;
      - `booted := true`;
      - the cursor it stores, live at `asOf`, covers the acked entries of the scope with
        `resultSeq ≤ asOf`, which settle (**Settling**, below).
    - **Live rows** replace confirmed rows by §3.4; a dead row deletes it, a dead derived row also
-     adds a `SpentId`, and a dead row of a governing type records its `tree/<id>` and
-     `self/overlay/<id>` as known `gone` (`KnownScope`).
+     adds a `SpentId` with its `born` and `seq`, and a dead row of a governing type records its
+     `tree/<id>` and `self/overlay/<id>` as known `gone` (`KnownScope`).
    - **`gone` or `not-found`**, except two the client ignores, forgetting and recording nothing:
      - Any for a product scope. The server answers one only to a request served as anonymous, which
        the client has already handled as a `401` (§9.1), so no described path reaches this ignore
@@ -1695,13 +2205,14 @@ engine stops on any `426`.
        whose governing record is alive in `drawn` or in `stored`, a held delete's window included
        (§7.9).
 
-     Otherwise:
+     Otherwise, apply the following to the scope and, for a bound replica's tree, to its own overlay
+     in the same transaction (§7.9):
      - delete the scope's confirmed rows, `SpentId` rows and cursor, record the scope as known with
        that kind, and unsubscribe;
      - acked entries of the scope resolve;
      - pending entries stay, and the server refuses them.
-   - A subscribe and an alive governing row (§7.9) clear a `not-found` `KnownScope` record; nothing
-     clears a `gone` one.
+   - A subscribe and an alive governing row (§7.9) clear a `not-found` `KnownScope` record, and so does
+     a browser's reconcile once no product holds the tree open (§7.9); nothing clears a `gone` one.
    - Every change to the scope's confirmed rows changes `CursorRec.digest`, and every change to its
      staging changes the staging digest (§6.12), in the chunk that makes the change.
    - Every chunk observes the stamps of its rows and updates `admittedHigh`. The last chunk stores
@@ -1739,6 +2250,13 @@ engine stops on any `426`.
    `serverEpoch` and whose `resultSeq ≤ cleanSeq`:
    - live cursor: `cleanSeq = cursor.seq`, or `cursor.seq − 1` while the cursor carries a key;
    - booting, or no cursor: `cleanSeq = −∞`.
+
+   For an opted entry, test each marker against its own scope cursor and shared `resultEpoch`.
+   Cover and deactivate that marker independently; retain the acked entry until every marker is
+   covered. A terminal scope end covers only that scope's marker. Ordinary reset preserves coverage;
+   epoch recovery deliberately clears it for replay. A covered target's text and serial predictions
+   cannot overlay newer confirmed values while another target still waits. Retained acked entries
+   are never resent in the same epoch.
 
    A covered entry resolves. The transaction that stores a cursor (a page's last chunk, a frame
    applied inline) settles the entries it covers: it resolves them all, or a first part in commit
@@ -1791,7 +2309,8 @@ engine stops on any `426`.
 ### §7.6 Views
 
 ```
-pending(scope, withHeld) = entries of scope in {ready, sent, acked} ∪ (withHeld ? {held} : {}), in commitOrder
+pending(scope, withHeld) = active effects in scope from entries in {ready, sent, acked}
+                          ∪ (withHeld ? {held} : {}), in commitOrder
 drawn(t, id)  = fold(joinRecord, confirmed[t, id], [e.delta[t, id] ∪ e.predict[t, id] for e in pending(scope, true)])
 stored(t, id) = the same fold over pending(scope, false)
 text fields: the newest pending text replaces the confirmed text
@@ -1802,11 +2321,25 @@ capCount(t) = |{ id : visible(stored(t, id)) }|
 - `drawn` decides what is drawn.
 - `stored` decides caps, guards and write positions (D-25's drop position), so a held delete still
   occupies its slot.
+- A scoped entry contributes only its uncovered projection for this scope, plus ordinary `d` while
+  its origin marker is uncovered. Once its receipt is applied, ordinary `d` draws each register the
+  origin receipt versions at that accepted version, so a guard read after the ACK holds what the
+  server stored. Stored all-scope effects remain available for dependencies, adoption, identity
+  recovery and retained notices after a projection deactivates.
 - Serial values start from confirmed rows; command predictions overlay their serial keys in commit
   order. Entries without serials preserve them, and `stored` excludes held predictions.
 - Unknown fields, and rows of unknown types, are preserved and ignored: a row of an unknown type is
   never visible, and a record of a type with life is visible only while alive.
 - Appendix A may add a product view rule (A.2).
+
+**A product's notices.** A client reads one product's notices (D-17), observable and published again whenever a
+notice is written, dismissed or folded into (§7.7): every notice whose scope is one of the product's (a product
+scope, and for the product whose type governs trees, its tree and overlay scopes), whole, as copy and discard read
+them, but a dismissed one. It reads no scope's rows, so a notice outlives its scope: a tree known gone (§7.5), whose
+rows the device has forgotten and which nothing the device holds still names, keeps its `scope-dead` notice
+readable. The JS reference reads it as `noticesOfProduct`, the browser engine as `observeNotices`, Swift as
+`NoticesView` and Kotlin as `notices(product)`. A browser scope observation also carries the notices whose content
+draws in its scope, projected to it (§7.7), dismissed ones marked.
 
 ### §7.7 Refusal, rebase, recovery and maps
 
@@ -1833,11 +2366,11 @@ notice of its own, as step 3 states):
    - `base-unknown`: every text delta of `e` switches to `base: {text: baseTexts[…]}`.
 2. **Remove `e`.**
 3. **Fold dependents.** A *dependent* is a delta or command of a later entry that touches, or whose
-   `ref` fields, `ref` arguments or key parts name, a record created in `e` (by a delta or by
-   `predict`), that carries unchanged a life register `e` wrote (a keyed put or a command's
-   prediction, §7.1 step 4), or that
-   targets a scope whose governing record `e` creates. A reference names a record in the scope its
-   type lives in: a product scope, or the tree and overlay scopes of the same tree. Folding is
+   ordinary references (D-10) name, a record created in `e` (by a delta or by `predict`), that
+   carries unchanged a life register `e` wrote (a keyed put or a command's prediction, §7.1 step 4),
+   or that targets a scope whose governing record `e` creates. A reference names `(scope, t, id)` in
+   the scope it declares (§2.4 References): a step `treeFrom` its tree argument names a record of that
+   tree, and the same id in another tree is another record. A proposed creation names none. Folding is
    transitive: a record a dependent creates, and a life register it writes, make their own
    dependents. A guard makes nothing dependent, so a fold keeps a guard on a record `e` creates in
    an entry with no dependent delta on that record. After this refusal the server refuses that entry
@@ -1864,7 +2397,16 @@ notice of its own, as step 3 states):
 
 **Write map.** An `ok` result's write map applies in the result's batch (§7.4). Let `s` be the
 command entry's stamp, which every register it predicted carries. Steps 0–2 run for each map
-entry `w`, then step 3 once for the map:
+entry `w`, then step 3 once for the map. The `target-merged` refusals of every entry are read first,
+from the queue as it stood. The renames of steps 0 and 1 are then one logical map, applied to each
+entry at once through its compiled leaves (§2.4 References): no mapping feeds another. A mapping of a
+global type renames its id in every scope; a mapping of a scope-local type renames it only in the
+command's scope, keyed by that scope as the map's governor mappings leave it, so an overlay's key
+names the record of its own tree and the same id in a sibling tree stays. Each entry takes two passes,
+each reading every leaf before writing one: the global leaves and governed ScopeRefs, then the
+scope-local leaves resolved again, so a `treeFrom` scope follows its renamed tree. The entry's
+`baseTexts` keys follow their records, so a `base-unknown` recovery finds the text a renamed record's
+write was edited from. A creation leaf moves only with its own command's retained target.
 0. The stable source is `(w.t, w.from ?? w.id)`. If `writeTargets` already records this source,
    first move its previous resolved id to `w.id` in the command's prediction and its later held or
    ready dependents, including deletes, references, key parts and guards, and in device rows through
@@ -1884,7 +2426,7 @@ entry `w`, then step 3 once for the map:
 1. If this source had no retained target, apply its initial join: `w.from` is present only when the
    resolved id differs from the id the command was called with,
    which means the record existed before the command (a join). It is replaced by `w.id` in every
-   held and ready entry (delta ids, key parts, `ref<w.t>` fields and arguments), in `predict`, and
+   held and ready entry (delta ids and every reference to the record), in `predict`, and
    in device rows (a product hook). The exception is an entry whose delta deletes `(w.t, w.from)`:
    it is not rewritten, and is refused `target-merged` by steps 2–4 above.
 2. The command's own `predict` is restamped by the restamp rule, with `n` given by the map:
@@ -1899,7 +2441,21 @@ entry `w`, then step 3 once for the map:
    of a `w` with `born`) in every held or ready entry that writes them. A later local write
    therefore follows the command it came after (INV-1).
 
-No entry is `sent` behind a command (§7.4), so every reference, born and guard is rewritable.
+For scoped entries, every record and slot mapping is keyed by `(scope, t, id, slot)`. Apply global-ID
+remaps, including governed ScopeRefs, before scoped accepted slot versions. Observe all accepted
+stamps and reclock later queued owned writes; numbered immutable intents are never rewritten by a
+scoped ACK. A predicted register moves to its accepted version. Where an accepted version differs
+from the stamp the command wrote (a consequence rewrote an ordinary register) or from the previous
+receipt's (a replay), later queued guards, borns and carried lives holding the old stamp follow it,
+for ordinary `d` and predictions alike. Repeated singleton IDs in two trees never share a slot map.
+The stored effects drive record, reference, born, life and governor dependencies, including a target
+update with no life register. Held-back numbering, refusal folding and unsourced-clock recovery use
+these scoped keys. Target read projections expose that scope's pending records, Undo offers and
+failed deltas. Command read lists remain owned by the origin. A projected notice preserves its
+identity and origin, while the durable notice retains all scoped content for global copy and
+discard; origin command arguments never infer a target singleton's failed record.
+
+No entry is `sent` behind a command (§7.4), so every queued reference, born and guard is rewritable.
 
 **Restamp rule.** Used by `clock-skew` recovery and by the write map (steps 2 and 3). It moves only
 registers an entry wrote, which carry a stamp at or after the entry's `stamp`. A register an entry
@@ -1908,7 +2464,9 @@ by recovery's lowering (step 1.5). The registers
 each entry wrote are determined for every entry before any register moves in a pass. Each restamped
 entry takes one new stamp `n`: a fresh tick of the recovering instance's clock, in commit order, or
 the stamp a write map gives. In `clock-skew` recovery `n` becomes the entry's `stamp`; a write-map
-restamp leaves the entry's `stamp` unchanged. For each register that moves from `o` to `n`:
+restamp leaves the entry's `stamp` unchanged. A register belongs to the scope its delta writes: an
+opted entry's projection is its own scope's, and steps 2–4 look in that scope, whatever the entry's
+origin. For each register that moves from `o` to `n`:
 1. the register takes `n`;
 2. if it is a create's life, the entry's `born` also becomes `n`, and every later held, ready or
    sent delta on the same `(t, id)` carrying `born = o` takes `n`;
@@ -1923,38 +2481,93 @@ before its own result is recorded; its resend then carries another digest, the s
 
 ### §7.8 Multi-tab (web)
 
-- The leader holds `navigator.locks` lock `wm-sync:<replica>` and runs the sender, the puller and
-  the live socket.
+- The leader holds `navigator.locks` lock `wm-sync@<store>:<replica>` and runs the sender, the
+  puller and the live socket. `<store>` is the IndexedDB version of the device store (§2.5).
 - A tab requests the lock when it becomes visible. A hidden tab releases it once a peer announces
   it is visible.
 - Tabs post `hello {visible}`, `visible`, `hidden`, `bye`, `changed(scope, ids)`, `upgrade` and
-  `activeReplicaChanged(previous, replica)` on `BroadcastChannel('wm-sync:<replica>')`, and a tab
+  `activeReplicaChanged(previous, replica)` on `BroadcastChannel('wm-sync@<store>:<replica>')`, and a tab
   answers a peer's `hello` with its own. A tab that knows no other live tab is the last tab. A tab
   that receives a `426` posts `upgrade`, and every tab then stops sync until the app is upgraded
   (§7.5). A tab whose transaction changes `activeReplica()` posts `activeReplicaChanged` on the
   channel of the replica it replaced, and every tab delivers the event (§7.12). A tab compares
   `activeReplica()` with its channel's id on every `hello`, `visible` and lock acquisition, and
   rekeys its channel and lock.
-- Every tab holds the lock `wm-tab` in shared mode while it lives. A tab that finds it unheld
+- Every tab holds the lock `wm-tab@<store>` in shared mode while it lives. A tab that finds it unheld
   (`navigator.locks.query()`) when it starts is the first tab.
-- Every tab reads views from IndexedDB and commits through §7.1.
+- **Store versions.** Every lock and channel name carries the device store's IndexedDB version, and
+  the registry version keys none: two bundles of one store version share the store, so they share one
+  leader. Raising the store version shuts out every older bundle. The upgrade closes an older tab's
+  connection, and an older bundle's open fails, so two versions never hold the store open together. A
+  tab under an older version's names therefore holds no lock a current tab waits on. No current tab
+  counts it as a peer or hears it. A leader pulls only its own registry's scopes, so a bundle whose
+  registry adds a product raises the store version.
+- A tab whose connection an upgrade closes (`versionchange`) can keep nothing more. It releases its
+  locks and its channel at once, and stops sync as a `426` does (§7.5). It reloads only when that
+  loses nothing on its screen: the person has given no input (a key, a pointer, a touch or a wheel)
+  since the tab's last commit, no write has failed since the close, no text field holds the focus
+  and no dialog is open; it then waits until the page is hidden or has had no input for 3 s. Until
+  then it shows the update prompt, which says that work saved before the update stays and that
+  anything typed since will not save. Once input or a failed write stands, the prompt stands until
+  the person reloads.
+  A bundle released before these names (store version 2) keeps its unversioned locks and its
+  channel until its page closes, reading and writing nothing.
+- Every tab reads views from IndexedDB and commits through §7.1. Each publication of a tab's views, at open
+  and after every change to the store, its own or a peer's, reads every scope of the active replica whole,
+  whether or not anything in the tab observes it, so a read of a scope answers the rows the device stored for
+  it: a scope a peer changed is read again, and one a peer brought to the device after the tab opened is read
+  the first time. No read answers a scope whose stored rows the tab has not read.
 
 ### §7.9 Subscriptions
 
 A bound replica subscribes the product scopes of the products its surface carries (the registry's
-`surfaces`), and no scope of another product. It also subscribes the tree and overlay scopes its
+`surfaces`), and no scope of another product. A build may carry fewer products than its surface lists:
+it names the products it carries (Swift `EngineConfig.carried`, Kotlin `products`), and subscribes only
+those. It also subscribes the tree and overlay scopes its
 product binding lists (A.1): the set holds a tree and its overlay per governing record alive in
 `drawn` or in `stored`, so a held create's tree is in it, and so is a tree inside its governing
-record's delete window, so an undo finds its rows. It also subscribes any `tree/<T>` while it is open: the engine exposes
-`subscribe(scope)` and `unsubscribe(scope)`, which a product calls when it opens and closes a tree.
-A subscribe deletes a `not-found` `KnownScope` record; the scope has no cursor, so its first pull
-boots it. A `gone` record stays, since a scope's death is final (INV-13): a subscribe to it answers
-`gone`, and nothing is pulled. An alive row of the governing type, arriving in any page or frame,
+record's delete window, so an undo finds its rows. The engine also exposes `subscribe(scope)` and
+`unsubscribe(scope)`, which a product calls when it opens and closes a tree. An explicit `tree/<T>`
+subscription on a bound replica adds both the tree and that replica's own `self/overlay/<T>`, even
+when another account owns the readable tree. It never adds the owner's overlay. An anonymous
+replica adds only the tree. The same resolved set drives pulls, live subscriptions, readers'
+`firstPullComplete`, peers and account changes; a tree subscribe schedules both bound scopes' first
+pulls. Web accepts only tree scopes at this public entry, and counts them per tab: each `subscribe` of a
+tree adds a holder and each `unsubscribe` removes one, so a tree that two products, or two readings of
+one product, hold open stays in the set, pulled and followed, until the last of them lets it go; an
+`unsubscribe` with no holder left changes nothing. A tree's holders share one opening, which ends with
+its last holder: where every holder leaves before a `subscribe` of the tree resolves, the tree stays out
+of the set, neither pulled nor followed, until the next `subscribe`. Native clients hold one entry per
+explicitly subscribed scope, which one `unsubscribe` releases, and also retain their explicit overlay
+subscription entry.
+
+The last explicit tree release (across web tabs) releases its paired overlay too, unless the tree's
+alive governing record or a separate explicit native overlay subscription still supplies it. A tree
+access denial differs from a voluntary release: an applied `gone` or `not-found` for a bound
+replica's tree atomically forgets and records that end for its own overlay as well, even if the
+overlay was explicitly opened. A prior `gone` remains final. Both scopes' acknowledged entries
+resolve; unconfirmed work remains under the ordinary scope-end rules (§7.5). Ignored ends change
+neither scope.
+
+A tree subscribe deletes `not-found` `KnownScope` records for the tree and, on a bound replica,
+its own overlay; neither has a cursor, so each first pull boots it. A `gone` record stays, since a
+scope's death is final (INV-13): a subscribe to a gone tree answers `gone`, clears neither record,
+and pulls nothing. An alive row of the governing type, arriving in any page or frame,
 deletes a `not-found` record of its `tree/<id>` and `self/overlay/<id>` alike: the tree the record
 denies exists, so the answer that wrote it is stale (a restore, then a create re-sent after it). The
 scopes rejoin the subscription set, so the next puller run pulls them (§7.5). An `anon` replica
 pulls only readable trees it opens. Every scope a replica pulls is held in full: a boot sends every
 alive row (§6.7).
+
+In a browser, reconciling the set (below) first deletes the `not-found` records of every tree that no
+product holds open (`subscribe`, in any tab) and no entry writes, in the tree or its overlay. A
+`not-found` is all a tree the person may not read leaves (§6.7), and once the tree is closed nothing
+needs its id on the device: opened again, it is pulled again and answered as before. A `gone` stays,
+since only a tree's owner hears one (§6.7) and it refuses a write into the account's own dead tree
+(§7.1 step 2).
+
+Uncovered scoped prediction and receipt-only targets join a bound replica's subscription set, so the
+puller proactively obtains their watermarks even when no product screen has opened them.
 
 A tree or overlay scope whose governing record's create is still in the outbox, held, ready or sent
 (by a delta or a prediction), stays in the subscription set but is neither pulled nor subscribed
@@ -2016,7 +2629,10 @@ replica pulls no product scope).
 
 **Sign-in as A** follows the lineage rule (D-27), per product. It runs after a hello served as A
 (`as`, §9.1), which states the products in which A holds records (§9.2). An entry's product is its
-scope's; a tree or overlay scope's product is its governing type's. It first releases every held
+origin scope's; a tree or overlay origin's product is its governing type's. One Add/Discard choice
+owns the whole entry and every projection, including projections into another product. Its count
+uses distinct `(scope, type, id)` across those effects; an entry is never split between product
+choices. It first releases every held
 entry into the durable queue (Undo does not survive sign-in), before the decisions. While it is
 incomplete, `DeviceMeta.pendingSignIn` holds A.
 - Entries of lineage A, a `dormant(A)` replica's included, are sent without asking.
@@ -2035,21 +2651,26 @@ incomplete, `DeviceMeta.pendingSignIn` holds A.
   `anon` replica stays active, no replica changes and nothing is sent. Leaving an incomplete
   sign-in changes nothing more; it resumes, with a new hello and every decision still due, at the
   next engine start. Cancelling it (Swift `SyncEngine.cancelSignIn()`, store transaction
-  `signInCancel`; Kotlin `SyncRuntime.abandonSignIn`, for the attempt whose credential is still A's)
-  clears `pendingSignIn` and deletes A's credential: the `anon` replica stays active and nothing
-  resumes.
+  `signInCancel`; Kotlin `SyncRuntime.abandonSignIn`, for the attempt whose credential is still A's;
+  the JS reference's `cancelSignIn(device, A)` and the browser engine's `cancelSignIn(A)`, which
+  record the credential's deletion in the same transaction) clears `pendingSignIn` and deletes A's
+  credential: the `anon` replica stays active and nothing resumes. Once a sign-in completed, there
+  is none to cancel.
 - **Adoption boundary:** entries of another account's lineage are never adopted. A `dormant(B)`
   replica stays dormant.
 
 Then, in one local transaction:
 1. **Discard.** For each decision answered discard, the entries it covers end `discarded`, deletes
    released at the start among them, and the product's device rows in the `anon` replica are
-   deleted.
+   deleted, with the journal's whole source entries of that product and their preimages, its
+   cancellations' units and its inverse requests (§7.3 Undo of an act). An act or cancellation left with
+   no entry of its own goes.
 2. **Bind.** A `dormant(A)` replica becomes `bound(A)`, with every cursor `null`. Otherwise the
    `anon` replica, when entries or pending product device work remain, is rebound (`state := bound`, `account := A`).
    Otherwise a new `bound(A)` replica is created.
 3. **Add.** When `bound(A)` is not the rebound `anon` replica and entries or pending product device
-   work remain in the `anon` replica, they move, with its device rows and notices, into `bound(A)`, preserving local ids,
+   work remain in the `anon` replica, they move, with its device rows, notices, journal, cancellations and
+   inverse requests, into `bound(A)`, preserving local ids,
    gesture ids and stamps, after `bound(A)`'s own entries in their commit order. The `anon` replica
    is then deleted. Products merge writing-bearing device-row collisions without dropping either
    document; the destination's current draft stays current and incoming writing remains available
@@ -2083,7 +2704,8 @@ Then, in one local transaction:
      resume on the next sign-in as A. On Discard:
      delete the replica with its device rows, and its entries end `discarded`. Discard removes them from this device; it
      cannot recall a sent entry the server may already have admitted.
-  4. The `anon` replica, created if absent, becomes the active one, and A's credential is deleted.
+  4. The `anon` replica, created if absent, becomes the active one, unpaused (§9.1), and A's
+     credential is deleted.
 
   Cancel ends the session with A signed in: the sender resumes, and the released holds stay
   released. A sign-out is not durable: a process death before the finish leaves A signed in, as
@@ -2091,10 +2713,25 @@ Then, in one local transaction:
 - **Credentials.** The engine keeps an account's credential only while the account is bound or its
   sign-in is pending (`pendingSignIn`). Engine start deletes every other stored credential, so a
   deletion a finished sign-out did not reach (a process death after its transaction) is retried
-  there.
+  there. In a browser, a reconnection retries it too, before the live socket opens again, and while a
+  deletion is owed no live socket stays open (§9.1). A deletion that leaves no credential unpauses
+  the active `anon` replica (§9.1): the session owner's port answers whether it did. A browser
+  sign-in drops a deletion owed for an earlier session: the credential the browser holds is the one
+  signing in.
 - **Discard unsent** (explicit, for `dormant`): delete the replica. Its entries end `discarded`.
 - **Account change:** signing in as another account while A is `authPaused` is a sign-out of A,
   then a sign-in.
+
+In a browser, the transaction that completes a sign-in also empties the `anon` replica it leaves beside
+the bound one, which holds no work then, of every tree and overlay scope: their confirmed rows,
+`SpentId` rows, cursors, `KnownScope` rows and staging. They are the readable trees a person opened
+signed out (§7.9), which nothing reconciles while the replica is not active, so they would otherwise
+stay with whoever is at the browser next.
+
+The browser engine adds two reads for a product's sweep after a sign-out: `hasReplicaOf(account)`,
+whether a bound or dormant replica of the account remains (a Discard deleted it), and
+`anonymousRecords()`, the scopes the `anon` replica holds rows of or its entries write, and the
+records `{scope, t, id}` those entries write: what stays with whoever is at the browser next.
 
 ### §7.11 Fork guard and re-identify
 
@@ -2143,6 +2780,17 @@ so whoever holds an id reads `activeReplica()` again at engine start, or keeps a
 its own, such as the gym Coach's `runningTurn` device row (gym Coach §4.5). On web every tab delivers
 it (§7.8).
 
+The browser engine adds `activeBinding()`: an opaque string that changes whenever the active replica or
+the account it is bound to changes, so a switch to another replica, a sign-in (the one that binds the
+anon replica in place, whose id stands, included) and a sign-out each change it, and a re-identify does
+not; null before the engine's first publication. An act planned under it commits only while it stands
+(§7.1 Ordered local acts). A pull's answer and its pages land only under the binding the pull was sent
+under, and the answer only under the replica id it was sent under as well; a frame lands only under the
+binding its live socket opened under, and a change of binding, another tab's included, closes that
+socket and ends every doubt (§7.9), so the socket opens again under the new one. An answer or frame
+these rules turn away applies nothing and pauses nothing, and the puller does not back off for it: it
+pulls the answer's scopes again for the replica now active.
+
 The Kotlin engine adds two reads of this state. `activeReplicaRebinds()` announces each completed sign-in
 that rebinds the active `anon` replica, whose id stands and whose seat does not (gym Coach D-10), with the
 event's delivery. `activeReplica()` answers from what the last durable transaction published, so no
@@ -2168,6 +2816,7 @@ doubt (§7.9), whether or not its id changed.
 | `ready` | at numbering, its one-intent body over `PUSH_MAX_BYTES` (grown since commit, §7.4) | `refused` (`too-large`, a notice, or none for an orphan) |
 | `held`, `ready` | anonymous gesture superseded (§7.1 step 4), or emptied by the silent fold of an undo, retire or supersede (§7.3) | `undone` (no notice) |
 | `held`, `ready` | folded as a dependent (§7.7) | `refused` (in the dependency's notice) |
+| `ready` | an inverse slot materialized with nothing left to restore (§7.3 Undo of an act) | `resolved` (vacated, never numbered) |
 | `held`, `ready` | a write map merges its delete target into an existing record (§7.7) | `refused` (`target-merged`, a notice) |
 | `sent` | `ok` | `acked` |
 | `sent` | `clock-skew`, `base-unknown` | `ready` (recovered, same position) |
@@ -2193,7 +2842,8 @@ doubt (§7.9), whether or not its id changed.
 | `anon` | sign-in as A with a decision still due, or cancelled | unchanged; nothing sent (§7.10) |
 | `bound(A)` | sign-out, empty outbox or Keep | `dormant(A)` |
 | `bound(A)` | sign-out, Discard | deleted |
-| `bound(A)` | 401, `account-mismatch`, or an answer served as another principal (§9.1) / re-authentication as A | `authPaused` set / cleared |
+| `bound(A)` | 401, `account-mismatch`, an answer served as another principal, or (browser) the session owner finding the browser holds no credential of A (§9.1) / re-authentication as A | `authPaused` set / cleared |
+| `anon` (browser) | an answer or frame served as an account (§9.1) / a finished sign-out, a deletion that leaves no credential, or the session owner finding the browser holds none | `authPaused` set / cleared |
 | `dormant` | explicit discard | deleted |
 | any | fork guard, `replica-forked`, `replica-foreign`, `gap`, epoch change | same state, new replica id |
 
@@ -2279,7 +2929,23 @@ every `401`. Every `change`, `gone` and `not-found` frame carries its socket's `
 describes what that principal sees, not the replica's account. A replica of account A handles a
 `200` or `409`, and a frame, whose `as` is not A (`null`, another account, or absent) as a `401`
 (§9.6): `authPaused`, nothing applied and nothing forgotten. These are the answers whose handling
-depends on the principal; a `400`, `413`, `426` or `503` is handled by its status alone.
+depends on the principal; a `400`, `413`, `426` or `503` is handled by its status alone. The browser
+engine's `anon` replica handles a `200`, and a frame, whose `as` is an account the same way: its
+requests carry no credential, but its live socket carries whatever cookie the browser holds, such as
+one a sign-in set before it completed. No re-authentication ends that pause, since the replica has no
+account: the credential going does. So while a credential's deletion is owed (§7.10 **Credentials**)
+the browser engine keeps its live socket closed, and its anonymous pulls go on; a reconnection runs the
+deletion before the socket opens again. A finished sign-out makes the `anon` replica active unpaused, and
+a deletion that leaves the browser no credential (§7.10 **Credentials**) unpauses the active `anon`
+replica; one that leaves another account's cookie in place does not. The session owner learns whose
+credential the browser holds outside the sync endpoints too, and tells the browser engine
+(`credentialHeld(account)`, `null` for none): a bound replica whose account's credential the browser
+no longer holds is `authPaused` as a `401` would pause it, and a paused `anon` replica unpauses once
+the browser holds none. The session owner tells it what its reads of the account find, and that is
+what ends a paused `anon` replica's pause while no deletion is owed and no sign-in is pending: the
+web shell reads `/v1/me` once the engine opens or is restored, on focus, on reconnection and every
+20 s, outside a sign-out or an account closure. The engine asks no one itself. A frame's `as` never
+deletes a credential: it may name a cookie a sign-in set before the sign-in recorded `pendingSignIn`.
 
 An HTTP request is checked in this order, and the first failing check answers:
 1. the registry version (above);
@@ -2356,6 +3022,11 @@ query over visible rows (§6.5). A row of a `visibleWhen` type counts only while
 holds a value, so an account whose rows are all empty holds none. A sign-in's lineage rule uses the
 hello that precedes it (§7.10).
 
+A deployment MAY compose and bind a product it withholds: it holds nothing of it. Its `holdsRecords` is false and
+its `holdings` count 0; a pull answers its product scope as an absent one (§6.7 step 2) and its trees and overlays
+`not-found`, as does a `sub` to them; and admission refuses an intent in its product scope `forbidden` and in its
+trees and overlays `not-found`, before step 3 takes any lock or inserts a scope.
+
 `holdings` is present iff `holdsRecords` is, from the same snapshot. `holdings[p]` is present iff `p`
 declares a `headline` type (§2.4): `count` is the number of rows of that type in `acct:A/<p>` that
 `visible` accepts, and `lastWrittenAt` is the greatest `ru` among them (the server's receipt of the
@@ -2378,6 +3049,13 @@ type Result = { n, s: 'ok', seq: number, write?: {t, id: Id, from?: Id, born?: S
 type PushResponse = { serverTime, epoch, as: string, lastN: number, results: Result[],
                       retry?: {n: number, retryAfterMs: number} }
 ```
+
+An opted push response is bounded by `SCOPED_RESPONSE_MAX_BYTES` (§9.7), including its complete
+result, write map, original command detail and envelope. Admission checks the full canonical UTF-8
+response with widest safe-integer envelope fields before commit; the metadata also has its separate
+receipt bound. Transports select the allowance from registry-declared scoped command names in the
+request, including saved-result replay, and measure actual UTF-8 response bytes. Hello, conflicts and
+empty pushes return no saved successful result. Non-opted response limits remain unchanged.
 
 ### §9.4 Pull: `POST /v1/sync/pull`
 
@@ -2418,7 +3096,7 @@ S→C: { op: 'change', as, scope, epoch, seq, digest: string, rows?: Row[] }
 `as` is the principal the socket's upgrade was served as (§9.1), the same on every frame of the
 socket.
 
-Other `op` values carry ephemeral product messages, such as presence, and the engine ignores them.
+The engine ignores any other `op` value.
 Frames are at most `LIVE_FRAME_BYTES`.
 
 ### §9.6 Codes: the closed list
@@ -2483,6 +3161,9 @@ product copy shows its generic refusal line.
 |---|---|
 | `MAX_RECORD_BYTES` | 1 048 576, a joined row (admits a 131 072-byte body at worst-case JSON escaping). It is measured before step 11's serial (§6.1 step 9), so a stored row may exceed it by that register. |
 | `PUSH_MAX_INTENTS` / `PUSH_MAX_BYTES` | 64 / 2 097 152 (admits a text intent with its inline base) |
+| `EFFECT_MAX_BYTES` | 67 108 864 bytes (64 MiB), summed JCS `{scope, delta}` bytes of generated command and check effects across all scopes, independent of the input body; supports bulk changes carrying maximal Unicode ids. Local scoped predictions use the same bound on their canonical grouped deltas. Tests may shrink it. |
+| `RECEIPT_MAX_BYTES` | 67 108 864 UTF-8 bytes (64 MiB) of canonical `windmillKit` metadata. Positive test overrides may only shrink it. |
+| `SCOPED_RESPONSE_MAX_BYTES` | 71 303 168 UTF-8 bytes (68 MiB), one complete opted result plus its push envelope. Positive test overrides may only shrink it. |
 | `PUSH_WORK_MS` | 50 |
 | `PULL_PAGE_BYTES` | 1 048 576 (at least one row) |
 | `PULL_MAX_SCOPES` / `PULL_MAX_BYTES` | 64 / 65 536 (admits `PULL_MAX_SCOPES` scopes with their cursors) |
@@ -2565,7 +3246,7 @@ vectors assume.
 |---|---|
 | all | `constants.json`, `stamp/{order,codec}`, `hlc/{tick,observe}`, `jcs/values`, `join/{lww,ranked,fww,life,born,record}`, `derive/slug`, `identity/seeded`, `digest/{row,scope}`, `protocol/*.jsonl` (hello, push, pull, live, join, skew and whole transcripts) |
 | server | `identity/table` (every §4.3 cell), `admit/*`, `text/{tokens,script,diff3,merge}`, `envelope/credentials`, `push/serve`, `pull/{serve,hello}`, `live/death`, `machine/scope`, `gym/admit`, `journal/admit`, `journal/revisions` |
-| client | `hlc/{offset,jump}`, `fracindex/{between,drop}`, `view/{drawn,stored}`, `commit/*`, `hold/{release,undo}`, `refusal/{fold,restamp,base-unknown,transport}`, `write/map`, `lineage/{signin,signout,start}`, `pull/pages`, `machine/{intent,replica}`, `journal/client`, `journal/content-clock` |
+| client | `hlc/{offset,jump}`, `fracindex/{between,drop}`, `view/{drawn,stored}`, `commit/*`, `hold/{release,undo}`, `refusal/{fold,restamp,base-unknown,transport}`, `write/map`, `lineage/{signin,signout,start}`, `pull/pages`, `machine/{intent,replica}`, `journal/client`, `journal/content-clock`, `undo/*` |
 
 Runners assert exact equality, comparing values by `jcs`.
 
@@ -2613,8 +3294,11 @@ run, and against the real server and Postgres nightly.
 - a store restored from a snapshot, or cloned.
 
 **It checks at every answer and frame** that one served as anyone but the replica's account changes
-nothing the replica pulled (§9.1), and **at every step** that each change of a device's active replica
-id was announced by one `activeReplicaChanged` naming the id it replaced (§7.12).
+nothing the replica pulled (§9.1), **at every step** that each change of a device's active replica
+id was announced by one `activeReplicaChanged` naming the id it replaced (§7.12), and **at every push**
+that no intent a device sends names a proposal its retained write targets say was redirected, by the
+proposal's own id or by any typed reference (§2.4 References), but the command that proposed it and an
+id another retained command resolved to.
 
 **It checks after quiescence:**
 - INV-2: no resurrection without a revive or a newer keyed put.
@@ -2643,55 +3327,117 @@ as ≤200 chars is a bound in that unit, the field's, or its domain's when neste
 
 ### A.1 Roadmap
 
-**Surfaces:** web. **Primary types** (§9.2): `tree`.
+**Scopes:** `self/roadmap` (the person's roadmaps and Roadmap Coach's records), `tree/<T>` (one roadmap) and
+`self/overlay/<T>` (a person's marks; the owner's pointers and workspace). **Device scope** `device/roadmap`,
+with rows `landing:<T>` (`{nodes, edges, revived, names?}`: the device's own new steps and links, the steps its
+own changes revived, and the name of each step it linked from, until the person has been told,
+[Roadmap on the sync engine](roadmap-on-the-engine.md) §6), `carry:<T>` (the carry-over's ledger of what it carried of
+the old bundle's roadmap `T` and the words of each record it set aside, Roadmap on the sync engine §8.2),
+`runningTurn:<turnId>`, `applying:<proposalId>` (`{stamp}`) and `picture:<id>` (`localOnly`), as
+[Roadmap Coach](roadmap-coach.md) §7–§9 use them.
+**Surfaces:** web, iOS. Roadmap's server-origin doors (MCP, tending, the fork) are Roadmap on the sync engine
+§7's. **Subscriptions** (§7.9): a tree and its overlay for each `tree` record the replica holds; a reader's
+roadmap and its subtrees are subscribed explicitly as the person opens them (Roadmap on the sync engine §5).
+**Adoption:** the cutover of Roadmap on the sync engine §8.1. **Binding:** the JS reference model server
+(`packages/api-contract/sync/reference/roadmap/`) and the C++ server's (`backend/products/roadmap/sync/`).
 
-| Type | Scope | Identity | Life | Fields | Cap |
+`tree` mints `t_` and 16 of `0-9a-f`. `node` and `kind` take ids by `idDomain`, 1–128 chars (§2.4), mint 16 of `0-9a-z` and derive with the fallbacks `step` and `kind` (D-26). `subtask` and
+`stepLink` mint 16 base-62 characters in their overlay's id space, matching `^[A-Za-z0-9_-]{8,64}$`; Coach's
+four types mint the same, globally, seeded (D-8: a seed of at most 58 characters, `n ≤ 99 999`). A
+roadmap's *place* is its `tree.parent`; a *subtree* has one and a *root* does not; *the subtrees under* a
+roadmap are those whose places lead up to it. A step is *present* while its `node` is alive. **Primary
+type** (§9.2): `tree`. No type is the headline.
+
+| Type | Scope | Identity | Life | Fields | Rules |
 |---|---|---|---|---|---|
-| `tree` | self/roadmap | minted g `^t_[0-9a-f]{16}$`, governs `tree:<id>` | terminal, keep | — | — |
-| `track` | self/roadmap | keyed (tree id) | yes, keep | — | — |
-| `meta` | tree/T | singleton | — | `title` lww ≤200 chars; `visibility` lww **server** ∈ {private, unlisted, public}, `opens` at {unlisted, public} (D-4); `visibilitySetBy` lww server; `forkedFrom` const server | — |
-| `node` | tree/T | derived ≤128 chars, fallback `step` | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color`, `ord` (D-25), `status`, `description` ≤16 000 chars, `links` (`maxItems` 32 of {url ≤2048 chars, label ≤200 chars}) | 10 000 |
-| `edge` | tree/T | keyed `[from, to]` (`ref<node>` each) | yes, keep | — | 20 000 |
-| `kind` | tree/T | derived ≤128 chars, fallback `kind`; genesis `build`, `learn`, `milestone` | revivable, keep | lww: `hue`, `label` ≤24 chars, `description` ≤80 chars, `ord` (D-25) | 6 |
-| `progress` | self/overlay/T | keyed (`ref<node>` id) | none | `mark` lww `{status: complete\|none, outOfOrder: bool}` | — |
+| `tree` | self/roadmap | minted g, governs `tree:<id>` | terminal, keep | const server: `parent` `{tree, step}` or null (default null), whose `tree` is a tree of self/roadmap and `step` a node of `tree/<tree>` (E-8) | A replica-origin delete of a subtree's record → `not-a-root`. Its death kills every subtree under it; a root's also kills each step of the owner's other roadmaps whose alive pointer opens it. |
+| `meta` | tree | singleton | — | lww: `title` ≤200 chars, `guide` ≤5 000 chars, `visibility` ∈ {private, unlisted, public} (private); lww server: `guideInherited` (false), `reach` ∈ {private, unlisted, public}, which `opens` at {unlisted, public} (private); const server: `root` `ref<tree>`, unset on a root, which reads its own id; `parent` as `tree.parent`; `depth` 0–8 (0); `forkedFrom` a tree id | A delta writing `visibility` on a subtree's `meta` → `not-a-root`. A changed `guide` register clears `guideInherited` unless the intent writes it. `reach` is the root's `visibility` while the subtree stands, and `private` otherwise; a root's is its `visibility`. |
+| `node` | tree | derived, by domain | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color` a hue (terracotta), `ord`, `status` null or ∈ {none, complete} (null), `description` ≤16 000 chars, `links` (`maxItems` 32 of {`url` ≤2 048 chars, `label` ≤200 chars}); lww server: `branch` `ref<tree>` or null (null) | Cap 10 000. A change carrying an alive life that joins dead is revived. A change of its presence writes the reach of the subtrees it owns. |
+| `edge` | tree | keyed `[from, to]`, `ref<node>` each | yes, keep | — | Cap 20 000. A loop is admitted. |
+| `kind` | tree | derived, by domain | revivable, keep | lww: `hue` a hue (terracotta), `label` ≤24 chars, `description` ≤80 chars, `ord` | Cap 6. Two kinds of one hue are admitted. A change carrying an alive life that joins dead is revived. |
+| `progress` | overlay | keyed `ref<node>` | none | lww: `mark` {`status` ∈ {complete, none}, `outOfOrder`} ({none, false}) | A reader's own marks. |
+| `pointer` | overlay | keyed `ref<node>` | yes, keep | lww: `opens` `ref<tree>` | The owner's only (below). |
+| `subtask` | overlay | minted | terminal, spent | const: `step` `ref<node>`; lww: `label` ≤200 chars, `done` (false), `ord` | Cap 20 000. The owner's only. Replica origin. |
+| `stepLink` | overlay | minted | terminal, spent | const: `step` `ref<node>`; lww: `url` ≤2 048 chars, `title` ≤200 chars, `ord` | Cap 20 000. The owner's only. Replica origin. |
+| `stepNote` | overlay | keyed `ref<node>` | none; `visibleWhen [text]` | text: `text` ≤16 000 chars | The owner's only. Replica origin. |
+| `coachThread` | self/roadmap | minted g | terminal, spent | lww: `treeId` `ref<tree>` or null (all roadmaps); const: `stepId` ≤128 chars or null, `title` 1–8 000 bytes | Its death kills its messages, their write fates, and its proposals. Replica origin; not a primary type. |
+| `coachMessage` | self/roadmap | minted g | terminal, spent | const: `threadId` `ref<coachThread>` parent, `role` ∈ {person, coach}, `replica`, `pictures` (`maxItems` 1), `at`; lww: `text` ≤131 072 bytes, `truncated` (false), `refusal` a code or null, `calls` ≤32 768 bytes, `receipts` ≤16 384 bytes, `proposalId` `ref<coachProposal>` or null; ranked `state` (running 0; interrupted 1; completed, declined, failed, stopped 2) | Once the stored `state` is completed, declined, failed or stopped, a delta writing `state`, `text`, `calls` or `receipts` → `turn-final`. Its death kills its write fates. |
+| `coachProposal` | self/roadmap | minted g | terminal, spent | lww: `treeId` `ref<tree>`; const: `threadId` `ref<coachThread>`, `messageId` `ref<coachMessage>`, `base` ≤262 144 bytes of JSON, `changes` (`maxItems` 100 of JSON, ≤65 536 bytes); ranked `state` (pending 0; rejected, stale, replaced 1; applied 2); fww `undone` (false) | Roadmap Coach §7. |
+| `coachWriteFate` | self/roadmap | minted g | terminal, spent | const: `messageId` `ref<coachMessage>` parent, `receipt` 0–5, `fate` ∈ {undone, refused}, `code` or null | Roadmap Coach §9. |
 
-**Gestures:**
-- **Atomic:** create tree, which is `tree` + `track`, followed by one `tree/<T>` intent carrying
-  `meta.title`, the genesis kinds and the first nodes.
-- **Held:** delete node (the node's life and the splice edges it adds), delete tree, delete kind,
-  untrack.
-- Deleting a node writes no incident edges; an edge with an absent endpoint is masked.
-- Undo of a released node or kind delete is a `revive`.
-- Every other gesture, including paste, is one intent per record.
-- A reorder writes the moved record's `ord`.
+**The owner's records.** A `pointer`, `subtask`, `stepLink` or `stepNote` in an overlay whose owner is not
+its tree's owner → `forbidden`, so a reader's overlay holds their marks alone (R-3).
 
-**Commands:**
-- `roadmap.setVisibility {visibility, stamp}` in `tree/<T>`, by the owner. `stamp` is the
-  gesture's stamp.
-  - Replay: `stamp` equal to `meta.visibilitySetBy` → ok. Otherwise it writes `visibility` and
-    `visibilitySetBy := stamp`.
-  - Committed with a guard on the `stored` `meta.visibility` stamp; `stale` if it moved.
-  - Predicts `meta.visibility`. A pending prediction's stamp is replaced through the write map
-    (§7.7), so a second change guards on the stamp the first one wrote.
-- `roadmap.fork {src: ref<tree>, dst: ref<tree>, title?}` in `self/roadmap`.
-  - `src` unreadable → `not-found`.
-  - `dst` alive, the caller's, with `forkedFrom = src` → ok (replay). Any other state of `dst`
-    (§4.3) → `id-taken`.
-  - Otherwise: create `tree dst` and `track dst`; write `meta {title: title ?? src title,
-    forkedFrom: src}`; copy every node, edge and kind row of `src`, with ids and stamps kept, `born`
-    as §6.1 step 14 gives it, and `status` cleared. `src` is read under `FOR SHARE` on
-    `sync_scopes(tree:src)`, taken after `acct:A/roadmap`.
-  - Predicts `tree` and `track`.
+**Revival.** An intent's delta of a `node` or a `kind` carrying an alive life, whose record is still dead once
+joined (the delete is newer), takes `life := alive` at the server stamp of step 9's next pass. So a step or
+kind a person changed is present, whichever of the change and the delete came first.
 
-**Other bindings:**
-- **Projections:**
-  - `tree_ops`: one headline per `(tree, gestureId)`, skipping a gesture that leaves no deed;
-  - the tree room: a read cache keyed by `(tree, seq)`.
-- **Server-origin writers:** MCP roadmap write tools, each advertising an optional `requestId`
-  (§6.3), and tending.
-- **Consequences:** a `tree` delete also writes the owner's `track` of that tree dead.
-- **Subscriptions** (§7.9): a bound replica also subscribes `tree/<T>` and `self/overlay/<T>` for
-  every `tree` and `track` record alive in `drawn` or in `stored`.
+**Visibility.** A root's `visibility` is the owner's field, written under the gesture's stamp, so the newest
+choice stands whenever it arrives. When an intent changes its value, by a delta or a restore, the root's `reach`
+takes it and every subtree under the root takes *reach* as below; a restamp of the same value writes no reach.
+Discovery declares `self/roadmap` and those subtrees' scopes for any intent of a tree scope that writes or
+restores `visibility`.
+
+**Reach.** For every `node` whose presence an intent changes, whatever changes it, each subtree the step owns,
+and each under those, in order of depth, takes its place's roadmap's `reach` while it and its owning step are
+present, and `private` otherwise; a `meta.reach` that differs is written at the server stamp. Discovery
+declares `self/roadmap` and those subtrees' scopes for any intent of a tree scope that writes a node's life.
+
+**A roadmap's death** (in `self/roadmap`) kills every alive subtree under it. A root's death also kills every
+alive step of the owner's other alive roadmaps whose alive `pointer` in the owner's overlay `opens` the root;
+discovery reads the owner's overlays and declares those that hold one, with their trees, and the subtrees the
+steps own.
+
+**Commands.** None names a stamp; each writes at the server stamp.
+
+- **`roadmap.createSubtree {tree, root, step, subtree}`** in `self/roadmap`, replica and server origin,
+  `scopedEffects`, predicts `tree`, `meta`, `node`, `kind`. Its arguments are typed leaves (E-8): `tree` and
+  `root` trees of `self/roadmap`, `step` a node of `tree/<tree>`, `subtree` a proposed tree.
+  1. An alive `tree` of the scope placed at `{tree, step}` (the least id when several) answers: ok, the step
+     revived when dead, write `[{t: tree, id, from?: subtree, born}]`. This is the replay rule.
+  2. No `node` `step` in `tree/<tree>`, alive or dead → `unknown-record`.
+  3. An alive owner's `pointer` on the step with `opens` set → `step-opens-a-tree`.
+  4. `tree`'s `depth` (0 unset) + 1 > `MAX_DEPTH` (8) → `depth-limit`.
+  5. `root` not `tree`'s `root` (its id unset) → `invalid`; `subtree` not `none` → `id-taken`.
+  6. Create `tree` `subtree` placed at `{tree, step}`, which creates its scope; into it `meta` `{root, parent,
+     depth: tree's depth + 1, reach: tree's reach}` and the genesis kinds `build` (terracotta, `Build`,
+     `Things you make`, `a0`), `learn` (olive, `Learn`, `Things you figure out`, `a1`) and `milestone` (gold,
+     `Milestone`, `Moments that matter`, `a2`); the step's `branch := subtree`, reviving it when dead. Write
+     `[{t: tree, id: subtree, born, f: {parent}}]`.
+- **`roadmap.recolourKind {kind: ref<kind>, hue}`** in `tree/<T>`, replica and server origin, `scopedEffects`,
+  predicts `kind`, `node`. No such kind → `unknown-record`; its hue (terracotta unset) → ok, no change.
+  Otherwise the kind's `hue := hue`, reviving it when dead, and every `node`, alive or dead, whose `color`
+  (terracotta unset) was the kind's hue takes `color := hue` with its stored life: no step revives. Write `[]`.
+- **Capture and restore** (replica origin, §6.4): `roadmap.capture`, `roadmap.captureTree` (predicts `meta`,
+  so a visibility's write predicts the branch's reach), `roadmap.captureOverlay`; `roadmap.restore` (restores `coachThread`, `coachMessage`, `coachProposal`,
+  `coachWriteFate`), `roadmap.restoreTree` (`meta`, `node`, `edge`, `kind`) and `roadmap.restoreOverlay`
+  (`progress`, `pointer`, `subtask`, `stepLink`, `stepNote`). A restored node life counts for *reach*, and a
+  restored `visibility` for *Visibility*: Undo of a visibility is this generic restore.
+- **Product inverses** (replica origin, `scopedEffects`, `inverse: true`, §6.4). Evidence that does not name
+  what each lists → `invalid`; evidence that no longer holds, a row of a scope not declared or not alive
+  reading absent, skips whole.
+  - `roadmap.undoCreateRoadmap {input: {tree}}` (`self/roadmap`, predicts `tree`): evidence proves the created
+    record `tree` and the created scope `tree/<tree>`. A place → `not-a-root`; the owner's overlay of it past
+    seq 0 → skipped `scope-changed`. Then `tree` dies, as a root dies.
+  - `roadmap.undoCreateSubtree {input: {tree, step, subtree}}` (`self/roadmap`, predicts `tree`, `node`):
+    evidence owns the step's `branch` and proves the created record `subtree` and its scope. `subtree` not
+    placed at `{tree, step}` → `invalid`; the owner's overlay of it past seq 0 → skipped `scope-changed`. Then
+    `subtree` dies and the step's `branch := null`, together (R-8).
+  - `roadmap.redoCreateSubtree {input: {tree, root, step, subtree}}` (`self/roadmap`, predicts `tree`, `meta`,
+    `node`, `kind`; `subtree` proposed): evidence owns the step's `branch` the Undo wrote. Then as
+    `createSubtree` steps 5 and 6.
+
+**What admission does not refuse:** a loop among links, two kinds of one hue, a pointer on a step that owns
+a subtree (reading prefers the subtree). A device checks each before the gesture
+(Roadmap on the sync engine §5).
+
+**Gestures:** **Held** (9 s): delete a step, delete a roadmap; a roadmap's deletion is not undone once its
+hold ends. A reorder writes the moved step's or kind's `ord`, a key the product computes among one trunk
+parent's steps or one roadmap's kinds.
+
+**Codes** (§9.6), the registry's `codes`: `step-opens-a-tree` and `depth-limit` (`roadmap.createSubtree`),
+`not-a-root` (a `visibility` written on a subtree, `roadmap.undoCreateRoadmap`, a person's delete of a
+subtree's record), `turn-final` (a write of a Coach message the writer has ended).
 
 ### A.2 Gym
 

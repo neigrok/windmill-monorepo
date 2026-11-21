@@ -99,6 +99,11 @@ services:
         condition: service_completed_successfully
       embedder:
         condition: service_started
+    # Roadmap's switch onto the sync engine, ROADMAP_ENGINE_ENABLED, lives in a host file of its own that no deploy
+    # renders: deploy-production.sh keeps it as it finds it, creating it empty where it is missing, and only roadmap's
+    # cutover writes it (README.md, "Roadmap's cutover onto the sync engine"). Empty → roadmap's scopes are withheld.
+    env_file:
+      - roadmap-engine.env
     environment:
       APPLE_NATIVE_ENABLED: ${APPLE_NATIVE_ENABLED:-0}
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
@@ -116,6 +121,10 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       COACH_MAX_OUTPUT_TOKENS: ${COACH_MAX_OUTPUT_TOKENS:-2000}
       AI_ALLOWANCES_ENABLED: ${AI_ALLOWANCES_ENABLED:-false}
+      AI_PASS_PRIVATE_SEED: ${AI_PASS_PRIVATE_SEED:-}
+      AI_PASS_KID: ${AI_PASS_KID:-}
+      AI_PASS_MIN_VERSIONS: ${AI_PASS_MIN_VERSIONS:-}
+      AI_PASS_ENVIRONMENT: production
       AI_INSTALLATIONS_ENABLED: ${AI_INSTALLATIONS_ENABLED:-false}
       AI_INSTALLATION_IP_HMAC_KEY: ${AI_INSTALLATION_IP_HMAC_KEY:-}
       AI_INSTALLATION_PROXY_MODE: cloudflare
@@ -360,6 +369,8 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./web:/srv/windmill-web:ro
+      # The site's pause: while maintenance/on exists, the Caddyfile answers 503 (README.md, "Pause the site").
+      - ./maintenance:/srv/windmill-maintenance:ro
       - caddy_data:/data
       - caddy_config:/config
 

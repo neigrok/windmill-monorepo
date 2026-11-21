@@ -44,7 +44,11 @@ reads/writes, protected-storage preparation, fork-guard I/O, Keychain reads/writ
 enumeration, session restoration, code authentication, Apple ticket creation/linking, sign-in-method
 reads, Apple removal, adoption and sign-out. The sync engine
 reports unexpected admission results, digest resets and doubts that reach the backoff ceiling,
-once per doubt episode. Engine and app runtime adapters enqueue static diagnostics through
+once per doubt episode. A push answer to an opted entry that exceeds its byte bound reports `sync_push`
+as decode and changes nothing. An `ok` whose scoped receipt (engine E-7) or inverse outcomes (K-3) do
+not decode still acknowledges its entry with no receipt, ending its predictions until the pull brings
+the rows, and reports `sync_admission` as malformed, as a 400 answer does; a receipt's ids never leave
+the phone. Engine and app runtime adapters enqueue static diagnostics through
 `BoundedTelemetry`: a serial utility worker invokes the sink outside engine/writer/publisher locks.
 At most 128 records wait behind one in flight; overflow silently drops new diagnostics. A blocked
 sink cannot delay commits/subscriptions or enter adaptive writer timing.
@@ -76,9 +80,10 @@ enters telemetry.
 The promise is **Only you.** Never send journal text, text length, mood or energy values, email
 addresses, Apple subjects/tickets/identity tokens, session tokens or response bodies. Apple tickets
 live in memory only and are cleared on dismissal, expiry or completion. Product properties pass a finite allowlist of labels;
-unknown event names, property names and label values are discarded. Duration and a Coach turn's counts
-(`ability_calls`, `refusals`, `answer_bytes`) are the only numeric product properties; duration is clamped to
-0–86,400,000 ms and a count to 0–10,000,000. Version/build/release metadata is bounded.
+unknown event names, property names and label values are discarded. Duration, a Coach turn's counts
+(`ability_calls`, `refusals`, `answer_bytes`) and `sync_inverse`'s (`applied`, `skipped`, `waiting`, `age_ms`) are the
+only numeric product properties; duration is clamped to 0–86,400,000 ms and a count to 0–10,000,000. Version/build/release
+metadata is bounded.
 
 The final Sentry send hook removes messages, requests, extras, breadcrumbs, user identity, transaction
 and server names, arbitrary tags and custom contexts. It strips exception messages and mechanism
@@ -146,6 +151,7 @@ rules refuse, records `journal_save_refused` with its reason alone.
 | Echo sheet | `journal_echo_ink` | action: open, close, back |
 | Echoes | `journal_echo_shown`, `journal_echo_reader_opened`, `journal_echo_intro_dismissed`, `journal_echo_opened`, `journal_echo_useful`, `journal_echo_dismissed` | no properties |
 | Synchronization | `sync_pull_outcome`, `sync_push_outcome` | outcome: ok, failed; failure_kind, status, duration_ms |
+| Undo of an act | `sync_inverse` | an Undo or Redo of a journaled act (engine K-3). Requested: outcome ok (cancelled in place, or settled at once), pending (its slots wait or travel), unavailable (an act it cannot invert), failed (the transaction did not commit). A request the phone sent that settles later: outcome settled, with `applied` and `skipped` operation counts. At engine start, while requests still wait: outcome pending, with how many (`waiting`) and the oldest one's `age_ms`. No act, request or record id and no value |
 | Reliability | `api_request_failed`, `client_error` | operation, method, route, status, failure_kind, duration_ms; optional coarse scope_kind |
 
 Echoes reads and feedback stay REST and report failures under the static operation `journal_echoes`
@@ -428,3 +434,29 @@ Sampled stacks identify framework UI work, not a changed flow function. This est
 simulator responsiveness issue, not harmlessness or severity/rate equivalence. The scoped comparison
 is `/tmp/ios-gym-ui-verify/gym-hang-audit.md`; the load-wheel Release/device profiling follow-up is in
 [App/WORK_LOG.md](../apps/ios/App/WORK_LOG.md).
+
+## Coach engine libraries
+
+The `Agent` and `WindmillPlatform` packages expose telemetry ports for their library integration;
+the app's existing Coach event and failure routes above remain its current wiring. `Agent.Telemetry`
+receives one ability outcome with a profile-allowlisted name (unknown names become `unoffered`)
+and bounded refusal code, and one turn outcome with state, seat kind, bounded code, rounds,
+admitted executions, gate refusals, answer bytes and elapsed milliseconds. Host-returned codes
+outside the profile and engine allowlists become `unknown` in telemetry. Its `hostFailure()` port
+carries no data and must report static operation `agent-host`: unexpected host/storage/runtime
+failures at open, recovery, marks, visible text, ability checks/execution or completion use this port.
+Expected record-gone, stale-seat and host refusals produce no Issue. These failures are distinct
+from AI wire defects.
+
+`AiDiagnostics` receives only static operation `ai-call` or `ai-pass` and kind `wire`, `refusal` or
+`transport`. It reports malformed answers, unexpected transport failures and defect refusal codes.
+Offline connections, proxy responses without a valid service refusal, recognized temporary pass
+refusals and actionable refusals create no Issue. Recovery `call_unknown` is quiet because its mark
+may precede dispatch; a live `call_unknown` remains a defect. A pass-expired answer refreshes once;
+a second reports a defect. Picture repair follows the same once-only rule. Passes, installation and
+session credentials, seat keys, call IDs, prompts, questions, text deltas, assistant carry and tool
+inputs/results never enter these ports. The shared-story tests assert complete telemetry traces;
+platform tests reject malformed event, allowance, pass and refusal shapes before delivery, assert
+delayed old-seat replies cannot publish allowance or authorize another seat, and prove a suspended
+response ends at the whole-round deadline. Host fault tests assert only `agent-host`, with no raw
+error text. Offline pass and picture requests map to the offline outcome without an Issue.

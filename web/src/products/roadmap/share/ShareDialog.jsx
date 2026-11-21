@@ -20,7 +20,8 @@ function refusalReason(failure, act) {
 }
 
 // `subtrees` says the roadmap's steps own subtrees, which whoever reads it reads too; `title` names it.
-export function ShareDialog({ open, onClose, treeId, visibility, mine, title = '', subtrees = false, onStanceChange }) {
+// `writeVisibility` writes the roadmap's visibility: the server's route, or the device's copy where the room reads it.
+export function ShareDialog({ open, onClose, treeId, visibility, mine, title = '', subtrees = false, onStanceChange, writeVisibility = setVisibility }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -60,7 +61,7 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, title = '
     setMessage('');
     try {
       if (publish) {
-        await setVisibility(treeId, 'public');
+        await writeVisibility(treeId, 'public');
         track('roadmap_verb', { verb: 'share', step: 'publish', outcome: 'ok' });
         if (!mounted.current) return;
         onStanceChange?.('public');
@@ -97,7 +98,7 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, title = '
     setMessage('');
     setError('');
     try {
-      await setVisibility(treeId, 'private');
+      await writeVisibility(treeId, 'private');
       track('roadmap_verb', { verb: 'share', step: 'private', outcome: 'ok' });
       if (!mounted.current) return;
       onStanceChange?.('private');

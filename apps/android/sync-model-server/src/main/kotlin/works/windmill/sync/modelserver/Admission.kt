@@ -24,9 +24,13 @@ class Admission(val registry: Registry, val rules: ServerRules, val limits: Serv
     }
     private inner class Run(val origin: IntentOrigin, val now: Long, val scope: ScopeKey, val state: ServerState, val intent: CheckedIntent) {
         val locks = mutableMapOf<Place, IdState>(); val touched = linkedMapOf<Place, Touched>()
-        val created = mutableSetOf<ScopeKey>(); val events = mutableListOf<LiveEvent>(); val deaths = mutableListOf<LiveEvent>()
+        var effectBytes = 0
+        var declared = setOf(scope); val events = mutableListOf<LiveEvent>(); val deaths = mutableListOf<LiveEvent>()
+        // An opted command's watermarks: each owned scope's seq when its effects were discovered, and the scopes this admission created.
+        var beforeSeqs = emptyMap<ScopeKey, Long>(); var created = emptyMap<ScopeKey, String>()
         fun context(): RuleContext = RuleContext(registry, scope, origin, intent.deltas, intent.guards, now, state, rules,
-            touched.filterKeys { it.scope == scope }.mapNotNull { (place, record) -> record.row?.let { place.key to it } }.toMap())
+            touched.filterKeys { it.scope == scope }.mapNotNull { (place, record) -> record.row?.let { place.key to it } }.toMap(),
+            declared, touched.entries.groupBy { it.key.scope }.mapValues { (_, records) -> records.associate { it.key.key to it.value.row!! } })
         fun admit(): Json {
             when (state.access(scope, origin.account, registry)) {
                 "not-found" -> throw Refusal("not-found"); "gone" -> throw Refusal("scope-dead"); "readable" -> throw Refusal("forbidden")
@@ -35,21 +39,90 @@ class Admission(val registry: Registry, val rules: ServerRules, val limits: Serv
             intent.command?.definition?.let { if (it.serverInternal && origin.isReplica || origin.kind !in it.origins) throw Refusal("forbidden") }
             if (intent.deltas.any { origin.kind !in registry.type(it.key.type)!!.json.member("origins").arr().map(Json::str) }) throw Refusal("forbidden")
             val client = lockIdentities(intent.deltas, scope, "intent")
-            if (intent.command?.let { rules.replays(it, context()) } != true) checkGuards(client)
-            val outcome = intent.command?.let { rules.run(it, context()) }
+            if (intent.command?.takeIf { it.definition.engine == null }?.let { rules.replays(it, context()) } != true) checkGuards(client)
+            discoverEffectScopes()
+            // `engine: "capture"` runs no product command: the intent's own deltas, checks and consequences are what it receipts.
+            val outcome = intent.command?.let { when (it.definition.engine) {
+                "capture" -> CommandOutcome(product = state.product)
+                "restore" -> restore(it.restore!!)
+                else -> rules.run(it, context()).also { outcome ->
+                    // An inverse command answers its one outcome; a handler that reports none is a contract fault, and commits nothing.
+                    if (it.definition.inverse) try { InverseOutcome.read(outcome.detail, 1) } catch (missing: JsonError) { throw AdmissionFault(missing) }
+                }
+            } }
             outcome?.let { state.product = it.product }
-            val command = lockIdentities(outcome?.deltas.orEmpty(), scope, "command") + outcome?.created.orEmpty().toSortedMap().flatMap { (created, deltas) -> lockIdentities(deltas, created, "command") }
+            val commandEffects = outcome?.into.orEmpty().toMutableMap()
+            commandEffects[scope] = outcome?.deltas.orEmpty() + commandEffects[scope].orEmpty()
+            val command = admitEffects(Effects(commandEffects), "command")
             val stamp = join(client + command, client)
-            val checking = context(); val appended = rules.check(changes(), checking); state.product = checking.product
-            join(lockIdentities(appended, scope, "check"), client)
-            checkParents(); assignSerials(); checkCaps(); apply(scope); lifecycle()
+            val checking = context(); val appended = rules.effects(changes(), checking); state.product = checking.product
+            join(admitEffects(appended, "check"), client)
+            checkParents(); assignSerials(); checkCaps(); createScopes(); apply(scope)
             for (written in touched.keys.map { it.scope }.toSet().minus(scope).sorted()) {
-                if (written !in created) throw AdmissionFault()
                 apply(written)
             }
-            events.addAll(deaths)
-            return Json.objectOf("s" to Json.of("ok"), "seq" to Json.of(state.scopes.getValue(scope.text).seq)).with(
+            applyDeaths()
+            events.addAll(deaths.sortedBy { it.key })
+            val result = Json.objectOf("s" to Json.of("ok"), "seq" to Json.of(state.scopes.getValue(scope.text).seq)).with(
                 "write" to outcome?.let { Json.Arr(it.write.map { claim -> claim.json(stamp, touched[Place(scope, claim.key)]?.row?.lattice?.born) }) }, "detail" to outcome?.detail)
+            if (intent.command?.definition?.scopedEffects != true) return result
+            val receipted = result.with("detail" to Json.objectOf("windmillKit" to receipts()).with("command" to outcome?.detail))
+            if (receipted.member("detail").member("windmillKit").jcs.encodeToByteArray().size > limits.receiptMaxBytes ||
+                EffectReceipt.responseBytes(receipted, state.epoch, origin.account) > limits.scopedResponseMaxBytes) throw Refusal("too-large")
+            return receipted
+        }
+        // §6.4 restore: each operation holds or skips by its own condition against the scope as stored, and what holds writes back its
+        // earlier value as the command's own delta, under the stamp step 9 mints.
+        private fun restore(args: RestoreArguments): CommandOutcome {
+            val evaluation = args.evaluate(registry, { key -> state.rows[scope.text]?.get(key)?.let(::Row) },
+                { key -> state.idState(key, scope, registry).state != "none" }, state.epoch)
+            return CommandOutcome(evaluation.deltas.map { IntentShape.effect(it, scope, "command", registry) }, detail = InverseOutcome.detail(evaluation.outcomes), product = state.product)
+        }
+        // §6.4: the caller's own committed effects, scope by scope: every declared target, every scope this admission created, and every
+        // owned scope a death ended, with their watermarks and changed rows. Another reader's overlay never appears.
+        private fun receipts(): Json {
+            val killed = deaths.map { it.key }.filter { state.scopes.getValue(it.text).owner == origin.account }
+            val keys = (declared + created.keys + killed).associateBy { it.ref }
+            val effects = EffectReceipt.ordered(scope.ref, keys.keys).map { ref ->
+                val key = keys.getValue(ref); val seq = state.scopes[key.text]?.seq
+                EffectReceipt(ref, beforeSeqs[key], seq, touched.filter { it.key.scope == key && it.value.changed }
+                    .map { (_, record) -> EffectRow.committed(record.locked.row, record.row!!.copy(seq = seq!!)) }.sortedBy { it.key })
+            }
+            return Json.objectOf("v" to Json.of(1), "effects" to Json.Arr(effects.map(EffectReceipt::json)))
+        }
+        private fun discoverEffectScopes() {
+            declared = rules.discoverEffectScopes(context(), intent.command) + scope
+            beforeSeqs = state.scopes.filterValues { it.owner == origin.account }.map { (key, record) -> ScopeKey(key) to record.seq }.toMap()
+            for (target in (declared - scope).sorted()) {
+                if (ScopeKey.resolve(target.ref, origin.account) != target) throw Refusal("forbidden")
+                if (registry.scopeKind(target.ref) == null || target.tree?.let { tree -> registry.governingType?.let { registry.isId(Json.of(tree), it) } != true } == true) throw Refusal("invalid")
+                state.scopes[target.text]?.let {
+                    if (it.owner != origin.account) throw Refusal("forbidden")
+                    if (it.state == "dead") throw Refusal("scope-dead")
+                }
+                if (target.kind == "overlay") when (val access = state.access(target, origin.account, registry)) {
+                    "absent", "writable" -> Unit
+                    "gone" -> throw Refusal("scope-dead")
+                    "readable" -> throw Refusal("forbidden")
+                    else -> throw Refusal(access)
+                }
+            }
+        }
+        private fun admitEffects(effects: Effects, source: String): List<Placed> {
+            val placed = mutableListOf<Placed>()
+            val targets = effects.byScope.keys.sortedWith(compareBy<ScopeKey> { it != scope }.thenBy { it })
+            for (target in targets) {
+                if (target !in declared) throw AdmissionFault()
+                val deltas = effects.byScope.getValue(target)
+                for (delta in deltas) {
+                    val parsed = IntentShape.effect(delta.json, target, source, registry)
+                    if (parsed.op != delta.op) throw Refusal("invalid")
+                    effectBytes += Json.objectOf("scope" to Json.of(target.text), "delta" to delta.json).jcs.encodeToByteArray().size
+                    if (effectBytes > limits.effectMaxBytes) throw Refusal("too-large")
+                }
+                placed.addAll(lockIdentities(deltas, target, source))
+            }
+            return placed
         }
         private fun lock(place: Place): IdState = locks.getOrPut(place) { state.idState(place.key, place.scope, registry).let { if (it.state == "none" && rules.elsewhere(place.key, state.product)) IdState("foreign") else it } }
         private fun lockIdentities(deltas: List<PlannedDelta>, scope: ScopeKey, source: String): List<Placed> = deltas.mapNotNull { delta ->
@@ -173,13 +246,22 @@ class Admission(val registry: Registry, val rules: ServerRules, val limits: Serv
             }
             events.add(LiveEvent.change(written, state.epoch, record.seq, record.digest, rows, limits.liveInlineBytes))
         }
-        private fun lifecycle() {
+        private fun createScopes() {
+            val creates = mutableMapOf<ScopeKey, String>()
+            for ((place, record) in touched) {
+                if (registry.type(place.key.type)?.json?.get("governs")?.str() != "tree" || record.locked.state != "none" || !record.row!!.isAlive) continue
+                val tree = ScopeKey("tree:${place.key.id}")
+                if (tree.text !in state.scopes) creates[tree] = governor(place.scope, place.key)
+            }
+            // An opted command may name a target it leaves untouched; a write there still needs the scope or its governing create.
+            if (declared.any { it.text !in state.scopes && it !in creates && (intent.command?.definition?.scopedEffects != true || touched.keys.any { place -> place.scope == it }) }) throw Refusal("not-found")
+            for ((tree, governor) in creates) state.scopes[tree.text] = ScopeRecord(origin.account, governedBy = governor)
+            created = creates
+        }
+        private fun applyDeaths() {
             for ((place, record) in touched) {
                 if (!record.changed || registry.type(place.key.type)?.json?.get("governs")?.str() != "tree") continue
                 val tree = ScopeKey("tree:${place.key.id}")
-                if (record.locked.state == "none" && record.row!!.isAlive && tree.text !in state.scopes) {
-                    state.scopes[tree.text] = ScopeRecord(state.scopes.getValue(scope.text).owner, governedBy = governor(place.scope, place.key)); created.add(tree)
-                }
                 if (record.diesHere) for (key in state.scopes.keys.map(::ScopeKey).filter { it == tree || it.kind == "overlay" && it.tree == tree.tree }.sorted()) {
                     val dead = state.scopes.getValue(key.text)
                     if (dead.state == "alive") { dead.state = "dead"; dead.deadAt = now; deaths.add(LiveEvent(key, dead = true)) }

@@ -3,7 +3,7 @@
 // the synced path uses.
 
 import { SyncSession } from './SyncSession.js';
-import { SyncStore } from './SyncStore.js';
+import { CorruptDeviceRecord, SyncStore, failureTags } from './SyncStore.js';
 import { pendingGestures } from './pendingWrites.js';
 import { materialize } from './materialize.js';
 import { HlcClock, TreeLattice, hlcText } from './lattice.js';
@@ -15,6 +15,7 @@ import { WorkspaceStore } from '../persistence/WorkspaceStore.js';
 import { LegendStore } from '../persistence/LegendStore.js';
 import { ReturnLedger } from '../persistence/ReturnLedger.js';
 import { MilestoneLedger } from '../persistence/MilestoneLedger.js';
+import { forgetShareResidue, forgetTreeResidue } from '../persistence/deviceResidue.js';
 import { DEFAULT_KINDS } from '../model/Legend.js';
 import { OpenedTrees } from '../model/OpenedTrees.js';
 import { InadmissibleGuide, admitsGuide } from '../guide/GuideDraft.js';
@@ -151,23 +152,6 @@ function marksShown(saved, nodes) {
   return { completed: new Set(nodes.filter((step) => step.status === 'complete').map((step) => step.id)), completedAt: {} };
 }
 
-// A device record that does not join as a lattice: its steps cannot be known.
-class CorruptDeviceRecord extends Error {
-  constructor(cause) {
-    super('Device record does not join', { cause });
-    this.name = 'CorruptDeviceRecord';
-  }
-}
-
-// The one bounded tag a device failure reports under: the browser's own name for what failed, `corrupt` for a record that
-// does not join, `other` for anything else. Never a message.
-const DEVICE_FAILURES = new Set(['QuotaExceededError', 'AbortError', 'UnknownError', 'ConstraintError', 'DataError', 'DataCloneError',
-  'InvalidStateError', 'NotFoundError', 'ReadOnlyError', 'TransactionInactiveError', 'VersionError', 'SecurityError', 'TimeoutError']);
-function failureTags(error) {
-  if (error instanceof CorruptDeviceRecord) return { name: 'corrupt' };
-  return { name: error instanceof DOMException && DEVICE_FAILURES.has(error.name) ? error.name : 'other' };
-}
-
 // The steps of a stored record as a lattice, or why they cannot be known.
 function joinedRecord(treeId, title, saved) {
   const lattice = new TreeLattice(treeId, title);
@@ -286,7 +270,7 @@ async function amendDeviceRecord(store, treeId, saved, change) {
 // No server call, ever. The caller must close any live session first, or its pagehide flush
 // resurrects the blob.
 export async function deleteLocalTree(treeId) {
-  clearShareResidue();
+  forgetShareResidue();
   await new SyncStore().clear(treeId).catch(() => {});
   new ProgressStore().clear(treeId);
   new WorkspaceStore().clear(treeId);
@@ -376,23 +360,21 @@ function stepsOpening(lattice, treeId) {
 // device-index rows, their per-tree stores and blobs, and residue whose index row is gone.
 // Anonymous rows stay — that work follows whoever signs in next.
 export async function forgetDeviceTrees() {
-  clearShareResidue();
   const registry = new LocalTreeRegistry();
   const anonymous = new Set(registry.list(null).map((tree) => tree.id));
+  forgetShareResidue();
+  forgetTreeResidue((treeId) => !anonymous.has(treeId));
   if (!registry.keeps()) throw new Error('device-index-unavailable');
   const store = new SyncStore();
   const blobs = await store.treeIds({ durable: true });
   const owned = new Set([...Object.keys(registry.entries()), ...blobs]);
   for (const treeId of owned) if (!anonymous.has(treeId)) await store.clear(treeId, { durable: true });
 
-  for (const PerTreeStore of [ProgressStore, WorkspaceStore, LegendStore, ReturnLedger, MilestoneLedger]) {
+  for (const PerTreeStore of [ProgressStore, WorkspaceStore]) {
     const perTree = new PerTreeStore();
     for (const treeId of perTree.treeIds()) if (!anonymous.has(treeId)) perTree.clear(treeId);
   }
 
-  const place = new PlaceStore();
-  const stood = place.load()?.treeId;
-  if (stood && !anonymous.has(stood)) place.forget(stood);
   for (const treeId of owned) if (!anonymous.has(treeId)) registry.remove(treeId);
   if (Object.keys(registry.entries()).some((treeId) => !anonymous.has(treeId))) throw new Error('device-index-cleanup');
 }
@@ -417,16 +399,4 @@ export async function moveLocalTree(fromId, toId) {
     }
   }
   new LocalTreeRegistry().move(fromId, toId);
-}
-
-function clearShareResidue() {
-  try {
-    const storage = window.localStorage;
-    const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index));
-    for (const key of keys) {
-      if (key?.startsWith('windmill:shared:') || key === 'windmill:card:unit' || key === 'windmill:card:ledger') {
-        storage.removeItem(key);
-      }
-    }
-  } catch {}
 }

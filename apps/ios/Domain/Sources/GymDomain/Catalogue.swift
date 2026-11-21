@@ -15,7 +15,7 @@ public enum Equipment: String, CaseIterable, Sendable {
   }
 }
 
-public struct Exercise: Writable, Equatable {
+public struct Exercise: ProductEntity, Writable, Equatable {
   public static let type = Gym.Types.exercise
   public static let scope = Gym.scope
 
@@ -74,7 +74,7 @@ public struct Exercise: Writable, Equatable {
   ]
 }
 
-public struct ExerciseName: Writable, Equatable {
+public struct ExerciseName: ProductEntity, Writable, Equatable {
   public static let type = Gym.Types.exerciseName
   public static let scope = Gym.scope
 

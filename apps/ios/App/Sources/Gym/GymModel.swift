@@ -315,7 +315,7 @@ final class GymModel {
   }
 
   @discardableResult
-  func save<E: Draftable>(_ draft: inout Draft<E>) -> SaveResult<GymRefusal> {
+  func save<E: Draftable & ProductEntity>(_ draft: inout Draft<E>) -> SaveResult<GymRefusal> {
     guard !accountTransition else {
       error = String(localized: "Wait for the account change to finish.")
       return .failed(AppFailure(message: error!))

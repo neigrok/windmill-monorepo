@@ -2,6 +2,7 @@ package works.windmill.sync.testing
 
 import java.io.File
 import works.windmill.sync.core.*
+import works.windmill.sync.modelserver.IntentShape
 
 object CoreCorpus {
     fun handlers(probe: Registry): Map<String, Handler> = linkedMapOf(
@@ -64,8 +65,43 @@ object CoreCorpus {
             check(result == Join.record(type, b, a))
             Json.objectOf("join" to result.json)
         },
+        "derive/bounded.json" to { input -> Json.objectOf("id" to Json.of(DerivedId.from(input.member("label").str(), input.member("fallback").str(), input.member("taken").arr().map { it.str() }, input.member("maxChars").long()))) },
         "derive/slug.json" to { input -> Json.objectOf("id" to Json.of(DerivedId.from(input.member("label").str(), input.member("fallback").str(), input.member("taken").arr().map { it.str() }))) },
         "registry/refusals.json" to { input -> Json.objectOf("admitted" to Json.of(runCatching { Registry(input.member("registry")) }.isSuccess)) },
+        // Whether a registry with refPaths loads, and whether a field value or a command's arguments it then declares are admitted.
+        "registry/references.json" to { input ->
+            val loaded = runCatching { Registry(input.member("registry")) }.getOrNull()
+            val field = input["field"]; val command = input["command"]
+            val admitted = when {
+                loaded == null -> false
+                field != null -> loaded.admits(field.member("value"), loaded.type(field.member("type").str())!!.fields.getValue(field.member("name").str()))
+                command != null -> {
+                    val definition = loaded.command(command.member("name").str())!!; val args = command.member("args")
+                    args.obj().keys.all { it in definition.args } && definition.args.values.all { it.optional || it.name in args.obj() } &&
+                        args.obj().all { (name, value) -> definition.args[name]?.let { loaded.admits(value, it) } != false } && loaded.references.checkArguments(definition, args)
+                }
+                else -> true
+            }
+            Json.objectOf("admitted" to Json.of(admitted))
+        },
+        "registry/ids.json" to { input ->
+            val registry = Registry(input.member("registry"))
+            val name = input.member("type").str()
+            val id = runCatching { Json.parse(input.member("idJson").str()) }.getOrNull()
+            val field = FieldDef("target", Json.objectOf("kind" to Json.of("lww"), "writer" to Json.of("client"), "ref" to Json.of(name)))
+            val command = Json.objectOf("name" to Json.of("p.check"), "scope" to Json.of("product:p"),
+                "origins" to Json.array(Json.of("replica")), "serverInternal" to Json.of(false),
+                "args" to Json.objectOf("target" to Json.objectOf("type" to Json.of("ref<$name>"))))
+            val commandRegistry = Registry(registry.json.with("commands" to Json.array(command)))
+            val argument = id != null && runCatching {
+                IntentShape.check(Json.objectOf("scope" to Json.of("self/p"), "cmd" to Json.objectOf(
+                    "name" to Json.of("p.check"), "args" to Json.objectOf("target" to id))), true, commandRegistry, 1000)
+            }.isSuccess
+            Json.objectOf("id" to Json.of(id != null && registry.isId(id, registry.type(name)!!)),
+                "field" to Json.of(id != null && registry.admits(id, field)),
+                "argument" to Json.of(argument),
+                "key" to if (id != null && registry.isId(id, registry.type(name)!!)) Json.of(RecordID(id).json.jcs) else Json.Null)
+        },
         "identity/seeded.json" to { input ->
             if (input.member("op").str() == "make") {
                 Json.objectOf("id" to Json.of(SeededId.make(input.member("seed").str(), input.member("n").long(), probe.type(input.member("type").str())!!).id))
@@ -111,7 +147,8 @@ object CoreCorpus {
         "REQUEST_TIMEOUT_MS" to Constants.REQUEST_TIMEOUT_MS, "OFFSET_SAMPLES" to Constants.OFFSET_SAMPLES, "CLOCK_JUMP_MS" to Constants.CLOCK_JUMP_MS,
         "REQUEST_LEASE_MS" to Constants.REQUEST_LEASE_MS, "SCOPE_HORIZON_DAYS" to Constants.SCOPE_HORIZON_DAYS, "REPLICA_GC_DAYS" to Constants.REPLICA_GC_DAYS,
         "REQUEST_RETENTION_DAYS" to Constants.REQUEST_RETENTION_DAYS, "MAX_RECORD_BYTES" to Constants.MAX_RECORD_BYTES, "PUSH_MAX_INTENTS" to Constants.PUSH_MAX_INTENTS,
-        "PUSH_MAX_BYTES" to Constants.PUSH_MAX_BYTES, "PUSH_WORK_MS" to Constants.PUSH_WORK_MS, "PULL_PAGE_BYTES" to Constants.PULL_PAGE_BYTES,
+        "PUSH_MAX_BYTES" to Constants.PUSH_MAX_BYTES, "EFFECT_MAX_BYTES" to Constants.EFFECT_MAX_BYTES,
+        "RECEIPT_MAX_BYTES" to Constants.RECEIPT_MAX_BYTES, "SCOPED_RESPONSE_MAX_BYTES" to Constants.SCOPED_RESPONSE_MAX_BYTES, "PUSH_WORK_MS" to Constants.PUSH_WORK_MS, "WRITER_SLICE_MS" to Constants.WRITER_SLICE_MS, "PULL_PAGE_BYTES" to Constants.PULL_PAGE_BYTES,
         "PULL_MAX_SCOPES" to Constants.PULL_MAX_SCOPES, "PULL_MAX_BYTES" to Constants.PULL_MAX_BYTES, "LIVE_FRAME_BYTES" to Constants.LIVE_FRAME_BYTES,
         "LIVE_INLINE_BYTES" to Constants.LIVE_INLINE_BYTES, "KEEPALIVE_BYTES" to Constants.KEEPALIVE_BYTES, "MERGE_WORK_CELLS" to Constants.MERGE_WORK_CELLS,
         "ACCOUNT_ID_BYTES" to Constants.ACCOUNT_ID_BYTES,
@@ -123,7 +160,7 @@ fun main(args: Array<String>) {
     val contract = File(args[0])
     val corpus = Corpus(File(contract, "sync/corpus"))
     val probe = Registry(Json.parse(File(contract, "sync/probe.registry.json").readBytes()))
-    val handlers = CoreCorpus.handlers(probe) + ClientCorpus.handlers(probe) + NetworkCorpus.handlers(probe) + JournalCorpus.handlers(contract) + ProtocolCorpus.handlers(probe)
+    val handlers = CoreCorpus.handlers(probe) + ClientCorpus.handlers(probe) + NetworkCorpus.handlers(probe) + NetworkCorpus.productHandlers(contract) + JournalCorpus.handlers(contract) + ProtocolCorpus.handlers(probe)
     val paths = corpus.clientPaths
     val supported = paths.filter { it in handlers }
     println("client corpus: ${supported.size}/${paths.size} files, ${supported.sumOf { corpus.vectors(it).size }}/${paths.sumOf { corpus.vectors(it).size }} vectors")

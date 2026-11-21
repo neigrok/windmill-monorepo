@@ -58,13 +58,15 @@ Json::Value markedOverlay() {
 
 TEST(every_registered_sync_command_logs_one_bounded_command_and_admission_outcome) {
   BlockingThread::Mark blocking;
-  for (int product = 0; product != 3; ++product) {
-    test::FakeWorld world(product == 1, product == 2);
+  for (const test::WorldProduct product : {test::WorldProduct::probe, test::WorldProduct::gym, test::WorldProduct::journal, test::WorldProduct::roadmap}) {
+    test::FakeWorld world(product);
     Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+    const std::string tree = product == test::WorldProduct::roadmap ? "t_0000000000000001" : "b_00000001";
     for (const CommandDef& command : world.catalog().registry().commands()) {
       WriteCapture capture;
       Json::Value intent(Json::objectValue);
-      intent["scope"] = "self/" + command.scope.product;
+      intent["scope"] = command.scope.kind == ScopeKind::product ? "self/" + command.scope.product
+          : command.scope.kind == ScopeKind::tree ? "tree/" + tree : "self/overlay/" + tree;
       intent["cmd"]["name"] = command.name;
       intent["cmd"]["args"]["private_content"] = "PRIVATE-JOURNAL-WORKOUT-TOKEN";
       const auto outcome = admission.admit(ServerOrigin{world.account("A"), std::nullopt}, intent, 1'000'000);
@@ -73,13 +75,13 @@ TEST(every_registered_sync_command_logs_one_bounded_command_and_admission_outcom
       REQUIRE_EQ(capture.completed.size(), 2u);
       const auto& observed = capture.completed[0];
       CHECK_EQ(observed.operation, "sync.command." + command.name);
-      CHECK_EQ(observed.product, command.scope.product);
+      CHECK_EQ(observed.product, world.catalog().observationProduct(command.scope));
       CHECK_EQ(observed.door, "command");
       CHECK_EQ(observed.outcome, "invalid");
       CHECK(observed.durationMs >= 0);
       CHECK_FALSE(observed.requestId.empty());
       CHECK_EQ(capture.completed[1].operation, "sync.admit");
-      CHECK_EQ(capture.completed[1].product, command.scope.product);
+      CHECK_EQ(capture.completed[1].product, world.catalog().observationProduct(command.scope));
       CHECK_EQ(capture.completed[1].door, "server-origin");
       CHECK_EQ(capture.completed[1].outcome, "invalid");
       CHECK_EQ(capture.completed[1].requestId, observed.requestId);
@@ -117,7 +119,7 @@ TEST(sync_invariant_failures_report_static_operation_type_and_request_id_without
   } command;
   SyncCatalog catalog(world.catalog().registry());
   for (const TypeDef& type : catalog.registry().types()) catalog.bindType(world.catalog().store(type.name));
-  for (const CommandDef& def : catalog.registry().commands()) catalog.bindCommand(def.name, command);
+  for (const CommandDef& def : catalog.registry().commands()) if (!def.engine) catalog.bindCommand(def.name, command);
   catalog.seal();
   Admission admission(catalog, world.store(), world.feed, world.clock(), world.failures);
   WriteCapture capture;
@@ -322,6 +324,127 @@ TEST(admission_doors_share_the_scope_mutex_until_commit_publication_finishes) {
   REQUIRE(std::holds_alternative<Retry>(second));
   CHECK_EQ(std::get<Retry>(second).afterMs, Retry::kTransientMs);
   CHECK_EQ(world.db().scopes.at(ScopeKey::product(world.account("A"), "probe")).seq, 1u);
+}
+
+TEST(admission_owner_gate_covers_opposite_scope_effects_until_publication) {
+  test::FakeWorld world;
+  auto seed = parseJson(R"({"epoch":"ep-1","accounts":{"A":{"name":"Ann"}},"scopes":{
+    "tree:b_00000001":{"kind":"tree","owner":"A","seq":0,"state":"alive","counters":{}},
+    "tree:b_00000002":{"kind":"tree","owner":"A","seq":0,"state":"alive","counters":{}}}})");
+  for (const auto& key : seed["scopes"].getMemberNames()) seed["scopes"][key]["digest"] = Digest256{}.hex();
+  world.seed(seed);
+  struct Opposite final : TypeRules {
+    std::set<ScopeKey> discoverEffectScopes(const CheckCtx&) override {
+      return {ScopeKey::tree("b_00000001"), ScopeKey::tree("b_00000002")};
+    }
+    Effects effects(const CheckCtx& ctx, const std::vector<Change>&) override {
+      const ScopeKey target = ScopeKey::tree(ctx.scope.key.treeId() == "b_00000001" ? "b_00000002" : "b_00000001");
+      Delta delta{.t = "meta", .id = RecordId(std::string("meta"))};
+      delta.lattice.f.emplace("title", Reg("Effect", Stamp{}));
+      return Effects{{{target, {delta}}}};
+    }
+  } rules;
+  SyncCatalog catalog(world.catalog().registry());
+  for (const auto& type : catalog.registry().types()) catalog.bindType(world.catalog().store(type.name), type.name == "meta" ? &rules : world.catalog().rules(type.name));
+  for (const auto& command : catalog.registry().commands()) if (!command.engine) catalog.bindCommand(command.name, world.catalog().command(command.name));
+  catalog.seal();
+  struct HeldPublication final : ChangeFeed {
+    std::promise<CommittedChange> committed;
+    std::promise<void> release;
+    void publish(const CommittedChange& change) override {
+      committed.set_value(change);
+      if (release.get_future().wait_for(std::chrono::seconds(2)) != std::future_status::ready) throw std::runtime_error("publication test timed out");
+    }
+  } publication;
+  Limits limits;
+  limits.lockTimeoutMs = 20;
+  Admission first(catalog, world.store(), publication, world.clock(), world.failures, limits);
+  Admission second(catalog, world.store(), world.feed, world.clock(), world.failures, limits);
+  const auto intent = parseJson(R"({"scope":"tree/b_00000001","d":[{"t":"meta","id":"meta","f":{"title":["Origin",null]}}]})");
+  auto started = std::async(std::launch::async, [&] {
+    BlockingThread::Mark blocking;
+    return first.admit(ServerOrigin{world.account("A"), std::nullopt}, intent, 1'000'000);
+  });
+  auto published = publication.committed.get_future();
+  const bool ready = published.wait_for(std::chrono::milliseconds(500)) == std::future_status::ready;
+  auto reverse = intent;
+  reverse["scope"] = "tree/b_00000002";
+  auto blocked = std::async(std::launch::async, [&] {
+    BlockingThread::Mark blocking;
+    return second.admit(ServerOrigin{world.account("A"), std::nullopt}, reverse, 1'000'001);
+  });
+  const bool bounded = blocked.wait_for(std::chrono::milliseconds(500)) == std::future_status::ready;
+  publication.release.set_value();
+  const auto initial = started.get();
+  const auto attempted = blocked.get();
+  REQUIRE(ready);
+  CHECK(bounded);
+  REQUIRE(std::holds_alternative<Admitted>(initial));
+  CHECK_EQ(std::get<Admitted>(initial).result["s"].asString(), "ok");
+  REQUIRE(std::holds_alternative<Retry>(attempted));
+  const CommittedChange frame = published.get();
+  REQUIRE_EQ(frame.changed.size(), 2u);
+  CHECK_EQ(frame.changed[0].key.text(), "tree:b_00000001");
+  CHECK_EQ(frame.changed[1].key.text(), "tree:b_00000002");
+  CHECK_EQ(frame.changed[0].seq, 1u);
+  CHECK_EQ(frame.changed[1].seq, 1u);
+  BlockingThread::Mark blocking;
+  const auto next = second.admit(ServerOrigin{world.account("A"), std::nullopt}, reverse, 1'000'001);
+  REQUIRE(std::holds_alternative<Admitted>(next));
+  CHECK_EQ(std::get<Admitted>(next).result["s"].asString(), "ok");
+  REQUIRE_EQ(world.feed.published.size(), 1u);
+  CHECK_EQ(world.feed.published[0].changed[0].key.text(), "tree:b_00000002");
+  CHECK_EQ(world.feed.published[0].changed[1].key.text(), "tree:b_00000001");
+  CHECK_EQ(world.feed.published[0].changed[0].seq, 2u);
+  CHECK_EQ(world.feed.published[0].changed[1].seq, 2u);
+  CHECK(world.failures.reports.empty());
+}
+
+TEST(admission_local_rule_reads_and_emits_its_consequence_in_the_target_scope) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  auto state = markedOverlay();
+  state["rows"]["acct:A/probe"].append(parseJson(R"({"t":"run","id":"run00001","life":["alive","1000:0:srv"],"born":"1000:0:srv","f":{"startedAt":[1000,"1000:0:srv"]},"seq":2,"rc":1000,"ru":1000})"));
+  state["rows"]["acct:A/probe"].append(parseJson(R"({"t":"lap","id":"lap00001","life":["alive","1000:0:srv"],"born":"1000:0:srv","f":{"runId":["run00001","1000:0:srv"],"at":[1000,"1000:0:srv"],"weight":[10,"1000:0:srv"]},"v":{"no":1},"seq":3,"rc":1000,"ru":1000})"));
+  state["scopes"]["acct:A/probe"]["seq"] = 3;
+  const auto& productRows = state["rows"]["acct:A/probe"];
+  state["scopes"]["acct:A/probe"]["digest"] = scopeDigest(std::vector<Json::Value>(productRows.begin(), productRows.end())).hex();
+  world.seed(state);
+  auto document = parseJson(probe::registryText());
+  for (auto& command : document["commands"]) if (command["name"] == "probe.tick") command["scope"] = "tree";
+  Registry registry(document);
+  struct EndRun final : SyncCommand {
+    bool isReplay(CommandCtx&) override { return false; }
+    std::set<ScopeKey> discoverEffectScopes(const CommandCtx& ctx) override { return {ScopeKey::product(ctx.caller.account, "probe")}; }
+    CommandOutcome run(CommandCtx& ctx) override {
+      const ScopeKey target = ScopeKey::product(ctx.caller.account, "probe");
+      const Row& row = *ctx.read.lockIn(target, "run", RecordId(std::string("run00001"))).stored;
+      Delta death{.t = "run", .id = row.id};
+      death.lattice.life = Life(LifeState::dead, Stamp{});
+      death.lattice.born = row.lattice.born;
+      return CommandOutcome{.into = {IntoScope{target, {death}}}};
+    }
+  } command;
+  SyncCatalog catalog(registry);
+  for (const auto& type : registry.types()) catalog.bindType(world.catalog().store(type.name), world.catalog().rules(type.name));
+  for (const auto& def : registry.commands()) if (!def.engine) catalog.bindCommand(def.name, def.name == "probe.tick" ? command : world.catalog().command(def.name));
+  catalog.seal();
+  Admission admission(catalog, world.store(), world.feed, world.clock(), world.failures);
+  WriteCapture capture;
+  const auto outcome = admission.admit(ServerOrigin{world.account("A"), std::nullopt}, parseJson(R"({"scope":"tree/b_00000001",
+    "d":[{"t":"meta","id":"meta","f":{"title":["Origin",null]}}],"cmd":{"name":"probe.tick","args":{}}})"), 1'000'000);
+  REQUIRE(std::holds_alternative<Admitted>(outcome));
+  CHECK_EQ(jcs(std::get<Admitted>(outcome).result), R"({"s":"ok","seq":2,"write":[]})");
+  const auto after = world.dump();
+  CHECK_EQ(after["scopes"]["acct:A/probe"]["seq"].asUInt64(), 4u);
+  CHECK_EQ(jcs(after["spent"]["acct:A/probe"]), R"([{"born":"1000:0:srv","id":"lap00001","lifeStamp":"1000000:1:srv","seq":4,"t":"lap"},{"born":"1000:0:srv","id":"run00001","lifeStamp":"1000000:0:srv","seq":4,"t":"run"}])");
+  REQUIRE_EQ(world.feed.published.size(), 1u);
+  REQUIRE_EQ(world.feed.published[0].changed.size(), 2u);
+  CHECK_EQ(world.feed.published[0].changed[0].key.text(), "tree:b_00000001");
+  CHECK_EQ(world.feed.published[0].changed[1].key.text(), "acct:A/probe");
+  CHECK(world.failures.reports.empty());
+  REQUIRE_EQ(capture.completed.size(), 3u);
+  for (const auto& log : capture.completed) CHECK_EQ(log.outcome, "ok");
 }
 
 TEST(admission_releases_the_scope_mutex_before_publication_completion_reaches_a_blocking_sink) {

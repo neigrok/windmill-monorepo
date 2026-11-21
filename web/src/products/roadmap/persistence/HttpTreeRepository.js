@@ -1,20 +1,22 @@
 // Tree reads over HTTP, per treeId. A bootstrap read only: a live SyncSession's private
 // lane owns the overlay.
 
-import { Openings, TreePlace } from '../model/Opening.js';
+import { Opening, Openings, TreePlace } from '../model/Opening.js';
 import { ProgressLattice } from '../sync/progressLattice.js';
 import { API_BASE } from '../../../shell/apiBase.js';
 import { BoundaryFailure, reportInvalidProgressMark, pageWatching, reportRoadmapFailure } from '../reportFailure.js';
 
 export class HttpTreeRepository {
-  // An owner naming `operation` reports every read under it; a tree this repository did not read came off this device, and its reads report nothing.
-  constructor({ baseUrl = API_BASE, treeId, operation = null, reportFailure = reportRoadmapFailure } = {}) {
+  // An owner naming `operation` reports every read under it. A tree this repository did not read came off this device, and
+  // its reads report nothing, but where the server keeps it (`served`: a room on the device's copy, whose marks of someone
+  // else's roadmap and whose activity the server alone holds): its reads report as a read tree's do.
+  constructor({ baseUrl = API_BASE, treeId, operation = null, served = false, reportFailure = reportRoadmapFailure } = {}) {
     if (!treeId) throw new Error('HttpTreeRepository requires a treeId — there is no default roadmap');
     this.baseUrl = baseUrl;
     this.treeId = treeId;
     this.operation = operation;
     this.reportFailure = reportFailure;
-    this.treeRead = false;
+    this.treeRead = served;
   }
 
   // One read's parsed answer, null when a 2xx is not JSON; anything else throws, reporting `operation` for a server failure or a loss someone was waiting on.
@@ -54,7 +56,9 @@ export class HttpTreeRepository {
     };
   }
 
-  // The owner's marks on a share, else the document's seeds. A server tree whose marks can't be read throws rather than open on a false count.
+  // The owner's marks on a share, else the document's seeds, and what the server says each subtree the steps own has come
+  // to (`subtrees`, by step; none where it says nothing). A server tree whose marks can't be read throws rather than open
+  // on a false count.
   async loadProgress(treeData, { signal } = {}) {
     const operation = this.treeRead ? this.operation ?? 'roadmap-progress-load' : null;
     const body = await this.answer('loadProgress', '/progress', { operation, signal }).catch((error) => {
@@ -65,15 +69,21 @@ export class HttpTreeRepository {
       this.reportFailure(operation);
       throw new BoundaryFailure(`loadProgress ${this.treeId}: the answer is not JSON`);
     }
+    const subtrees = new Map((Array.isArray(body?.subtrees) ? body.subtrees : []).flatMap((row) => {
+      if (typeof row?.node !== 'string' || typeof row.tree !== 'string') return [];
+      const state = row.total > 0 && row.done === row.total ? 'complete' : 'open';
+      return [[row.node, Opening.owned({ id: row.tree, done: row.done, total: row.total, state })]];
+    }));
     if (body?.marks?.length) {
       const lattice = new ProgressLattice();
       lattice.join(body, () => reportInvalidProgressMark(this.reportFailure));
-      return { ...lattice.overlay(), server: true };
+      return { ...lattice.overlay(), server: true, subtrees };
     }
     return {
       completed: new Set(treeData.nodes.filter((node) => node.status === 'complete').map((node) => node.id)),
       completedAt: {},  // an authored seed status carries no instant
       server: false,
+      subtrees,
     };
   }
 

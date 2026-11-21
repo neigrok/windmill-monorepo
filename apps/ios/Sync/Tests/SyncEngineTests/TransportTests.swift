@@ -50,11 +50,13 @@ struct TransportTests {
     }
 
     // A transport to `host`, served by `route`; nil from the route is no response at all.
-    static func transport(_ host: String, telemetry: any Telemetry = NoopTelemetry(), _ route: @escaping Route) -> HTTPTransport {
+    static func transport(_ host: String, telemetry: any Telemetry = NoopTelemetry(), scopedCommands: Set<String> = [],
+                          scopedResponseMaxBytes: Int = Constants.scopedResponseMaxBytes, _ route: @escaping Route) -> HTTPTransport {
       routes.withLock { $0[host] = route }
       let configuration = URLSessionConfiguration.ephemeral
       configuration.protocolClasses = [Stub.self]
-      return HTTPTransport(baseURL: URL(string: "https://\(host)/")!, schema: 3, configuration: configuration, telemetry: telemetry)
+      return HTTPTransport(baseURL: URL(string: "https://\(host)/")!, schema: 3, scopedCommands: scopedCommands,
+                           scopedResponseMaxBytes: scopedResponseMaxBytes, configuration: configuration, telemetry: telemetry)
     }
   }
 
@@ -109,6 +111,27 @@ struct TransportTests {
     for reply in [await garbled.push(Self.request, token: SessionToken("t")), await silent.push(Self.request, token: SessionToken("t"))] {
       guard case .unreachable = reply else { throw RigError("\(reply) is not unreachable") }
     }
+  }
+
+  // §9.3: a push naming a command with scoped effects is answered within SCOPED_RESPONSE_MAX_BYTES of the body's actual
+  // UTF-8 bytes, or is unreachable and reported undecodable; any other push keeps its unbounded answer.
+  @Test func anOptedPushIsAnsweredWithinItsBytes() async throws {
+    let body = #"{"serverTime": 1000, "epoch": "épοch", "as": "A", "lastN": 5, "results": [{"n": 5, "s": "ok", "seq": 12, "write": []}]}"#
+    let telemetry = TelemetryTests.Recorder()
+    let opted = { (limit: Int) in
+      Stub.transport("opted-\(limit).test", telemetry: telemetry, scopedCommands: ["probe.capture"], scopedResponseMaxBytes: limit) { _, _ in (200, body) }
+    }
+    let capture = PushRequest(
+      replica: "rp_00000000000000000000000000000001", account: "A", ackThrough: 4,
+      intents: [Intent(n: 5, scope: .product("probe"), command: Command(name: "probe.capture", args: [:]))])
+    let bytes = body.utf8.count
+    #expect(bytes > body.count)
+    for (limit, request, answered) in [(bytes, capture, true), (bytes - 1, capture, false), (bytes - 1, Self.request, true)] {
+      let reply = await opted(limit).push(request, token: SessionToken("t"))
+      if case .answered(.ok) = reply { #expect(answered, "\(limit)") } else { #expect(!answered, "\(limit)") }
+    }
+    let failures: [String] = telemetry.failures.map { failure in "\(failure.name) \(failure.kind ?? "")" }
+    #expect(failures == ["sync_push decode"])
   }
 
   @Test func aHelloWithoutATokenCarriesNoAuthorization() async throws {

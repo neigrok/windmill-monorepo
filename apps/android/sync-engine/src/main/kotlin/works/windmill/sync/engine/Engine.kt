@@ -32,12 +32,21 @@ interface IdentitySource {
     fun forkGuard() = opaqueID()
 }
 
+data class WriterTiming(val operation: EngineOperation, val queueMs: Double, val heldMs: Double, val outcome: Outcome) {
+    enum class Outcome { success, failure }
+}
+// Runs after writer release; observation is outside the measured hold and exceptions cannot fail the write.
+fun interface WriterObserver { fun record(timing: WriterTiming) }
+
 class Engine internal constructor(val registry: Registry, internal val store: EngineStore,
     internal val clock: EngineClock, internal val identities: IdentitySource, var actor: String,
     internal val pushMaxBytes: Int = Constants.PUSH_MAX_BYTES, telemetry: EngineTelemetry = NoEngineTelemetry,
     internal val rewriteDeviceValue: DeviceValueRewrite = { _, _, value, _, _, _ -> value },
     internal val intentResultWrites: IntentResultDeviceWrites = { _, _, _, _, _ -> emptyList() },
-    internal val pendingDeviceWork: PendingDeviceWork = { _, _ -> emptyList() }) : Replica, AutoCloseable {
+    internal val pendingDeviceWork: PendingDeviceWork = { _, _ -> emptyList() },
+    private val writerObserver: WriterObserver? = null,
+    internal val effectMaxBytes: Int = Constants.EFFECT_MAX_BYTES) : Replica, AutoCloseable {
+    init { require(effectMaxBytes in 1..Constants.EFFECT_MAX_BYTES) }
     internal val lock = ReentrantLock(true)
     internal var device = DeviceState(store.metadata()).also { device -> device.replicas.forEach { replica -> replica.staging.replaceAll { _, stage -> stage.with("rows" to null) } } }
     // The answer `activeReplica()` gives, published as each transaction turns durable: the Main thread asks it, and no transaction may hold that thread up.
@@ -126,75 +135,95 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     internal fun draw(bound: Int) = identities.draw(bound)
     internal fun report(operation: EngineOperation, outcome: EngineOutcome, code: String? = null) = telemetry.offer(operation, outcome, code)
     internal fun ensureOpen() { if (closed) throw CommitFailure(CommitFailure.Kind.notWritable, "closed") }
-    internal fun <T> write(operation: EngineOperation = EngineOperation.commit, body: (ReplicaState) -> T): T = lock.withLock {
-        ensureOpen()
-        if (writing) throw CommitFailure.malformed("nested-commit")
-        val before = device
-        val endedBefore = ended.size
-        val eventsBefore = events.size
-        val diagnosticsBefore = diagnostics.size
-        val actorBefore = actor
-        val scopesBefore = selectedScopes
-        val openedBefore = openedScopes
-        changedRows.clear(); changedScopes.clear()
-        device = device.copy()
-        writing = true
-        var durable = false
-        var deviceChanged = false
+    internal fun <T> write(operation: EngineOperation = EngineOperation.commit, body: (ReplicaState) -> T): T {
+        val queued = writerObserver?.let { System.nanoTime() }
+        var acquired: Long? = null
+        var completed: Long? = null
+        var writerOutcome = WriterTiming.Outcome.failure
         try {
-            val result = store.transaction { body(device.current()).also {
-                val next = device.json()
-                deviceChanged = next != before.json()
-                if (deviceChanged) store.metadata(next)
-            } }
-            durable = true
-            crashCountdown?.let { left ->
-                crashCountdown = if (left == 1) null else left - 1
-                if (left == 1) throw EngineCrash()
+            return lock.withLock {
+                ensureOpen()
+                if (writing) throw CommitFailure.malformed("nested-commit")
+                acquired = queued?.let { System.nanoTime() }
+                val before = device
+                val endedBefore = ended.size
+                val eventsBefore = events.size
+                val diagnosticsBefore = diagnostics.size
+                val actorBefore = actor
+                val scopesBefore = selectedScopes
+                val openedBefore = openedScopes
+                changedRows.clear(); changedScopes.clear()
+                device = device.copy()
+                writing = true
+                var durable = false
+                var deviceChanged = false
+                try {
+                    val result = store.transaction { body(device.current()).also {
+                        val next = device.json()
+                        deviceChanged = next != before.json()
+                        if (deviceChanged) store.metadata(next)
+                    } }
+                    durable = true
+                    crashCountdown?.let { left ->
+                        crashCountdown = if (left == 1) null else left - 1
+                        if (left == 1) throw EngineCrash()
+                    }
+                    activeNow = device.active
+                    val previous = before.replicas.flatMap { it.outbox }.associate { it.id to it.json }
+                    val current = device.replicas.flatMap { it.outbox }.associate { it.id to it.json }
+                    val modified = (previous.keys + current.keys).filter { previous[it] != current[it] }
+                        .flatMap { id -> listOfNotNull(previous[id], current[id]) }.map(::Entry)
+                    val activeChanged = before.active != device.active
+                    val oldCursors = before.replicas.firstOrNull { it.id == before.active }?.cursors.orEmpty()
+                    val newCursors = device.current().cursors
+                    val cursorScopes = (oldCursors.keys + newCursors.keys).filter { oldCursors[it] != newCursors[it] }.map(::ScopeRef).toSet()
+                    val changed = deviceChanged || changedRows.isNotEmpty() || changedScopes.isNotEmpty() || scopesBefore != selectedScopes || openedBefore != openedScopes
+                    if (changed) {
+                        version++
+                        changes.tryEmit(Invalidation(version, modified.flatMap { entry -> entry.effects.flatMap { effect -> effect.deltas.map { effect.scope to it.key } } }.toSet() + changedRows,
+                            activeChanged || operation == EngineOperation.lifecycle || operation == EngineOperation.subscription, scopes = changedScopes.toSet(), firstPullScopes = cursorScopes, operation = operation,
+                            replica = device.current().id, account = device.current().account))
+                    }
+                    events.drop(eventsBefore).filter { it.member("event").str() == "activeReplicaChanged" }.forEach { change ->
+                        replicaChanges.tryEmit(ActiveReplicaChange(change.member("previous").orNull()?.str(), change.member("replica").str()))
+                    }
+                    if (before.active == device.active && before.current().account != device.current().account) replicaRebinds.tryEmit(device.current().id)
+                    val outcome = (result as? Pair<*, *>)?.first as? CommitOutcome
+                    if (changed || outcome is CommitOutcome.Refused) telemetry.offer(operation,
+                        if (outcome is CommitOutcome.Refused) EngineOutcome.refused else EngineOutcome.success, (outcome as? CommitOutcome.Refused)?.code?.text)
+                    diagnostics.drop(diagnosticsBefore).forEach { report(EngineOperation.sync, EngineOutcome.failure, it["event"]?.str()) }
+                    for (trace in listOf(ended, events, diagnostics)) if (trace.size > 1_024) trace.subList(0, trace.size - 1_024).clear()
+                    writerOutcome = WriterTiming.Outcome.success
+                    result
+                } catch (failure: Throwable) {
+                    // The transaction is durable. Reopening its snapshot must see it, even when the process dies before publication.
+                    if (failure is EngineCrash && durable) throw failure
+                    device = before
+                    actor = actorBefore
+                    selectedScopes = scopesBefore
+                    openedScopes = openedBefore
+                    while (events.size > eventsBefore) events.removeAt(events.lastIndex)
+                    while (diagnostics.size > diagnosticsBefore) diagnostics.removeAt(diagnostics.lastIndex)
+                    while (ended.size > endedBefore) ended.removeAt(ended.lastIndex)
+                    if (failure is StoreFailure) {
+                        telemetry.offer(EngineOperation.storage, EngineOutcome.failure, "store-failure")
+                        throw CommitFailure(CommitFailure.Kind.storeFailure, "transaction")
+                    }
+                    if (failure !is ActRefusal && failure !is ActBodyError) telemetry.offer(operation, EngineOutcome.failure, (failure as? CommitFailure)?.kind?.wire)
+                    throw failure
+                } finally {
+                    writing = false
+                    completed = queued?.let { System.nanoTime() }
+                }
             }
-            activeNow = device.active
-            val previous = before.replicas.flatMap { it.outbox }.associate { it.id to it.json }
-            val current = device.replicas.flatMap { it.outbox }.associate { it.id to it.json }
-            val modified = (previous.keys + current.keys).filter { previous[it] != current[it] }
-                .flatMap { id -> listOfNotNull(previous[id], current[id]) }.map(::Entry)
-            val activeChanged = before.active != device.active
-            val oldCursors = before.replicas.firstOrNull { it.id == before.active }?.cursors.orEmpty()
-            val newCursors = device.current().cursors
-            val cursorScopes = (oldCursors.keys + newCursors.keys).filter { oldCursors[it] != newCursors[it] }.map(::ScopeRef).toSet()
-            val changed = deviceChanged || changedRows.isNotEmpty() || changedScopes.isNotEmpty() || scopesBefore != selectedScopes || openedBefore != openedScopes
-            if (changed) {
-                version++
-                changes.tryEmit(Invalidation(version, modified.flatMap { entry -> entry.deltas.map { entry.scope to it.key } }.toSet() + changedRows,
-                    activeChanged || operation == EngineOperation.lifecycle || operation == EngineOperation.subscription, scopes = changedScopes.toSet(), firstPullScopes = cursorScopes, operation = operation,
-                    replica = device.current().id, account = device.current().account))
+        } finally {
+            val began = acquired
+            if (writerObserver != null && queued != null && began != null) {
+                try { writerObserver.record(WriterTiming(operation, (began - queued) / 1_000_000.0,
+                    ((completed ?: System.nanoTime()) - began) / 1_000_000.0, writerOutcome)) }
+                catch (_: Exception) { /* Diagnostic observers cannot change a write's result. */ }
             }
-            events.drop(eventsBefore).filter { it.member("event").str() == "activeReplicaChanged" }.forEach { change ->
-                replicaChanges.tryEmit(ActiveReplicaChange(change.member("previous").orNull()?.str(), change.member("replica").str()))
-            }
-            if (before.active == device.active && before.current().account != device.current().account) replicaRebinds.tryEmit(device.current().id)
-            val outcome = (result as? Pair<*, *>)?.first as? CommitOutcome
-            if (changed || outcome is CommitOutcome.Refused) telemetry.offer(operation,
-                if (outcome is CommitOutcome.Refused) EngineOutcome.refused else EngineOutcome.success, (outcome as? CommitOutcome.Refused)?.code?.text)
-            diagnostics.drop(diagnosticsBefore).forEach { report(EngineOperation.sync, EngineOutcome.failure, it["event"]?.str()) }
-            for (trace in listOf(ended, events, diagnostics)) if (trace.size > 1_024) trace.subList(0, trace.size - 1_024).clear()
-            result
-        } catch (failure: Throwable) {
-            // The transaction is durable. Reopening its snapshot must see it, even when the process dies before publication.
-            if (failure is EngineCrash && durable) throw failure
-            device = before
-            actor = actorBefore
-            selectedScopes = scopesBefore
-            openedScopes = openedBefore
-            while (events.size > eventsBefore) events.removeAt(events.lastIndex)
-            while (diagnostics.size > diagnosticsBefore) diagnostics.removeAt(diagnostics.lastIndex)
-            while (ended.size > endedBefore) ended.removeAt(ended.lastIndex)
-            if (failure is StoreFailure) {
-                telemetry.offer(EngineOperation.storage, EngineOutcome.failure, "store-failure")
-                throw CommitFailure(CommitFailure.Kind.storeFailure, "transaction")
-            }
-            telemetry.offer(operation, EngineOutcome.failure, (failure as? CommitFailure)?.kind?.wire)
-            throw failure
-        } finally { writing = false }
+        }
     }
     override fun <T> commit(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T> = write { replica ->
         if (replica.state !in setOf("anon", "bound")) throw CommitFailure(CommitFailure.Kind.notWritable, replica.state)
@@ -206,6 +235,8 @@ class Engine internal constructor(val registry: Registry, internal val store: En
         }
         result to value
     }
+    override fun <T> commitAct(prepare: (ActContext) -> Pair<ActRequest?, T>,
+        segment: (T, Int, CommitContext) -> Gesture): Pair<ActCommitOutcome?, T> = commitActTransaction(prepare, segment)
     override fun <T> read(scope: ScopeRef, body: (ScopeReader) -> T): T = lock.withLock {
         ensureOpen()
         val reader = Reader(device.current(), scope, now(device.current()))
@@ -219,24 +250,41 @@ class Engine internal constructor(val registry: Registry, internal val store: En
             content.items("dependents").any(::carries)
         reader.drawn(key.type, key.id) != null || device.current().notices.any {
             ScopeRef(it.member("scope")) == scope && carries(it.member("content"))
-        } || device.current().spent[scope.text]?.arr()?.any { it.recordKey == key } == true
+        } || device.current().spentId(scope, key) != null
     }
     override fun mintID(type: String): RecordID = lock.withLock {
         ensureOpen(); RecordID((registry.type(type)?.mint ?: throw CommitFailure.malformed("not-minted")).id(::draw))
     }
-    override fun undo(gestureId: String): Boolean = write(EngineOperation.undo) { replica ->
+    override fun cancelHeld(gestureId: String): Boolean = write(EngineOperation.undo) { replica ->
         val entries = replica.entries().filter { it.gestureId == gestureId }
         if (entries.isEmpty() || entries.any { it.state != "held" }) return@write false
+        undoHeld(replica, entries)
+        true
+    }
+    // A wholly held gesture never reached the server: its entries end undone, their dependents folded silently.
+    internal fun undoHeld(replica: ReplicaState, entries: List<Entry>) {
         val folded = silentFold(replica, entries)
         entries.forEach { replica.move(it, "undo", ended) }
         applySilentFold(replica, folded)
+        replica.settleEnded("undone")
+    }
+    // `slots`, by source ordinal, replaces the stored recipes whole (a product's Redo).
+    override fun requestInverse(actId: String, slots: List<UndoSegment>?): InverseResult = write(EngineOperation.undo) { replica ->
+        if (replica.state !in setOf("anon", "bound")) throw CommitFailure(CommitFailure.Kind.notWritable, replica.state)
+        requestInverse(replica, actId, slots)
+    }
+    override fun readInverseResult(requestId: String): InverseResult = lock.withLock { ensureOpen(); device.current().readInverseResult(requestId) }
+    // Its journal record and values go once no unsettled inverse request reads them.
+    override fun releaseReversibleAct(actId: String): Boolean = write(EngineOperation.undo) { it.releaseReversibleAct(actId) }
+    // A gesture id no entry, notice or journal record of the device carries yet.
+    internal fun freshGestureId(): String = generateSequence { opaqueID() }.first { !device.carriesGesture(it) }
+    // D-17: true iff the active replica holds the notice. One it does not hold is left alone: false, nothing written or thrown.
+    override fun dismissNotice(id: String): Boolean = write(EngineOperation.dismiss) { replica ->
+        val at = replica.notices.indexOfFirst { it.member("id").str() == id }
+        if (at < 0) return@write false
+        replica.notices[at] = replica.notices[at].with("dismissed" to Json.of(true))
         true
     }
-    override fun dismissNotice(id: String) { write(EngineOperation.dismiss) { replica ->
-        val at = replica.notices.indexOfFirst { it.member("id").str() == id }
-        if (at < 0) throw CommitFailure.malformed("unknown-notice")
-        replica.notices[at] = replica.notices[at].with("dismissed" to Json.of(true))
-    } }
     fun releaseHeld(all: Boolean = false): List<String> = write(EngineOperation.release) { replica ->
         val due = replica.entries().filter { it.state == "held" && (all || it.json.member("releaseAt").long() <= clock.now()) }
         due.forEach { replica.move(it, "release", ended) }; due.map { it.id }
@@ -247,8 +295,9 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     }
     fun undoOffers(): List<UndoOffer> = lock.withLock {
         ensureOpen()
-        device.current().entries().filter { it.state == "held" && it.json.member("releaseAt").long() > clock.now() }
-            .distinctBy { it.gestureId }.map { UndoOffer(it.gestureId, it.scope, it.json.member("releaseAt").long()) }
+        device.current().entries().groupBy { it.gestureId }.values.filter { entries ->
+            entries.all { it.state == "held" } && entries.first().json.member("releaseAt").long() > clock.now()
+        }.map { entries -> entries.first().let { UndoOffer(it.gestureId, it.scope, it.json.member("releaseAt").long()) } }
     }
     fun observe(scope: ScopeRef, type: String, field: String? = null, id: RecordID? = null, mode: ViewMode = ViewMode.drawn): Flow<List<Record>> = flow {
         require((field == null) == (id == null))
@@ -283,9 +332,9 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     // The outbox deltas a scope's records draw, by record, in commit order: a view over many records
     // indexes the outbox once instead of walking it for each record.
     internal fun outboxDeltas(replica: ReplicaState, scope: ScopeRef): Map<RecordKey, List<OutboxDelta>> =
-        replica.entries().filter { it.scope == scope }.flatMap { entry -> entry.deltas.map { OutboxDelta(entry, it) } }.groupBy { it.delta.key }
+        replica.entries().flatMap { entry -> entry.activeDeltas(scope).map { OutboxDelta(entry, it) } }.groupBy { it.delta.key }
     internal fun outboxDeltas(replica: ReplicaState, scope: ScopeRef, key: RecordKey): List<OutboxDelta> =
-        replica.entries().filter { it.scope == scope }.flatMap { entry -> entry.deltas.filter { it.key == key }.map { OutboxDelta(entry, it) } }
+        replica.entries().flatMap { entry -> entry.activeDeltas(scope).filter { it.key == key }.map { OutboxDelta(entry, it) } }
     internal fun view(replica: ReplicaState, scope: ScopeRef, key: RecordKey, mode: ViewMode, gone: Set<Delta> = emptySet(),
         outbox: List<OutboxDelta> = outboxDeltas(replica, scope, key)): Record? {
         val row = store.row(replica.id, scope, key)
@@ -317,12 +366,14 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     }
     internal fun keys(replica: ReplicaState, scope: ScopeRef, type: String, field: String? = null, id: RecordID? = null): Set<RecordKey> {
         val rows = if (field != null && id != null) store.matching(replica.id, scope, type, field, id) else store.rows(replica.id, scope, type)
-        return rows.map { it.key }.toSet() + replica.entries().filter { it.scope == scope }.flatMap { it.deltas }.filter { it.key.type == type }.map { it.key }
+        return rows.map { it.key }.toSet() + replica.entries().flatMap { it.activeDeltas(scope) }.filter { it.key.type == type }.map { it.key }
     }
-    internal inner class Reader(private val replicaState: ReplicaState, private val scope: ScopeRef, override val now: Long) : CommitContext {
+    // `minted` holds the identities already drawn in its scope, which an act's reservations share across its readers.
+    internal inner class Reader(private val replicaState: ReplicaState, private val scope: ScopeRef, override val now: Long,
+        private val minted: MutableSet<RecordID> = mutableSetOf()) : CommitContext {
         private var open = true
-        private var failure: Exception? = null
-        private val minted = mutableSetOf<RecordID>()
+        var failure: Exception? = null
+            private set
         init { if (registry.scopeKind(scope) == null) throw CommitFailure.malformed("scope") }
         fun end() { open = false }
         fun finish() { failure?.let { throw it } }
@@ -340,6 +391,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
         override fun stored(type: String) = list(type, ViewMode.stored)
         override fun drawn(type: String, field: String, id: RecordID) = list(type, ViewMode.drawn, field, id)
         override fun stored(type: String, field: String, id: RecordID) = list(type, ViewMode.stored, field, id)
+        override fun spentBorn(type: String, id: RecordID): Stamp? = checked { lives(type); replicaState.spentBorn(scope, RecordKey(type, id)) }
         fun list(type: String, mode: ViewMode, field: String? = null, id: RecordID? = null): List<Record> = checked {
             lives(type)
             if (field != null && registry.type(type)?.fields?.get(field)?.ref == null) throw CommitFailure.malformed("reference-field")
@@ -356,7 +408,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
         }
         override fun device(key: String): Json? = checked { registry.product(scope)?.let { replicaState.device[it]?.get(key) } }
         override fun devices(prefix: String): Map<String, Json> = checked { registry.product(scope)?.let { replicaState.device[it]?.obj()?.filterKeys { key -> key.startsWith(prefix) } }.orEmpty() }
-        override fun firstPullComplete() = checked { scope !in (selectedScopes ?: (subscriptionsOf(replicaState) + openedScopes)) || replicaState.cursors[scope.text]?.flag("booted") == true }
+        override fun firstPullComplete() = checked { scope.text in replicaState.known || scope !in (selectedScopes ?: subscriptionsOf(replicaState)) || replicaState.cursors[scope.text]?.flag("booted") == true }
         override fun serverSchema(): Long? = checked { if (isAnonymous) null else replicaState.meta["serverSchema"]?.long() }
         override fun checkpoint(): ScopeCheckpoint = checked {
             val state = replicaState.cursors[scope.text]
@@ -372,7 +424,7 @@ class Engine internal constructor(val registry: Registry, internal val store: En
             lives(type)
             val mint = registry.type(type)?.mint ?: throw CommitFailure.malformed("not-minted")
             var id: RecordID
-            do { id = RecordID(mint.id(::draw)) } while (id in minted || view(replicaState, scope, RecordKey(type, id), ViewMode.drawn) != null || replicaState.spent[scope.text]?.arr()?.any { it.recordKey == RecordKey(type, id) } == true)
+            do { id = RecordID(mint.id(::draw)) } while (id in minted || view(replicaState, scope, RecordKey(type, id), ViewMode.drawn) != null || replicaState.spentId(scope, RecordKey(type, id)) != null)
             minted.add(id)
             id
         }
@@ -388,19 +440,23 @@ class Engine internal constructor(val registry: Registry, internal val store: En
     }
     fun materialized(scope: ScopeRef, mode: ViewMode): Json = lock.withLock {
         ensureOpen()
-        val replica = device.current()
-        val allKeys = store.rows(replica.id, scope).map { it.key }.toSet() + replica.entries().filter { it.scope == scope }.flatMap { it.deltas }.map { it.key }
+        val records = viewRecords(device.current(), scope, mode).values
+        Json.objectOf("records" to Json.Arr(records.map { it.first }), "visible" to Json.Arr(records.filter { it.second.isVisible }.map { it.first.recordKey.json }))
+    }
+    // A scope's records as a view shows them, by key: each in its view form (the lattice with its stamps, texts as their text, serials)
+    // beside the record a reader sees.
+    internal fun viewRecords(replica: ReplicaState, scope: ScopeRef, mode: ViewMode): Map<RecordKey, Pair<Json, Record>> {
+        val allKeys = store.rows(replica.id, scope).map { it.key }.toSet() + replica.entries().flatMap { it.activeDeltas(scope) }.map { it.key }
         val outbox = outboxDeltas(replica, scope)
-        val records = allKeys.sorted().mapNotNull { key ->
+        return allKeys.sorted().mapNotNull { key ->
             val record = view(replica, scope, key, mode, outbox = outbox[key].orEmpty()) ?: return@mapNotNull null
             val lattice = latticeView(replica, scope, key, mode, outbox = outbox[key].orEmpty()) ?: Lattice()
-            Json.Obj(buildList {
+            key to (Json.Obj(buildList {
                 add("t" to Json.of(key.type)); add("id" to key.id.json); addAll(lattice.json.obj().toList())
                 if (record.texts.isNotEmpty()) add("x" to Json.Obj(record.texts.map { it.key to Json.of(it.value.text) }))
                 if (record.serials.isNotEmpty()) add("v" to Json.Obj(record.serials.toList()))
-            }) to record.isVisible
-        }
-        Json.objectOf("records" to Json.Arr(records.map { it.first }), "visible" to Json.Arr(records.filter { it.second }.map { it.first.recordKey.json }))
+            }) to record)
+        }.toMap()
     }
     fun sweepReleased(limit: Int = 128): Boolean = write(EngineOperation.storage) { store.sweepReleased(limit) }
     fun ended(): List<Json> = lock.withLock { ended.toList() }
@@ -419,10 +475,11 @@ class Engine internal constructor(val registry: Registry, internal val store: En
             }, actor: String = "r_" + identities.opaqueID().take(12), pushMaxBytes: Int = Constants.PUSH_MAX_BYTES, telemetry: EngineTelemetry = NoEngineTelemetry,
             rewriteDeviceValue: DeviceValueRewrite = { _, _, value, _, _, _ -> value },
             intentResultWrites: IntentResultDeviceWrites = { _, _, _, _, _ -> emptyList() },
-            pendingDeviceWork: PendingDeviceWork = { _, _ -> emptyList() }): Engine {
+            pendingDeviceWork: PendingDeviceWork = { _, _ -> emptyList() }, writerObserver: WriterObserver? = null, effectMaxBytes: Int = Constants.EFFECT_MAX_BYTES): Engine {
             val device = snapshot ?: Json.objectOf("active" to Json.of("rp_" + buildString { repeat(32) { append("0123456789abcdef"[identities.draw(16)]) } }), "replicas" to Json.array())
             val initial = if (snapshot != null) device else device.with("replicas" to Json.array(freshReplica(device.member("active").str()).json()))
-            return Engine(registry, MemoryStore(registry, initial), clock, identities, actor, pushMaxBytes, telemetry, rewriteDeviceValue, intentResultWrites, pendingDeviceWork)
+            return Engine(registry, MemoryStore(registry, initial), clock, identities, actor, pushMaxBytes, telemetry,
+                rewriteDeviceValue, intentResultWrites, pendingDeviceWork, writerObserver, effectMaxBytes)
         }
     }
 }

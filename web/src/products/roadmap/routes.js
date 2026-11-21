@@ -1,4 +1,6 @@
 import { lazy } from 'react';
+import { invalidateStepDraftSession } from './step/StepDraftSession.js';
+import { readNavigation, replaceLocation } from '../../shell/navigation.js';
 import { PlaceStore } from './persistence/PlaceStore.js';
 import { noteForked } from './persistence/ViewPrefs.js';
 import { confirmDeviceOwner } from './persistence/LocalTreeRegistry.js';
@@ -6,10 +8,20 @@ import { DEMO_TREE_ID } from './demo/demoStage.js';
 import { paidPlansOpen } from '../../shell/billing/checkout.js';
 import { roadmapLandingHead } from './marketing/landingHead.js';
 import { t } from './i18n/entry/index.js';
+import { YOUR_ROADMAPS } from './identity/HeldDeletion.js';
+import { ROOM_READS_REPLICA } from './replicaRoom.js';
+
+const StepDraftProvider = lazy(() => import('./step/StepDraftProvider.jsx').then((m) => ({ default: m.StepDraftProvider })));
+const StepDraftNotice = lazy(() => import('./step/StepDraftProvider.jsx').then((m) => ({ default: m.StepDraftNotice })));
+const RoadmapSession = lazy(() => import('./RoadmapSession.jsx').then((m) => ({ default: m.RoadmapSession })));
+
+// Roadmap's part in a sign-in, a sign-out and an account change, loaded when one comes.
+const accountChange = () => import('./sync/accountChange.js');
 
 const importSkillTreeApp = () => import('./index.js').then((m) => ({ default: m.SkillTreeApp }));
 const SkillTreeApp = lazy(importSkillTreeApp);
 const BrowsePage = lazy(() => import('./browse/BrowsePage.jsx').then((m) => ({ default: m.BrowsePage })));
+const YourRoadmaps = lazy(() => import('./identity/YourRoadmaps.jsx').then((m) => ({ default: m.YourRoadmaps })));
 const HomeCard = lazy(() => import('./HomeCard.jsx').then((m) => ({ default: m.HomeCard })));
 
 const importRoadmapLanding = () => import('./marketing/RoadmapLanding.jsx').then((m) => ({ default: m.RoadmapLanding }));
@@ -56,30 +68,45 @@ function render({ hash, pathname, search }) {
   // The hash wins over the /t/:id path when it names an app destination.
   const pathShare = pathTarget(pathname);
   if (pathShare && !hash.startsWith('#/')) {
-    return { Component: SkillTreeApp, props: { treeId: pathShare.treeId, birth: false, start: false, demo: false }, inRoom: true };
+    return { Component: SkillTreeApp, props: { treeId: pathShare.treeId, birth: false, start: false, demo: false, replica: ROOM_READS_REPLICA }, inRoom: true };
   }
 
   if (hash.startsWith('#/browse')) return { Component: BrowsePage, props: {} };
+  // The person's roadmaps, where a deletion of the open one lands: only where the room reads the device's copy.
+  if (ROOM_READS_REPLICA && hash.split('?')[0] === YOUR_ROADMAPS) return { Component: YourRoadmaps, props: {}, inRoom: true };
 
   const isApp = hash.startsWith('#/app') || hash.startsWith('#/t/') || hash.startsWith('#/demo')
     || new URLSearchParams(search).has('view');
   if (!isApp) return null;
 
   const target = appTarget(hash);
-  return { Component: SkillTreeApp, props: { treeId: target.treeId, birth: target.birth, start: target.start, demo: target.demo }, inRoom: true };
+  return { Component: SkillTreeApp, props: { treeId: target.treeId, birth: target.birth, start: target.start, demo: target.demo, replica: ROOM_READS_REPLICA }, inRoom: true };
 }
 
-// Explicit sign-out and account replacement wipe stamped work; a session lapse never calls this hook.
-async function forgetDevice({ next }) {
+// Explicit sign-out, account replacement and account closure take what the browser kept of every roadmap but the
+// anonymous ones, Keep or Discard. Roadmap's own sync also wipes stamped work; on the device's copy the engine's Keep or
+// Discard decides what is unsent, a Discard takes the old stores its question named, and the rest of the old stores are
+// the carry-over's to empty once carried (INV-4). A session lapse never calls this hook.
+async function forgetDevice({ previous = null, next, navigation }) {
   // Sweep BEFORE confirming the arriving owner, or unstamped work is attributed to them.
-  const { forgetDeviceTrees } = await import('./sync/localTrees.js');
-  await forgetDeviceTrees();
+  if (ROOM_READS_REPLICA) await (await accountChange()).forgetReplicaRoom({ previous });
+  else await (await import('./sync/localTrees.js')).forgetDeviceTrees();
   confirmDeviceOwner(next ?? null);
-  if (typeof window !== 'undefined' && window.location.hash.startsWith('#/app/')) window.location.hash = '#/app';
+  if (typeof window === 'undefined' || !readNavigation().hash.startsWith('#/app/')) return;
+  if (navigation) navigation.navigate('#/app', { replace: true });
+  else replaceLocation('#/app');
 }
 
 export const roadmapRoutes = {
   id: 'roadmap',
+  // Where the room reads the device's copy (replicaRoom.js), the session keeps the one list of what cannot land beside the
+  // step draft, and roadmap words the shell's sign-in and sign-out questions; elsewhere the session is the step draft's alone.
+  session: { Provider: ROOM_READS_REPLICA ? RoadmapSession : StepDraftProvider, Notice: StepDraftNotice, invalidateAccount: invalidateStepDraftSession },
+  sync: ROOM_READS_REPLICA ? {
+    adoptionAnswer: async (engine, due) => (await accountChange()).adoptionAnswer(engine, due),
+    signInWords: async (engine, due) => (await accountChange()).signInWords(engine, due),
+    signOutWords: async (engine, question) => (await accountChange()).signOutWords(engine, question),
+  } : undefined,
   label: t('roadmap.product.name'),
   switchHash: '#/app',
   home,

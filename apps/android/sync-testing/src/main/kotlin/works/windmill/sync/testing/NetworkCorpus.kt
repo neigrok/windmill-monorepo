@@ -1,5 +1,6 @@
 package works.windmill.sync.testing
 
+import java.io.File
 import works.windmill.sync.api.*
 import works.windmill.sync.core.*
 import works.windmill.sync.engine.*
@@ -7,9 +8,15 @@ import works.windmill.sync.engine.*
 object NetworkCorpus {
     val paths = listOf("commit/grouping.json", "commit/retire.json", "commit/throws.json", "hold/release.json", "hold/undo.json",
         "lineage/signin.json", "lineage/signout.json", "lineage/start.json", "pull/pages.json", "refusal/base-unknown.json",
-        "refusal/fold.json", "refusal/restamp.json", "refusal/transport.json", "write/map.json")
+        "refusal/fold.json", "refusal/restamp.json", "refusal/transport.json", "write/map.json", "write/scoped-predictions.json", "write/references.json", "undo/journal.json", "undo/restore.json")
 
-    fun handlers(registry: Registry): Map<String, Handler> = paths.associateWith { { input: Json -> run(registry, input) } }
+    fun handlers(registry: Registry): Map<String, Handler> = paths.associateWith { handler(registry) }
+
+    // The client-step language against a product's registry: `roadmap/client.json` runs it with roadmap's (corpus/README.md).
+    fun productHandlers(root: File): Map<String, Handler> =
+        mapOf("roadmap/client.json" to handler(Registry(Json.parse(File(root, "sync/roadmap.registry.json").readBytes()))))
+
+    fun handler(registry: Registry): Handler = { input -> run(registry, input) }
 
     private fun run(registry: Registry, input: Json): Json {
         var wall = 0L
@@ -27,15 +34,20 @@ object NetworkCorpus {
             override fun now() = wall
             override fun reading() = ClockReading(wall, wall, "boot-1")
         }
+        var opened: Engine? = null
         val identities = object : IdentitySource {
-            override fun opaqueID() = "g${++gestures}"
+            override fun opaqueID(): String {
+                var id: String
+                do id = "g${++gestures}" while (opened?.let { ClientCorpus.carriesGesture(it.snapshot(), id) } == true)
+                return id
+            }
             override fun draw(bound: Int) = take("draws").long(0).toInt().also { check(it in 0 until bound) }
             override fun replicaID() = take("ids").str()
             override fun actorID() = take("actors").str()
             override fun forkGuard() = take("forkGuards").str()
         }
-        Engine.memory(registry, input.member("device"), clock, identities, current,
-            input["limits"]?.get("PUSH_MAX_BYTES")?.long(1)?.toInt() ?: Constants.PUSH_MAX_BYTES).use { engine ->
+        val limits = ClientCorpus.limits(input)
+        Engine.memory(registry, input.member("device"), clock, identities, current, limits.pushMaxBytes, effectMaxBytes = limits.effectMaxBytes).also { opened = it }.use { engine ->
             var lastPush: Json? = null
             var lastPull: Json? = null
             var pulledFor: String? = null
@@ -63,22 +75,31 @@ object NetworkCorpus {
                         "release" -> Json.of(engine.release(step.member("localId").str()))
                         "releaseAll" -> { engine.releaseHeld(true); Json.Null }
                         "releaseDue" -> { engine.releaseHeld(); Json.Null }
-                        "undo" -> Json.of(engine.undo(step.member("gestureId").str()))
-                        "dismiss" -> { engine.dismissNotice(step.member("id").str()); Json.Null }
+                        "commitAct" -> ClientCorpus.act(engine, step).also { if (it == null || it is ActCommitOutcome.Refused) { gestures = beforeGestures; consumed.putAll(beforeConsumed) } }
+                            ?.let(ClientCorpus::outcome) ?: Json.Null
+                        "undo" -> Json.of(engine.cancelHeld(step.member("gestureId").str()))
+                        "requestInverse" -> engine.requestInverse(step.member("actId").str(), step["slots"]?.let(ClientCorpus::undoSegments)).json
+                        "readInverseResult" -> engine.readInverseResult(step.member("requestId").str()).json
+                        "releaseReversibleAct" -> Json.of(engine.releaseReversibleAct(step.member("actId").str()))
+                        "dismiss" -> Json.of(engine.dismissNotice(step.member("id").str()))
                         "push" -> engine.nextPush(step["limit"]?.long(1)?.toInt() ?: Constants.PUSH_MAX_INTENTS).also { lastPush = it } ?: Json.Null
-                        "pushResponse" -> engine.onPushResponse(checkNotNull(lastPush) { "response without push" }, response(), timing,
+                        // A response with no push in the vector answers one its device sent before a restart, from the active replica.
+                        "pushResponse" -> engine.onPushResponse(lastPush ?: Json.objectOf("replica" to Json.of(engine.activeReplica()), "intents" to Json.array()), response(), timing,
                             step["dieAfter"]?.long(0)?.toInt() ?: Int.MAX_VALUE) ?: Json.Null
                         "hello" -> { engine.onHello(response(), timing); Json.Null }
                         "engineStart" -> engine.start(step["backupGuard"])
-                        "pull" -> engine.pullRequest(step.member("scopes").arr().map(::ScopeRef)).also {
-                            lastPull = it; pulledFor = engine.activeReplica()
-                        } ?: Json.Null
+                        "pull" -> {
+                            val scopes = step["scopes"]?.arr()?.map(::ScopeRef) ?: engine.subscriptions(registry.products.keys.toList()).also { engine.reconcile(it) }.toList()
+                            engine.pullRequest(scopes).also { lastPull = it; pulledFor = engine.activeReplica() } ?: Json.Null
+                        }
                         "pullResponse" -> if (pulledFor != engine.activeReplica()) Json.Null else Json.Arr(engine.onPullResponse(
                             checkNotNull(lastPull) { "response without pull" }, response(), timing,
                             PullSlicing(step["chunk"]?.long(1)?.toInt() ?: 128, step["settle"]?.long(1)?.toInt() ?: 64,
                                 step["dieAfter"]?.long(0)?.toInt() ?: Int.MAX_VALUE), appVersion))
                         "frame" -> Json.of(engine.onFrame(step.member("frame"), appVersion))
                         "subscribe" -> engine.subscribe(ScopeRef(step.member("scope")))?.let(Json::of) ?: Json.Null
+                        "unsubscribe" -> { engine.unsubscribe(ScopeRef(step.member("scope"))); Json.Null }
+                        "subscriptions" -> Json.Arr(engine.subscriptions(registry.products.keys.toList()).map { Json.of(it.text) })
                         "reconcile" -> {
                             engine.reconcile(step["scopes"]?.arr()?.map(::ScopeRef)?.toSet() ?: engine.subscriptions(registry.products.keys.toList()))
                             Json.Null

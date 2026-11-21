@@ -47,6 +47,8 @@ package actor LiveChannel {
     let token: SessionToken
     let generation: Int
     let openedAt: Int64
+    let connectivity: Int
+    let lifecycle: Int
     var following: [ScopeRef] = []
     // When a frame or pong was last received, or the socket opened.
     var heardAt: Int64
@@ -126,6 +128,7 @@ package actor LiveChannel {
   // Every state that wants no socket: the socket closes, pulling nothing, and the next one opens at once. A socket that
   // stayed open `settledMs` resets the reopen backoff's `k`.
   package func close() {
+    core.liveReadiness.withLock { $0 = nil }
     if let socket, now() - socket.openedAt >= Self.settledMs { backoff.reset() }
     socket?.connection.close()
     if socket != nil { core.doubts.withLock { $0.follow([], at: now()) } }
@@ -167,6 +170,8 @@ package actor LiveChannel {
     guard let token = core.tokens.token(for: account) else {
       return (try? core.pauseAuth(meta.replica, sentUnder: nil)) == true ? .paused : .again
     }
+    let connectivity = core.connectivityGeneration.withLock { $0 }
+    let lifecycle = core.lifecycleGeneration.withLock { $0 }
     switch await transport.openLive(token: token) {
     case .answered(.ok(let connection)):
       guard wanted(for: meta) else {
@@ -176,7 +181,7 @@ package actor LiveChannel {
       generation += 1
       socket = Socket(
         connection: connection, replica: meta.replica, account: account, token: token, generation: generation, openedAt: now(),
-        heardAt: now())
+        connectivity: connectivity, lifecycle: lifecycle, heardAt: now())
       if core.config.drivesLoops { read(connection, generation: generation) }
       return await keep(meta)
     case .answered(.failed(let failure)) where failure.status == 401:
@@ -231,6 +236,8 @@ package actor LiveChannel {
       if !added.isEmpty { try await send(.sub(added), on: current) }
       let following = current.following.filter(subscriptions.set.contains) + added
       socket?.following = following
+      core.liveReadiness.withLock { $0 = EngineCore.LiveReadiness(replica: current.replica, token: current.token, scopes: Set(following),
+        connectivity: current.connectivity, lifecycle: current.lifecycle) }
       core.doubts.withLock { $0.follow(Set(following), at: mono) }
       if current.pongDue == nil, mono - current.heardAt >= Constants.livePingMs {
         socket?.pongDue = mono + Constants.livePongMs
@@ -267,6 +274,7 @@ package actor LiveChannel {
       guard frame.isServed(to: socket.account) else { return servedAsAnother(socket) }
       let following = socket.following.filter { $0 != scope }
       self.socket?.following = following
+      core.liveReadiness.withLock { $0 = nil }
       core.doubts.withLock { $0.follow(Set(following), at: now()) }
       await puller.enqueue(frame, for: socket.replica)
     }

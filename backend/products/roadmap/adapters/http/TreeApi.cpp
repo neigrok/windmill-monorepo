@@ -18,9 +18,10 @@ namespace wm {
 
 TreeApi::TreeApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRepository> trees,
                  std::shared_ptr<OwnerProgress> progress, std::shared_ptr<OpLog> ops, std::shared_ptr<AuthService> auth,
-                 std::shared_ptr<ForkService> fork)
+                 std::shared_ptr<TreeForks> fork, std::shared_ptr<EngineReadModels> engine,
+                 std::shared_ptr<FailureReporter> failures)
     : registry_(std::move(registry)), trees_(std::move(trees)), progress_(std::move(progress)),
-      ops_(std::move(ops)), auth_(std::move(auth)), fork_(std::move(fork)) {}
+      ops_(std::move(ops)), auth_(std::move(auth)), fork_(std::move(fork)), engine_(std::move(engine)), failures_(std::move(failures)) {}
 
 std::optional<UserId> TreeApi::callerOf(const drogon::HttpRequestPtr& req) const {
   return wm::callerOf(req, *auth_);
@@ -31,7 +32,7 @@ std::optional<UserId> TreeApi::callerOf(const drogon::HttpRequestPtr& req) const
 // alone files an Issue, under one static operation. `read` runs under the strand.
 bool TreeApi::readRoom(const std::string& treeId, const std::optional<UserId>& caller,
                        const std::function<void(TreeRoom&)>& read) {
-  WriteObservation observation{"roadmap.tree.read", "roadmap", "rest"};
+  WriteObservation observation{"roadmap.tree.read", "roadmap", "rest", "", failures_.get()};
   // The reads made for it are of its request: a failure one of them reports is the request's one Issue.
   WriteContext context{observation};
   std::lock_guard<std::mutex> lock(registry_->strandFor(TreeId{treeId}));
@@ -50,8 +51,23 @@ bool TreeApi::readRoom(const std::string& treeId, const std::optional<UserId>& c
   }
 }
 
+bool TreeApi::readRecords(const std::string& treeId, const std::optional<UserId>& caller,
+                          const std::function<void(const ReadableRoadmap&)>& read) {
+  WriteObservation observation{"roadmap.tree.read", "roadmap", "rest", "", failures_.get()};
+  WriteContext context{observation};
+  try {
+    const std::optional<ReadableRoadmap> roadmap = engine_->open(TreeId{treeId}, caller);
+    if (roadmap) read(*roadmap);
+    observation.skip();
+    return roadmap.has_value();
+  } catch (const std::exception& error) {
+    observation.fail(error);
+    return false;
+  }
+}
+
 std::optional<Place> TreeApi::placeOf(const TreeId& tree) {
-  WriteObservation observation{"roadmap.tree.place", "roadmap", "rest"};
+  WriteObservation observation{"roadmap.tree.place", "roadmap", "rest", "", failures_.get()};
   try {
     std::optional<Place> place = trees_->placeOf(tree);
     observation.skip();
@@ -118,7 +134,7 @@ void TreeApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
     callback(jsonResponse(body));
     return;
   }
-  WriteObservation observation{"roadmap.tree.follow", "roadmap", "rest"};
+  WriteObservation observation{"roadmap.tree.follow", "roadmap", "rest", "", failures_.get()};
   try {
     const std::optional<OpenedTrees> opened(std::in_place, trees_->openedFrom(*caller, treesOpenedBy(data)));
     body["data"] = toJson(data, ownedSubtrees(subtrees, opened));
@@ -164,7 +180,7 @@ void TreeApi::getGuides(const drogon::HttpRequestPtr& req, HttpCallback&& callba
     return;
   }
   // The trees above are read for the tree's writer alone and OUTSIDE the room strand, as getProgress loads.
-  WriteObservation observation{"roadmap.tree.guides", "roadmap", "rest"};
+  WriteObservation observation{"roadmap.tree.guides", "roadmap", "rest", "", failures_.get()};
   try {
     body["guides"] = toJson(guidesFor(trees_->guidedTreesAbove(*caller, TreeId{treeId}), own));
     observation.skip();
@@ -196,7 +212,7 @@ void TreeApi::getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& c
   // The pointers are followed for the tree's writer alone and OUTSIDE the room strand, as getProgress loads. A follow
   // that fails leaves the graph's diagnostics and a flag: the graph is still told.
   Json::Value body;
-  WriteObservation observation{"roadmap.diagnostics.follow", "roadmap", "rest"};
+  WriteObservation observation{"roadmap.diagnostics.follow", "roadmap", "rest", "", failures_.get()};
   try {
     const OpenedTrees opened(trees_->openedFrom(*caller, treesOpenedBy(*pointers)));
     body = toJson(graph, opened.diagnose(TreeId{treeId}, *pointers));
@@ -234,16 +250,34 @@ void TreeApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     return;
   }
 
-  ForkService::Result forked = fork_->fork(TreeId{treeId}, newId, title, *caller);
-  if (forked.outcome == ForkService::Outcome::noSource) {
+  // A fork sent with a request key — `requestId` in the body or the Idempotency-Key header — is one fork however often
+  // it is sent: a resend after a lost answer or a cut-short copy answers the same new roadmap.
+  std::string requestKey = json ? json->get("requestId", "").asString() : "";
+  if (requestKey.empty()) requestKey = req->getHeader("Idempotency-Key");
+  if (requestKey.size() > 128 || requestKey.find_first_of(std::string("#\0", 2)) != std::string::npos) {
+    callback(error(drogon::k400BadRequest, "requestId must be at most 128 characters, holding no \"#\"", "bad-request-id"));
+    return;
+  }
+
+  TreeForks::Result forked = fork_->fork(TreeId{treeId}, newId, title, *caller,
+                                         requestKey.empty() ? std::nullopt : std::optional<std::string>(requestKey));
+  if (forked.outcome == TreeForks::Outcome::busy) {
+    callback(error(drogon::k503ServiceUnavailable, "the fork could not be made just now; send it again", "busy"));
+    return;
+  }
+  if (forked.outcome == TreeForks::Outcome::requestConflict) {
+    callback(error(drogon::k409Conflict, "this requestId was sent before for another fork", "request-conflict"));
+    return;
+  }
+  if (forked.outcome == TreeForks::Outcome::noSource) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
-  if (forked.outcome == ForkService::Outcome::conflict) {
+  if (forked.outcome == TreeForks::Outcome::conflict) {
     callback(error(drogon::k409Conflict, "a tree with that id already exists"));
     return;
   }
-  if (forked.outcome == ForkService::Outcome::notARoot) {
+  if (forked.outcome == TreeForks::Outcome::notARoot) {
     callback(jsonResponse(toJson(*forked.notARoot, "a subtree is copied with its root, so fork the root"),
                           drogon::k409Conflict));
     return;
@@ -256,7 +290,20 @@ void TreeApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
 }
 
 void TreeApi::getProgress(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
-  std::optional<UserId> caller = callerOf(req);
+  const std::optional<Json::Value> answer = progressAnswer(treeId, callerOf(req));
+  if (!answer) {
+    callback(error(drogon::k404NotFound, "no such tree"));
+    return;
+  }
+  callback(jsonResponse(*answer));
+}
+
+std::optional<Json::Value> TreeApi::progressAnswer(const std::string& treeId, const std::optional<UserId>& caller) {
+  if (engine_) {
+    ShownProgress shown;
+    if (!readRecords(treeId, caller, [&](const ReadableRoadmap& roadmap) { shown = engine_->progress(roadmap); })) return std::nullopt;
+    return toJson(shown);
+  }
   // Progress follows OWNERSHIP, not the caller, and is gated by canRead.
   std::optional<UserId> owner;
   bool mine = false;
@@ -266,25 +313,17 @@ void TreeApi::getProgress(const drogon::HttpRequestPtr& req, HttpCallback&& call
         mine = canWrite(caller, owner);
         // A writer reads the marks as stored, so only a reader's answer is judged against the tree's pointers.
         if (!mine) pointers = room.stampedPointers();
-      })) {
-    callback(error(drogon::k404NotFound, "no such tree"));
-    return;
-  }
-  if (!owner) {
-    callback(jsonResponse(toJson(Progress{})));
-    return;
-  }
+      }))
+    return std::nullopt;
+  if (!owner) return toJson(Progress{});
   // The marks are loaded and the pointers followed OUTSIDE the room strand: never hold a room's lock across a
   // Postgres call. A reader is shown the owner's derived completion (domain readerView); the tree's writer, whose
   // view derives it again from the tree's `opens`, the marks as stored.
   const TreeId tree{treeId};
-  if (mine) {
-    callback(jsonResponse(toJson(progress_->stored(tree, *owner))));
-    return;
-  }
+  if (mine) return toJson(progress_->stored(tree, *owner));
   const ShownToReaders shown =
       progress_->shownToReaders({OwnersTrees{*owner, {{tree, std::move(pointers)}}}}, kReaderFollowBudget, "rest");
-  callback(jsonResponse(toJson(shown.progress.at(tree))));
+  return toJson(shown.progress.at(tree));
 }
 
 void TreeApi::getActivity(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
@@ -297,14 +336,25 @@ void TreeApi::getActivity(const drogon::HttpRequestPtr& req, HttpCallback&& call
     callback(error(drogon::k400BadRequest, "since and limit must be numbers"));
     return;
   }
-
-  TreeData current;
-  if (!readRoom(treeId, callerOf(req), [&](TreeRoom& room) { current = room.snapshot(); })) {
+  const std::optional<Json::Value> answer = activityAnswer(treeId, callerOf(req), since, limit);
+  if (!answer) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
   }
+  callback(jsonResponse(*answer));
+}
 
-  std::vector<ActivityEvent> events = activityFeed(current, ops_->since(TreeId{treeId}, since), limit);
+std::optional<Json::Value> TreeApi::activityAnswer(const std::string& treeId, const std::optional<UserId>& caller, Seq since,
+                                                   std::size_t limit) {
+  std::vector<ActivityEvent> events;
+  if (engine_) {
+    if (!readRecords(treeId, caller, [&](const ReadableRoadmap& roadmap) { events = engine_->activity(roadmap, since, limit); }))
+      return std::nullopt;
+  } else {
+    TreeData current;
+    if (!readRoom(treeId, caller, [&](TreeRoom& room) { current = room.snapshot(); })) return std::nullopt;
+    events = activityFeed(current, ops_->since(TreeId{treeId}, since), limit);
+  }
 
   Json::Value list(Json::arrayValue);
   for (const ActivityEvent& event : events) {
@@ -322,7 +372,7 @@ void TreeApi::getActivity(const drogon::HttpRequestPtr& req, HttpCallback&& call
   }
   Json::Value body(Json::objectValue);
   body["events"] = list;
-  callback(jsonResponse(body));
+  return body;
 }
 
 }

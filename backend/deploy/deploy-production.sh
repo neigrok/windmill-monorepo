@@ -20,6 +20,50 @@ if [[ ! -d ai-db.next ]]; then
   printf 'FAIL candidate ai-db folder is missing\n' >&2
   exit 1
 fi
+# Roadmap's switch onto the sync engine is the host's own (README.md, "Roadmap's cutover onto the sync engine"): no
+# deploy renders or changes roadmap-engine.env, so none can turn roadmap back to its own sync. Compose reads it into
+# the server; once nothing below refuses, a missing one is created empty, which keeps roadmap's scopes withheld.
+roadmap_switch=
+[[ ! -e roadmap-engine.env ]] || roadmap_switch=$(cat roadmap-engine.env)
+if [[ -n "$roadmap_switch" && "$roadmap_switch" != ROADMAP_ENGINE_ENABLED=1 ]]; then
+  printf 'FAIL roadmap-engine.env holds something other than ROADMAP_ENGINE_ENABLED=1\n' >&2
+  exit 1
+fi
+# The cutover's floor and the database decide too: once a cutover ran here, or the engine holds roadmap's scopes, a server
+# off the engine would serve roadmap's old tables beside them, so a switch lost or emptied is refused, not recreated off.
+if [[ -z "$roadmap_switch" && -s roadmap-engine.floor ]]; then
+  printf 'FAIL roadmap-engine.floor says roadmap is on the sync engine here, and roadmap-engine.env does not say ROADMAP_ENGINE_ENABLED=1\n' >&2
+  exit 1
+fi
+if [[ -z "$roadmap_switch" && -f .env ]]; then
+  # A database that is down is started as it stands, as the deploy would start it anyway, so that it can answer.
+  if [[ -z "$(docker compose ps -q db 2> /dev/null)" ]]; then
+    docker compose up -d --no-deps --no-recreate db > /dev/null 2>&1 || true
+    for ((attempt = 0; attempt < 120; attempt++)); do
+      docker compose exec -T db pg_isready --username=windmill --dbname=windmill > /dev/null 2>&1 && break
+      sleep 1
+    done
+  fi
+  on_engine=$(docker compose exec -T db psql --username=windmill --dbname=windmill -XAtq -v ON_ERROR_STOP=1 \
+    -c "select to_regclass('public.sync_scopes') is not null" 2> /dev/null) || on_engine=unread
+  if [[ "$on_engine" == t ]]; then
+    on_engine=$(docker compose exec -T db psql --username=windmill --dbname=windmill -XAtq -v ON_ERROR_STOP=1 \
+      -c "select exists (select 1 from sync_scopes where kind <> 'product' or key like 'acct:%/roadmap')" 2> /dev/null) ||
+      on_engine=unread
+  fi
+  if [[ "$on_engine" == t ]]; then
+    printf 'FAIL the database holds roadmap on the sync engine, and roadmap-engine.env does not say ROADMAP_ENGINE_ENABLED=1\n' >&2
+    exit 1
+  fi
+  if [[ "$on_engine" != f ]]; then
+    printf 'FAIL whether the database holds roadmap on the sync engine could not be read\n' >&2
+    exit 1
+  fi
+fi
+[[ -e roadmap-engine.env ]] || : > roadmap-engine.env
+# The site's pause, which Caddy mounts and only roadmap's cutover and Ops · maintenance set and lift (README.md,
+# "Pause the site"); a deploy keeps it as it is.
+mkdir -p maintenance
 # Validate before pruning, pulling, changing HBA, or promoting any live file.
 python3 - rendered.env <<'PYAI'
 import base64
@@ -255,11 +299,30 @@ try:
             capture_output=True, timeout=5)
         if check.returncode:
             raise SystemExit("FAIL running server installation network key is unavailable")
+    roadmap = "1" if open("roadmap-engine.env").read().strip() else ""
+    if server["environment"].get("ROADMAP_ENGINE_ENABLED", "") != roadmap:
+        raise SystemExit("FAIL compose does not read roadmap-engine.env into the server")
+    check = subprocess.run(["docker", "compose", "exec", "-T", "server", "sh", "-eu", "-c",
+        'if [ -n "$1" ]; then grep -Fzxq -- "ROADMAP_ENGINE_ENABLED=$1" /proc/1/environ; '
+        'else ! grep -Ezq -- "^ROADMAP_ENGINE_ENABLED=" /proc/1/environ; fi', "sh", roadmap, "roadmap-switch"],
+        capture_output=True, timeout=5)
+    if check.returncode:
+        raise SystemExit("FAIL running server ROADMAP_ENGINE_ENABLED differs from roadmap-engine.env")
+    # An image that does not act on the switch serves roadmap's old sync beside the engine's (spec §8.3).
+    if roadmap:
+        retired = subprocess.run(["docker", "compose", "exec", "-T", "server", "curl", "--silent", "--output", "/dev/null",
+            "--max-time", "5", "--write-out", "%{http_code}", "http://127.0.0.1:8080/v1/socket"], capture_output=True,
+            text=True, timeout=10)
+        if retired.stdout != "410":
+            raise SystemExit("FAIL the running server does not retire roadmap's socket while roadmap is on the sync engine")
 except Exception:
     raise SystemExit("FAIL server runtime verification could not complete")
 PY
 python3 "$(dirname "$0")/sync_compatibility.py" verify "$verification/sync.json"
 rm -f .env.bak rendered.env sync-cutover.json
+if [[ -n "$roadmap_switch" ]]; then
+  printf 'PASS roadmap: the server runs with ROADMAP_ENGINE_ENABLED=1, kept from roadmap-engine.env\n'
+fi
 # The subscription database's one-shot ran with `up`, and nothing there waits on it, so its outcome is read
 # here, once the backend is verified. A FAIL turns this run red while the backend stays deployed and serving,
 # and leaves the subscription service as it was.

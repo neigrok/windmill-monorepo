@@ -220,6 +220,17 @@
     }
   },
   {
+    "name": "ready --vacate--> resolved",
+    "input": {
+      "from": "ready",
+      "event": "vacate",
+      "to": "resolved"
+    },
+    "expect": {
+      "to": "resolved"
+    }
+  },
+  {
     "name": "acked --resolve--> resolved",
     "input": {
       "from": "acked",

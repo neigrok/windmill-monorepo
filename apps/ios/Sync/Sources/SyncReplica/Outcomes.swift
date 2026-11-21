@@ -2,8 +2,8 @@ import SyncAPI
 import SyncCore
 
 // §7.4 the sender's local side: numbering ready entries into a push, and a push answer as its ordered steps, each one
-// local transaction. §7.7 what a result does: acks and write maps, refusals with their fold and notice, and automatic
-// recovery with the restamp rule.
+// local transaction. §7.7 what a result does: acks and write maps, an opted command's receipt with its accepted versions
+// (E-7), refusals with their fold and notice, and automatic recovery with the restamp rule.
 
 // The device clocks' readings around one request, for its offset sample (§10.4).
 public struct Timing: Sendable, Hashable {
@@ -23,8 +23,9 @@ public struct Timing: Sendable, Hashable {
 
 // One local transaction of a push answer, in the order `PushSteps` gives them.
 public enum PushStep: Sendable, Hashable {
-  // §10.4, before any stamp of the answer is observed.
-  case sample(serverTime: Int64)
+  // §10.4, before any stamp of the answer is observed. A 200's sample first checks the answer's scoped receipts whole
+  // (§7.4): a malformed one fails the answer, which then changes nothing, its sample included.
+  case sample(serverTime: Int64, checking: PushResponse? = nil)
   case pauseAuth
   case reidentify(epoch: String)
   // A 400 or 413 on several intents: resend the first `limit` entries by n; a 400 also reports itself.
@@ -43,17 +44,24 @@ public enum PushStep: Sendable, Hashable {
     }
   }
 
-  // What of the outbox a step reads in a replica holding `meta`: a batch of `ok`s with no write map their own entries; a
-  // step of the meta alone, or an epoch that is the replica's already or its first, none; and any other every entry,
-  // which a refusal's fold, a write map, a re-identify or an epoch change may rewrite.
+  // What of the outbox a step reads in a replica holding `meta`: a sample checking receipts the entries its oks answer; a
+  // batch of `ok`s with no write map and no receipt their own entries; a step of the meta alone, or an epoch that is the
+  // replica's already or its first, none; and any other every entry, which a refusal's fold, a write map, a receipt's
+  // versions, a re-identify or an epoch change may rewrite.
   public func entries(of meta: ReplicaMeta) -> EntrySelection {
     switch self {
-    case .sample, .pauseAuth, .halve:
+    case .sample(_, let checking):
+      let oks = checking?.results.filter { if case .ok = $0.verdict { true } else { false } } ?? []
+      return EntrySelection(numbered: Set(oks.map(\.n)))
+    case .pauseAuth, .halve:
       return EntrySelection()
     case .results(let batch):
       guard batch.replica.utf8.elementsEqual(meta.replica.utf8) else { return EntrySelection() }
       if let epoch = meta.serverEpoch, !epoch.utf8.elementsEqual(batch.epoch.utf8) { return .every }
-      guard batch.results.allSatisfy({ if case .ok(_, nil) = $0.verdict { true } else { false } }) else { return .every }
+      let alone = batch.results.allSatisfy { result in
+        if case .ok(_, nil) = result.verdict { result.detail?["windmillKit"] == nil } else { false }
+      }
+      guard alone else { return .every }
       return EntrySelection(numbered: Set(batch.results.map(\.n)))
     case .epoch(let epoch):
       guard let held = meta.serverEpoch, !held.utf8.elementsEqual(epoch.utf8) else { return EntrySelection() }
@@ -74,15 +82,24 @@ public struct ResultBatch: Sendable, Hashable {
   public let isLast: Bool
   // Every remaining result of the answer, for an atomic epoch recovery before ordinary result slicing.
   public let epochResults: [PushResult]
+  // The n a `retry` continues at: the server may hold results past the answer, an opted one among them, whose stored
+  // receipt only a resend fetches.
+  public let continuesAt: Int64?
 
-  public init(replica: String, results: [PushResult], lastN: Int64, epoch: String, isLast: Bool, epochResults: [PushResult]? = nil) {
+  public init(replica: String, results: [PushResult], lastN: Int64, epoch: String, isLast: Bool, epochResults: [PushResult]? = nil,
+              continuesAt: Int64? = nil) {
     self.replica = replica
     self.results = results
     self.lastN = lastN
     self.epoch = epoch
     self.isLast = isLast
     self.epochResults = epochResults ?? results
+    self.continuesAt = continuesAt
   }
+
+  // What the last batch acknowledges: lastN, but never past the intent a `retry` continues at, so the server keeps every
+  // result it has yet to return.
+  public var ackThrough: Int64 { continuesAt.map { min(lastN, $0 - 1) } ?? lastN }
 }
 
 // §7.4 a push answer's transactions in order: the sample, then a 401's pause, a 200's epoch recovery or result batches, or a failure's own move.
@@ -90,7 +107,7 @@ public struct PushSteps: Sendable {
   enum Part: Sendable {
     case step(PushStep)
     // A 200's results not yet taken, ascending by n.
-    case results(ArraySlice<PushResult>, replica: String, lastN: Int64, epoch: String)
+    case results(ArraySlice<PushResult>, replica: String, lastN: Int64, epoch: String, continuesAt: Int64?)
   }
 
   var parts: [Part]
@@ -102,12 +119,16 @@ public struct PushSteps: Sendable {
     case .step(let step):
       parts.removeFirst()
       return step
-    case .results(let results, let replica, let lastN, let epoch):
+    case .results(let results, let replica, let lastN, let epoch, let continuesAt):
       let batch = results.prefix(sizes.size(.results))
       let rest = results.dropFirst(batch.count)
-      if rest.isEmpty { parts.removeFirst() } else { parts[0] = .results(rest, replica: replica, lastN: lastN, epoch: epoch) }
+      if rest.isEmpty {
+        parts.removeFirst()
+      } else {
+        parts[0] = .results(rest, replica: replica, lastN: lastN, epoch: epoch, continuesAt: continuesAt)
+      }
       return .results(ResultBatch(replica: replica, results: Array(batch), lastN: lastN, epoch: epoch, isLast: rest.isEmpty,
-                                  epochResults: Array(results)))
+                                  epochResults: Array(results), continuesAt: continuesAt))
     }
   }
 }
@@ -121,6 +142,7 @@ public struct PushPlanner: Sendable {
   public let registry: Registry
   public let limits: Limits
   let lifecycle: ReplicaLifecycle
+  let inverses: Inverses
   let rewriteDeviceValue: DeviceValueRewrite
   let commandResultWrites: CommandResultDeviceWrites
 
@@ -132,6 +154,7 @@ public struct PushPlanner: Sendable {
     self.registry = registry
     self.limits = limits
     lifecycle = ReplicaLifecycle(registry: registry)
+    inverses = Inverses(registry: registry)
     self.rewriteDeviceValue = rewriteDeviceValue
     self.commandResultWrites = commandResultWrites
   }
@@ -157,7 +180,13 @@ public struct PushPlanner: Sendable {
       var intents = sent(replica).map(\.intent)
       var back = heldBack(in: replica)
       for candidate in replica.outbox where candidate.state == .ready {
-        guard let entry = replica.entry(candidate.localId), entry.state == .ready else { continue }
+        guard var entry = replica.entry(candidate.localId), entry.state == .ready else { continue }
+        if entry.inverseOf != nil {
+          guard try inverses.passesBarrier(entry, in: &replica) else { break }
+          back = heldBack(in: replica)
+          guard let materialized = replica.entry(candidate.localId) else { continue }
+          entry = materialized
+        }
         if back.contains(entry.commitOrder) {
           if entry.intent.command != nil { break }
           continue
@@ -186,24 +215,26 @@ public struct PushPlanner: Sendable {
   }
 
   // §7.4 held back, by commit order: the ready entries that depend (§7.7 step 3) on a held or held-back entry or on an
-  // orphan awaiting its result (sent, or returned to ready), or touch, by a delta, a guard or a prediction, a record an
-  // earlier held-back entry touches.
+  // orphan awaiting its result (sent, or returned to ready), or touch, by a delta, a guard or a prediction in any scope,
+  // a record an earlier held-back entry touches.
   func heldBack(in replica: LoadedReplica) -> Set<Int64> {
     var sources = Dependents(registry: registry)
     var touched: Set<ScopedKey> = []
     var back: Set<Int64> = []
     for entry in replica.outbox {
       if entry.state == .ready {
-        let records = (entry.drawnDeltas.map(\.key) + entry.intent.guards.map(\.key)).map { ScopedKey(scope: entry.scope, key: $0) }
+        let written: [ScopedKey] = entry.effects().flatMap { (effect: ScopedDeltas) -> [ScopedKey] in
+          effect.deltas.map { ScopedKey(scope: effect.scope, key: $0.key) }
+        }
+        let guarded: [ScopedKey] = entry.intent.guards.map { ScopedKey(scope: entry.scope, key: $0.key) }
+        let records: [ScopedKey] = written + guarded
         if sources.part(of: entry).any || records.contains(where: touched.contains) {
           back.insert(entry.commitOrder)
           touched.formUnion(records)
         }
       }
       let awaitsResult = entry.orphanOf != nil && (entry.state == .sent || entry.state == .ready)
-      if entry.state == .held || back.contains(entry.commitOrder) || awaitsResult {
-        sources.absorb(scope: entry.scope, deltas: entry.drawnDeltas, stamp: entry.stamp)
-      }
+      if entry.state == .held || back.contains(entry.commitOrder) || awaitsResult { sources.absorb(entry) }
     }
     return back
   }
@@ -216,8 +247,9 @@ public struct PushPlanner: Sendable {
     guard !answer.isUnauthenticated(for: request.account) else { return PushSteps(parts: sample + [.step(.pauseAuth)]) }
     switch answer {
     case .ok(let response):
-      let results = PushSteps.Part.results(response.results[...], replica: request.replica, lastN: response.lastN, epoch: response.epoch)
-      return PushSteps(parts: sample + [results])
+      let results = PushSteps.Part.results(response.results[...], replica: request.replica, lastN: response.lastN, epoch: response.epoch,
+                                           continuesAt: response.retry?.n)
+      return PushSteps(parts: [.step(.sample(serverTime: response.serverTime, checking: response)), results])
     case .failed(let failure):
       switch failure.status {
       case 409:
@@ -239,7 +271,8 @@ public struct PushPlanner: Sendable {
   public func apply(_ step: PushStep, to replica: inout LoadedReplica, instance: inout Instance, timing: Timing,
                     identities: IdentitySource) throws {
     switch step {
-    case .sample(let serverTime):
+    case .sample(let serverTime, let checking):
+      if let checking, try !everyReceiptReads(in: checking, of: replica) { replica.record(.pushMalformed) }
       replica.update { $0.sample(serverTime: serverTime, send: timing.send, recv: timing.recv) }
     case .pauseAuth:
       replica.update { $0.authPaused = true }
@@ -271,7 +304,7 @@ public struct PushPlanner: Sendable {
       let records = batch.results.contains { replica.sentEntry(numbered: $0.n) != nil }
       if replica.meta.serverEpoch == nil && (records || batch.isLast) { replica.update { $0.serverEpoch = batch.epoch } }
       for result in batch.results { try apply(result, lastN: batch.lastN, epoch: batch.epoch, to: &replica, instance: instance) }
-      if batch.isLast { replica.update { $0.ackThrough = batch.lastN } }
+      if batch.isLast { replica.update { $0.ackThrough = batch.ackThrough } }
     case .epoch(let epoch):
       try lifecycle.checkEpoch(epoch, in: &replica, instance: &instance, identities: identities)
     }
@@ -281,22 +314,63 @@ public struct PushPlanner: Sendable {
 
   // A result applies only to the entry still sent with its n; any other entry moved on since the request. An `ok` whose
   // seq its scope's stored cursor already covers (its own page or frame came first) resolves its own entry, and no other
-  // (§7.5 step 2).
+  // (§7.5 step 2); an opted entry's ok applies its write map and then its receipt, which may cover some projections at once.
+  // An ok whose receipt or inverse outcomes do not read still acknowledges its entry, with no receipt.
   func apply(_ result: PushResult, lastN: Int64, epoch: String, to replica: inout LoadedReplica, instance: Instance) throws {
     guard let entry = replica.sentEntry(numbered: result.n) else { return }
     try writeCommandResult(entry, result: result, epoch: epoch, in: &replica)
     switch result.verdict {
     case .refused(let code):
       try refuse(entry.localId, code: code, detail: result.detail, lastN: lastN, in: &replica, instance: instance)
+      if replica.entry(entry.localId) == nil { replica.retain(Attempt(epoch: epoch, n: result.n, ok: false), of: entry.localId) }
+      try inverses.settle(entry, by: result, epoch: epoch, in: &replica)
+    case .ok(let seq, let write) where !readable(result, of: entry, in: replica):
+      try acknowledgeUnreadable(entry, n: result.n, seq: seq, write: write, epoch: epoch, in: &replica, instance: instance)
     case .ok(let seq, let write):
+      let effects = entry.predictions == nil ? nil : try receipt(of: result, for: entry)
       try replica.move(entry.localId, .ok) { entry in
         entry.resultSeq = seq
         entry.resultEpoch = epoch
       }
       replica.update { $0.admit(entry.intent.deltas.flatMap(\.lattice.stamps)) }
-      if let write { try applyWriteMap(write, of: entry.localId, in: &replica, instance: instance) }
-      if let acked = replica.entry(entry.localId), replica.covers(acked) { try replica.move(entry.localId, .resolve) }
+      if let effects {
+        if let write { try applyScopedWriteMap(write, of: entry.localId, in: &replica, instance: instance) }
+        applyReceipt(effects, write: write ?? [], of: entry.localId, in: &replica, instance: instance)
+      } else if let write {
+        try applyWriteMap(write, of: entry.localId, in: &replica, instance: instance)
+      }
+      replica.retain(Attempt(epoch: epoch, n: result.n, ok: true, acceptedEffects: replica.entry(entry.localId)?.acceptedEffects), of: entry.localId)
+      if let acked = replica.entry(entry.localId) { inverses.resolveReferences(of: acked, epoch: epoch, in: &replica) }
+      try inverses.settle(entry, by: result, epoch: epoch, in: &replica)
+      try replica.settle(entry.localId)
     }
+  }
+
+  // The server holds the write whose receipt does not read: its entry is acknowledged with no receipt, so every projection
+  // ends at once and the pull brings the rows; its source's history proves nothing, and an inverse slot settles skipped
+  // `invalid`.
+  func acknowledgeUnreadable(_ entry: OutboxEntry, n: Int64, seq: Int64, write: [WriteMapEntry]?, epoch: String,
+                             in replica: inout LoadedReplica, instance: Instance) throws {
+    try replica.move(entry.localId, .ok) { entry in
+      entry.resultSeq = seq
+      entry.resultEpoch = epoch
+    }
+    replica.update { $0.admit(entry.intent.deltas.flatMap(\.lattice.stamps)) }
+    if let write {
+      if entry.predictions == nil { try applyWriteMap(write, of: entry.localId, in: &replica, instance: instance) }
+      else { try applyScopedWriteMap(write, of: entry.localId, in: &replica, instance: instance) }
+    }
+    replica.update(entry: entry.localId) { entry in
+      entry.predictions = entry.predictions?.map { (projection: Projection) -> Projection in
+        var covered = projection
+        covered.covered = true
+        return covered
+      }
+    }
+    replica.retain(Attempt(epoch: epoch, n: n, ok: true), of: entry.localId)
+    try replica.settle(entry.localId)
+    let invalid = try PushResult(json: ["n": JSON(n), "s": "refused", "code": RefusalCode.invalid.json])
+    try inverses.settle(entry, by: invalid, epoch: epoch, in: &replica)
   }
 
   func writeCommandResult(_ entry: OutboxEntry, result: PushResult, epoch: String, in replica: inout LoadedReplica) throws {
@@ -345,6 +419,7 @@ public struct PushPlanner: Sendable {
     replica.apply(.putNotice(Notice(
       id: "notice:\(entry.localId)", product: product(of: entry.scope), scope: entry.scope, code: code, detail: detail,
       content: content, at: deviceNow)))
+    replica.settleEnded(code: code.text)
   }
 
   // An orphan's refusal ends it by `event` with no notice of its own; its held-back dependents fold into its origin's
@@ -353,6 +428,7 @@ public struct PushPlanner: Sendable {
   func refuseOrphan(_ orphan: OutboxEntry, of origin: String, by event: IntentEvent, in replica: inout LoadedReplica) throws {
     try replica.move(orphan.localId, event)
     let dependents = try foldDependents(of: orphan, into: origin, in: &replica)
+    replica.settleEnded(code: "refused")
     guard !dependents.isEmpty else { return }
     let id = "notice:\(origin)"
     guard let notice = replica.notices.first(where: { $0.id.utf8.elementsEqual(id.utf8) }) else {
@@ -374,16 +450,19 @@ public struct PushPlanner: Sendable {
   // §7.7 step 3: the dependents of a refused `source` fold into the notice of `origin`, the refused entry itself or the
   // one whose notice an orphan's content rides. A queued dependent part is removed; a sent entry with any dependent part
   // is an orphan, whole in the notice. An orphan is no source here: its own dependents are held back (§7.4) until its
-  // result, and fold only when it is refused.
+  // result, and fold only when it is refused. Where an opted entry takes part, each dependent names its scope.
   func foldDependents(of source: OutboxEntry, into origin: String, in replica: inout LoadedReplica) throws -> [NoticeContent] {
     var dependents = Dependents(registry: registry)
-    dependents.absorb(scope: source.scope, deltas: source.drawnDeltas, stamp: source.stamp)
+    dependents.absorb(source)
     var folded: [NoticeContent] = []
     for entry in replica.outbox where entry.commitOrder > source.commitOrder {
       let part = dependents.part(of: entry)
       guard part.any else { continue }
+      let crossing = source.predictions != nil || entry.predictions != nil
       if entry.state == .sent {
-        folded.append(entry.content)
+        var content = entry.content
+        if crossing { content.scope = entry.scope }
+        folded.append(content)
         replica.update(entry: entry.localId) { $0.orphanOf = origin }
         continue
       }
@@ -392,6 +471,7 @@ public struct PushPlanner: Sendable {
       var removed = NoticeContent()
       if part.commandGone { try writeCommandRefusal(entry, code: .parentDead, in: &replica) }
       replica.update(entry: entry.localId) { removed = Dependents.remove(part, from: &$0) }
+      if crossing { removed.scope = entry.scope }
       folded.append(removed)
       if replica.entry(entry.localId)!.isEmpty {
         replica.update(entry: entry.localId) { $0.orphanOf = origin }
@@ -447,80 +527,233 @@ public struct PushPlanner: Sendable {
     try replica.move(localId, .recover)
   }
 
-  // MARK: The write map
+  // MARK: Receipts (E-7)
 
-  // §7.7 an ok result's write map, in the result's transaction: ids a join resolved are rewritten into queued entries,
-  // predictions and device rows (a queued delete of the joined id is refused target-merged, its dependents folded); the
-  // prediction takes the map's stamps; then queued writes of the mapped registers take fresh ticks of this instance's
-  // clock after them.
-  func applyWriteMap(_ write: [WriteMapEntry], of commandId: String, in replica: inout LoadedReplica, instance: Instance) throws {
-    guard let original = replica.entry(commandId) else { return }
-    let retained = original.writeTargets != nil
-    if !retained { replica.update(entry: commandId) { $0.writeTargets = [] } }
-    for w in write {
-      let source = w.from ?? w.key.id
-      let previous = replica.entry(commandId)?.writeTargets?.first { $0.key.type == w.key.type && $0.from == source }
-      if let previous {
-        for later in replica.outbox where later.commitOrder > original.commitOrder && later.isQueued {
-          replica.update(entry: later.localId) { rewrite(&$0, type: w.key.type, from: previous.key.id, to: w.key.id, replay: true) }
-        }
-        if previous.key.id != w.key.id {
-          replica.update(entry: commandId) { command in
-            for index in command.predict.indices { rewrite(&command.predict[index], type: w.key.type, from: previous.key.id, to: w.key.id) }
-          }
-          rewriteDeviceRows(of: commandId, type: w.key.type, from: previous.key.id, to: w.key.id, in: &replica)
-        }
-        if let old = previous.born, let born = w.born, old != born {
-          for later in replica.outbox where later.commitOrder > original.commitOrder && (later.isQueued || later.state == .sent) {
-            replica.update(entry: later.localId) { entry in
-              Restamp.follow(&entry.intent.deltas, key: w.key, from: old, to: born, born: true)
-              Restamp.follow(&entry.predict, key: w.key, from: old, to: born, born: true)
-            }
-          }
-        }
-      } else if retained && w.born != nil {
-        let predicted = replica.entry(commandId)?.predict.filter { $0.key.type == w.key.type } ?? []
-        for later in replica.outbox where later.commitOrder > original.commitOrder && later.isQueued {
-          guard let entry = replica.entry(later.localId) else { continue }
-          let unmapped = entry.intent.deltas.contains { delta in
-            delta.key.type == w.key.type && delta.removes && delta.key.id != source && delta.key.id != w.key.id
-              && (predicted.isEmpty || predicted.contains { $0.key.id == delta.key.id })
-          }
-          if unmapped {
-            try writeCommandRefusal(entry, code: .targetMerged, in: &replica)
-            try remove(entry, by: .targetMerged, code: .targetMerged, detail: nil, in: &replica, at: instance.deviceNow)
-          }
-        }
+  // §7.4 a 200's receipts, checked before anything of it applies: an answer to a sent opted entry is within
+  // SCOPED_RESPONSE_MAX_BYTES, or the whole answer throws. Whether every ok of it reads (`readable`).
+  func everyReceiptReads(in response: PushResponse, of replica: LoadedReplica) throws -> Bool {
+    let answered: [(result: PushResult, entry: OutboxEntry)] = response.results.compactMap { (result: PushResult) in
+      guard case .ok = result.verdict, let entry = replica.sentEntry(numbered: result.n) else { return nil }
+      return (result, entry)
+    }
+    if answered.contains(where: { $0.entry.predictions != nil }) && response.json.jcs.count > Constants.scopedResponseMaxBytes {
+      throw JSONError.shape("a scoped answer exceeds its bound")
+    }
+    return answered.allSatisfy { readable($0.result, of: $0.entry, in: replica) }
+  }
+
+  // Whether an ok reads: answering an opted entry it carries a well-formed receipt naming its origin and every scope it
+  // predicted, and an inverse slot's outcomes; answering any other entry it carries no receipt.
+  func readable(_ result: PushResult, of entry: OutboxEntry, in replica: LoadedReplica) -> Bool {
+    guard entry.predictions != nil else { return result.detail?["windmillKit"] == nil }
+    do {
+      _ = try receipt(of: result, for: entry)
+      try inverses.check(result, of: entry, in: replica)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  // An opted entry's receipt, each predicted scope read through the governor ids the write map resolved.
+  func receipt(of result: PushResult, for entry: OutboxEntry) throws(JSONError) -> [EffectReceipt] {
+    guard case .ok(let seq, let write) = result.verdict, let predictions = entry.predictions else { return [] }
+    let required = predictions.map { remapped($0.scope, by: write ?? [], targets: entry.writeTargets ?? []) }
+    return try ScopedDetail.effects(in: result.detail, registry: registry, origin: entry.scope, seq: seq, requiring: required)
+  }
+
+  // A tree or overlay reference whose tree a write map's governing record resolved to another id, its own or the one a
+  // retained target followed.
+  func remapped(_ scope: ScopeRef, by write: [WriteMapEntry], targets: [WriteTarget]) -> ScopeRef {
+    guard let governing = registry.governingType, let tree = scope.tree else { return scope }
+    let id = RecordID(tree)
+    let mapping = write.first { w in
+      w.key.type == governing.name
+        && (w.from == id || targets.contains { $0.key.type == w.key.type && $0.from == (w.from ?? w.key.id) && $0.key.id == id })
+    }
+    return mapping.map { scope.retargeted(to: $0.key.id) } ?? scope
+  }
+
+  // §7.4 the ACK's receipt-application point, before any projection settles or the entry resolves: the accepted versions
+  // kept scope by scope, each projection told the seq that covers it (a target the command left uncreated is covered at
+  // once, a scope only the receipt names gets an empty projection), then the versions applied. The origin's write map
+  // gives its versions too, for slots the receipt leaves out.
+  func applyReceipt(_ effects: [EffectReceipt], write: [WriteMapEntry], of commandId: String, in replica: inout LoadedReplica,
+                    instance: Instance) {
+    guard let command = replica.entry(commandId) else { return }
+    let previous = command.acceptedEffects ?? []
+    replica.update(entry: commandId) { entry in
+      var projections = entry.predictions ?? []
+      for effect in effects {
+        if !projections.contains(where: { $0.scope == effect.scope }) { projections.append(Projection(scope: effect.scope)) }
+        let index = projections.firstIndex { $0.scope == effect.scope }!
+        if let seq = effect.seq { projections[index].resultSeq = seq } else { projections[index].covered = true }
       }
-      if previous == nil, let from = w.from {
-        let fromKey = RecordKey(w.key.type, from)
-        for queued in replica.outbox where queued.isQueued {
-          guard let entry = replica.entry(queued.localId) else { continue }
-          if entry.intent.deltas.contains(where: { $0.key == fromKey && $0.removes }) {
-            try writeCommandRefusal(entry, code: .targetMerged, in: &replica)
-            try remove(entry, by: .targetMerged, code: .targetMerged, detail: nil, in: &replica, at: instance.deviceNow)
+      entry.predictions = Projection.merged(projections, origin: entry.scope)
+      entry.acceptedEffects = effects
+    }
+    var versions = effects.flatMap { effect in effect.rows.map { AcceptedVersion(scope: effect.scope, key: $0.key, slots: $0.slots) } }
+    for w in write {
+      let lives: [EffectSlot] = w.born.map { (born: Stamp) -> [EffectSlot] in [EffectSlot(.born, .stamp(born)), EffectSlot(.life, .stamp(born))] } ?? []
+      let fields: [EffectSlot] = w.fields.sorted { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }
+        .map { (field: (key: String, value: Stamp)) -> EffectSlot in EffectSlot(.field(field.key), .stamp(field.value)) }
+      let slots: [EffectSlot] = lives + fields
+      let index = versions.firstIndex { $0.scope == command.scope && $0.key == w.key } ?? {
+        versions.append(AcceptedVersion(scope: command.scope, key: w.key, slots: []))
+        return versions.count - 1
+      }()
+      versions[index].slots += slots.filter { slot in !versions[index].slots.contains { $0.slot == slot.slot } }
+    }
+    applyAccepted(versions, previous: previous, of: commandId, in: &replica, instance: instance)
+  }
+
+  // One record's accepted slot versions in one scope.
+  struct AcceptedVersion {
+    let scope: ScopeRef
+    let key: RecordKey
+    var slots: [EffectSlot]
+
+    func stamp(of slot: EffectSlot.Slot) -> Stamp? {
+      guard case .stamp(let stamp)? = slots.first(where: { $0.slot == slot })?.version else { return nil }
+      return stamp
+    }
+  }
+
+  // §7.7 for scoped entries, by (scope, t, id, slot): every accepted stamp is observed; the command's predictions move to
+  // the accepted versions; later queued work that carried a stamp the command wrote, by an ordinary delta, by a prediction
+  // or by an earlier receipt of a replay, follows its accepted version; then each later queued entry whose own writes of
+  // those registers the receipt names takes one fresh tick of this instance's clock after them. Sent entries, numbered
+  // and immutable, keep their stamps, and so does the command's own intent, which views draw at the accepted versions.
+  func applyAccepted(_ versions: [AcceptedVersion], previous: [EffectReceipt], of commandId: String, in replica: inout LoadedReplica,
+                     instance: Instance) {
+    guard let command = replica.entry(commandId) else { return }
+    let stamps = versions.flatMap { $0.slots.compactMap { if case .stamp(let stamp) = $0.version { stamp } else { nil } } }
+    replica.update { meta in
+      meta.observe(stamps)
+      meta.admit(stamps)
+    }
+    let own = replica.outbox.filter { $0.commitOrder > command.commitOrder && $0.isQueued }
+      .map { (localId: $0.localId, registers: Restamp.registers(of: $0, acceptedIn: versions)) }
+    for version in versions {
+      let earlier = previous.first { $0.scope == version.scope }?.rows.first { $0.key == version.key }
+        .map { AcceptedVersion(scope: version.scope, key: version.key, slots: $0.slots) }
+      let ordinary = version.scope == command.scope ? command.intent.deltas.filter { $0.key == version.key } : []
+      for slot in version.slots {
+        guard case .stamp(let n) = slot.version else { continue }
+        let register: Restamp.Register.Name = if case .field(let name) = slot.slot { .field(name) } else { .life }
+        let carried: [Stamp?] = [earlier?.stamp(of: slot.slot)] + ordinary.map { (delta: Delta) -> Stamp? in delta.stamp(of: slot.slot) }
+        for o in carried.compactMap({ $0 }) {
+          Restamp.follow(register, of: version.key, in: version.scope, after: commandId, from: o, to: n, createsRecord: slot.slot == .born,
+                         queuedOnly: true, in: &replica)
+        }
+        for part in Restamp.parts(of: replica.entry(commandId)!, predictedIn: version.scope, for: version.key) {
+          guard slot.slot == .born else {
+            Restamp.move(.init(part: part, register: register), of: commandId, to: n, in: &replica, queuedOnly: true)
             continue
           }
-          replica.update(entry: entry.localId) { rewrite(&$0, type: w.key.type, from: from, to: w.key.id) }
+          var delta = Restamp.delta(part, of: replica.entry(commandId)!)
+          guard let old = delta.lattice.born else { continue }
+          delta.lattice.born = n
+          if let life = delta.lattice.life, life.isAlive, life.stamp == old { delta.lattice.life = Life(.alive, n) }
+          replica.update(entry: commandId) { Restamp.replace(part, of: &$0, with: delta) }
+          Restamp.follow(.life, of: version.key, in: version.scope, after: commandId, from: old, to: n, createsRecord: true, queuedOnly: true,
+                         in: &replica)
         }
-        replica.update(entry: commandId) { command in
-          for index in command.predict.indices { rewrite(&command.predict[index], type: w.key.type, from: from, to: w.key.id) }
+      }
+    }
+    let physNow = replica.meta.physNow(deviceNow: instance.deviceNow)
+    var clock = replica.meta.hlc
+    for (localId, registers) in own where !registers.isEmpty {
+      let n = clock.tick(physNow: physNow, actor: instance.actor)
+      for register in registers { Restamp.move(register, of: localId, to: n, in: &replica, queuedOnly: true) }
+      replica.update { $0.hlcHigh = max($0.hlcHigh, n) }
+    }
+    replica.update { $0.hlc = clock }
+  }
+
+  // MARK: The write map
+
+  // One record a write map names, as its command retained it (§7.7 step 0): the stable source the command was called
+  // with, the target it last resolved that source to, and the id the queue names the record by now.
+  struct MappedRecord {
+    let w: WriteMapEntry
+    let source: RecordID
+    let previous: WriteTarget?
+
+    init(_ w: WriteMapEntry, of command: OutboxEntry) {
+      let source: RecordID = w.from ?? w.key.id
+      self.w = w
+      self.source = source
+      previous = command.writeTargets?.first { (target: WriteTarget) -> Bool in target.key.type == w.key.type && target.from == source }
+    }
+
+    var named: RecordID { previous?.key.id ?? source }
+
+    // The rename this record makes in the command's `scope`: from the id the queue names it by to the map's id.
+    func mapping(in scope: ScopeRef) -> RecordMap.Mapping {
+      RecordMap.Mapping(type: w.key.type, from: named, to: w.key.id, scope: scope)
+    }
+  }
+
+  // §7.7 a legacy command's write map, in the result's transaction. Its target-merged refusals are read first, from the
+  // queue as it stood: a queued delete of an id a join merged. Then the map renames every queued entry at once through its
+  // compiled leaves (E-8): a join everywhere, a replayed target's move in the later entries, a scope-local id in the
+  // command's scope only. Then each mapped record's born and predicted registers follow, its retained target moves, and
+  // queued writes of the mapped registers take fresh ticks of this instance's clock after them.
+  func applyWriteMap(_ write: [WriteMapEntry], of commandId: String, in replica: inout LoadedReplica, instance: Instance) throws {
+    guard let original = replica.entry(commandId) else { return }
+    let scope = original.scope
+    let retained = original.writeTargets != nil
+    if !retained { replica.update(entry: commandId) { $0.writeTargets = [] } }
+    let records: [MappedRecord] = write.map { (w: WriteMapEntry) -> MappedRecord in MappedRecord(w, of: original) }
+    for record in records where record.previous == nil && retained && record.w.born != nil {
+      let w = record.w
+      let predicted: [Delta] = original.predict.filter { (delta: Delta) -> Bool in delta.key.type == w.key.type }
+      for later in replica.outbox where later.commitOrder > original.commitOrder && later.isQueued {
+        guard let entry = replica.entry(later.localId) else { continue }
+        let unmapped = entry.intent.deltas.contains { (delta: Delta) -> Bool in
+          delta.key.type == w.key.type && delta.removes && delta.key.id != record.source && delta.key.id != w.key.id
+            && (predicted.isEmpty || predicted.contains { $0.key.id == delta.key.id })
         }
-        rewriteDeviceRows(of: commandId, type: w.key.type, from: from, to: w.key.id, in: &replica)
+        if unmapped { try refuseMerged(entry, in: &replica, at: instance.deviceNow) }
       }
-      guard let command = replica.entry(commandId) else { continue }
-      for (index, delta) in command.predict.enumerated() where delta.key == w.key {
-        for (name, stamp) in w.fields { Restamp.move(.init(part: .predict(index), register: .field(name)), of: commandId, to: stamp, in: &replica) }
-        if let born = w.born { Restamp.move(.init(part: .predict(index), register: .life), of: commandId, to: born, in: &replica) }
+    }
+    for record in records where record.previous == nil {
+      guard let from = record.w.from else { continue }
+      let merged = RecordKey(record.w.key.type, from)
+      for queued in replica.outbox where queued.isQueued {
+        guard let entry = replica.entry(queued.localId), entry.intent.deltas.contains(where: { $0.key == merged && $0.removes }) else { continue }
+        try refuseMerged(entry, in: &replica, at: instance.deviceNow)
       }
-      replica.update(entry: commandId) { command in
-        var target = previous ?? WriteTarget(key: w.key, from: source)
-        target.key = w.key
-        if let born = w.born { target.born = born }
-        if let index = command.writeTargets?.firstIndex(where: { $0.key.type == w.key.type && $0.from == source }) {
-          command.writeTargets?[index] = target
-        } else { command.writeTargets?.append(target) }
+    }
+    let joins: [RecordMap.Mapping] = records.filter { $0.previous == nil && $0.w.from != nil }.map { $0.mapping(in: scope) }
+    let replayed: [RecordMap.Mapping] = records.filter { $0.previous != nil }.map { $0.mapping(in: scope) }
+    for queued in replica.outbox where queued.isQueued {
+      let later = queued.commitOrder > original.commitOrder
+      let mappings: [RecordMap.Mapping] = later ? joins + replayed : joins
+      guard !mappings.isEmpty else { continue }
+      let map = RecordMap(registry: registry, mappings: mappings)
+      replica.update(entry: queued.localId) { rewrite(&$0, by: map, replayed: later ? replayed : []) }
+    }
+    if !joins.isEmpty || !replayed.isEmpty { replica.remapJournal(by: RecordMap(registry: registry, mappings: joins + replayed), registry: registry) }
+    let moved: [RecordMap.Mapping] = joins + replayed.filter { $0.from != $0.to }
+    let own = RecordMap(registry: registry, mappings: moved)
+    replica.update(entry: commandId) { rewrite(&$0, by: own, predictionsOnly: true) }
+    for mapping in moved { rewriteDeviceRows(of: commandId, type: mapping.type, from: mapping.from, to: mapping.to, in: &replica) }
+    for record in records {
+      let w = record.w
+      if let old = record.previous?.born, let born = w.born, old != born {
+        for later in replica.outbox where later.commitOrder > original.commitOrder && (later.isQueued || later.state == .sent) {
+          replica.update(entry: later.localId) { Restamp.follow(&$0, in: scope, key: w.key, from: old, to: born, born: true) }
+        }
       }
+      if let command = replica.entry(commandId) {
+        for (index, delta) in command.predict.enumerated() where delta.key == w.key {
+          for (name, stamp) in w.fields { Restamp.move(.init(part: .predict(index), register: .field(name)), of: commandId, to: stamp, in: &replica) }
+          if let born = w.born { Restamp.move(.init(part: .predict(index), register: .life), of: commandId, to: born, in: &replica) }
+        }
+      }
+      retarget(commandId, to: record, in: &replica)
     }
 
     let mapped = write.flatMap(\.stamps)
@@ -532,7 +765,7 @@ public struct PushPlanner: Sendable {
     var clock = replica.meta.hlc
     for queued in replica.outbox where queued.isQueued {
       let entry = replica.entry(queued.localId)!
-      let named = Restamp.registers(of: entry, namedBy: write)
+      let named = Restamp.registers(of: entry, in: scope, namedBy: write)
       guard !named.isEmpty else { continue }
       let n = clock.tick(physNow: physNow, actor: instance.actor)
       for register in named { Restamp.move(register, of: entry.localId, to: n, in: &replica) }
@@ -541,56 +774,139 @@ public struct PushPlanner: Sendable {
     replica.update { $0.hlc = clock }
   }
 
-  // Replaces the id a join mapped `from` by `to` in an entry's deltas, predictions, guards, base texts and command
-  // arguments: as a record's id, a key part, or a ref field's value.
-  func rewrite(_ entry: inout OutboxEntry, type: String, from: RecordID, to: RecordID, replay: Bool = false) {
-    if replay {
-      for index in entry.writeTargets?.indices ?? 0..<0 where entry.writeTargets?[index].key == RecordKey(type, from) {
-        guard let command = entry.intent.command, case .object(var args) = command.args, let target = entry.writeTargets?[index] else { continue }
-        let refs = Dependents.references(of: command, registry: registry).filter { $0.key == RecordKey(type, target.from) }
-        for ref in refs { args[ref.argument] = to.json }
-        if !refs.isEmpty { entry.writeTargets?[index].from = to }
-        entry.intent.command = Command(name: command.name, args: .object(args))
+  // §7.7 an opted command's write map: a later queued delete of a merged identity in the command's scope is refused
+  // target-merged, read from the queue as it stood; then the map renames later queued entries and the command's own
+  // predictions at once through their compiled leaves, a governing id's scopes with it. Its stamps reach the predictions
+  // and later writes through the receipt.
+  func applyScopedWriteMap(_ write: [WriteMapEntry], of commandId: String, in replica: inout LoadedReplica, instance: Instance) throws {
+    guard let original = replica.entry(commandId) else { return }
+    let scope = original.scope
+    let retained = original.writeTargets != nil
+    if !retained { replica.update(entry: commandId) { $0.writeTargets = [] } }
+    let records: [MappedRecord] = write.map { (w: WriteMapEntry) -> MappedRecord in MappedRecord(w, of: original) }
+    for record in records {
+      let w = record.w
+      let joined = record.previous == nil && w.from != nil
+      let unmapped = retained && record.previous == nil && w.born != nil
+      for later in replica.outbox where later.commitOrder > original.commitOrder && later.isQueued {
+        guard let entry = replica.entry(later.localId), entry.scope == scope else { continue }
+        let deletes = entry.intent.deltas.contains { (delta: Delta) -> Bool in
+          guard delta.key.type == w.key.type, delta.removes else { return false }
+          if joined && delta.key.id == record.named { return true }
+          return unmapped && delta.key.id != record.source && delta.key.id != w.key.id
+        }
+        if deletes { try refuseMerged(entry, in: &replica, at: instance.deviceNow) }
       }
     }
-    for index in entry.intent.deltas.indices { rewrite(&entry.intent.deltas[index], type: type, from: from, to: to) }
-    for index in entry.predict.indices { rewrite(&entry.predict[index], type: type, from: from, to: to) }
-    for index in entry.intent.guards.indices {
-      entry.intent.guards[index].key = rekey(entry.intent.guards[index].key, type: type, from: from, to: to)
-    }
-    entry.baseTexts = Dictionary(entry.baseTexts.map { (TextRef(rekey($0.key.key, type: type, from: from, to: to), $0.key.field), $0.value) }) { own, _ in own }
-    if let command = entry.intent.command, case .object(var args) = command.args {
-      for reference in Dependents.references(of: command, registry: registry) where reference.key == RecordKey(type, from) {
-        args[reference.argument] = to.json
+    let moved: [MappedRecord] = records.filter { $0.named != $0.w.key.id }
+    let mappings: [RecordMap.Mapping] = moved.map { $0.mapping(in: scope) }
+    let replayed: [RecordMap.Mapping] = moved.filter { $0.previous != nil }.map { $0.mapping(in: scope) }
+    if !mappings.isEmpty {
+      let map = RecordMap(registry: registry, mappings: mappings)
+      for later in replica.outbox where later.commitOrder > original.commitOrder && later.isQueued {
+        replica.update(entry: later.localId) { rewrite(&$0, by: map, replayed: replayed) }
       }
-      entry.intent.command = Command(name: command.name, args: .object(args))
+      replica.update(entry: commandId) { rewrite(&$0, by: map, predictionsOnly: true) }
+      replica.remapJournal(by: map, registry: registry)
     }
-    for index in entry.writeTargets?.indices ?? 0..<0 where entry.writeTargets?[index].key.type == type {
-      if entry.writeTargets?[index].from == from { entry.writeTargets?[index].from = to }
-      if entry.writeTargets?[index].key.id == from { entry.writeTargets?[index].key = RecordKey(type, to) }
+    for record in records {
+      let w = record.w
+      if let old = record.previous?.born, let born = w.born, old != born {
+        for later in replica.outbox where later.commitOrder > original.commitOrder && later.isQueued {
+          replica.update(entry: later.localId) { Restamp.follow(&$0, in: scope, key: w.key, from: old, to: born, born: true) }
+        }
+      }
+      retarget(commandId, to: record, in: &replica)
     }
   }
 
-  func rewrite(_ delta: inout Delta, type: String, from: RecordID, to: RecordID) {
-    delta.key = rekey(delta.key, type: type, from: from, to: to)
-    guard let def = registry.type(delta.key.type) else { return }
-    for (name, register) in delta.lattice.fields where def.field(name)?.ref == type && register.value == from.json {
-      delta.lattice.fields[name] = Register(to.json, register.stamp)
+  // A later queued entry deleting what a join merged ends target-merged, its dependents folded into its notice.
+  func refuseMerged(_ entry: OutboxEntry, in replica: inout LoadedReplica, at deviceNow: Int64) throws {
+    try writeCommandRefusal(entry, code: .targetMerged, in: &replica)
+    try remove(entry, by: .targetMerged, code: .targetMerged, detail: nil, in: &replica, at: deviceNow)
+  }
+
+  // The command's retained target for the write map's record: its original identity and where it resolved now.
+  func retarget(_ commandId: String, to record: MappedRecord, in replica: inout LoadedReplica) {
+    let w = record.w
+    replica.update(entry: commandId) { command in
+      var target = record.previous ?? WriteTarget(key: w.key, from: record.source)
+      target.key = w.key
+      if let born = w.born { target.born = born }
+      if let index = command.writeTargets?.firstIndex(where: { $0.key.type == w.key.type && $0.from == record.source }) {
+        command.writeTargets?[index] = target
+      } else {
+        command.writeTargets?.append(target)
+      }
     }
   }
 
-  // A record's key with the joined id replaced: the record itself, a key naming it, or a tuple key's part.
-  func rekey(_ key: RecordKey, type: String, from: RecordID, to: RecordID) -> RecordKey {
-    if key == RecordKey(type, from) { return RecordKey(type, to) }
-    switch registry.type(key.type)?.key {
-    case .ref(let target)? where target == type && key.id == from:
-      return RecordKey(key.type, to)
-    case .tuple(let parts)?:
-      guard let ids = key.id.parts, let joined = to.string else { return key }
-      return RecordKey(key.type, RecordID(tuple: zip(parts, ids).map { part, id in part.ref == type && RecordID(id) == from ? joined : id }))
-    default:
-      return key
+  // §7.7 write map and E-8: one queued entry renamed by one logical map, at once, through its compiled leaves: the deltas
+  // of each effects group in its scope, its receipt rows, guards, base texts and arguments, global mappings first and
+  // then scoped ones in the scopes the governor mappings leave; then its ScopeRefs follow the governors. `replayed`
+  // re-address a retained command (step 0): an argument naming its own source moves to the record that source now
+  // resolves to, a proposed creation included. `predictionsOnly` renames a command's own predictions and nothing it sent.
+  func rewrite(_ entry: inout OutboxEntry, by map: RecordMap, predictionsOnly: Bool = false, replayed: [RecordMap.Mapping] = []) {
+    let scope = entry.scope
+    var moves: [RecordKey: RecordID] = [:]
+    for mapping in predictionsOnly ? [] : replayed {
+      guard registry.type(mapping.type)?.idSpace == .global || mapping.scope.map(map.scope) == map.scope(scope) else { continue }
+      for target in entry.writeTargets ?? [] where target.key.type == mapping.type && target.key.id == mapping.from {
+        moves[RecordKey(target.key.type, target.from)] = mapping.to
+      }
     }
+    var named: [ResolvedReference] = []
+    if !predictionsOnly, let command = entry.intent.command {
+      named = registry.references(of: command, in: scope) + registry.references(of: command, in: scope, role: .creation)
+    }
+    if !predictionsOnly {
+      for index in entry.intent.deltas.indices { registry.remap(&entry.intent.deltas[index], in: scope, by: map) }
+    }
+    for index in entry.predict.indices { registry.remap(&entry.predict[index], in: scope, by: map) }
+    for p in entry.predictions?.indices ?? 0..<0 {
+      let target = entry.predictions![p].scope
+      for index in entry.predictions![p].deltas.indices { registry.remap(&entry.predictions![p].deltas[index], in: target, by: map) }
+    }
+    for e in entry.acceptedEffects?.indices ?? 0..<0 {
+      let target = entry.acceptedEffects![e].scope
+      for index in entry.acceptedEffects![e].rows.indices {
+        entry.acceptedEffects![e].rows[index].key = registry.remapped(entry.acceptedEffects![e].rows[index].key, in: target, by: map)
+      }
+    }
+    if !predictionsOnly {
+      for index in entry.intent.guards.indices {
+        entry.intent.guards[index].key = registry.remapped(entry.intent.guards[index].key, in: scope, by: map)
+      }
+      entry.baseTexts = Dictionary(entry.baseTexts.map { (TextRef(registry.remapped($0.key.key, in: scope, by: map), $0.key.field), $0.value) }) { own, _ in own }
+      if var command = entry.intent.command {
+        registry.remap(&command, in: scope, by: map, moves: moves)
+        entry.intent.command = command
+      }
+      for index in entry.writeTargets?.indices ?? 0..<0 {
+        let target = entry.writeTargets![index]
+        let source = RecordKey(target.key.type, target.from)
+        let resolved: RecordID = map.target(of: target.key, in: scope) ?? target.key.id
+        entry.writeTargets![index].key = RecordKey(target.key.type, resolved)
+        if let moved = moves[source], named.contains(where: { $0.key == source }) {
+          entry.writeTargets![index].from = moved
+        } else {
+          entry.writeTargets![index].from = map.target(of: source, in: scope) ?? target.from
+        }
+      }
+    }
+    guard map.movesGovernors else { return }
+    if !predictionsOnly {
+      entry.scope = map.scope(entry.scope)
+      entry.intent.scope = entry.scope
+    }
+    entry.predictions = entry.predictions.map { projections in
+      Projection.merged(projections.map { projection in
+        var projection = projection
+        projection.scope = map.scope(projection.scope)
+        return projection
+      }, origin: entry.scope)
+    }
+    for e in entry.acceptedEffects?.indices ?? 0..<0 { entry.acceptedEffects![e].scope = map.scope(entry.acceptedEffects![e].scope) }
   }
 
   func rewriteDeviceRows(of commandId: String, type: String, from: RecordID, to: RecordID, in replica: inout LoadedReplica) {
@@ -604,13 +920,16 @@ public struct PushPlanner: Sendable {
 
 // MARK: - The restamp rule (§7.7)
 
-// One primitive, `move`: a register an entry wrote takes a new stamp, and borns, carried lives and guards that named
-// its old stamp follow it in every later held, ready or sent entry.
+// One primitive, `move`: a register an entry wrote takes a new stamp, and borns, carried lives and guards that named its
+// old stamp follow it in later entries of the same scope: held, ready or sent, or only queued ones when the move is an
+// opted command's or comes from a receipt, since numbered intents are immutable.
 package enum Restamp {
   struct Register: Hashable {
     enum Part: Hashable {
       case intent(Int)
       case predict(Int)
+      // A delta of an opted entry's projection: the projection's index, then the delta's.
+      case projection(Int, Int)
     }
 
     enum Name: Hashable {
@@ -620,6 +939,24 @@ package enum Restamp {
 
     let part: Part
     let register: Name
+  }
+
+  // Every delta of an entry, where it lives and the scope it writes.
+  static func parts(of entry: OutboxEntry) -> [(part: Register.Part, scope: ScopeRef)] {
+    let intent = entry.intent.deltas.indices.map { (part: Register.Part.intent($0), scope: entry.scope) }
+    let predict = entry.predict.indices.map { (part: Register.Part.predict($0), scope: entry.scope) }
+    let projected = (entry.predictions ?? []).enumerated().flatMap { p, projection in
+      projection.deltas.indices.map { (part: Register.Part.projection(p, $0), scope: projection.scope) }
+    }
+    return intent + predict + projected
+  }
+
+  // The command's predicted deltas of `key` in `scope`.
+  static func parts(of entry: OutboxEntry, predictedIn scope: ScopeRef, for key: RecordKey) -> [Register.Part] {
+    parts(of: entry).filter { item in
+      if case .intent = item.part { return false }
+      return item.scope == scope && delta(item.part, of: entry).key == key
+    }.map(\.part)
   }
 
   // The registers an entry's intent itself writes: those stamped at or after its gesture stamp. A life a keyed put
@@ -633,11 +970,10 @@ package enum Restamp {
     }
   }
 
-  // The registers of an entry's deltas and predictions that a write map names: a field in `f`, or the life of a record
+  // The registers of an entry's deltas in `scope` that a legacy write map names: a field in `f`, or the life of a record
   // with `born`.
-  static func registers(of entry: OutboxEntry, namedBy write: [WriteMapEntry]) -> [Register] {
-    let parts = entry.intent.deltas.indices.map { Register.Part.intent($0) } + entry.predict.indices.map { Register.Part.predict($0) }
-    return parts.flatMap { part -> [Register] in
+  static func registers(of entry: OutboxEntry, in scope: ScopeRef, namedBy write: [WriteMapEntry]) -> [Register] {
+    parts(of: entry).filter { $0.scope == scope }.flatMap { part, _ -> [Register] in
       let delta = delta(part, of: entry)
       return write.filter { $0.key == delta.key }.flatMap { w -> [Register] in
         let fields = w.fields.keys.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }.filter { delta.lattice.fields[$0] != nil }
@@ -648,14 +984,48 @@ package enum Restamp {
     }
   }
 
+  // The registers an entry wrote itself, at or after its stamp, whose accepted versions a receipt gives in their scope.
+  static func registers(of entry: OutboxEntry, acceptedIn versions: [PushPlanner.AcceptedVersion]) -> [Register] {
+    parts(of: entry).flatMap { part, scope -> [Register] in
+      let delta = delta(part, of: entry)
+      guard let version = versions.first(where: { $0.scope == scope && $0.key == delta.key }) else { return [] }
+      return version.slots.compactMap { slot in
+        switch slot.slot {
+        case .life:
+          guard let life = delta.lattice.life, life.stamp >= entry.stamp else { return nil }
+          return Register(part: part, register: .life)
+        case .field(let name):
+          guard let register = delta.lattice.fields[name], register.stamp >= entry.stamp else { return nil }
+          return Register(part: part, register: .field(name))
+        case .born, .text:
+          return nil
+        }
+      }
+    }
+  }
+
   static func delta(_ part: Register.Part, of entry: OutboxEntry) -> Delta {
     switch part {
     case .intent(let index): entry.intent.deltas[index]
     case .predict(let index): entry.predict[index]
+    case .projection(let p, let index): entry.predictions![p].deltas[index]
     }
   }
 
-  static func move(_ register: Register, of localId: String, to n: Stamp, in replica: inout LoadedReplica) {
+  static func scope(of part: Register.Part, in entry: OutboxEntry) -> ScopeRef {
+    if case .projection(let p, _) = part { return entry.predictions![p].scope }
+    return entry.scope
+  }
+
+  static func replace(_ part: Register.Part, of entry: inout OutboxEntry, with delta: Delta) {
+    switch part {
+    case .intent(let index): entry.intent.deltas[index] = delta
+    case .predict(let index): entry.predict[index] = delta
+    case .projection(let p, let index): entry.predictions![p].deltas[index] = delta
+    }
+  }
+
+  static func move(_ register: Register, of localId: String, to n: Stamp, in replica: inout LoadedReplica, queuedOnly: Bool = false) {
     guard let entry = replica.entry(localId) else { return }
     var delta = delta(register.part, of: entry)
     let o: Stamp
@@ -672,26 +1042,30 @@ package enum Restamp {
       o = current.stamp
       delta.lattice.fields[name] = SyncCore.Register(current.value, n)
     }
-    replica.update(entry: localId) { entry in
-      switch register.part {
-      case .intent(let index): entry.intent.deltas[index] = delta
-      case .predict(let index): entry.predict[index] = delta
-      }
-    }
-    let later = replica.outbox.filter { $0.commitOrder > entry.commitOrder && ($0.isQueued || $0.state == .sent) }
+    replica.update(entry: localId) { replace(register.part, of: &$0, with: delta) }
+    follow(register.register, of: delta.key, in: scope(of: register.part, in: entry), after: localId, from: o, to: n,
+           createsRecord: createsRecord, queuedOnly: queuedOnly || entry.predictions != nil, in: &replica)
+  }
+
+  // What follows a record's register from `o` to `n` in the entries after `localId`, in `scope`: of a life, the lives that
+  // carry it and, when it created the record, the borns; of a field, the guards on it. Sent entries follow too, unless
+  // `queuedOnly`.
+  static func follow(_ register: Register.Name, of key: RecordKey, in scope: ScopeRef, after localId: String, from o: Stamp, to n: Stamp,
+                     createsRecord: Bool = false, queuedOnly: Bool, in replica: inout LoadedReplica) {
+    guard o != n, let entry = replica.entry(localId) else { return }
+    let later = replica.outbox.filter { $0.commitOrder > entry.commitOrder && ($0.isQueued || !queuedOnly && $0.state == .sent) }
     for other in later {
       replica.update(entry: other.localId) { other in
-        switch register.register {
+        switch register {
         case .life:
-          follow(&other.intent.deltas, key: delta.key, from: o, to: n, born: createsRecord)
-          follow(&other.predict, key: delta.key, from: o, to: n, born: createsRecord)
-        case .field(let name):
+          follow(&other, in: scope, key: key, from: o, to: n, born: createsRecord)
+        case .field(let name) where other.scope == scope:
           for index in other.intent.guards.indices {
             let named = other.intent.guards[index]
-            if named.key == delta.key && named.field.utf8.elementsEqual(name.utf8) && named.stamp == o {
-              other.intent.guards[index].stamp = n
-            }
+            if named.key == key && named.field.utf8.elementsEqual(name.utf8) && named.stamp == o { other.intent.guards[index].stamp = n }
           }
+        case .field:
+          break
         }
       }
     }
@@ -716,17 +1090,21 @@ package enum Restamp {
     }
   }
 
-  // §7.7 step 1.5: the borns and carried lives above admittedHigh, in `judged` entries, that no unacked entry sources.
+  // §7.7 step 1.5: the borns and carried lives above admittedHigh, in `judged` entries, that no unacked entry sources by a
+  // delta or a prediction of the same scope.
   package static func unsourced(in replica: LoadedReplica, judged: (OutboxEntry) -> Bool = \.isQueued) -> [Carried] {
     let written = Set(replica.outbox.filter { $0.isQueued || $0.state == .sent }.flatMap { entry in
-      let own = ownRegisters(of: entry).filter { $0.register == .life }.map { delta($0.part, of: entry) } + entry.predict
-      return own.compactMap { delta in delta.lattice.life.map { WrittenLife(key: delta.key, stamp: $0.stamp) } }
+      let own = ownRegisters(of: entry).filter { $0.register == .life }.map { (scope: entry.scope, delta: delta($0.part, of: entry)) }
+      let predicted = entry.projected.flatMap { projection in projection.deltas.map { (scope: projection.scope, delta: $0) } }
+      return (own + predicted).compactMap { written in
+        written.delta.lattice.life.map { WrittenLife(record: ScopedKey(scope: written.scope, key: written.delta.key), stamp: $0.stamp) }
+      }
     })
-    let unsourced = { (key: RecordKey, stamp: Stamp) in
-      stamp > replica.meta.admittedHigh && !written.contains(WrittenLife(key: key, stamp: stamp))
-    }
     return replica.outbox.filter(judged).flatMap { entry in
-      entry.intent.deltas.enumerated().flatMap { index, delta -> [Carried] in
+      let unsourced = { (key: RecordKey, stamp: Stamp) in
+        stamp > replica.meta.admittedHigh && !written.contains(WrittenLife(record: ScopedKey(scope: entry.scope, key: key), stamp: stamp))
+      }
+      return entry.intent.deltas.enumerated().flatMap { index, delta -> [Carried] in
         let creates = delta.lattice.life.map { $0.isAlive && $0.stamp == delta.lattice.born } ?? false
         let born = delta.lattice.born.map { !creates && unsourced(delta.key, $0) } ?? false
         let life = delta.lattice.life.map { $0.stamp < entry.stamp && unsourced(delta.key, $0.stamp) } ?? false
@@ -736,9 +1114,9 @@ package enum Restamp {
     }
   }
 
-  // The life register of a record, as a delta writes it.
+  // The life register of a record of a scope, as a delta writes it.
   struct WrittenLife: Hashable {
-    let key: RecordKey
+    let record: ScopedKey
     let stamp: Stamp
   }
 
@@ -754,7 +1132,17 @@ package enum Restamp {
     }
   }
 
-  // A later delta on the same record whose born is the moved create's, or that carries the moved life, follows it.
+  // Every delta of `entry` in `scope` on `key` whose born is the moved create's, or that carries the moved life, follows it.
+  static func follow(_ entry: inout OutboxEntry, in scope: ScopeRef, key: RecordKey, from o: Stamp, to n: Stamp, born: Bool) {
+    if entry.scope == scope {
+      follow(&entry.intent.deltas, key: key, from: o, to: n, born: born)
+      follow(&entry.predict, key: key, from: o, to: n, born: born)
+    }
+    for p in entry.predictions?.indices ?? 0..<0 where entry.predictions![p].scope == scope {
+      follow(&entry.predictions![p].deltas, key: key, from: o, to: n, born: born)
+    }
+  }
+
   static func follow(_ deltas: inout [Delta], key: RecordKey, from o: Stamp, to n: Stamp, born: Bool) {
     for index in deltas.indices where deltas[index].key == key {
       if born && deltas[index].lattice.born == o { deltas[index].lattice.born = n }

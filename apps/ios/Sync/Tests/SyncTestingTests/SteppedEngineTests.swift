@@ -52,7 +52,7 @@ struct SteppedEngineTests {
     #expect(Self.titles(try tablet.stored(Self.probe, "card")) == ["One"])
     phone.advance(ms: Constants.holdMs)
     #expect(phone.undoOffers() == [])
-    #expect(try phone.replica.undo(held.gestureId) == false)
+    #expect(try phone.replica.cancelHeld(held.gestureId) == false)
     phone.sync()
     #expect(try tablet.stored(Self.probe, "card") == [])
   }
@@ -61,7 +61,7 @@ struct SteppedEngineTests {
     let phone = try Self.harness()
     let held = try Self.commit(Gesture(changes: [Self.card("card0001", "One")], hold: true), on: phone)
     phone.advance(ms: Constants.holdMs - 1)
-    #expect(try phone.replica.undo(held.gestureId))
+    #expect(try phone.replica.cancelHeld(held.gestureId))
     phone.sync()
     #expect(phone.server.rows(Self.probe, of: "A") == [])
   }

@@ -85,19 +85,25 @@ internal fun Engine.reidentify(replica: ReplicaState) {
 }
 fun Engine.reidentify() { write(EngineOperation.lifecycle) { reidentify(it); actor = identities.actorID() } }
 internal fun Engine.epochChange(replica: ReplicaState, epoch: String) {
+    replica.bindReferences(replica.meta["serverEpoch"]?.orNull()?.str())
     replica.meta = replica.meta.with("serverEpoch" to Json.of(epoch))
     replica.cursors.replaceAll { _, value -> value.with("cursor" to Json.Null) }
     replica.staging.keys.toList().forEach { store.dropStaging(replica.id, ScopeRef(it)) }
     replica.staging.clear()
     replica.entries().filter { it.state == "acked" && it.json["resultEpoch"]?.str() != epoch }.forEach { entry ->
         recoverWriteTargets(entry)
+        entry.predictions = entry.predictions?.map { it.copy(resultSeq = null, covered = false) }
         replica.move(entry, "epoch", ended)
     }
+    replica.invalidateEpochs(epoch)
     reidentify(replica); actor = identities.actorID()
 }
 fun Engine.epochChange(epoch: String) { write(EngineOperation.lifecycle) { epochChange(it, epoch) } }
 fun Engine.start(backupGuard: Json? = null): Json = write(EngineOperation.lifecycle) {
-    for (replica in device.replicas) replica.entries().filter { it.state == "held" }.forEach { replica.move(it, "release", ended) }
+    for (replica in device.replicas) {
+        replica.entries().filter { it.state == "held" }.forEach { replica.move(it, "release", ended) }
+        replica.releaseJournal()
+    }
     actor = identities.actorID()
     var reidentified = false
     if (backupGuard != null) {
@@ -118,7 +124,7 @@ internal fun Engine.lineageWork(replica: ReplicaState, product: String): List<St
         "device:$product:$key:${Sha256.hex(replica.device.getValue(product).member(key).jcs.encodeToByteArray())}"
     }
 internal fun Engine.anonCount(replica: ReplicaState, product: String, counts: (ScopeRef, RecordKey) -> Boolean = { _, _ -> true }): Json {
-    val records = entriesOf(replica, product).flatMap { entry -> entry.deltas.map { entry.scope to it.key } }.distinct().filter { (scope, key) -> counts(scope, key) }
+    val records = entriesOf(replica, product).flatMap { entry -> entry.effects.flatMap { effect -> effect.deltas.map { effect.scope to it.key } } }.distinct().filter { (scope, key) -> counts(scope, key) }
     val counts = records.groupingBy { it.second.type }.eachCount().toMutableMap()
     for (key in pendingKeys(replica, product)) {
         val detail = replica.device.getValue(product).member(key)["count"]?.obj()
@@ -158,7 +164,9 @@ fun Engine.signIn(account: String, holdsRecords: Map<String, Boolean>, decisions
     for (question in due) {
         val product = question.member("product").str()
         if (decisions[product] != "discard") continue
-        entriesOf(anon!!, product).forEach { anon.move(it, "discard", ended) }; anon.device.remove(product)
+        entriesOf(anon!!, product).forEach { anon.move(it, "discard", ended) }
+        anon.discardJournal(registry, product)
+        anon.device.remove(product)
     }
     val dormant = device.replicas.firstOrNull { it.state == "dormant" && it.account == account }
     val hasAnonymousWork = anon != null && (anon.outbox.isNotEmpty() || registry.products.keys.any { pendingKeys(anon, it).isNotEmpty() })
@@ -173,12 +181,14 @@ fun Engine.signIn(account: String, holdsRecords: Map<String, Boolean>, decisions
         else -> freshReplica(identities.replicaID(), account).also { device.replicas.add(it) }
     }
     if (anon != null && anon !== target && hasAnonymousWork) {
+        var nextOrder = target.nextCommitOrder()
         for (entry in anon.entries()) {
-            entry.json = entry.json.with("commitOrder" to Json.of(1 + (target.outbox.maxOfOrNull { it.order } ?: 0)))
+            entry.json = entry.json.with("commitOrder" to Json.of(nextOrder++))
             target.outbox.add(entry)
         }
         for ((product, rows) in anon.device) target.device[product] = Json.Obj(rows.obj().toMutableMap().apply { putAll(target.device[product]?.obj().orEmpty()) }.toList())
         target.notices.addAll(anon.notices)
+        target.adoptJournal(anon)
         Machines.replica.transition("anon", "sign-in", "deleted")
         store.purgeReplica(anon.id); device.replicas.remove(anon)
     }

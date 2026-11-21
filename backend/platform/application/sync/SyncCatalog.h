@@ -6,8 +6,10 @@
 
 #include <array>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -29,6 +31,9 @@ public:
 
   void bindType(TypeStore& store, TypeRules* rules = nullptr);
   void bindCommand(const std::string& name, SyncCommand& command);
+  // A product the deployment composes and binds but does not serve: its scopes read as absent, admit no intent and
+  // hold no records in hello (engine.md §9.2), until a deployment that serves it starts.
+  void withhold(const std::string& product);
   void seal();
 
   const Registry& registry() const { return registry_; }
@@ -40,7 +45,11 @@ public:
   std::string observationProduct(const RegistryScope& scope) const;
   std::string observationProduct(const Json::Value& intent, const UserId& caller) const;
   std::string observationOutcome(const Json::Value& result) const;
+  // Whether this deployment serves the product whose scopes `scope` names.
+  bool serves(const RegistryScope& scope) const;
+  bool serves(const std::string& product) const;
   std::timed_mutex& scopeMutex(const ScopeKey& scope) const;
+  std::timed_mutex& ownerMutex(const UserId& owner) const;
 
   // The registry's types of one scope kind, in registry order.
   std::vector<const TypeDef*> typesIn(const RegistryScope& scope) const;
@@ -59,8 +68,14 @@ private:
   const Registry& registry_;
   std::optional<Opening> opening_;
   std::map<std::string, TypeBinding> types_;
+  std::unique_ptr<SyncCommand> capture_;
+  std::unique_ptr<SyncCommand> restore_;
   std::map<std::string, SyncCommand*> commands_;
+  std::set<std::string> withheld_;
   mutable std::array<std::timed_mutex, 256> scopeMutexes_;
+  mutable std::mutex ownerMutexesLock_;
+  // Gates live for this catalog's process lifetime; active admissions retain stable references.
+  mutable std::map<std::string, std::unique_ptr<std::timed_mutex>> ownerMutexes_;
   std::vector<const TypeDef*> applyOrder_;
   bool sealed_ = false;
 };

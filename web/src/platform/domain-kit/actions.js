@@ -27,7 +27,7 @@ import { Violation } from './values.js';
  * A decider: its stored properties are its input; `load` reads through the reader only; `decide` is pure.
  * An action is a decider the runner runs.
  * @template L, T, R
- * @typedef {{ scope: string, refusals: import('./refusals.js').Refusals<R>, load(read: Reader): L, decide(loaded: L, ids: IDSource): Decision<T, R> }} Decider
+ * @typedef {{ scope: string, refusals: import('./refusals.js').Refusals<R>, reversible?: boolean, load(read: Reader): L, decide(loaded: L, ids: IDSource): Decision<T, R> }} Decider
  */
 
 export const Decision = Object.freeze({
@@ -112,8 +112,9 @@ export function decision(decider, loaded, ids) {
   }
 }
 
-// §9.2 step 5: every update, remove or move of a type with life needs its record alive in `drawn`, and
-// every anchor needs a visible member with an order key in `drawn` or in `stored`.
+// §9.2 step 5: every update, remove or move of a type with life needs its record alive in `drawn`, a revival
+// needs a born, its `drawn` record's or its spent id's, and every anchor needs a visible member with an order key
+// in `drawn` or in `stored`.
 /**
  * @param {Plan} plan
  * @param {Views} views
@@ -126,6 +127,10 @@ export function firstGone(plan, views, scope, registry) {
     const type = operation.entity.type;
     const definition = registry.type(type);
     if (!definition || definition.scope !== registry.scopeKindOf(scope)) continue;
+    const revives = operation.kind.op === 'revive' && definition.hasBorn && definition.revivable === true;
+    if (revives && !(views.record('drawn', type, operation.id)?.born ?? views.spentBorn(type, operation.id))) {
+      return new Refused('unknown-record', operation.ref, null, 'predicted');
+    }
     const needsLife = operation.kind.op === 'update' || operation.kind.op === 'remove' || operation.kind.op === 'move';
     if (needsLife && definition.life && views.record('drawn', type, operation.id)?.life?.[0] !== 'alive') {
       return new Refused('unknown-record', operation.ref, null, 'predicted');

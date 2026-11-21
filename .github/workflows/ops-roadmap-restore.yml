@@ -1,0 +1,167 @@
+# By hand only, from main, with the owner's word: run a roadmap cutover's restore again where it stopped, for the run whose
+# restore did not finish (backend/deploy/README.md, "Roadmap's cutover onto the sync engine"). The host refuses once a
+# run wrote roadmap's floor, as production's names one; what the run kept on the host is sealed to the owner as the
+# cutover seals it.
+name: Ops · roadmap restore
+
+on:
+  workflow_dispatch:
+    inputs:
+      run:
+        description: The cutover's run id and attempt, as <run id>-<attempt>
+        required: true
+        type: string
+      confirm:
+        description: 'Type "restore the backup"'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github
+          persist-credentials: false
+      - name: Refuse unless from main, confirmed and alone on the host
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ inputs.run }}
+          CONFIRMATION: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo 'Refusing the restore: it runs from main alone.' >&2
+            exit 1
+          fi
+          if [ "$CONFIRMATION" != "restore the backup" ] || [[ ! "$RUN" =~ ^[0-9]{1,20}-[0-9]{1,5}$ ]]; then
+            echo 'Refusing the restore: run must read <run id>-<attempt> and confirm "restore the backup".' >&2
+            exit 1
+          fi
+          # Every workflow that names the deploy-vps lock reaches the host, read from the workflows themselves, this one
+          # among them; a pull request's run takes no lock and reaches no server, and this run is the one asking.
+          deploys=$(grep -l 'deploy-vps' .github/workflows/*.yml | sort)
+          for workflow in $deploys; do
+            for status in queued in_progress waiting requested pending; do
+              runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$(basename "$workflow")" --status "$status" \
+                --json event,databaseId --jq "[.[] | select(.event != \"pull_request\" and .databaseId != $GITHUB_RUN_ID)] | length")
+              if [ "$runs" -ne 0 ]; then
+                echo "Not now: $(basename "$workflow") has a run $status. Dispatch the restore again once it has finished." >&2
+                exit 1
+              fi
+            done
+          done
+
+  restore:
+    needs: guard
+    if: always() && needs.guard.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    concurrency:
+      group: deploy-vps
+      cancel-in-progress: false
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
+      RUN: ${{ inputs.run }}
+      SITE: https://${{ vars.DOMAIN_APP }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            .github
+            backend/deploy
+          persist-credentials: false
+
+      # `host` runs one command on the host; `site` waits up to 30 s for the public site to answer a status on its page
+      # and its API, through Cloudflare as a person reaches it.
+      - name: Reach the host
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/deploy_key"
+          cat > "$RUNNER_TEMP/host" <<'HOST'
+          #!/usr/bin/env bash
+          exec ssh -i "$RUNNER_TEMP/deploy_key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            -o ServerAliveInterval=30 "$SSH_USER@$SSH_HOST" "$@"
+          HOST
+          cat > "$RUNNER_TEMP/site" <<'SITE'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          for ((attempt = 0; attempt < 30; attempt++)); do
+            page=$(curl --silent --output /dev/null --max-time 10 --write-out '%{http_code}' "$SITE/" || true)
+            api=$(curl --silent --output /dev/null --max-time 10 --write-out '%{http_code}' \
+              -H 'Sync-Schema: 2147483647' "$SITE/v1/sync/hello" || true)
+            if [ "$page" = "$1" ] && [ "$api" = "$1" ]; then
+              echo "PASS site: $SITE answers $1 on its page and its API"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "FAIL site: $SITE answers $page on its page and $api on its API, not $1" >&2
+          exit 1
+          SITE
+          chmod 700 "$RUNNER_TEMP/host" "$RUNNER_TEMP/site"
+          "$RUNNER_TEMP/host" 'cat > ~/windmill/roadmap-cutover.sh' < backend/deploy/roadmap-cutover.sh
+
+      - name: Restore the backup
+        id: restore
+        timeout-minutes: 60
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh restore $RUN" < /dev/null
+          "$RUNNER_TEMP/site" 200
+
+      # The run's folder on the host, its private record and what Postgres said of a restore, sealed as it arrives from
+      # ssh under the run's own key, and only that key sealed to the owner's certificate, so no plaintext reaches the
+      # runner's disk or the log. A folder that cannot be sealed stays on the host and turns nothing back.
+      - name: Seal what the run kept on the host
+        id: seal
+        if: always() && steps.restore.outcome != 'skipped'
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          umask 077
+          sealed="$RUNNER_TEMP/roadmap-cutover-record"
+          mkdir "$sealed"
+          run_key=$(openssl rand -hex 32)
+          printf '%s' "$run_key" \
+            | openssl smime -encrypt -aes256 -binary -outform PEM -out "$sealed/key.pem" .github/ops/inventory-recipient.pem
+          "$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh record $RUN" < /dev/null \
+            | ROADMAP_CUTOVER_KEY="$run_key" openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:ROADMAP_CUTOVER_KEY \
+              -out "$sealed/record.tar.enc"
+          cd "$sealed"
+          for file in key.pem record.tar.enc; do
+            printf '%s: %s bytes\n' "$file" "$(wc -c < "$file" | tr -d ' ')"
+          done
+          sha256sum key.pem record.tar.enc
+
+      - name: Keep the sealed record for a day
+        id: upload
+        if: always() && steps.seal.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: roadmap-cutover-record-${{ inputs.run }}-restored-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/roadmap-cutover-record/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Forget what the run kept on the host
+        if: always() && steps.upload.outcome == 'success'
+        timeout-minutes: 5
+        run: '"$RUNNER_TEMP/host" "cd ~/windmill && bash roadmap-cutover.sh forget $RUN" < /dev/null'
+
+      - name: Forget the deploy key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/deploy_key"

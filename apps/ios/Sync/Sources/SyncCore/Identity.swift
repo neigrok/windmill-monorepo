@@ -18,7 +18,7 @@ public enum DerivedID {
   public static let baseLimit = 40
 
   // `taken` is compared by bytes; every label byte outside [A-Za-z0-9] separates words.
-  public static func from(label: String, fallback: String, taken: some Sequence<String>) -> String {
+  public static func from(label: String, fallback: String, taken: some Sequence<String>, maxChars: Int? = nil) throws(IdentityError) -> String {
     let takenBytes = Set(taken.map { Array($0.utf8) })
     var base: [UInt8] = []
     for byte in label.utf8 {
@@ -30,12 +30,25 @@ public enum DerivedID {
       }
     }
     while base.last == UInt8(ascii: "-") { base.removeLast() }
-    let stem = base.isEmpty ? fallback : String(decoding: base, as: UTF8.self)
+    var stem = base.isEmpty ? fallback : String(decoding: base, as: UTF8.self)
+    if let maxChars {
+      guard maxChars > 0 else { throw IdentityError("a derived id bound is positive") }
+      stem = String(stem.unicodeScalars.prefix(maxChars))
+      while stem.unicodeScalars.last == "-" { stem.unicodeScalars.removeLast() }
+      guard !stem.isEmpty else { throw IdentityError("a derived id has a nonempty stem") }
+    }
     var id = stem
-    var suffix = 2
+    var ordinal = 2
     while takenBytes.contains(Array(id.utf8)) {
-      id = "\(stem)-\(suffix)"
-      suffix += 1
+      let suffix = "-\(ordinal)"
+      ordinal += 1
+      guard let maxChars else { id = stem + suffix; continue }
+      let room = maxChars - suffix.utf8.count
+      guard room > 0 else { throw IdentityError("a derived id has no room for its collision suffix") }
+      var prefix = String(stem.unicodeScalars.prefix(room))
+      while prefix.unicodeScalars.last == "-" { prefix.unicodeScalars.removeLast() }
+      guard !prefix.isEmpty else { throw IdentityError("a derived id has a nonempty stem") }
+      id = prefix + suffix
     }
     return id
   }

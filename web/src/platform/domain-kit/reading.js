@@ -19,10 +19,12 @@ import { precondition } from './values.js';
 /** @typedef {{ kind: 'top' } | { kind: 'bottom' } | { kind: 'below', id: RecordID }} Placement */
 /** @typedef {{ gestureId: string, command: import('./plans.js').Command, canSupersede: boolean, isAdmitted?: boolean }} QueuedCommand */
 /** @typedef {{ epoch: string | null, cleanSeq: number | null }} ScopeCheckpoint */
+/** @typedef {{ t: string, id: RecordID, born: string, seq?: number }} SpentId */
+/** @typedef {{ get(key: string): ViewRecord | undefined }} ConfirmedRows the scope's confirmed records by record key */
 /**
- * @typedef {{ devices?: Record<string, Json>, firstPullComplete?: boolean, actor?: string, isAnonymous?: boolean,
+ * @typedef {{ spent?: SpentId[], devices?: Record<string, Json>, firstPullComplete?: boolean, actor?: string, isAnonymous?: boolean,
  *   commands?: QueuedCommand[], checkpoint?: ScopeCheckpoint, mintId?: (type: string) => RecordID,
- *   opaqueID?: () => string }} ViewMetadata
+ *   opaqueID?: () => string, assertOpen?: () => void }} ViewMetadata
  */
 
 export const Placement = Object.freeze({
@@ -32,22 +34,27 @@ export const Placement = Object.freeze({
   below: (id) => Object.freeze({ kind: /** @type {const} */ ('below'), id }),
 });
 
-// What a reader reads: one scope's views, confirmed records, commands and checkpoint, with its
+// What a reader reads: one scope's views, confirmed records, spent ids, commands and checkpoint, with its
 // product's device rows and the identity mints a commit offers.
 export class Views {
   /** @type {Record<ViewMode, Map<string, ViewTypeIndex>>} */
   #indexes = { drawn: new Map(), stored: new Map() };
+  /** @type {Map<string, SpentId>} */
+  #spentIds;
 
   /**
    * @param {Registry} registry
-   * @param {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, confirmed?: Map<string, ViewRecord> } & ViewMetadata} source
+   * @param {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, confirmed?: ConfirmedRows } & ViewMetadata} source
    */
-  constructor(registry, { drawn, stored, confirmed = new Map(), devices = {}, firstPullComplete = true,
-    actor = '', isAnonymous = false, commands = [], checkpoint = { epoch: null, cleanSeq: null }, mintId, opaqueID }) {
+  constructor(registry, { drawn, stored, confirmed = new Map(), spent = [], devices = {}, firstPullComplete = true,
+    actor = '', isAnonymous = false, commands = [], checkpoint = { epoch: null, cleanSeq: null }, mintId, opaqueID, assertOpen = () => {} }) {
+    this.assertOpen = assertOpen;
     this.registry = registry;
     this.drawn = drawn;
     this.stored = stored;
     this.confirmed = confirmed;
+    this.spent = spent;
+    this.#spentIds = new Map(spent.map((row) => [recordKey(row.t, row.id), row]));
     this.devices = devices;
     this.firstPullComplete = firstPullComplete;
     this.actor = actor;
@@ -96,6 +103,7 @@ export class Views {
    * @param {RecordID} id
    */
   record(view, type, id) {
+    this.assertOpen();
     return this[view].get(recordKey(type, id));
   }
 
@@ -105,6 +113,7 @@ export class Views {
    * @param {string} type
    */
   visible(view, type) {
+    this.assertOpen();
     return [...(this.#indexes[view].get(type)?.records ?? [])];
   }
 
@@ -115,6 +124,7 @@ export class Views {
    * @param {RecordID} id
    */
   referencing(view, type, via, id) {
+    this.assertOpen();
     const key = jcs(id);
     const index = this.#indexes[view].get(type);
     if (!index) return [];
@@ -126,18 +136,41 @@ export class Views {
     });
   }
 
+  // The born of the scope's spent id of a record (engine §7.5), or null.
+  /**
+   * @param {string} type
+   * @param {RecordID} id
+   */
+  spentBorn(type, id) {
+    this.assertOpen();
+    return this.#spentIds.get(recordKey(type, id))?.born ?? null;
+  }
+
+  // The `seq` of the dead row the scope's spent id of a record came from (engine §2.5), or null.
+  /**
+   * @param {string} type
+   * @param {RecordID} id
+   */
+  spentSeq(type, id) {
+    this.assertOpen();
+    return this.#spentIds.get(recordKey(type, id))?.seq ?? null;
+  }
+
   /** @param {string} key */
   device(key) {
+    this.assertOpen();
     return Object.hasOwn(this.devices, key) ? /** @type {Json} */ (this.devices[key]) : null;
   }
 
   /** @param {string} type */
   mint(type) {
+    this.assertOpen();
     precondition(this.mintId !== null, 'ids are minted inside a commit only');
     return this.mintId(type);
   }
 
   opaqueID() {
+    this.assertOpen();
     precondition(this.mintOpaqueId !== null, 'opaque ids are minted inside a commit only');
     return this.mintOpaqueId();
   }
@@ -158,11 +191,12 @@ export class Reader {
   }
 
   get registry() {
+    this.views.assertOpen();
     return this.views.registry;
   }
 
-  get actor() { return this.views.actor; }
-  get isAnonymous() { return this.views.isAnonymous; }
+  get actor() { this.views.assertOpen(); return this.views.actor; }
+  get isAnonymous() { this.views.assertOpen(); return this.views.isAnonymous; }
 
   /**
    * @template E
@@ -170,7 +204,7 @@ export class Reader {
    */
   repository(type) {
     const definition = this.registry.type(type.type);
-    precondition(type.scope === this.scope && definition !== undefined && definition.scope === this.registry.scopeKindOf(this.scope),
+    precondition((type.scope === null || type.scope === this.scope) && definition !== undefined && definition.scope === this.registry.scopeKindOf(this.scope),
       `${type.type} is outside ${this.scope}`);
     return new Repository(type, this.views);
   }
@@ -182,6 +216,7 @@ export class Reader {
 
   /** @param {string} prefix */
   devices(prefix) {
+    this.views.assertOpen();
     return Object.fromEntries(Object.entries(this.views.devices).filter(([key]) => key.startsWith(prefix)));
   }
 
@@ -191,14 +226,16 @@ export class Reader {
    * @param {import('./entities.js').Id<E>} id
    */
   confirmed(type, id) {
+    this.views.assertOpen();
     this.repository(type);
     return this.views.confirmed.get(recordKey(type.type, id.record)) ?? null;
   }
 
-  commands() { return this.views.commands; }
-  checkpoint() { return this.views.checkpoint; }
+  commands() { this.views.assertOpen(); return this.views.commands; }
+  checkpoint() { this.views.assertOpen(); return this.views.checkpoint; }
 
   firstPullComplete() {
+    this.views.assertOpen();
     return this.views.firstPullComplete;
   }
 }
@@ -242,6 +279,20 @@ export class Repository {
 
   capacity() {
     return new Capacity(this.type, this.views.visible('stored', this.type.type), this.views.registry);
+  }
+
+  // §7.2: the born the device keeps of a record deleted elsewhere once its row is gone (engine §7.5), in neither
+  // view; null for any other id, one the device never knew included.
+  /** @param {import('./entities.js').Id<E>} id */
+  spentBorn(id) {
+    return this.views.spentBorn(this.type.type, id.record);
+  }
+
+  // The server's `seq` of the death a spent id came from (engine §2.5), where the device keeps it: the order in which the
+  // server took the delete. Null for any other id, and for a spent id that keeps none.
+  /** @param {import('./entities.js').Id<E>} id */
+  spentSeq(id) {
+    return this.views.spentSeq(this.type.type, id.record);
   }
 
   // The raw record of a view, visible or not (the folded record, ER-3).

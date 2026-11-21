@@ -25,6 +25,10 @@ matching the container does not establish that its inherited text is current.
   Shared component typography and mixed prose/numeral runs must not be flattened into one Gym style.
 - **F5 / 1w · Unused glow.** Audit the Gym library's Daylight `glow/set-done` values and remove
   unused bindings. Daylight web has no set-done glow.
+- **Planned-maintenance page.** While `ops-maintenance.yml` pauses the site,
+  `backend/deploy/Caddyfile` answers every page and API path with a 503 and one plain-text sentence,
+  "Windmill is down for a planned update and will be back shortly." No board draws it. Draw the page a
+  person lands on during a pause, in the brand's voice and both themes, and say what an open tab shows.
 
 ### Sync engine
 
@@ -594,6 +598,61 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Roadmap
 
+- **Roadmap on the sync engine · what the web redraws (owner, 2026-11-17).**
+  [Roadmap on the sync engine](../foundation/roadmap-on-the-engine.md) rules that a change is never shown as
+  refused for what happened elsewhere, and that presence ends. The owner approved
+  [web journeys 48–52](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1412-1531)
+  on 2026-11-17; the sections and their 22 screen frames are ✅ Ready for dev. They cover the quiet
+  line for a step brought back or following through an absent step; the one list of what could not
+  land; sign-in's Add or Discard and sign-out's Keep or Discard; nine-second roadmap-delete Undo;
+  and the room and activity without presence. Deletion is permanent after the hold. The
+  [interaction handoff](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1412-1555)
+  specifies the paths. Production's web room, the one on the device's copy, is built from them; flow 43's
+  refused-change states and the Restore offer for a hidden link belong to roadmap's own sync, which serves
+  the room with the switch off, and go with it (the Roadmap on the engine tree's node
+  `m5-delete-roadmaps-own-sync`).
+- **Roadmap on the sync engine · two steps of flow 51 the boards do not draw.** Built behind the room's replica switch
+  (on in production) from [journeys 48–52](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1412-1531): the
+  switcher's confirm before a roadmap's delete still says *This can't be undone*, which is untrue once the delete is held
+  nine seconds with *Undo* (R-7); and *Your roadmaps* with no roadmap left shows only its heading. To draw, for the web's
+  owner: the confirm's copy (or no confirm, since Undo stands for nine seconds), and the empty *Your roadmaps*. Phones
+  have no door to delete a roadmap today, so 51.03 is reached only by address.
+- **Roadmap · iOS · what the web does differently.** [Roadmap · iOS](ios/roadmap.md) is drawn as one room and
+  waits for the owner's review. Where it and the web now disagree, for the web's owner to rule or redraw: the web
+  says *tree* where iOS says *roadmap* (*Fork this tree*, *Attach a tree*, *Open tree*); the web's phone has no
+  rename, no delete and no kinds management, and its desktop deletes a roadmap at once where iOS holds it nine
+  seconds with *Undo*; the web shows Done as its twelve newest and *Show all N* where iOS folds each group; the web's reader on an app route sees an
+  *Author's note* and iOS's cover shows none; the web's private links are *Personal links* and iOS's are *Your
+  links*.
+- **Roadmap · iOS · the design draws more than the spec's build reads.** For parity with the web the boards
+  include quests and a pasted plan (01.6 to 01.8b, 02.16 to 02.18), Share with its public switch and Export (09.1
+  to 09.3), the public gallery (09.12) and the roadmap's Activity (01.13). [Roadmap on iOS](../foundation/roadmap-ios.md)
+  INV-1 names three reads outside the sync engine (the owner's progress on a shared roadmap, History, Fork); the
+  gallery's list and the visibility switch are two more, and its build tree has no step for any of these. When the
+  owner approves the boards, the spec's invariant and the tree follow; a board the owner strikes leaves both as
+  they are.
+- **Roadmap · iOS · the Shell owes the room its door.** A proposal is drawn in the Shell file
+  ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)): *Where to start?* with a
+  third door. The Design System has no `iOS / Product card` · Roadmap variant and no `map` symbol, so the door is a
+  detached copy; both belong in the library before it is built. The sign-in and sign-out questions that name
+  roadmaps and conversations (Roadmap · iOS 10.7, 10.8) are proposals for the Shell's owner too.
+- **iOS · system parts in the Design System predate the simulator probe.** A SwiftUI probe on the iOS 26.5
+  simulator (2026-11-18) found that the system draws several parts otherwise than the library and the Gym and
+  Journal iOS boards do: a menu's symbols and checkmark are on the leading side (`iOS / Menu item` puts the symbol
+  trailing); a `.confirmationDialog` on iPhone is a small popover anchored to its source with no Cancel and no
+  dimming; an alert stacks its actions as capsules and emphasises none; a sheet's *Cancel* and confirm are two
+  untinted glass words, and an active `EditButton` is a tinted checkmark circle; swipe actions are 50 pt shapes
+  with their title beneath; a `.medium` sheet floats 8 pt inside the screen and becomes the large one when the
+  keyboard rises; a bar folds its buttons into an overflow before it truncates a title; `.glass` on a white card
+  is white on white. Roadmap's kit is matched to the probe. To check against it: the library's iOS parts and the
+  Gym and Journal iOS boards.
+- **Roadmap · iOS · the iOS 18 boards are not probed.** Section 12's iOS 18 boards are drawn from knowledge of
+  iOS 18, with no simulator run. Before they are built: one probe of the bar, the sheets, Find and the action
+  sheet on an iOS 18 runtime. With the title in the principal slot the system's in-bar rename is unavailable there,
+  so renaming on iOS 18 needs a ruling.
+- **Roadmap file · a prototype variable collection nothing on the iPhone pages binds.** *🧪 iOS 07 · Local picker
+  state* held the state of boards that are deleted. No node on the Roadmap · iOS or Roadmap Coach page binds it;
+  the file's other pages were not checked. Delete it once they are.
 - **Roadmap Coach · the engineering note against the spec.** The Figma
   [engineering note](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=688-4965) of 2026-11-08 and
   [Roadmap Coach](../foundation/roadmap-coach.md) disagree in every section, and the spec stands (owner, 2026-11-14).
@@ -617,11 +676,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Roadmap Coach · not drawn.** No board draws Coach for a person who only reads a roadmap, a card whose proposal
   was applied and then undone, a replaced card, or the sign-in question when both the device and the account hold
   conversations.
-- **Guide · clipboard refusal and ownership-loss wording.** Clipboard refusal leaves *Copy draft* and the
-  draft unchanged without a message. Loss of ownership shows the refused line before sending a request, although
-  its copy says the server refused the save. A new clipboard recovery UI or changed ownership-loss wording needs
-  an owner-approved drawing. [44 · Guide recovery](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1241-25026)
-  documents the approved current recovery states.
 - **Step relations · "Opens", "Unlocks" and "Tree" (18–22, 27, 28).** The approved step editor heads the steps a
   step unlocks with *Opens*; the Board card says *Unlocks*. The approved
   [28 · A node opens a tree](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=876-48881) calls the tree a
@@ -737,8 +791,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   that open it in 2 of your other trees*); a tree deleted in the open menu leaves the other rows' lines, as its steps
   went with it. The line's graph glyph is the Board / Icon component scaled to 14 px on the boards, a 1.17 px stroke;
   web draws it as every tree glyph, at 1.67 px.
-- **Section 29 · editor and Coach scope.** The shared step read document and right-side Coach placeholder are
-  delivered. Full inline editing and functional Coach remain unbuilt. A step that owns a subtree shows its progress
+- **Section 29 · editor and Coach scope.** The shared step document includes field-scoped editing from
+  [46](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1322-81073) and retained draft recovery from
+  [47](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1348-81444). Coach remains a right-side placeholder.
+  A step that owns a subtree shows its progress
   (*No steps yet*, *0 of 1 done*, *1 of 1 done*) beside Open subtree in the pinned actions, for owners and readers
   (29.16, 29.52); it has no Tree section. 29.10's *Remove step…* corresponds to Delete step in the document's menu.
 - **Section 29 · words the web keeps.** The boards say *New node*, *No nodes yet* with *Add first node*, *Mark
@@ -826,9 +882,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   lowercase *for <draft>* and carries the total in its count line. Proposed, awaiting the owner: *for Passage plan · 5,000 steps* with
   the count line reduced to *4 matches* (15.11).
 - **Board · picker without a draft name or with a removed prerequisite.** With no draft name the phone and composer-page headers show
-  only *Prerequisites*, without a For line (drawn in 25.15, 15.12). A prerequisite deleted remotely is dropped silently from the draft
-  and selection, and placement recomputes. Proposed, awaiting the owner: *Read the wind was deleted, so it left your selection.* in the
-  picker (25.16, 15.15), and the placement preview naming the loss in the form (25.17, 15.16). 10.11 Selection revalidated is Edit copy.
+  only *Prerequisites*, without a For line (drawn in 25.15, 15.12). The current composer silently drops a remotely deleted prerequisite
+  and recomputes placement. Existing-step inline editing shows **Selection updated** feedback from
+  [46.05](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1322-81750) and the reconciliation contract in
+  [46.10](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1324-81414).
+  Creation-only deletion and placement notices (25.16–25.17, 15.15–15.16) still need reconciliation with the approved New step flow
+  before owner review. 10.11 Selection revalidated is Edit copy.
 - **Board · phone large-picker dark.** Phone 10.x dark uses the existing tokens with the light structure. Proposed, awaiting the owner:
   the 11 dark frames in section 539:16665, beside 10.05 dark (383:19007).
 - **Board · shared Undo.** Backspace and Delete on an owner Board card start the nine-second held delete directly; the hold is its
@@ -836,7 +895,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   a hold first, as the hold is the last act, and is refused under a covering layer and in a text field.
 - **Board · multi-select entry for keyboard and screen readers.** Phone owners enter selection through a touch hold or *Select* in
   the step menu. A polite live region announces the count and the bulk bar is a named Selection region with a count heading.
-  Proposed, awaiting the owner: *Select steps* in the roadmap sheet and a selection state with none chosen (25.18–25.22).
+  Proposed, awaiting the owner: *Select steps* in the roadmap sheet and a selection state with none chosen (25.19–25.22).
   The follow-up node is `rb-multi-select-keyboard`.
 - **Board · desktop Activity without WebGL2.** At 1024px and above Activity lives in the Graph dock, so the row's Activity offer and
   A shortcut are absent when WebGL2 is unavailable. The tablet panel and phone sheet page remain available. No approved frame draws
@@ -854,15 +913,22 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   A failed Board offers neither Share nor the Board/Graph switch: the Graph's load error veils its topbar.
   Proposed, awaiting the owner outside the tablet Board: a still name skeleton without a chevron (15.08) and
   *Your roadmaps* after failure (15.09). The view switch waits for an accessible Graph load-error topbar.
-- **Board · Graph interims.** G2 hands a Graph search to the Board while keeping the query and field focus. G4 retains the phone Graph
-  camera group under the row. Proposed, awaiting the owner: 25.11, 25.12.
-- **Graph and Board · last root.** A roadmap keeps a root on every view and band. While a selection takes every root, the phone Board's bulk bar and the desktop and
-  tablet selection bars drop Delete with nothing saying why, and the phone's Recolor sits at half width beside an empty half. Proposed, awaiting the owner: Delete keeps
-  its place, dimmed and `aria-disabled`, with *A roadmap keeps one starting step* under the count, on all three bars
-  ([25.25](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=591-19626)). The shared step document also omits *Delete step* for a sole root.
-- **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph where its destination is available. The Board shortcuts dialog does not list A.
-  Proposed, awaiting the owner: an *Activity* row after *Board / Graph*, owner only (15.17), before adding it to `BOARD_SHORTCUT_GROUPS`.
-  A does nothing on phones.
+- **Board · Graph interims.** G2 hands a Graph search to the Board while keeping the query and field focus. The phone Graph camera
+  group already clears the measured device notice, as drawn in 25.12, and uses a solid card surface. The glass treatment in 25.11
+  remains proposed. These older drawings' selected-step bottom panel is superseded by direct node-to-editor entry in 18.02.
+- **Graph and Board · last root.** A roadmap keeps a root on every view and band. The phone Board follows approved
+  [25.25](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=591-19626): Delete keeps its half-width place, dimmed and
+  `aria-disabled`, with *A roadmap keeps one starting step* under the count and associated through `aria-describedby`.
+  Activating the unavailable button nudges the reason without attempting deletion. Desktop and tablet Graph selection bars still
+  omit Delete; their corresponding explanations in 15.23–15.24 await owner approval. The shared step document also omits
+  *Delete step* for a sole root.
+- **Board · Bark roles.** Bulk Delete and approved dark [25.25](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=591-19715)
+  use Figma's `room/color-bark`, matching editing chrome's `--color-bark`: `#9C6B44` light and `#C07C43` dark.
+  Enabled and disabled source controls bind both fill and stroke to this role; disabled opacity remains 45%.
+  Scene `bark/base` remains `#6E5D49` dark for `theme.BARK` and carries no chrome CSS mapping.
+- **Board · Activity shortcut in help.** From 744px A opens Activity on both Board and Graph where its destination is available.
+  The Board shortcuts dialog and approved 12.12 both omit A. An *Activity* row after *Board / Graph*, owner only (15.17), is a proposed
+  addition to canon and awaits owner approval before entering `BOARD_SHORTCUT_GROUPS`. A does nothing on phones.
 - **Board · Export and reader Share feedback.** G5 downloads this roadmap as one Markdown file in the paste format, with the browser
   download as feedback; Settings retains the all-roadmaps zip. G24 copies the reader's roadmap link and uses the existing *Link copied*
   toast; a refused clipboard shows nothing. Proposed, awaiting the owner: *Learn to sail exported* and *Couldn't export this roadmap* ·
@@ -877,7 +943,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Board and Graph · superseded step layouts.** List vocabulary, old phone sheets and tabbed
   Overview/Workspace/History drawings are marked Superseded development target. The [flow index](../index.md#approved-shared-step-editor)
   points to the delivered shared read document from 18/19/27/40, including completion, workspace, history,
-  relationships, deletion and subtree behavior. Inline editing, creation and functional Coach remain unbuilt.
+  relationships, deletion and subtree behavior. Approved 46/47 supplies shared-field editing, dirty-navigation protection,
+  conflict decisions and retained draft recovery. New step keeps its separate composer; creation alignment and functional
+  Coach remain unfinished.
   Link-copy proposals 15.01–15.02 and
   25.01–25.02 point to approved 37.01–37.15.
   The shared editor keeps the Shell available and presents reader content without owner controls.
@@ -936,6 +1004,18 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Journal
 
+- **Talk is live (owner, 2026-11-17).** [Journal Talk](../foundation/journal-talk.md) R-1 replaces the finished
+  recording of Journal · iOS 03.3P to 03.6P with words that appear as a person speaks. To draw, for the iPhone and
+  then the web, before it is built: listening with words arriving, unsettled words told apart from settled ones,
+  ending, the last minute of ten, a take that ended by itself for each cause, a quiet bridge, and every access
+  state. The sentence under a recording and in the microphone permission text is R-3's: Windmill keeps no audio,
+  and the service that writes it down keeps it for 30 days. 03.1P's permission text and the web's *No audio is
+  kept anywhere* say otherwise today. 03.7P's *write it down* reads as the finished recording and needs its
+  words checked. Ending a take offers Undo, which removes what it wrote; the ✕ that discarded a recording has no
+  other heir.
+- **Talk signed out against brand canon (owner, 2026-11-17).** The owner ruled that Talk's button is shown signed
+  out and opens sign-in. [Brand foundations](brand-foundations.md) says Windmill One is never shown signed out;
+  it takes this exception, or the rule is reworded.
 - **iOS journal first run · R117.** AX3 keeps the longer privacy fact in a scrollable page.
 - **iOS journal without mood and energy (owner, 2026-11-08).** The iOS room draws no scale rows, no
   invitation and no ratings on earlier pages; the stored values and sync keep them, and the web still draws
@@ -1009,6 +1089,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Gym
 
+- **The web as a device (owner, 2026-11-17).** [The web as a device](../foundation/web-device-parity.md) rules
+  full workout entry on the web and a gym room that opens signed out. Neither is drawn. To draw before it is
+  built: starting, logging, editing and finishing a workout on the web, with what stands in for a phone's Live
+  Activity; a workout open on another device; Coach during a workout and a workout proposal's card; the signed-out
+  gym room and its sign-in Add or Discard; and, for every room, a browser that keeps nothing and one whose saved
+  data was cleared.
 ### Sets · product direction
 
 Sets have no type on any surface. Targets are references: actual weight/reps remain independent for every set, including extra or
@@ -1689,6 +1775,12 @@ Android. It and the product differ in these places.
   already separate concerns (`guidelines/system-architecture.md` §3, the window rule).
 - **3s · iOS bottom band.** Coordinate the routine Start refusal, room status and Undo transient
   so concurrent messages cannot hide a reachable action.
+- **An Undo that could not apply.** A held delete's Undo pressed after its window says *The window
+  closed — that delete already went.* on the web (`gym.held.windowClosed`) and *The Undo window
+  closed.* on Android (`gym_room_undo_closed`). An Undo the engine did not answer says *That delete
+  could not be taken back — {reason}.* on the web (`gym.held.undoFailed`); Android words it *the log
+  didn’t answer — Undo could not restore that weigh-in* (`gym_store_weigh_in_undo_no_answer`). Choose
+  one wording for each and use it on both.
 - **4v · Browser failure.** Android `ConnectedLogScreen.kt` swallows `openUri` errors. Show a
   recovery when a browser cannot open.
 - **Native acceptance.** Keep API 26, notification promotion-disabled fallback, full TalkBack

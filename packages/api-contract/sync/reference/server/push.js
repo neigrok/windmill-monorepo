@@ -53,10 +53,22 @@ export function push({ state, registry, product, account = null, credential, req
   };
   let retry;
   let admitted = 0;
+  let scopedResult = false;
   for (const intent of [...request.intents].sort((a, b) => a.n - b.n)) {
     const { n } = intent;
     const digest = intentDigest(intent);
     const binding = work.replicas[replica];
+    if (n > binding.lastN + 1) return conflict('gap');
+    const scoped = registry.command(intent.cmd?.name)?.scopedEffects === true;
+    if (scopedResult && n === results[0].n) {
+      if (work.resultOf(replica, n)?.digest !== digest) return conflict('replica-forked');
+      continue;
+    }
+    if (scopedResult || (scoped && results.length)) {
+      retry = { n, retryAfterMs: 0 };
+      break;
+    }
+    scopedResult = scoped;
     if (n <= binding.lastN) {
       const stored = work.resultOf(replica, n);
       if (!stored || stored.result === null || stored.digest !== digest) return conflict('replica-forked');

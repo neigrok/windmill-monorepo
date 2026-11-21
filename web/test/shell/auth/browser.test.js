@@ -8,8 +8,6 @@ import { beacon, withBrowserErrors } from '../../products/roadmap/browserFixture
 
 let server, browser, origin;
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const referencePath = fileURLToPath(new URL('../../../../packages/api-contract/sync/reference/', import.meta.url));
-const registryPath = fileURLToPath(new URL('../../../../packages/api-contract/sync/probe.registry.json', import.meta.url));
 const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-auth-test`, plugins: [{
     name: 'auth-upgrade-fixture', enforce: 'pre',
@@ -33,7 +31,8 @@ const ready = (async () => {
         import { SessionsSection } from '/src/shell/settings/SessionsSection.jsx';
         import { syncSession } from '/src/platform/sync/session.js';
         import { BrowserSyncEngine } from '/src/platform/sync/engine.js';
-        import { Registry } from '/@fs${referencePath}core/registry.js';
+        // The engine opens on the registry the shell ships, so each product's part in an account change finds its device rows.
+        import { registry } from '/src/platform/sync/schema.js';
         import { registerRoomStatus, useRoomStatus } from '/src/shell/roomStatus.js';
         import { Shell } from '/src/shell/chrome/Shell.jsx';
         import { SignInDoorProvider } from '/src/shell/auth/SignInDoor.jsx';
@@ -75,13 +74,12 @@ const ready = (async () => {
               React.createElement(SessionsSection), React.createElement(CloseAccountSection)));
         }
         window.mountAuth = async (name, upgrade = true, room = false) => {
-          const probe = await (await fetch('/@fs${registryPath}')).json();
           window.syncFailures = [];
-          const registry = new Registry(probe);
+          const holdsRecords = Object.fromEntries(Object.keys(registry.products).map((product) => [product, false]));
           const options = { name, registry, limits: { SIGNOUT_FLUSH_MS: 30 },
             transport: { request: async (endpoint) => ({ response: upgrade ? { status: 426, body: {} }
               : endpoint === 'hello' ? { status: 200, body: { serverTime: Date.now(), epoch: 'test', as: 'A',
-                schema: registry.version, minSchema: registry.minVersion, holdsRecords: { probe: false } } }
+                schema: registry.version, minSchema: registry.minVersion, holdsRecords } }
               : { status: 503, body: {} }, timing: { send: (window.engine ?? syncSession.engine).reading(), recv: (window.engine ?? syncSession.engine).reading() } }),
               openLive() { throw new Error('offline'); } },
             telemetry: { failure(operation) { syncFailures.push(operation); }, event() {} } };
@@ -121,7 +119,7 @@ async function open(context, name) {
 
 async function pending(page) {
   return page.evaluate(async () => {
-    await engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0001', f: { title: 'private' } }]);
+    await engine.commit('self/gym', [{ op: 'create', t: 'thread', id: 'thread0001', f: { title: 'private' } }]);
     return { gestureId: engine.device.activeReplica.outbox[0].gestureId, device: (await engine.store.read()).device.toJSON() };
   });
 }
@@ -281,7 +279,7 @@ test('Chromium: account closure discards without asking; failed server and local
     assert.equal(await page.evaluate(() => engine.signingOut), false);
     state.closeStatus = 200;
     state.beforeClose = () => page.evaluate(async () => {
-      await engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0002', f: { title: 'late work' } }]);
+      await engine.commit('self/gym', [{ op: 'create', t: 'thread', id: 'thread0002', f: { title: 'late work' } }]);
       const transact = engine.store.transact.bind(engine.store);
       engine.store.transact = (...args) => window.refuseStorage
         ? Promise.reject(new DOMException('storage refused', 'QuotaExceededError')) : transact(...args);

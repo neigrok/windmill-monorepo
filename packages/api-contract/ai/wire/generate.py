@@ -60,7 +60,7 @@ def generate():
         400: ['invalid_request', 'provider_rejected'],
         401: ['pass_missing', 'pass_signature', 'pass_audience', 'pass_malformed', 'pass_expired'],
         403: ['funding_required', 'device_bound'], 404: ['call_unknown'], 409: ['conflict'],
-        410: ['result_gone'], 413: ['too_large'],
+        410: ['result_gone', 'picture_gone'], 413: ['too_large'],
         429: ['subject_exhausted', 'free_month_exhausted', 'free_day_exhausted', 'concurrency_exhausted', 'rate_limited'],
         503: ['busy', 'paused', 'accounting_unavailable', 'provider_unavailable'],
     }
@@ -79,6 +79,8 @@ def generate():
         'output': {'maxTokens': 2000, 'minTokens': 1024, 'schema': {'type': 'object', 'properties': {'step': {'type': 'string'}}, 'required': ['step'], 'additionalProperties': False}},
         'effort': 'high', 'cache': True,
     }
+    picture_request = copy.deepcopy(text_request)
+    picture_request['messages'][0]['parts'][1] = {'image': {'picture': 'pictureabcdefghijklmn0'}}
     text_events = [
         {'event': 'started', 'data': {'callId': 'abcdefghijklmnopqrstuv', 'served': 'small', 'maxTokens': 100}},
         {'event': 'text', 'data': {'delta': 'Hello'}},
@@ -131,7 +133,13 @@ def generate():
             'provider_rejected': {'status': 400, 'body': {'code': 'provider_rejected', 'allowance': allowances['one_owner']}},
             'provider_unavailable': {'status': 503, 'body': {'code': 'provider_unavailable', 'allowance': allowances['one_owner']}},
         },
-        'textRequest': text_request,
+        'textRequest': text_request, 'textPictureRequest': picture_request,
+        'pictureUploads': [
+            {'pictureId': 'pictureabcdefghijklmn0', 'mediaType': 'image/png',
+             'data': text_request['messages'][0]['parts'][1]['image']['data'], 'status': 204},
+            {'pictureId': 'pictureabcdefghijklmn1', 'mediaType': 'image/jpeg',
+             'data': '/9j/2Q==', 'status': 204},
+        ],
         'calls': [call_status(state, charge, ended) for state, charge, ended in [
             ('reserved', None, None), ('dispatched', None, None), ('settled', '0.001', 1800000001000),
             ('unconsumed', '0', 1800000001000), ('assumed', '0.002', 1800000001000),

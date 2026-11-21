@@ -102,6 +102,18 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
   }
 
+  @Test func anUndoOfAnActReportsOutcomesAndCountsAndDropsItsIds() {
+    #expect(TelemetryPrivacy.events.contains("sync_inverse"))
+    for outcome in ["ok", "pending", "unavailable", "failed"] {
+      #expect(TelemetryPrivacy.properties(["outcome": outcome, "requestId": "g_private0001"]) == ["outcome": .label(outcome)])
+    }
+    let settled: [String: EventValue] = ["outcome": .label("settled"), "applied": .number(2), "skipped": .number(1)]
+    #expect(TelemetryPrivacy.properties(["outcome": "settled", "applied": "2", "skipped": "1", "inverseActId": "g_private0002"]) == settled)
+    let waiting: [String: EventValue] = ["outcome": .label("pending"), "waiting": .number(3), "age_ms": .number(10_000_000)]
+    #expect(TelemetryPrivacy.properties(["outcome": "pending", "waiting": "3", "age_ms": "86400000", "actId": "card0001"]) == waiting)
+    #expect(TelemetryPrivacy.properties(["outcome": "settled", "applied": "card0001"]) == ["outcome": .label("settled")])
+  }
+
   @Test func receiptAndConfirmationStepsRetainOnlyBoundedActionLabels() {
     #expect(TelemetryPrivacy.properties(["screen": "workout", "action": "share", "sessionId": "private-id", "question": "private-text"]) ==
             ["screen": .label("workout"), "action": .label("share")])
@@ -324,9 +336,12 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
   }
 
-  @Test(arguments: [false, true]) func offlineRetriesReachSentryAndTheQueueOnceWithoutContentOrIssues(telemetryDeliveryFirst: Bool) async throws {
+  @Test(.timeLimit(.minutes(1)), arguments: [false, true]) func offlineRetriesReachSentryAndTheQueueOnceWithoutContentOrIssues(telemetryDeliveryFirst: Bool) async throws {
     let dir = directory(); defer { try? FileManager.default.removeItem(at: dir) }
-    let telemetry = AppTelemetry(info: info, baseURL: URL(string: "https://offline.invalid"), directory: dir, debug: true)
+    let (requests, submitted) = AsyncStream<URLRequest>.makeStream()
+    defer { submitted.finish() }
+    let telemetry = AppTelemetry(info: info, baseURL: URL(string: "https://offline.invalid"), directory: dir, debug: true,
+                                 deliver: { request in submitted.yield(request); throw URLError(.timedOut) })
     let delivered = TelemetryBuffer<[String]>([])
     let options = try #require(CrashReports.options(info: info, debug: true))
     options.beforeSend = { event in
@@ -343,6 +358,10 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
       telemetry.failure("sync_hello", kind: "timeout")
     }
     await queue.report("telemetry_delivery", "timeout", ["route": "/v1/events", "message": "private-marker"], 60_000)
+    var submissions = requests.makeAsyncIterator()
+    let request = try #require(await submissions.next())
+    #expect(request.httpMethod == "POST" && request.url?.path == "/v1/events")
+    #expect(!String(decoding: request.httpBody ?? Data(), as: UTF8.self).contains("private-marker"))
     for _ in 0..<100 {
       if delivered.withLock({ $0.count == 1 }), await queue.state.events.count == 1 { break }
       try await Task.sleep(for: .milliseconds(10))

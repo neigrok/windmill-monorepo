@@ -10,7 +10,9 @@ import { OpenedTrees } from '../model/OpenedTrees.js';
 import { SyncSession } from './SyncSession.js';
 import { mintTreeId, moveLocalTree, deleteLocalTree, readDeviceTrees, repointDeviceSteps } from './localTrees.js';
 import { countBucket } from '../board/acts.js';
+import { readNavigation, replaceLocation } from '../../../shell/navigation.js';
 import { track } from '../../../telemetry/beacon.js';
+import { ROOM_READS_REPLICA } from '../replicaRoom.js';
 
 const DRAIN_TIMEOUT_MS = 30_000;
 const CLAIMS = 'windmill-roadmap-claims';
@@ -57,8 +59,11 @@ class RetiredTree extends Error {
 }
 
 // One pass over the device index. `openSession` is an accessor for the live session of the
-// currently-open tree; every other tree drains through a headless session. Never rejects.
+// currently-open tree; every other tree drains through a headless session. Never rejects. Where the room reads the
+// device's copy it claims nothing: the engine's lineage rule takes signed-out roadmaps to an account, asking where the
+// account holds some (§5 Signed out).
 export async function claimLocalTrees({ openTreeId = null, openSession = null } = {}) {
+  if (ROOM_READS_REPLICA) return { claimed: 0 };
   // The server or restored replica identifies the device holder; claiming still requires a server session.
   const owner = await resolveDeviceOwner();
   if (!owner) return { claimed: 0 }; // no known device holder to claim for
@@ -115,8 +120,8 @@ async function ensureServerTree(entry) {
   const freshId = mintTreeId();
   await moveLocalTree(entry.id, freshId);
   window.dispatchEvent(new CustomEvent('wm-claim-conflict', { detail: { treeId: entry.id, remappedTo: freshId } }));
-  const [route, query] = window.location.hash.split('?');
-  if (route === `#/app/${entry.id}`) window.location.hash = `#/app/${freshId}${query === undefined ? '' : `?${query}`}`;
+  const [route, query] = readNavigation().hash.split('?');
+  if (route === `#/app/${entry.id}`) replaceLocation(`#/app/${freshId}${query === undefined ? '' : `?${query}`}`);
   const { treeId } = await createTree(claimBody(freshId, entry.title));
   return treeId;
 }

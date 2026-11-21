@@ -51,6 +51,14 @@ TEST(dominant_kind_breaks_a_tie_to_the_root_color) {
   CHECK_EQ(stats.dominantKind, NodeColor::gold);
 }
 
+TEST(dominant_kind_breaks_a_tie_to_the_smallest_id_root_whatever_order_the_steps_arrive_in) {
+  // The engine's reads hand the steps over in the roadmap's order, the rooms' by id: 'two' first, 'one' the smallest id.
+  const TreeData authored = tree("t", {spec("two", NodeColor::terracotta, {}), spec("one", NodeColor::gold, {})});
+  CHECK_EQ(treeStats(authored, Progress{}).dominantKind, NodeColor::gold);
+  const TreeData followed = tree("t", {spec("b", NodeColor::sky, {}), spec("a", NodeColor::gold, {nid("b")})});
+  CHECK_EQ(treeStats(followed, Progress{}).dominantKind, NodeColor::sky);
+}
+
 TEST(dominant_kind_of_an_empty_tree_is_absent) {
   TreeStats stats = treeStats(tree("t", {}), Progress{});
   CHECK_EQ(stats.total, 0);

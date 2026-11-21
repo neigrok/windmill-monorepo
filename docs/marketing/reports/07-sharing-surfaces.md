@@ -1,9 +1,8 @@
 # 07 · Use the existing share path before commissioning new cards
 
-**Roadmap pilot support.** The founder publishes the original starter from an account that owns it, opens
+**Separate referral test.** The planned [report 11](11-roadmap-seed-trees.md) cohort uses the starter picker. For a later direct-fork intake, the founder publishes the original starter from an account that owns it, opens
 the link signed out, forks it into a test account, completes a step and checks the new tree's owner. Verify
-that subsequent edits affect the copy. The participant can keep that copy private. Use the working link for
-[report 11](11-roadmap-seed-trees.md). [Roadmap sharing contract](../../PRODUCT_LOG.md#roadmap)
+that subsequent edits affect the copy. The participant can keep that copy private. Use the working link only for that separately recorded intake; do not switch the current cohort destination. [Roadmap sharing contract](../../PRODUCT_LOG.md#roadmap)
 
 Where coverage permits, count visitors to the starter, actual forks, activated participants and mature
 returns separately. A link copy or image export can happen without a recipient opening it. The fork's

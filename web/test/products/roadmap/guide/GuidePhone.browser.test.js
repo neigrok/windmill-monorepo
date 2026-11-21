@@ -152,7 +152,7 @@ for (const engine of [chromium, webkit]) {
       await page.locator('.st-roadmap-identity[data-role="reader"]').waitFor({ state: 'attached' });
       assert.equal(await field(page).inputValue(), 'Keep this unfinished draft.');
       await page.getByRole('button', { name: 'Save', exact: true }).click();
-      assert.equal(await page.getByRole('alert').textContent(), 'The server refused this save. Copy your draft to keep it.');
+      assert.equal(await page.getByRole('alert').textContent(), 'You can’t save this guide. Copy your draft to keep it.');
       assert.deepEqual(await page.evaluate(() => window.writes), []);
       await page.setViewportSize({ width: 390, height: 844 });
       await page.evaluate(() => window.setRoom({ band: 'phone' }));

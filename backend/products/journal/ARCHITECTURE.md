@@ -367,7 +367,7 @@ Two obligations fall out of on-device search:
 
 `products/journal/routes.h` declares `JournalDeps`; `platform/infra/main.cpp` fills it.
 
-- `platform/infra/SyncProducts` binds `PgJournal` into the sealed gym + journal catalog, and
+- `platform/infra/SyncProducts` binds `PgJournal` into the sealed product catalog, and
   `main.cpp` makes `JournalFeed`, over `EchoDerivations` and the live feed, the engine's change feed.
 - Journal arms three threads in `main.cpp` — `journalNudgeSweep->start()`,
   `journalEchoSweep->start()`, `journalEchoDerivations->start()` — each its own trantor loop.

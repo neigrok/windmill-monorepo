@@ -1,0 +1,63 @@
+[
+  {
+    "name": "an act's decision lists each segment's gesture in the act's order, each translated in its own scope",
+    "input": {
+      "loads": ["tree/b_00000001", "self/overlay/b_00000001"],
+      "segments": [
+        {"scope": "tree/b_00000001", "plan": [{"op": "update", "t": "meta", "id": "meta", "f": {"title": " Next "}, "fields": ["title"]}]},
+        {"scope": "self/overlay/b_00000001", "plan": [{"op": "create", "t": "mark", "id": "card0001", "f": {"done": true}, "fields": ["done"]}]}
+      ],
+      "scopes": {
+        "tree/b_00000001": {"drawn": [{"t": "meta", "id": "meta", "seq": 1, "f": {"title": ["First", "1000:0:r_aaaaaaaaaaaa"]}}]},
+        "self/overlay/b_00000001": {"drawn": [{"t": "mark", "id": "card0002", "seq": 1, "f": {"done": [false, "1000:0:r_aaaaaaaaaaaa"]}}]}
+      }
+    },
+    "expect": {"decision": {"write": {
+      "segments": [
+        {"scope": "tree/b_00000001", "gesture": {"changes": [{"op": "write", "t": "meta", "id": "meta", "f": {"title": "Next"}}], "atomic": false, "hold": false, "guards": [], "retire": [], "cmd": null, "predict": [], "local": []}},
+        {"scope": "self/overlay/b_00000001", "gesture": {"changes": [{"op": "write", "t": "mark", "id": "card0001", "f": {"done": true}}], "atomic": false, "hold": false, "guards": [], "retire": [], "cmd": null, "predict": [], "local": []}}
+      ],
+      "result": {"tree/b_00000001": ["meta"], "self/overlay/b_00000001": ["card0002"]}
+    }}}
+  },
+  {
+    "name": "ids are minted in order across the act's scopes",
+    "input": {
+      "loads": ["self/probe", "tree/b_00000001"],
+      "ids": ["cardM001", "tagm0001"],
+      "segments": [
+        {"scope": "self/probe", "plan": [{"op": "insert", "t": "card", "mint": true, "f": {"title": "One"}, "below": null}]},
+        {"scope": "tree/b_00000001", "plan": [{"op": "create", "t": "tag", "mint": true, "f": {"label": "Two"}}]}
+      ],
+      "scopes": {}
+    },
+    "expect": {"decision": {"write": {
+      "segments": [
+        {"scope": "self/probe", "gesture": {"changes": [{"op": "create", "t": "card", "id": "cardM001", "f": {"title": "One", "body": "", "size": null, "claim": null, "tier": "draft"}, "anchor": {"field": "ord", "below": null}}], "atomic": false, "hold": false, "guards": [], "retire": [], "cmd": null, "predict": [], "local": []}},
+        {"scope": "tree/b_00000001", "gesture": {"changes": [{"op": "create", "t": "tag", "id": "tagm0001", "f": {"label": "Two"}}], "atomic": false, "hold": false, "guards": [], "retire": [], "cmd": null, "predict": [], "local": []}}
+      ],
+      "result": {"self/probe": [], "tree/b_00000001": []}
+    }}}
+  },
+  {
+    "name": "a violation in any segment refuses the whole act",
+    "input": {
+      "loads": [],
+      "segments": [
+        {"scope": "tree/b_00000001", "plan": [{"op": "update", "t": "meta", "id": "meta", "f": {"title": "Fine"}, "fields": ["title"]}]},
+        {"scope": "self/probe", "plan": [{"op": "insert", "t": "card", "id": "cardM001", "f": {"title": "   "}, "below": null}]}
+      ],
+      "scopes": {}
+    },
+    "expect": {"decision": {"refuse": {"violation": {"rule": "card.title", "path": "title", "reason": "blank"}}}}
+  },
+  {
+    "name": "an act with nothing to write is unchanged, its result read from its scopes",
+    "input": {
+      "loads": ["self/probe"],
+      "segments": [],
+      "scopes": {"self/probe": {"drawn": [{"t": "card", "id": "card0001", "seq": 1, "born": "1000:0:r_aaaaaaaaaaaa", "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"title": ["Kept", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}]}}
+    },
+    "expect": {"decision": {"unchanged": {"result": {"self/probe": ["card0001"]}}}}
+  }
+]

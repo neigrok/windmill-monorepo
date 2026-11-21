@@ -1,0 +1,1233 @@
+#!/usr/bin/env python3
+# Roadmap's cutover onto the sync engine: the Roadmap cutover workflow's cutover job run step by step as Actions runs
+# it, over its host stages (deploy/roadmap-cutover.sh), with ssh, rsync and the public site stood in. The host is a
+# model here; with WM_CUTOVER_TOOL, WM_CUTOVER_SERVER and a maintenance DATABASE_URL it is a local stack instead: a
+# Postgres database seeded with roadmap's adoption fixture, the built windmill_roadmap_adopt and windmill_server, and
+# the production Caddyfile in Caddy's image (needs Docker).
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import tarfile
+import tempfile
+import textwrap
+import time
+import unittest
+
+
+REPOSITORY = Path(__file__).resolve().parents[3]
+WORKFLOW = REPOSITORY / ".github/workflows/roadmap-cutover.yml"
+IMAGE = "c" * 40
+PINNED = "sha256:" + "a" * 64
+RUN = "4242-1"
+EXPECTED_OWNERLESS = "t_c000000000000001\nt_d000000000000001\n"
+DEMO = "t_9e407a96b5330ebe"
+STAGES = ["unfold", "read-models-before", "before", "adopt", "demo", "after", "read-models", "digests"]
+CANARIES = ["PRIVATE_SSH_KEY_CANARY", "PRIVATE_TOOL_CANARY", "PRIVATE_RECORD_CANARY", "PRIVATE_DUMP_CANARY",
+            "PRIVATE_ROW_CANARY", "t_c000000000000001", "t_d000000000000001", "t_a000000000000001"]
+CUTOVER_STEPS = [
+    ("uses: actions/checkout@v5", None), ("uses: actions/download-artifact@v4", None), ("Reach the host", None),
+    ("Check the host is ready", "check"), ("Pause the site", "pause"), ("Stop the server", "stop"),
+    ("Back up the database", "backup"), ("Adopt roadmap's rows and check every digest", "adopt"),
+    ("Start the server on the sync engine", "start"), ("Promote the web whose room reads the replica", "web"),
+    ("Walk the stack", "smoke"), ("Lift the pause", "lift"), ("Restore the backup", None), ("Return the site as it was", None),
+    ("Seal what the run kept on the host", "seal"), ("Keep the sealed record for a day", "upload"),
+    ("Forget what the run kept on the host", None), ("Forget the deploy key", None)]
+PROBE = "windmill-roadmap-probe-" + RUN
+TOOL = "windmill-roadmap-adopt-" + RUN
+
+
+# The subset of YAML the workflow is written in: mappings, lists of mappings, plain and quoted scalars, `|` blocks.
+def indentation(line):
+    return len(line) - len(line.lstrip(" "))
+
+
+def scalar(value):
+    if value.startswith("'") and value.endswith("'"):
+        return value[1:-1].replace("''", "'")
+    if value.startswith('"') and value.endswith('"'):
+        return value[1:-1]
+    return value
+
+
+def nested(lines, index, level):
+    body = []
+    while index < len(lines) and (not lines[index].strip() or indentation(lines[index]) > level):
+        body.append(lines[index])
+        index += 1
+    return body, index
+
+
+def mapping(lines):
+    meaningful = [line for line in lines if line.strip() and not line.lstrip().startswith("#")]
+    level = indentation(meaningful[0])
+    result, index = {}, 0
+    while index < len(lines):
+        line = lines[index]
+        index += 1
+        if not line.strip() or line.lstrip().startswith("#") or indentation(line) != level:
+            continue
+        key, _, value = line.strip().partition(":")
+        value = value.strip()
+        if value == "|":
+            body, index = nested(lines, index, level)
+            result[key] = textwrap.dedent("\n".join(body)).strip("\n") + "\n"
+        elif value == "":
+            body, index = nested(lines, index, level)
+            first = next((entry for entry in body if entry.strip() and not entry.lstrip().startswith("#")), None)
+            result[key] = "" if first is None else listing(body) if first.lstrip().startswith("- ") else mapping(body)
+        else:
+            result[key] = scalar(value)
+    return result
+
+
+def listing(lines):
+    level = indentation(next(line for line in lines if line.lstrip().startswith("- ")))
+    items = []
+    for line in lines:
+        if indentation(line) == level and line.lstrip().startswith("- "):
+            items.append([" " * (level + 2) + line.lstrip()[2:]])
+        elif items and (not line.strip() or indentation(line) > level):
+            items[-1].append(line)
+    return [mapping(item) if ":" in item[0] else scalar(item[0].strip()) for item in items]
+
+
+def workflow():
+    return mapping(WORKFLOW.read_text().splitlines())
+
+
+def step_label(step):
+    return step.get("name") or "uses: " + step["uses"]
+
+
+def executable(path, text):
+    path.write_text(text)
+    path.chmod(0o755)
+
+
+def shim(path, mode):
+    executable(path, "#!" + sys.executable + "\nimport runpy, sys\nsys.argv = [" + repr(str(Path(__file__).resolve())) +
+               ", " + repr(mode) + "] + sys.argv[1:]\nrunpy.run_path(sys.argv[0], run_name='__main__')\n")
+
+
+# The cutover job as Actions runs it: each step's condition decided by the job's status and the steps' outcomes so far,
+# `run` steps under bash with the job's and the step's environment, and the three actions it uses stood in.
+class Job:
+    def __init__(self, definition, context, workspace, environment, artifact, artifacts):
+        self.definition, self.context, self.workspace = definition, context, workspace
+        self.environment, self.artifact, self.artifacts = environment, artifact, artifacts
+
+    def expand(self, text):
+        return re.sub(r"\$\{\{\s*(.*?)\s*\}\}", lambda match: self.context[match.group(1)], text)
+
+    def decides(self, condition, failed, outcomes):
+        if condition is None:
+            return not failed
+        expression = re.sub(r"steps\.([a-z]+)\.outcome", lambda match: repr(outcomes.get(match.group(1), "skipped")), condition)
+        for written, meant in (("always()", "True"), ("failure()", "failed"), ("cancelled()", "False"),
+                               ("&&", " and "), ("||", " or ")):
+            expression = expression.replace(written, meant)
+        return eval(expression, {}, {"failed": failed})
+
+    def run(self):
+        failed = False
+        outcomes, log = {}, []
+        for step in self.definition["steps"]:
+            label = step_label(step)
+            if not self.decides(step.get("if"), failed, outcomes):
+                outcomes[step.get("id", label)] = "skipped"
+                continue
+            code, output = self.execute(step)
+            log.append((label, code, output))
+            outcome = "success" if code == 0 else "failure"
+            outcomes[step.get("id", label)] = outcome
+            if outcome == "failure" and step.get("continue-on-error") != "true":
+                failed = True
+        return outcomes, log
+
+    def execute(self, step):
+        uses = step.get("uses", "")
+        if uses.startswith("actions/checkout@"):
+            return 0, ""
+        if uses.startswith("actions/download-artifact@"):
+            shutil.copytree(self.artifact, self.expand(step["with"]["path"]))
+            return 0, ""
+        if uses.startswith("actions/upload-artifact@"):
+            shutil.copytree(self.expand(step["with"]["path"]), self.artifacts / self.expand(step["with"]["name"]))
+            return 0, ""
+        environment = {**self.environment,
+                       **{key: self.expand(value) for key, value in self.definition.get("env", {}).items()},
+                       **{key: self.expand(value) for key, value in step.get("env", {}).items()}}
+        directory = self.expand(step.get("working-directory", str(self.workspace)))
+        result = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", step["run"]], cwd=directory,
+                                env=environment, capture_output=True, text=True, timeout=600)
+        return result.returncode, result.stdout + result.stderr
+
+
+# A host and a runner around a stand-in of the VPS, the job's workspace holding its own certificate and the deploy files.
+class Stage:
+    def __init__(self, test, host_shim):
+        directory = tempfile.TemporaryDirectory(prefix="roadmap-cutover-")
+        test.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.home = self.root / "host"
+        self.windmill = self.home / "windmill"
+        for folder in ("host/windmill/web", "host/windmill/maintenance", "host/bin", "runner/bin", "runner/temp",
+                       "workspace/.github/ops", "workspace/backend/deploy", "artifact/dist", "artifacts", "owner"):
+            (self.root / folder).mkdir(parents=True)
+        (self.windmill / ".env").write_text(f"IMAGE_TAG={IMAGE}\nPOSTGRES_PASSWORD=PRIVATE_SSH_KEY_CANARY\nSERVER_IMAGE={PINNED}\n")
+        (self.windmill / "roadmap-engine.env").write_text("")
+        shutil.copyfile(REPOSITORY / "backend/deploy/docker-compose.yml", self.windmill / "docker-compose.yml")
+        (self.windmill / "web/index.html").write_text("<!doctype html><html><head><title>Windmill</title></head><body>old</body></html>\n")
+        self.workspace = self.root / "workspace"
+        for name in ("roadmap-cutover.sh", "sync_compatibility.py"):
+            shutil.copyfile(REPOSITORY / "backend/deploy" / name, self.workspace / "backend/deploy" / name)
+        self.owner_key = self.root / "owner/key.pem"
+        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=roadmap-cutover-test",
+                        "-keyout", str(self.owner_key), "-out", str(self.workspace / ".github/ops/inventory-recipient.pem")],
+                       check=True, capture_output=True)
+        (self.root / "artifact/dist/index.html").write_text(
+            "<!doctype html><html><head><title>Windmill</title></head><body>replica room</body></html>\n")
+        (self.root / "artifact/dist/assets.js").write_text("export const room = 'replica';\n")
+        sys.path.insert(0, str(REPOSITORY / "backend/deploy"))
+        from sync_compatibility import metadata
+        (self.root / "artifact/web-sync-compatibility.json").write_text(json.dumps(metadata(REPOSITORY / "packages/api-contract/sync")))
+        shim(self.root / "host/bin/docker", host_shim)
+        for name in ("ssh", "rsync", "curl", "gh"):
+            shim(self.root / "runner/bin" / name, "--" + name + "-shim")
+        self.calls = self.root / "ssh-calls"
+        self.environment = {**os.environ, "PATH": str(self.root / "runner/bin") + os.pathsep + os.environ["PATH"],
+                            "RUNNER_TEMP": str(self.root / "runner/temp"), "GITHUB_WORKSPACE": str(self.workspace),
+                            "GITHUB_SHA": "d" * 40, "WM_HOST_HOME": str(self.home), "WM_HOST_BIN": str(self.root / "host/bin"),
+                            "WM_SSH_CALLS": str(self.calls), "WM_DOCKER": shutil.which("docker") or "docker",
+                            "WM_CURL": shutil.which("curl") or "curl", "GITHUB_REF": "refs/heads/main",
+                            "GITHUB_REPOSITORY": "owner/repository", "GITHUB_RUN_ID": "4242", "WM_GH_CALLS": str(self.root / "gh-calls")}
+        self.context = {"secrets.SSH_KEY": "PRIVATE_SSH_KEY_CANARY", "secrets.SSH_HOST": "vps.invalid",
+                        "secrets.SSH_USER": "deploy", "secrets.SSH_PORT": "", "github.run_id": RUN.split("-")[0],
+                        "github.run_attempt": RUN.split("-")[1], "inputs.image_tag": IMAGE, "vars.DOMAIN_APP": "app.localhost",
+                        "secrets.ROADMAP_ADOPTION_EXPECTED_OWNERLESS": EXPECTED_OWNERLESS,
+                        "runner.temp": str(self.root / "runner/temp"), "github.token": "PRIVATE_SSH_KEY_CANARY"}
+
+    def job(self):
+        return Job(workflow()["jobs"]["cutover"], self.context, self.workspace, self.environment, self.root / "artifact",
+                   self.root / "artifacts")
+
+    def host_stages(self):
+        return [re.search(r"roadmap-cutover\.sh (\w+)", line).group(1) for line in self.calls.read_text().splitlines()
+                if "roadmap-cutover.sh " in line and "cat >" not in line]
+
+    def sealed(self):
+        folder = self.root / f"artifacts/roadmap-cutover-record-{RUN}"
+        key = subprocess.run(["openssl", "smime", "-decrypt", "-inform", "PEM", "-inkey", str(self.owner_key),
+                              "-in", str(folder / "key.pem")], check=True, capture_output=True, text=True).stdout
+        plain = subprocess.run(["openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-pass", "env:ROADMAP_CUTOVER_KEY",
+                                "-in", str(folder / "record.tar.enc")], env={**os.environ, "ROADMAP_CUTOVER_KEY": key},
+                               check=True, capture_output=True).stdout
+        archive = self.root / "record.tar"
+        archive.write_bytes(plain)
+        with tarfile.open(archive) as record:
+            files = {str(Path(member.name)): record.extractfile(member).read().decode()
+                     for member in record.getmembers() if member.isfile()}
+        archive.unlink()
+        return sorted(path.name for path in folder.iterdir()), files
+
+    def assert_nothing_private(self, test, log, private=CANARIES):
+        printed = "".join(output for _, _, output in log)
+        for canary in private:
+            test.assertNotIn(canary, printed)
+        for folder in ("runner", "workspace", "artifacts"):
+            for path in (self.root / folder).rglob("*"):
+                if path.is_file() and path.name != "deploy_key":
+                    for canary in private:
+                        test.assertNotIn(canary.encode(), path.read_bytes(), path)
+
+
+def printed(log, label):
+    return next(output for name, _, output in log if name == label)
+
+
+class WorkflowShapeTest(unittest.TestCase):
+    def test_it_runs_by_hand_from_main_confirms_the_backup_and_takes_the_deploy_lock_for_the_cutover_job_alone(self):
+        definition = workflow()
+        self.assertEqual(definition["on"], {"workflow_dispatch": {"inputs": {
+            "image_tag": {"description": "Full main commit SHA the live server runs; its windmill_roadmap_adopt moves the rows",
+                          "required": "true", "type": "string"},
+            "backup": {"description": 'Type "back up, restore on failure": the run backs up the database once the server stops, '
+                                      'and restores it on any failure before the server starts on the engine',
+                       "required": "true", "type": "string"}}}})
+        self.assertEqual(definition["permissions"], {"contents": "read", "actions": "read"})
+        self.assertNotIn("concurrency", definition)
+        self.assertEqual({name: job.get("needs") for name, job in definition["jobs"].items()},
+                         {"web": None, "guard": "web", "cutover": "guard", "walk": "cutover"})
+        self.assertEqual({name: job.get("concurrency") for name, job in definition["jobs"].items()},
+                         {"web": None, "guard": None, "cutover": {"group": "deploy-vps", "cancel-in-progress": "false"}, "walk": None})
+        # A cancel re-evaluates a running job's condition, and always() keeps the cutover running to its own end.
+        self.assertEqual({name: job.get("if") for name, job in definition["jobs"].items()},
+                         {"web": None, "guard": None, "cutover": "always() && needs.guard.result == 'success'", "walk": None})
+        self.assertEqual(["SSH_KEY" in step.get("env", {}) for step in definition["jobs"]["cutover"]["steps"]],
+                         [step_label(step) == "Reach the host" for step in definition["jobs"]["cutover"]["steps"]])
+        self.assertNotIn("SSH_KEY", definition["jobs"]["cutover"]["env"])
+        confirm = definition["jobs"]["web"]["steps"][0]
+        for reference, confirmation, image, outcome in (
+                ("refs/heads/main", "back up, restore on failure", IMAGE, (0, "")),
+                ("refs/heads/rehearsal", "back up, restore on failure", IMAGE, (1, "Refusing the cutover: it runs from main alone.\n")),
+                ("refs/heads/main", "yes", IMAGE, (1, 'Refusing the cutover: the backup input must read "back up, restore on failure".\n')),
+                ("refs/heads/main", "back up, restore on failure", "main", (1, "Refusing the cutover: image_tag must be a full commit SHA.\n"))):
+            with self.subTest(reference=reference, confirmation=confirmation, image=image):
+                result = subprocess.run(["bash", "-eo", "pipefail", "-c", confirm["run"]], capture_output=True, text=True,
+                                        env={**os.environ, "GITHUB_REF": reference, "CONFIRMATION": confirmation, "IMAGE_TAG": image})
+                self.assertEqual((result.returncode, result.stdout + result.stderr), outcome)
+
+    def test_the_stages_run_in_their_order_each_on_its_own_host_stage(self):
+        steps = workflow()["jobs"]["cutover"]["steps"]
+        self.assertEqual([(step_label(step), step.get("id")) for step in steps], CUTOVER_STEPS)
+        for step in steps:
+            if step.get("id") in ("check", "pause", "stop", "backup", "adopt", "start", "smoke", "lift"):
+                self.assertIn(f"bash roadmap-cutover.sh {step['id']} $RUN", step["run"])
+        self.assertEqual({step_label(step): step.get("if") for step in steps if step.get("if")}, {
+            "Restore the backup": "(failure() || cancelled()) && steps.backup.outcome == 'success' && steps.start.outcome != 'success'",
+            "Return the site as it was": "(failure() || cancelled()) && steps.pause.outcome != 'skipped' && steps.backup.outcome != 'success'",
+            "Seal what the run kept on the host": "always() && (steps.backup.outcome == 'success' || steps.check.outcome == 'failure')",
+            "Keep the sealed record for a day": "always() && steps.seal.outcome == 'success'",
+            "Forget what the run kept on the host": "always() && steps.upload.outcome == 'success'",
+            "Forget the deploy key": "always()"})
+        self.assertEqual([step_label(step) for step in steps if step.get("continue-on-error")], ["Seal what the run kept on the host"])
+        self.assertIn("bash roadmap-cutover.sh record $RUN", next(step for step in steps if step.get("id") == "seal")["run"])
+        self.assertIn("bash roadmap-cutover.sh forget $RUN", steps[-2]["run"])
+
+    def test_the_cutover_builds_the_web_as_web_deploy_does_with_its_room_reading_the_replica(self):
+        deploy = mapping((REPOSITORY / ".github/workflows/web.yml").read_text().splitlines())["jobs"]["build-and-deploy"]["steps"]
+        cutover = workflow()["jobs"]["web"]["steps"]
+        built = lambda steps: next(step for step in steps if step.get("name") == "Build")
+        self.assertEqual({**built(deploy)["env"], "VITE_ROADMAP_REPLICA_ROOM": "on"}, built(cutover)["env"])
+        self.assertEqual(built(deploy)["env"]["VITE_ROADMAP_REPLICA_ROOM"], "${{ steps.roadmap.outputs.room || 'off' }}")
+        shared = lambda steps: [{key: value for key, value in step.items() if key != "env"} for step in steps
+                                if step.get("uses", "").startswith(("actions/setup-node", "actions/cache", "./.github"))
+                                or step.get("run") == "npm ci" or step.get("name") == "Build"]
+        self.assertEqual(shared(cutover), shared(deploy))
+        self.assertEqual(cutover[-1]["with"], {"name": "roadmap-cutover-web-${{ github.run_id }}",
+                                               "path": "web/dist/\nweb/web-sync-compatibility.json\n", "include-hidden-files": "true",
+                                               "if-no-files-found": "error", "overwrite": "true", "retention-days": "14"})
+        self.assertEqual(workflow()["jobs"]["cutover"]["steps"][1]["with"]["name"], "roadmap-cutover-web-${{ github.run_id }}")
+
+    def test_the_cutover_waits_for_the_lock_only_once_no_deploy_and_no_other_cutover_holds_it_or_waits_for_it(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        bin = Path(directory.name)
+        executable(bin / "gh", "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$GH_CALLS\"\n"
+                               "case \" $* \" in *\" --workflow $BUSY_WORKFLOW --status $BUSY_STATUS \"*) echo 1 ;; *) echo 0 ;; esac\n")
+        guard = workflow()["jobs"]["guard"]["steps"][1]["run"]
+        workflows = sorted(path.name for path in (REPOSITORY / ".github/workflows").glob("*.yml") if "deploy-vps" in path.read_text())
+        self.assertEqual(workflows, ["deploy.yml", "gym-backup.yml", "ops-roadmap-copy.yml", "ops-roadmap-restore.yml",
+                                     "ops-subtree-inventory.yml", "roadmap-cutover.yml", "sync-digest-resum.yml", "web.yml"])
+        statuses = ["queued", "in_progress", "waiting", "requested", "pending"]
+        for busy, status, outcome in ((None, None, (0, "")), ("roadmap-cutover.yml", "queued",
+                                      (1, "Not now: roadmap-cutover.yml has a run queued. Dispatch the cutover again once it has finished.\n"))):
+            with self.subTest(busy=busy):
+                calls = bin / f"calls-{busy}"
+                result = subprocess.run(["bash", "-eo", "pipefail", "-c", guard], cwd=REPOSITORY, capture_output=True, text=True,
+                                        env={**os.environ, "PATH": str(bin) + os.pathsep + os.environ["PATH"], "GH_CALLS": str(calls),
+                                             "GITHUB_REPOSITORY": "owner/repository", "GITHUB_RUN_ID": "4242",
+                                             "BUSY_WORKFLOW": busy or "", "BUSY_STATUS": status or ""})
+                self.assertEqual((result.returncode, result.stdout + result.stderr), outcome)
+                asked = calls.read_text().splitlines()
+                self.assertTrue(all(line.endswith('[.[] | select(.event != "pull_request" and .databaseId != 4242)] | length')
+                                    for line in asked))
+                every = [f"{name} --status {each}" for name in workflows for each in statuses]
+                self.assertEqual([line.split(" --workflow ", 1)[1].split(" --json", 1)[0] for line in asked],
+                                 every if busy is None else every[:every.index(f"{busy} --status {status}") + 1])
+
+
+# The VPS as roadmap-cutover.sh meets it, kept in a JSON state beside the host: the server's container, the probe of
+# the image check starts, Postgres' databases and answers, and the tool's output.
+# Two of them run at once in a pipe, so the state is replaced whole and never read half written.
+def model_docker(arguments):
+    path = Path(os.environ["WM_HOST_HOME"]) / "state.json"
+    state = json.loads(path.read_text())
+    state["commands"].append(arguments)
+    code, output, error = model_answer(state, arguments)
+    written = path.with_name(f"state.{os.getpid()}.json")
+    written.write_text(json.dumps(state))
+    os.replace(written, path)
+    sys.stdout.write(output)
+    sys.stderr.write(error)
+    return code
+
+
+def model_curl(running, answers, command):
+    if not running:
+        return 7, "", "curl: (7) Failed to connect\n"
+    method = command[command.index("-X") + 1] if "-X" in command else "GET"
+    route = command[-1].split("127.0.0.1:8080", 1)[1]
+    if route == "/v1/sync/hello":
+        return 0, json.dumps({"schema": 13, "minSchema": 11, "epoch": "e", "serverTime": 1}) + "\n200", ""
+    status, body = answers.get(f"{method} {route}", [200, {}])
+    return 0, json.dumps(body) + "\n" + str(status), ""
+
+
+def model_answer(state, arguments):
+    server, probe = state["server"], state["probe"]
+    if arguments == ["compose", "ps", "-q", "server"]:
+        return 0, "server-container\n" if server["running"] else "", ""
+    if arguments == ["compose", "ps", "-aq", "server"]:
+        return 0, "server-container\n", ""
+    if arguments == ["inspect", "--format", "{{.Image}}", "server-container"]:
+        return 0, state["imageId"] + "\n", ""
+    if arguments == ["inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "server-container"]:
+        return 0, "DATABASE_URL=postgresql://windmill:PRIVATE_SSH_KEY_CANARY@db:5432/windmill\n" + "".join(
+            f"{key}={value}\n" for key, value in server["env"].items()), ""
+    if arguments == ["logs", "--tail", "200", "server-container"]:
+        return 0, state["serverLog"], ""
+    if arguments == ["inspect", "--format", "{{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}", "server-container"]:
+        return 0, ("running 0 0" if server["running"] else state["serverExit"]) + "\n", ""
+    if arguments == ["logs", "--tail", "200", PROBE]:
+        return 0, state["probeLog"], ""
+    if arguments == ["inspect", "--format", "{{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}", PROBE]:
+        return 0, "running 0 0\n" if probe["running"] else "exited 1 0\n", ""
+    if arguments == ["rm", "-f", PROBE]:
+        probe["running"] = False
+        return 0, "", ""
+    if arguments == ["ps", "-aq", "--filter", "name=windmill-roadmap-probe-"]:
+        return 0, PROBE + "\n" if probe["running"] else "", ""
+    if arguments == ["rm", "-f", TOOL]:
+        return 0, "", ""
+    if arguments == ["run", "--rm", "--entrypoint", "cat", PINNED, "/app/db/schema.sql"]:
+        return 0, "create table if not exists probed ();\n", ""
+    if arguments[:4] == ["run", "-d", "--name", PROBE]:
+        settings = dict(line.split("=", 1) for line in Path(arguments[arguments.index("--env-file") + 1]).read_text().splitlines())
+        probe.update(running=not state.get("probeBootFails"), network=arguments[arguments.index("--network") + 1], image=arguments[-1],
+                     settings=sorted(settings), database=settings["DATABASE_URL"].rsplit("/", 1)[1],
+                     engine=settings["ROADMAP_ENGINE_ENABLED"])
+        return 0, "probe-container\n", ""
+    if arguments[:3] == ["exec", PROBE, "curl"]:
+        return model_curl(probe["running"], state["probeAnswers"], arguments[2:])
+    if arguments in (["compose", "stop", "server"], ["compose", "up", "-d", "--no-deps", "--no-recreate", "--pull", "never", "server"],
+                     ["compose", "up", "-d", "--no-deps", "--pull", "never", "server"]):
+        server["running"] = arguments[1] != "stop"
+        if "--no-recreate" not in arguments and arguments[1] == "up":
+            server["env"] = dict(line.split("=", 1) for line in Path("roadmap-engine.env").read_text().splitlines() if line)
+            server["running"] = not state.get("serverBootFails")
+        return 0, "", ""
+    if arguments == ["compose", "run", "--rm", "--no-deps", "-T", "migrate"]:
+        if state.get("migrateFails"):
+            state["migrateFails"] = False
+            return 1, "", "psql: ERROR: PRIVATE_ROW_CANARY\n"
+        return 0, "", ""
+    if arguments[:5] == ["compose", "run", "--rm", "--no-deps", "-T"]:
+        mounts = dict(tuple(reversed(argument.split(":")[:2])) for argument in arguments
+                      if argument.startswith("/") and ":/adoption/" in argument)
+        record = Path(mounts["/adoption/record"])
+        for name, text in state["tool"]["record"].items():
+            (record / name).write_text(text)
+        state["tool"]["expected"] = Path(mounts["/adoption/expected-ownerless"]).read_text()
+        return state["tool"]["exit"], state["tool"]["stdout"], state["tool"]["stderr"]
+    exec_in = arguments[3] if arguments[:3] == ["compose", "exec", "-T"] else None
+    command = arguments[4:]
+    if exec_in == "caddy":
+        return (0 if state["pauseMounted"] else 1), "", ""
+    if exec_in == "server" and command[0] == "sh":
+        if "command -v windmill_roadmap_adopt" in command[2]:
+            return (0, "/usr/local/bin/windmill_roadmap_adopt\n", "") if state["toolCarried"] else (1, "", "")
+        engine = server["running"] and server["env"].get("ROADMAP_ENGINE_ENABLED") == "1"
+        if "then echo on; else echo off" in command[2]:
+            return (0, "on\n" if engine else "off\n", "") if server["running"] else (1, "", "container is not running\n")
+        return (0 if engine else 1), "", ""
+    if exec_in == "server" and command[0] == "curl":
+        return model_curl(server["running"], state["answers"], command)
+    if exec_in == "db":
+        return model_database(state, command)
+    raise AssertionError("unmodeled docker command: " + repr(arguments))
+
+
+def model_database(state, command):
+    if command[0] == "psql" and "-c" not in command:
+        sys.stdin.read()
+        return 0, "", ""
+    if command[0] == "psql":
+        sql = command[-1]
+        if "pg_database_size" in sql:
+            return 0, str(state["databaseBytes"]) + "\n", ""
+        if "group by 1" in sql:
+            return 0, "psql 1\n", ""
+        if "select count(*) from pg_stat_activity" in sql:
+            return 0, str(state["otherSessions"].pop(0) if state["otherSessions"] else 0) + "\n", ""
+        if sql.startswith("select count(*) from pg_database where datname = "):
+            return 0, str(int(sql.split("'")[1] in state["databases"])) + "\n", ""
+        if "pg_terminate_backend" in sql:
+            return 0, "0\n", ""
+        if sql.startswith("drop database if exists "):
+            state["databases"] = [name for name in state["databases"] if name != sql.split()[4]]
+            return 0, "", ""
+        if sql.startswith("alter database windmill rename to "):
+            moved = sql.split("rename to ", 1)[1].split(";", 1)[0]
+            state["databases"] = sorted({*state["databases"]} - {"windmill", "windmill_restore"} | {moved, "windmill"})
+            return 0, "", ""
+    if command[0] == "df":
+        return 0, "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/vda1 100000000 1 99999999 1% /var/lib/postgresql/data\n", ""
+    if command[0] == "pg_dump":
+        return 0, "PGDMP PRIVATE_DUMP_CANARY\n", ""
+    if command[0] == "createdb":
+        state["databases"].append(command[-1])
+        return 0, "", ""
+    if command[0] == "pg_restore":
+        dump = sys.stdin.read()
+        if not dump.startswith("PGDMP"):
+            return 1, "", "pg_restore: error: input file does not appear to be a valid archive\n"
+        if command[1] == "--list":
+            return 0, ";\n;     dbname: windmill\n;\n3; 0 0 TABLE DATA public trees windmill PRIVATE_ROW_CANARY\n", ""
+        if state.get("restoreFails"):
+            return 1, "", "pg_restore: error: COPY failed for table \"trees\": PRIVATE_ROW_CANARY\n"
+        state["restoredFrom"] = dump
+        return 0, "", ""
+    raise AssertionError("unmodeled database command: " + repr(command))
+
+
+def stage_line(stage, verdict, counts):
+    return json.dumps({"stage": stage, "verdict": verdict, "ms": 12, "counts": counts}) + "\n"
+
+
+PASSED = "".join(stage_line(stage, verdict, {"roadmaps": {"adopted": 13}})
+                 for stage, verdict in zip(STAGES, ["unfolded", "asked", "ready", "adopted", "present", "same", "same", "summed"]))
+STOPPED = (stage_line("unfold", "unfolded", {"roadmaps": {"lastChangeKept": 1}}) + stage_line("read-models-before", "asked", {"answers": 72}) +
+           stage_line("before", "stops", {"stop": {"unknownStepStatus": 1}}))
+RETIRED = {"GET /v1/socket": [410, {"error": "update", "code": "client-update-required"}],
+           "POST /v1/trees": [410, {"error": "update", "code": "client-update-required"}]}
+SITE = "PASS site: https://app.localhost answers {} on its page and its API\n"
+# What a server logs: its access lines name the account each request came from.
+SERVER_LOG = "INFO http GET /v1/trees 200 caller=aaaaaaaa-0000-4000-8000-00000000000a PRIVATE_ROW_CANARY\n"
+FORWARD_ONLY = "FAIL restore: roadmap's floor is written, so the server may have served on the engine and the cutover goes forward only\n"
+RESTORED = ("PASS restore: windmill is {} again, its sha256 matched; the moved database is kept as windmill_cutover_4242_1\n"
+            "PASS restore: the server serves as before the cutover, roadmap off the engine, and the site is lifted\n")
+
+
+class CutoverAgainstAModeledHostTest(unittest.TestCase):
+    def setUp(self):
+        self.host(tool={"stdout": PASSED, "stderr": "PRIVATE_TOOL_CANARY on stderr\n", "exit": 0,
+                        "record": {"before.jsonl": '{"roadmap":"t_a000000000000001","title":"PRIVATE_RECORD_CANARY"}\n'}})
+
+    def host(self, **changes):
+        self.stage = Stage(self, "--model-docker-shim")
+        executable(self.stage.root / "host/bin/sleep", "#!/bin/sh\nexit 0\n")
+        self.model(**changes)
+
+    def model(self, **changes):
+        path = self.stage.home / "state.json"
+        state = json.loads(path.read_text()) if path.exists() else {
+            "commands": [], "server": {"running": True, "env": {}}, "probe": {"running": False}, "imageId": PINNED,
+            "toolCarried": True, "pauseMounted": True, "databaseBytes": 50 * 1048576, "otherSessions": [], "databases": ["windmill"],
+            "answers": RETIRED, "probeAnswers": RETIRED, "serverLog": SERVER_LOG, "serverExit": "exited 0 0",
+            "probeLog": "probe: PRIVATE_SSH_KEY_CANARY\n"}
+        state.update(changes)
+        path.write_text(json.dumps(state))
+        return state
+
+    def files(self):
+        return {str(path.relative_to(self.stage.windmill)): path.read_bytes() for path in self.stage.windmill.rglob("*") if path.is_file()}
+
+    def backup(self):
+        return next(name for name in self.files() if name.startswith("backups/") and name.endswith(".dump"))
+
+    def test_a_cutover_proves_the_image_pauses_moves_starts_the_engine_promotes_the_web_and_lifts_printing_only_counts(self):
+        outcomes, log = self.stage.job().run()
+        self.assertEqual({step: outcome for step, outcome in outcomes.items() if outcome != "success"},
+                         {"Restore the backup": "skipped", "Return the site as it was": "skipped"}, log)
+        self.assertEqual(self.stage.host_stages(), ["check", "pause", "stop", "backup", "adopt", "start", "smoke", "lift", "record",
+                                                    "forget"])
+        self.assertRegex(printed(log, "Check the host is ready"),
+                         r"\Adisk: the database 50 MB; free \d+ MB beside the backups and 97656 MB beside the database; 1174 MB needed\n"
+                         "PASS check: GET /v1/socket answers 410 client-update-required\n"
+                         "PASS check: POST /v1/trees answers 410 client-update-required\n"
+                         f"PASS check: the server runs {IMAGE} and carries windmill_roadmap_adopt; roadmap is off the engine; "
+                         r"the pause is mounted\n\Z")
+        state = self.model()
+        self.assertEqual(state["probe"], {"running": False, "network": "windmill_default", "image": PINNED,
+                                          "settings": ["DATABASE_URL", "PORT", "ROADMAP_ENGINE_ENABLED"],
+                                          "database": "windmill_roadmap_probe", "engine": "1"})
+        self.assertEqual(printed(log, "Pause the site"), "PASS pause: maintenance/on is set\n" + SITE.format(503))
+        self.assertEqual(printed(log, "Stop the server"), "PASS stop: the server is stopped and no client is on the database\n")
+        backup = self.backup()
+        self.assertRegex(backup, rf"^backups/roadmap-cutover-{RUN}-\d{{8}}T\d{{6}}Z\.dump$")
+        digest = hashlib.sha256(b"PGDMP PRIVATE_DUMP_CANARY\n").hexdigest()
+        self.assertEqual(printed(log, "Back up the database"), f"PASS backup verified: {backup}, 26 bytes\n{digest}  {backup}\n")
+        self.assertEqual(printed(log, "Adopt roadmap's rows and check every digest"),
+                         "Ownerless roadmaps the move expects beside the public demo: 2\n" +
+                         "".join(json.dumps(json.loads(line), sort_keys=True, separators=(",", ":")) + "\n" for line in PASSED.splitlines()) +
+                         "PASS adopt: every stage passed\n")
+        self.assertEqual(printed(log, "Start the server on the sync engine"),
+                         "PASS start: the server runs its pinned image with ROADMAP_ENGINE_ENABLED=1; hello says schema 13, minimum 11\n")
+        self.assertEqual(printed(log, "Promote the web whose room reads the replica"),
+                         "PASS web deployment: live backend accepts the candidate sync client, roadmap's room on\n"
+                         f"PASS web: 2 files promoted, built from {'d' * 40} with roadmap's room on\n")
+        self.assertEqual(printed(log, "Walk the stack"), "".join(f"PASS smoke: {line}\n" for line in [
+            "GET /v1/sync/hello answers 200", "GET /v1/socket answers 410 client-update-required",
+            "POST /v1/trees answers 410 client-update-required", f"GET /v1/trees/{DEMO}/progress answers 200",
+            f"GET /v1/trees/{DEMO}/activity answers 200", f"GET /t/{DEMO} answers 200", "GET /gallery answers 200"]))
+        self.assertEqual(printed(log, "Lift the pause"), "PASS lift: maintenance/on is gone\n" + SITE.format(200))
+        self.assertEqual(printed(log, "Forget what the run kept on the host"), "PASS forget: what the run kept on the host is gone, but for its backup\n")
+        self.assertEqual((state["server"], state["tool"]["expected"], state["databases"]),
+                         ({"running": True, "env": {"ROADMAP_ENGINE_ENABLED": "1"}}, EXPECTED_OWNERLESS, ["windmill"]))
+        self.assertEqual(self.stage.sealed(), (["key.pem", "record.tar.enc"], {
+            "backup": backup + "\n", "record/before.jsonl": '{"roadmap":"t_a000000000000001","title":"PRIVATE_RECORD_CANARY"}\n',
+            "record/tool.stderr": "PRIVATE_TOOL_CANARY on stderr\n"}))
+        files = self.files()
+        self.assertEqual((files["roadmap-engine.env"], files["roadmap-engine.floor"], files["web/index.html"], "maintenance/on" in files),
+                         (b"ROADMAP_ENGINE_ENABLED=1\n", IMAGE.encode() + b"\n", (self.stage.root / "artifact/dist/index.html").read_bytes(), False))
+        self.assertEqual(sorted(name for name in files if name.startswith("roadmap-cutover/")), [f"roadmap-cutover/{RUN}/backup"])
+        self.assertFalse((self.stage.root / "runner/temp/deploy_key").exists())
+        self.stage.assert_nothing_private(self, log)
+
+    def test_only_a_stages_own_line_in_its_own_shape_reaches_the_log(self):
+        lines = ["PRIVATE_TOOL_CANARY not json", json.dumps({"stage": "adopt", "verdict": "adopted", "ms": 1,
+                                                             "counts": {"t_a000000000000001": 1}}),
+                 json.dumps({"stage": "adopt", "verdict": "PRIVATE_TOOL_CANARY", "ms": 1, "counts": {}}),
+                 json.dumps({"stage": "adopt", "verdict": "adopted", "ms": 1, "counts": {"roadmaps": {"adopted": "13"}}}),
+                 json.dumps({"stage": "adopt", "verdict": "adopted", "ms": 1, "counts": {}, "roadmap": "t_a000000000000001"}),
+                 json.dumps(["PRIVATE_TOOL_CANARY"]), json.dumps({"stage": "digests", "verdict": "summed", "ms": 3,
+                                                                  "counts": {"scopes": {"summed": 20}}})]
+        self.model(tool={"stdout": "\n".join(lines) + "\n", "stderr": "", "exit": 0, "record": {}})
+        outcomes, log = self.stage.job().run()
+        self.assertEqual(outcomes["adopt"], "success")
+        self.assertEqual(printed(log, "Adopt roadmap's rows and check every digest"),
+                         "Ownerless roadmaps the move expects beside the public demo: 2\n"
+                         '{"counts":{"scopes":{"summed":20}},"ms":3,"stage":"digests","verdict":"summed"}\n'
+                         "WITHHELD adopt: 6 lines of the tool's output were not a stage's counts\n"
+                         "PASS adopt: every stage passed\n")
+        self.stage.assert_nothing_private(self, log)
+
+    def test_a_tool_that_never_answers_a_stage_says_so(self):
+        self.model(tool={"stdout": "", "stderr": "PRIVATE_TOOL_CANARY: no such image\n", "exit": 125, "record": {}})
+        outcomes, log = self.stage.job().run()
+        self.assertEqual((outcomes["adopt"], outcomes["Restore the backup"]), ("failure", "success"))
+        self.assertEqual(printed(log, "Adopt roadmap's rows and check every digest"),
+                         "Ownerless roadmaps the move expects beside the public demo: 2\n"
+                         "FAIL adopt: windmill_roadmap_adopt exited 125 before any stage answered; what it said is in the sealed record\n")
+        self.assertEqual(self.stage.sealed()[1]["record/tool.stderr"], "PRIVATE_TOOL_CANARY: no such image\n")
+        self.stage.assert_nothing_private(self, log)
+
+    def test_a_stop_restores_the_backup_lifts_the_pause_and_seals_what_the_run_kept_and_nothing_after_it_runs(self):
+        self.model(tool={"stdout": STOPPED, "stderr": "", "exit": 3,
+                         "record": {"stops.jsonl": '{"reason":"stop.unknownStepStatus","roadmap":"t_a000000000000001"}\n'}})
+        outcomes, log = self.stage.job().run()
+        self.assertEqual({step: outcomes[step] for step in ("adopt", "start", "web", "smoke", "lift", "Restore the backup",
+                                                             "Return the site as it was", "seal", "upload")},
+                         {"adopt": "failure", "start": "skipped", "web": "skipped", "smoke": "skipped", "lift": "skipped",
+                          "Restore the backup": "success", "Return the site as it was": "skipped", "seal": "success", "upload": "success"})
+        self.assertEqual(self.stage.host_stages(), ["check", "pause", "stop", "backup", "adopt", "restore", "record", "forget"])
+        self.assertIn("STOP adopt: a stage did not pass, and nothing after it ran\n", printed(log, "Adopt roadmap's rows and check every digest"))
+        backup = self.backup()
+        self.assertEqual(printed(log, "Restore the backup"), RESTORED.format(backup) + SITE.format(200))
+        state = self.model()
+        self.assertEqual((state["databases"], state["restoredFrom"], state["server"]),
+                         (["windmill", "windmill_cutover_4242_1"], "PGDMP PRIVATE_DUMP_CANARY\n", {"running": True, "env": {}}))
+        removals = [index for index, command in enumerate(state["commands"]) if command == ["rm", "-f", TOOL]]
+        self.assertEqual(len(removals), 2)
+        self.assertEqual([command[4] if command[:3] == ["compose", "exec", "-T"] else " ".join(command[:2])
+                          for command in state["commands"][removals[0]:removals[1]]],
+                         ["rm -f", "psql", "pg_restore", "psql", "createdb", "pg_restore", "psql", "psql", "compose run", "compose up", "curl"])
+        self.assertEqual(self.stage.sealed()[1], {
+            "backup": backup + "\n", "record/stops.jsonl": '{"reason":"stop.unknownStepStatus","roadmap":"t_a000000000000001"}\n',
+            "record/tool.stderr": "", "restore.log": "", "migrate.log": "", "restored": "restored\n"})
+        files = self.files()
+        self.assertEqual((files["roadmap-engine.env"], "roadmap-engine.floor" in files, "maintenance/on" in files), (b"", False, False))
+        self.assertEqual(sorted(name for name in files if name.startswith("roadmap-cutover/")),
+                         [f"roadmap-cutover/{RUN}/backup", f"roadmap-cutover/{RUN}/restored"])
+        self.stage.assert_nothing_private(self, log)
+
+    def test_a_host_lost_while_it_moves_the_rows_is_restored_and_what_the_move_wrote_is_sealed(self):
+        self.stage.environment["WM_SSH_DROP"] = "adopt:after"
+        outcomes, log = self.stage.job().run()
+        self.assertEqual({step: outcomes[step] for step in ("adopt", "start", "Restore the backup", "seal", "upload")},
+                         {"adopt": "failure", "start": "skipped", "Restore the backup": "success", "seal": "success", "upload": "success"})
+        self.assertEqual(self.stage.host_stages(), ["check", "pause", "stop", "backup", "adopt", "restore", "record", "forget"])
+        self.assertEqual(self.stage.sealed()[1]["record/before.jsonl"], '{"roadmap":"t_a000000000000001","title":"PRIVATE_RECORD_CANARY"}\n')
+        self.assertEqual(sum(command == ["rm", "-f", TOOL] for command in self.model()["commands"]), 2)
+        self.stage.assert_nothing_private(self, log)
+
+    def test_a_start_that_never_reached_the_host_restores_the_backup_and_one_that_wrote_the_switch_goes_forward_only(self):
+        self.stage.environment["WM_SSH_DROP"] = "start:before"
+        outcomes, log = self.stage.job().run()
+        self.assertEqual((outcomes["start"], outcomes["Restore the backup"], outcomes["web"]), ("failure", "success", "skipped"))
+        files = self.files()
+        self.assertEqual((files["roadmap-engine.env"], "roadmap-engine.floor" in files, "maintenance/on" in files), (b"", False, False))
+        self.assertEqual(self.model()["databases"], ["windmill", "windmill_cutover_4242_1"])
+
+        self.host(tool={"stdout": PASSED, "stderr": "", "exit": 0, "record": {}})
+        self.stage.environment["WM_SSH_DROP"] = "start:after"
+        outcomes, log = self.stage.job().run()
+        self.assertEqual((outcomes["start"], outcomes["Restore the backup"], outcomes["web"], outcomes["seal"]),
+                         ("failure", "failure", "skipped", "success"))
+        self.assertEqual(printed(log, "Restore the backup"), FORWARD_ONLY)
+        files = self.files()
+        self.assertEqual((files["roadmap-engine.env"], files["maintenance/on"]), (b"ROADMAP_ENGINE_ENABLED=1\n", f"roadmap cutover {RUN}\n".encode()))
+        self.assertEqual(self.model()["databases"], ["windmill"])
+
+    def test_a_start_cut_short_between_the_switch_and_the_floor_restores_the_backup_and_empties_the_switch(self):
+        executable(self.stage.root / "host/bin/mv",
+                   '#!/bin/sh\n[ "$2" != roadmap-engine.floor ] || { kill -KILL "$PPID"; exit 1; }\nexec /bin/mv "$@"\n')
+        outcomes, log = self.stage.job().run()
+        self.assertEqual((outcomes["start"], outcomes["Restore the backup"], outcomes["web"]), ("failure", "success", "skipped"))
+        self.assertEqual(printed(log, "Restore the backup"),
+                         "NOTE restore: the start wrote roadmap's switch, not its floor, and never started the server on it; the switch "
+                         "is emptied\n" + RESTORED.format(self.backup()) + SITE.format(200))
+        files = self.files()
+        self.assertEqual((files["roadmap-engine.env"], "roadmap-engine.floor" in files, "maintenance/on" in files), (b"", False, False))
+        state = self.model()
+        self.assertEqual((state["databases"], state["server"]), (["windmill", "windmill_cutover_4242_1"], {"running": True, "env": {}}))
+        self.stage.assert_nothing_private(self, log)
+
+    def test_the_restore_door_refuses_wherever_the_start_may_have_served_on_the_engine(self):
+        self.stage.environment["WM_SSH_DROP"] = "start:after"
+        self.assertEqual(self.stage.job().run()[0]["Restore the backup"], "failure")
+        floor = self.stage.windmill / "roadmap-engine.floor"
+        for attempt, lost, reason in (
+                ("1", lambda: (self.stage.windmill / "roadmap-engine.env").write_text(""), FORWARD_ONLY),
+                ("2", lambda: (floor.unlink(), (self.stage.windmill / "roadmap-engine.env").write_text("ROADMAP_ENGINE_ENABLED=1\n")),
+                 "FAIL restore: roadmap's switch is written and the server's container holds it, so the cutover goes forward only\n")):
+            with self.subTest(reason=reason):
+                lost()
+                self.model(server={"running": False, "env": {"ROADMAP_ENGINE_ENABLED": "1"}}, commands=[])
+                before = self.files()
+                outcomes, log = self.door(attempt)
+                self.assertEqual((outcomes["restore"], printed(log, "Restore the backup")), ("failure", reason))
+                self.assertEqual({name: text for name, text in self.files().items() if not name.startswith("roadmap-cutover/")},
+                                 {name: text for name, text in before.items() if not name.startswith("roadmap-cutover/")})
+                state = self.model()
+                self.assertEqual((state["databases"], state["server"]["running"]), (["windmill"], False))
+                self.assertFalse(any(command[:4] == ["compose", "exec", "-T", "db"] and command[4] in ("pg_restore", "createdb")
+                                     for command in state["commands"]))
+                self.stage.assert_nothing_private(self, log)
+
+    def test_a_server_that_does_not_serve_on_the_engine_prints_its_state_and_seals_its_log(self):
+        self.model(serverBootFails=True, serverExit="restarting 1 3")
+        outcomes, log = self.stage.job().run()
+        self.assertEqual((outcomes["start"], outcomes["Restore the backup"], outcomes["seal"], outcomes["upload"]),
+                         ("failure", "failure", "success", "success"))
+        self.assertEqual(printed(log, "Start the server on the sync engine"),
+                         "NOTE start: the container is restarting, exit code 1, 3 restarts; its last 200 lines are in the sealed record "
+                         "as server.log\nFAIL start: the server did not answer hello within 60 s\n")
+        self.assertEqual(printed(log, "Restore the backup"), FORWARD_ONLY)
+        self.assertEqual(self.stage.sealed()[1]["server.log"], SERVER_LOG)
+        self.assertEqual(sorted(name for name in self.files() if name.startswith("roadmap-cutover/")), [f"roadmap-cutover/{RUN}/backup"])
+        self.stage.assert_nothing_private(self, log, [*CANARIES, "aaaaaaaa-0000-4000-8000-00000000000a"])
+
+    def test_a_probe_a_killed_check_left_behind_is_removed_before_the_next_check_starts_its_own(self):
+        self.model(probe={"running": True}, databases=["windmill", "windmill_roadmap_probe"])
+        (self.stage.windmill / "roadmap-cutover").mkdir()
+        (self.stage.windmill / "roadmap-cutover/probe.env").write_text("DATABASE_URL=postgresql://windmill:PRIVATE_SSH_KEY_CANARY@db\n")
+        outcomes, log = self.stage.job().run()
+        self.assertEqual(outcomes["check"], "success")
+        state = self.model()
+        self.assertEqual((state["probe"]["running"], state["databases"], (self.stage.windmill / "roadmap-cutover/probe.env").exists()),
+                         (False, ["windmill"], False))
+        self.assertLess(state["commands"].index(["rm", "-f", PROBE]),
+                        next(index for index, command in enumerate(state["commands"]) if command[:4] == ["run", "-d", "--name", PROBE]))
+
+    def test_a_failure_before_the_backup_leaves_the_database_untouched_and_returns_the_site_as_it_was(self):
+        sealed = ["check", "record", "forget"]
+        for failure, stages, last, kept in (
+                ({"otherSessions": [1] * 30}, ["check", "pause", "stop", "undo"], None, None),
+                ({"pauseMounted": False}, sealed, "FAIL check: Caddy does not mount the maintenance folder", {}),
+                ({"probeBootFails": True}, sealed, "FAIL check: the image did not answer hello within 60 s while serving roadmap's scopes",
+                 {"probe.log": "probe: PRIVATE_SSH_KEY_CANARY\n"}),
+                ({"probeAnswers": {**RETIRED, "GET /v1/socket": [404, {"error": "PRIVATE_ROW_CANARY"}]}}, sealed,
+                 "FAIL check: the image does not retire roadmap's own routes when it serves roadmap's scopes",
+                 {"probe.log": "probe: PRIVATE_SSH_KEY_CANARY\n"})):
+            with self.subTest(failure=failure):
+                self.host(tool={"stdout": PASSED, "stderr": "", "exit": 0, "record": {}}, **failure)
+                outcomes, log = self.stage.job().run()
+                self.assertEqual(self.stage.host_stages(), stages)
+                self.assertEqual((outcomes["Restore the backup"], outcomes["seal"]), ("skipped", "skipped" if kept is None else "success"))
+                if kept is not None:
+                    self.assertEqual(self.stage.sealed()[1], kept)
+                    self.assertEqual(sorted(name for name in self.files() if name.startswith("roadmap-cutover/")), [])
+                if kept:
+                    commands = self.model()["commands"]
+                    self.assertLess(commands.index(["logs", "--tail", "200", PROBE]), commands.index(["rm", "-f", PROBE]))
+                    self.assertIn("NOTE check: the container is ", printed(log, "Check the host is ready"))
+                state = self.model()
+                self.assertEqual((state["databases"], state["server"]["running"], state["probe"]["running"], "maintenance/on" in self.files()),
+                                 (["windmill"], True, False, False))
+                self.assertFalse(any(command[:4] == ["compose", "exec", "-T", "db"] and command[4] == "pg_dump"
+                                     for command in state["commands"]))
+                if last:
+                    self.assertEqual(printed(log, "Check the host is ready").splitlines()[-1], last)
+                self.stage.assert_nothing_private(self, log)
+        self.assertIn("FAIL check: GET /v1/socket answers 404, not 410 client-update-required\n", printed(log, "Check the host is ready"))
+
+    def test_once_the_server_starts_on_the_engine_a_failure_goes_forward_only_and_keeps_the_pause(self):
+        self.model(answers={**RETIRED, "GET /v1/socket": [404, {"error": "PRIVATE_ROW_CANARY"}]})
+        outcomes, log = self.stage.job().run()
+        self.assertEqual({step: outcomes[step] for step in ("start", "web", "smoke", "lift", "Restore the backup", "Return the site as it was")},
+                         {"start": "success", "web": "success", "smoke": "failure", "lift": "skipped", "Restore the backup": "skipped",
+                          "Return the site as it was": "skipped"})
+        self.assertIn("FAIL smoke: GET /v1/socket answers 404, not 410 client-update-required\n", printed(log, "Walk the stack"))
+        self.assertTrue(printed(log, "Walk the stack").endswith(
+            "NOTE smoke: the container is running, exit code 0, 0 restarts; its last 200 lines are in the sealed record as server.log\n"))
+        self.assertEqual(self.stage.sealed()[1]["server.log"], SERVER_LOG)
+        files = self.files()
+        self.assertEqual((files["roadmap-engine.env"], files["maintenance/on"]), (b"ROADMAP_ENGINE_ENABLED=1\n", f"roadmap cutover {RUN}\n".encode()))
+        self.stage.assert_nothing_private(self, log)
+
+    def door(self, attempt):
+        shutil.rmtree(self.stage.root / "runner/temp")
+        (self.stage.root / "runner/temp").mkdir()
+        door = mapping((REPOSITORY / ".github/workflows/ops-roadmap-restore.yml").read_text().splitlines())["jobs"]["restore"]
+        return Job(door, {**self.stage.context, "inputs.run": RUN, "github.run_attempt": attempt}, self.stage.workspace,
+                   self.stage.environment, self.stage.root / "artifact", self.stage.root / "artifacts").run()
+
+    def test_a_restore_pg_restore_refuses_keeps_windmill_and_the_pause_and_the_restore_door_finishes_it_where_it_stopped(self):
+        self.model(tool={"stdout": STOPPED, "stderr": "", "exit": 3, "record": {}}, restoreFails=True)
+        outcomes, log = self.stage.job().run()
+        self.assertEqual((outcomes["Restore the backup"], outcomes["seal"]), ("failure", "success"))
+        self.assertEqual(printed(log, "Restore the backup"),
+                         "FAIL restore: pg_restore did not restore the backup; windmill is as the move left it, and Postgres' words go "
+                         "to the sealed record\n")
+        self.assertIn("PRIVATE_ROW_CANARY", self.stage.sealed()[1]["restore.log"])
+        state = self.model()
+        self.assertEqual((state["databases"], state["server"]["running"], "maintenance/on" in self.files()),
+                         (["windmill", "windmill_restore"], False, True))
+        self.stage.assert_nothing_private(self, log)
+
+        # The door's first run swaps the backup in and stops at the schema; its second takes up from there.
+        self.model(restoreFails=False, migrateFails=True)
+        outcomes, log = self.door("1")
+        self.assertEqual((outcomes["restore"], outcomes["seal"], outcomes["upload"]), ("failure", "success", "success"))
+        self.assertEqual(printed(log, "Restore the backup"),
+                         "FAIL restore: the schema did not apply to the restored database; its words go to the sealed record\n")
+        self.assertEqual((self.model()["databases"], "maintenance/on" in self.files()), (["windmill", "windmill_cutover_4242_1"], True))
+        outcomes, log = self.door("2")
+        self.assertEqual({step: outcome for step, outcome in outcomes.items() if outcome != "success"}, {})
+        self.assertEqual(printed(log, "Restore the backup"),
+                         "NOTE restore: windmill holds the backup already and the moved database is kept, so only the start is left\n" +
+                         RESTORED.format(self.backup()) + SITE.format(200))
+        state = self.model()
+        self.assertEqual((state["databases"], state["server"]["running"], "maintenance/on" in self.files()),
+                         (["windmill", "windmill_cutover_4242_1"], True, False))
+        self.stage.assert_nothing_private(self, log)
+
+    def test_the_restore_door_never_restores_over_a_site_that_serves_again(self):
+        self.model(tool={"stdout": STOPPED, "stderr": "", "exit": 3, "record": {}})
+        self.assertEqual(self.stage.job().run()[0]["Restore the backup"], "success")
+        moved = self.model()["databases"]
+        for attempt, undone, reason in (("1", lambda: None, "this run's backup is restored already"),
+                                        ("2", lambda: (self.stage.windmill / f"roadmap-cutover/{RUN}/restored").unlink(),
+                                         "the site is not paused, so whatever runs here now is not this run's"),
+                                        ("3", lambda: (self.stage.windmill / "maintenance/on").write_text("paused by hand\n"),
+                                         "the server is running, so whatever runs here now is not this run's")):
+            with self.subTest(reason=reason):
+                undone()
+                self.model(databases=[name for name in moved if name != "windmill_cutover_4242_1"], commands=[])
+                outcomes, log = self.door(attempt)
+                self.assertEqual((outcomes["restore"], printed(log, "Restore the backup")), ("failure", f"FAIL restore: {reason}\n"))
+                state = self.model()
+                self.assertEqual((state["databases"], state["server"]["running"]), (["windmill"], True))
+                self.assertFalse(any(command[:4] == ["compose", "exec", "-T", "db"] and command[4] in ("pg_restore", "createdb")
+                                     for command in state["commands"]))
+
+    def test_a_host_already_on_the_engine_or_on_another_image_is_refused_before_anything_changes(self):
+        for change, reason in ((lambda: (self.stage.windmill / "roadmap-engine.env").write_text("ROADMAP_ENGINE_ENABLED=1\n"),
+                                "roadmap is on the sync engine here already"),
+                               (lambda: self.model(imageId="sha256:" + "e" * 64), "the server is not running its pinned image"),
+                               (lambda: self.model(toolCarried=False), "the live image does not carry windmill_roadmap_adopt"),
+                               (lambda: self.model(databaseBytes=10 ** 15), "too little free disk for a backup and its restore")):
+            with self.subTest(reason=reason):
+                self.host(tool={"stdout": PASSED, "stderr": "", "exit": 0, "record": {}})
+                change()
+                before = {name: text for name, text in self.files().items() if name != "roadmap-cutover.sh"}
+                outcomes, log = self.stage.job().run()
+                self.assertEqual((outcomes["check"], self.stage.host_stages()), ("failure", ["check", "record", "forget"]))
+                self.assertEqual(printed(log, "Check the host is ready").splitlines()[-1], f"FAIL check: {reason}")
+                self.assertEqual({name: text for name, text in self.files().items() if name != "roadmap-cutover.sh"}, before)
+
+
+class DoorsTest(unittest.TestCase):
+    def test_the_restore_door_reaches_seals_and_forgets_as_the_cutover_does_and_refuses_unless_from_main_confirmed_and_alone(self):
+        cutover = workflow()["jobs"]["cutover"]["steps"]
+        door = mapping((REPOSITORY / ".github/workflows/ops-roadmap-restore.yml").read_text().splitlines())
+        shared = ("Reach the host", "Seal what the run kept on the host", "Forget what the run kept on the host", "Forget the deploy key")
+        same = lambda steps: {step_label(step): step["run"] for step in steps if step_label(step) in shared}
+        self.assertEqual(same(door["jobs"]["restore"]["steps"]), same(cutover))
+        self.assertEqual((door["jobs"]["restore"]["if"], door["jobs"]["restore"]["concurrency"], door["permissions"]),
+                         ("always() && needs.guard.result == 'success'", {"group": "deploy-vps", "cancel-in-progress": "false"},
+                          {"contents": "read", "actions": "read"}))
+        stage = Stage(self, "--model-docker-shim")
+        guard = door["jobs"]["guard"]["steps"][1]["run"]
+        refused = 'Refusing the restore: run must read <run id>-<attempt> and confirm "restore the backup".\n'
+        for reference, run, confirmation, busy, outcome in (
+                ("refs/heads/main", RUN, "restore the backup", "", (0, "")),
+                ("refs/heads/other", RUN, "restore the backup", "", (1, "Refusing the restore: it runs from main alone.\n")),
+                ("refs/heads/main", "4242", "restore the backup", "", (1, refused)),
+                ("refs/heads/main", RUN, "yes", "", (1, refused)),
+                ("refs/heads/main", RUN, "restore the backup", "deploy.yml in_progress",
+                 (1, "Not now: deploy.yml has a run in_progress. Dispatch the restore again once it has finished.\n"))):
+            with self.subTest(reference=reference, run=run, confirmation=confirmation, busy=busy):
+                result = subprocess.run(["bash", "-eo", "pipefail", "-c", guard], cwd=REPOSITORY, capture_output=True, text=True,
+                                        env={**stage.environment, "GITHUB_REF": reference, "RUN": run, "CONFIRMATION": confirmation,
+                                             "WM_GH_BUSY": busy})
+                self.assertEqual((result.returncode, result.stdout + result.stderr), outcome)
+
+    def test_the_maintenance_door_pauses_and_lifts_the_site_proving_each_through_its_page_and_never_beside_a_cutover(self):
+        stage = Stage(self, "--model-docker-shim")
+        (stage.home / "state.json").write_text(json.dumps({"server": {"running": True}}))
+        definition = mapping((REPOSITORY / ".github/workflows/ops-maintenance.yml").read_text().splitlines())
+        self.assertEqual((definition["on"], definition["permissions"], "concurrency" in definition),
+                         ({"workflow_dispatch": {"inputs": {"switch": {"description": "Pause or lift the site", "required": "true",
+                                                                       "type": "choice", "options": "[lift, pause]"}}}},
+                          {"contents": "read", "actions": "read"}, False))
+        job = lambda switch: Job(definition["jobs"]["maintenance"], {**stage.context, "inputs.switch": switch}, stage.workspace,
+                                 stage.environment, stage.root / "artifact", stage.root / "artifacts")
+        for switch, line, paused in (("pause", "PASS maintenance: the site is paused; https://app.localhost answers 503 on its page\n", True),
+                                     ("lift", "PASS maintenance: the site is lifted; https://app.localhost answers 200 on its page\n", False)):
+            with self.subTest(switch=switch):
+                outcomes, log = job(switch).run()
+                self.assertEqual((outcomes, log[1][1:], (stage.windmill / "maintenance/on").exists()),
+                                 ({"Refuse beside a cutover or its restore": "success", "Pause or lift the site": "success"},
+                                  (0, line), paused))
+        stage.environment["WM_GH_BUSY"] = "roadmap-cutover.yml in_progress"
+        outcomes, log = job("pause").run()
+        self.assertEqual((outcomes, log[0][1:], (stage.windmill / "maintenance/on").exists()),
+                         ({"Refuse beside a cutover or its restore": "failure", "Pause or lift the site": "skipped"},
+                          (1, "Not now: roadmap-cutover.yml has a run in_progress, and it pauses and lifts the site itself.\n"), False))
+
+
+# The VPS as a local stack: compose's services mapped onto a Postgres database of their own, the built tool, the built
+# server on a port of its own, and Caddy's image serving the production Caddyfile in front of a stand-in that forwards to
+# that server.
+STACK_PREFIX = "wm_roadmap_cutover_"
+SERVER_PORT = 5426
+PROBE_PORT = 5427
+
+
+def stack():
+    return json.loads((Path(os.environ["WM_HOST_HOME"]) / "stack.json").read_text())
+
+
+def stack_database(name):
+    return STACK_PREFIX + name
+
+
+def stack_url(name):
+    return re.sub(r"^(postgres(?:ql)?://[^/?]*)/[^?]*", rf"\1/{stack_database(name)}", os.environ["DATABASE_URL"])
+
+
+def stack_alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, TypeError):
+        return False
+
+
+# A server process of the built binary, left running past the shim that starts it.
+def stack_server(settings, log):
+    started = subprocess.run(["sh", "-c", '"$0" >> "$1" 2>&1 & echo $!', os.environ["WM_CUTOVER_SERVER"], log],
+                             env={"PATH": os.environ["PATH"], **settings}, capture_output=True, text=True, check=True)
+    return int(started.stdout)
+
+
+def stack_stop(pid):
+    if stack_alive(pid):
+        os.kill(pid, signal.SIGTERM)
+        deadline = time.monotonic() + 15
+        while stack_alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        if stack_alive(pid):
+            os.kill(pid, signal.SIGKILL)
+
+
+def stack_docker(arguments):
+    state = stack()
+    host = Path(os.environ["WM_HOST_HOME"]) / "windmill"
+    server = state.get("serverPid")
+    remember = lambda **changes: (Path(os.environ["WM_HOST_HOME"]) / "stack.json").write_text(json.dumps({**state, **changes}))
+    if arguments == ["run", "--rm", "--entrypoint", "cat", PINNED, "/app/db/schema.sql"]:
+        sys.stdout.write((REPOSITORY / "backend/db/schema.sql").read_text())
+        return 0
+    if arguments[:4] == ["run", "-d", "--name", f"windmill-roadmap-probe-{RUN}"]:
+        settings = dict(line.split("=", 1) for line in Path(arguments[arguments.index("--env-file") + 1]).read_text().splitlines())
+        database = settings["DATABASE_URL"].rsplit("/", 1)[1]
+        remember(probePid=stack_server({**settings, "DATABASE_URL": stack_url(database), "PORT": str(PROBE_PORT)}, state["probeLog"]))
+        return 0
+    # A container outlives its process here as in Docker; a process that ended reads as exit code 1, which the stack
+    # cannot read once the shim that started it is gone.
+    containers = {"windmill-server": (server, state["serverLog"]), f"windmill-roadmap-probe-{RUN}": (state.get("probePid"), state["probeLog"])}
+    if arguments[:3] == ["logs", "--tail", "200"] and arguments[3] in containers:
+        log = Path(containers[arguments[3]][1])
+        sys.stdout.write("".join(log.read_text(errors="replace").splitlines(keepends=True)[-200:]) if log.exists() else "")
+        return 0
+    if arguments[:3] == ["inspect", "--format", "{{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}"] and arguments[3] in containers:
+        print("running 0 0" if stack_alive(containers[arguments[3]][0]) else "exited 1 0")
+        return 0
+    if arguments == ["inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", "windmill-server"]:
+        print("".join(f"{key}={value}\n" for key, value in state.get("serverEnv", {}).items()))
+        return 0
+    if arguments == ["compose", "ps", "-aq", "server"]:
+        print("windmill-server")
+        return 0
+    if arguments[:3] == ["exec", f"windmill-roadmap-probe-{RUN}", "curl"]:
+        return subprocess.run([os.environ["WM_CURL"], *[argument.replace("127.0.0.1:8080", f"127.0.0.1:{PROBE_PORT}")
+                                                       for argument in arguments[3:]]]).returncode
+    if arguments == ["rm", "-f", f"windmill-roadmap-probe-{RUN}"]:
+        stack_stop(state.get("probePid"))
+        return 0
+    if arguments == ["ps", "-aq", "--filter", "name=windmill-roadmap-probe-"]:
+        print(f"windmill-roadmap-probe-{RUN}" if stack_alive(state.get("probePid")) else "")
+        return 0
+    if arguments == ["compose", "ps", "-q", "server"]:
+        print("windmill-server" if stack_alive(server) else "")
+        return 0
+    if arguments == ["inspect", "--format", "{{.Image}}", "windmill-server"]:
+        print(PINNED)
+        return 0
+    if arguments[:2] == ["rm", "-f"]:
+        return 0
+    if arguments == ["compose", "stop", "server"]:
+        stack_stop(server)
+        return 0
+    if arguments in (["compose", "up", "-d", "--no-deps", "--no-recreate", "--pull", "never", "server"],
+                     ["compose", "up", "-d", "--no-deps", "--pull", "never", "server"]):
+        recreate = "--no-recreate" not in arguments
+        if recreate:
+            stack_stop(server)
+        if recreate or not stack_alive(server):
+            switch = dict(line.split("=", 1) for line in (host / "roadmap-engine.env").read_text().splitlines() if line)
+            remember(serverEnv=switch, serverPid=stack_server({"DATABASE_URL": stack_url("windmill"), "PORT": str(SERVER_PORT),
+                                                               "WINDMILL_WEB_ROOT": str(host / "web"), **switch}, state["serverLog"]))
+        return 0
+    if arguments == ["compose", "run", "--rm", "--no-deps", "-T", "migrate"]:
+        return subprocess.run(["psql", stack_url("windmill"), "-Xq", "-v", "ON_ERROR_STOP=1", "-f",
+                               str(REPOSITORY / "backend/db/schema.sql")]).returncode
+    if arguments[:5] == ["compose", "run", "--rm", "--no-deps", "-T"]:
+        volumes = dict(tuple(reversed(arguments[index + 1].split(":")[:2])) for index, argument in enumerate(arguments)
+                       if argument == "--volume")
+        settings = dict(arguments[index + 1].split("=", 1) for index, argument in enumerate(arguments) if argument == "--env")
+        settings = {key: volumes.get(value, value) for key, value in settings.items()}
+        return subprocess.run([os.environ["WM_CUTOVER_TOOL"], arguments[-1]],
+                              env={"PATH": os.environ["PATH"], "DATABASE_URL": stack_url("windmill"), "SENTRY_DSN": "", **settings}).returncode
+    exec_in = arguments[3] if arguments[:3] == ["compose", "exec", "-T"] else None
+    command = arguments[4:]
+    if exec_in == "caddy":
+        return subprocess.run([os.environ["WM_DOCKER"], "exec", state["edge"], *command]).returncode
+    if exec_in == "server" and command[0] == "sh":
+        if "command -v windmill_roadmap_adopt" in command[2]:
+            return 0 if Path(os.environ["WM_CUTOVER_TOOL"]).is_file() else 1
+        engine = stack_alive(server) and state.get("serverEnv", {}).get("ROADMAP_ENGINE_ENABLED") == "1"
+        if "then echo on; else echo off" in command[2]:
+            print("on" if engine else "off")
+            return 0 if stack_alive(server) else 1
+        return 0 if engine else 1
+    if exec_in == "server" and command[0] == "curl":
+        return subprocess.run([os.environ["WM_CURL"], *[argument.replace("127.0.0.1:8080", f"127.0.0.1:{SERVER_PORT}")
+                                                       for argument in command[1:]]]).returncode
+    if exec_in == "db" and command[0] == "psql":
+        database = next(argument for argument in command if argument.startswith("--dbname=")).split("=", 1)[1]
+        target = os.environ["DATABASE_URL"] if database == "postgres" else stack_url(database)
+        if "-c" not in command:
+            return subprocess.run(["psql", target, "-Xq", "-v", "ON_ERROR_STOP=1"]).returncode
+        sql = re.sub(r"\bwindmill(_restore|_roadmap_probe|_cutover_[0-9_]+)?\b", lambda match: STACK_PREFIX + match.group(0),
+                     command[-1])
+        return subprocess.run(["psql", target, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c", sql]).returncode
+    if exec_in == "db" and command[0] == "df":
+        return subprocess.run(["df", "-Pk", "/"]).returncode
+    if exec_in == "db" and command[0] == "pg_dump":
+        return subprocess.run(["pg_dump", stack_url("windmill"), "--format=custom"]).returncode
+    if exec_in == "db" and command[:2] == ["pg_restore", "--list"]:
+        listing = subprocess.run(["pg_restore", "--list"], capture_output=True, text=True)
+        sys.stdout.write(listing.stdout.replace(f"dbname: {STACK_PREFIX}windmill", "dbname: windmill"))
+        sys.stderr.write(listing.stderr)
+        return listing.returncode
+    if exec_in == "db" and command[0] == "createdb":
+        return subprocess.run(["psql", os.environ["DATABASE_URL"], "-XAtq", "-c",
+                               f'create database "{stack_database(command[-1])}"']).returncode
+    if exec_in == "db" and command[0] == "pg_restore":
+        database = next(argument for argument in command if argument.startswith("--dbname=")).split("=", 1)[1]
+        return subprocess.run(["pg_restore", "--dbname", stack_url(database), *[argument for argument in command[1:]
+                               if not argument.startswith(("--username=", "--dbname="))]]).returncode
+    raise AssertionError("unmodeled docker command: " + repr(arguments))
+
+
+def fingerprint(url):
+    tables = subprocess.run(["psql", url, "-XAtq", "-c", "select tablename from pg_tables where schemaname = 'public' order by 1"],
+                            check=True, capture_output=True, text=True).stdout.split()
+    sql = " union all ".join(f"select '{table}', md5(coalesce(string_agg(t::text, ',' order by t::text), '')) from {table} t"
+                             for table in tables)
+    answer = subprocess.run(["psql", url, "-XAtq", "-c", sql], check=True, capture_output=True, text=True).stdout
+    return dict(line.split("|", 1) for line in answer.splitlines())
+
+
+@unittest.skipUnless(os.environ.get("WM_CUTOVER_TOOL") and os.environ.get("WM_CUTOVER_SERVER") and os.environ.get("DATABASE_URL"),
+                     "a local stack needs WM_CUTOVER_TOOL, WM_CUTOVER_SERVER and a maintenance DATABASE_URL")
+class CutoverOnALocalStackTest(unittest.TestCase):
+    maxDiff = None
+
+    def setUp(self):
+        self.stage = Stage(self, "--stack-docker-shim")
+        self.network = "roadmap-cutover-" + RUN
+        subprocess.run(["docker", "network", "create", self.network], check=True, capture_output=True)
+        self.addCleanup(subprocess.run, ["docker", "network", "rm", self.network], capture_output=True)
+        forward = subprocess.run(["docker", "run", "-d", "--network", self.network, "--network-alias", "server",
+                                  "--add-host", "host.docker.internal:host-gateway", "caddy:2", "caddy", "reverse-proxy",
+                                  "--from", ":8080", "--to", f"host.docker.internal:{SERVER_PORT}"],
+                                 check=True, capture_output=True, text=True).stdout.strip()
+        self.addCleanup(subprocess.run, ["docker", "rm", "-f", forward], capture_output=True)
+        edge = subprocess.run(["docker", "run", "-d", "--network", self.network, "-p", "127.0.0.1::443",
+                               "-e", "DOMAIN_APP=app.localhost", "-e", "DOMAIN_API=api.localhost", "-e", "ACME_EMAIL=ops@example.invalid",
+                               "-e", "CF_IPS=0.0.0.0/0 ::/0", "-v", f"{REPOSITORY / 'backend/deploy/Caddyfile'}:/etc/caddy/Caddyfile:ro",
+                               "-v", f"{self.stage.windmill / 'web'}:/srv/windmill-web:ro",
+                               "-v", f"{self.stage.windmill / 'maintenance'}:/srv/windmill-maintenance:ro", "caddy:2"],
+                              check=True, capture_output=True, text=True).stdout.strip()
+        self.addCleanup(subprocess.run, ["docker", "rm", "-f", edge], capture_output=True)
+        self.stage.environment["WM_EDGE_PORT"] = subprocess.run(["docker", "port", edge, "443/tcp"], check=True, capture_output=True,
+                                                                text=True).stdout.splitlines()[0].rsplit(":", 1)[1]
+        (self.stage.home / "stack.json").write_text(json.dumps({"edge": edge, "serverLog": str(self.stage.root / "server.log"),
+                                                                "probeLog": str(self.stage.root / "probe.log")}))
+        self.addCleanup(self.stop_server)
+        for name in ("windmill", "windmill_restore", "windmill_roadmap_probe", f"windmill_cutover_{RUN.replace('-', '_')}"):
+            self.addCleanup(self.psql, os.environ["DATABASE_URL"], f'drop database if exists "{stack_database(name)}" with (force)')
+
+    def psql(self, url, sql):
+        return subprocess.run(["psql", url, "-XAtq", "-v", "ON_ERROR_STOP=1", "-c", sql], check=True, capture_output=True,
+                              text=True).stdout.strip()
+
+    def stop_server(self):
+        os.environ["WM_HOST_HOME"] = str(self.stage.home)
+        stack_docker(["compose", "stop", "server"])
+        stack_docker(["rm", "-f", f"windmill-roadmap-probe-{RUN}"])
+
+    def seed(self, sql=""):
+        self.psql(os.environ["DATABASE_URL"], f'drop database if exists "{stack_database("windmill")}" with (force)')
+        self.psql(os.environ["DATABASE_URL"], f'create database "{stack_database("windmill")}" template template0 encoding \'UTF8\'')
+        schema, fixture = REPOSITORY / "backend/db/schema.sql", REPOSITORY / "backend/test/platform/infra/roadmap_adopt_fixture.sql"
+        for file in (schema, fixture):
+            subprocess.run(["psql", stack_url("windmill"), "-Xq", "-v", "ON_ERROR_STOP=1", "-f", str(file)], check=True, capture_output=True)
+        if sql:
+            self.psql(stack_url("windmill"), sql)
+        # As every deploy has: the schema applied again over the rows, so a restore's own application of it changes none.
+        subprocess.run(["psql", stack_url("windmill"), "-Xq", "-v", "ON_ERROR_STOP=1", "-f", str(schema)], check=True, capture_output=True)
+        os.environ["WM_HOST_HOME"] = str(self.stage.home)
+        stack_docker(["compose", "up", "-d", "--no-deps", "--no-recreate", "--pull", "never", "server"])
+
+    def adopt_again(self):
+        os.environ["WM_HOST_HOME"] = str(self.stage.home)
+        stack_docker(["compose", "stop", "server"])
+        with tempfile.TemporaryDirectory() as record:
+            expected = Path(record) / "expected-ownerless"
+            expected.write_text(EXPECTED_OWNERLESS)
+            return subprocess.run([os.environ["WM_CUTOVER_TOOL"], "all"], capture_output=True, text=True, timeout=600,
+                                  env={"PATH": os.environ["PATH"], "DATABASE_URL": stack_url("windmill"), "SENTRY_DSN": "",
+                                       "ROADMAP_ADOPTION_PRIVATE_DIR": str(Path(record) / "record"),
+                                       "ROADMAP_ADOPTION_EXPECTED_OWNERLESS": str(expected)})
+
+    def test_the_cutover_moves_the_fixture_through_every_stage_and_a_second_run_changes_nothing(self):
+        self.seed()
+        started = time.monotonic()
+        outcomes, log = self.stage.job().run()
+        print(f"\ncutover on the local stack: {time.monotonic() - started:.1f} s", file=sys.stderr)
+        for label, code, output in log:
+            print(f"--- {label} (exit {code})\n{output}", end="", file=sys.stderr)
+        self.assertEqual({step: outcome for step, outcome in outcomes.items() if outcome != "success" and step not in ("smoke", "lift")},
+                         {"Restore the backup": "skipped", "Return the site as it was": "skipped"})
+        verdicts = [json.loads(line) for line in printed(log, "Adopt roadmap's rows and check every digest").splitlines() if line.startswith("{")]
+        self.assertEqual([(report["stage"], report["verdict"]) for report in verdicts],
+                         list(zip(STAGES, ["unfolded", "asked", "ready", "adopted", "present", "same", "same", "summed"])))
+        names, record = self.stage.sealed()
+        self.assertEqual((names, sorted(record)), (["key.pem", "record.tar.enc"], ["backup", *[f"record/{name}" for name in (
+            "after.jsonl", "before.jsonl", "differences.jsonl", "digests.jsonl", "read-models-before.jsonl", "read-models.jsonl",
+            "stops.jsonl", "tool.stderr")]]))
+        self.stage.assert_nothing_private(self, log, ["PRIVATE_SSH_KEY_CANARY", "Learn the cello", "Practise daily", "owner@example.com",
+                                                      "aaaaaaaa-0000-4000-8000-00000000000a", "t_a000000000000001", "t_c000000000000001"])
+        adopted = fingerprint(stack_url("windmill"))
+        again = self.adopt_again()
+        reports = [json.loads(line) for line in again.stdout.splitlines()]
+        self.assertEqual((again.returncode, [(report["stage"], report["verdict"]) for report in reports]),
+                         (0, list(zip(STAGES, ["unfolded", "asked", "ready", "unchanged", "present", "same", "same", "summed"]))))
+        self.assertEqual(fingerprint(stack_url("windmill")), adopted)
+        # The stack's walk and the pause's lift, last: they need the build that answers the retired routes 410 (§8.3).
+        self.assertEqual((outcomes["smoke"], outcomes["lift"]), ("success", "success"), printed(log, "Walk the stack"))
+
+    def test_a_stop_restores_the_backup_and_returns_the_site_as_it_was(self):
+        self.seed("insert into tree_nodes (tree_id, node_id, created_hlc, status, status_hlc, present) values "
+                  "('t_a000000000000001', 'odd', '1740000000000:90:r_owner', 'banana', '1740000000000:90:r_owner', true)")
+        os.environ["WM_HOST_HOME"] = str(self.stage.home)
+        stack_docker(["compose", "stop", "server"])
+        before = fingerprint(stack_url("windmill"))
+        stack_docker(["compose", "up", "-d", "--no-deps", "--no-recreate", "--pull", "never", "server"])
+        outcomes, log = self.stage.job().run()
+        for label, code, output in log:
+            print(f"--- {label} (exit {code})\n{output}", end="", file=sys.stderr)
+        self.assertEqual({step: outcomes[step] for step in ("adopt", "start", "Restore the backup", "Return the site as it was", "seal")},
+                         {"adopt": "failure", "start": "skipped", "Restore the backup": "success", "Return the site as it was": "skipped",
+                          "seal": "success"})
+        verdicts = [json.loads(line) for line in printed(log, "Adopt roadmap's rows and check every digest").splitlines() if line.startswith("{")]
+        self.assertEqual([(report["stage"], report["verdict"], report["counts"].get("stop")) for report in verdicts],
+                         [("unfold", "unfolded", None), ("read-models-before", "asked", None), ("before", "stops", {"unknownStepStatus": 1})])
+        self.assertEqual(self.stage.sealed()[1]["record/stops.jsonl"], '{"reason":"stop.unknownStepStatus","roadmap":"t_a000000000000001"}\n')
+        stack_docker(["compose", "stop", "server"])
+        self.assertEqual(fingerprint(stack_url("windmill")), before)
+        moved = stack_url(f"windmill_cutover_{RUN.replace('-', '_')}")
+        self.assertNotEqual(fingerprint(moved), before)
+        self.assertEqual(((self.stage.windmill / "roadmap-engine.env").read_text(), (self.stage.windmill / "maintenance/on").exists()),
+                         ("", False))
+
+
+# The connection to the host. WM_SSH_DROP=<stage>:<before|after> loses it at that host stage, before it runs or after.
+def ssh_shim(arguments):
+    index = 0
+    while arguments[index] in ("-i", "-p", "-o"):
+        index += 2
+    command = " ".join(arguments[index + 1:])
+    with open(os.environ["WM_SSH_CALLS"], "a") as calls:
+        calls.write(command + "\n")
+    lost, _, when = os.environ.get("WM_SSH_DROP", "").partition(":")
+    dropped = bool(lost) and f"roadmap-cutover.sh {lost} " in command
+    if dropped and when == "before":
+        return 255
+    home = os.environ["WM_HOST_HOME"]
+    code = subprocess.run(["bash", "-c", command], cwd=home,
+                          env={**os.environ, "HOME": home, "PATH": os.environ["WM_HOST_BIN"] + os.pathsep + os.environ["PATH"]}).returncode
+    return 255 if dropped else code
+
+
+# GitHub's run list: no run anywhere, but the one WM_GH_BUSY names as "<workflow> <status>".
+def gh_shim(arguments):
+    line = " ".join(arguments)
+    with open(os.environ["WM_GH_CALLS"], "a") as calls:
+        calls.write(line + "\n")
+    workflow, _, status = os.environ.get("WM_GH_BUSY", "").partition(" ")
+    print(1 if workflow and f" --workflow {workflow} --status {status} " in f" {line} " else 0)
+    return 0
+
+
+def rsync_shim(arguments):
+    source, target = Path(arguments[-2]), Path(os.environ["WM_HOST_HOME"]) / arguments[-1].split(":", 1)[1]
+    for path in target.iterdir():
+        if not re.fullmatch(r"[0-9a-f]{32}\.txt", path.name):
+            shutil.rmtree(path) if path.is_dir() else path.unlink()
+    shutil.copytree(source, target, dirs_exist_ok=True)
+    return 0
+
+
+def curl_shim(arguments):
+    url = arguments[-1]
+    if os.environ.get("WM_EDGE_PORT"):
+        port = os.environ["WM_EDGE_PORT"]
+        address = url.replace("https://app.localhost", f"https://app.localhost:{port}")
+        return subprocess.run([os.environ["WM_CURL"], "-k", "--resolve", f"app.localhost:{port}:127.0.0.1", "-H", "CF-Connecting-IP: 203.0.113.7",
+                               *arguments[:-1], address]).returncode
+    home = Path(os.environ["WM_HOST_HOME"])
+    running = json.loads((home / "state.json").read_text())["server"]["running"]
+    print(503 if (home / "windmill/maintenance/on").exists() else 200 if running else 502, end="")
+    return 0
+
+
+if __name__ == "__main__":
+    shims = {"--model-docker-shim": model_docker, "--stack-docker-shim": stack_docker, "--ssh-shim": ssh_shim,
+             "--rsync-shim": rsync_shim, "--curl-shim": curl_shim, "--gh-shim": gh_shim}
+    if sys.argv[1:2] and sys.argv[1] in shims:
+        sys.exit(shims[sys.argv[1]](sys.argv[2:]))
+    unittest.main()

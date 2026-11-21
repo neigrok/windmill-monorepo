@@ -3,12 +3,19 @@ package works.windmill.sync.engine
 import works.windmill.sync.core.*
 
 private fun Entry.queued() = state == "held" || state == "ready"
+private fun ReplicaState.laterUnacked(entry: Entry) = entries().filter { it.order > entry.order && (it.queued() || it.state == "sent") }
 
-private data class DeltaSlot(val entry: Entry, val prediction: Boolean, val index: Int) {
+// One delta of an entry where it is held: in the intent, the legacy prediction, or an opted command's projection `group`.
+private data class DeltaSlot(val entry: Entry, val prediction: Boolean, val index: Int, val group: Int? = null) {
+    val scope: ScopeRef get() = group?.let { entry.predictions!![it].scope } ?: entry.scope
     var delta: Json
-        get() = if (prediction) entry.json.items("predict")[index] else entry.json.member("intent").items("d")[index]
+        get() = if (group != null) entry.predictions!![group].deltas[index].json else if (prediction) entry.json.items("predict")[index] else entry.json.member("intent").items("d")[index]
         set(value) {
-            if (prediction) {
+            if (group != null) {
+                entry.predictions = entry.predictions!!.mapIndexed { at, projection ->
+                    if (at != group) projection else projection.copy(deltas = projection.deltas.toMutableList().apply { this[index] = Delta(value) })
+                }
+            } else if (prediction) {
                 val values = entry.json.items("predict").toMutableList().apply { this[index] = value }
                 entry.json = entry.json.with("predict" to Json.Arr(values))
             } else {
@@ -20,8 +27,9 @@ private data class DeltaSlot(val entry: Entry, val prediction: Boolean, val inde
 }
 
 private fun Entry.slots(predictions: Boolean = true): List<DeltaSlot> =
-    json.member("intent").items("d").indices.map { DeltaSlot(this, false, it) } +
-        if (predictions) json.items("predict").indices.map { DeltaSlot(this, true, it) } else emptyList()
+    json.member("intent").items("d").indices.map { DeltaSlot(this, false, it) } + if (!predictions) emptyList() else
+        this.predictions?.flatMapIndexed { group, projection -> projection.deltas.indices.map { DeltaSlot(this, true, it, group) } }
+            ?: json.items("predict").indices.map { DeltaSlot(this, true, it) }
 
 private data class NamedRegister(val slot: DeltaSlot, val name: String)
 
@@ -33,55 +41,54 @@ private fun ownRegisters(entry: Entry): List<NamedRegister> = entry.slots(false)
     }
 }
 
-// Borns, carried lives and guards follow their source in later unacked entries, including sent entries.
-private fun moveRegister(replica: ReplicaState, named: NamedRegister, stamp: Stamp) {
+// Borns, carried lives and guards follow their source in later unacked entries of the same scope, sent ones included. An opted command's
+// registers, and every move a receipt makes, reach queued entries only: a sent entry is the server's to answer.
+private fun moveRegister(replica: ReplicaState, named: NamedRegister, stamp: Stamp, queuedOnly: Boolean = false) {
     val slot = named.slot
     var delta = slot.delta
     val current = if (named.name == "life") delta["life"] else delta["f"]?.get(named.name)
     if (current == null || current.arr()[1] == stamp.json) return
-    val old = current.arr()[1]
-    val creates = named.name == "life" && current.arr()[0] == Json.of("alive") && delta["born"] == old
+    val old = Stamp(current.arr()[1].str())
+    val creates = named.name == "life" && current.arr()[0] == Json.of("alive") && delta["born"] == old.json
     val moved = Json.array(current.arr()[0], stamp.json)
     delta = if (named.name == "life") delta.with("life" to moved, "born" to if (creates) stamp.json else delta["born"])
         else delta.with("f" to delta.member("f").with(named.name to moved))
     slot.delta = delta
-    for (later in replica.entries().filter { it.order > slot.entry.order && (it.queued() || it.state == "sent") }) {
-        if (named.name == "life") {
-            for (other in later.slots()) {
-                var following = other.delta
-                if (following.recordKey != delta.recordKey) continue
-                if (creates && following["born"] == old) following = following.with("born" to stamp.json)
-                following["life"]?.arr()?.let { life ->
-                    if (life[1] == old) following = following.with("life" to Json.array(life[0], stamp.json))
-                }
-                other.delta = following
-            }
-        } else {
+    followRegister(replica, slot.entry, slot.scope, delta.recordKey, named.name, old, stamp, creates, queuedOnly || slot.entry.predictions != null)
+}
+
+// What follows a record's register from `old` to `stamp` in the entries after `source`, in `scope`: the borns of a record it creates and
+// the lives that carry it, or the guards on a field.
+private fun followRegister(replica: ReplicaState, source: Entry, scope: ScopeRef, key: RecordKey, register: String, old: Stamp, stamp: Stamp,
+    createsRecord: Boolean = false, queuedOnly: Boolean = false) {
+    for (later in replica.laterUnacked(source).filter { !queuedOnly || it.queued() }) {
+        if (register == "life") for (other in later.slots().filter { it.scope == scope && it.delta.recordKey == key }) {
+            var following = other.delta
+            if (createsRecord && following["born"] == old.json) following = following.with("born" to stamp.json)
+            following["life"]?.arr()?.let { life -> if (life[1] == old.json) following = following.with("life" to Json.array(life[0], stamp.json)) }
+            if (following != other.delta) other.delta = following
+        } else if (later.scope == scope) {
             val intent = later.json.member("intent")
             val guards = intent.items("guard")
-            if (guards.isEmpty()) continue
-            later.json = later.json.with("intent" to intent.with("guard" to Json.Arr(guards.map { guard ->
-                if (guard.recordKey == delta.recordKey && guard.member("field").str() == named.name && guard["stamp"] == old)
-                    guard.with("stamp" to stamp.json) else guard
-            })))
+            val followed = guards.map { if (it.recordKey == key && it.member("field").str() == register && it["stamp"] == old.json) it.with("stamp" to stamp.json) else it }
+            if (followed != guards) later.json = later.json.with("intent" to intent.with("guard" to Json.Arr(followed)))
         }
     }
 }
 
-private data class WrittenLife(val key: RecordKey, val stamp: Stamp)
+private data class WrittenLife(val scope: ScopeRef, val key: RecordKey, val stamp: Stamp)
 private data class Carried(val slot: DeltaSlot, val born: Boolean)
 
+// The borns and carried lives of queued entries above admittedHigh that no unacked entry wrote, by a delta or a prediction in that scope.
 private fun unsourced(replica: ReplicaState): List<Carried> {
     val admitted = Stamp(replica.meta.member("admittedHigh").str())
     val written = mutableSetOf<WrittenLife>()
     for (entry in replica.entries().filter { it.queued() || it.state == "sent" }) {
         for (named in ownRegisters(entry).filter { it.name == "life" }) {
             val delta = named.slot.delta
-            written.add(WrittenLife(delta.recordKey, Stamp(delta.member("life").arr()[1].str())))
+            written.add(WrittenLife(entry.scope, delta.recordKey, Stamp(delta.member("life").arr()[1].str())))
         }
-        for (slot in entry.slots().filter { it.prediction }) slot.delta["life"]?.arr()?.let {
-            written.add(WrittenLife(slot.delta.recordKey, Stamp(it[1].str())))
-        }
+        for ((scope, deltas) in entry.predicted) for (delta in deltas) delta.lattice.life?.let { written.add(WrittenLife(scope, delta.key, it.stamp)) }
     }
     return buildList {
         for (entry in replica.entries().filter { it.queued() }) for (slot in entry.slots(false)) {
@@ -89,8 +96,8 @@ private fun unsourced(replica: ReplicaState): List<Carried> {
             val life = delta["life"]?.let(::Life)
             val born = delta["born"]?.str()?.let(::Stamp)
             val creates = life?.isAlive == true && life.stamp == born
-            if (born != null && !creates && born > admitted && WrittenLife(delta.recordKey, born) !in written) add(Carried(slot, true))
-            if (life != null && life.stamp < entry.stamp && life.stamp > admitted && WrittenLife(delta.recordKey, life.stamp) !in written) add(Carried(slot, false))
+            if (born != null && !creates && born > admitted && WrittenLife(entry.scope, delta.recordKey, born) !in written) add(Carried(slot, true))
+            if (life != null && life.stamp < entry.stamp && life.stamp > admitted && WrittenLife(entry.scope, delta.recordKey, life.stamp) !in written) add(Carried(slot, false))
         }
     }
 }
@@ -136,26 +143,32 @@ private fun recoverBase(replica: ReplicaState, refused: Entry, ended: MutableLis
     replica.move(refused, "recover", ended)
 }
 
+// An entry's content as its notice keeps it: a snapshot no later recovery changes, an opted command's projections whole.
 private fun contentOf(entry: Entry): Json = Json.Obj(buildList {
     val intent = entry.json.member("intent")
     if (intent.items("d").isNotEmpty()) add("d" to intent.member("d"))
     intent["cmd"]?.let { add("cmd" to it) }
+    entry.predictions?.let { add("predictions" to Json.Arr(it.map(Projection::json))) }
 })
 
+// §7.7 step 3: a refused source's dependents fold into `origin`'s notice. Once a scoped command is on either side, each folded part names
+// the scope it came from, so the notice keeps every scope's content.
 private fun Engine.foldDependents(replica: ReplicaState, source: Entry, origin: String): List<Json> {
     val dependents = Dependents(registry)
-    dependents.absorb(source.scope, source.deltas, source.stamp)
+    dependents.absorb(source)
     return buildList {
         for (entry in replica.entries().filter { it.order > source.order }) {
             val part = dependents.of(entry)
             if (!part.any) continue
+            val scoped = source.predictions != null || entry.predictions != null
+            fun placed(content: Json) = if (scoped) content.with("scope" to entry.scope.json) else content
             if (entry.state == "sent") {
-                add(contentOf(entry)); entry.json = entry.json.with("orphanOf" to Json.of(origin)); continue
+                add(placed(contentOf(entry))); entry.json = entry.json.with("orphanOf" to Json.of(origin)); continue
             }
             if (!entry.queued()) continue
             dependents.absorb(entry, part)
             val original = entry.intent
-            add(removeDependent(entry, part))
+            add(placed(removeDependent(entry, part)))
             if (part.commandGone || entry.intent.deltas.isEmpty() && entry.intent.command == null)
                 applyIntentResultDeviceWrites(replica, original, entry.gestureId,
                     PushResult(original.n ?: 0, PushResult.Verdict.Refused(RefusalCode.parentDead)),
@@ -175,6 +188,7 @@ internal fun Engine.refuse(replica: ReplicaState, entry: Entry, event: String, c
     val orphan = entry.json["orphanOf"]?.str()
     replica.move(entry, event, ended, orphan)
     val folded = foldDependents(replica, entry, orphan ?: entry.id)
+    replica.settleEnded(if (orphan != null) "refused" else code)
     if (orphan != null) {
         if (folded.isEmpty()) return
         val index = replica.notices.indexOfFirst { it.member("id").str() == "notice:$orphan" }
@@ -200,169 +214,297 @@ internal fun Engine.onRefused(replica: ReplicaState, entry: Entry, result: Json,
     }
 }
 
-private fun Registry.rewriteKey(key: RecordKey, map: WriteMapEntry): RecordKey {
-    val from = map.from ?: return key
-    if (key == RecordKey(map.key.type, from)) return map.key
-    val definition = type(key.type)?.json?.get("key") ?: return key
-    if (definition["ref"]?.str() == map.key.type && key.id == from) return RecordKey(key.type, map.key.id)
-    val parts = definition["tuple"]?.arr() ?: return key
-    val ids = key.id.parts ?: return key
-    val joined = map.key.id.string ?: return key
-    return RecordKey(key.type, RecordID(ids.mapIndexed { i, id -> if (parts[i].member("ref").str() == map.key.type && RecordID(id) == from) joined else id }))
+// A tree or overlay scope under the identity a write map gave its governing record: a fresh mapping of that record, or one that
+// rebases `targets`, a replay's earlier mapping of it.
+internal fun Registry.remappedScope(scope: ScopeRef, write: List<WriteMapEntry>, targets: List<Json> = emptyList()): ScopeRef {
+    val governing = governingType ?: return scope
+    val tree = scope.tree ?: return scope
+    val mapping = write.firstOrNull { item -> item.key.type == governing.name && (item.from == RecordID(tree) ||
+        targets.any { it["t"] == Json.of(item.key.type) && it["from"] == (item.from ?: item.key.id).json && it["id"] == Json.of(tree) }) } ?: return scope
+    val id = mapping.key.id.string ?: return scope
+    return if (scope.kind is ScopeRef.Kind.Tree) ScopeRef.tree(id) else ScopeRef.overlay(id)
 }
 
-private fun Registry.rewriteDelta(delta: Json, map: WriteMapEntry): Json {
-    val key = rewriteKey(delta.recordKey, map)
-    val definition = type(key.type)
-    val fields = delta.fields("f").map { (name, register) ->
-        name to if (definition?.fields?.get(name)?.ref == map.key.type && register.arr()[0] == map.from?.json)
-            Json.array(map.key.id.json, register.arr()[1]) else register
+// §7.7 write map and E-8: one entry renamed by one logical map, atomically. Every delta, guard, receipt row, argument and base text key is
+// renamed by its compiled leaves, global mappings first and then scoped ones in the scopes the governor mappings leave; then
+// its ScopeRefs follow the governors. `replayed` re-address a retained command (step 0): an argument naming its own source
+// moves to the record that source now resolves to, even a proposed creation. `predictionOnly` renames an opted command's
+// own projections.
+private fun Registry.rewriteEntry(entry: Entry, map: RecordMap, predictionOnly: Boolean = false, replayed: List<Mapping> = emptyList()) {
+    val scope = entry.scope
+    val moves = mutableMapOf<RecordKey, RecordID>()
+    if (!predictionOnly) for (mapping in replayed) {
+        if (!isGlobal(mapping.type) && map.scope(mapping.scope!!) != map.scope(scope)) continue
+        for (target in entry.json.items("writeTargets")) if (target["t"] == Json.of(mapping.type) && target["id"] == mapping.from.json)
+            moves[RecordKey(mapping.type, RecordID(target.member("from")))] = mapping.id
     }
-    return delta.with("id" to key.id.json, "f" to fields.takeIf { it.isNotEmpty() }?.let { Json.Obj(it) })
-}
-
-private fun Registry.rewriteEntry(entry: Entry, map: WriteMapEntry, replay: Boolean = false) {
     val command = entry.json.member("intent")["cmd"]
-    val targets = entry.json["writeTargets"]
-    if (replay && command != null && targets != null) {
-        var args = command.member("args")
-        val definitions = this.command(command.member("name").str())?.args.orEmpty()
-        val rebound = targets.arr().map { target ->
-            if (target["t"] != Json.of(map.key.type) || target["id"] != map.from?.json) target else {
-                val references = definitions.filter { (name, arg) -> arg.ref == map.key.type && args[name] == target["from"] }.keys
-                for (name in references) args = args.with(name to map.key.id.json)
-                if (references.isEmpty()) target else target.with("from" to map.key.id.json)
-            }
+    val named = if (predictionOnly || command == null) emptyList()
+        else references.ofCommand(scope, command) + references.ofCommand(scope, command, Leaf.Role.creation)
+    for (slot in entry.slots().filter { !predictionOnly || it.prediction }) slot.delta = references.remapRecord(slot.scope, slot.delta, map)
+    entry.acceptedEffects = entry.acceptedEffects.map { effect -> effect.copy(rows = effect.rows.map { EffectRow(references.remapRecord(effect.scope, it.json, map)) }) }
+    if (!predictionOnly) {
+        var intent = entry.json.member("intent")
+        intent = intent.with("guard" to intent["guard"]?.let { guards -> Json.Arr(guards.arr().map { references.remapRecord(scope, it, map) }) },
+            "cmd" to command?.let { references.remapCommand(scope, it, map, moves) })
+        entry.json = entry.json.with("intent" to intent)
+        fun renamed(type: String, id: Json): Json = RecordKey(type, RecordID(id)).let { key ->
+            (if (isGlobal(type)) map.globalTarget(key) else map.scopedTarget(map.scope(scope), key))?.json ?: id
         }
-        entry.json = entry.json.with("writeTargets" to Json.Arr(rebound),
-            "intent" to entry.json.member("intent").with("cmd" to command.with("args" to args)))
+        entry.json["writeTargets"]?.let { targets -> entry.json = entry.json.with("writeTargets" to Json.Arr(targets.arr().map { target ->
+            val type = target.member("t").str(); val from = target.member("from")
+            val moved = moves[RecordKey(type, RecordID(from))]
+            val argued = moved != null && named.any { it.key == RecordKey(type, RecordID(from)) }
+            target.with("from" to if (argued) moved!!.json else renamed(type, from), "id" to renamed(type, target.member("id")))
+        })) }
+        entry.json.fields("baseTexts").takeIf { it.isNotEmpty() }?.let { bases -> entry.json = entry.json.with("baseTexts" to Json.Obj(bases.map { (text, value) ->
+            val (type, id, field) = Json.parse(text).arr()
+            val record = references.remapRecord(scope, Json.objectOf("t" to type, "id" to id), map)
+            Json.array(type, record.member("id"), field).jcs to value
+        }.distinctBy { it.first })) }
     }
-    for (slot in entry.slots()) slot.delta = rewriteDelta(slot.delta, map)
-    var intent = entry.json.member("intent")
-    val guards = intent.items("guard")
-    if (guards.isNotEmpty()) intent = intent.with("guard" to Json.Arr(guards.map { it.with("id" to rewriteKey(it.recordKey, map).id.json) }))
-    intent["cmd"]?.let { command ->
-        var args = command.member("args")
-        for ((name, arg) in this.command(command.member("name").str())?.args ?: emptyMap())
-            if (arg.ref == map.key.type && args[name] == map.from?.json) args = args.with(name to map.key.id.json)
-        intent = intent.with("cmd" to command.with("args" to args))
+    if (!map.movesScopes) return
+    if (!predictionOnly) {
+        val moved = map.scope(scope)
+        entry.json = entry.json.with("scope" to moved.json, "intent" to entry.json.member("intent").with("scope" to moved.json))
     }
-    entry.json = entry.json.with("intent" to intent)
-    entry.json["writeTargets"]?.let { targets ->
-        entry.json = entry.json.with("writeTargets" to Json.Arr(targets.arr().map { target ->
-            if (target["t"] != Json.of(map.key.type)) target else target.with(
-                "from" to if (target["from"] == map.from?.json) map.key.id.json else target["from"],
-                "id" to if (target["id"] == map.from?.json) map.key.id.json else target["id"])
-        }))
-    }
-    val bases = entry.json.fields("baseTexts")
-    if (bases.isNotEmpty()) {
-        val rewritten = linkedMapOf<String, Json>()
-        for ((text, value) in bases) {
-            val parts = Json.parse(text).arr()
-            val key = rewriteKey(RecordKey(parts[0].str(), RecordID(parts[1])), map)
-            rewritten.putIfAbsent(Json.array(Json.of(key.type), key.id.json, parts[2]).jcs, value)
-        }
-        entry.json = entry.json.with("baseTexts" to Json.Obj(rewritten.toList()))
-    }
+    entry.predictions = entry.predictions?.map { it.copy(scope = map.scope(it.scope)) }
+    entry.acceptedEffects = entry.acceptedEffects.map { it.copy(scope = map.scope(it.scope)) }
+    entry.mergePredictions()
 }
 
+// A retained command's targets, rebuilt after an epoch change: each predicted record its one proposed creation of that type
+// names, or else its one argument of that type.
 internal fun Engine.recoverWriteTargets(command: Entry) {
-    val intent = command.intent.command ?: return
+    val intent = command.json.member("intent")["cmd"] ?: return
     if (command.json["writeTargets"] != null) return
-    val definition = registry.command(intent.name) ?: return
-    val targets = mutableListOf<Json>()
-    for ((type, predictions) in command.predict.groupBy { it.key.type }) {
-        val references = definition.args.values.filter { it.ref == type && intent.args[it.name] != null }
-        if (references.size == 1 && predictions.size == 1) {
-            val prediction = predictions.single()
-            targets.add(Json.objectOf("t" to Json.of(type), "from" to intent.args.member(references.single().name),
-                "id" to prediction.key.id.json).with("born" to prediction.lattice.born?.json))
-        }
+    val proposed = registry.references.ofCommand(command.scope, intent, Leaf.Role.creation)
+    val named = registry.references.ofCommand(command.scope, intent)
+    val targets = command.predict.groupBy { it.key.type }.mapNotNull { (type, predictions) ->
+        val sources = proposed.filter { it.key.type == type }.ifEmpty { named.filter { it.key.type == type } }
+        val prediction = predictions.singleOrNull()?.takeIf { sources.size == 1 } ?: return@mapNotNull null
+        Json.objectOf("t" to Json.of(type), "from" to sources.single().key.id.json, "id" to prediction.key.id.json).with("born" to prediction.lattice.born?.json)
     }
     command.json = command.json.with("writeTargets" to Json.Arr(targets))
 }
 
-internal fun Engine.applyWriteMap(replica: ReplicaState, command: Entry, write: List<Json>) {
-    val maps = write.map(::WriteMapEntry)
-    val retained = command.json["writeTargets"] != null
-    val targets = command.json.items("writeTargets").toMutableList()
-    for (map in maps) {
+private fun Engine.rewriteDeviceValues(replica: ReplicaState, command: Entry, mappings: List<Mapping>) {
+    val product = registry.product(command.scope) ?: return
+    for (mapping in mappings.filter { it.from != it.id }) {
+        val rows = replica.device[product] ?: return
+        replica.device[product] = Json.Obj(rows.obj().map { (key, value) -> key to rewriteDeviceValue(product, key, value, mapping.type, mapping.from, mapping.id) })
+    }
+}
+
+// One write map item and the retained target of its source, if a replay already mapped it.
+private data class WriteItem(val map: WriteMapEntry, val source: Json, val at: Int, val previous: Json?) {
+    val previousId: RecordID? get() = previous?.member("id")?.let(::RecordID)
+}
+private fun writeItems(command: Entry, write: List<Json>): List<WriteItem> {
+    val targets = command.json.items("writeTargets")
+    return write.map(::WriteMapEntry).map { map ->
         val source = (map.from ?: map.key.id).json
         val at = targets.indexOfFirst { it["t"] == Json.of(map.key.type) && it["from"] == source }
-        val prior = targets.getOrNull(at)
-        if (prior != null) {
-            val previous = RecordID(prior.member("id"))
-            val replay = map.copy(from = previous)
-            for (entry in replica.entries().filter { it.order > command.order && it.queued() }) registry.rewriteEntry(entry, replay, replay = true)
-            if (previous != map.key.id) {
-                for (slot in command.slots().filter { it.prediction }) slot.delta = registry.rewriteDelta(slot.delta, replay)
-                registry.product(command.scope)?.let { product ->
-                    replica.device[product]?.let { rows -> replica.device[product] = Json.Obj(rows.obj().map { (key, value) ->
-                        key to rewriteDeviceValue(product, key, value, map.key.type, previous, map.key.id)
-                    }) }
-                }
-            }
-            val born = prior["born"]
-            val nextBorn = map.born?.json
-            if (born != null && nextBorn != null) {
-                for (entry in replica.entries().filter { it.order > command.order && (it.queued() || it.state == "sent") }) for (slot in entry.slots()) {
-                    var delta = slot.delta
-                    if (delta.recordKey != map.key) continue
-                    if (delta["born"] == born) delta = delta.with("born" to nextBorn)
-                    delta["life"]?.arr()?.let { life ->
-                        if (life[1] == born) delta = delta.with("life" to Json.array(life[0], nextBorn))
-                    }
-                    slot.delta = delta
-                }
-            }
-        } else if (retained && map.born != null) {
-            val predicted = command.predict.filter { it.key.type == map.key.type }
-            for (entry in replica.entries().filter { it.order > command.order && it.queued() }) {
-                if (entry !in replica.outbox) continue
-                val unmapped = entry.intent.deltas.any { delta -> delta.key.type == map.key.type && delta.removes &&
-                    delta.key.id.json != source && delta.key.id != map.key.id &&
-                    (predicted.isEmpty() || predicted.any { it.key == delta.key }) }
-                if (unmapped) refuse(replica, entry, "target-merged", "target-merged")
-            }
-        }
-        val from = map.from
-        if (prior == null && from != null) {
-            for (entry in replica.entries().filter { it.queued() }) {
-                if (entry !in replica.outbox) continue
-                val deletes = entry.intent.deltas.any { it.key == RecordKey(map.key.type, from) && it.removes }
-                if (deletes) { refuse(replica, entry, "target-merged", "target-merged"); continue }
-                registry.rewriteEntry(entry, map)
-            }
-            for (slot in command.slots().filter { it.prediction }) slot.delta = registry.rewriteDelta(slot.delta, map)
-            registry.product(command.scope)?.let { product ->
-                replica.device[product]?.let { rows -> replica.device[product] = Json.Obj(rows.obj().map { (key, value) ->
-                    key to rewriteDeviceValue(product, key, value, map.key.type, from, map.key.id)
-                }) }
-            }
-        }
-        for (slot in command.slots().filter { it.prediction && it.delta.recordKey == map.key }) {
-            for ((name, stamp) in map.fields) moveRegister(replica, NamedRegister(slot, name), stamp)
-            map.born?.let { moveRegister(replica, NamedRegister(slot, "life"), it) }
-        }
-        val target = Json.objectOf("t" to Json.of(map.key.type), "from" to source, "id" to map.key.id.json)
-            .with("born" to (map.born?.json ?: prior?.get("born")))
-        if (at < 0) targets.add(target) else targets[at] = target
+        WriteItem(map, source, at, targets.getOrNull(at))
     }
-    command.json = command.json.with("writeTargets" to Json.Arr(targets))
+}
+private fun Entry.retarget(items: List<WriteItem>) {
+    val targets = json.items("writeTargets").toMutableList()
+    for (item in items) {
+        val target = Json.objectOf("t" to Json.of(item.map.key.type), "from" to item.source, "id" to item.map.key.id.json)
+            .with("born" to (item.map.born?.json ?: item.previous?.get("born")))
+        if (item.at < 0) targets.add(target) else targets[item.at] = target
+    }
+    json = json.with("writeTargets" to Json.Arr(targets))
+}
+
+// §7.7 write map: an ok result's map applies in the result's transaction. Its target-merged refusals are read first, from the
+// queue as it stood; then the map renames every queued entry at once; then each mapped record's born, predicted registers and
+// retained target follow. An opted command's restamps come from its receipt instead.
+internal fun Engine.applyWriteMap(replica: ReplicaState, command: Entry, write: List<Json>) {
+    if (command.predictions != null) { applyScopedWriteMap(replica, command, write); return }
+    val retained = command.json["writeTargets"] != null
+    val items = writeItems(command, write)
+    for (item in items) {
+        if (item.previous != null || !retained || item.map.born == null) continue
+        val predicted = command.predict.filter { it.key.type == item.map.key.type }
+        for (entry in replica.laterUnacked(command).filter { it.queued() }) {
+            if (entry !in replica.outbox) continue
+            val unmapped = entry.intent.deltas.any { delta -> delta.key.type == item.map.key.type && delta.removes &&
+                delta.key.id.json != item.source && delta.key.id != item.map.key.id && (predicted.isEmpty() || predicted.any { it.key == delta.key }) }
+            if (unmapped) refuse(replica, entry, "target-merged", "target-merged")
+        }
+    }
+    for (item in items) {
+        val from = item.map.from ?: continue
+        if (item.previous != null) continue
+        for (entry in replica.entries().filter { it.queued() }) {
+            if (entry !in replica.outbox) continue
+            if (entry.intent.deltas.any { it.key == RecordKey(item.map.key.type, from) && it.removes }) refuse(replica, entry, "target-merged", "target-merged")
+        }
+    }
+    val joins = items.filter { it.previous == null && it.map.from != null }.map { Mapping(it.map.key.type, it.map.from!!, it.map.key.id, command.scope) }
+    val replayed = items.filter { it.previous != null }.map { Mapping(it.map.key.type, it.previousId!!, it.map.key.id, command.scope) }
+    val later = replica.laterUnacked(command).toSet()
+    for (entry in replica.entries().filter { it.queued() }) {
+        val mappings = if (entry in later) joins + replayed else joins
+        if (mappings.isNotEmpty()) registry.rewriteEntry(entry, RecordMap(registry, mappings), replayed = if (entry in later) replayed else emptyList())
+    }
+    if (joins.isNotEmpty() || replayed.isNotEmpty()) registry.remapJournal(replica, RecordMap(registry, joins + replayed))
+    val own = joins + replayed.filter { it.from != it.id }
+    val ownMap = RecordMap(registry, own)
+    for (slot in command.slots().filter { it.prediction }) slot.delta = registry.references.remapRecord(command.scope, slot.delta, ownMap)
+    rewriteDeviceValues(replica, command, own)
+    for (item in items) {
+        val born = item.previous?.get("born"); val nextBorn = item.map.born?.json
+        if (born != null && nextBorn != null && born != nextBorn) for (entry in replica.laterUnacked(command)) for (slot in entry.slots()) {
+            var delta = slot.delta
+            if (slot.scope != command.scope || delta.recordKey != item.map.key) continue
+            if (delta["born"] == born) delta = delta.with("born" to nextBorn)
+            delta["life"]?.arr()?.let { life -> if (life[1] == born) delta = delta.with("life" to Json.array(life[0], nextBorn)) }
+            slot.delta = delta
+        }
+        for (slot in command.slots().filter { it.prediction && it.delta.recordKey == item.map.key }) {
+            for ((name, stamp) in item.map.fields) moveRegister(replica, NamedRegister(slot, name), stamp)
+            item.map.born?.let { moveRegister(replica, NamedRegister(slot, "life"), it) }
+        }
+    }
+    command.retarget(items)
+    val maps = items.map { it.map }
     val mapped = maps.flatMap { it.stamps }
     observe(replica, mapped)
     raiseAdmittedHigh(replica, mapped)
     val physical = now(replica)
     val clock = Hlc(replica.meta.member("hlc"))
     for (entry in replica.entries().filter { it.queued() }) {
-        val named = entry.slots().flatMap { slot -> maps.filter { it.key == slot.delta.recordKey }.flatMap { map ->
+        val named = entry.slots().filter { it.scope == command.scope }.flatMap { slot -> maps.filter { it.key == slot.delta.recordKey }.flatMap { map ->
             map.fields.keys.filter { it in slot.delta.fields("f") }.map { NamedRegister(slot, it) } +
                 if (map.born != null && slot.delta["life"] != null) listOf(NamedRegister(slot, "life")) else emptyList()
         } }
         if (named.isEmpty()) continue
         val stamp = clock.tick(physical, actor)
         named.forEach { moveRegister(replica, it, stamp) }
+        replica.meta = replica.meta.with("hlcHigh" to maxOf(Stamp(replica.meta.member("hlcHigh").str()), stamp).json)
+    }
+    replica.meta = replica.meta.with("hlc" to clock.json)
+}
+
+// An opted command's write map moves identities only, through the same renaming. Its versions arrive with its receipt.
+private fun Engine.applyScopedWriteMap(replica: ReplicaState, command: Entry, write: List<Json>) {
+    val retained = command.json["writeTargets"] != null
+    val items = writeItems(command, write)
+    for (item in items) {
+        val from = item.previousId ?: RecordID(item.source)
+        for (entry in replica.laterUnacked(command).filter { it.queued() }) {
+            if (entry !in replica.outbox) continue
+            val deletes = entry.scope == command.scope && entry.intent.deltas.any { delta -> delta.key.type == item.map.key.type && delta.removes &&
+                (item.previous == null && item.map.from != null && delta.key.id == from ||
+                    retained && item.previous == null && item.map.born != null && delta.key.id.json != item.source && delta.key.id != item.map.key.id) }
+            if (deletes) refuse(replica, entry, "target-merged", "target-merged")
+        }
+    }
+    val moved = items.mapNotNull { item -> Mapping(item.map.key.type, item.previousId ?: RecordID(item.source), item.map.key.id, command.scope).takeIf { it.from != it.id }?.let { item to it } }
+    val mappings = moved.map { it.second }
+    if (mappings.isNotEmpty()) {
+        val map = RecordMap(registry, mappings)
+        val replayed = moved.filter { it.first.previous != null }.map { it.second }
+        for (entry in replica.laterUnacked(command).filter { it.queued() }) registry.rewriteEntry(entry, map, replayed = replayed)
+        registry.rewriteEntry(command, map, predictionOnly = true)
+        registry.remapJournal(replica, map)
+        rewriteDeviceValues(replica, command, mappings)
+    }
+    for (item in items) {
+        val oldBorn = item.previous?.get("born"); val newBorn = item.map.born?.json
+        if (oldBorn == null || newBorn == null || oldBorn == newBorn) continue
+        for (entry in replica.laterUnacked(command).filter { it.queued() }) for (slot in entry.slots()) {
+            if (slot.scope != command.scope || slot.delta.recordKey != item.map.key) continue
+            var delta = slot.delta
+            if (delta["born"] == oldBorn) delta = delta.with("born" to newBorn)
+            delta["life"]?.arr()?.let { if (it[1] == oldBorn) delta = delta.with("life" to Json.array(it[0], newBorn)) }
+            slot.delta = delta
+        }
+    }
+    command.retarget(items)
+}
+
+// The ACK transaction's receipt-application point, before any projection settles or the entry resolves: the receipt is kept, each scope's
+// projection takes its accepted seq (a receipt-only scope its own empty marker, an uncreated one covered now), and the accepted versions apply.
+internal fun Engine.applyReceipt(replica: ReplicaState, command: Entry, effects: List<EffectReceipt>, write: List<Json>) {
+    val previous = command.acceptedEffects
+    command.acceptedEffects = effects
+    val projections = command.predictions!!.toMutableList()
+    for (effect in effects) {
+        val at = projections.indexOfFirst { it.scope == effect.scope }
+        val projection = projections.getOrNull(at) ?: Projection(effect.scope, emptyList())
+        val accepted = if (effect.seq == null) projection.copy(covered = true) else projection.copy(resultSeq = effect.seq)
+        if (at < 0) projections.add(accepted) else projections[at] = accepted
+    }
+    command.predictions = projections
+    command.mergePredictions()
+    val written = write.map(::WriteMapEntry)
+    val accepted = effects.map { effect ->
+        if (effect.scope != command.scope) return@map effect
+        val rows = effect.rows.toMutableList()
+        for (map in written) {
+            val at = rows.indexOfFirst { it.key == map.key }
+            val row = rows.getOrNull(at) ?: EffectRow(map.key, null, 0, emptyList())
+            val versions = buildList {
+                map.born?.let { add(EffectSlot(Slot(Slot.Kind.born), SlotVersion.Stamped(it))); add(EffectSlot(Slot(Slot.Kind.life), SlotVersion.Stamped(it))) }
+                for ((name, stamp) in map.fields) add(EffectSlot(Slot(Slot.Kind.field, name), SlotVersion.Stamped(stamp)))
+            }
+            val next = row.copy(slots = row.slots + versions.filter { row.slot(it.slot) == null })
+            if (at < 0) rows.add(next) else rows[at] = next
+        }
+        effect.copy(rows = rows)
+    }
+    applyAcceptedVersions(replica, command, accepted, previous)
+}
+
+// Accepted versions replace what the command predicted and what later queued work carried from it, scope by scope. A replay whose versions
+// differ from the ones a previous receipt gave rebases later work from those; later work that wrote an accepted register again takes a new stamp.
+private fun Engine.applyAcceptedVersions(replica: ReplicaState, command: Entry, effects: List<EffectReceipt>, previous: List<EffectReceipt>) {
+    val stamps = effects.flatMap { effect -> effect.rows.flatMap { row -> row.slots.mapNotNull { it.stamp } } }
+    observe(replica, stamps); raiseAdmittedHigh(replica, stamps)
+    val later = replica.entries().filter { it.order > command.order && it.queued() }
+    val own = later.associateWith { entry -> entry.slots().flatMap { slot ->
+        val row = effects.firstOrNull { it.scope == slot.scope }?.row(slot.delta.recordKey)
+        row?.slots.orEmpty().mapNotNull { it.slot.register }.filter { register ->
+            val value = if (register == "life") slot.delta["life"] else slot.delta["f"]?.get(register)
+            value != null && Stamp(value.arr()[1].str()) >= entry.stamp
+        }.map { NamedRegister(slot, it) }
+    } }
+    for (effect in effects) for (row in effect.rows) {
+        val ordinary = if (effect.scope == command.scope) command.intent.deltas.filter { it.key == row.key } else emptyList()
+        val predicted = command.slots().filter { it.prediction && it.scope == effect.scope && it.delta.recordKey == row.key }
+        val prior = previous.firstOrNull { it.scope == effect.scope }?.row(row.key)
+        for (slot in row.slots) {
+            val stamp = slot.stamp ?: continue
+            val register = if (slot.kind == Slot.Kind.field) slot.name!! else "life"
+            fun follow(old: Stamp?) {
+                if (old != null && old != stamp) followRegister(replica, command, effect.scope, row.key, register, old, stamp, slot.kind == Slot.Kind.born, queuedOnly = true)
+            }
+            follow(prior?.slot(slot.slot)?.stamp)
+            for (delta in ordinary) follow(when (slot.kind) {
+                Slot.Kind.born -> delta.lattice.born
+                Slot.Kind.life -> delta.lattice.life?.stamp
+                else -> delta.lattice.fields[register]?.stamp
+            })
+            for (delta in predicted) {
+                if (slot.kind != Slot.Kind.born) { moveRegister(replica, NamedRegister(delta, register), stamp, queuedOnly = true); continue }
+                val old = delta.delta["born"]?.str()?.let(::Stamp) ?: continue
+                var updated = delta.delta.with("born" to stamp.json)
+                updated["life"]?.arr()?.let { if (it[0] == Json.of("alive") && it[1] == old.json) updated = updated.with("life" to Json.array(it[0], stamp.json)) }
+                delta.delta = updated
+                follow(old)
+            }
+        }
+    }
+    val clock = Hlc(replica.meta.member("hlc")); val physical = now(replica)
+    for (entry in later) {
+        val named = own.getValue(entry)
+        if (named.isEmpty()) continue
+        val stamp = clock.tick(physical, actor)
+        named.forEach { moveRegister(replica, it, stamp, queuedOnly = true) }
         replica.meta = replica.meta.with("hlcHigh" to maxOf(Stamp(replica.meta.member("hlcHigh").str()), stamp).json)
     }
     replica.meta = replica.meta.with("hlc" to clock.json)

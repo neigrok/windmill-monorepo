@@ -1,0 +1,862 @@
+[
+  {
+    "name": "one Meta declaration keeps the same id independent in two trees and a saved draft remains bound",
+    "input": {
+      "t": "meta",
+      "reportScope": true,
+      "scopes": {
+        "tree/b_00000001": {
+          "drawn": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "seq": 1,
+              "f": {
+                "title": [
+                  "First",
+                  "1800000000000:0:srv00001"
+                ]
+              }
+            }
+          ],
+          "stored": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "seq": 1,
+              "f": {
+                "title": [
+                  "First",
+                  "1800000000000:0:srv00001"
+                ]
+              }
+            }
+          ]
+        },
+        "tree/b_00000002": {
+          "drawn": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "seq": 1,
+              "f": {
+                "title": [
+                  "Second",
+                  "1800000000000:0:srv00001"
+                ]
+              }
+            }
+          ],
+          "stored": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "seq": 1,
+              "f": {
+                "title": [
+                  "Second",
+                  "1800000000000:0:srv00001"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "ops": [
+        {
+          "op": "open",
+          "scope": "tree/b_00000001",
+          "id": "meta"
+        },
+        {
+          "op": "edit",
+          "f": {
+            "title": "First edit"
+          }
+        },
+        {
+          "op": "remember",
+          "name": "first"
+        },
+        {
+          "op": "open",
+          "scope": "tree/b_00000002",
+          "id": "meta"
+        },
+        {
+          "op": "edit",
+          "f": {
+            "title": "Second edit"
+          }
+        },
+        {
+          "op": "save"
+        },
+        {
+          "op": "recall",
+          "name": "first"
+        },
+        {
+          "op": "save"
+        },
+        {
+          "op": "edit",
+          "f": {
+            "title": "First twice"
+          }
+        },
+        {
+          "op": "save"
+        }
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000001",
+            "base": {
+              "title": "First"
+            },
+            "current": {
+              "title": "First"
+            },
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000001",
+            "base": {
+              "title": "First"
+            },
+            "current": {
+              "title": "First edit"
+            },
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000001",
+            "base": {
+              "title": "First"
+            },
+            "current": {
+              "title": "First edit"
+            },
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000002",
+            "base": {
+              "title": "Second"
+            },
+            "current": {
+              "title": "Second"
+            },
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000002",
+            "base": {
+              "title": "Second"
+            },
+            "current": {
+              "title": "Second edit"
+            },
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000002",
+            "base": {
+              "title": "Second edit"
+            },
+            "current": {
+              "title": "Second edit"
+            },
+            "isNew": false,
+            "placement": null
+          },
+          "result": {
+            "saved": "g1",
+            "scope": "tree/b_00000002"
+          }
+        },
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000001",
+            "base": {
+              "title": "First"
+            },
+            "current": {
+              "title": "First edit"
+            },
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000001",
+            "base": {
+              "title": "First edit"
+            },
+            "current": {
+              "title": "First edit"
+            },
+            "isNew": false,
+            "placement": null
+          },
+          "result": {
+            "saved": "g2",
+            "scope": "tree/b_00000001"
+          }
+        },
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000001",
+            "base": {
+              "title": "First edit"
+            },
+            "current": {
+              "title": "First twice"
+            },
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000001",
+            "base": {
+              "title": "First twice"
+            },
+            "current": {
+              "title": "First twice"
+            },
+            "isNew": false,
+            "placement": null
+          },
+          "result": {
+            "saved": "g3",
+            "scope": "tree/b_00000001"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "one Mark declaration opens the same key independently in two overlays",
+    "input": {
+      "t": "mark",
+      "reportScope": true,
+      "scopes": {
+        "self/overlay/b_00000001": {
+          "drawn": [
+            {
+              "t": "mark",
+              "id": "c_00000001",
+              "seq": 1,
+              "f": {
+                "done": [
+                  true,
+                  "1800000000000:0:srv00001"
+                ]
+              }
+            }
+          ],
+          "stored": [
+            {
+              "t": "mark",
+              "id": "c_00000001",
+              "seq": 1,
+              "f": {
+                "done": [
+                  true,
+                  "1800000000000:0:srv00001"
+                ]
+              }
+            }
+          ]
+        },
+        "self/overlay/b_00000002": {
+          "drawn": [],
+          "stored": []
+        }
+      },
+      "ops": [
+        {
+          "op": "openOrNew",
+          "scope": "self/overlay/b_00000001",
+          "id": "c_00000001"
+        },
+        {
+          "op": "remember",
+          "name": "first"
+        },
+        {
+          "op": "openOrNew",
+          "scope": "self/overlay/b_00000002",
+          "id": "c_00000001"
+        },
+        {
+          "op": "edit",
+          "f": {
+            "done": false,
+            "memo": "Second"
+          }
+        },
+        {
+          "op": "save"
+        },
+        {
+          "op": "recall",
+          "name": "first"
+        },
+        {
+          "op": "edit",
+          "f": {
+            "memo": "First"
+          }
+        },
+        {
+          "op": "save"
+        }
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "c_00000001",
+            "scope": "self/overlay/b_00000001",
+            "base": {
+              "done": true,
+              "memo": ""
+            },
+            "current": {
+              "done": true,
+              "memo": ""
+            },
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "c_00000001",
+            "scope": "self/overlay/b_00000001",
+            "base": {
+              "done": true,
+              "memo": ""
+            },
+            "current": {
+              "done": true,
+              "memo": ""
+            },
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "c_00000001",
+            "scope": "self/overlay/b_00000002",
+            "base": {
+              "done": null,
+              "memo": ""
+            },
+            "current": {
+              "done": null,
+              "memo": ""
+            },
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "c_00000001",
+            "scope": "self/overlay/b_00000002",
+            "base": {
+              "done": null,
+              "memo": ""
+            },
+            "current": {
+              "done": false,
+              "memo": "Second"
+            },
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "c_00000001",
+            "scope": "self/overlay/b_00000002",
+            "base": {
+              "done": false,
+              "memo": "Second"
+            },
+            "current": {
+              "done": false,
+              "memo": "Second"
+            },
+            "isNew": false,
+            "placement": null
+          },
+          "result": {
+            "saved": "g1",
+            "scope": "self/overlay/b_00000002"
+          }
+        },
+        {
+          "draft": {
+            "id": "c_00000001",
+            "scope": "self/overlay/b_00000001",
+            "base": {
+              "done": true,
+              "memo": ""
+            },
+            "current": {
+              "done": true,
+              "memo": ""
+            },
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "c_00000001",
+            "scope": "self/overlay/b_00000001",
+            "base": {
+              "done": true,
+              "memo": ""
+            },
+            "current": {
+              "done": true,
+              "memo": "First"
+            },
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "c_00000001",
+            "scope": "self/overlay/b_00000001",
+            "base": {
+              "done": true,
+              "memo": "First"
+            },
+            "current": {
+              "done": true,
+              "memo": "First"
+            },
+            "isNew": false,
+            "placement": null
+          },
+          "result": {
+            "saved": "g2",
+            "scope": "self/overlay/b_00000001"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "meta reader rejects self/probe before a write",
+    "input": {
+      "t": "meta",
+      "drawn": [],
+      "stored": [],
+      "ops": [
+        {
+          "op": "open",
+          "scope": "self/probe",
+          "id": "meta"
+        }
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "trap": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "meta reader rejects self/overlay/b_00000001 before a write",
+    "input": {
+      "t": "meta",
+      "drawn": [],
+      "stored": [],
+      "ops": [
+        {
+          "op": "open",
+          "scope": "self/overlay/b_00000001",
+          "id": "meta"
+        }
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "trap": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "mark reader rejects tree/b_00000001 before a write",
+    "input": {
+      "t": "mark",
+      "drawn": [],
+      "stored": [],
+      "ops": [
+        {
+          "op": "open",
+          "scope": "tree/b_00000001",
+          "id": "c_00000001"
+        }
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "trap": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "mark reader rejects self/probe before a write",
+    "input": {
+      "t": "mark",
+      "drawn": [],
+      "stored": [],
+      "ops": [
+        {
+          "op": "open",
+          "scope": "self/probe",
+          "id": "c_00000001"
+        }
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "trap": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "card reader rejects tree/b_00000001 before a write",
+    "input": {
+      "t": "card",
+      "drawn": [],
+      "stored": [],
+      "ops": [
+        {
+          "op": "open",
+          "scope": "tree/b_00000001",
+          "id": "c_00000001"
+        }
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "trap": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "card reader rejects self/other before a write",
+    "input": {
+      "t": "card",
+      "drawn": [],
+      "stored": [],
+      "ops": [
+        {
+          "op": "open",
+          "scope": "self/other",
+          "id": "c_00000001"
+        }
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "trap": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "a dynamic draft cannot save into another tree",
+    "input": {
+      "t": "meta",
+      "reportScope": true,
+      "ops": [
+        {
+          "op": "openOrNew",
+          "id": "meta",
+          "scope": "tree/b_00000002"
+        },
+        {
+          "op": "save",
+          "scope": "tree/b_00000001"
+        }
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000002",
+            "base": {
+              "title": ""
+            },
+            "current": {
+              "title": ""
+            },
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "trap": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "a dynamic guarded draft retains its tree through rebase and save",
+    "input": {
+      "t": "guardedMeta",
+      "scope": "tree/b_00000002",
+      "reportScope": true,
+      "drawn": [
+        {
+          "t": "meta",
+          "id": "meta",
+          "seq": 1,
+          "f": {
+            "title": [
+              "Base",
+              "1:0:srv"
+            ]
+          }
+        }
+      ],
+      "stored": [
+        {
+          "t": "meta",
+          "id": "meta",
+          "seq": 1,
+          "f": {
+            "title": [
+              "Base",
+              "1:0:srv"
+            ]
+          }
+        }
+      ],
+      "ops": [
+        {
+          "op": "open",
+          "id": "meta"
+        },
+        {
+          "op": "edit",
+          "f": {
+            "title": "Mine"
+          }
+        },
+        {
+          "op": "records",
+          "drawn": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "seq": 2,
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2:0:srv"
+                ]
+              }
+            }
+          ],
+          "stored": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "seq": 2,
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2:0:srv"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "op": "rebase",
+          "f": {
+            "title": "Theirs"
+          }
+        },
+        {
+          "op": "save"
+        }
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000002",
+            "base": {
+              "title": "Base"
+            },
+            "current": {
+              "title": "Base"
+            },
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000002",
+            "base": {
+              "title": "Base"
+            },
+            "current": {
+              "title": "Mine"
+            },
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000002",
+            "base": {
+              "title": "Base"
+            },
+            "current": {
+              "title": "Mine"
+            },
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000002",
+            "base": {
+              "title": "Theirs"
+            },
+            "current": {
+              "title": "Mine"
+            },
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000002",
+            "base": {
+              "title": "Mine"
+            },
+            "current": {
+              "title": "Mine"
+            },
+            "isNew": false,
+            "placement": null
+          },
+          "result": {
+            "saved": "g1",
+            "scope": "tree/b_00000002"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "a composed dynamic save cannot load a different tree",
+    "input": {
+      "t": "meta",
+      "reportScope": true,
+      "ops": [
+        {
+          "op": "openOrNew",
+          "id": "meta",
+          "scope": "tree/b_00000002"
+        },
+        {
+          "op": "load",
+          "scope": "tree/b_00000001"
+        }
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "meta",
+            "scope": "tree/b_00000002",
+            "base": {
+              "title": ""
+            },
+            "current": {
+              "title": ""
+            },
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "trap": true
+        }
+      ]
+    }
+  }
+]

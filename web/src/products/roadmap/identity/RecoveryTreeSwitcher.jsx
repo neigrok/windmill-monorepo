@@ -12,8 +12,10 @@ import { reportRoadmapFailure } from '../reportFailure.js';
 import { readDeviceTrees } from '../sync/localTrees.js';
 import { roadmapMatch } from './roadmapSearch.js';
 
-// This door navigates known list rows; it has no current tree and no mutation authority.
-export function RecoveryTreeSwitcher({ place, onPickTree, onNew, onBrowse }) {
+// This door navigates known list rows; it has no current tree and no mutation authority. `listHeld` reads the person's roadmaps
+// where the room reads the device's copy, which keeps the account's and the browser's alike, and answers as the server's
+// list does, not authoritative where the copy cannot say; elsewhere the server's list and this device's index do.
+export function RecoveryTreeSwitcher({ place, listHeld = null, onPickTree, onNew, onBrowse }) {
   const root = useRef(null);
   const trigger = useRef(null);
   const panel = useRef(null);
@@ -43,6 +45,10 @@ export function RecoveryTreeSwitcher({ place, onPickTree, onNew, onBrowse }) {
     setExpanded(new Set());
     searched.current = false;
     const read = async () => {
+      if (listHeld) {
+        const held = await listHeld();
+        return { ...held, rows: held.rows.map(({ id, title }) => ({ id, title })) };
+      }
       if (place === 'account') return listServerTrees({ signal: request.signal });
       const rows = new LocalTreeRegistry().readList(null);
       const trees = await readDeviceTrees({ registry: { list: () => rows } });
@@ -69,7 +75,7 @@ export function RecoveryTreeSwitcher({ place, onPickTree, onNew, onBrowse }) {
       track('roadmap_recovery', { step: 'list', place, outcome: 'failed' });
     }).finally(() => clearTimeout(timeout));
     return () => { active = false; clearTimeout(timeout); request.abort(); };
-  }, [open, attempt, place]);
+  }, [open, attempt, place, listHeld]);
 
   useLayoutEffect(() => {
     if (!open) return;

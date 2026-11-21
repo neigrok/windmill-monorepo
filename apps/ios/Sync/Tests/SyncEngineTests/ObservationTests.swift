@@ -369,7 +369,10 @@ struct ObservationTests {
     _ = try rig.engine.commit(Rig.scope, Gesture(changes: [Rig.card("card0001", "One")], gestureId: "g1"))
     await rig.engine.settle()
     #expect(notices.notices.map { "\($0.id) \($0.product) \($0.scope) \($0.code)" } == ["notice:g1/0 probe self/probe too-large"])
-    try rig.engine.dismissNotice("notice:g1/0")
+    #expect(try rig.engine.dismissNotice("notice:g2/0") == false)
+    await rig.engine.settle()
+    #expect(notices.notices.map(\.id) == ["notice:g1/0"])
+    #expect(try rig.engine.dismissNotice("notice:g1/0"))
     await rig.engine.settle()
     #expect(notices.notices.isEmpty)
   }
@@ -385,7 +388,7 @@ struct ObservationTests {
     #expect(offers.offers == [
       UndoOffer(id: "g1", scope: Rig.scope, releaseAt: deadline), UndoOffer(id: "g2", scope: Rig.scope, releaseAt: deadline),
     ])
-    _ = try rig.engine.undo("g1")
+    _ = try rig.engine.cancelHeld("g1")
     await rig.engine.settle()
     #expect(offers.offers == [UndoOffer(id: "g2", scope: Rig.scope, releaseAt: deadline)])
     rig.clock.advance(ms: Constants.holdMs)
@@ -488,8 +491,8 @@ struct ObservationTests {
     var second = rig.engine.events().makeAsyncIterator()
     try rig.commit(Gesture(changes: [Rig.card("card0001", "One")], hold: true, gestureId: "g1"))
     try rig.commit(Gesture(changes: [Rig.card("card0002", "Two")], hold: true, gestureId: "g2"))
-    _ = try rig.engine.undo("g2")
-    _ = try rig.engine.undo("g1")
+    _ = try rig.engine.cancelHeld("g2")
+    _ = try rig.engine.cancelHeld("g1")
     let expected: [EngineEvent] = [
       .ended(localId: "g2/0", outcome: .undone, event: .undo, orphanOf: nil),
       .ended(localId: "g1/0", outcome: .undone, event: .undo, orphanOf: nil),
@@ -593,7 +596,7 @@ final class Shelves {
       return try write(on: phone, &random)
     case 5:
       guard let offer = try phone.currentUndoOffers().randomElement(using: &random) else { return "undo: nothing held" }
-      return "undo \(offer.id): \(try phone.undo(offer.id))"
+      return "undo \(offer.id): \(try phone.cancelHeld(offer.id))"
     case 6:
       clock.advance(ms: Constants.holdMs)
       var released = 0

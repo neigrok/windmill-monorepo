@@ -53,7 +53,7 @@ export class WorkoutProposalValue {
   get document() { return RoutineChange.document(this.changes); }
 }
 
-/** @type {EntityType<WorkoutProposalValue>} */
+/** @type {EntityType<WorkoutProposalValue, string>} */
 export const WorkoutProposal = new EntityType({
   type: 'workoutProposal', scope: 'self/gym',
   decode: (fields) => new WorkoutProposalValue({ id: new Id(fields.id, WorkoutProposal), sessionId: fields.ref('sessionId', Session),

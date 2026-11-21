@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
+import { syncSession } from '../../../platform/sync/session.js';
 import { createTree } from '../persistence/TreeRegistry.js';
 import { bearLocalTree, bearImportedTree, deviceKeepsTrees } from '../sync/localTrees.js';
+import { BirthFailure, ReplicaBirth } from '../room/ReplicaBirth.js';
 import { DEFAULT_KINDS } from '../model/Legend.js';
 import { parsePlan } from './planGrammar.js';
 import { PasteComposer } from './PasteComposer.jsx';
@@ -14,7 +16,7 @@ import { prefersReducedMotion } from '../theme.js';
 import { DEVICE_REFUSED } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { countBucket } from '../board/acts.js';
-import { reportUnexpectedFailure } from '../reportFailure.js';
+import { buildRetirement } from '../sync/retirement.js';
 import { track } from '../../../telemetry/beacon.js';
 
 
@@ -25,8 +27,11 @@ function openBorn(treeId) {
 }
 
 
-export function NewTreeBirth() {
+// `replica` plants through the domain on the device's copy (room/ReplicaBirth.js), where the route table turns the room's
+// replica on.
+export function NewTreeBirth({ replica = false } = {}) {
   const { status, holdDeviceLine } = useAuth();
+  const copyRefused = useSyncExternalStore(syncSession.subscribe, () => syncSession.getSnapshot().error);
   const { breakpoint } = useViewMode();
   const [name, setName] = useState('');
   const [phase, setPhase] = useState('naming'); // naming | planting | error
@@ -35,23 +40,29 @@ export function NewTreeBirth() {
   const [composerOpen, setComposerOpen] = useState(() =>
     typeof window !== 'undefined' && new URLSearchParams(window.location.hash.split('?')[1] ?? '').has('compose'));
   const [dropHot, setDropHot] = useState(false);
-  const [deviceRefused, setDeviceRefused] = useState(false);
+  const [storeRefused, setStoreRefused] = useState(false);
   const inputRef = useRef(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
   // Short of a signed-in account a plan lives only on this device: a browser that will not keep one is told before anyone types.
+  // On the device's copy every plan lives there first, so a browser whose copy could not open is told, signed in or not.
   useEffect(() => {
-    if (status === 'signed-in') {
-      setDeviceRefused(false);
+    if (replica || status === 'signed-in') {
+      setStoreRefused(false);
       return undefined;
     }
     let current = true;
-    deviceKeepsTrees().then((keeps) => { if (current) setDeviceRefused(!keeps); });
+    deviceKeepsTrees().then((keeps) => { if (current) setStoreRefused(!keeps); });
     return () => { current = false; };
-  }, [status]);
+  }, [status, replica]);
+  const deviceRefused = replica ? copyRefused : storeRefused;
 
   useEffect(() => (deviceRefused ? holdDeviceLine() : undefined), [deviceRefused, holdDeviceLine]);
+
+  // A name or a plan typed here lives in this page's state alone, a plan set aside by Esc too: a retired build's reload waits.
+  const typed = name.trim() !== '' || draft.trim() !== '';
+  useEffect(() => (typed ? buildRetirement.hold() : undefined), [typed]);
 
   const parse = useMemo(
     () => (composerOpen ? parsePlan(draft, draftKinds) : null),
@@ -109,10 +120,16 @@ export function NewTreeBirth() {
     if (phase === 'planting') return;
     setPhase('planting');
     const title = name.trim();
+    const root = { id: crypto.randomUUID?.() ?? `n-${Date.now()}`, label: title, icon: 'sparkles', color: DEFAULT_KINDS[0].hue, prerequisites: [] };
     try {
+      if (replica) {
+        const { treeId, local } = await new ReplicaBirth().plant({ title, nodes: [root] });
+        if (local) track('birth', { local: true });
+        else track('birth');
+        openBorn(treeId);
+        return;
+      }
       if (status === 'signed-in') {
-        const rootId = crypto.randomUUID?.() ?? `n-${Date.now()}`;
-        const root = { id: rootId, label: title, icon: 'sparkles', color: DEFAULT_KINDS[0].hue, prerequisites: [] };
         const { treeId } = await createTree({ ...(title ? { title } : {}), nodes: [root] });
         track('birth');
         openBorn(treeId);
@@ -120,7 +137,7 @@ export function NewTreeBirth() {
       }
       openBorn(await plantLocally(title));
     } catch (err) {
-      reportUnexpectedFailure('roadmap-plant', err);
+      BirthFailure.reportFailed(err);
       // A signed-in plant the server refuses for want of a session falls back to the local birth.
       if (err.code === 'unauthenticated' || err.code === 'unreachable') {
         try {
@@ -128,7 +145,9 @@ export function NewTreeBirth() {
           return;
         } catch { /* the local soil failed too — fall through to the error face */ }
       }
-      track('roadmap_board_create', { step: 'failed', door: 'blank' });
+      const reason = BirthFailure.reasonOf(err);
+      if (reason) track('roadmap_board_create', { step: 'failed', door: 'blank', reason });
+      else track('roadmap_board_create', { step: 'failed', door: 'blank' });
       setPhase('error');
     }
   }
@@ -137,6 +156,13 @@ export function NewTreeBirth() {
     if (phase === 'planting') return;
     setPhase('planting');
     try {
+      if (replica) {
+        const { treeId, local } = await new ReplicaBirth().plant({ title: plan.title ?? '', nodes: plan.nodes, kinds: plan.kinds });
+        if (local) track('birth', { import: true, steps: countBucket(plan.nodes.length), local: true });
+        else track('birth', { import: true, steps: countBucket(plan.nodes.length) });
+        openBorn(treeId);
+        return;
+      }
       if (status === 'signed-in') {
         const { treeId } = await createTree({ ...(plan.title ? { title: plan.title } : {}), nodes: plan.nodes, kinds: plan.kinds });
         track('birth', { import: true, steps: countBucket(plan.nodes.length) });
@@ -145,14 +171,16 @@ export function NewTreeBirth() {
       }
       openBorn(await plantImportedLocally(plan));
     } catch (err) {
-      reportUnexpectedFailure('roadmap-plant', err);
+      BirthFailure.reportFailed(err);
       if (err.code === 'unauthenticated' || err.code === 'unreachable') {
         try {
           openBorn(await plantImportedLocally(plan));
           return;
         } catch { /* the local soil failed too — fall through to the error face */ }
       }
-      track('roadmap_board_create', { step: 'failed', door: 'import' });
+      const reason = BirthFailure.reasonOf(err);
+      if (reason) track('roadmap_board_create', { step: 'failed', door: 'import', reason });
+      else track('roadmap_board_create', { step: 'failed', door: 'import' });
       setPhase('error');
     }
   }

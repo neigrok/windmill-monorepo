@@ -38,20 +38,25 @@ export function setNote(ws, markdown) {
 }
 
 export function addLink(ws, value) {
+  const link = workspaceLink(value);
+  if (!link) return ws;
+  return { ...ws, links: [...ws.links, { id: newId(), url: link.url, title: link.title || link.domain, domain: link.domain }] };
+}
+
+// An address as a person typed it, read as a link: a scheme where none was given, the domain it names, and the title the
+// person gave it, empty where they gave none. Null for text that names no address.
+export function workspaceLink(value) {
   const input = typeof value === 'string' ? { url: value } : value;
   const trimmed = input.url.trim();
-  if (!trimmed) return ws;
+  if (!trimmed) return null;
   const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
   let url;
   try {
     url = new URL(hasScheme ? trimmed : `https://${trimmed}`);
   } catch {
-    return ws;
+    return null;
   }
-  const domain = url.hostname.replace(/^www\./, '');
-  const title = input.title?.trim() || domain;
-  const link = { id: newId(), url: url.href, title, domain };
-  return { ...ws, links: [...ws.links, link] };
+  return { url: url.href, title: input.title?.trim() ?? '', domain: url.hostname.replace(/^www\./, '') };
 }
 
 export function deleteLink(ws, linkId) {

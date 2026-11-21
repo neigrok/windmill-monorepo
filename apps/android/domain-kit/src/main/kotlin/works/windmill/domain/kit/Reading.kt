@@ -5,6 +5,7 @@ import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.Registry
 import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.core.Stamp
 import works.windmill.sync.core.RefusalCode
 import works.windmill.sync.core.compareBytes
 import works.windmill.sync.core.lives
@@ -16,9 +17,12 @@ class Reader(val source: ScopeReader, val scope: ScopeRef, val moment: Moment, v
     fun commands(): List<QueuedCommand> = (source as? CommitContext)?.commands() ?: emptyList()
     fun devices(prefix: String): Map<String, Json> = source.devices(prefix)
     fun checkpoint(): ScopeCheckpoint = source.checkpoint()
-    fun <E : Entity<E>> confirmed(type: EntityType<E>, id: Id<E>): Record? = source.confirmed(type.type, id.record)
+    fun <E : Entity<E>> confirmed(type: EntityType<E>, id: Id<E>): Record? {
+        repository(type)
+        return source.confirmed(type.type, id.record)
+    }
     fun <E : Entity<E>> repository(type: EntityType<E>): Repository<E> {
-        check(type.scope == scope && registry.lives(type.type, scope)) { "${type.type} is outside $scope" }
+        check((type.scope == null || type.scope == scope) && registry.lives(type.type, scope)) { "${type.type} is outside $scope" }
         return Repository(type, source, registry)
     }
     fun device(key: String): Json? = source.device(key)
@@ -33,6 +37,9 @@ class Repository<E : Entity<E>>(val type: EntityType<E>, val source: ScopeReader
     fun capacity(): Capacity = Capacity(type, source.stored(type.type), registry)
     fun record(id: Id<E>, view: ViewMode): Record? = record(id.record, view)
     fun record(id: RecordID, view: ViewMode): Record? = if (view == ViewMode.drawn) source.drawn(type.type, id) else source.stored(type.type, id)
+    // Engine §2.5, §7.5: what the device keeps of a derived record deleted elsewhere once its row is gone, a record in neither view; null for
+    // any other id. A revival (§8.1) takes this born.
+    fun spentBorn(id: Id<E>): Stamp? = source.spentBorn(type.type, id.record)
     fun anchor(placement: Placement, orderField: String = (type as? OrderedType<*>)?.orderField ?: error("${type.type} is unordered")): RecordID? = when (placement) {
         Placement.Top -> null
         is Placement.Below -> placement.id
