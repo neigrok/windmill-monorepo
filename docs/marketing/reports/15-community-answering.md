@@ -2,7 +2,7 @@
 
 **Recurring distribution and cohort recruitment.** The founder can use existing relationships, a builder feedback
 thread, or a coach willing to pass along an invitation. Count this time within the eight-hour weekly cap for
-the whole plan. Use the [weekly editorial cadence](17-distribution-and-editorial.md#weekly-cadence-and-time-cap) to bring
+the whole plan. Use the [weekly time allocation](17-distribution-and-editorial.md#weekly-time-allocation-and-cap) to bring
 useful guides and demos to relevant conversations. Keep formal recruitment for twenty builders and ten lifters
 separate from ordinary reader referrals. [Roadmap invitation](11-roadmap-seed-trees.md) ·
 [Gym invitation](04-gym-demo-and-checkout.md)

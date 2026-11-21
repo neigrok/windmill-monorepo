@@ -4,6 +4,28 @@
 
 The proposed operating scenario is **eight founder hours per week and $0 incremental campaign spend**. It limits the active queue, not the range of strategies researched. Search repairs and truthful listings remain foundations; two small behavior experiments test useful first actions and repeat use. The [growth options report](reports/18-growth-options.md) applies Ansoff, Blue Ocean and a Balanced Scorecard to 24 routes, including larger options with explicit resource tradeoffs. Record execution only when it happens.
 
+## Positioning
+
+> Windmill is where a person keeps growing in body, skill and mind, with the machine working for them. Bring your own AI or use ours at a fair price. Nothing is locked and nothing is graded.
+
+[Brand foundations](../design/brand-foundations.md#the-idea) is the one home of this sentence, the reason behind it, the meaning of the name and what Windmill never says. Marketing claims a pillar only as far as the rule or fact behind it reaches.
+
+| Pillar | Standing rule or fact |
+|---|---|
+| The machine serves | Coach changes an existing routine only as a proposal the lifter applies, and after its first greeting it waits to be asked. [Gym principles](../design/brand-foundations.md#gym) |
+| Yours and open | Everything done by hand works signed out. A person's own assistant reaches Roadmap and Gym through MCP; Journal has no MCP door, and Windmill takes no provider key or token from a person. [Accounts and sign-in](../design/brand-foundations.md#accounts-and-sign-in) · [Connect](https://windmill.works/connect.html) |
+| Never graded | Journal has no streaks or scores and praises no value. Gym has no grades or streaks. The honesty rules allow no urgency on any surface. [Journal principles](../design/brand-foundations.md#journal) · [Numbers and money](../design/brand-foundations.md#numbers-and-money) |
+| A fair price, shown | Not shown yet. The [pricing page](../../web/public/pricing.html) names $12 a month and no allowance amount, so it does not say where the money goes. [Owner decisions](#owner-decisions-the-positioning-opens) |
+
+## What every channel keeps
+
+- **Nothing that frightens or belittles.** No "AI will replace you", no "don't fall behind", no "fix yourself".
+- **Publish only when there is something to say.** There is no posting cadence, and nothing is made to keep activity. Every piece shows real work or a real idea.
+- **Work follows readiness.** No campaign is timed to a season or a launch date. Observation windows are measurement, not deadlines.
+- **Brand-led, with at most one founder note.** Writing and publishing it are the owner's alone, and no agent drafts it. If it is published, it is in the first person under a pseudonym, tells why Windmill exists and what the name means, appears once, and is posted only where disclosed self-posts are allowed. Public creative and posts do not name or show the founder; a post still discloses that its author builds Windmill.
+- **A master is paid for their time, never their verdict.** [Masters](reports/09-creator-campaign.md)
+- **The honesty rules hold in every channel.** [Honesty](../design/brand-foundations.md#honesty)
+
 ## Launch contract
 
 The [iOS release tree](https://windmill.works/app/roadmap#/app/t_4549f1f8cc783f1b) is the source of launch truth, read on November 17, 2026. The owner's scope is:
@@ -29,6 +51,8 @@ The available iOS beta carries Journal and Gym; that is not evidence that the pl
 | First week live | Read store discovery, useful actions, returns and genuine purchases as separate denominators. Close native return windows only after they mature. [Launch scorecard](funnels.md#public-ios-launch) |
 
 ## Who we want to reach
+
+The audience is people in general. Each lane below tests one entry point and never labels the product.
 
 | Lane | Person and moment | Demonstration | First destination and action |
 |---|---|---|---|
@@ -70,8 +94,16 @@ Repeat a passing cohort with an independent source. Rework the observed obstacle
 
 ## When money enters the plan
 
+Windmill One is the fair price for Windmill-funded AI and for the work of making Windmill, and it keeps Windmill independent. Copy may say so plainly. A person can use their own assistant instead, which costs Windmill nothing and earns nothing. Using Windmill and paying nothing is a good outcome. Expect trust before revenue: a person who already pays for an assistant can connect it to Roadmap and Gym and never need One there.
+
 Windmill One is sold first as a monthly App Store subscription inside the iOS app and goes on sale with the public iOS release. The web sells nothing; a Paddle checkout on the web and Google Play come later, by a future owner ruling, with no date. The paid line is currently closed, and manual work is free. Prepare the offer before release and measure genuine demand from the first day customers can buy in the App Store. A request for an invite, use of an external assistant, a free hosted Coach turn or a hypothetical price answer is evidence of interest. **A paid-demand test starts only when a customer can really buy**, the owner opens the paid line and approves funding, billing and refund behavior is verified, and hosted AI costs are measured. Customer-facing claims about AI must match the enabled allowance. [Billing and usage contract](../AI_USAGE_REVIEW.md) · [One offer](reports/04-gym-demo-and-checkout.md)
 
-For the separate 50-lifter demand test, quote One's App Store price for the participant's storefront in invitations. Start that experiment once an eligible returning cohort and a test slot are available. Proposed learning gate: five genuine non-refunded buyers and at least half of those buyers performing a second useful Coach task in a later week. Keep an unobserved payer window pending. If this gate passes, price a single creator test with usage rights, a cash ceiling and a working store destination. Each commercial commitment is an owner decision.
+For the separate 50-lifter demand test, quote One's App Store price for the participant's storefront in invitations. Start that experiment once an eligible returning cohort and a test slot are available. Proposed learning gate: five genuine non-refunded buyers and at least half of those buyers performing a second useful Coach task in a later week. Keep an unobserved payer window pending. If this gate passes, price one master's placement under [the masters rules](reports/09-creator-campaign.md): a flat disclosed fee, a cash ceiling and a working store destination. Each commercial commitment is an owner decision.
 
-For scale, retain the stricter gate: 50 unique non-refunded payers across successive cohorts from the same repeatable channel, at least 70% of eligible first renewals kept, and fully loaded acquisition cost at or below realised 90-day contribution. Include founder time, content and allocated free AI use. Any bounded learning spend before those cohorts mature needs its own owner-approved cap. [Economics](benchmarks.md) · [Creator test](reports/09-creator-campaign.md)
+For scale, retain the stricter gate: 50 unique non-refunded payers across successive cohorts from the same repeatable channel, at least 70% of eligible first renewals kept, and fully loaded acquisition cost at or below realised 90-day contribution. Include founder time, content and allocated free AI use. Any bounded learning spend before those cohorts mature needs its own owner-approved cap. [Economics](benchmarks.md) · [Masters](reports/09-creator-campaign.md)
+
+## Owner decisions the positioning opens
+
+- Whether the pricing page states where the $12 goes: the AI allowance, the store's fee, running Windmill and the work. It states none of this today.
+- The cash ceiling for a master's fee, and whether the fee is owed when the master publishes nothing. No fee benchmark is recorded in [the evidence](benchmarks.md), and no ceiling is approved.
+- Whether Windmill will take a person's own provider key or token. It takes none today.

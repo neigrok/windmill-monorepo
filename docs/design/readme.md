@@ -30,7 +30,7 @@ behaviour is not restated here: it is in the code, and its picture is in Figma.
 | Path | Holds |
 |---|---|
 | `consistency.md` | The drift ledger — disagreements between drawings, written rules and code. Start here for consistency work. |
-| `brand-foundations.md` | Direction, voice, the honesty rules, visual foundations, iconography, fonts, the logo, and each product's standing principles. |
+| `brand-foundations.md` | The idea, direction, voice, the honesty rules, visual foundations, iconography, fonts, the logo, and each product's standing principles. |
 | `guidelines/system-architecture.md` | The four layers that travel between products, the colour contract, the interaction laws (native idiom, gestures), grounds. |
 | `guidelines/motion-language.md` | The motion beats, their composition and the calm ceiling. |
 | `guidelines/text-budget.md` | How many words an element may spend. |
