@@ -30,7 +30,7 @@ The proposed scale is **eight owner hours a week and $0 of campaign spending**. 
 
 | | Today | Source |
 |---|---|---|
-| The web | Roadmap, Journal and Gym run at windmill.works. Everything done by hand works signed out. | [Product strategy](../PRODUCT_LOG.md) · [Accounts and sign-in](../design/brand-foundations.md#accounts-and-sign-in) |
+| The web | Roadmap, Journal and Gym run at windmill.works. Roadmap and Journal work signed out. Gym on the web keeps an account gate. | [Product strategy](../PRODUCT_LOG.md) · [Web rules](../../web/CLAUDE.md) |
 | iPhone | A TestFlight beta carries Journal and Gym. There is no App Store listing and no release date. Roadmap on the iPhone and live Talk are release requirements, not things to show yet. | [Launch contract](#launch-contract) |
 | Android | Gym only, as a signed APK a person installs by hand. It is not on Google Play. | [Access checks](reports/01-store-readiness.md) |
 | Windmill One | It cannot be bought on any surface. The pricing page names $12 a month and says nothing is on sale yet. | [Paid line](../../AGENTS.md) · [Pricing page](../../web/public/pricing.html) |
@@ -97,7 +97,7 @@ Every route below passes the rules in [What every channel keeps](#what-every-cha
 
 One tutorial video of the first guide is a proposal; no Windmill channel is confirmed. Paid search is a priced option behind the money gates, with no spending approved. [Video route](reports/17-distribution-and-editorial.md#proposed-channel-choices) · [Apple Ads brief](reports/14-apple-ads-test.md)
 
-[Report 17](reports/17-distribution-and-editorial.md) holds the working order for the first two weeks, counted from the day work starts, and how the owner's weekly hours divide. [Report 19](reports/19-product-generated-content.md) assesses small useful things the product could make from a person's own action. [Report 20](reports/20-competitive-presence.md) compares what each room competes with. New page layouts and changes to public screens need an approved design. No route adds a requirement to the [launch contract](#launch-contract).
+[Report 17](reports/17-distribution-and-editorial.md) holds the working order for the first two weeks, counted from the day work starts, and how the owner's weekly hours divide. [Report 19](reports/19-product-generated-content.md) assesses small useful things the product could make from a person's own action. [Report 20](reports/20-competitive-presence.md) compares what each room competes with. New page layouts and changes to public screens need an approved design. The public pages' structure, wording, search repairs and look are proposed in [the marketing site proposal](../design/marketing-site-proposal.md). No route adds a requirement to the [launch contract](#launch-contract).
 
 ## Two behavior experiments at a time
 
