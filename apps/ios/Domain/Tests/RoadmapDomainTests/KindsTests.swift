@@ -70,7 +70,7 @@ struct KindsTests {
   // with the step that is present; once the hold ends the delete stands and the recolour lands with no refusal.
   @Test func aRecolourReachesAStepWhoseDeleteIsStillHeld() throws {
     let phone = RoadmapsTests.phone()
-    let planted = ImportedSteps(steps: [ImportedStep(key: "a", label: "Basics", color: "olive"), ImportedStep(key: "b", label: "Tools", color: "olive")])
+    let planted = ImportedSteps(steps: [ImportedStep(key: "a", .init(label: "Basics", color: "olive")), ImportedStep(key: "b", .init(label: "Tools", color: "olive"))])
     guard case .committed(let created, _) = try phone.runner.runAct(CreateRoadmap(title: "Learn Rust", steps: planted)) else {
       Issue.record("the roadmap was not created")
       return
@@ -103,7 +103,7 @@ struct KindsTests {
 
   @Test func aRecolourIsDrawnOnTheKindAndItsStepsAsTheServerThenWritesIt() throws {
     let phone = RoadmapsTests.phone()
-    let planted = ImportedSteps(steps: [ImportedStep(key: "a", label: "Basics", color: "olive"), ImportedStep(key: "b", label: "Tools", color: "gold")])
+    let planted = ImportedSteps(steps: [ImportedStep(key: "a", .init(label: "Basics", color: "olive")), ImportedStep(key: "b", .init(label: "Tools", color: "gold"))])
     guard case .committed(let created, _) = try phone.runner.runAct(CreateRoadmap(title: "Learn Rust", steps: planted)) else {
       Issue.record("the roadmap was not created")
       return
