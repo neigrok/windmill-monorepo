@@ -206,6 +206,63 @@ async fn a_notification_with_nothing_to_apply_is_settled_with_what_it_was() {
     .await;
 }
 
+#[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+async fn a_settlement_beside_an_apply_of_its_notification_waits_for_the_apply_and_keeps_its_outcome()
+ {
+    with_empty_database(async |url| {
+        let mut control = PgConnection::connect(&url).await.unwrap();
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let Receipt::Kept(kept) = ledger
+            .receive(notification(Store::AppStore, "n-beside", "a renewal"))
+            .await
+            .unwrap()
+        else {
+            panic!("the notification was not kept")
+        };
+        hold_events(&mut control).await;
+
+        let applying = tokio::spawn({
+            let (ledger, kept) = (ledger.clone(), kept.clone());
+            async move { ledger.apply_notification(&kept, observed(renewal())).await }
+        });
+        until("the apply holds its events", async || {
+            waiting(&mut control).await == 1
+        })
+        .await;
+        let settling = tokio::spawn({
+            let (ledger, kept) = (ledger.clone(), kept.clone());
+            async move { ledger.settle(&kept, "unsupported").await }
+        });
+        until("the settlement waits for the apply", async || {
+            waiting(&mut control).await == 2
+        })
+        .await;
+        control
+            .execute("select pg_advisory_unlock(7)")
+            .await
+            .unwrap();
+        let (applied, settled) = (applying.await.unwrap(), settling.await.unwrap());
+        let outcomes: Vec<(String, Option<String>)> =
+            sqlx::query_as("select notification_id, outcome from inbox")
+                .fetch_all(&mut control)
+                .await
+                .unwrap();
+
+        let Ok(Applied::Recorded { seqs, .. }) = applied else {
+            panic!("the apply answered {applied:?}")
+        };
+        assert_eq!(seqs, [1, 2]);
+        assert_eq!(settled, Ok(()));
+        assert_eq!(
+            outcomes,
+            [("n-beside".to_owned(), Some("applied".to_owned()))]
+        );
+        ledger.close().await;
+    })
+    .await;
+}
+
 #[tokio::test]
 #[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
 async fn a_notification_no_retry_can_apply_waits_behind_the_rest_and_is_settled_failed_at_its_fifth_attempt()

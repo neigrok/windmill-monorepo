@@ -1,7 +1,7 @@
 package works.windmill.gym.coach.onboarding
 
 import kotlinx.serialization.Serializable
-import works.windmill.agent.TurnRefusal
+import works.windmill.agent.AllowanceShortfall
 import works.windmill.gym.coach.CoachAttachment
 import works.windmill.platform.net.WindmillJson
 
@@ -20,8 +20,8 @@ data class CoachOnboardingResponse(
     val message: String = "",
     val allowance: Allowance? = null,
 ) {
-    // Whether the allowance read this answer ended on says the balance is gone.
-    val spent: Boolean get() = TurnRefusal.spent(allowance?.remaining, allowance?.reserved)
+    // What the allowance read this answer ended on shows held it back.
+    val shortfall: AllowanceShortfall? get() = AllowanceShortfall.of(allowance?.remaining, allowance?.reserved)
 
     @Serializable
     data class Allowance(val remaining: String? = null, val reserved: String? = null)

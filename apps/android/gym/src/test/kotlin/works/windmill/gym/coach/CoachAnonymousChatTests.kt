@@ -25,6 +25,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import works.windmill.agent.AllowanceShortfall
 import works.windmill.agent.TurnEvent
 import works.windmill.agent.TurnOpen
 import works.windmill.agent.TurnRefusal
@@ -150,14 +151,14 @@ class CoachAnonymousChatTests {
     @Test fun everyCapKeepsTheQuestionInItsChatAcrossAReopenAndStandsOverEveryChatUntilThen() = runTest {
         data class Cap(val code: String, val refusal: CoachTurnRefusal, val sentence: String, val named: String)
         for ((code, refusal, sentence, named) in listOf(
-            Cap("subject_exhausted", CoachTurnRefusal.Allowance("subject_exhausted", spent = true), "You have used all of your AI allowance.", "allowance"),
+            Cap("subject_exhausted", CoachTurnRefusal.Shortfall(AllowanceShortfall.spent), "You have used all of your AI allowance.", "allowance"),
             Cap("free_day_exhausted", CoachTurnRefusal.Allowance("free_day_exhausted"), "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.", "allowance"),
             Cap("free_month_exhausted", CoachTurnRefusal.FreeMonthExhausted(null), "Coach is paused for everyone this month.", "allowance"),
             Cap("concurrency_exhausted", CoachTurnRefusal.Allowance("concurrency_exhausted"), "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.", "allowance"),
             Cap(TurnRefusal.rateLimited, CoachTurnRefusal.RateLimited, "You can ask again later.", "daily"),
         )) {
             val telling = TellingRecorder()
-            val server = script("[]").apply { refuseOpen = TurnRefusal(429, code, null, spent = code == "subject_exhausted") }
+            val server = script("[]").apply { refuseOpen = TurnRefusal(429, code, null, AllowanceShortfall.spent.takeIf { code == "subject_exhausted" }) }
             val file = File(temporary.newFolder(), LocalCoach.fileName)
             val directory = temporary.newFolder()
             val (chat, other, snapshot) = room(server, LocalCoach(file), directory, telling = telling).use { room ->

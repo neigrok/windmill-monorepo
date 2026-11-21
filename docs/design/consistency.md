@@ -618,24 +618,31 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   owner: the confirm's copy (or no confirm, since Undo stands for nine seconds), and the empty *Your roadmaps*. Phones
   have no door to delete a roadmap today, so 51.03 is reached only by address.
 - **Roadmap · iOS · what the web does differently.** [Roadmap · iOS](ios/roadmap.md) is drawn as one room and
-  waits for the owner's review. Where it and the web now disagree, for the web's owner to rule or redraw: the web
+  is ✅ Ready for dev. Where it and the web now disagree, for the web's owner to rule or redraw: the web
   says *tree* where iOS says *roadmap* (*Fork this tree*, *Attach a tree*, *Open tree*); the web's phone has no
   rename, no delete and no kinds management, and its desktop deletes a roadmap at once where iOS holds it nine
   seconds with *Undo*; the web shows Done as its twelve newest and *Show all N* where iOS folds each group; the web's reader on an app route sees an
   *Author's note* and iOS's cover shows none; the web's private links are *Personal links* and iOS's are *Your
   links*.
-- **Roadmap · iOS · the design draws more than the spec's build reads.** For parity with the web the boards
-  include quests and a pasted plan (01.6 to 01.8b, 02.16 to 02.18), Share with its public switch and Export (09.1
-  to 09.3), the public gallery (09.12) and the roadmap's Activity (01.13). [Roadmap on iOS](../foundation/roadmap-ios.md)
-  INV-1 names three reads outside the sync engine (the owner's progress on a shared roadmap, History, Fork); the
-  gallery's list and the visibility switch are two more, and its build tree has no step for any of these. When the
-  owner approves the boards, the spec's invariant and the tree follow; a board the owner strikes leaves both as
-  they are.
-- **Roadmap · iOS · the Shell owes the room its door.** A proposal is drawn in the Shell file
-  ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)): *Where to start?* with a
-  third door. The Design System has no `iOS / Product card` · Roadmap variant and no `map` symbol, so the door is a
-  detached copy; both belong in the library before it is built. The sign-in and sign-out questions that name
-  roadmaps and conversations (Roadmap · iOS 10.7, 10.8) are proposals for the Shell's owner too.
+- **Roadmap · iOS · what the boards draw that no read serves.** [Roadmap on iOS](../foundation/roadmap-ios.md)
+  names every read and command the boards need (§3 INV-1, §7.1 to §7.4). Where a board and what is read still
+  disagree, for the owner to rule or the board to be redrawn: Activity (01.13) and History (03.12) draw dated
+  *unlocked* rows, and the activity feed tells no unlock, while the web shows one only in the session it happens.
+  The same boards word *added*, *renamed* and *completed*; the feed also tells steps removed and recolored, links
+  drawn and taken away, and kinds added, renamed, described, recolored, reordered and removed, and counts
+  several deeds of one gesture in a sentence of the server's that says *nodes*. A reader's History has no board,
+  and a deed there is the owner's, not *You*. A gallery row (09.12a) names its roadmap's author and its caption
+  says newest first; `GET /v1/gallery` answers no author and ranks by forks, then by last activity. Quests
+  (01.7) draws sizes that are not the roster's, all nine (*Learn to sail* 22 steps, the roster 17), and its
+  estimates without the roster's *~*. Share draws public and private; a roadmap may hold `unlisted`, which no
+  surface writes and the web reads as a live link.
+- **Roadmap · iOS · the Design System owes the room its door.** *Where to start?* with a third door, Roadmap, is
+  ✅ Ready for dev in the Shell file
+  ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)). The Design System has no
+  `iOS / Product card` · Roadmap variant and no `map` symbol, so the door is a detached copy; both belong in the
+  library (the build tree's step `m0-add-the-roadmap-door-to-the-library`). The sign-in and sign-out questions
+  that name roadmaps and conversations are ✅ Ready for dev on Roadmap · iOS (10.7, 10.8). To check: that the
+  Shell's own boards of those two questions say the same.
 - **iOS · system parts in the Design System predate the simulator probe.** A SwiftUI probe on the iOS 26.5
   simulator (2026-11-18) found that the system draws several parts otherwise than the library and the Gym and
   Journal iOS boards do: a menu's symbols and checkmark are on the leading side (`iOS / Menu item` puts the symbol
@@ -1206,9 +1213,9 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
   01.14 and 01.15 draw Apply and Reject; allowance used is 11j.
 - **11j · The allowance-used copy.** Boards 01.10–01.12 say *You have used all of your AI
   allowance.*, a sentence no server sends (the nearest is *Your AI allowance is fully used or
-  reserved.*, 10v); Android says it for `subject_exhausted` when the server's allowance read shows the
-  balance gone, and *Coach’s AI allowance is unavailable right now.*, which no board draws, on a balance
-  that refused a round without being gone (`coach/turn/CoachTurnRefusal.kt`). It says when Coach
+  reserved.*, 10v); Android says it for `subject_exhausted` when the allowance the refusal carries shows
+  nothing left or held, and otherwise says what holds the request, as iOS does, in sentences no board draws
+  (6aa, `coach/turn/CoachTurnRefusal.kt`). It says when Coach
   comes back only of a paused pool (`free_month_exhausted`, `free_day_exhausted`), not of the seat's own
   allowance (01.11). Windmill One (01.12) ships only with checkout open.
 - **11k · Proposals decided on a sheet.** The owner keeps Android's action cards, review route and outcome wording.
@@ -1685,8 +1692,7 @@ Android. It and the product differ in these places.
   `allowance.budgetResetsAtMs` on the turn route's refusal before the stream, and follows the phone's
   locale (*Nov 1* in en_US). The backend code sends it under dogfood node
   `gym-coach-turn-allowance-reset`; production sends it once that node is done, and until then the line
-  ends at *this month*. A refusal mid-turn names the same moment on its `error` frame, where iOS reads
-  only `code`, so that line always ends at *this month*.
+  ends at *this month*. A refusal mid-turn reads the same moment from its `error` frame.
 - **6x · The iOS sign-in decision names no conversations.** Signed-out Coach conversations are engine records, and
   they join the account or are deleted with the rest of the signed-out gym data (gym Coach §9.1). Android names them
   (`PhoneSignInCopy`, 07.15 `1902:35369`, 07.16 `1902:35444`). iOS `AdoptionQuestion.named` lists workouts, routines,
@@ -1732,14 +1738,13 @@ Android. It and the product differ in these places.
   *removed from this workout*; 08.56 *Proposal · Push A · next time*; 07.15 and 07.16 *conversation* as the sign-in noun; the
   specimens *I made 3 routines.* and *I made Incline Dumbbell Press, then*. 08.45 says Android's *Get the update*, not iOS's
   *Update*. 08.68 offers *Use your own AI agent* on a shared free day, which iOS code does not (`CoachTurnRefusal.recovery`).
-  A spent signed-out allowance says *You have used all of your AI allowance.* over *Sign in to continue.* on both phones; one
-  with too little left for a round says *Coach’s AI allowance is unavailable right now.* on Android and *This request needs
-  more AI capacity than your remaining allowance.* on iOS over the same line, and one whose rest earlier requests hold says
-  Android's same unavailable line and iOS's *Your earlier AI requests hold the rest of your AI allowance until their cost is
-  confirmed, at most 10 minutes after each began.* No board draws iOS's two lines or its *Your AI allowance has no room for
-  this request.*, said where a refusal carries no allowance. That
-  allowance is $0.25, and an account's month is $0.50, which counts this phone's spend from the same month, so about $0.25 is left
-  after signing in and the line holds. An account truly run out says the same first sentence and *It comes back on {date}.*,
+  A `subject_exhausted` refusal says on both phones what the allowance it carries shows holds the request, over *Sign in to
+  continue.* signed out: *You have used all of your AI allowance.* with nothing left or held, *Your earlier AI requests hold
+  the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began.* with nothing left but
+  something held, *This request needs more AI capacity than your remaining allowance.* with something left, and *Your AI
+  allowance has no room for this request.* where the refusal carries none. No board draws the last three. A signed-out
+  phone's allowance is $0.25, and an account's month is $0.50, which counts this phone's spend from the same month, so about
+  $0.25 is left after signing in and *Sign in to continue.* holds. An account truly run out says the same first sentence and *It comes back on {date}.*,
   08.44's words, on Android; iOS's signed-in notice names no date.
 
 ### Native and web differences

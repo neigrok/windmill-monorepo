@@ -41,6 +41,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import works.windmill.agent.AllowanceShortfall
 import works.windmill.agent.TurnLine
 import works.windmill.agent.TurnRefusal
 import works.windmill.agent.TurnTransport
@@ -189,7 +190,7 @@ class ThreadScreenTests {
     fun aRefusedSendReturnsItsQuestionToTheComposerEditableAndTheTranscriptHoldsOnlyWhatWasSaid() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val turns = ScriptedTurns(Json.parse("""[{"event":"text","data":{"delta":"Pulldowns it is."}},{"event":"done","data":{"state":"completed"}}]""").arr())
-            .apply { refuseOpen = TurnRefusal(429, "subject_exhausted", null, spent = true) }
+            .apply { refuseOpen = TurnRefusal(429, "subject_exhausted", null, AllowanceShortfall.spent) }
         val file = File(tmp.newFolder(), LocalCoach.fileName)
         val room = signedIn(scope, turns, LocalCoach(file))
         room.sync(EngineRoomFixture.server())

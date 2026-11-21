@@ -311,10 +311,11 @@ nonisolated struct TurnInterrupted: Error {
               try await answer(batch, running, tally: &tally)
             case .done(let state, let truncated):
               end(running, state: state, truncated: truncated, code: nil, tally: tally, started: started); return
-            case .error(let code, _) where code == TurnRefusal.streamReplaced:
+            case .error(let code, _, _) where code == TurnRefusal.streamReplaced:
               throw TurnWireFault.streamReplaced
-            case .error(let code, let allowance):
-              end(running, state: .failed, truncated: false, code: code, allowance: allowance, tally: tally, started: started); return
+            case .error(let code, let budgetResetsAtMs, let allowance):
+              end(running, state: .failed, truncated: false, code: code, budgetResetsAtMs: budgetResetsAtMs, allowance: allowance, tally: tally,
+                  started: started); return
             }
           }
           throw TurnWireFault.endedWithoutTerminal
@@ -453,17 +454,17 @@ nonisolated struct TurnInterrupted: Error {
   // MARK: - End
 
   // Coach §4.4: the terminal state, the text and the receipt its calls derive, in one transaction; then what the events say
-  // of it. How the turn ended is the message's own line in the room; a failed turn's §6.5 code, read with the allowance its
-  // frame carried, becomes the refusal said at the conversation's end when it names a cap or a door, and the cause of an
-  // interrupted one only the `coach_turn` event carries.
-  func end(_ running: Running, state: MessageState, truncated: Bool, code: String?, allowance: AiAllowance? = nil, tally: CoachTurnTally,
-           started: ContinuousClock.Instant) {
+  // of it. How the turn ended is the message's own line in the room; a failed turn's §6.5 code, read with the moment and the
+  // allowance its frame carried, becomes the refusal said at the conversation's end when it names a cap or a door, and the
+  // cause of an interrupted one only the `coach_turn` event carries.
+  func end(_ running: Running, state: MessageState, truncated: Bool, code: String?, budgetResetsAtMs: Int64? = nil, allowance: AiAllowance? = nil,
+           tally: CoachTurnTally, started: ContinuousClock.Instant) {
     textFlush?.cancel(); textFlush = nil
     let text = streamed
     do { _ = try runner.run(EndTurn(running.turn.coach, state: state, text: text, truncated: truncated)) } catch { report(TurnInterrupted.storage, error) }
     guard self.running == running else { return }
     self.running = nil; stopping = false; reconnecting = false; work = nil
-    let refused = state == .failed ? code.map { CoachTurnRefusal(code: $0, allowance: allowance) } : nil
+    let refused = state == .failed ? code.map { CoachTurnRefusal(code: $0, resetsAtMs: budgetResetsAtMs, allowance: allowance) } : nil
     refusal = refused.flatMap { if case .said = $0 { nil } else { $0 } }
     error = nil
     var ended = ["screen": "coach", "outcome": Self.outcome(of: state)]
@@ -477,6 +478,8 @@ nonisolated struct TurnInterrupted: Error {
   }
 
   // A refusal before the stream started never reached Coach: the turn's records go and the question returns to the field.
+  // A cap the notice says is a refusal this phone expects, told by its capped outcome alone; every other one is a failed
+  // request too.
   func withdraw(_ running: Running, refusal: TurnRefusal, started: ContinuousClock.Instant) {
     do { _ = try runner.run(WithdrawTurn(turn: running.turn)) } catch { report(TurnInterrupted.storage, error) }
     guard self.running == running else { return }
@@ -486,7 +489,9 @@ nonisolated struct TurnInterrupted: Error {
     var ended = ["screen": "coach", "outcome": refused.askOutcome.outcome]
     if let cap = refused.askOutcome.cap { ended["cap"] = cap }
     if ended["outcome"] == "refused", refusal.status >= 500 { ended["outcome"] = "failed"; report("http", refusal) }
-    telemetry.event("api_request_failed", properties: ["operation": "gym_coach_turn", "route": "/v1/gym", "method": "POST", "failure_kind": "http", "status": String(refusal.status)])
+    if refused.askOutcome.outcome != "capped" {
+      telemetry.event("api_request_failed", properties: ["operation": "gym_coach_turn", "route": "/v1/gym", "method": "POST", "failure_kind": "http", "status": String(refusal.status)])
+    }
     telemetry.event("gym_ask_outcome", properties: ended, durationMs: Int64(started.duration(to: .now).components.seconds * 1_000))
   }
 

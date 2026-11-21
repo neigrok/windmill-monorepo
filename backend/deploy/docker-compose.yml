@@ -1,6 +1,8 @@
 # Windmill backend, one VPS. Postgres holds the data, a one-shot applies the schema, another
 # provisions each service ledger, and the server, embedder, subscriptions and AI services run from
-# the images Backend CI publishes for one commit. Caddy terminates TLS and routes public doors.
+# images Backend CI publishes for each commit; the backend's commit is BACKEND_TAG. A deploy keeps an
+# image whose inputs it does not change (README.md, "What a deploy replaces"). Caddy terminates TLS
+# and routes public doors.
 # Only Caddy is exposed to the internet; other services use the private compose network, except
 # subscription internal doors, which the server alone reaches on internal-doors.
 #
@@ -25,7 +27,7 @@ services:
       retries: 20
 
   migrate:
-    image: ${SERVER_IMAGE:-ghcr.io/neigrok/windmill-monorepo:${IMAGE_TAG:-latest}}
+    image: ${SERVER_IMAGE:-ghcr.io/neigrok/windmill-monorepo:${BACKEND_TAG:-latest}}
     restart: "no"
     depends_on:
       db:
@@ -84,7 +86,7 @@ services:
     command: ["bash", "/ai-db/provision.sh"]
 
   server:
-    image: ${SERVER_IMAGE:-ghcr.io/neigrok/windmill-monorepo:${IMAGE_TAG:-latest}}
+    image: ${SERVER_IMAGE:-ghcr.io/neigrok/windmill-monorepo:${BACKEND_TAG:-latest}}
     restart: unless-stopped
     # How long the server has between SIGTERM and SIGKILL when a deploy replaces it. It covers the server's own
     # deadline for everything still running at the signal (5 s) and the 3 s it may take to write out its log and
@@ -184,12 +186,12 @@ services:
       # Observability: uncaught server exceptions AND every LOG_* line ship to Sentry (empty DSN →
       # both no-op; stdout is never affected, so `docker logs` stays whole either way). LOG_LEVEL is
       # the volume knob, ENVIRONMENT keeps a non-prod run out of the environment you page on, and
-      # RELEASE is the deployed sha. Funnel events forward to Amplitude with the resolved user_id
-      # (empty key → skipped); HOST picks the region.
+      # RELEASE is the commit the server's image was built from. Funnel events forward to Amplitude
+      # with the resolved user_id (empty key → skipped); HOST picks the region.
       SENTRY_DSN: ${SENTRY_DSN:-}
       SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SENTRY_LOG_LEVEL: ${SENTRY_LOG_LEVEL:-info}
-      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      SENTRY_RELEASE: ${BACKEND_TAG:-}
       AMPLITUDE_API_KEY: ${AMPLITUDE_API_KEY:-}
       AMPLITUDE_HOST: ${AMPLITUDE_HOST:-api2.amplitude.com}
       # How long the three telemetry tables keep a row (days). Empty ⇒ the binary's defaults —
@@ -249,12 +251,12 @@ services:
   # or the mount is empty and /health reports 503 naming the missing path (the container stays up).
   #
   # The code is an IMAGE built by Backend CI/CD from services/embedder — the same package as the
-  # server, tagged `embedder-<sha>`, pulled by the same IMAGE_TAG — since 2026-08-15. Until then this
+  # server, tagged `embedder-<sha>`, pulled at the server's commit, BACKEND_TAG — since 2026-08-15. Until then this
   # was `node:22-slim` with services/embedder bind-mounted from the host, a directory the deploy
   # never copied to the VPS, so the sidecar could not start on any host nobody had hand-provisioned.
   # A rollback to a sha older than that has no embedder image at its tag; dispatch with a newer one.
   embedder:
-    image: ghcr.io/neigrok/windmill-monorepo:embedder-${IMAGE_TAG:-latest}
+    image: ghcr.io/neigrok/windmill-monorepo:embedder-${BACKEND_TAG:-latest}
     restart: unless-stopped
     volumes:
       - ./web/models:/models:ro

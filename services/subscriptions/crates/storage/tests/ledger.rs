@@ -1,6 +1,6 @@
 use std::env;
 use std::panic::{AssertUnwindSafe, resume_unwind};
-use std::time::Duration;
+use std::time::{Duration, Instant as Clock};
 
 use domain::{
     BillingInterval, Environment, Instant, Lineage, Money, NextCharge, Observation, ObservedPeriod,
@@ -9,7 +9,9 @@ use domain::{
 };
 use futures_util::FutureExt;
 use sqlx::{AssertSqlSafe, Connection, Executor, PgConnection};
-use storage::{Applied, DatabaseUrl, Ledger, MalformedDatabaseUrl, Observed, StorageError};
+use storage::{
+    AccountClaim, Applied, DatabaseUrl, Ledger, MalformedDatabaseUrl, Observed, StorageError,
+};
 use url::Url;
 use uuid::Uuid;
 
@@ -234,6 +236,122 @@ async fn a_stalled_seq_lock_costs_its_writers_a_busy_answer_and_never_the_health
         assert_eq!(
             answers,
             (0..8).map(|_| Err(StorageError::Busy)).collect::<Vec<_>>()
+        );
+        ledger.close().await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+async fn writes_behind_a_stalled_store_hint_row_each_answer_busy_within_five_seconds() {
+    with_empty_database(async |url| {
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let claimant = Uuid::new_v4();
+        ledger.apply(purchase("claimed")).await.unwrap();
+        ledger
+            .apply(Observed {
+                claim: Some(AccountClaim {
+                    account_id: claimant,
+                    at: Instant::from_epoch_millis(1_798_765_200_000),
+                }),
+                ..purchase("claimed")
+            })
+            .await
+            .unwrap();
+        let owed = ledger.store_hints(10).await.unwrap();
+        assert_eq!(owed.len(), 1);
+        let mut control = PgConnection::connect(&url).await.unwrap();
+        let mut holder = PgConnection::connect(&url).await.unwrap();
+        holder
+            .execute("begin; select * from store_hints for update")
+            .await
+            .unwrap();
+
+        let clearing = tokio::spawn({
+            let (ledger, hint) = (ledger.clone(), owed[0].clone());
+            async move {
+                let started = Clock::now();
+                (ledger.clear_store_hint(&hint).await, started.elapsed())
+            }
+        });
+        until("the clear waits behind the stalled row", async || {
+            waiting(&mut control).await == 1
+        })
+        .await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let erasing = tokio::spawn({
+            let ledger = ledger.clone();
+            async move {
+                let started = Clock::now();
+                (ledger.erase_account(claimant).await, started.elapsed())
+            }
+        });
+        let (cleared, cleared_in) = within("the clear's answer", clearing).await.unwrap();
+        let (erased, erased_in) = within("the erasure's answer", erasing).await.unwrap();
+        holder.execute("rollback").await.unwrap();
+        let left: (i64, i64, i64) = sqlx::query_as(
+            "select (select count(*) from erased_accounts), (select count(*) from events), \
+             (select count(*) from store_hints)",
+        )
+        .fetch_one(&mut control)
+        .await
+        .unwrap();
+
+        assert_eq!(cleared, Err(StorageError::Busy));
+        assert_eq!(erased, Err(StorageError::Busy));
+        assert!(cleared_in < Duration::from_millis(5500), "{cleared_in:?}");
+        assert!(erased_in < Duration::from_millis(5500), "{erased_in:?}");
+        assert_eq!(left, (0, 4, 1));
+        ledger.close().await;
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+async fn a_write_that_waited_already_waits_for_a_lock_only_what_is_left_of_its_five_seconds() {
+    with_empty_database(async |url| {
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let mut control = PgConnection::connect(&url).await.unwrap();
+        // A period waits to be written for as long as the test holds the advisory lock 7.
+        control
+            .execute(
+                "create function hold_periods() returns trigger language plpgsql as $$ \
+                 begin perform pg_advisory_xact_lock_shared(7); return new; end $$; \
+                 create trigger hold_periods before insert on periods \
+                     for each row execute function hold_periods(); \
+                 select pg_advisory_lock(7);",
+            )
+            .await
+            .unwrap();
+        let mut holder = PgConnection::connect(&url).await.unwrap();
+        holder
+            .execute("begin; select latest_seq from ledger for update")
+            .await
+            .unwrap();
+
+        let writer = tokio::spawn({
+            let ledger = ledger.clone();
+            async move { ledger.apply(purchase("w")).await }
+        });
+        until("the writer waits to write its period", async || {
+            waiting(&mut control).await == 1
+        })
+        .await;
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        control
+            .execute("select pg_advisory_unlock(7)")
+            .await
+            .unwrap();
+        let answer = tokio::time::timeout(Duration::from_millis(3500), writer).await;
+        holder.execute("rollback").await.unwrap();
+
+        assert_eq!(
+            answer
+                .expect("the writer waited for the seq lock past what was left of its 5 s")
+                .unwrap(),
+            Err(StorageError::Busy)
         );
         ledger.close().await;
     })
