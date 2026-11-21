@@ -62,7 +62,8 @@ Issue, both under the static operation. It sends neither for an expected answer:
 
 The gym and Coach stores also drop domain refusals (`TrainingRefused`, `TrainingUnanswered`,
 `TrainingReadChanged`) and every `WindmillApiException`, which their HTTP door has already judged.
-A failed HTTP request always sends `api_request_failed`; an unexpected one also reports under its
+A failed HTTP request sends `api_request_failed`, except a Coach turn's open that an allowance or the
+daily cap refused, which `gym_ask_outcome` tells as `capped` alone; an unexpected one also reports under its
 operation. A `Timeout` still reports. Raw storage exceptions remain reportable even when their
 type also occurs during network loss. Failures of the telemetry pipeline itself (`telemetry_*`) go to Sentry only.
 
@@ -206,7 +207,7 @@ the rest in `gym/telemetry/GymEvents.kt`, owns the `onboarding_` prefix, and the
 |---|---|---|
 | `account_delete` | platform | `state`: `shown`; `action`: `confirm`, `check`, `cleanup`, `back`, `done`, `retry` (Try again on Not deleted), `date_time` (with `outcome`: `failed` when date settings cannot open); `outcome`: `started`, `cancelled`, `refused`, `clock_refused` (the phone's date and time are wrong), `not_deleted` (the close never reached Windmill in time), `failed`, `ok`, `cleanup_pending`, `pending_confirmation`. Refusals file no Issue. |
 | `ai_installation_outcome` | platform | `action`: `bind`; `outcome`: `refused`, `failed` |
-| `api_request_failed` | platform, gym | `method`, `route` (first two path segments), `operation`, `failure_kind`, `status`, `duration_ms`, `network_phase`. A Coach turn the server refused before its stream sends `operation`: `gym_coach_turn`, `route`: `/v1/gym`, `method`: `POST`, `failure_kind`: `http`, `status`; one withdrawn with no answer from the server, every attempt lost or the answer unreadable, or a Stop before any frame that went unheard, sends the same with `failure_kind`: `offline` and no `status`; one withdrawn because every answer was a 2xx that was no event stream, a captive portal's page, sends `failure_kind`: `malformed` and no `status` |
+| `api_request_failed` | platform, gym | `method`, `route` (first two path segments), `operation`, `failure_kind`, `status`, `duration_ms`, `network_phase`. A Coach turn the server refused before its stream other than by a cap sends `operation`: `gym_coach_turn`, `route`: `/v1/gym`, `method`: `POST`, `failure_kind`: `http`, `status`; one withdrawn with no answer from the server, every attempt lost or the answer unreadable, or a Stop before any frame that went unheard, sends the same with `failure_kind`: `offline` and no `status`; one withdrawn because every answer was a 2xx that was no event stream, a captive portal's page, sends `failure_kind`: `malformed` and no `status` |
 | `app_backgrounded` | app | none |
 | `app_foregrounded` | app | none |
 | `app_started` | app | none |

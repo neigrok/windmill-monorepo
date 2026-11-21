@@ -764,9 +764,35 @@ class CoachTurnsTests {
                 assertEquals(listOf(CoachRecovery.signIn, null), listOf(refusal.recovery(anonymous = true), refusal.recovery(anonymous = false)))
                 assertEquals(WithdrawnTurn("Private question", null, null), phone.turns.withdrawn.value)
                 assertEquals(emptyList<CoachMessage>(), phone.messages())
-                assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "capped", "cap" to "allowance", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))
+                assertEquals(listOf(
+                    "gym_ask_started" to mapOf("screen" to "coach"),
+                    "coach_ability" to mapOf("name" to "list_sessions", "outcome" to "ok"),
+                    "coach_ability" to mapOf("name" to "list_notes", "outcome" to "ok"),
+                    "coach_ability" to mapOf("name" to "list_exercises", "outcome" to "ok"),
+                    "coach_ability" to mapOf("name" to "list_routines", "outcome" to "ok"),
+                    "gym_ask_outcome" to mapOf("screen" to "coach", "outcome" to "capped", "cap" to "allowance", "duration_ms" to "0"),
+                ), phone.telling.events)
                 assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
             }
+        }
+    }
+
+    // A daily cap before the stream is as expected as an allowance: its notice and its capped outcome say it, and nothing reads it as a failed request.
+    @Test fun aDailyCapBeforeTheStreamTellsOnlyItsOutcome() = runTest {
+        val server = script("[]").apply { refuseOpen = TurnRefusal(429, TurnRefusal.rateLimited, null) }
+        TurnPhone(this, folder.newFolder(), server).use { phone ->
+            checkNotNull(phone.turns.send("Private question", null, null, anonymous = true))
+            advanceUntilIdle()
+            assertEquals(CoachTurnRefusal.RateLimited, phone.turns.refusal.value)
+            assertEquals(listOf(
+                "gym_ask_started" to mapOf("screen" to "coach"),
+                "coach_ability" to mapOf("name" to "list_sessions", "outcome" to "ok"),
+                "coach_ability" to mapOf("name" to "list_notes", "outcome" to "ok"),
+                "coach_ability" to mapOf("name" to "list_exercises", "outcome" to "ok"),
+                "coach_ability" to mapOf("name" to "list_routines", "outcome" to "ok"),
+                "gym_ask_outcome" to mapOf("screen" to "coach", "outcome" to "capped", "cap" to "daily", "duration_ms" to "0"),
+            ), phone.telling.events)
+            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
         }
     }
 
