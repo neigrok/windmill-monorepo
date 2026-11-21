@@ -136,6 +136,14 @@ message; `WriteRoutesTest` holds that line. `maxFrameBytes` is the most the web 
 structure frame, but for a single entry that alone is larger: `MAX_FRAME_BYTES` (`web/src/products/roadmap/sync/frames.js`, held to the file and
 under `maxInboundBytes` by `web/test/products/roadmap/sync/SyncSession.test.js`).
 
+## `roadmap/quests/`
+
+The roster of quests ([roadmap-ios.md](../../docs/foundation/roadmap-ios.md) §7.1): `roster.json`, the nine
+ready-made roadmaps in their order, each with the input of the domain's `CreateRoadmap` it plants. The file
+is the source: the web's shelf reads it, and `web/test/products/roadmap/quests/roster.test.js` holds what the
+web plants to it. [roadmap/quests/README.md](roadmap/quests/README.md) has the shape, the rules every quest
+keeps and how its words are shown.
+
 ## `gym-ladder.json`
 
 - The step pair is chosen by the **magnitude** of the weight, never its sign: under 20 kg ±1 / ±2.5,

@@ -207,10 +207,10 @@ New Roadmap makes a roadmap blank, from a quest, from a plan on the clipboard, o
 copy. None makes a request, and none needs a connection or an account.
 
 - **Blank** plants one starting step, named as the roadmap.
-- **A quest** is one of the web's roster of nine. `packages/api-contract/roadmap/quests/` holds
-  the roster: the quests in their order, each with its group, name, estimate, kinds, steps and
-  links, and the `CreateRoadmap` input it plants. The web's roster is held to that file and the
-  app's quests come from it. The size shown beside a quest is counted from its steps.
+- **A quest** is one of the roster's nine. `packages/api-contract/roadmap/quests/` holds the
+  roster: the quests in their order, each with its id, group and estimate and the `CreateRoadmap`
+  input it plants, which carries its name, kinds, steps and links. The web's shelf reads that
+  file and the app's quests come from it. The size shown beside a quest is counted from its steps.
 - **A plan** is text read by the web's plan grammar, ported to `RoadmapDomain`: the same text
   gives the same name, steps, links, kinds, done marks and counts on the iPhone as on the web.
   It is read on the phone, and reading cannot fail: a line the grammar cannot place is kept as a
@@ -368,8 +368,6 @@ makes it false.
   a mark; a name with a line break breaks the file's first line; and steps on a loop are not
   written. In a file an export wrote, text before the first step is dropped, where §7.1 keeps
   every line. The cases of `write.json` and `read.json` pin each as it stands.
-- The quest roster is the web's code and the web's own tests alone
-  (`web/src/products/roadmap/quests/roster/`): no shared case holds it.
 - The domain's read of a roadmap carries no `forkedFrom`, which the gallery's row reads (§3).
 - The app's Info.plist names no Markdown type (§7.3).
 
