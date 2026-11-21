@@ -119,11 +119,10 @@ Activity and the web demo.
 | `GET /v1/gallery` | the public gallery | a connection | it says the gallery cannot be reached and offers to try again |
 | `POST /v1/trees/{id}/fork` | Fork: on a cover, on a gallery row, and before attaching a roadmap the person can only read (§6) | a connection and an account | with no connection it says so and forks nothing; signed out it opens sign-in, and the fork runs when that closes signed in |
 
-- **What no read serves.** Two things the boards draw have no source in what the room reads: the
-  dated *unlocked* rows of Activity and History (01.13, 03.12), and the author's name on a gallery
-  row (09.12a). One state has no board: Share for a roadmap whose visibility is `unlisted`. The
-  [consistency ledger](../design/consistency.md) holds each for the owner, and none is built
-  before a ruling.
+- **What the room does not show.** The feed tells no unlock, so Activity and History show none
+  (R-7). The gallery answers no author, so a row shows its roadmap's title and step count alone
+  (R-8). Share has two states, public and private (R-9): the roadmaps that hold `unlisted` are
+  moved to private before Share is built.
 
 ## §4 Links
 
@@ -152,8 +151,9 @@ browser's.
   joins the web and the backend in running.
 - The address Share hands out (§7.4) is the roadmap's share address of the same cases, `/t/<id>`
   on the site.
-- Not known until it is tried on a device: that the release's signing turns the capability on with
-  no step in Apple's portal, and that Apple's fetch of the file passes the site's edge.
+- Apple's fetch of the file passes the site's edge: its CDN serves the site's file. Not known
+  until it is tried on a device: that the release's signing turns the capability on with no step
+  in Apple's portal.
 
 ## §5 The Graph
 
@@ -385,3 +385,6 @@ makes it false.
 | R-4 | Which links open the app | Shared links and a person's own links. (2026-11-17) |
 | R-5 | Where a form commits | In the toolbar, as every other form. (2026-11-17) |
 | R-6 | Renaming and deleting a roadmap, and managing kinds, on the iPhone | All are in the first version: rename and delete a roadmap, and add, rename, recolour and remove a kind. Each is drawn as a proposal and approved first. (2026-11-17) |
+| R-7 | Unlocked rows in Activity and History | Not shown in the first version: the feed tells no unlock, and the boards are redrawn without them. (2026-11-21) |
+| R-8 | The author on a gallery row | A row shows its roadmap's title and step count alone; no name of a person is made public. (2026-11-21) |
+| R-9 | A roadmap whose visibility is `unlisted` | Every such roadmap is moved to private, and Share has two states, public and private. (2026-11-21) |
