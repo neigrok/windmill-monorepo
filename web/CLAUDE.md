@@ -187,6 +187,11 @@ npm run build    # fetch model weights, run tests, build Vite and static landing
 Use `npm run build` as the gate. `prebuild` fetches self-hosted weights into `public/models`;
 `vite build` alone skips that step, tests and static-page generation.
 
+With `APPLE_TEAM_ID` in its environment the build writes `dist/.well-known/apple-app-site-association`
+(`scripts/appSiteAssociation.js`), the file iOS reads before it opens a roadmap's link in the iPhone app. Without it the
+build writes no file and says so, and an identifier that is not ten capitals and digits stops the build. Web Deploy
+passes the secret and holds a release that carries no file.
+
 Web Deploy runs a pull request's suite a second time with `VITE_ROADMAP_REPLICA_ROOM=on` (its `room-on-tests` job), as
 production's build sets it; `VITE_ROADMAP_REPLICA_ROOM=on npm test` runs it locally. Only Vite-served tests read the switch,
 so a browser test about one reading pins `replicaRoom.js` in its fixture and says which in its name.
@@ -252,10 +257,11 @@ source sitemap to edit. `staticPageAssets.js` checks canonical, Open Graph and T
 and supplies shared fonts, chrome, boot and appearance assets. Missing landing modules or fallback
 bodies fail the build.
 
-Caddy serves real 404s, redirects extensionless static paths to their canonicals and forwards
-`/gallery` and `/t/:id` to the backend. Shared-tree pages receive tree-specific metadata; unlisted
-trees are `noindex`. The API host is excluded from indexing. Cloudflare may add managed rules to
-`public/robots.txt`; inspect the live response when checking crawler access.
+Caddy serves real 404s, redirects extensionless static paths to their canonicals, serves the
+association file as JSON at its own address and forwards `/gallery` and `/t/:id` to the backend.
+Shared-tree pages receive tree-specific metadata; unlisted trees are `noindex`. The API host is
+excluded from indexing. Cloudflare may add managed rules to `public/robots.txt`; inspect the live
+response when checking crawler access.
 
 Remaining search work: product-specific social cards, a public-tree sitemap, font preloads and
 full landing prerendering. Hash routes cannot be independently indexed. Organization social links
@@ -292,7 +298,9 @@ landings as a signed-out reader at 390, 744 and 1440, and makes one returning vi
 read-only, with the event intake and Sentry blocked and the sync engine's pull let through as the read it is. It fails on a page
 error, a console error, a failed same-origin request other than the anonymous `/v1/me` 401, a Graph with no painted pixels, a
 session the server never answered, any Sentry attempt, a `client_error` beacon, a landing the app never mounted over, or a
-service worker that never took the page and primed its shell or answers a returning visit badly. It calls no route roadmap's
+service worker that never took the page and primed its shell or answers a returning visit badly. On a site that serves its
+own API, as production does, it also fails unless `/.well-known/apple-app-site-association` answers `200` as
+`application/json` with no redirect and holds what the build writes for the team it names. It calls no route roadmap's
 move onto the engine retires, so it walks a server with roadmap's switch on, as production's is, or off: the step link
 takes its step from the reader's Board and the roadmap's visibility from its share page, and a session is answered once
 the engine has pulled the roadmap and follows it live, or, with the switch off, once the room's socket answers its

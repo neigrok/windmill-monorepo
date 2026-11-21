@@ -6,8 +6,8 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified. `RoadmapDomain` holds the pure reads (§2) and runs their vector files (§10);
-nothing else is built. The owner approved it on 2026-11-17; what it says of
+**Status:** Specified and in build; §13 lists what is not built yet, and the Roadmap on iOS
+roadmap tree records each landing. The owner approved it on 2026-11-17; what it says of
 quests, plans, Export, Share, the gallery and Activity follows the boards and has not been before
 the owner. The iPhone app carries journal and gym. Roadmap's design for it is
 [Roadmap · iOS](../design/ios/roadmap.md), with its boards in the Roadmap Figma file, every one
@@ -354,7 +354,7 @@ makes it false.
 ## §13 Gaps this build closes
 
 - The app has no third room, no associated domain and no roadmap code; its onboarding says roadmap
-  is on the web. Nothing serves an association file.
+  is on the web.
 - `RoadmapDomain` holds the pure reads alone: no entity, action, replica read, Undo, plan grammar, quest or Coach
   executor.
 - No fixture of the web's picture exists, and the web's own layout calls the platform's

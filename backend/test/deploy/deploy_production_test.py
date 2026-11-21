@@ -1055,6 +1055,8 @@ class WebCompatibilityTest(unittest.TestCase):
         self.web = self.root / "checkout/web"
         (self.web / "dist").mkdir(parents=True)
         (self.web / "dist/index.html").write_text("candidate web")
+        (self.web / "dist/.well-known").mkdir()
+        (self.web / "dist/.well-known/apple-app-site-association").write_text("candidate association")
         helper = self.web.parent / "backend/deploy/sync_compatibility.py"
         helper.parent.mkdir(parents=True)
         shutil.copyfile(SCRIPT.with_name("sync_compatibility.py"), helper)
@@ -1171,6 +1173,18 @@ class WebCompatibilityTest(unittest.TestCase):
                 self.assertEqual(json.loads(self.state.read_text())["commands"], [])
                 self.assertEqual(self.live_files(), before)
 
+    def test_a_release_without_the_association_file_never_reaches_the_host(self):
+        text = (SCRIPT.parents[2] / ".github/workflows/web.yml").read_text()
+        self.assertIn("          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}\n",
+                      text.split("      - name: Build\n", 1)[1].split("\n      - ", 1)[0])
+        before = self.live_files()
+        (self.web / "dist/.well-known/apple-app-site-association").unlink()
+        result = self.promote({"schema": 10, "minSchema": 10})
+        self.assertEqual((result.returncode, result.stdout, result.stderr),
+                         (1, "", "HOLD web deployment: the release holds no association file, which the build writes from APPLE_TEAM_ID\n"))
+        self.assertEqual(json.loads(self.state.read_text())["commands"], [])
+        self.assertEqual(self.live_files(), before)
+
     def test_pinned_artifact_records_the_source_composed_schema_and_every_dist_file_before_preflight(self):
         contract = self.web.parent / "packages/api-contract/sync"
         contract.mkdir(parents=True)
@@ -1184,7 +1198,8 @@ class WebCompatibilityTest(unittest.TestCase):
         release = json.loads((self.web / "web-release.json").read_text())
         self.assertEqual(release, {"source": "b" * 40, "compatibility": {"schema": 10, "minSchema": 10}, "files": [
             {"path": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
-            for name, data in ((".retained", bytes([0, 128, 255])), ("index.html", b"candidate web"))]})
+            for name, data in ((".retained", bytes([0, 128, 255])),
+                               (".well-known/apple-app-site-association", b"candidate association"), ("index.html", b"candidate web"))]})
         text = (SCRIPT.parents[2] / ".github/workflows/web.yml").read_text()
         self.assertLess(text.index("name: Retain pinned web release"), text.index("name: Rsync dist to the VPS"))
         retained = text.split("      - name: Retain pinned web release\n", 1)[1].split("\n      - ", 1)[0]
@@ -1210,6 +1225,7 @@ class WebCompatibilityTest(unittest.TestCase):
         self.assertFalse((self.web / "web-release.json").exists())
         (contract / "journal.registry.json").write_text(json.dumps({"version": 10, "minVersion": 10}))
         (self.web / "dist/index.html").unlink()
+        (self.web / "dist/.well-known/apple-app-site-association").unlink()
         result = subprocess.run(["bash", "-euc", self.block("Prepare pinned web release")], cwd=self.web,
                                 env=self.environment, capture_output=True, text=True)
         self.assertEqual((result.returncode, result.stdout, result.stderr), (1, "", "FAIL web release has no files\n"))

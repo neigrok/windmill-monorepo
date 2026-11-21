@@ -72,6 +72,7 @@ jobs:
         env:
           VITE_SENTRY_DSN: https://8ccb99ec79873a1f7ad27fb1939906d0@o4511760691953664.ingest.de.sentry.io/4511760715350096
           VITE_RELEASE: ${{ github.sha }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           VITE_ROADMAP_REPLICA_ROOM: on
         run: npm run build
 
