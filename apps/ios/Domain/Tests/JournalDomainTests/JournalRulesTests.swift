@@ -213,9 +213,11 @@ final class JournalVectorReader: CommitContext {
   func stored(_ type: String, _ id: RecordID) throws -> Record? { try rows.stored(type, id) }
   func drawn(_ type: String) throws -> [Record] { try rows.drawn(type) }
   func stored(_ type: String) throws -> [Record] { try rows.stored(type) }
+  func records(_ type: String, in view: ViewMode) throws -> [Record] { try rows.records(type, in: view) }
   func drawn(_ type: String, where field: String, is id: RecordID) throws -> [Record] { try rows.drawn(type, where: field, is: id) }
   func stored(_ type: String, where field: String, is id: RecordID) throws -> [Record] { try rows.stored(type, where: field, is: id) }
   func spentBorn(_ type: String, _ id: RecordID) throws -> Stamp? { try rows.spentBorn(type, id) }
+  func spentSeq(_ type: String, _ id: RecordID) throws -> Int64? { try rows.spentSeq(type, id) }
   func firstPullComplete() throws -> Bool { try rows.firstPullComplete() }
   func confirmed(_ type: String, _ id: RecordID) throws -> Record? { try confirmedRows.stored(type, id) }
   func device(_ key: String) throws -> JSON? { deviceRows[key] }

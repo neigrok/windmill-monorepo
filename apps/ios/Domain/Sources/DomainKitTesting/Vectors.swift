@@ -52,10 +52,10 @@ public struct ProductCorpus {
     return ["decision": try decision.form(in: decider.scope, registry: book.registry, result: result, refusal: refusal)]
   }
 
-  // An act's case (§9.5), a scene of several scopes, `{scopes: {<scope>: {drawn, stored?}}, device?, ids?, now,
-  // offsetSeconds}` → `{decision}`: the act's load through a reader of each scope's records, one decision minting the
-  // listed ids in order across scopes, a violation its decide throws folded into its refusal, and each segment's gesture
-  // in its scope.
+  // An act's case (§9.5), a scene of several scopes, `{scopes: {<scope>: {drawn, stored?, confirmed?, spent?}}, device?,
+  // ids?, now, offsetSeconds}` → `{decision}`: the act's load through a reader of each scope's records, one decision
+  // minting the listed ids in order across scopes, a violation its decide throws folded into its refusal, and each
+  // segment's gesture in its scope, with its Undo recipes where its plan opts in.
   public func act<A: ActAction>(_ action: A, _ vector: Vector, result: (A.Result) -> JSON, refusal: (A.Refusal) -> JSON) throws -> JSON {
     let moment = try Moment(form: vector.input)
     let scene = try VectorScene(vector.input, now: moment.now.ms, registry: book.registry)
@@ -109,42 +109,48 @@ public struct ProductCorpus {
 }
 
 extension Moment {
-  // `{now, offsetSeconds}`: the instant in a fixed zone.
+  // `{now?, offsetSeconds?}`: the instant in a fixed zone, 2027-01-15T08:00:00Z in UTC where a case gives neither.
   init(form: JSON) throws {
-    let offset = Int(try form.member("offsetSeconds").asInteger())
-    self.init(now: Instant(ms: try form.member("now").asInteger()), zone: FixedZone(offsetSeconds: offset))
+    let offset = Int(try form["offsetSeconds"]?.asInteger() ?? 0)
+    self.init(now: Instant(ms: try form["now"]?.asInteger() ?? 1_800_000_000_000), zone: FixedZone(offsetSeconds: offset))
   }
 }
 
 // MARK: - Records
 
 // The records a vector lists per view (§15.1), each an engine row as the engine's readers hand it to a product, the
-// device keys it lists, each key's value, and the scope's spent ids it lists, `{t, id, born}`, each id's born.
+// server's copy of them as the device pulled it (`confirmed`, by default `stored`), the device keys it lists, each key's
+// value, and the scope's spent ids it lists, `{t, id, born, seq?}`, each id's born and the `seq` it keeps.
 package struct VectorRecords: Sendable {
   package var drawn: [Record]
   package var stored: [Record]
+  package var confirmed: [Record]
   package var device: JSON.Object
-  package var spent: [RecordKey: Stamp]
+  package var spent: [RecordKey: (born: Stamp, seq: Int64?)]
 
-  package init(drawn: JSON?, stored: JSON?, device: JSON? = nil, spent: JSON? = nil, registry: Registry) throws {
+  package init(drawn: JSON?, stored: JSON?, confirmed: JSON? = nil, device: JSON? = nil, spent: JSON? = nil, registry: Registry) throws {
     self.drawn = try VectorRecords.records(drawn, registry: registry)
     self.stored = try VectorRecords.records(stored, registry: registry)
+    self.confirmed = try confirmed.map { try VectorRecords.records($0, registry: registry) } ?? self.stored
     self.device = try device?.asObject() ?? [:]
-    self.spent = Dictionary(uniqueKeysWithValues: try (spent?.asArray() ?? []).map { (spentID: JSON) throws -> (RecordKey, Stamp) in
-      (RecordKey(try spentID.member("t").asString(), try RecordID(json: spentID.member("id"))), try Stamp(json: spentID.member("born")))
+    self.spent = Dictionary(uniqueKeysWithValues: try (spent?.asArray() ?? []).map { (spentID: JSON) throws -> (RecordKey, (born: Stamp, seq: Int64?)) in
+      let seq = try spentID["seq"].map { (seq: JSON) throws -> Int64 in try seq.asInteger() }
+      return (RecordKey(try spentID.member("t").asString(), try RecordID(json: spentID.member("id"))), (try Stamp(json: spentID.member("born")), seq))
     })
   }
 
   // A case's records in `scope`, `stored` defaulting to `drawn`: its `records`, device rows among them, or, in a scene of
   // several scopes, `scopes[scope]` with the scene's `device` rows, a scope the scene leaves out holding none.
   package init(_ input: JSON, in scope: ScopeRef, registry: Registry) throws {
-    guard case .object(let scopes)? = input["scopes"] else {
-      let rows = try input.member("records")
-      try self.init(drawn: rows["drawn"], stored: rows["stored"] ?? rows["drawn"], device: rows["device"], registry: registry)
-      return
+    let (rows, device): (JSON, JSON?)
+    if case .object(let scopes)? = input["scopes"] {
+      (rows, device) = (scopes[scope.text] ?? ["drawn": []], input["device"])
+    } else {
+      rows = try input.member("records")
+      device = rows["device"]
     }
-    let rows: JSON = scopes[scope.text] ?? ["drawn": []]
-    try self.init(drawn: rows["drawn"], stored: rows["stored"] ?? rows["drawn"], device: input["device"], registry: registry)
+    try self.init(drawn: rows["drawn"], stored: rows["stored"] ?? rows["drawn"], confirmed: rows["confirmed"], device: device,
+                  spent: rows["spent"], registry: registry)
   }
 
   static func records(_ rows: JSON?, registry: Registry) throws -> [Record] {
@@ -152,10 +158,10 @@ package struct VectorRecords: Sendable {
   }
 }
 
-// A reader over a vector's records: the folded record by id visible or not, the visible records of a type in id order,
-// and the born of a spent id, as the engine's readers answer (ER-3, ER-12). Given a scope, it refuses a type of another
-// scope as they do. It mints the ids the vector lists, in order, opaque ones included, and no other; the replica it
-// writes to is one no vector names.
+// A reader over a vector's records: the folded record by id visible or not, the records of a type in id order, the visible
+// ones or every one, the confirmed record by id with its row's `seq`, and the born and `seq` of a spent id, as the engine's
+// readers answer (ER-3, ER-12). Given a scope, it refuses a type of another scope as they do. It mints the ids the vector
+// lists, in order, opaque ones included, and no other; the replica it writes to is one no vector names.
 package final class VectorReader: CommitContext {
   let records: VectorRecords
   package let now: Int64
@@ -180,6 +186,11 @@ package final class VectorReader: CommitContext {
   package func drawn(_ type: String) throws -> [Record] { visible(records.drawn, try lives(type)) }
   package func stored(_ type: String) throws -> [Record] { visible(records.stored, try lives(type)) }
 
+  package func records(_ type: String, in view: ViewMode) throws -> [Record] {
+    let type = try lives(type)
+    return (view == .drawn ? records.drawn : records.stored).filter { $0.type == type }.sorted { $0.id < $1.id }
+  }
+
   package func drawn(_ type: String, where field: String, is id: RecordID) throws -> [Record] {
     visible(records.drawn, try lives(type)).filter { $0.values[field] == id.json }
   }
@@ -188,7 +199,8 @@ package final class VectorReader: CommitContext {
     visible(records.stored, try lives(type)).filter { $0.values[field] == id.json }
   }
 
-  package func spentBorn(_ type: String, _ id: RecordID) throws -> Stamp? { records.spent[RecordKey(try lives(type), id)] }
+  package func spentBorn(_ type: String, _ id: RecordID) throws -> Stamp? { records.spent[RecordKey(try lives(type), id)]?.born }
+  package func spentSeq(_ type: String, _ id: RecordID) throws -> Int64? { records.spent[RecordKey(try lives(type), id)]?.seq }
 
   // The engine's readers throw on a type of another scope.
   func lives(_ type: String) throws -> String {
@@ -198,7 +210,7 @@ package final class VectorReader: CommitContext {
 
   package func device(_ key: String) throws -> JSON? { records.device[key] }
   package func firstPullComplete() throws -> Bool { pulled }
-  package func confirmed(_ type: String, _ id: RecordID) throws -> Record? { try stored(type, id) }
+  package func confirmed(_ type: String, _ id: RecordID) throws -> Record? { find(records.confirmed, try lives(type), id) }
   package func checkpoint() throws -> ScopeCheckpoint { ScopeCheckpoint() }
   package func devices(prefix: String) throws -> JSON.Object {
     JSON.Object(uniqueKeysWithValues: records.device.members.filter { $0.key.hasPrefix(prefix) }.map { ($0.key, $0.value) })

@@ -141,8 +141,9 @@ contents. Native acceptance and a same-key update check precede publication. See
   [Roadmap on the sync engine](docs/foundation/roadmap-on-the-engine.md), which moves roadmap's records and rules
   onto the engine and the domain kit, is built, and production's roadmaps sync through the engine; the deletion of
   roadmap's own sync remains. Of [Roadmap on iOS](docs/foundation/roadmap-ios.md), the iPhone's Roadmap room on
-  them, the Swift domain's pure reads (`apps/ios/Domain/Sources/RoadmapDomain`) and the Graph's picture
-  (`apps/ios/Domain/Sources/RoadmapLayout`) are built and nothing else. Two more are specified and not built:
+  them, the Swift domain's reads, entities, rule book and the actions of a roadmap, its kinds and progress
+  (`apps/ios/Domain/Sources/RoadmapDomain`) and the Graph's picture (`apps/ios/Domain/Sources/RoadmapLayout`) are
+  built and nothing else. Two more are specified and not built:
   [Journal Talk](docs/foundation/journal-talk.md), live speech to text through the AI service; and
   [the web as a device](docs/foundation/web-device-parity.md), which makes gym and journal on the web
   work as they do on a phone. [Echoes on the AI service](docs/foundation/echoes-on-ai-service.md), which

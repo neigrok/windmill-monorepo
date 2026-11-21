@@ -5,12 +5,13 @@ import Testing
 
 // The runner of roadmap's shared vectors, `packages/api-contract/roadmap/domain/`: each read over the records a case states.
 struct CorpusTests {
-  static let reads = ["account", "board", "diagnostics", "graph", "guides", "landing", "legend", "pointers", "progress", "search"]
+  static let reads = ["account", "board", "diagnostics", "graph", "guides", "landing", "legend", "pointers", "progress", "replica", "search"]
 
+  // `rules.json` and `values.json` run in RoadmapRulesTests, and each family's actions in its own tests.
   @Test func everyFileIsClaimedOrWaitsForTheActions() throws {
-    let waiting = ["kinds-actions", "landing-actions", "progress-actions", "replica", "roadmaps-actions", "rules", "steps-actions", "undo",
-                   "values", "workspace-actions"]
-    let named = (Self.reads + waiting).map { "roadmap/domain/\($0).json" }.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
+    let claimed = Self.reads + ["kinds-actions", "progress-actions", "roadmaps-actions", "rules", "values"]
+    let waiting = ["landing-actions", "steps-actions", "undo", "workspace-actions"]
+    let named = (claimed + waiting).map { "roadmap/domain/\($0).json" }.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
     #expect(try Contract.files(under: "roadmap/domain") == named)
   }
 
@@ -20,15 +21,9 @@ struct CorpusTests {
     #expect(actual == vector.expect, "\(vector)\n  got    \(actual.jcsText)\n  expect \(vector.expect.jcsText)")
   }
 
-  // `replica.json` waits for the read of a replica's records; its `openings` and `list` cases take normalized trees and run here.
-  @Test(arguments: try Contract.vectors("roadmap/domain/replica.json").filter { $0.input["operation"] != "roadmap" })
-  func accountReadOfTheReplicaFile(_ vector: Vector) throws {
-    let actual = try Self.result(of: vector.input)
-    #expect(actual == vector.expect, "\(vector)\n  got    \(actual.jcsText)\n  expect \(vector.expect.jcsText)")
-  }
-
   static func result(of input: JSON) throws -> JSON {
     let operation = try input.member("operation").asString()
+    if operation == "roadmap" { return try RoadmapTree(replica: input).form }
     if let trees = input["trees"] {
       let account = RoadmapAccount(try trees.asArray().map(RoadmapTree.init(form:)))
       switch operation {

@@ -73,4 +73,102 @@ struct ProductCorpusTests {
       try ProductCorpusTests.corpus().read(vector, in: Probe.tree, facts)
     }
   }
+
+  static func tag(_ id: String, _ label: String, seq: Int64 = 1, life: String = "alive") -> JSON {
+    ["t": "tag", "id": .string(id), "seq": JSON(seq), "born": "1000:0:r_aaaaaaaaaaaa", "life": [.string(life), "1000:0:r_aaaaaaaaaaaa"],
+     "f": ["label": [.string(label), "1000:0:r_aaaaaaaaaaaa"]]]
+  }
+
+  // A scope's `confirmed` is the server's copy as the device pulled it, each row with its `seq`, by default what it
+  // stores; its `spent` ids are what it keeps of records deleted elsewhere, each with its born and the `seq` it keeps; and
+  // its records are listed whole, a dead one among them, by the repository and by the reader.
+  @Test func aSceneReadsEachScopesConfirmedRecordsSpentIdsAndEveryRecord() throws {
+    let born: JSON = "900:0:r_bbbbbbbbbbbb"
+    let scopes: JSON = [
+      "tree/b_00000001": ["drawn": [ProductCorpusTests.tag("tag00004", "Dropped", life: "dead"), ProductCorpusTests.tag("tag00001", "Mine"),
+                                    ProductCorpusTests.tag("tag00002", "Kept")],
+                          "confirmed": [ProductCorpusTests.tag("tag00001", "Theirs", seq: 5)],
+                          "spent": [["t": "tag", "id": "tag00003", "born": born, "seq": 7], ["t": "tag", "id": "tag00005", "born": born]]],
+      "tree/b_00000002": ["drawn": [ProductCorpusTests.tag("tag00001", "Other", seq: 2)]],
+    ]
+    let vector = try ProductCorpusTests.vector(["scopes": scopes, "now": 1_800_000_000_000, "offsetSeconds": 0])
+    let held = { (read: Reader) throws -> JSON in
+      let tags = read.repository(Tag.self)
+      let confirmed: [JSON] = try ["tag00001", "tag00002"].map { (id: String) throws -> JSON in
+        let record = try read.confirmed(Tag.self, ID(RecordID(id)))
+        return [record?.values["label"] ?? .null, record?.seq.map { JSON($0) } ?? .null]
+      }
+      let spent: [JSON] = try ["tag00002", "tag00003", "tag00005"].map { (id: String) throws -> JSON in
+        [try tags.spentBorn(ID(RecordID(id)))?.json ?? .null, try tags.spentSeq(ID(RecordID(id))).map { JSON($0) } ?? .null]
+      }
+      let listed: [[Record]] = [try tags.records(in: .drawn), try tags.records(in: .stored), try read.records(in: .drawn)]
+      let every: [JSON] = listed.map { (records: [Record]) -> JSON in
+        .array(records.map { (record: Record) -> JSON in [record.id.json, .bool(record.isVisible)] })
+      }
+      return ["confirmed": .array(confirmed), "spent": .array(spent), "every": .array(every),
+              "visible": .array(try tags.all(in: .drawn).map(\.id.json))]
+    }
+    let tree: JSON = [["tag00001", true], ["tag00002", true], ["tag00004", false]]
+    #expect(try ProductCorpusTests.corpus().read(vector, in: Probe.tree, held) == ["result": [
+      "confirmed": [["Theirs", 5], [.null, .null]], "spent": [[.null, .null], [born, 7], [born, .null]], "every": [tree, tree, tree],
+      "visible": ["tag00001", "tag00002"],
+    ]])
+    let other: JSON = [["tag00001", true]]
+    #expect(try ProductCorpusTests.corpus().read(vector, in: .tree("b_00000002"), held) == ["result": [
+      "confirmed": [["Other", 2], [.null, .null]], "spent": [[.null, .null], [.null, .null], [.null, .null]], "every": [other, other, other],
+      "visible": ["tag00001"],
+    ]])
+  }
+
+  struct Relabel: ActAction {
+    func load(_ read: ActReader) throws -> (moment: Moment, tags: [Tag]) {
+      (read.moment, try ["tag00001", "tag00002", "tag00003"].map { (id: String) throws -> Tag in try Tag.decoding(RecordID(id), [:]) })
+    }
+
+    func decide(_ loaded: (moment: Moment, tags: [Tag]), ids: ActIDSource) throws(Violation) -> ActDecision<JSON, ProbeRefusal> {
+      var renamed = loaded.tags[0]
+      renamed.label = "Renamed"
+      var relabel = Plan()
+      relabel.revive(try Valid(renamed, fields: ["label"], at: loaded.moment), fields: ["label"])
+      relabel.undoBy(.fields(restoreCommand: "probe.restoreTree", targets: [(target: .field(renamed.id, "label"), default: "")]))
+      var evidence = Plan()
+      evidence.revive(try Valid(loaded.tags[1], fields: [], at: loaded.moment), fields: [])
+      evidence.evidenceForUndo()
+      var plain = Plan()
+      plain.revive(try Valid(loaded.tags[2], fields: [], at: loaded.moment), fields: [])
+      return .write(ActPlan([ScopedPlan(Probe.tree, relabel), ScopedPlan(Probe.tree, evidence), ScopedPlan(.tree("b_00000002"), plain)]), .null)
+    }
+  }
+
+  // A segment whose plan opts into Undo names its recipes, one named for evidence alone names none, and any other no `undo`.
+  @Test func anActsSegmentThatOptsIntoUndoNamesItsRecipes() throws {
+    let vector = try ProductCorpusTests.vector(["scopes": [:], "now": 1_800_000_000_000, "offsetSeconds": 0])
+    let result = try ProductCorpusTests.corpus().act(Relabel(), vector, result: { $0 }, refusal: \.form)
+    let revive = { (id: String, values: JSON?) -> JSON in
+      var change: JSON.Object = ["op": "revive", "t": "tag", "id": .string(id)]
+      change["f"] = values
+      return ["changes": [.object(change)], "atomic": false, "hold": false, "guards": [], "retire": [], "cmd": .null, "predict": [], "local": []]
+    }
+    let restored: JSON = ["kind": "fields", "restoreCommand": "probe.restoreTree", "targets": [
+      ["target": ["scope": "tree/b_00000001", "t": "tag", "id": "tag00001", "slot": ["kind": "field", "name": "label"]], "defaultValue": ""],
+    ]]
+    #expect(result == ["decision": ["write": ["segments": [
+      ["scope": "tree/b_00000001", "gesture": revive("tag00001", ["label": "Renamed"]), "undo": [restored]],
+      ["scope": "tree/b_00000001", "gesture": revive("tag00002", nil), "undo": []],
+      ["scope": "tree/b_00000002", "gesture": revive("tag00003", nil)],
+    ], "result": .null]]])
+  }
+
+  @Test func aVectorsRecordsReverseWhereverItListsThem() throws {
+    let (one, two) = (ProductCorpusTests.tag("tag00001", "One"), ProductCorpusTests.tag("tag00002", "Two"))
+    let spent: [JSON] = [["t": "tag", "id": "tag00003", "born": "900:0:r_bbbbbbbbbbbb"], ["t": "tag", "id": "tag00004", "born": "900:0:r_bbbbbbbbbbbb"]]
+    let vector = try ProductCorpusTests.vector([
+      "scopes": ["tree/b_00000001": ["drawn": [one, two], "stored": [two, one], "confirmed": [one, two], "spent": .array(spent)]],
+      "records": ["drawn": [one, two]], "ids": ["a", "b"],
+    ])
+    #expect(vector.withRecordsReversed.input == [
+      "scopes": ["tree/b_00000001": ["drawn": [two, one], "stored": [one, two], "confirmed": [one, two], "spent": .array(spent.reversed())]],
+      "records": ["drawn": [two, one]], "ids": ["a", "b"],
+    ])
+  }
 }

@@ -26,8 +26,8 @@ struct NotesTests {
   func contentTimeIsReadWithoutEnteringTheWriteMap(_ updatedAt: Int64?) throws {
     var values: [String: JSON] = ["title": "Tone", "body": "Blunt."]
     if let updatedAt { values["updatedAt"] = JSON(updatedAt) }
-    let record = Record(type: Gym.Types.note, id: "note0001", life: nil, born: nil, values: values, texts: [:],
-      serials: [:], rc: 100, ru: 200, isVisible: true, isPending: false, isHeld: false)
+    let record = Record(type: Gym.Types.note, id: "note0001", life: nil, born: nil, values: values, stamps: [:], texts: [:],
+      serials: [:], seq: nil, rc: 100, ru: 200, isVisible: true, isPending: false, isHeld: false)
     let note = try Note(Fields(record))
     #expect(note.updatedAt == updatedAt.map { Instant(ms: $0) })
     #expect(note.fields == ["title": "Tone", "body": "Blunt."])

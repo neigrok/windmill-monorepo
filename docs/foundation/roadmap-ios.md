@@ -357,10 +357,12 @@ makes it false.
 
 - The app has no third room, no associated domain and no roadmap code; its onboarding says roadmap
   is on the web.
-- `RoadmapDomain` holds the pure reads alone: no entity, action, replica read, Undo, plan grammar, quest or Coach
-  executor.
-- No fixture of the web's picture exists, and the web's own layout calls the platform's
-  trigonometry.
+- `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and the actions of a
+  roadmap, its kinds and progress: no step, workspace or landing action, no Undo scene, plan grammar, quest or
+  Coach executor.
+- Activity and History have no read (§3): no case states one, and neither the web's domain nor Swift's gives it.
+- `RoadmapLayout` draws the picture and nothing draws it on a screen; its time at 5,000 steps is not measured
+  against the budget of §5.
 - The app's one runner deletes at once, in every room.
 - The plan grammar has no Swift port: the web's (`web/src/products/roadmap/paste/`) is its one
   implementation, and the web alone runs its cases (`packages/api-contract/roadmap/plan/`).
@@ -371,6 +373,7 @@ makes it false.
   written. In a file an export wrote, text before the first step is dropped, where §7.1 keeps
   every line. The cases of `write.json` and `read.json` pin each as it stands.
 - The domain's read of a roadmap carries no `forkedFrom`, which the gallery's row reads (§3).
+- Roadmaps that hold `unlisted` are not moved to private (R-9).
 - The app's Info.plist names no Markdown type (§7.3).
 
 ## §14 Rulings

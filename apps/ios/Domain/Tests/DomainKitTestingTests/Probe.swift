@@ -21,8 +21,8 @@ extension ProbeEntity {
     (Self.self as? any ProductEntity.Type)?.scope ?? (type == "mark" ? Probe.overlay : Probe.tree)
   }
   static func decoding(_ id: RecordID, _ f: [String: JSON]) throws -> Self {
-    try Self(Fields(Record(type: type, id: id, life: nil, born: nil, values: f, texts: [:], serials: [:], rc: nil, ru: nil,
-                           isVisible: true, isPending: false, isHeld: false)))
+    try Self(Fields(Record(type: type, id: id, life: nil, born: nil, values: f, stamps: [:], texts: [:], serials: [:], seq: nil, rc: nil,
+                           ru: nil, isVisible: true, isPending: false, isHeld: false)))
   }
 }
 

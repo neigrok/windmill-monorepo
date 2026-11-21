@@ -82,9 +82,10 @@ struct ReadersTests {
             texts[field] = TextValue(text: "\(index == 0 ? "held" : "ready") \(field)", merged: false, pending: true)
           }
         }
+        let renamed = index == 1 && mode == .drawn
         return Record(type: "item", id: key.id, life: Life(.alive, seeded), born: seeded,
-          values: ["listId": "l_one", "name": index == 1 && mode == .drawn ? "held name" : key.id.json],
-          texts: texts, serials: [:], rc: 5, ru: 6, isVisible: true, isPending: pending, isHeld: index < 2)
+          values: ["listId": "l_one", "name": renamed ? "held name" : key.id.json], stamps: ["listId": seeded, "name": renamed ? changed : seeded],
+          texts: texts, serials: [:], seq: 1, rc: 5, ru: 6, isVisible: true, isPending: pending, isHeld: index < 2)
       }
       let indexed = Dictionary(uniqueKeysWithValues: zip(keys, expected))
       try rig.store.read { tx in
@@ -156,7 +157,9 @@ struct ReadersTests {
     }
     #expect(throws: ended) { try kept!.drawn("item") }
     #expect(throws: ended) { try kept!.device("anything") }
+    #expect(throws: ended) { try kept!.records("item", in: .stored) }
     #expect(throws: ended) { try kept!.spentBorn("item", "i_aaaa") }
+    #expect(throws: ended) { try kept!.spentSeq("item", "i_aaaa") }
     var context: (any CommitContext)?
     _ = try rig.engine.commit(Self.scope) { body -> (Gesture?, Void) in
       context = body
@@ -179,7 +182,9 @@ struct ReadersTests {
       (Rig.scope, CommitFailure(.malformed, "tag is no type of self/probe"), { _ = try $0.drawn("tag") }),
       (Rig.scope, CommitFailure(.malformed, "card.title is not a top-level ref field"), { _ = try $0.stored("card", where: "title", is: "card0001") }),
       (Rig.scope, CommitFailure(.malformed, "tag is no type of self/probe"), { _ = try $0.drawn("tag", where: "label", is: "tag0001") }),
+      (Rig.scope, CommitFailure(.malformed, "tag is no type of self/probe"), { _ = try $0.records("tag", in: .drawn) }),
       (Rig.scope, CommitFailure(.malformed, "tag is no type of self/probe"), { _ = try $0.spentBorn("tag", "tag0001") }),
+      (Rig.scope, CommitFailure(.malformed, "tag is no type of self/probe"), { _ = try $0.spentSeq("tag", "tag0001") }),
       (.device("probe"), CommitFailure(.malformed, "device/probe is no product, tree or overlay scope of the registry"), { _ = try $0.drawn("card") }),
     ]
     for (scope, failure, use) in misuses {
@@ -201,16 +206,92 @@ struct ReadersTests {
     let receipt = try rig.commit(Gesture(changes: [.delete("item", "i_aaaa")], hold: true), in: Self.scope)
     let alive = Life(.alive, Self.seeded)
     let values: [String: JSON] = ["listId": "l_one", "name": "i_aaaa"]
+    let stamps = ["listId": Self.seeded, "name": Self.seeded]
     let (drawn, stored) = try rig.engine.read(Self.scope) { reader in
       (try reader.drawn("item", "i_aaaa"), try reader.stored("item", "i_aaaa"))
     }
     #expect(drawn == Record(
-      type: "item", id: "i_aaaa", life: Life(.dead, receipt.stamp), born: Self.seeded, values: values, texts: [:], serials: [:],
-      rc: 5, ru: 6, isVisible: false, isPending: true, isHeld: true))
+      type: "item", id: "i_aaaa", life: Life(.dead, receipt.stamp), born: Self.seeded, values: values, stamps: stamps, texts: [:],
+      serials: [:], seq: 1, rc: 5, ru: 6, isVisible: false, isPending: true, isHeld: true))
     #expect(stored == Record(
-      type: "item", id: "i_aaaa", life: alive, born: Self.seeded, values: values, texts: [:], serials: [:], rc: 5, ru: 6,
-      isVisible: true, isPending: false, isHeld: true))
+      type: "item", id: "i_aaaa", life: alive, born: Self.seeded, values: values, stamps: stamps, texts: [:], serials: [:], seq: 1,
+      rc: 5, ru: 6, isVisible: true, isPending: false, isHeld: true))
     #expect(try rig.engine.read(Self.scope) { [try Self.ids($0.drawn("item")), try Self.ids($0.stored("item"))] } == [[], ["i_aaaa"]])
+  }
+
+  // §7.6, §9.1: a record carries the stamp of each register and its confirmed row's `seq`. A queued rename is drawn under
+  // the gesture's stamp over the row's `seq`, while the confirmed read stays the server's copy; a record the server has
+  // not sent has no confirmed read and no `seq`.
+  @Test func aQueuedChangeIsDrawnUnderItsStampWhileTheConfirmedReadStaysTheServersCopy() throws {
+    let rig = try Rig(registry: Rig.shelf)
+    try Self.seed(rig, items: [("i_aaaa", "l_one")])
+    let receipt = try rig.commit(Gesture(changes: [
+      .update("item", "i_aaaa", ["name": "milk"]), .create("item", id: .given("i_bbbb"), ["listId": "l_one", "name": "eggs"]),
+    ]), in: Self.scope)
+    let pulled = Record(
+      type: "item", id: "i_aaaa", life: Life(.alive, Self.seeded), born: Self.seeded, values: ["listId": "l_one", "name": "i_aaaa"],
+      stamps: ["listId": Self.seeded, "name": Self.seeded], texts: [:], serials: [:], seq: 1, rc: 5, ru: 6, isVisible: true,
+      isPending: false, isHeld: false)
+    let renamed = Record(
+      type: "item", id: "i_aaaa", life: Life(.alive, Self.seeded), born: Self.seeded, values: ["listId": "l_one", "name": "milk"],
+      stamps: ["listId": Self.seeded, "name": receipt.stamp], texts: [:], serials: [:], seq: 1, rc: 5, ru: 6, isVisible: true,
+      isPending: true, isHeld: false)
+    let made = Record(
+      type: "item", id: "i_bbbb", life: Life(.alive, receipt.stamp), born: receipt.stamp, values: ["listId": "l_one", "name": "eggs"],
+      stamps: ["listId": receipt.stamp, "name": receipt.stamp], texts: [:], serials: [:], seq: nil, rc: nil, ru: nil, isVisible: true,
+      isPending: true, isHeld: false)
+    let read = try rig.engine.read(Self.scope) { (reader: any ScopeReader) throws -> [Record?] in
+      try ["i_aaaa", "i_bbbb"].flatMap { (id: String) throws -> [Record?] in
+        [try reader.confirmed("item", RecordID(id)), try reader.drawn("item", RecordID(id))]
+      }
+    }
+    #expect(read == [pulled, renamed, nil, made])
+    let decided = try rig.engine.commit(Self.scope) { context -> (Gesture?, [Record?]) in
+      (nil, [try context.confirmed("item", "i_aaaa"), try context.stored("item", "i_aaaa")])
+    }.value
+    #expect(decided == [pulled, renamed])
+  }
+
+  // §7.6: a view folds records that are not visible, a delete the device still queues among them. Both readers list every
+  // record of a type as each view folds it, in id order, each as its lookup by id answers it; the visible lists are those
+  // of them that are visible. A held delete is dead in drawn alone, a released one in both.
+  @Test func bothReadersListEveryRecordOfATypeVisibleOrNot() throws {
+    let rig = try Rig(registry: Rig.shelf)
+    try Self.seed(rig, items: [("i_aaaa", "l_one"), ("i_bbbb", "l_one"), ("i_cccc", "l_two")])
+    try rig.commit(Gesture(changes: [.delete("item", "i_aaaa")], hold: true), in: Self.scope)
+    try rig.commit(Gesture(changes: [.delete("item", "i_bbbb"), .create("item", id: .given("i_dddd"), ["listId": "l_two", "name": "new"])]),
+                   in: Self.scope)
+    let ids: [RecordID] = ["i_aaaa", "i_bbbb", "i_cccc", "i_dddd"]
+    let listed = { (reader: any ScopeReader) throws -> [[Record]] in
+      [try reader.records("item", in: .drawn), try reader.records("item", in: .stored), try reader.drawn("item"), try reader.stored("item")]
+    }
+    let (lists, drawn, stored) = try rig.engine.read(Self.scope) { (reader: any ScopeReader) throws -> ([[Record]], [Record?], [Record?]) in
+      (try listed(reader), try ids.map { try reader.drawn("item", $0) }, try ids.map { try reader.stored("item", $0) })
+    }
+    #expect(lists[0] == drawn)
+    #expect(lists[1] == stored)
+    #expect(lists[0].map(\.isVisible) == [false, false, true, true])
+    #expect(lists[1].map(\.isVisible) == [true, false, true, true])
+    #expect(lists[2] == lists[0].filter(\.isVisible))
+    #expect(lists[3] == lists[1].filter(\.isVisible))
+    #expect(try rig.engine.commit(Self.scope) { context -> (Gesture?, [[Record]]) in (nil, try listed(context)) }.value == lists)
+  }
+
+  // §2.5: a spent id keeps the `seq` of the dead row it came from. Both readers answer it, nil for a spent id that keeps
+  // none and for an id the scope keeps no spent id of.
+  @Test func bothReadersAnswerTheSeqOfTheDeadRowASpentIdCameFrom() throws {
+    let rig = try Rig()
+    let tree = ScopeRef.tree("b_00000001")
+    let born = try Stamp("1000:0:r_aaaaaaaaaaaa")
+    _ = try rig.store.write(.pullPage) { tx in
+      var replica = try tx.replica(tx.activeReplica(), reads: [tree: RowSelection()])!
+      replica.apply(.putSpent(tree, SpentID(key: RecordKey("tag", "oak"), born: born, seq: 3)))
+      replica.apply(.putSpent(tree, SpentID(key: RecordKey("tag", "ash"), born: born, seq: nil)))
+      return Planned((), replica.batch)
+    }
+    let seqs = { (reader: any ScopeReader) throws -> [Int64?] in try ["oak", "ash", "elm"].map { try reader.spentSeq("tag", RecordID($0)) } }
+    #expect(try rig.engine.read(tree, seqs) == [3, nil, nil])
+    #expect(try rig.engine.commit(tree) { context -> (Gesture?, [Int64?]) in (nil, try seqs(context)) }.value == [3, nil, nil])
   }
 
   // §2.5, §7.5: a spent id is all the device keeps of a derived record deleted elsewhere. Both readers answer its born, nil

@@ -1,7 +1,10 @@
 import DomainKit
 import DomainKitTesting
 import RoadmapDomain
+import SyncAPI
 import SyncCore
+import SyncSchema
+import SyncTesting
 
 // The corpus's JSON as the normalized records the reads take, and each read's result in the form the corpus states it.
 
@@ -18,6 +21,16 @@ extension JSON {
   func optionalStamp(_ key: String) throws -> Stamp? { try optional(key, Stamp.init(json:)) }
 
   static func strings(_ items: [String]) -> JSON { .array(items.map { .string($0) }) }
+
+  // The id an action's input names under `key`.
+  func id<E: Entity>(_ key: String) throws -> ID<E> { ID(try RecordID(json: member(key))) }
+}
+
+extension NewKind {
+  init(form: JSON) throws {
+    self.init(hue: try form.member("hue").asString(), label: try form.optionalString("label") ?? "",
+              description: try form.optionalString("description") ?? "")
+  }
 }
 
 extension Step {
@@ -79,6 +92,84 @@ extension RoadmapTree.Edge {
   }
 
   var ends: JSON { [.string(from), .string(to)] }
+}
+
+extension Record {
+  // An engine view record, `{t, id, life?, born?, f?, rc?, ru?}`, as the engine's readers hand it to a product, pending
+  // where an entry the device queues still changes it. A view record states no `seq`.
+  init(view: JSON, isPending: Bool = false) throws {
+    let row = Row(key: try RecordKey(view: view), lattice: try Lattice(json: view), seq: 0, rc: try view["rc"]?.asInteger(),
+                  ru: try view["ru"]?.asInteger())
+    let read = Record(confirmed: row, registry: SyncSchema.registry)
+    self.init(type: read.type, id: read.id, life: read.life, born: read.born, values: read.values, stamps: read.stamps, texts: read.texts,
+              serials: read.serials, seq: nil, rc: read.rc, ru: read.ru, isVisible: read.isVisible, isPending: isPending, isHeld: false)
+  }
+
+  // The record as the view record a case states.
+  var view: JSON {
+    var form: JSON.Object = ["t": .string(type), "id": id.json]
+    form["life"] = life?.json
+    form["born"] = born?.json
+    let registers = values.map { (field: (key: String, value: JSON)) -> (String, JSON) in
+      (field.key, .array([field.value, stamps[field.key]?.json ?? .null]))
+    }
+    form["f"] = registers.isEmpty ? nil : .object(JSON.Object(uniqueKeysWithValues: registers))
+    form["rc"] = rc.map { JSON($0) }
+    form["ru"] = ru.map { JSON($0) }
+    return .object(form)
+  }
+}
+
+extension RecordKey {
+  // The `{t, id}` a view record and a queued record both carry.
+  init(view: JSON) throws {
+    self.init(try view.member("t").asString(), try RecordID(json: view.member("id")))
+  }
+}
+
+extension RoadmapTree {
+  // `{operation: "roadmap", id, listed, tree, overlay: {drawn, queued} | null, read}`: one roadmap's records as a replica holds them.
+  init(replica input: JSON) throws {
+    let overlay: JSON? = try input.member("overlay").nullable { $0 }
+    let queued = try (overlay?["queued"]?.asArray() ?? []).map(RecordKey.init(view:))
+    let overlaid = try overlay.map { (overlay: JSON) throws -> [Record] in
+      try overlay.member("drawn").asArray().map { (view: JSON) throws -> Record in
+        try Record(view: view, isPending: queued.contains(try RecordKey(view: view)))
+      }
+    }
+    try self.init(id: ID(RecordID(try input.member("id").asString())), listed: try input.member("listed").nullable { try Record(view: $0) },
+                  tree: try input.member("tree").asArray().map { try Record(view: $0) }, overlay: overlaid, read: try input.member("read").asBool())
+  }
+
+  var form: JSON {
+    let place: JSON = parent.map { ["tree": .string($0.tree), "step": .string($0.step)] } ?? .null
+    let words: JSON = meta.map {
+      ["title": .string($0.title), "guide": .string($0.guide), "guideInherited": .bool($0.guideInherited), "root": .string($0.root),
+       "depth": JSON($0.depth), "visibility": .string($0.visibility), "reach": .string($0.reach)]
+    } ?? .null
+    let steps: [JSON] = nodes.map { step in
+      let links: [JSON] = step.links.map { ["url": .string($0.url), "label": .string($0.label)] }
+      return ["id": .string(step.id), "present": .bool(step.present), "born": step.born.json, "rc": .of(step.rc), "ru": .of(step.ru),
+              "label": .string(step.label), "icon": .string(step.icon), "color": .string(step.color), "ord": .string(step.ord),
+              "status": .string(step.status), "description": .string(step.description), "links": .array(links), "branch": .of(step.branch),
+              "branchStamp": step.branchStamp?.json ?? .null]
+    }
+    let links: [JSON] = edges.map { ["from": .string($0.from), "to": .string($0.to), "present": .bool($0.present)] }
+    let legend: [JSON] = kinds.map {
+      ["id": .string($0.id), "present": .bool($0.present), "born": $0.born.json, "hue": .string($0.hue), "label": .string($0.label),
+       "description": .string($0.description), "ord": .string($0.ord)]
+    }
+    let marked: [JSON] = marks.map {
+      ["node": .string($0.node), "status": .string($0.status), "outOfOrder": .bool($0.outOfOrder), "stamp": $0.stamp?.json ?? .null,
+       "recordedAt": .of($0.recordedAt), "deviceAt": .of($0.deviceAt)]
+    }
+    let opened: [JSON] = pointers.map {
+      ["node": .string($0.node), "present": .bool($0.present), "opens": .string($0.opens), "setAt": $0.setAt?.json ?? .null]
+    }
+    return ["id": .string(id), "present": .bool(present), "read": .string(read.rawValue), "own": .bool(own), "updatedAt": .of(updatedAt),
+            "parent": place, "meta": words, "nodes": .array(steps), "edges": .array(links), "kinds": .array(legend), "marks": .array(marked),
+            "pointers": .array(opened)]
+  }
 }
 
 extension FollowGraph {

@@ -57,6 +57,24 @@ public struct Vector: Sendable, CustomStringConvertible {
   }
 
   public var description: String { "\(file) · \(name)" }
+
+  // The vector with its records in reverse wherever it lists them (`drawn`, `stored`, `spent`): a decision that depends on
+  // row order rather than id bytes differs over it.
+  public var withRecordsReversed: Vector {
+    Vector(file: file, name: name, input: Vector.reversingRecords(in: input), expect: expect)
+  }
+
+  static func reversingRecords(in json: JSON) -> JSON {
+    switch json {
+    case .array(let items): return .array(items.map(reversingRecords))
+    case .object(let members):
+      return .object(JSON.Object(uniqueKeysWithValues: members.members.map { (key: String, value: JSON) -> (String, JSON) in
+        guard ["drawn", "stored", "spent"].contains(key), case .array(let rows) = value else { return (key, reversingRecords(in: value)) }
+        return (key, .array(rows.reversed()))
+      }))
+    default: return json
+    }
+  }
 }
 
 public struct ContractError: Error, CustomStringConvertible {
@@ -262,12 +280,15 @@ extension Decision {
 }
 
 extension ActDecision {
-  // An act's write as each segment's gesture, §8.2 translating its plan in its own scope, in the act's order.
+  // An act's write as each segment's gesture, §8.2 translating its plan in its own scope, in the act's order, with the
+  // plan's Undo recipes when it opts in.
   public func form(registry: Registry, result: (Result) -> JSON, refusal: (Refusal) -> JSON) throws -> JSON {
     switch self {
     case .write(let act, let value):
       let segments: [JSON] = try act.segments.map { (segment: ScopedPlan) throws -> JSON in
-        ["scope": segment.scope.json, "gesture": try segment.plan.gesture(in: segment.scope, registry: registry).form]
+        var form: JSON.Object = ["scope": segment.scope.json, "gesture": try segment.plan.gesture(in: segment.scope, registry: registry).form]
+        form["undo"] = segment.plan.undoRecipes(in: segment.scope).map { (recipes: [ActUndoRecipe]) -> JSON in .array(recipes.map(\.json)) }
+        return .object(form)
       }
       return ["write": ["segments": .array(segments), "result": result(value)]]
     case .unchanged(let value): return ["unchanged": ["result": result(value)]]

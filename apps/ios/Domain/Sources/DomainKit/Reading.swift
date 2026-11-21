@@ -30,6 +30,13 @@ public struct Reader {
     Repository(source: source, registry: registry, scope: scope)
   }
 
+  // Every record of the scope as a view folds it, visible or not, in record order (its type, then its id, by bytes): the
+  // engine's records (ER-3), each with its registers' stamps and its confirmed row's `seq`.
+  public func records(in view: ViewMode) throws -> [Record] {
+    let types = registry.types.map(\.name).filter { registry.lives($0, in: scope) }
+    return try types.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }.flatMap { try source.records($0, in: view) }
+  }
+
   // A `device/<product>` row of the scope's product (engine §2.5).
   public func device(_ key: String) throws -> JSON? {
     try source.device(key)
@@ -79,11 +86,24 @@ public struct Repository<E: Entity> {
 
   public func record(_ id: ID<E>, in view: ViewMode) throws -> Record? { try record(id.record, in: view) }
 
+  // Every record of a view, visible or not, in id order: the engine's folded records (ER-3).
+  public func records(in view: ViewMode) throws -> [Record] {
+    try checkScope()
+    return try source.records(E.type, in: view)
+  }
+
   // Engine §2.5, §7.5: what the device keeps of a derived record deleted elsewhere once its row is gone, a record in
   // neither view; nil for any other id. A revival (§8.1) takes this born.
   public func spentBorn(_ id: ID<E>) throws -> Stamp? {
     try checkScope()
     return try source.spentBorn(E.type, id.record)
+  }
+
+  // Engine §2.5: the `seq` of the dead row that spent id came from, the order in which the server took the delete; nil
+  // for any other id, and for a spent id that keeps none.
+  public func spentSeq(_ id: ID<E>) throws -> Int64? {
+    try checkScope()
+    return try source.spentSeq(E.type, id.record)
   }
 
   // The visible records, decoded in `all`'s order: an `Ordered` type by its key then its id, any other by its id. A record

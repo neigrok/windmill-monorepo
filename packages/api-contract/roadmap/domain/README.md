@@ -4,10 +4,12 @@ Each JSON file holds `{name,input,expect}` cases, except `rules.json`, the pinne
 corpus (`web/test/products/roadmap/domain/corpus.test.js`) claims every file by name and compares
 complete outputs. The server's read domain (`backend/products/roadmap/domain/read/`) claims the reads
 the table marks as the server's, by JCS, in `backend/test/products/roadmap/domain/read/ReadVectorsTest.cpp`,
-which fails on a file it neither claims nor names as a device's. Swift's read domain (`apps/ios/Domain/Sources/RoadmapDomain/`)
-claims the pure reads' files (`account`, `board`, `diagnostics`, `graph`, `guides`, `landing`, `legend`, `pointers`, `progress`
-and `search`), by JCS, in `apps/ios/Domain/Tests/RoadmapDomainTests/CorpusTests.swift`, which also runs `replica.json`'s
-`openings` and `list` cases, names every other file as waiting for the actions, and fails on a file in neither list.
+which fails on a file it neither claims nor names as a device's. Swift's domain (`apps/ios/Domain/Sources/RoadmapDomain/`)
+claims, by JCS, in `apps/ios/Domain/Tests/RoadmapDomainTests/`, the reads' files (`account`, `board`, `diagnostics`, `graph`,
+`guides`, `landing`, `legend`, `pointers`, `progress`, `replica` and `search`), `rules.json`, `values.json`, and
+`roadmaps-actions.json`, `kinds-actions.json` and `progress-actions.json`, each action case with its records reversed too. Its
+`CorpusTests.swift` names `steps-actions.json`, `workspace-actions.json`, `landing-actions.json` and `undo.json` as waiting for
+their actions, and fails on a file in neither list.
 The pure reads below take normalized domain records; the actions, `values.json`
 and `rules.json` follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3 over engine
 rows and `../../sync/roadmap.registry.json` (see [Actions](#actions)). No operation reads storage,

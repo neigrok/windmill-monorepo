@@ -351,11 +351,12 @@ final class ViewHub {
 
 // MARK: - Views
 
-// The visible records of one type of one scope, drawn or stored, every one or only those whose top-level ref field names
-// an id (ER-12), as the store holds them after every applied change. The view is `.loading` until its first load, read
-// off the main actor, lands. A change then reads again only the records of its type it touched: a change to one the
-// view does not list costs it one read of that record, and a change that touches none of its type costs it no read, but
-// the one read of its scope's first pull all the scope's views share when the change may have moved it.
+// The records of one type of one scope, drawn or stored, as the store holds them after every applied change: the visible
+// ones, every one or only those whose top-level ref field names an id (ER-12), or every record the view folds, visible
+// or not. The view is `.loading` until its first load, read off the main actor, lands. A change then reads again only
+// the records of its type it touched: a change to one the view does not list costs it one read of that record, and a
+// change that touches none of its type costs it no read, but the one read of its scope's first pull all the scope's
+// views share when the change may have moved it.
 @MainActor @Observable
 public final class RecordsView {
   struct Key: Hashable, Sendable {

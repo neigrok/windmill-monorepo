@@ -48,6 +48,34 @@ struct HarnessTests {
     #expect(try other.runner.run(Remove<Sticky, ProbeRefusal>(next.id)).receipt?.releaseAt == nil)
   }
 
+  // §7.1 and §7.2 over the real engine: a removal still held is out of sight and still listed among every record of its
+  // type and of its scope, dead in `drawn` under the removal's stamp and alive in `stored`; each record carries the stamps
+  // of its registers, and the confirmed read is the server's row with its `seq`.
+  @Test func aHeldRemovalIsListedAmongEveryRecordAndTheConfirmedReadKeepsTheServersSeq() throws {
+    let a = try HarnessTests.phone()
+    let (kept, dropped) = (try HarnessTests.sticky(a, "Kept"), try HarnessTests.sticky(a, "Dropped"))
+    a.sync()
+    let removal = try #require(try a.runner.run(Remove<Sticky, ProbeRefusal>(dropped.id)).receipt)
+    let ids = [kept.id, dropped.id].sorted()
+    let (drawn, stored, scope, found, confirmed, visible) = try a.runner.read(Probe.scope) {
+      (read: Reader) throws -> ([Record], [Record], [Record], [Record?], [Record?], [ID<Sticky>]) in
+      let stickies = read.repository(Sticky.self)
+      return (try stickies.records(in: .drawn), try stickies.records(in: .stored), try read.records(in: .drawn),
+              try ids.map { try stickies.record($0, in: .drawn) }, try ids.map { try read.confirmed(Sticky.self, $0) },
+              try stickies.all(in: .drawn).map(\.id))
+    }
+    #expect(drawn == found)
+    #expect(scope == drawn)
+    #expect(visible == [kept.id])
+    #expect(drawn.map(\.isVisible) == ids.map { $0 == kept.id })
+    #expect(stored.map(\.isVisible) == [true, true])
+    #expect(drawn.first { $0.id == dropped.id.record }?.life == Life(.dead, removal.stamp))
+    let rows = a.server.rows(Probe.scope, of: "acct-1")
+    #expect(confirmed.map { $0?.seq } == rows.map { (row: Row) -> Int64? in row.seq })
+    #expect(confirmed.map { $0?.stamps } == rows.map { (row: Row) -> [String: Stamp]? in row.lattice.fields.mapValues(\.stamp) })
+    #expect(stored.map(\.stamps) == confirmed.map { $0?.stamps ?? [:] })
+  }
+
   struct RemoveStickies: Action {
     let ids: [ID<Sticky>]
     var scope: ScopeRef { Probe.scope }

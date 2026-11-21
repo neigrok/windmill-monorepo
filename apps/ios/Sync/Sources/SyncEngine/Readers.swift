@@ -105,8 +105,9 @@ final class TransactionActContext: ActContext {
   func end() { isOpen = false; for reader in minted.values { reader.end() } }
 }
 
-// What a list read and a `RecordsView` list (§7.6, ER-12): the visible records of one type, drawn or stored, every one or
-// those whose top-level ref field names an id, in id-byte order.
+// What a list read and a `RecordsView` list (§7.6, ER-12), in id-byte order: the visible records of one type, drawn or
+// stored, every one or those whose top-level ref field names an id; or, `visibleOnly` false, every record of the type as
+// the view folds it, visible or not.
 struct Listing: Hashable, Sendable {
   struct Narrowing: Hashable, Sendable {
     let field: String
@@ -116,10 +117,12 @@ struct Listing: Hashable, Sendable {
   let type: String
   let mode: ViewMode
   let narrowing: Narrowing?
+  let visibleOnly: Bool
 
   // A type that is no type of `scope`, then a narrowing by a field that is no top-level ref of the type, is malformed,
   // as every misuse of a reader is.
-  init(_ type: String, _ mode: ViewMode, where narrowing: Narrowing? = nil, in scope: ScopeRef, registry: Registry) throws {
+  init(_ type: String, _ mode: ViewMode, where narrowing: Narrowing? = nil, visibleOnly: Bool = true, in scope: ScopeRef,
+       registry: Registry) throws {
     guard registry.lives(type, in: scope) else { throw CommitFailure.malformed("\(type) is no type of \(scope)") }
     if let narrowing, registry.type(type)?.field(narrowing.field)?.ref == nil {
       throw CommitFailure.malformed("\(type).\(narrowing.field) is not a top-level ref field")
@@ -127,11 +130,13 @@ struct Listing: Hashable, Sendable {
     self.type = type
     self.mode = mode
     self.narrowing = narrowing
+    self.visibleOnly = visibleOnly
   }
 
-  // Whether the list holds `record` as `view` folds it: visible, and where narrowed, its field naming the id.
+  // Whether the list holds `record` as `view` folds it: visible, unless the list takes every record, and where narrowed,
+  // its field naming the id.
   func holds(_ record: ViewRecord, in view: ScopeView) -> Bool {
-    guard view.isVisible(record) else { return false }
+    guard !visibleOnly || view.isVisible(record) else { return false }
     guard let narrowing else { return true }
     return record.value(narrowing.field) == narrowing.id.json
   }
@@ -204,6 +209,10 @@ final class TransactionReader: CommitContext {
   func drawn(_ type: String) throws -> [Record] { try reading { try records(Listing(type, .drawn, in: scope, registry: registry)) } }
   func stored(_ type: String) throws -> [Record] { try reading { try records(Listing(type, .stored, in: scope, registry: registry)) } }
 
+  func records(_ type: String, in view: ViewMode) throws -> [Record] {
+    try reading { try records(Listing(type, view, visibleOnly: false, in: scope, registry: registry)) }
+  }
+
   func drawn(_ type: String, where field: String, is id: RecordID) throws -> [Record] {
     try reading { try records(Listing(type, .drawn, where: Listing.Narrowing(field: field, id: id), in: scope, registry: registry)) }
   }
@@ -212,13 +221,8 @@ final class TransactionReader: CommitContext {
     try reading { try records(Listing(type, .stored, where: Listing.Narrowing(field: field, id: id), in: scope, registry: registry)) }
   }
 
-  func spentBorn(_ type: String, _ id: RecordID) throws -> Stamp? {
-    try reading {
-      try checkLives(type)
-      let key = RecordKey(type, id)
-      return try load(RowSelection(keys: [key])).spentIDs(scope)[key]?.born
-    }
-  }
+  func spentBorn(_ type: String, _ id: RecordID) throws -> Stamp? { try reading { try spentID(RecordKey(type, id))?.born } }
+  func spentSeq(_ type: String, _ id: RecordID) throws -> Int64? { try reading { try spentID(RecordKey(type, id))?.seq } }
 
   // Found by the key's bytes, as the store compares text.
   func device(_ key: String) throws -> JSON? {
@@ -250,8 +254,9 @@ final class TransactionReader: CommitContext {
       let key = RecordKey(type, id), replica = try load(RowSelection(keys: [key]))
       guard let row = replica.rows(scope).row(key) else { return nil }
       return Record(type: type, id: id, life: row.lattice.life, born: row.lattice.born,
-        values: row.lattice.fields.mapValues(\.value), texts: row.texts.mapValues { TextValue(text: $0.text, merged: $0.merged, pending: false) },
-        serials: row.serials, rc: row.rc, ru: row.ru, isVisible: Visibility.of(row, registry: registry), isPending: false, isHeld: false)
+        values: row.lattice.fields.mapValues(\.value), stamps: row.lattice.fields.mapValues(\.stamp),
+        texts: row.texts.mapValues { TextValue(text: $0.text, merged: $0.merged, pending: false) }, serials: row.serials,
+        seq: row.seq, rc: row.rc, ru: row.ru, isVisible: Visibility.of(row, registry: registry), isPending: false, isHeld: false)
     }
   }
 
@@ -313,6 +318,12 @@ final class TransactionReader: CommitContext {
   func record(_ key: RecordKey, _ mode: ViewMode) throws -> Record? {
     try checkLives(key.type)
     return try records([key], mode)[key]
+  }
+
+  // §2.5 the scope's spent id of a record.
+  func spentID(_ key: RecordKey) throws -> SpentID? {
+    try checkLives(key.type)
+    return try load(RowSelection(keys: [key])).spentIDs(scope)[key]
   }
 
   // The folded records of `keys`, visible or not; a key no row, delta or prediction names is absent.
@@ -414,7 +425,8 @@ final class TransactionReader: CommitContext {
     }
     return Record(
       type: record.key.type, id: record.key.id, life: record.lattice.life, born: record.lattice.born,
-      values: record.lattice.fields.mapValues(\.value), texts: texts, serials: record.serials, rc: confirmed?.rc,
-      ru: confirmed?.ru, isVisible: view.isVisible(record), isPending: pending.isPending, isHeld: pending.isHeld)
+      values: record.lattice.fields.mapValues(\.value), stamps: record.lattice.fields.mapValues(\.stamp), texts: texts,
+      serials: record.serials, seq: confirmed?.seq, rc: confirmed?.rc, ru: confirmed?.ru, isVisible: view.isVisible(record),
+      isPending: pending.isPending, isHeld: pending.isHeld)
   }
 }

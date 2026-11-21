@@ -152,9 +152,9 @@ public final class SteppedEngine: Sendable {
   // MARK: Observing what the person sees
 
   // The views a UI module observes (design §4.5), over the engine the device runs now. Each is `.loading` until the views
-  // settle.
-  @MainActor public func records(_ scope: ScopeRef, _ type: String, _ mode: ViewMode = .drawn) throws -> RecordsView {
-    try engine.records(scope, type, mode)
+  // settle. `visibleOnly` false lists the records that are not visible too.
+  @MainActor public func records(_ scope: ScopeRef, _ type: String, _ mode: ViewMode = .drawn, visibleOnly: Bool = true) throws -> RecordsView {
+    try engine.records(scope, type, mode, visibleOnly: visibleOnly)
   }
 
   @MainActor public func records(_ scope: ScopeRef, _ type: String, where field: String, is id: RecordID,

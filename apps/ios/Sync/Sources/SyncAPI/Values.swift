@@ -483,30 +483,38 @@ public struct TextValue: Hashable, Sendable {
   }
 }
 
-// One record of a view: its lattice values, texts and serials, and what the outbox holds of it.
+// One record of a view: its life and born, its lattice values and the stamp of the register that holds each (§3), its
+// texts and serials, the server's order and receipt times of its confirmed row, and what the outbox holds of it.
 public struct Record: Hashable, Sendable {
   public let type: String
   public let id: RecordID
   public let life: Life?
   public let born: Stamp?
   public let values: [String: JSON]
+  // By field, as `values`.
+  public let stamps: [String: Stamp]
   public let texts: [String: TextValue]
   public let serials: [String: JSON]
+  // §9.1 the confirmed row's `seq`, `rc` and `ru`; nil where the scope holds no confirmed row of the record.
+  public let seq: Int64?
   public let rc: Int64?
   public let ru: Int64?
   public let isVisible: Bool
   public let isPending: Bool
   public let isHeld: Bool
 
-  public init(type: String, id: RecordID, life: Life?, born: Stamp?, values: [String: JSON], texts: [String: TextValue],
-              serials: [String: JSON], rc: Int64?, ru: Int64?, isVisible: Bool, isPending: Bool, isHeld: Bool) {
+  public init(type: String, id: RecordID, life: Life?, born: Stamp?, values: [String: JSON], stamps: [String: Stamp],
+              texts: [String: TextValue], serials: [String: JSON], seq: Int64?, rc: Int64?, ru: Int64?, isVisible: Bool,
+              isPending: Bool, isHeld: Bool) {
     self.type = type
     self.id = id
     self.life = life
     self.born = born
     self.values = values
+    self.stamps = stamps
     self.texts = texts
     self.serials = serials
+    self.seq = seq
     self.rc = rc
     self.ru = ru
     self.isVisible = isVisible
@@ -516,7 +524,8 @@ public struct Record: Hashable, Sendable {
 
   public static func == (lhs: Record, rhs: Record) -> Bool {
     lhs.type.utf8.elementsEqual(rhs.type.utf8) && lhs.id == rhs.id && lhs.life == rhs.life && lhs.born == rhs.born
-      && lhs.values == rhs.values && lhs.texts == rhs.texts && lhs.serials == rhs.serials && lhs.rc == rhs.rc && lhs.ru == rhs.ru
+      && lhs.values == rhs.values && lhs.stamps == rhs.stamps && lhs.texts == rhs.texts && lhs.serials == rhs.serials
+      && lhs.seq == rhs.seq && lhs.rc == rhs.rc && lhs.ru == rhs.ru
       && lhs.isVisible == rhs.isVisible && lhs.isPending == rhs.isPending && lhs.isHeld == rhs.isHeld
   }
 
@@ -526,8 +535,10 @@ public struct Record: Hashable, Sendable {
     hasher.combine(life)
     hasher.combine(born)
     hasher.combine(values)
+    hasher.combine(stamps)
     hasher.combine(texts)
     hasher.combine(serials)
+    hasher.combine(seq)
     hasher.combine(rc)
     hasher.combine(ru)
     hasher.combine(isVisible)

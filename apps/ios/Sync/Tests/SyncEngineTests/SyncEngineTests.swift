@@ -26,7 +26,8 @@ struct SyncEngineTests {
     #expect(try rig.outbox() == ["g1/0 ready"])
     #expect(try rig.engine.read(Rig.scope) { try $0.drawn("card", "card0001") } == Record(
       type: "card", id: "card0001", life: Life(.alive, receipt.stamp), born: receipt.stamp,
-      values: ["title": "One"], texts: [:], serials: [:], rc: nil, ru: nil, isVisible: true, isPending: true, isHeld: false))
+      values: ["title": "One"], stamps: ["title": receipt.stamp], texts: [:], serials: [:], seq: nil, rc: nil, ru: nil, isVisible: true,
+      isPending: true, isHeld: false))
   }
 
   @Test func aNilGestureWritesNothingAndTicksNoClock() throws {
