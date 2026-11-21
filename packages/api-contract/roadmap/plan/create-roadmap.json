@@ -1,0 +1,485 @@
+[
+  {
+    "name": "A named plan: its legend where it changed the kinds, its steps keyed by their ids, each link, and the step it brings done",
+    "input": {
+      "text": "# Learn WebGL\n## Basics\n- [x] Read the spec\n- [ ] Draw a triangle\n  - Understand shaders\n## Projects\n1. Particle system\n2. Terrain renderer\nJust a stray thought",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": ""
+    },
+    "expect": {
+      "CreateRoadmap": {
+        "title": "Learn WebGL",
+        "steps": {
+          "steps": [
+            {"key": "learn-webgl", "label": "Learn WebGL", "icon": "sparkles", "color": "terracotta"},
+            {"key": "basics", "label": "Basics", "icon": "", "color": "terracotta"},
+            {"key": "read-the-spec", "label": "Read the spec", "icon": "", "color": "terracotta"},
+            {"key": "draw-a-triangle", "label": "Draw a triangle", "icon": "", "color": "terracotta"},
+            {"key": "understand-shaders", "label": "Understand shaders", "icon": "", "color": "terracotta"},
+            {"key": "projects", "label": "Projects", "icon": "", "color": "olive"},
+            {"key": "particle-system", "label": "Particle system", "icon": "", "color": "olive"},
+            {"key": "terrain-renderer", "label": "Terrain renderer", "icon": "", "color": "olive", "description": "Just a stray thought"}
+          ],
+          "links": [
+            ["learn-webgl", "basics"],
+            ["basics", "read-the-spec"],
+            ["basics", "draw-a-triangle"],
+            ["draw-a-triangle", "understand-shaders"],
+            ["learn-webgl", "projects"],
+            ["projects", "particle-system"],
+            ["particle-system", "terrain-renderer"]
+          ]
+        },
+        "kinds": [
+          {"hue": "terracotta", "label": "Basics", "description": ""},
+          {"hue": "olive", "label": "Projects", "description": ""},
+          {"hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+        ]
+      },
+      "Complete": ["read-the-spec"]
+    }
+  },
+  {
+    "name": "A plan that leaves the kinds it was read over as the genesis kinds creates with them",
+    "input": {
+      "text": "Ship the beta\n- write changelog\n## build\n- [x] cut the release",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": ""
+    },
+    "expect": {
+      "CreateRoadmap": {
+        "title": "Ship the beta",
+        "steps": {
+          "steps": [
+            {"key": "ship-the-beta", "label": "Ship the beta", "icon": "sparkles", "color": "terracotta"},
+            {"key": "write-changelog", "label": "write changelog", "icon": "", "color": "terracotta"},
+            {"key": "build", "label": "build", "icon": "", "color": "terracotta"},
+            {"key": "cut-the-release", "label": "cut the release", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["ship-the-beta", "write-changelog"], ["ship-the-beta", "build"], ["build", "cut-the-release"]]
+        },
+        "kinds": null
+      },
+      "Complete": ["cut-the-release"]
+    }
+  },
+  {
+    "name": "A plan read over no kinds that adds none creates with the genesis kinds",
+    "input": {"text": "Ship the beta\n- write changelog", "kinds": [], "name": ""},
+    "expect": {
+      "CreateRoadmap": {
+        "title": "Ship the beta",
+        "steps": {
+          "steps": [
+            {"key": "ship-the-beta", "label": "Ship the beta", "icon": "sparkles", "color": "terracotta"},
+            {"key": "write-changelog", "label": "write changelog", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["ship-the-beta", "write-changelog"]]
+        },
+        "kinds": null
+      },
+      "Complete": []
+    }
+  },
+  {
+    "name": "A plan read over no kinds that adds some creates with those alone",
+    "input": {"text": "Ship\n## Deploy\n- a", "kinds": [], "name": ""},
+    "expect": {
+      "CreateRoadmap": {
+        "title": "Ship",
+        "steps": {
+          "steps": [
+            {"key": "ship", "label": "Ship", "icon": "sparkles", "color": "terracotta"},
+            {"key": "deploy", "label": "Deploy", "icon": "", "color": "terracotta"},
+            {"key": "a", "label": "a", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["ship", "deploy"], ["deploy", "a"]]
+        },
+        "kinds": [{"hue": "terracotta", "label": "Deploy", "description": ""}]
+      },
+      "Complete": []
+    }
+  },
+  {
+    "name": "The genesis kinds in another order are a legend of their own",
+    "input": {
+      "text": "Ship\n- a",
+      "kinds": [
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": ""
+    },
+    "expect": {
+      "CreateRoadmap": {
+        "title": "Ship",
+        "steps": {
+          "steps": [{"key": "ship", "label": "Ship", "icon": "sparkles", "color": "olive"}, {"key": "a", "label": "a", "icon": "", "color": "olive"}],
+          "links": [["ship", "a"]]
+        },
+        "kinds": [
+          {"hue": "olive", "label": "Learn", "description": "Things you figure out"},
+          {"hue": "terracotta", "label": "Build", "description": "Things you make"},
+          {"hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+        ]
+      },
+      "Complete": []
+    }
+  },
+  {
+    "name": "A typed name and a plan with a first line of its own: the plan's line names the roadmap",
+    "input": {
+      "text": "# Learn to sail\n- Rig the boat",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": "Typed name"
+    },
+    "expect": {
+      "CreateRoadmap": {
+        "title": "Learn to sail",
+        "steps": {
+          "steps": [
+            {"key": "learn-to-sail", "label": "Learn to sail", "icon": "sparkles", "color": "terracotta"},
+            {"key": "rig-the-boat", "label": "Rig the boat", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["learn-to-sail", "rig-the-boat"]]
+        },
+        "kinds": null
+      },
+      "Complete": []
+    }
+  },
+  {
+    "name": "A typed name names a plan that has none, and its first step, trimmed",
+    "input": {
+      "text": "- Rig the boat\n- [x] Read the wind",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": " \u00a0Learn to sail\u3000\t"
+    },
+    "expect": {
+      "CreateRoadmap": {
+        "title": "Learn to sail",
+        "steps": {
+          "steps": [
+            {"key": "root", "label": "Learn to sail", "icon": "sparkles", "color": "terracotta"},
+            {"key": "rig-the-boat", "label": "Rig the boat", "icon": "", "color": "terracotta"},
+            {"key": "read-the-wind", "label": "Read the wind", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["root", "rig-the-boat"], ["root", "read-the-wind"]]
+        },
+        "kinds": null
+      },
+      "Complete": ["read-the-wind"]
+    }
+  },
+  {
+    "name": "A plan with no name and no typed name creates nothing",
+    "input": {
+      "text": "- Rig the boat",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": ""
+    },
+    "expect": null
+  },
+  {
+    "name": "A typed name of whitespace is no name",
+    "input": {
+      "text": "- Rig the boat",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": " \u00a0\u3000\ufeff\t"
+    },
+    "expect": null
+  },
+  {
+    "name": "Empty text with a typed name creates a roadmap of one step",
+    "input": {
+      "text": "",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": "Learn to sail"
+    },
+    "expect": {
+      "CreateRoadmap": {
+        "title": "Learn to sail",
+        "steps": {"steps": [{"key": "root", "label": "Learn to sail", "icon": "sparkles", "color": "terracotta"}], "links": []},
+        "kinds": null
+      },
+      "Complete": []
+    }
+  },
+  {
+    "name": "A typed name is clipped at 200 UTF-16 units after trimming, never inside a pair",
+    "input": {
+      "text": "- Rig the boat",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": "  nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn😀tail  "
+    },
+    "expect": {
+      "CreateRoadmap": {
+        "title": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+        "steps": {
+          "steps": [
+            {
+              "key": "root",
+              "label": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+              "icon": "sparkles",
+              "color": "terracotta"
+            },
+            {"key": "rig-the-boat", "label": "Rig the boat", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["root", "rig-the-boat"]]
+        },
+        "kinds": null
+      },
+      "Complete": []
+    }
+  },
+  {
+    "name": "Notes are a step's description joined by line breaks, and addresses its links with empty labels",
+    "input": {
+      "text": "Root\nabout the plan\n- step\nhalf a sentence\nhttps://example.com/docs\nanother aside\nhttp://example.com/second",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": ""
+    },
+    "expect": {
+      "CreateRoadmap": {
+        "title": "Root",
+        "steps": {
+          "steps": [
+            {"key": "root", "label": "Root", "icon": "sparkles", "color": "terracotta", "description": "about the plan"},
+            {
+              "key": "step",
+              "label": "step",
+              "icon": "",
+              "color": "terracotta",
+              "description": "half a sentence\nanother aside",
+              "links": [{"url": "https://example.com/docs", "label": ""}, {"url": "http://example.com/second", "label": ""}]
+            }
+          ],
+          "links": [["root", "step"]]
+        },
+        "kinds": null
+      },
+      "Complete": []
+    }
+  },
+  {
+    "name": "Every done step is completed in the plan's order, a step done under one that is not included",
+    "input": {
+      "text": "Trip\n- [ ] Pack\n  - [x] Find the bag\n  - [X] Buy socks\n- [x] Book",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": ""
+    },
+    "expect": {
+      "CreateRoadmap": {
+        "title": "Trip",
+        "steps": {
+          "steps": [
+            {"key": "trip", "label": "Trip", "icon": "sparkles", "color": "terracotta"},
+            {"key": "pack", "label": "Pack", "icon": "", "color": "terracotta"},
+            {"key": "find-the-bag", "label": "Find the bag", "icon": "", "color": "terracotta"},
+            {"key": "buy-socks", "label": "Buy socks", "icon": "", "color": "terracotta"},
+            {"key": "book", "label": "Book", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["trip", "pack"], ["pack", "find-the-bag"], ["pack", "buy-socks"], ["trip", "book"]]
+        },
+        "kinds": null
+      },
+      "Complete": ["find-the-bag", "buy-socks", "book"]
+    }
+  },
+  {
+    "name": "The first step, which a typed name names, is never done",
+    "input": {
+      "text": "- [x] a\n- [x] b",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": "Done list"
+    },
+    "expect": {
+      "CreateRoadmap": {
+        "title": "Done list",
+        "steps": {
+          "steps": [
+            {"key": "root", "label": "Done list", "icon": "sparkles", "color": "terracotta"},
+            {"key": "a", "label": "a", "icon": "", "color": "terracotta"},
+            {"key": "b", "label": "b", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["root", "a"], ["root", "b"]]
+        },
+        "kinds": null
+      },
+      "Complete": ["a", "b"]
+    }
+  },
+  {
+    "name": "A marked file creates a step for each item and none for its name, whatever was typed",
+    "input": {
+      "text": "# Sail\n<!-- windmill:roadmap -->\n- [x] Wind <!-- windmill:kind sky Sailing -->\n  Read it.\n  https://example.com/wind\n  - Dock\n- Bag <!-- windmill:kind gold -->",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": "Typed name"
+    },
+    "expect": {
+      "CreateRoadmap": {
+        "title": "Sail",
+        "steps": {
+          "steps": [
+            {
+              "key": "wind",
+              "label": "Wind",
+              "icon": "sparkles",
+              "color": "sky",
+              "description": "Read it.",
+              "links": [{"url": "https://example.com/wind", "label": ""}]
+            },
+            {"key": "dock", "label": "Dock", "icon": "", "color": "sky"},
+            {"key": "bag", "label": "Bag", "icon": "", "color": "gold"}
+          ],
+          "links": [["wind", "dock"]]
+        },
+        "kinds": [
+          {"hue": "terracotta", "label": "Build", "description": "Things you make"},
+          {"hue": "olive", "label": "Learn", "description": "Things you figure out"},
+          {"hue": "gold", "label": "Milestone", "description": "Moments that matter"},
+          {"hue": "sky", "label": "Sailing", "description": ""}
+        ]
+      },
+      "Complete": ["wind"]
+    }
+  },
+  {
+    "name": "A marked file with an empty name creates an untitled roadmap whatever was typed",
+    "input": {
+      "text": "# \n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky -->",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": "Typed name"
+    },
+    "expect": {
+      "CreateRoadmap": {"title": "", "steps": {"steps": [{"key": "a", "label": "A", "icon": "sparkles", "color": "sky"}], "links": []}, "kinds": null},
+      "Complete": []
+    }
+  },
+  {
+    "name": "A marked file with no step creates a roadmap with no steps",
+    "input": {
+      "text": "# Empty\n<!-- windmill:roadmap -->",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": ""
+    },
+    "expect": {"CreateRoadmap": {"title": "Empty", "steps": {"steps": [], "links": []}, "kinds": null}, "Complete": []}
+  },
+  {
+    "name": "Step names are passed on unclipped and empty names empty",
+    "input": {
+      "text": "Root\n- yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n- ",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": ""
+    },
+    "expect": {
+      "CreateRoadmap": {
+        "title": "Root",
+        "steps": {
+          "steps": [
+            {"key": "root", "label": "Root", "icon": "sparkles", "color": "terracotta"},
+            {
+              "key": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+              "label": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+              "icon": "",
+              "color": "terracotta"
+            },
+            {"key": "step", "label": "", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["root", "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"], ["root", "step"]]
+        },
+        "kinds": null
+      },
+      "Complete": []
+    }
+  },
+  {
+    "name": "Names in several scripts keep their text, under the keys the read gave them",
+    "input": {
+      "text": "Учить языки\n- [x] Привет, мир\n- 你好，世界\n- 🚀 Launch",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "name": ""
+    },
+    "expect": {
+      "CreateRoadmap": {
+        "title": "Учить языки",
+        "steps": {
+          "steps": [
+            {"key": "root", "label": "Учить языки", "icon": "sparkles", "color": "terracotta"},
+            {"key": "step", "label": "Привет, мир", "icon": "", "color": "terracotta"},
+            {"key": "step-2", "label": "你好，世界", "icon": "", "color": "terracotta"},
+            {"key": "launch", "label": "🚀 Launch", "icon": "", "color": "terracotta"}
+          ],
+          "links": [["root", "step"], ["root", "step-2"], ["root", "launch"]]
+        },
+        "kinds": null
+      },
+      "Complete": ["step"]
+    }
+  }
+]
