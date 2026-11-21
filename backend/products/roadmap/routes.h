@@ -17,7 +17,6 @@
 #include "products/roadmap/ports/OgImageRepository.h"
 #include "products/roadmap/ports/OgVideoRepository.h"
 #include "products/roadmap/ports/OpLog.h"
-#include "products/roadmap/ports/PlanComposer.h"
 #include "products/roadmap/ports/ReminderRepository.h"
 #include "products/roadmap/ports/TreeRepository.h"
 
@@ -51,7 +50,6 @@ struct RoadmapDeps {
   std::shared_ptr<TokenGenerator> tokens;
   std::shared_ptr<Clock> clock;
   std::string remindersAdminToken;
-  std::shared_ptr<PlanComposer> composer;
   // Set where the engine serves roadmap's scopes (ROADMAP_ENGINE_ENABLED): the activity, the progress, the share page, its
   // card and video, and the gallery read its records, and the rooms' socket and routes are retired; unset, the rooms and
   // roadmap's own tables serve.
@@ -62,8 +60,7 @@ struct RoadmapDeps {
 };
 
 // Mounts the roadmap product on the shared app: the collab socket and its presence flush, or their retirement where the
-// engine serves roadmap's scopes, and every roadmap HTTP route (/v1/trees*, /gallery, /t/:id, /v1/reminders*, /v1/tend*,
-// /v1/compose, …).
+// engine serves roadmap's scopes, and every roadmap HTTP route (/v1/trees*, /gallery, /t/:id, /v1/reminders*, /v1/tend*, …).
 void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps);
 
 }

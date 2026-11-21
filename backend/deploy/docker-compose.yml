@@ -116,8 +116,7 @@ services:
       # which is an outage that passes every check the owner can run. Empty fails for everyone or not at
       # all; the deploy guard keeps it from ever rendering empty here.
       RESEND_FROM: ${RESEND_FROM:-}
-      # Paste-import LLM escalation (/v1/compose). Empty → the route answers 503 compose-unavailable
-      # and the client hides the handle.
+      # Roadmap tending, gym Coach and journal echoes call Anthropic with this key.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       COACH_MAX_OUTPUT_TOKENS: ${COACH_MAX_OUTPUT_TOKENS:-2000}
       AI_ALLOWANCES_ENABLED: ${AI_ALLOWANCES_ENABLED:-false}
@@ -140,8 +139,8 @@ services:
       # answers 503 and the client hides Talk. Set it to arm voice for Windmill One subscribers.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Journal echoes. BOTH boundaries must be wired or the nightly pass is a quiet no-op: the
-      # embedder sidecar below, and ANTHROPIC_API_KEY above (shared with paste-import — one account,
-      # two products asking it different questions). Unset URL → echoes stay dark, and nothing is
+      # embedder sidecar below, and ANTHROPIC_API_KEY above (shared with Coach and tending — one account,
+      # several products asking it different questions). Unset URL → echoes stay dark, and nothing is
       # written, so arming later costs a re-derivation and never a wrong row.
       JOURNAL_EMBEDDER_URL: ${JOURNAL_EMBEDDER_URL:-http://embedder:8081}
       # The operator's rehearsal door for one nightly pass. Unset → the route 403s, its resting state.

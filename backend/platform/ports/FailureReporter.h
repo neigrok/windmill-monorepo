@@ -5,7 +5,7 @@
 
 namespace wm {
 
-// Handled failures a user can see. `where` names the operation ("compose.stream"), `detail`
+// Handled failures a user can see. `where` names the operation ("tend"), `detail`
 // carries diagnostics — never user content.
 struct FailureReporter {
   virtual ~FailureReporter() = default;

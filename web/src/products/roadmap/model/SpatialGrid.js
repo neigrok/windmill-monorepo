@@ -45,7 +45,7 @@ export class SpatialGrid {
     let bestDistSq = maxRadius * maxRadius;
 
     for (const node of this.scan(originX - reach, originY - reach, originX + reach, originY + reach)) {
-      const distSq = (node.x - x) ** 2 + (node.y - y) ** 2;
+      const distSq = (node.x - x) * (node.x - x) + (node.y - y) * (node.y - y);
       if (distSq > bestDistSq) continue;
       bestDistSq = distSq;
       bestId = node.id;

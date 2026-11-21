@@ -1,12 +1,8 @@
 // Pure 2D orthographic camera; world space is Y-down. worldToScreen must stay the exact inverse of screenToWorld or picking drifts.
 import { WORKING_ZOOM } from '../theme.js';
+import { centreFor, clampZoom, fitFrame, fitZoomFor, minZoom, visibleSpanAt } from './framing.js';
 
-const MAX_ZOOM = 6;
 const PINCH_MAX_ZOOM = 2.5;
-// The zoom floor sits this far below the whole tree's fit: a wheel or pinch can back off from All steps, never lose the tree.
-const FLOOR_BELOW_FIT = 0.5;
-const MIN_ZOOM_WITHOUT_MODEL = 0.006;
-const FIT_PADDING = 0.9;
 const PAN_SLACK = 80; // px
 const WHEEL_ZOOM_SPEED = 0.0016;
 const INERTIA_FRICTION = 3.2;
@@ -20,10 +16,6 @@ const GLIDE_FAR = 0.72;
 
 const SAFE_FRAME_INSET = 0.1; // central 80% viewport = 10% inset per side
 const ZOOM_MATCH_EPSILON = 0.02; // zooms within 2% count as "no change"
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
 
 // Inside [min,max] the value passes through 1:1; past an edge it eases asymptotically toward at most `slack` beyond, never bouncing back.
 function softClamp(value, min, max, slack) {
@@ -123,39 +115,12 @@ export class Camera2D {
     this.fitBounds = bounds;
   }
 
-  // The zoom that shows all of `bounds` inside the visible area, uncapped.
-  fitZoomFor(bounds, padding = FIT_PADDING) {
-    const boundsWidth = Math.max(bounds.maxX - bounds.minX, 1);
-    const boundsHeight = Math.max(bounds.maxY - bounds.minY, 1);
-    const visibleWidth = Math.max(1, this.viewportWidth - this.insets.left - this.insets.right);
-    const visibleHeight = Math.max(1, this.viewportHeight - this.insets.top - this.insets.bottom);
-    return Math.min(visibleWidth / boundsWidth, visibleHeight / boundsHeight) * padding;
-  }
-
-  minZoom() {
-    if (!this.fitBounds) return MIN_ZOOM_WITHOUT_MODEL;
-    return Math.min(this.fitZoomFor(this.fitBounds), this.workingZoom) * FLOOR_BELOW_FIT;
-  }
-
-  clampZoom(zoom, maxZoom = MAX_ZOOM) {
-    return clamp(zoom, this.minZoom(), maxZoom);
-  }
-
-  // The world-space size of the area the chrome leaves visible, at `zoom`.
-  visibleSpanAt(zoom) {
-    return {
-      width: Math.max(1, this.viewportWidth - this.insets.left - this.insets.right) / zoom,
-      height: Math.max(1, this.viewportHeight - this.insets.top - this.insets.bottom) / zoom,
-    };
-  }
-
-  // Where the camera must sit for a world point to land at the centre of the visible area at `zoom`.
-  centreFor(x, y, zoom) {
-    return {
-      x: x + (this.insets.right - this.insets.left) / (2 * zoom),
-      y: y + (this.insets.bottom - this.insets.top) / (2 * zoom),
-    };
-  }
+  // The framing rules, read for this camera's canvas.
+  fitZoomFor(bounds, padding) { return fitZoomFor(this, bounds, padding); }
+  minZoom() { return minZoom(this); }
+  clampZoom(zoom, maxZoom) { return clampZoom(this, zoom, maxZoom); }
+  visibleSpanAt(zoom) { return visibleSpanAt(this, zoom); }
+  centreFor(x, y, zoom) { return centreFor(this, x, y, zoom); }
 
   // The world rectangle the chrome leaves visible at the current camera.
   visibleViewport() {
@@ -296,17 +261,17 @@ export class Camera2D {
     this.dirty = true;
   }
 
-  // Show all of `bounds` inside the visible area; the cap keeps a tiny tree from fitting-to-fill past the working zoom. An
-  // extent without finite edges shows nothing, and leaves the camera where it stands.
-  fitToView(bounds, padding = FIT_PADDING, maxZoom = this.workingZoom) {
+  // Show all of `bounds` inside the visible area. An extent without finite edges shows nothing, and leaves the camera
+  // where it stands.
+  fitToView(bounds, padding, maxZoom) {
     if (![bounds.minX, bounds.maxX, bounds.minY, bounds.maxY].every(Number.isFinite)) return;
     this.glide = null;
     this.velocityX = 0;
     this.velocityY = 0;
-    this.zoom = this.clampZoom(this.fitZoomFor(bounds, padding), maxZoom);
-    const centre = this.centreFor((bounds.minX + bounds.maxX) / 2, (bounds.minY + bounds.maxY) / 2, this.zoom);
-    this.x = centre.x;
-    this.y = centre.y;
+    const frame = fitFrame(this, bounds, padding, maxZoom);
+    this.x = frame.x;
+    this.y = frame.y;
+    this.zoom = frame.zoom;
     this.dirty = true;
   }
 

@@ -11,7 +11,6 @@ are not guaranteed to preserve identity. Customer USD screens remain work.
 
 | Feature | Operation / configured model | Enabled allowance treatment |
 | --- | --- | --- |
-| Roadmap text composition | `compose` / `claude-haiku-4-5-20251001` | Anonymous dispatch remains closed; Coach installation access does not enable this route. |
 | Roadmap AI assistance | `tend` / `claude-sonnet-5` | Individual and applicable free/funded budgets; no separate customer request quota. |
 | Gym Coach | `ask` / `claude-opus-5` | Individual and applicable free/funded budgets; technical question burst protection remains. |
 | Anonymous Gym onboarding | `coach.preview` / `claude-sonnet-5` | Lifetime installation and shared free budgets; one bounded call, public exercises only. |

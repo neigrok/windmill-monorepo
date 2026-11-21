@@ -130,7 +130,7 @@ TEST(ai_usage_a_model_we_cannot_price_returns_nothing_rather_than_zero) {
   CHECK_FALSE(costNanos("laude-opus-5", tokens).has_value());
 }
 
-// The whole reason the unit is nanos: in micro-dollars haiku input is 1 per 1000 tokens, so a 300-token compose truncates to ZERO.
+// The whole reason the unit is nanos: in micro-dollars haiku input is 1 per 1000 tokens, so a 300-token call truncates to ZERO.
 TEST(ai_usage_a_three_hundred_token_haiku_call_does_not_round_to_zero) {
   const std::optional<long long> input = costNanos("claude-haiku-4-5", TokenUse{300, 0, 0, 0});
   REQUIRE(input.has_value());

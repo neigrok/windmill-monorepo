@@ -1,15 +1,16 @@
 // Bubble tree over the trunk arborescence: each node's children on rays inside its enclosing circle, in-edge side free,
 // then a post-order tuck sliding subtrees on their rays until footprints or trunk edges touch or discs meet their air.
 import { LayoutEngine } from './LayoutEngine.js';
+import { PI, asin, atan2, cos, hypot, sin } from './arithmetic.js';
 import { cmpOrder } from '../model/TrunkTree.js';
 import { footprintOf, footprintRect } from '../model/footprint.js';
 import { WORKING_ZOOM, BODY_WU } from '../theme.js';
 
-const TWO_PI = 2 * Math.PI;
+const TWO_PI = 2 * PI;
 // The arc kept free on a node's parent side, so its in-edge reaches it between no children.
-const IN_EDGE_GAP = Math.PI / 3;
+const IN_EDGE_GAP = PI / 3;
 // A root has no in-edge; its children spread around it, but never further apart than this.
-const ROOT_SPREAD_CAP = Math.PI / 9;
+const ROOT_SPREAD_CAP = PI / 9;
 // Subtree circles are rounded up to this step, so a small change in one caption rarely reaches its ancestors.
 const RADIUS_STEP = 24;
 // Island circles are rounded up more coarsely still, so an edit inside one rarely reseats the others.
@@ -53,7 +54,7 @@ class Forest {
     this.childrenOf = this.ids.map((id) => trunk.trunkChildrenOf(id).map((childId) => indexOf.get(childId)));
     this.shapes = this.ids.map((id, node) => {
       const rect = footprintRect(0, 0, footprintOf(tree.nodesById.get(id).label, { root: this.parentOf[node] === -1 }));
-      return { rect, ownRadius: Math.hypot(Math.max(-rect.minX, rect.maxX), Math.max(-rect.minY, rect.maxY)) + TUCK_MARGIN / 2 };
+      return { rect, ownRadius: hypot(Math.max(-rect.minX, rect.maxX), Math.max(-rect.minY, rect.maxY)) + TUCK_MARGIN / 2 };
     });
     this.subtreeSize = new Int32Array(this.size).fill(1);
     for (let node = this.size - 1; node > 0; node--) {
@@ -106,7 +107,10 @@ function stepUp(radius, step) {
 // arcs fit inside the free angle.
 function ringRadius(own, children, free) {
   let ring = 0;
-  for (const child of children) ring = Math.max(ring, Math.sqrt(Math.max(0, (own + child.radius) ** 2 - child.cy ** 2)) - child.cx);
+  for (const child of children) {
+    const reach = own + child.radius;
+    ring = Math.max(ring, Math.sqrt(Math.max(0, reach * reach - child.cy * child.cy)) - child.cx);
+  }
   const arcsFit = (d) => children.reduce((sum, child) => sum + arcOf(d, child), 0) <= free;
   if (arcsFit(ring)) return ring;
   let lo = ring;
@@ -122,7 +126,7 @@ function ringRadius(own, children, free) {
 
 // The angle a child's circle covers, seen from the node, when the child sits `ring` out along its ray.
 function arcOf(ring, child) {
-  return 2 * Math.asin(Math.min(1, child.radius / Math.hypot(ring + child.cx, child.cy)));
+  return 2 * asin(Math.min(1, child.radius / hypot(ring + child.cx, child.cy)));
 }
 
 // Consecutive arcs packed edge to edge and centred on +x — a root's spread apart by the slack, up to the cap. A
@@ -135,14 +139,14 @@ function fanRays(ring, children, free, spreadCap) {
   return children.map((child, i) => {
     const arcCentre = cursor + arcs[i] / 2;
     cursor += arcs[i] + spread;
-    return arcCentre - Math.atan2(child.cy, ring + child.cx);
+    return arcCentre - atan2(child.cy, ring + child.cx);
   });
 }
 
 // A child's subtree circle in its parent's frame: the child `ring` out along `angle`, facing along it.
 function circleOnRay(ring, angle, child) {
-  const ux = Math.cos(angle);
-  const uy = Math.sin(angle);
+  const ux = cos(angle);
+  const uy = sin(angle);
   return { x: (ring + child.cx) * ux - child.cy * uy, y: (ring + child.cx) * uy + child.cy * ux, r: child.radius };
 }
 
@@ -156,8 +160,8 @@ function growIslands(forest, bubbles) {
     const { ring, rays } = bubbles[node];
     forest.childrenOf[node].forEach((child, i) => {
       const angle = heading[node] + rays[i];
-      x[child] = x[node] + ring * Math.cos(angle);
-      y[child] = y[node] + ring * Math.sin(angle);
+      x[child] = x[node] + ring * cos(angle);
+      y[child] = y[node] + ring * sin(angle);
       heading[child] = angle;
     });
   }
@@ -179,7 +183,7 @@ function tuckIsland(forest, positions, root, work) {
     const parent = forest.parentOf[head];
     const vx = positions.x[parent] - positions.x[head];
     const vy = positions.y[parent] - positions.y[head];
-    if (Math.hypot(vx, vy) < EPSILON) continue;
+    if (hypot(vx, vy) < EPSILON) continue;
     const last = rank[head];
     const first = last - forest.subtreeSize[head] + 1;
     const sliding = (node) => rank[node] >= first && rank[node] <= last;
@@ -214,7 +218,7 @@ function settleIslands(forest, positions, islands) {
   let reach = anchor.r;
   islands.forEach((island, i) => {
     if (i > 0) {
-      const seat = Math.hypot(circles[i].x, circles[i].y);
+      const seat = hypot(circles[i].x, circles[i].y);
       const ux = circles[i].x / seat;
       const uy = circles[i].y / seat;
       const start = reach + island.r;
@@ -275,7 +279,7 @@ class RestingSet {
   // The fraction of the move (vx, vy) that nodes[first..last] can take together, marching a cell at a time and asking
   // the grids a margin wider than each sweep, so a contact at the margin is never missed across a cell boundary.
   room(nodes, first, last, vx, vy, sliding, work = null) {
-    const length = Math.hypot(vx, vy);
+    const length = hypot(vx, vy);
     const ux = vx / length;
     const uy = vy / length;
     for (let travelled = 0; travelled < length; travelled += GRID_CELL) {
@@ -390,8 +394,8 @@ function placeTangent(b, a, c) {
     c.y = a.y;
     return;
   }
-  const a2 = (a.r + c.r) ** 2;
-  const b2 = (b.r + c.r) ** 2;
+  const a2 = (a.r + c.r) * (a.r + c.r);
+  const b2 = (b.r + c.r) * (b.r + c.r);
   if (a2 > b2) {
     const x = (d2 + b2 - a2) / (2 * d2);
     const y = Math.sqrt(Math.max(0, b2 / d2 - x * x));
@@ -407,7 +411,7 @@ function placeTangent(b, a, c) {
 
 function intersects(a, b) {
   const reach = a.r + b.r - 1e-6;
-  return reach > 0 && reach * reach > (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+  return reach > 0 && reach * reach > (b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y);
 }
 
 // How far from the origin the seat between a chain link and its next one lies.
@@ -428,7 +432,7 @@ function smallestCircleAround(discs) {
     let outermost = null;
     let outBy = EPSILON * (1 + circle.r);
     for (const disc of discs) {
-      const by = Math.hypot(disc.x - circle.x, disc.y - circle.y) + disc.r - circle.r;
+      const by = hypot(disc.x - circle.x, disc.y - circle.y) + disc.r - circle.r;
       if (by > outBy) {
         outermost = disc;
         outBy = by;
@@ -441,7 +445,7 @@ function smallestCircleAround(discs) {
     circle = improved.circle;
   }
   let r = 0;
-  for (const disc of discs) r = Math.max(r, Math.hypot(disc.x - circle.x, disc.y - circle.y) + disc.r);
+  for (const disc of discs) r = Math.max(r, hypot(disc.x - circle.x, disc.y - circle.y) + disc.r);
   return { x: circle.x, y: circle.y, r };
 }
 
@@ -464,7 +468,7 @@ function smallestBasis(discs) {
 }
 
 function encloses(circle, disc) {
-  return Math.hypot(disc.x - circle.x, disc.y - circle.y) + disc.r <= circle.r + EPSILON * (1 + circle.r);
+  return hypot(disc.x - circle.x, disc.y - circle.y) + disc.r <= circle.r + EPSILON * (1 + circle.r);
 }
 
 function circleOfDisc(a) {
@@ -472,7 +476,7 @@ function circleOfDisc(a) {
 }
 
 function circleOfTwoDiscs(a, b) {
-  const distance = Math.hypot(b.x - a.x, b.y - a.y);
+  const distance = hypot(b.x - a.x, b.y - a.y);
   if (distance + b.r <= a.r + EPSILON) return circleOfDisc(a);
   if (distance + a.r <= b.r + EPSILON) return circleOfDisc(b);
   const r = (distance + a.r + b.r) / 2;
@@ -533,7 +537,7 @@ function footprintStop(moving, vx, vy, still) {
 function discStop(moving, vx, vy, still) {
   const dx = moving.x - still.x;
   const dy = moving.y - still.y;
-  const apart = Math.hypot(dx, dy);
+  const apart = hypot(dx, dy);
   let reach = moving.r + still.r + DISC_AIR;
   if (apart < reach - EPSILON) {
     reach = moving.r + still.r;

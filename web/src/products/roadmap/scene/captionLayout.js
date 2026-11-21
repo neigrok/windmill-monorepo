@@ -2,6 +2,7 @@
 // throughout; LabelOverlay measures the text and moves elements to the rectangles this file returns.
 import { NODE_SIZE, BODY_FRACTION, ROOT_BODY_SCALE, MIN_BODY_PX, MIN_ROOT_BODY_PX, SELECTED_SCALE, CAPTION } from '../theme.js';
 import { BEND_REACH, bendOf, controlPoint, pointOnCurve } from './edgeCurve.js';
+import { hypot } from '../layout/arithmetic.js';
 
 export const CAPTION_POOL = 96; // the most captions on screen at once — also the DOM pool
 const WORKING_BODY_PX = 18; // drawn body from which every node may be named
@@ -353,7 +354,7 @@ export class CaptionPlacer {
         forced: rank <= RANK_HOVERED || (crown && limit < RANK_REST),
         weight: rank === RANK_ANCHOR ? this.subtreeSizeById.get(id) ?? 0 : 0,
         newcomer: onScreen ? 0 : 1,
-        distance: (node.x - view.x) ** 2 + (node.y - view.y) ** 2,
+        distance: (node.x - view.x) * (node.x - view.x) + (node.y - view.y) * (node.y - view.y),
       });
     }
     if (limit > RANK_ANCHOR) this.stageRibbons(view, grid, area);
@@ -374,7 +375,7 @@ export class CaptionPlacer {
       const tx = (to.x - view.x) * view.zoom + view.viewportWidth / 2;
       const ty = (to.y - view.y) * view.zoom + view.viewportHeight / 2;
       // Curves outside the caption area never reach a seat's collision query.
-      const length = Math.hypot(tx - fx, ty - fy);
+      const length = hypot(tx - fx, ty - fy);
       const crossing = chordRange(fx, fy, tx, ty, area, BEND_REACH * length + RIBBON_HALF_PX);
       if (crossing === null) continue;
       const { cx, cy } = controlPoint(fx, fy, tx, ty, bendOf(edge.from, edge.to));

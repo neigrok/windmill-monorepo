@@ -1,44 +1,18 @@
 // A plain text well whose gutter is the live parse — ◉ root · ├ branch · · step · ✓ arrives done ·
 // ¶ kept as a note — measured with an invisible mirror so every glyph sits on its wrapped line.
-// The deterministic parser is the only door into TreeData; the AI handle only rewrites the text.
+// The deterministic parser is the only door into TreeData.
 // The parse holds values alone: this file draws each line's mark and words each liberty taken.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { KindLegend } from '../graph/tree/KindLegend.jsx';
-import { withCounts, renameKind, recolorKind, describeKind, addKind, removeKind } from '../model/Legend.js';
+import { withCounts, renameKind, recolorKind, describeKind, addKind, removeKind, kindName } from '../model/Legend.js';
 import { KIND_CSS } from '../theme.js';
-import { API_BASE } from '../../../shell/apiBase.js';
-import { readComposeStream, shapeFailureLabels } from './composeStream.js';
 import { graftedStepCount } from './graftPlan.js';
 import { plantedRoadmap } from './planGrammar.js';
-import { reportError } from '../../../telemetry/beacon.js';
-import { kindName } from '../model/Legend.js';
 import { LABELS } from '../copy.js';
 import { t } from '../i18n/index.js';
 
 const PLACEHOLDER = t('roadmap.paste.placeholder');
-const AI_RESET_MS = 5000;
-const SHAPE_TIMEOUT_MS = 90000;  // the server's stream deadline; the abort tears the reader down
-const COMPOSE_TEXT_MAX_BYTES = 24576; // the server's cap — over it the handle never offers
-const AI_COPY = {
-  handle: t('roadmap.paste.shapeHandle'),
-  handleAny: t('roadmap.paste.shapeHandleAny'),
-  shape: t('roadmap.paste.shape'),
-  honesty: t('roadmap.paste.shapeHonesty'),
-  more: t('roadmap.paste.shapeMore'),
-  less: t('roadmap.paste.shapeLess'),
-  detail: t('roadmap.paste.shapeDetail'),
-  shaping: t('roadmap.paste.shaping'),
-  cancel: t('roadmap.common.cancel'),
-  kept: t('roadmap.paste.shapeKept'),
-  undo: t('roadmap.paste.shapeUndone'),
-  stopped: t('roadmap.paste.shapeStopped'),
-  rate: t('roadmap.paste.shapeRate'),
-  fail: t('roadmap.paste.shapeFail'),
-  long: t('roadmap.paste.shapeLong'),
-  retry: t('roadmap.common.tryAgain'),
-  undoDoor: t('roadmap.common.undo'),
-};
 
 const GLYPHS = { root: '◉', branch: '├', step: '·', done: '✓', note: '¶' };
 const CLAMP_WORDS = { ragged: t('roadmap.paste.mixedIndentClamped'), jump: t('roadmap.paste.indentClamped') };
@@ -49,23 +23,13 @@ function libertyWords(liberty) {
   return t('roadmap.paste.keptAsNote');
 }
 
-// A 503 compose-unavailable hides the handle for the whole session, without a message.
-let composeUnavailable = false;
-
 export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse, budName, planting, onClose, onPlant, sheet = false, append = false }) {
   const [name, setName] = useState(budName ?? '');
   const [legendOpen, setLegendOpen] = useState(false);
   const [glyphTops, setGlyphTops] = useState([]);
-  const [ai, setAi] = useState({ phase: 'idle', prior: null });
-  const [honestyOpen, setHonestyOpen] = useState(false);
-  const [aiHidden, setAiHidden] = useState(() => composeUnavailable);
   const mirrorRef = useRef(null);
   const textRef = useRef(null);
   const nameRef = useRef(null);
-  const aiTimer = useRef(null);
-  const shapeGen = useRef(0);   // bumped on unmount/Esc/new-shape — a stale reply has no seat
-  const shapeAbort = useRef(null);
-  const streamedText = useRef(null); // the stream's last flush — tells its own writes from outside edits
 
   const hasText = text.trim() !== '';
   const lines = useMemo(() => text.split(/\r\n|\r|\n/), [text]);
@@ -89,37 +53,6 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     return () => cancelAnimationFrame(raf);
   }, [lines]);
 
-  useEffect(() => () => {
-    shapeGen.current += 1;
-    shapeAbort.current?.abort();
-    clearTimeout(aiTimer.current);
-  }, []);
-
-  // The well is readOnly while shaping, so a mid-shape text change is the stream's own flush or a
-  // dropped file. The stream is append-only: text that prefixes the latest flush is a stale frame,
-  // and only genuinely foreign text retires the stream.
-  useEffect(() => {
-    if (ai.phase !== 'shaping') return;
-    if (text === streamedText.current) return;
-    if (streamedText.current !== null && streamedText.current.startsWith(text)) return;
-    shapeGen.current += 1;
-    shapeAbort.current?.abort();
-    setAi({ phase: 'idle', prior: null });
-  }, [text]);
-
-  // The drop door retires the stream synchronously, ahead of any pending rAF flush.
-  useEffect(() => {
-    const onReplaced = () => {
-      if (ai.phase !== 'shaping') return;
-      shapeGen.current += 1;
-      shapeAbort.current?.abort();
-      streamedText.current = null;
-      setAi({ phase: 'idle', prior: null });
-    };
-    window.addEventListener('wm-draft-replaced', onReplaced);
-    return () => window.removeEventListener('wm-draft-replaced', onReplaced);
-  }, [ai.phase]);
-
   // Esc goes back to the bud with the draft kept and ⌘↵ plants; nothing leaks out to the bud.
   const onKeyDown = (event) => {
     event.stopPropagation();
@@ -132,11 +65,6 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
       event.preventDefault();
       plant();
     }
-  };
-
-  const editText = (next) => {
-    if (ai.phase === 'undo' || ai.phase === 'stopped') setAi({ phase: 'idle', prior: null });
-    onTextChange(next);
   };
 
   function plant() {
@@ -168,155 +96,6 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
       label: (patch.label ?? minted.label).slice(0, 24),
       description: patch.description ?? minted.description,
     }]);
-  };
-
-  // The shape door is offered for real content only; text past the server's byte cap keeps it quiet.
-  const spoken = parse.gutter.filter((entry) => entry.mark !== null);
-  const prose = spoken.length >= 6 && spoken.filter((entry) => entry.mark === 'note').length / spoken.length >= 0.6;
-  const shapeable = spoken.length >= 3 && new TextEncoder().encode(text).length <= COMPOSE_TEXT_MAX_BYTES;
-  const aiVisible = !aiHidden && (shapeable || ai.phase !== 'idle');
-
-  const settleAi = (phase) => {
-    setAi({ phase, prior: null });
-    clearTimeout(aiTimer.current);
-    aiTimer.current = setTimeout(() => setAi({ phase: 'idle', prior: null }), AI_RESET_MS);
-  };
-
-  // Every delta grows the well text, throttled to one flush per animation frame. A reply that
-  // isn't a stream walks the buffered road, and a stream that breaks before its first word gets one
-  // buffered retry. The pre-shape text taken here is the undo slot.
-  async function shape(source = text) {
-    if (ai.phase === 'shaping') return;
-    const prior = source;
-    const gen = ++shapeGen.current;
-    const controller = new AbortController();
-    shapeAbort.current = controller;
-    streamedText.current = null;
-    const deadline = setTimeout(() => controller.abort(), SHAPE_TIMEOUT_MS);
-    setAi({ phase: 'shaping', prior });
-
-    const compose = (stream) => fetch(`${API_BASE}/v1/compose`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify(stream ? { text: prior, stream: true } : { text: prior }),
-      signal: controller.signal,
-    });
-
-    // A report carries a closed reason and a size bucket only: the text must never reach a tracker.
-    const reportShapeFailure = (reason) =>
-      reportError(new Error('shape'), 'shape', shapeFailureLabels(reason, new TextEncoder().encode(prior).length));
-
-    const settleUndo = () => {
-      setAi({ phase: 'undo', prior });
-      clearTimeout(aiTimer.current);
-      aiTimer.current = setTimeout(() => setAi((current) => (current.phase === 'undo' ? { phase: 'idle', prior: null } : current)), AI_RESET_MS);
-    };
-
-    const settleBuffered = async (response) => {
-      const body = response ? await response.json().catch(() => null) : null;
-      if (gen !== shapeGen.current) return; // Esc'd, unmounted or superseded — the reply has no seat
-      if (response?.ok && typeof body?.plan === 'string') {
-        streamedText.current = body.plan;
-        onTextChange(body.plan);
-        settleUndo();
-        return;
-      }
-      if (response?.status === 503 && body?.code === 'compose-unavailable') {
-        reportShapeFailure('unavailable');
-        composeUnavailable = true;
-        setAiHidden(true);
-        setAi({ phase: 'idle', prior: null });
-        return;
-      }
-      if (response?.status === 429) {
-        settleAi('rate');
-        return;
-      }
-      if (response?.status === 400 && body?.code === 'too-long') {
-        settleAi('long');
-        return;
-      }
-      reportShapeFailure(response ? 'failed' : 'unreachable');
-      settleAi('fail');
-    };
-
-    try {
-      let response = null;
-      try {
-        response = await compose(true);
-      } catch { /* network, timeout or abort — the quiet failure below */ }
-      if (gen !== shapeGen.current) return;
-      const streaming = response?.ok && (response.headers.get('content-type') ?? '').includes('text/event-stream') && response.body;
-      if (!streaming) {
-        await settleBuffered(response);
-        return;
-      }
-
-      let streamed = '';
-      let flushRaf = 0;
-      const flush = () => {
-        flushRaf = 0;
-        if (gen !== shapeGen.current) return;
-        streamedText.current = streamed;
-        onTextChange(streamed);
-      };
-      let outcome = null;
-      try {
-        outcome = await readComposeStream(response.body, (chunk) => {
-          if (gen !== shapeGen.current) return;
-          streamed += chunk;
-          if (flushRaf === 0) flushRaf = requestAnimationFrame(flush);
-        });
-      } catch { /* aborted, timed out or the pipe broke — settled by what already streamed */ }
-      cancelAnimationFrame(flushRaf);
-      if (gen !== shapeGen.current) return;
-
-      if (streamed === '') {
-        if (outcome === 'fail') {
-          reportShapeFailure('no-first-word');
-          settleAi('fail'); // the model stopped before its first word — the text is untouched
-          return;
-        }
-        let retry = null; // the stream broke before its first word — one buffered retry
-        try {
-          retry = await compose(false);
-        } catch { /* the quiet failure below */ }
-        if (gen !== shapeGen.current) return;
-        await settleBuffered(retry);
-        return;
-      }
-
-      streamedText.current = streamed;
-      onTextChange(streamed); // the last flush; everything the stream said stays visible
-      if (outcome === 'done') {
-        settleUndo();
-        return;
-      }
-      reportShapeFailure('stopped-mid-plan');
-      setAi({ phase: 'stopped', prior }); // the partial plan is kept; the handle itself is the undo
-    } finally {
-      clearTimeout(deadline);
-    }
-  }
-
-  // While shaping, restore aborts the stream and hands the words back; afterwards it swaps them in.
-  const restore = () => {
-    if (ai.phase === 'shaping') {
-      shapeGen.current += 1;
-      shapeAbort.current?.abort();
-      streamedText.current = null;
-    }
-    clearTimeout(aiTimer.current);
-    if (ai.prior !== null) onTextChange(ai.prior);
-    setAi({ phase: 'idle', prior: null });
-  };
-
-  // Try again re-fires the shape from the original notes; the generation bump retires the last one.
-  const tryAgain = () => {
-    const source = ai.phase === 'stopped' ? ai.prior : text;
-    clearTimeout(aiTimer.current);
-    shape(source);
   };
 
   const steps = append ? graftedStepCount(parse) : parse.readout.steps;
@@ -363,9 +142,9 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
           ref={textRef}
           className="pc-text"
           value={text}
-          onChange={(event) => editText(event.target.value)}
+          onChange={(event) => onTextChange(event.target.value)}
           placeholder={PLACEHOLDER}
-          readOnly={planting || ai.phase === 'shaping'}
+          readOnly={planting}
           spellCheck={false}
           aria-label={t('roadmap.paste.title')}
         />
@@ -410,65 +189,6 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
     </div>
   );
 
-  // One face per phase: idle carries the offer line, the Shape door and the honesty disclosure,
-  // shaping shows the status + Cancel, and the outcomes offer Try again / undo.
-  const keptVisible = ai.phase === 'shaping' || ai.phase === 'undo' || ai.phase === 'stopped';
-  const shapeZone = aiVisible && (
-    <div className="pc-shape">
-      {ai.phase === 'idle' && (
-        <div className="pc-shape-idle">
-          <div className="pc-shape-offer">
-            <span className="pc-shape-line">{prose ? AI_COPY.handle : AI_COPY.handleAny}</span>
-            <button type="button" className="pc-shape-do" onClick={() => shape()} disabled={planting}>{AI_COPY.shape}</button>
-          </div>
-          <div className="pc-shape-honesty">
-            <span className="pc-shape-note">{AI_COPY.honesty}</span>
-            <button type="button" className="pc-shape-more" aria-expanded={honestyOpen} onClick={() => setHonestyOpen((open) => !open)}>
-              {honestyOpen ? AI_COPY.less : AI_COPY.more}
-            </button>
-          </div>
-          {honestyOpen && <p className="pc-shape-detail">{AI_COPY.detail}</p>}
-        </div>
-      )}
-
-      {ai.phase === 'shaping' && (
-        <div className="pc-shape-status">
-          <span className="pc-ai-dot" />
-          <span className="pc-shape-writing">{AI_COPY.shaping}</span>
-          <button type="button" className="pc-shape-cancel" onClick={restore}>{AI_COPY.cancel}</button>
-        </div>
-      )}
-
-      {ai.phase === 'undo' && (
-        <button type="button" className="pc-shape-done" onClick={restore}>{AI_COPY.undo}</button>
-      )}
-
-      {ai.phase === 'stopped' && (
-        <div className="pc-shape-degrade">
-          <span className="pc-shape-degrade-line">{AI_COPY.stopped}</span>
-          <div className="pc-shape-doors">
-            <button type="button" className="pc-shape-do" onClick={tryAgain} disabled={planting}>{AI_COPY.retry}</button>
-            <button type="button" className="pc-shape-undo" onClick={restore}>{AI_COPY.undoDoor}</button>
-          </div>
-        </div>
-      )}
-
-      {ai.phase === 'fail' && (
-        <div className="pc-shape-degrade">
-          <span className="pc-shape-degrade-line">{AI_COPY.fail}</span>
-          <button type="button" className="pc-shape-do" onClick={tryAgain} disabled={planting}>{AI_COPY.retry}</button>
-        </div>
-      )}
-
-      {ai.phase === 'rate' && <span className="pc-shape-degrade-line">{AI_COPY.rate}</span>}
-      {ai.phase === 'long' && <span className="pc-shape-degrade-line">{AI_COPY.long}</span>}
-
-      {keptVisible && (
-        <button type="button" className="pc-shape-kept" onClick={restore} disabled={planting}>{AI_COPY.kept}</button>
-      )}
-    </div>
-  );
-
   const foot = (
     <footer className="pc-foot">
       {(hasText || chip.length > 0) && (
@@ -477,7 +197,6 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
           {chip.length > 0 && <span className="pc-imperfect">{chip.join(' · ')}</span>}
         </div>
       )}
-      {shapeZone}
       <button type="button" className="birth-plant pc-plant" disabled={!hasText || planting} onClick={plant}>
         {planting ? (append ? t('roadmap.paste.adding') : t('roadmap.paste.planting')) : (append ? t('roadmap.paste.add') : t('roadmap.paste.plant'))}
         {!planting && <kbd className="pc-kbd">⌘↵</kbd>}

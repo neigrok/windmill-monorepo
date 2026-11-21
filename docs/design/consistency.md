@@ -598,6 +598,16 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 
 ## Roadmap
 
+- **Roadmap · the paste sheet draws a control the web no longer has.** Compose is retired (owner, 2026-11-21): the
+  paste sheet splits a paste into steps by the plain parser alone, with no *Shape this into a plan* handle, its
+  *What's sent?* disclosure, its shaping, undo, stopped, failed, rate-limited or too-long states. Flow 05's boards
+  ([44:71](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=44-71),
+  [44:145](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=44-145),
+  [183:957](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-957),
+  [185:2376](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-2376),
+  [185:2444](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=185-2444),
+  [183:899](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=183-899)) may still draw those states. For
+  the designer: delete every frame and layer that draws them, keeping the rest of the sheet as built.
 - **Roadmap on the sync engine · what the web redraws (owner, 2026-11-17).**
   [Roadmap on the sync engine](../foundation/roadmap-on-the-engine.md) rules that a change is never shown as
   refused for what happened elsewhere, and that presence ends. The owner approved
@@ -624,18 +634,18 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   seconds with *Undo*; the web shows Done as its twelve newest and *Show all N* where iOS folds each group; the web's reader on an app route sees an
   *Author's note* and iOS's cover shows none; the web's private links are *Personal links* and iOS's are *Your
   links*.
-- **Roadmap · iOS · what the boards draw that no read serves.** [Roadmap on iOS](../foundation/roadmap-ios.md)
-  names every read and command the boards need (§3 INV-1, §7.1 to §7.4). Where a board and what is read still
-  disagree, for the owner to rule or the board to be redrawn: Activity (01.13) and History (03.12) draw dated
-  *unlocked* rows, and the activity feed tells no unlock, while the web shows one only in the session it happens.
-  The same boards word *added*, *renamed* and *completed*; the feed also tells steps removed and recolored, links
-  drawn and taken away, and kinds added, renamed, described, recolored, reordered and removed, and counts
-  several deeds of one gesture in a sentence of the server's that says *nodes*. A reader's History has no board,
-  and a deed there is the owner's, not *You*. A gallery row (09.12a) names its roadmap's author and its caption
-  says newest first; `GET /v1/gallery` answers no author and ranks by forks, then by last activity. Quests
-  (01.7) draws sizes that are not the roster's, all nine (*Learn to sail* 22 steps, the roster 17), and its
-  estimates without the roster's *~*. Share draws public and private; a roadmap may hold `unlisted`, which no
-  surface writes and the web reads as a live link.
+- **Roadmap · iOS · boards that disagree with what the room reads.** [Roadmap on iOS](../foundation/roadmap-ios.md)
+  names every read and command the boards need (§3 INV-1, §7.1 to §7.4) and rules three of the differences (R-7 to
+  R-9). To redraw, the build tree's step `m0-redraw-what-the-reads-cannot-serve`: Activity (01.13) and History
+  (03.12) without their dated *unlocked* rows (R-7) and showing only what the phone's copy holds a time for, since
+  both are read from it (R-11), so *Activity with no connection* (01.14) and *History with no connection* (03.13)
+  are states the room never reaches; a gallery row (09.12a) without its author (R-8), and its
+  caption, which says newest first where `GET /v1/gallery` ranks by forks, then by last activity; the words for the
+  feed's other deeds — steps removed and recolored, links drawn and taken away, kinds added, renamed, described,
+  recolored, reordered and removed — where the boards word only *added*, *renamed* and *completed* and the server's
+  sentence for several deeds of one gesture says *nodes*; a reader's History, which has no board and whose deeds are
+  the owner's, not *You*; and Quests (01.7), whose nine sizes are not the roster's (*Learn to sail* 22 steps, the
+  roster 17) and whose estimates lack the roster's *~*.
 - **Roadmap · iOS · the Design System owes the room its door.** *Where to start?* with a third door, Roadmap, is
   ✅ Ready for dev in the Shell file
   ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)). The Design System has no

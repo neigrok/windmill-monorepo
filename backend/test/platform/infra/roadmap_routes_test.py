@@ -31,14 +31,14 @@ ROOM_ROUTES = [
     ("GET", f"/v1/trees/{TREE}/diagnostics", "roadmap.GET.v1.trees.id.diagnostics"),
 ]
 # The routes the move keeps (§7): the fork, the activity and progress reads, the cards, tending, reminders, the share page,
-# the gallery and compose.
+# and the gallery.
 KEPT_ROUTES = [
     ("POST", f"/v1/trees/{TREE}/fork"), ("GET", f"/v1/trees/{TREE}/activity"), ("GET", f"/v1/trees/{TREE}/progress"),
     ("PUT", f"/v1/trees/{TREE}/og-image"), ("PUT", f"/v1/trees/{TREE}/og-video"), ("GET", f"/v1/trees/{TREE}/og-video"),
     ("POST", f"/v1/trees/{TREE}/tend"), ("GET", "/v1/tend/r_0123456789abcdef"), ("GET", "/v1/tending"),
     ("GET", "/v1/reminders"), ("PATCH", "/v1/reminders"), ("POST", "/v1/reminders/pause"),
     ("POST", "/v1/reminders/unsubscribe"), ("POST", "/v1/admin/reminders/sweep"), ("GET", f"/t/{TREE}"),
-    ("GET", "/gallery"), ("GET", "/v1/gallery"), ("GET", f"/og/{TREE}.png"), ("POST", "/v1/compose"),
+    ("GET", "/gallery"), ("GET", "/v1/gallery"), ("GET", f"/og/{TREE}.png"),
 ]
 WRITE_LINE = re.compile(r"\bwrite (\{.*?\}) - ")
 

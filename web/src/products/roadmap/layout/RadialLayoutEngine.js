@@ -1,11 +1,12 @@
 // Radial tidy tree over the trunk arborescence: each node sits on the ring for its trunk depth, at the centre of an angular wedge; wedges split among trunk children proportional to subtree leaf counts.
 import { LayoutEngine } from './LayoutEngine.js';
+import { PI, cos, sin } from './arithmetic.js';
 import { cmpOrder } from '../model/TrunkTree.js';
 import { NODE_SIZE } from '../theme.js';
 
 const RING = NODE_SIZE * 2.8; // the least the first ring clears the center
 const MIN_ARC = NODE_SIZE * 1.7; // center to center
-const FULL_CIRCLE = 2 * Math.PI;
+const FULL_CIRCLE = 2 * PI;
 
 // How much of a child's slice comes from an equal share rather than from its leaf count.
 const EVENNESS = 0.15;
@@ -61,7 +62,7 @@ export class RadialLayoutEngine extends LayoutEngine {
     const positions = new Map();
     for (const { id, depth, angle } of wedges) {
       const radius = radii[depth];
-      positions.set(id, { x: radius * Math.cos(angle), y: radius * Math.sin(angle) });
+      positions.set(id, { x: radius * cos(angle), y: radius * sin(angle) });
     }
     return positions;
   }

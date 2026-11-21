@@ -14,7 +14,7 @@ const MAX_EVENTS_PER_SEND = 50;
 const MAX_QUEUED_EVENTS = 200;
 
 // client_error carries only labels from these closed sets; anything they do not name reads `other`.
-const REPORT_KINDS = new Set(['window', 'promise', 'render', 'shape']);
+const REPORT_KINDS = new Set(['window', 'promise', 'render']);
 const FAILURE_KINDS = new Set(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'URIError', 'EvalError', 'AggregateError', 'DOMException']);
 const OTHER = 'other';
 
