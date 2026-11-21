@@ -105,8 +105,8 @@ there. Before Roadmap Coach opens to people the composer is absent and New step 
   *Discard*. A limit is refused where the gesture is made. A delete asks once with its cost and is then
   held nine seconds with *Undo*; every other *Undo* lasts six.
 - **Signed out is first class.** Everything works on the phone's copy with no banner. Where signed out and
-  signed in differ — Share, Fork, the sign-in question — both are drawn. A roadmap kept only on the phone
-  has no feed, so it shows neither *Activity* nor a step's *History*.
+  signed in differ — Share, Fork, the sign-in question — both are drawn. *Activity* and a step's
+  *History* are read from the phone's copy, so they work signed out and with no connection.
 - **Words.** iOS says *roadmap*, never *tree*, and *step*, never *node*. Section and field names are the
   web's: *Requires*, *Opens*, *Kind*, *Guide*, *Subtasks*, *Note*, *History*. Menu items and buttons are
   Title Case; spelling follows the web's strings (*Color*, *Recolor*).

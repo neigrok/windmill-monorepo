@@ -38,7 +38,9 @@ Activity and the web demo.
 - **P-1 The room is a client of the sync engine and the roadmap domain.** It has no sync of its
   own and holds no rule of its own. (R-1)
 - **P-2 The phone's copy is the roadmap.** Every read and every change of a person's own roadmap is
-  local; the network never fails a save, and the room works with no connection.
+  local; the network never fails a save, and the room works with no connection. The server is
+  for synchronization and for sharing: a public link, a shared roadmap's cover, the gallery and
+  Fork, whether a person shares or Coach does it for them (R-10).
 - **P-3 One domain, held by vectors.** `RoadmapDomain` reproduces every shared vector the web's
   domain does. A rule changes as a vector first.
 - **P-4 The Graph draws the web's picture.** The seats, the captions, the curves and the framing
@@ -95,31 +97,29 @@ Activity and the web demo.
 - **A change that met one made elsewhere** is told once, by the band and the footer the design
   draws. What could not land at all is listed in one place (Roadmap on the sync engine §6). The
   room shows no save failure and no refused change otherwise.
-- **Activity and History** read the backend's activity feed: a roadmap's Activity its latest
-  events, 200 as the web asks, and a step's History those among them that name the step. The feed
-  tells what was done to the roadmap's steps, links and kinds. It names no one: an account's
-  deeds carry an empty `actor`, and every deed in a roadmap is its owner's. It tells no
-  completion: a completion and its date come from the progress the room already shows, the
-  person's own by the domain's `progress` read over the phone's copy and the owner's on a cover,
-  joined to the feed in order of time. Both need a connection. A person's own also need an
-  account: signed out, a roadmap is kept only on the phone, has no feed, and the room offers
-  neither. A roadmap the backend does not hold yet answers no feed, and the room reads that as an
-  empty one. A roadmap gone into has its own feed. A reader has History and no Activity.
+- **Activity and History** are a read of the domain over the phone's copy (R-11): what the copy
+  holds a time for, such as a step's creation and its completion, in order of time, a roadmap's
+  Activity over all its steps and a step's History over that step. They make no request, and work
+  with no connection and signed out. What the copy does not keep is not shown: an earlier name, a
+  step that was removed, a mark that was reset. The read is shared with the web as cases under
+  `packages/api-contract/roadmap/domain/`, which say exactly which rows it gives. A roadmap gone
+  into has its own Activity. A reader has History and no Activity.
 
 - **INV-1.** The room reads no roadmap from the backend and sends no change to it except through
-  the sync engine. The exceptions are exactly the four requests below, named as the backend's
+  the sync engine. The exceptions are exactly the three requests below, all of them sharing, named as the backend's
   [HTTP surface](../../backend/SPEC.md#http-surface) names them. Each carries the account's token
   where the phone is signed in. A quest, a plan, pasted steps and Export read and write the
-  phone's copy alone, and Share's switch is a change through the engine (§7.1 to §7.4).
+  phone's copy alone, Activity and History read it alone, and Share's switch is a change through
+  the engine (§7.1 to §7.4). Whether the three move into synchronization is decided when links and
+  readers are built (R-12).
 
 | Request | Serves | Needs | Without it |
 |---|---|---|---|
 | `GET /v1/trees/{id}/progress` | the owner's progress on a cover, and what each subtree there has come to | a connection | as the cover (§4) |
-| `GET /v1/trees/{id}/activity` | Activity and History | a connection; for a person's own roadmap, an account | it says it needs a connection and loads when one returns; signed out, neither is offered |
 | `GET /v1/gallery` | the public gallery | a connection | it says the gallery cannot be reached and offers to try again |
 | `POST /v1/trees/{id}/fork` | Fork: on a cover, on a gallery row, and before attaching a roadmap the person can only read (§6) | a connection and an account | with no connection it says so and forks nothing; signed out it opens sign-in, and the fork runs when that closes signed in |
 
-- **What the room does not show.** The feed tells no unlock, so Activity and History show none
+- **What the room does not show.** Activity and History show no row for a step unlocking
   (R-7). The gallery answers no author, so a row shows its roadmap's title and step count alone
   (R-8). Share has two states, public and private (R-9): the roadmaps that hold `unlisted` are
   moved to private before Share is built.
@@ -302,15 +302,14 @@ step page and the step form, and a sheet for its answers.
 - **The picture** runs the fixtures of §5.
 - **CI.** The iPhone's workflow runs when roadmap's contract, the address cases or the layout
   fixtures change. The room's UI tests join the three shards there are; a fourth would queue.
-- **The room** has unit tests on its models, among them the gallery's pages and the feed joined
-  with completions, and the opt-in captures every room has, compared with the boards.
+- **The room** has unit tests on its models, among them the gallery's pages, and the opt-in captures every room has, compared with the boards.
 - **End to end**, on the simulator against a local stack: a roadmap made signed out and joined at
   sign-in; one edited in a browser and on the phone at once; one edited offline against a delete
   made elsewhere; a delete held while the app goes to the background; a shared link opened signed
   out; a quest planted signed out; a plan pasted into New Roadmap and planted; steps pasted into
   a roadmap and taken back by Undo; a roadmap made public on the phone and opened by its link in
-  a browser signed out; the gallery read, a row forked and the copy opened; Activity read after a
-  change made in a browser; Coach making a direct write and its Undo, applying a proposal
+  a browser signed out; the gallery read, a row forked and the copy opened; Activity showing a
+  change made in a browser once it has synced; Coach making a direct write and its Undo, applying a proposal
   offline, and a signed-out conversation joined at sign-in.
 - **On a device**, links from Messages and Safari open the app, the budget of §5 is measured, and
   an exported file is read back by New Roadmap.
@@ -326,24 +325,23 @@ step page and the step form, and a sheet for its answers.
   copied from and discarded from; roadmap's answer to the sign-in and sign-out questions; a link
   opened, by kind of address and whether the roadmap was the person's; the Graph opened, with the
   step count as a bucket.
-- **Events of making, sharing and the feed**, under the same rule: New Roadmap opened; a creation
+- **Events of making, sharing and Activity**, under the same rule: New Roadmap opened; a creation
   by its door (blank, a quest, a copied plan, a file), with its step count as a bucket and, for a
   quest, which of the roster's nine; a plan read back, by its source, and cleared; Paste Steps
   read back, added with the count as a bucket, cancelled and undone; Share opened, its switch
   turned on and off, the link shared and copied, and sign-in opened from it; a roadmap exported,
   and whether the file was saved; the gallery opened and each page read, with what the read came
   to (loaded, empty, failed), a retry, a row opened, a fork from a row and a copy opened; Activity
-  opened, with what its read came to (loaded, empty, no connection), and a row opened.
+  opened, with what its read came to (loaded, empty), and a row opened.
 - Coach's events are [Roadmap Coach](roadmap-coach.md) §13's, emitted on the iPhone as on the web.
-- **Sentry**, under static names, at the room's boundaries: the activity feed, the owner's
+- **Sentry**, under static names, at the room's boundaries: the owner's
   progress, the gallery and a fork that failed for a reason other than no connection, and an
   answer of theirs the room cannot read; a shared roadmap that could not be subscribed for a
   reason other than access; a view the room depends on that failed to read; an action whose
   commit failed; a creation from a quest or a plan that failed where no limit refused it, and
   done steps that could not be marked after it; a chosen file that could not be opened; an export
   the system could not write; a layout that fell back; a canvas that missed its budget on a
-  roadmap within the cap. A claimed address that names no roadmap, and a feed asked of a roadmap
-  the backend does not hold yet, are expected and report nothing. No report carries an address,
+  roadmap within the cap. A claimed address that names no roadmap is expected and reports nothing. No report carries an address,
   a plan's text, a file's name or a roadmap's title.
 - The iPhone's observability document lists them, and its telemetry allowlist gains the labels.
 
@@ -385,6 +383,9 @@ makes it false.
 | R-4 | Which links open the app | Shared links and a person's own links. (2026-11-17) |
 | R-5 | Where a form commits | In the toolbar, as every other form. (2026-11-17) |
 | R-6 | Renaming and deleting a roadmap, and managing kinds, on the iPhone | All are in the first version: rename and delete a roadmap, and add, rename, recolour and remove a kind. Each is drawn as a proposal and approved first. (2026-11-17) |
-| R-7 | Unlocked rows in Activity and History | Not shown in the first version: the feed tells no unlock, and the boards are redrawn without them. (2026-11-21) |
+| R-7 | Unlocked rows in Activity and History | Not shown in the first version; the boards are redrawn without them. (2026-11-21) |
 | R-8 | The author on a gallery row | A row shows its roadmap's title and step count alone; no name of a person is made public. (2026-11-21) |
 | R-9 | A roadmap whose visibility is `unlisted` | Every such roadmap is moved to private, and Share has two states, public and private. (2026-11-21) |
+| R-10 | What the server is for | Synchronization and sharing, whether a person shares or Coach does it for them. Every read and change of a person's own roadmap, and every other ability of Coach, works on the device's copy. (2026-11-21) |
+| R-11 | Where Activity and History come from | The device's copy, by a read of the domain; no request to the backend. (2026-11-21) |
+| R-12 | Whether sharing's requests move into synchronization | Decided when links and readers are built; until then the gallery, Fork and the owner's progress on a cover stay requests. (2026-11-21) |
