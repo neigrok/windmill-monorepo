@@ -12,11 +12,9 @@ products it carries as one superapp. Web carries all three products. Android car
 engine client, the domain kit, the app (`apps/ios/App`, on TestFlight) and a dev-only probe app. Every
 surface writes gym and journal data through the sync engine.
 
-The paid line — Windmill One — is one backend predicate, `Entitlements::hasWindmillOne`. It cannot
-be bought: `paidPlansOpen()` in `web/src/shell/billing/checkout.js` returns `false`, so no surface
-offers a checkout; `BillingApi`'s checkout door answers every signed-in caller 503; and
-`GET /v1/subscription` names no store to buy through until `SUBSCRIPTIONS_PURCHASABLE_STORES` opens
-one, which it does not by default.
+The paid line — Windmill One — is one backend predicate, `Entitlements::hasWindmillOne`, read from the
+subscription service's copy. It cannot be bought: no surface holds a checkout, and `GET /v1/subscription`
+names no store to buy through until `SUBSCRIPTIONS_PURCHASABLE_STORES` opens one, which it does not by default.
 
 This is a monorepo grouped by surface, then product. **Read `STRUCTURE.md` for the layout and the
 one dependency rule** (platform is product-neutral; products depend on platform, never the reverse;

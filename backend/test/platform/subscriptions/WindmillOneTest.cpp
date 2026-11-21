@@ -28,15 +28,15 @@ std::string offered(const Json::Value& body) {
 
 }
 
-// A name the backend does not know opens nothing and is flagged, so a typo leaves its store closed and the server
-// serving: the line opens only what it can name.
+// A name the backend does not know, and Paddle, which no surface sells through, opens nothing and is flagged, so a typo
+// leaves its store closed and the server serving: the line opens only what it can sell.
 TEST(the_paid_line_opens_the_stores_its_variable_names_in_d1_order_and_keeps_an_unknown_one_closed) {
   std::vector<std::string> lines;
-  for (const char* typed : {"", " , ", "app_store", " paddle ,app_store, app_store", "play_store,paddle,app_store",
-                            "appstore", "App_Store", "app_store,google_play", "paddle;app_store"})
+  for (const char* typed : {"", " , ", "app_store", " play_store ,app_store, app_store", "play_store,paddle,app_store",
+                            "paddle", "appstore", "App_Store", "app_store,google_play", "play_store;app_store"})
     lines.push_back(stores(PaidLine{typed, 0}));
-  CHECK(lines == (std::vector<std::string>{"[]", "[]", "[app_store]", "[app_store,paddle]",
-                                           "[app_store,play_store,paddle]", "[] unknown", "[] unknown",
+  CHECK(lines == (std::vector<std::string>{"[]", "[]", "[app_store]", "[app_store,play_store]",
+                                           "[app_store,play_store] unknown", "[] unknown", "[] unknown", "[] unknown",
                                            "[app_store] unknown", "[] unknown"}));
 }
 

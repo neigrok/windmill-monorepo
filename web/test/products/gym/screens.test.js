@@ -204,7 +204,7 @@ test('the word coach names exactly one thing — the room — and the share neve
 test('Coach offers nothing to buy, and reads no entitlement to decide whether to answer', () => {
   for (const file of ['coach/coach.js', 'coach/CoachRoom.jsx']) {
     const said = speech(file);
-    for (const door of ['useEntitlements', 'paidPlansOpen', 'beginUpgrade', 'windmillOne', 'checkout']) {
+    for (const door of ['useEntitlements', 'windmillOne', 'checkout']) {
       assert.equal(said.includes(door), false, `${file} reaches for ${door}`);
     }
     assert.equal(/[Uu]pgrade|Windmill One|[Ss]ubscri|\$\d|£\d|€\d/.test(said), false, file);

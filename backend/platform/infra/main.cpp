@@ -3,7 +3,6 @@
 #include "platform/adapters/oidc/AppleOAuthClient.h"
 #include "platform/adapters/oidc/GoogleOAuthClient.h"
 #include "platform/adapters/postgres/PgAccountFootprint.h"
-#include "platform/adapters/paddle/BillingApi.h"
 #include "platform/application/AiBudgetAlerts.h"
 #include "platform/application/AiBudgetHoldSweep.h"
 #include "platform/ai_installations/AiInstallationApi.h"
@@ -62,7 +61,6 @@
 #include "platform/adapters/postgres/PgRetentionStore.h"
 #include "platform/adapters/postgres/PgServerErrorRepository.h"
 #include "platform/adapters/postgres/PgSweepMutex.h"
-#include "platform/adapters/postgres/PgSubscriptionRepository.h"
 #include "products/roadmap/adapters/postgres/PgTendRunRepository.h"
 #include "platform/adapters/postgres/PgPool.h"
 #include "products/roadmap/adapters/postgres/PgTreeRepository.h"
@@ -349,7 +347,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                 {"gym_preferences", "user_id"},
                 {"org_members", "user_id"},
                 {"feedback", "user_id"},
-                {"paddle_subscriptions", "user_id"},  // platform
                 {"account_entitlements", "account_id"},
                 {"mcp_keys", "user_id"},              // platform
                 {"oauth_grants", "user_id"},          // platform
@@ -461,7 +458,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto nodeEdits = std::make_shared<NodeEdits>(*registry, *progressService, *bus, *systemClock);
   auto treeRegistry =
       std::make_shared<TreeRegistry>(*trees, *progress, *tokens, genesis, *registry, *nodeEdits, *systemClock);
-  auto subscriptionRepo = std::make_shared<PgSubscriptionRepository>(pool);
   // The spend ledger the ceilings read back; the Amplitude mirror below is only the eyes.
   auto aiUsageRepo = std::make_shared<PgAiUsageRepository>(pool);
   const char* aiAllowanceFlag = std::getenv("AI_ALLOWANCES_ENABLED");
@@ -540,7 +536,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const char* purchasableStoresEnv = std::getenv("SUBSCRIPTIONS_PURCHASABLE_STORES");
   const subscriptions::PaidLine paidLine{purchasableStoresEnv ? purchasableStoresEnv : "", aiLimits.paidPeriodNanos};
   if (paidLine.namesUnknownStore) {
-    LOG_ERROR << "subscriptions: SUBSCRIPTIONS_PURCHASABLE_STORES names a store the backend does not know; it stays closed";
+    LOG_ERROR << "subscriptions: SUBSCRIPTIONS_PURCHASABLE_STORES names a store the paid line cannot open; it stays closed";
     sentry->report("config", "subscription.paid_line", "unknown_store");
   }
 
@@ -713,14 +709,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   auto feedbackRepo = std::make_shared<PgFeedbackRepository>(pool);
   auto feedbackApi = std::make_shared<FeedbackApi>(feedbackRepo, authService);
-
-  // An empty PADDLE_WEBHOOK_SECRET refuses every delivery (Paddle retries), so billing is dark
-  // rather than forgeable until the secret lands.
-  const char* paddleWebhookSecret = std::getenv("PADDLE_WEBHOOK_SECRET");
-  const char* paddlePriceId = std::getenv("PADDLE_PRICE_ID");
-  auto billingApi = std::make_shared<BillingApi>(*subscriptionRepo, authService, *systemClock,
-                                                 paddleWebhookSecret ? paddleWebhookSecret : "",
-                                                 paddlePriceId ? paddlePriceId : "", aiBudgets, authRepo.get(), aiLimits.paidPeriodNanos);
 
   // The sweep that deletes rows nobody owns; no product table is reachable from it. 0 or less on
   // any window means keep forever.
@@ -987,9 +975,9 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
         std::string path = req->path();
         std::transform(path.begin(), path.end(), path.begin(),
                        [](unsigned char c) { return std::tolower(c); });
-        // Vendor webhooks verify an HMAC first and burst from a small egress pool onto one bucket
+        // The vendor webhook verifies an HMAC first and bursts from a small egress pool onto one bucket
         // here: a 429 burns a retry.
-        if (path == "/v1/paddle/webhook" || path == "/v1/resend/webhook") return nullptr;
+        if (path == "/v1/resend/webhook") return nullptr;
         bool ok = apiLimiter->allow(ip);
         if (ok && path == "/v1/auth/magic-link")
           ok = magicPerIp->allow(ip) && magicGlobal->allow("global");
@@ -1051,18 +1039,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       "/v1/auth/verify-code",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         authApi->verifyCode(req, std::move(cb));
-      },
-      {drogon::Post});
-  routes.registerHandler(
-      "/v1/paddle/webhook",
-      [billingApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        billingApi->webhook(req, std::move(cb));
-      },
-      {drogon::Post});
-  routes.registerHandler(
-      "/v1/billing/checkout",
-      [billingApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-        billingApi->startCheckout(req, std::move(cb));
       },
       {drogon::Post});
   if (aiPassApi) {
