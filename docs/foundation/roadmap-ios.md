@@ -6,21 +6,24 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified, and approved by the owner on 2026-11-17; nothing is built. The iPhone app carries journal and gym.
-Roadmap's design for it is [Roadmap · iOS](../design/ios/roadmap.md), with its boards in
-the Roadmap Figma file, every one ✅ Ready for dev since the owner's approval of 2026-11-21. The build order lives in the
-Roadmap on iOS roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node
-`roadmap-ios`.
+**Status:** Specified; nothing is built. The owner approved it on 2026-11-17; what it says of
+quests, plans, Export, Share, the gallery and Activity follows the boards and has not been before
+the owner. The iPhone app carries journal and gym. Roadmap's design for it is
+[Roadmap · iOS](../design/ios/roadmap.md), with its boards in the Roadmap Figma file, every one
+✅ Ready for dev since the owner's approval of 2026-11-21. The build order lives in the Roadmap on
+iOS roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node `roadmap-ios`.
 
 **Scope:** How the Roadmap room is built in the iPhone app: where its code lives, what it reads and
-writes, links that open it, the Graph, nested roadmaps and guides, Coach in the room, and how it is
-tested.
+writes, links that open it, the Graph, nested roadmaps and guides, starting a roadmap from a quest
+or a plan, pasted steps, Export and Share, the public gallery and Activity, Coach in the room, and
+how it is tested.
 
 **Out of scope:** What a person sees, which the design holds. Roadmap's records and rules, which
 [Roadmap on the sync engine](roadmap-on-the-engine.md) holds. Coach's abilities, records and turn,
 which [Roadmap Coach](roadmap-coach.md) holds. What the design leaves out, which its section 13
 lists: ceremonies, presence, editing on the canvas, keyboard shortcuts and iPad, widgets and App
-Intents, and the reminder switch.
+Intents, the reminder switch, the all-roadmaps export, *Shape* on a pasted plan, a reader's
+Activity and the web demo.
 
 **Depends on:**
 
@@ -45,11 +48,11 @@ Intents, and the reminder switch.
 
 | Part | Where | May import |
 |---|---|---|
-| Entities, actions and reads | `apps/ios/Domain/Sources/RoadmapDomain` | the domain kit and the sync engine's API, as gym's and journal's domains |
+| Entities, actions and reads; the plan grammar and the quests (§7.1) | `apps/ios/Domain/Sources/RoadmapDomain` | the domain kit and the sync engine's API, as gym's and journal's domains |
 | The picture: layout, caption placement, edge curves, framing | `apps/ios/Domain/Sources/RoadmapLayout` | nothing |
 | The schema | generated into `apps/ios/Sync/Sources/SyncSchema` from roadmap's registry | |
 | The model server's roadmap rules | `apps/ios/Sync/Sources/SyncModelServer` | |
-| The room, its screens and the Graph's canvas | `apps/ios/App/Sources/Roadmap/` | |
+| The room, its screens, the Graph's canvas and the requests of INV-1 | `apps/ios/App/Sources/Roadmap/` | |
 | Coach's executor on the phone's copy | `RoadmapDomain` | |
 
 - `RoadmapDomain` is built on the kit's changes [Roadmap on the sync engine](roadmap-on-the-engine.md)
@@ -62,6 +65,7 @@ Intents, and the reminder switch.
 - The room joins the shell as its third room. The shell's sign-in and sign-out questions count
   roadmap's unsent work, and Coach's conversations with it, as they count gym's and journal's.
 - Both of the app's entitlement files gain the associated domain (§4).
+- The app's Info.plist gains the Markdown type (§7.3).
 
 ## §3 Reading and writing
 
@@ -74,6 +78,13 @@ Intents, and the reminder switch.
   reopen with no connection. The cover shows the owner's progress, read from the backend, and
   offers no Complete and no workspace. A reader who wants a roadmap of their own forks it.
 - **Fork** is the server's, so it needs a connection and an account, and the copy arrives by sync.
+- **The public gallery** is the backend's list of public roadmaps, read a page at a time and shown
+  in the order the backend ranks it. It needs a connection and no account, and nothing of it is
+  kept on the phone. A row opens its roadmap in a cover, as its link does (§4), and is the
+  person's own where the list says `mine`. A row offers the person's copy where the phone holds
+  one: a roadmap of theirs that stands and whose `meta.forkedFrom` is the row's roadmap, the first
+  in their list's order, or the copy a fork made from the row has just answered. Otherwise it
+  offers Fork.
 - **Writing.** Every gesture is an action of `RoadmapDomain`, run through the kit's runner into the
   engine. The room writes no record another way.
 - **Deletes are held** nine seconds with Undo, by the engine's hold. Roadmap's actions run with
@@ -83,11 +94,35 @@ Intents, and the reminder switch.
 - **A change that met one made elsewhere** is told once, by the band and the footer the design
   draws. What could not land at all is listed in one place (Roadmap on the sync engine §6). The
   room shows no save failure and no refused change otherwise.
-- **History** reads the backend's activity feed and needs a connection. A roadmap made signed out
-  has none.
+- **Activity and History** read the backend's activity feed: a roadmap's Activity its latest
+  events, 200 as the web asks, and a step's History those among them that name the step. The feed
+  tells what was done to the roadmap's steps, links and kinds. It names no one: an account's
+  deeds carry an empty `actor`, and every deed in a roadmap is its owner's. It tells no
+  completion: a completion and its date come from the progress the room already shows, the
+  person's own by the domain's `progress` read over the phone's copy and the owner's on a cover,
+  joined to the feed in order of time. Both need a connection. A person's own also need an
+  account: signed out, a roadmap is kept only on the phone, has no feed, and the room offers
+  neither. A roadmap the backend does not hold yet answers no feed, and the room reads that as an
+  empty one. A roadmap gone into has its own feed. A reader has History and no Activity.
 
 - **INV-1.** The room reads no roadmap from the backend and sends no change to it except through
-  the sync engine. The owner's progress on a shared roadmap, History and Fork are the exceptions.
+  the sync engine. The exceptions are exactly the four requests below, named as the backend's
+  [HTTP surface](../../backend/SPEC.md#http-surface) names them. Each carries the account's token
+  where the phone is signed in. A quest, a plan, pasted steps and Export read and write the
+  phone's copy alone, and Share's switch is a change through the engine (§7.1 to §7.4).
+
+| Request | Serves | Needs | Without it |
+|---|---|---|---|
+| `GET /v1/trees/{id}/progress` | the owner's progress on a cover, and what each subtree there has come to | a connection | as the cover (§4) |
+| `GET /v1/trees/{id}/activity` | Activity and History | a connection; for a person's own roadmap, an account | it says it needs a connection and loads when one returns; signed out, neither is offered |
+| `GET /v1/gallery` | the public gallery | a connection | it says the gallery cannot be reached and offers to try again |
+| `POST /v1/trees/{id}/fork` | Fork: on a cover, on a gallery row, and before attaching a roadmap the person can only read (§6) | a connection and an account | with no connection it says so and forks nothing; signed out it opens sign-in, and the fork runs when that closes signed in |
+
+- **What no read serves.** Two things the boards draw have no source in what the room reads: the
+  dated *unlocked* rows of Activity and History (01.13, 03.12), and the author's name on a gallery
+  row (09.12a). One state has no board: Share for a roadmap whose visibility is `unlisted`. The
+  [consistency ledger](../design/consistency.md) holds each for the owner, and none is built
+  before a ruling.
 
 ## §4 Links
 
@@ -114,6 +149,8 @@ browser's.
   as JSON with no redirect, and the deploy's route test checks it.
 - The app parses an address by the shared address cases (`roadmap-addresses.json`), which Swift
   joins the web and the backend in running.
+- The address Share hands out (§7.4) is the roadmap's share address of the same cases, `/t/<id>`
+  on the site.
 - Not known until it is tried on a device: that the release's signing turns the capability on with
   no step in Apple's portal, and that Apple's fetch of the file passes the site's edge.
 
@@ -162,6 +199,72 @@ kinds (R-6). These are the domain's actions, the web's own: a delete is held wit
 recolouring a kind is the server's command. Each state is built from its board in the design's
 sections 01 and 06.
 
+### §7.1 Starting a roadmap
+
+New Roadmap makes a roadmap blank, from a quest, from a plan on the clipboard, or from a plan in a
+`.md` or `.txt` file (boards 01.6 to 01.8b). Each is the domain's `CreateRoadmap` on the phone's
+copy. None makes a request, and none needs a connection or an account.
+
+- **Blank** plants one starting step, named as the roadmap.
+- **A quest** is one of the web's roster of nine. `packages/api-contract/roadmap/quests/` holds
+  the roster: the quests in their order, each with its group, name, estimate, kinds, steps and
+  links, and the `CreateRoadmap` input it plants. The web's roster is held to that file and the
+  app's quests come from it. The size shown beside a quest is counted from its steps.
+- **A plan** is text read by the web's plan grammar, ported to `RoadmapDomain`: the same text
+  gives the same name, steps, links, kinds, done marks and counts on the iPhone as on the web.
+  It is read on the phone, and reading cannot fail: a line the grammar cannot place is kept as a
+  note on a step. The read-back shows the grammar's counts, and the plan's first steps in the
+  states the domain's reads give them over the plan as over a roadmap. Create runs
+  `CreateRoadmap` with the plan's steps, links and kinds, then `Complete` for each step the plan
+  brings done.
+- **The grammar's cases** live in `packages/api-contract/roadmap/plan/`: a text read to a plan,
+  alone and into a roadmap that has kinds of its own; a plan to the input of `CreateRoadmap`, and
+  to that of `ImportSteps` under a step (§7.2); a roadmap written to its Markdown (§7.3); and
+  each written file read back. A case compares what the grammar derives and no sentence of a
+  catalog. The web and Swift both run every case, and the grammar changes as a case first (P-3).
+
+### §7.2 Pasted steps
+
+Paste Steps reads the clipboard's text into the open roadmap by the same grammar, which there
+binds a heading to a kind the roadmap has or adds one, and renames none (boards 02.16 to 02.18).
+
+- The read-back shows the steps in the states they will land in, read by the domain over the
+  roadmap as the paste would leave it. Nothing is written before Add.
+- Add runs, as one act with one Undo, the domain's `ImportSteps` under the roadmap's starting
+  step and `CreateKind` for each kind the plan adds. The starting step is the first, in authored
+  order, of the steps that follow nothing; a roadmap with none takes the steps at its root.
+- It needs neither a connection nor an account. A roadmap too full for the steps refuses them
+  where the gesture is made (§3).
+
+### §7.3 Export
+
+Export writes one roadmap as one Markdown file and hands it to the system's exporter (board 09.3).
+It reads the phone's copy, makes no request, and needs neither a connection nor an account.
+
+- The text is the plan grammar's writing of a roadmap (§7.1), so New Roadmap reads the file back
+  to the same steps. It holds the roadmap's name and guide, and each step with its kind, its
+  description, its links' addresses, what it follows and whether the room shows it done.
+- The file holds one roadmap: a step that owns or opens another is written as a step, and that
+  roadmap is not.
+- The SDK's own Markdown type is available from iOS 27 and the app runs from iOS 18. The app's
+  Info.plist, which `apps/ios/App/project.yml` declares, names `net.daringfireball.markdown` as
+  an imported type, and the exporter and New Roadmap's file importer name it by that identifier;
+  the importer also takes plain text.
+
+### §7.4 Share
+
+Share is one switch on a root (boards 09.1a to 09.2b). A roadmap gone into has none.
+
+- It reads the roadmap's `visibility` from the phone's copy and writes it by the domain's
+  `SetVisibility`, `public` on and `private` off, through the sync engine like any change. The
+  server writes the reach of the roadmap and of every subtree that stands under it.
+- The switch needs an account and a connection, because a link opens for no one until the server
+  holds the change. Signed out it is disabled and the sheet offers sign-in; with no connection it
+  is disabled.
+- While the roadmap is public the sheet hands out its share address (§4), to the system's share
+  sheet and to the pasteboard, with a connection or without.
+- The sentence under the switch names subtrees where a step of the roadmap owns one.
+
 ## §8 Coach
 
 Coach is on the open screen, as the design rules: a composer at the foot of the Board, the Graph, a
@@ -188,20 +291,24 @@ step page and the step form, and a sheet for its answers.
 ## §10 Testing
 
 - **The domain** runs every file under `packages/api-contract/roadmap/domain/` and the kit's
-  harness. Coach's executor runs roadmap's ability vectors, and the Coach engine's turn stories
-  with roadmap's profile.
+  harness, and the plan and quest cases of §7.1. Coach's executor runs roadmap's ability vectors,
+  and the Coach engine's turn stories with roadmap's profile.
 - **The model server** runs the engine corpus's roadmap cases.
 - **The picture** runs the fixtures of §5.
 - **CI.** The iPhone's workflow runs when roadmap's contract, the address cases or the layout
   fixtures change. The room's UI tests join the three shards there are; a fourth would queue.
-- **The room** has unit tests on its models and the opt-in captures every room has, compared with
-  the boards.
+- **The room** has unit tests on its models, among them the gallery's pages and the feed joined
+  with completions, and the opt-in captures every room has, compared with the boards.
 - **End to end**, on the simulator against a local stack: a roadmap made signed out and joined at
   sign-in; one edited in a browser and on the phone at once; one edited offline against a delete
   made elsewhere; a delete held while the app goes to the background; a shared link opened signed
-  out; Coach making a direct write and its Undo, applying a proposal offline, and a signed-out
-  conversation joined at sign-in.
-- **On a device**, links from Messages and Safari open the app, and the budget of §5 is measured.
+  out; a quest planted signed out; a plan pasted into New Roadmap and planted; steps pasted into
+  a roadmap and taken back by Undo; a roadmap made public on the phone and opened by its link in
+  a browser signed out; the gallery read, a row forked and the copy opened; Activity read after a
+  change made in a browser; Coach making a direct write and its Undo, applying a proposal
+  offline, and a signed-out conversation joined at sign-in.
+- **On a device**, links from Messages and Safari open the app, the budget of §5 is measured, and
+  an exported file is read back by New Roadmap.
 
 ## §11 Observability
 
@@ -214,13 +321,25 @@ step page and the step form, and a sheet for its answers.
   copied from and discarded from; roadmap's answer to the sign-in and sign-out questions; a link
   opened, by kind of address and whether the roadmap was the person's; the Graph opened, with the
   step count as a bucket.
+- **Events of making, sharing and the feed**, under the same rule: New Roadmap opened; a creation
+  by its door (blank, a quest, a copied plan, a file), with its step count as a bucket and, for a
+  quest, which of the roster's nine; a plan read back, by its source, and cleared; Paste Steps
+  read back, added with the count as a bucket, cancelled and undone; Share opened, its switch
+  turned on and off, the link shared and copied, and sign-in opened from it; a roadmap exported,
+  and whether the file was saved; the gallery opened and each page read, with what the read came
+  to (loaded, empty, failed), a retry, a row opened, a fork from a row and a copy opened; Activity
+  opened, with what its read came to (loaded, empty, no connection), and a row opened.
 - Coach's events are [Roadmap Coach](roadmap-coach.md) §13's, emitted on the iPhone as on the web.
-- **Sentry**, under static names, at the room's boundaries: the activity feed, the owner's progress
-  and a fork that failed for a reason other than no connection; a shared roadmap that could not be
-  subscribed for a reason other than access; a view the room depends on that failed to read; an
-  action whose commit failed; a layout that fell back; a canvas that missed its budget on a roadmap
-  within the cap. A claimed address that names no roadmap is expected and reports nothing, and no
-  report carries an address.
+- **Sentry**, under static names, at the room's boundaries: the activity feed, the owner's
+  progress, the gallery and a fork that failed for a reason other than no connection, and an
+  answer of theirs the room cannot read; a shared roadmap that could not be subscribed for a
+  reason other than access; a view the room depends on that failed to read; an action whose
+  commit failed; a creation from a quest or a plan that failed where no limit refused it, and
+  done steps that could not be marked after it; a chosen file that could not be opened; an export
+  the system could not write; a layout that fell back; a canvas that missed its budget on a
+  roadmap within the cap. A claimed address that names no roadmap, and a feed asked of a roadmap
+  the backend does not hold yet, are expected and report nothing. No report carries an address,
+  a plan's text, a file's name or a roadmap's title.
 - The iPhone's observability document lists them, and its telemetry allowlist gains the labels.
 
 ## §12 What the build makes false
@@ -238,6 +357,12 @@ makes it false.
 - No fixture of the web's picture exists, and the web's own layout calls the platform's
   trigonometry.
 - The app's one runner deletes at once, in every room.
+- The plan grammar and the quest roster are the web's code and the web's own tests alone
+  (`web/src/products/roadmap/paste/`, `web/src/products/roadmap/quests/roster/`): no shared case
+  holds either. The web's grammar returns sentences of its catalog among what it derives, which a
+  shared case cannot compare.
+- The domain's read of a roadmap carries no `forkedFrom`, which the gallery's row reads (§3).
+- The app's Info.plist names no Markdown type (§7.3).
 
 ## §14 Rulings
 
