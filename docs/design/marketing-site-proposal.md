@@ -13,9 +13,9 @@ The pages speak from [the idea](brand-foundations.md#the-idea) and keep every ru
 
 A visitor should learn four things, in this order, and each page owns one of them.
 
-1. What Windmill is: the idea, said once, on the front page.
+1. What Windmill is, what its three tools are and the one feature that leads each: the front page.
 2. What one room does for one job: a page per room.
-3. That the machine is theirs to choose: the page about using your own assistant.
+3. That the AI is theirs to choose: the page about using your own assistant.
 4. How Windmill is paid for: the pricing page.
 
 The pages built today open with three product bands. No sentence says what Windmill is: the front
@@ -25,7 +25,7 @@ page's main heading, "Three tools. One account.", is hidden in the rendered page
 
 | Address | Its one job | Today |
 |---|---|---|
-| `/` | Say what Windmill is and send the visitor to a room | Exists; opens with product bands |
+| `/` | Say what Windmill is, name its three tools with the feature that leads each, and send the visitor to a room | Exists; opens with product bands |
 | `/roadmap` | Any goal as a skill tree | Exists |
 | `/gym` | A training log that remembers | Exists |
 | `/journal` | A place to notice what happened | Exists |
@@ -44,7 +44,8 @@ page's main heading, "Three tools. One account.", is hidden in the rendered page
 - The header carries: Roadmap, Gym, Journal, Pricing, About. On the right: a quiet Sign in and one
   action. The light and dark switch moves to the footer.
 - The footer is the whole sitemap in columns: Rooms · Your own assistant · Windmill (About, Pricing,
-  Changelog, Gallery) · Legal, then Feedback and the appearance switch.
+  Changelog, Gallery) · Legal, then Feedback and the appearance switch with three positions: Auto,
+  Light, Dark.
 - The front page's action is a choice of room. Today "Start free" opens Roadmap's start picker on a
   page about three rooms, and static pages send "Start your tree" to a different place than landings do.
 
@@ -54,32 +55,51 @@ Rules for every string on these pages:
 
 - It describes what a visitor can do today on the surface named. A number appears only when the code
   or a document that states it has been checked.
-- The person is the subject and the machine helps. Nothing frightens or belittles.
+- The person is the subject and does the work. The AI guides: it gives clarity and guidance, helps
+  keep the record and helps a person past what blocks them. No string says the AI "works for you" or
+  "does it for you". Nothing frightens or belittles.
 - Plain words, sentence case, short sentences. One idea per heading.
 - Each room is named in full at first mention: Windmill Roadmap, Windmill Gym, Windmill Journal.
 - One description per page, used for search and for social cards alike.
 
 ### Front page `/`
 
+A stranger with no context reads, in the first screen, what Windmill is, what its three tools are and
+the one feature that leads each.
+
 | Part | Wording |
 |---|---|
 | Title | Windmill — a skill tree, a training log and a journal |
-| Description | Windmill is where a person keeps growing in body, skill and mind. Free to use by hand. Bring your own AI assistant or use ours. |
+| Description | Windmill is where a person keeps growing in body, skill and mind. An AI-native training log, skill tree and journal. Use your own AI or ours. |
 | Main heading | Windmill is where a person keeps growing in body, skill and mind. |
-| Body · Windmill Gym | Log the set. The rest is remembered. → Open the log |
-| Skill · Windmill Roadmap | Map what you’re learning as a skill tree. → Start a tree |
-| Mind · Windmill Journal | One page a night, in your own words. → Write tonight |
+| Under the heading | An AI-native training log, skill tree and journal. · The AI guides. The work stays yours. Use your own AI or ours. |
+| Strip · Windmill Roadmap | A skill tree for any goal. · Tell an AI your goal, get a skill tree. |
+| Strip · Windmill Journal | A daily journal. · Your own words, echoed back. |
+| Strip · Windmill Gym | A training log. · A coach that has read every set. |
+| Roadmap section | Tell an AI your goal, get a skill tree. / Describe what you want to learn or build. Your own assistant, or Windmill's, writes the plan as a tree of steps. You edit it, and you do the steps. / Finish a step, the next unlocks · Start without an account · Share and fork → Start a tree |
+| Journal section | Your own words, echoed back. / As you write, passages you wrote before appear beside the page when they speak to the same thing. Nothing is interpreted and nothing is graded. / Search by meaning · One page a night · Never graded → Write tonight |
+| Gym section | A coach that has read every set. / Ask about your training and the answer comes from your whole log. It proposes a change to your routine, and nothing changes until you apply it. Use Windmill's Coach or connect your own assistant: the same log and the same rules. / It remembers last time · Honest progress · On your phone → Open the log |
+| Your AI, or ours. | Either way the AI guides, and the work stays yours. |
 | Your AI, or ours. · Yours | Connect the assistant you already have to Roadmap and Gym. It asks for the access it needs, and you approve it. → How to connect |
 | Your AI, or ours. · Ours | Windmill's own AI is built in, with a free allowance. Windmill One raises the ceiling for one price. It is not on sale yet. → Pricing |
 | Where it runs | Web: Roadmap, Gym and Journal. Android: Gym. iPhone: Journal and Gym, in beta. |
 
-The page runs in that order and ends in the footer, which is the sitemap. The heading says nothing about
-the machine. The page carries no price number. Windmill One's line reads "It is not on sale yet" until
-One can be bought, and becomes the offer on that day. The room lines are today's band titles.
+The page runs in that order: the heading with the two lines under it, the strip of three, one section
+per room in the order Roadmap, Journal, Gym, then "Your AI, or ours.", where it runs, and the footer,
+which is the sitemap. Each room section holds its heading, one paragraph, the picture that shows that
+feature and three named features. The page carries no price number. Windmill One's line reads "It is
+not on sale yet" until One can be bought, and becomes the offer on that day.
 
-Before build, check: how a visitor gets the Android app and the iPhone beta, so "Where it runs" can link
-to something that works; and that "built in, with a free allowance" matches the allowance enabled on each
-surface named.
+Before build, check each of these against the product, on every surface the page names:
+
+- Windmill's own AI writing a tree. The pricing page says Roadmap's AI assistance is being redesigned,
+  so "or Windmill's" may hold only at release. Until it holds, the Roadmap paragraph says "Your own
+  assistant writes the plan as a tree of steps."
+- Echoes appearing beside the page as a person writes.
+- Where Coach is available.
+- That "built in, with a free allowance" matches the allowance enabled.
+- How a visitor gets the Android app and the iPhone beta, so "On your phone" and "Where it runs" can
+  link to something that works.
 
 ### About page `/about`
 
@@ -87,8 +107,8 @@ surface named.
 |---|---|
 | Title | About Windmill — why it exists and what the name means |
 | Main heading | Why Windmill exists |
-| Statement | Machines can now do much of the work people do. Windmill puts them to work for you instead. They help you train, learn and reflect, and the growing stays yours. |
-| The machine serves | In Gym, Coach proposes a change and you apply it. After its first greeting it waits to be asked. |
+| Statement | Machines can now do much of the work people do. In Windmill the AI gives clarity and guidance, helps keep the record and helps you past what blocks you. It does not do the work for you: the growing stays yours. |
+| The AI guides, you decide | In Gym, Coach proposes a change and you apply it. After its first greeting it waits to be asked. |
 | Yours and open | Bring your own assistant. It connects to Roadmap and Gym and asks for the access it needs. Journal has no door for one. |
 | Never graded | No streaks, no scores, no countdowns. A day you skip is not coloured as a failure. |
 | The name | A mill takes its time and grinds the grain into flour anyway. |
@@ -186,7 +206,9 @@ picture. Hairlines in place of shadows and card outlines. A four-step ink scale.
 tight display type. One job per section. Small, quiet controls. A footer that is the sitemap.
 
 **The look is Instrument.** One typeface, Inter, for all page type, with few sizes and tight display
-type. Day and night are both drawn, and a first visit follows the visitor's device. The header carries
+type. Day and night are both drawn, and a first visit follows the visitor's device. The footer's
+appearance switch has three positions, Auto, Light and Dark, so a person can return to following the
+device. The header carries
 the approved mark, unchanged, with the word "Windmill" set in Inter; the full rounded logo stays for the
 app icon and social cards. A night version of the mark, with the same shapes and a lighter hub and door,
 is drawn for the owner's approval and is not used before it. The product pictures keep the product's own
@@ -209,8 +231,16 @@ the flow is marked Ready for dev.
 
 Ruled:
 
+- The AI guides and the person does the work. No string says the AI "works for you" or "does it for
+  you".
 - The front page's main heading: "Windmill is where a person keeps growing in body, skill and mind."
-- The front page's order: the heading, the three rooms, "Your AI, or ours.", where it runs, the footer.
+  Under it: "An AI-native training log, skill tree and journal." and "The AI guides. The work stays
+  yours. Use your own AI or ours."
+- The feature that leads each room: Roadmap, "Tell an AI your goal, get a skill tree."; Journal, "Your
+  own words, echoed back."; Gym, "A coach that has read every set."
+- The front page's order: the heading and its two lines, the strip of three, a section per room in the
+  order Roadmap, Journal, Gym, "Your AI, or ours.", where it runs, the footer.
+- The appearance switch has three positions: Auto, Light, Dark.
 - Windmill One on the front page is a plain statement that it is not on sale yet, with a link to pricing
   and no price number.
 - `/about` has no section on who makes Windmill.
@@ -220,7 +250,7 @@ Ruled:
 
 Open:
 
-- Approval of the drawn front page.
+- Approval of the front page, which is being redrawn with the wording above.
 - Approval of the night version of the mark.
 
 ## Order of work
@@ -228,8 +258,9 @@ Open:
 1. Correct the false strings. They do not wait for the design.
 2. Search repairs that change no layout: structured data, the tree page's first HTML and its 404,
    one description per page, short addresses.
-3. The designer draws the front page in the Instrument look, with the ruled structure and the night
-   mark. The owner reviews it.
+3. The designer redraws the front page in the Instrument look with the ruled wording: the first
+   screen names the three tools and each room leads with one feature. The owner reviews it and the
+   night mark.
 4. After that approval the designer draws the other pages, and the owner marks the flow.
 5. Build from the marked flow, with the landings rendered at build time. Brand foundations' Fonts, Logo
    and Landings sections are updated when the flow is marked Ready for dev.

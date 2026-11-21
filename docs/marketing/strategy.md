@@ -6,13 +6,13 @@ The scale is **eight owner hours a week**. Eight hours is a ceiling on the owner
 
 ## Positioning
 
-> Windmill is where a person keeps growing in body, skill and mind, with the machine working for them. Bring your own AI or use ours at a fair price. Nothing is locked and nothing is graded.
+> Windmill is where a person keeps growing in body, skill and mind. Bring your own AI or use ours at a fair price. Nothing is locked and nothing is graded.
 
 [Brand foundations](../design/brand-foundations.md#the-idea) is the one home of this sentence, the reason behind it, the meaning of the name and what Windmill never says. Marketing claims a pillar only as far as the rule or fact behind it reaches.
 
 | Pillar | Standing rule or fact |
 |---|---|
-| The machine serves | Coach changes an existing routine only as a proposal the lifter applies, and after its first greeting it waits to be asked. [Gym principles](../design/brand-foundations.md#gym) |
+| The AI guides, the person decides | Coach changes an existing routine only as a proposal the lifter applies, and after its first greeting it waits to be asked. [Gym principles](../design/brand-foundations.md#gym) |
 | Yours and open | Everything done by hand works signed out. A person's own assistant reaches Roadmap and Gym through MCP; Journal has no MCP door, and Windmill takes no provider key or token from a person. [Accounts and sign-in](../design/brand-foundations.md#accounts-and-sign-in) · [Connect](https://windmill.works/connect.html) |
 | Never graded | Journal has no streaks or scores and praises no value. Gym has no grades or streaks. The honesty rules allow no urgency on any surface. [Journal principles](../design/brand-foundations.md#journal) · [Numbers and money](../design/brand-foundations.md#numbers-and-money) |
 | A fair price, shown | Not shown yet. The [pricing page](../../web/public/pricing.html) names $12 a month and no allowance amount, so it does not say where the money goes. When the page is rebuilt it states the split in dollars. [Owner rulings](#owner-rulings-and-open-decisions) |
@@ -180,5 +180,5 @@ Ruled:
 Open:
 
 - Whether the EU stays in the first release, after the check of what Apple publishes about an individual seller on EU listings.
-- Approval of the drawn front page and of the night version of the mark.
+- Approval of the front page, which is being redrawn with the ruled wording, and of the night version of the mark.
 - The founder note, which is the owner's to write.

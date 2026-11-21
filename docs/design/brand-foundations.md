@@ -8,12 +8,12 @@ drawings are the Figma files'.
 
 ## The idea
 
-**The idea.** Windmill is where a person keeps growing in body, skill and mind, with the machine
-working for them. Bring your own AI or use ours at a fair price. Nothing is locked and nothing is
-graded.
+**The idea.** Windmill is where a person keeps growing in body, skill and mind. Bring your own AI or
+use ours at a fair price. Nothing is locked and nothing is graded.
 
-**Why.** Machines can now do much of the work people do. Windmill puts them to work for the person
-instead: they help with training, learning and reflecting, and the growing stays the person's.
+**Why.** Machines can now do much of the work people do. In Windmill the AI gives clarity and
+guidance, helps keep the record and helps a person past what blocks them. It does not do the work for
+them: the growing stays the person's.
 
 **The name.** A mill takes its time and grinds the grain into flour anyway. It takes nothing by
 force. The grain is yours, and so is the bread.
@@ -26,8 +26,9 @@ Gym; Journal has no MCP door, and Windmill takes no provider key or token from a
 and hurries no one.
 
 **What we never say.** Nothing that frightens or belittles: no "AI will replace you", no "don't fall
-behind", no "fix yourself". Journal is reflection, never therapy. One is a fair price for the AI and
-the work, never "at cost".
+behind", no "fix yourself". The AI never "works for you" or "does it for you": it guides, and the
+person does the work. Journal is reflection, never therapy. One is a fair price for the AI and the
+work, never "at cost".
 
 ## Direction
 - Minimalistic, animation-rich
