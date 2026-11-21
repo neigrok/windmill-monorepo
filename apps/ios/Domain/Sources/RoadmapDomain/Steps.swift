@@ -85,6 +85,9 @@ public struct RoadmapStep: Writable, Removable {
     Check("links") { s, _ in s.links = try RoadmapSpecs.links.apply(s.links, at: "links") },
   ]
 
+  // Its place among its trunk parent's steps, where it holds a key that orders.
+  var key: FractionalKey? { ord.flatMap { try? FractionalKey($0) } }
+
   // The step with each field the changes name, and the names.
   func taking(_ changes: Changes) -> (step: RoadmapStep, named: [String]) {
     var step = self
@@ -393,5 +396,64 @@ public struct ChangeStep: ActAction {
     guard loaded.held.isKnown else { return .refuse(.gone(step.ref, .predicted)) }
     let changed = loaded.held.value.taking(changes)
     return loaded.changing(to: try Valid(changed.step, fields: changed.named, at: loaded.moment))
+  }
+}
+
+// §5 Reorder: the step lands below the sibling above it among its trunk parent's steps, which the layout names, keyed
+// between that sibling and the next. A drop in place writes nothing.
+public struct MoveStep: ActAction {
+  public let tree: ID<RoadmapEntry>
+  public let step: ID<RoadmapStep>
+  public let below: ID<RoadmapStep>?
+  public let siblings: [ID<RoadmapStep>]
+
+  public init(tree: ID<RoadmapEntry>, step: ID<RoadmapStep>, below: ID<RoadmapStep>?, siblings: [ID<RoadmapStep>]) {
+    self.tree = tree
+    self.step = step
+    self.below = below
+    self.siblings = siblings.filter { $0 != step }
+  }
+
+  // The siblings the roadmap draws that hold a key that orders, each with its key.
+  public func load(_ read: ActReader) throws -> (step: HeldStep, members: [ListMember]) {
+    try read.inScope(tree.tree) { (scope: Reader) throws -> (step: HeldStep, members: [ListMember]) in
+      let steps = scope.repository(RoadmapStep.self)
+      let members = try siblings.compactMap { (sibling: ID<RoadmapStep>) throws -> ListMember? in
+        try steps.find(sibling, in: .drawn)?.key.map { ListMember(id: sibling.json, key: $0) }
+      }
+      return (try HeldStep(step, of: tree, in: scope), members)
+    }
+  }
+
+  public func decide(_ loaded: (step: HeldStep, members: [ListMember]), ids: ActIDSource) throws(Violation) -> ActDecision<Void, RoadmapRefusal> {
+    guard loaded.step.held.isKnown else { return .refuse(.gone(step.ref, .predicted)) }
+    if let below, !loaded.members.contains(where: { $0.id == below.json }) { return .refuse(.gone(below.ref, .predicted)) }
+    var moved = loaded.step.held.value
+    guard let ord = FractionalKey(moving: step.json, from: moved.key, below: below?.json, among: loaded.members) else { return .unchanged(()) }
+    moved.ord = ord.text
+    return loaded.step.changing(to: try Valid(moved, fields: ["ord"], at: loaded.step.moment))
+  }
+}
+
+// §5 Delete a step: held, and the step's death alone. Its links stay, unread while it is absent, and return with it.
+public struct DeleteStep: ActAction {
+  public let tree: ID<RoadmapEntry>
+  public let step: ID<RoadmapStep>
+
+  public init(tree: ID<RoadmapEntry>, step: ID<RoadmapStep>) {
+    self.tree = tree
+    self.step = step
+  }
+
+  public func load(_ read: ActReader) throws -> RoadmapStep? {
+    try read.inScope(tree.tree) { (scope: Reader) throws -> RoadmapStep? in try scope.repository(RoadmapStep.self).find(step, in: .drawn) }
+  }
+
+  public func decide(_ drawn: RoadmapStep?, ids: ActIDSource) -> ActDecision<Void, RoadmapRefusal> {
+    guard drawn != nil else { return .unchanged(()) }
+    var plan = Plan()
+    plan.remove(step)
+    plan.undoBy(.restoring(step, life: true, by: Roadmap.Commands.restoreTree))
+    return .write(plan, in: tree.tree, ())
   }
 }

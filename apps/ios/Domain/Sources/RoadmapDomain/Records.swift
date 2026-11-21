@@ -72,9 +72,10 @@ extension FractionalKey {
     catch { preconditionFailure("no order key follows \(last?.text ?? "the start"): \(error)") }
   }
 
-  // The key that drops a record below `above` among `members`, which do not hold it, or at their top: after `above` and
-  // before the member that follows it.
-  init(dropping moved: JSON, below above: JSON?, among members: [ListMember]) {
+  // The key that moves a record holding `own` below `above` among `members`, which do not hold it, or to their top: after
+  // `above` and before the member that follows it. Nil for a drop in place, the record already sitting below `above`.
+  init?(moving moved: JSON, from own: FractionalKey?, below above: JSON?, among members: [ListMember]) {
+    if let own, members.sorted().last(where: { $0 < ListMember(id: moved, key: own) })?.id == above { return nil }
     do { try self.init(dropping: moved, below: above, stored: members, drawn: members) }
     catch { preconditionFailure("no order key drops \(moved.jcsText) below \(above?.jcsText ?? "the top"): \(error)") }
   }

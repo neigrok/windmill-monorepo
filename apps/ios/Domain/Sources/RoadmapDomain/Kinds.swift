@@ -169,14 +169,11 @@ public struct MoveKind: ActAction {
     guard loaded.held.isKnown else { return .refuse(.gone(kind.ref, .predicted)) }
     let members = loaded.present.filter { $0.id != kind }.compactMap { (other: RoadmapKind) -> ListMember? in
       other.key.map { ListMember(id: other.id.json, key: $0) }
-    }.sorted()
+    }
     if let below, !members.contains(where: { $0.id == below.json }) { return .refuse(.gone(below.ref, .predicted)) }
     var moved = loaded.held.value
-    if let own = moved.key {
-      let above = members.last { $0 < ListMember(id: kind.json, key: own) }
-      if above?.id == below?.json { return .unchanged(()) }
-    }
-    moved.ord = FractionalKey(dropping: kind.json, below: below?.json, among: members).text
+    guard let ord = FractionalKey(moving: kind.json, from: moved.key, below: below?.json, among: members) else { return .unchanged(()) }
+    moved.ord = ord.text
     return loaded.changing(to: try Valid(moved, fields: ["ord"], at: loaded.moment), in: tree)
   }
 }
