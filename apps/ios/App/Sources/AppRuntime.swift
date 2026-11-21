@@ -36,6 +36,8 @@ struct AppSettings {
   let modelServer: Bool
   let appleFixture: String?
   let appleEnabled: Bool
+  // The Roadmap room, its menu row, its door and its sync scopes exist where WM_ROADMAP_ROOM_ENABLED is YES: Debug, never Release.
+  let roadmapRoom: Bool
   let scenario: String?
   let report: String?
   let codeFile: String?
@@ -70,6 +72,13 @@ struct AppSettings {
     #endif
     telemetryInfo = info
     appleEnabled = modelServer || (baseURL != nil && bundle.object(forInfoDictionaryKey: "WMAppleSignInEnabled") as? String == "YES")
+    roadmapRoom = bundle.object(forInfoDictionaryKey: "WMRoadmapRoomEnabled") as? String == "YES"
+  }
+
+  // The registry composes every product; the engine subscribes gym's and journal's scopes, and roadmap's where its room exists.
+  var engineConfig: EngineConfig {
+    let scopes = [Gym.scope, Journal.scope] + (roadmapRoom ? [Roadmap.scope] : [])
+    return EngineConfig(appVersion: "0.2.0", surface: .ios, carried: Set(scopes.compactMap { SyncSchema.registry.product(of: $0) }))
   }
 
   // You's How you sign in footer: what Apple opens, said only where this build offers Apple.
@@ -100,7 +109,10 @@ final class AppRuntime {
   let store: Store
   let engine: SyncEngine
   let gymBinding: GymBinding
+  // Gym's and Journal's actions remove at once.
   let runner: ActionRunner
+  // Roadmap's actions hold a removal for the engine's nine seconds, while Undo can take it back.
+  lazy var roadmapRunner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: DeviceZone(), holdRemovals: true)
   let auth: NativeAuth
   let lifecycle: AppLifecycle
   // The background time a Coach turn keeps the process alive within (Coach §4.5).
@@ -181,7 +193,7 @@ final class AppRuntime {
     let reach: any Connectivity = connectivity ?? PathConnectivity()
     #endif
     self.connectivity = reach
-    engine = try SyncEngine(config: Self.engineConfig, bindings: [gymBinding], store: store, transport: syncTransport ?? transport,
+    engine = try SyncEngine(config: settings.engineConfig, bindings: [gymBinding], store: store, transport: syncTransport ?? transport,
                             tokens: tokens,
                             forkGuard: storage.forkGuard, clock: EngineClock(wall: boardClock ? BoardClock() : SystemClock(), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: reach, telemetry: telemetry)
     runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: DeviceZone(), holdRemovals: false)
@@ -201,11 +213,6 @@ final class AppRuntime {
     lifecycle = AppLifecycle(engine: engine, signals: .application, time: ApplicationBackgroundTime())
     background = BackgroundActivity(time: ApplicationBackgroundTime())
   }
-
-  // The engine as the iPhone runs it: the registry composes roadmap too, and the iPhone carries gym and journal, so it
-  // subscribes no roadmap scope.
-  nonisolated static let engineConfig = EngineConfig(
-    appVersion: "0.2.0", surface: .ios, carried: Set([Gym.scope, Journal.scope].compactMap { SyncSchema.registry.product(of: $0) }))
 
   nonisolated static let commandResultWrites: CommandResultDeviceWrites = { command, result, epoch, rows in
     JournalWriting.resultWrites(command, result, epoch, rows) + RoutineRemovalReceipt.resultWrites(command, result, epoch, rows)

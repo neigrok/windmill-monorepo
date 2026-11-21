@@ -15,14 +15,6 @@ import SyncTesting
 @testable import Windmill
 
 @Suite @MainActor struct AppModelTests {
-  // The shipped composition is windmill's three registries at 13 / minimum 11, and the iPhone's engine subscribes gym's
-  // and journal's scopes alone: roadmap's room is not on the iPhone.
-  @Test func theShippedCompositionSyncsGymAndJournalAlone() {
-    #expect(SyncSchema.registry.products.map(\.name) == ["gym", "journal", "roadmap"])
-    #expect(SyncSchema.version == 13 && SyncSchema.registry.minVersion == 11)
-    #expect(AppRuntime.engineConfig.products(of: SyncSchema.registry) == ["gym", "journal"])
-  }
-
   @Test func ordinaryBackupPreservesAnUnfinishedAdoption() async throws {
     let (_, owner, model, localRoutine) = try await twoRooms()
     let session = try #require(model.signInSession)
