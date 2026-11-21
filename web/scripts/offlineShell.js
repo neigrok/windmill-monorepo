@@ -3,6 +3,10 @@ import { join } from 'node:path';
 
 export const PRECACHE_BUDGET = 4 * 1024 * 1024;
 
+// The front page's face stays out of the precache: only that page draws in it, so no other page's worker fetches it,
+// and offline the front page reads in the system's face.
+const FRONT_PAGE_FACE = /@fontsource-variable\/inter\//;
+
 export function offlineShell() {
   return {
     name: 'windmill-offline-shell',
@@ -15,7 +19,10 @@ export function offlineShell() {
         visited.add(name);
         const item = bundle[name];
         if (!item) throw new Error(`offline-shell: missing bundled dependency ${name}`);
-        if (item.type !== 'chunk') { assets.add(name); return; }
+        if (item.type !== 'chunk') {
+          if (!item.originalFileNames?.some((file) => FRONT_PAGE_FACE.test(file))) assets.add(name);
+          return;
+        }
         if (Object.keys(item.modules).some((path) => /\/src\/(?:showcase\/|products\/journal\/search\/neural\/)/.test(path))) return;
         assets.add(name);
         for (const dependency of [...item.imports, ...item.dynamicImports,

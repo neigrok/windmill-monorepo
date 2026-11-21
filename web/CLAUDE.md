@@ -324,7 +324,8 @@ account's device data without a second question, recovering interrupted cleanup 
 Gym and journal records change only through the engine; their REST clients carry server features.
 The worker stages the shell and room dependencies listed by `offline-assets.json` in one verified
 cache generation before promoting it; a failed update retains the previous complete shell. The build
-enforces a 4 MiB precache budget. Neural search loads its worker and WASM runtime on first search use.
+enforces a 4 MiB precache budget. Neural search loads its worker and WASM runtime on first search use, and the
+brand root's Inter stays out of the precache, so only that page fetches it.
 API/model responses bypass the worker: its fetch handler declines them, and where the browser takes service
 worker routes the worker routes `/v1/` to the network at install, so a beacon or keepalive request a page sends
 as it hides never waits on the handler. Bounded network navigation falls back to the cached shell.
