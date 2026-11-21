@@ -109,16 +109,17 @@ PYAI
 candidate_env=.env.next
 verification=$(mktemp -d)
 trap 'rm -f "$candidate_env"; rm -rf "$verification"' EXIT
-prior_pg=
-if [[ -f .env ]]; then
-  prior_pg=$(sed -n 's/^POSTGRES_PASSWORD=//p' .env | head -1)
-fi
-if [[ -n "$prior_pg" ]]; then
-  sed '/^POSTGRES_PASSWORD=/d' rendered.env > "$candidate_env"
-  printf 'POSTGRES_PASSWORD=%s\n' "$prior_pg" >> "$candidate_env"
-else
-  cp rendered.env "$candidate_env"
-fi
+live() {
+  [[ ! -f .env ]] || sed -n "s/^$1=//p" .env
+}
+write_candidate() {
+  sed "/^$1=/d" "$candidate_env" > "$verification/candidate.env"
+  printf '%s=%s\n' "$1" "$2" >> "$verification/candidate.env"
+  mv "$verification/candidate.env" "$candidate_env"
+}
+cp rendered.env "$candidate_env"
+prior_pg=$(live POSTGRES_PASSWORD | head -1)
+[[ -z "$prior_pg" ]] || write_candidate POSTGRES_PASSWORD "$prior_pg"
 candidate=(docker compose --env-file "$candidate_env" -f docker-compose.next.yml)
 "${candidate[@]}" config -q
 # The backend starts before either ledger service; their runtime health cannot hold it back.
@@ -131,14 +132,63 @@ done <<< "$services"
 # disk to the live images plus the candidate. Volumes are never pruned.
 docker image prune -af > /dev/null
 docker builder prune -af > /dev/null
-"${candidate[@]}" pull "${backend[@]}"
+# Backend CI builds every image again for each commit, so content IDs differ where nothing an image is built from did.
+# A unit is unchanged when this commit leaves its inputs as the live deployment has them (image_inputs.py, rendered by
+# the deploy workflow) and the image it is pinned to is still here, which the prune leaves any image a container uses.
+# An unchanged unit keeps that image and it is not pulled; compose recreates its container only for a value it
+# reads that changed. This prints why a unit is not unchanged, and nothing for one that is.
+replacement() {
+  local inputs live_inputs pinned
+  inputs=$(sed -n "s/^$1=//p" "$candidate_env")
+  live_inputs=$(live "$1")
+  pinned=$(live "$2")
+  if [[ ! "$inputs" =~ ^[a-f0-9]{64}$ ]]; then
+    echo "this commit's render holds no fingerprint for it"
+  elif [[ ! "$live_inputs" =~ ^[a-f0-9]{64}$ ]]; then
+    echo "the live deployment holds no fingerprint for it"
+  elif [[ "$inputs" != "$live_inputs" ]]; then
+    echo "this commit changes what it is built from"
+  elif [[ ! "$pinned" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+    echo "the live deployment pins no image for it"
+  elif ! docker image inspect --format '{{.Id}}' "$pinned" > /dev/null 2>&1; then
+    echo "the image it is pinned to is not on this host"
+  fi
+}
+# The backend's commit, BACKEND_TAG, names the embedder's image and the server's release, so an unchanged backend
+# keeps it too. Only the server and its migration are pinned by content ID: every other image the backend's services
+# run, the embedder's at that commit, the database's and Caddy's among them, is pulled on every deploy, so a compose
+# file that names another one finds it here.
+backend_tag=$(live BACKEND_TAG)
+backend_replaced=$(replacement BACKEND_INPUTS SERVER_IMAGE)
+[[ -n "$backend_replaced" || "$backend_tag" =~ ^[a-f0-9]{40}$ ]] || backend_replaced="the live deployment records no commit for it"
+if [[ -z "$backend_replaced" ]]; then
+  write_candidate BACKEND_TAG "$backend_tag"
+  write_candidate SERVER_IMAGE "$(live SERVER_IMAGE)"
+  printf 'NOTE backend: nothing it is built from changed, so it keeps its image, built at %s\n' "$backend_tag"
+  unpinned=()
+  for service in "${backend[@]}"; do
+    [[ "$service" == server || "$service" == migrate ]] || unpinned+=("$service")
+  done
+  "${candidate[@]}" pull "${unpinned[@]}"
+else
+  printf "NOTE backend: pulls this commit's image, since %s\n" "$backend_replaced"
+  write_candidate BACKEND_TAG "$(sed -n 's/^IMAGE_TAG=//p' "$candidate_env")"
+  "${candidate[@]}" pull "${backend[@]}"
+fi
 python3 "$(dirname "$0")/sync_compatibility.py" preflight "$candidate_env" sync-cutover.json "$verification/sync.json"
-# The subscription service runs the image built for this commit, pinned to the content ID it was pulled as, like
-# the server and the migration. A commit that has none, as an image built before Backend CI published the service,
+# A subscription service that changed runs the image built for this commit, pinned to the content ID it was pulled as,
+# like the server and the migration. A commit that has none, as an image built before Backend CI published the service,
 # keeps the container the live service runs, untouched: recreating it under the candidate compose could start an
 # older image on configuration it cannot read. Its container also keeps its image on the host through the prune.
+# A container kept for want of an image runs what the live inputs describe, so those are what the candidate records,
+# and the next deploy pulls again.
 kept_subscriptions=
-if "${candidate[@]}" pull subscriptions; then
+subscriptions_replaced=$(replacement SUBSCRIPTIONS_INPUTS SUBSCRIPTIONS_IMAGE)
+[[ -z "$subscriptions_replaced" ]] || printf "NOTE subscription service: pulls this commit's image, since %s\n" "$subscriptions_replaced"
+if [[ -z "$subscriptions_replaced" ]]; then
+  subscriptions_id=$(live SUBSCRIPTIONS_IMAGE)
+  printf 'NOTE subscription service: nothing it is built from changed, so it keeps its image, %s\n' "$subscriptions_id"
+elif "${candidate[@]}" pull subscriptions; then
   subscriptions_image=$("${candidate[@]}" config --format json |
     python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["subscriptions"]["image"])')
   subscriptions_id=$(docker image inspect --format '{{.Id}}' "$subscriptions_image")
@@ -156,12 +206,16 @@ else
   fi
   printf 'NOTE subscription service: no image could be pulled for this commit, so its running container is kept as it is, on %s\n' \
     "$subscriptions_id"
+  write_candidate SUBSCRIPTIONS_INPUTS "$(live SUBSCRIPTIONS_INPUTS)"
 fi
-sed '/^SUBSCRIPTIONS_IMAGE=/d' "$candidate_env" > "$verification/candidate.env"
-printf 'SUBSCRIPTIONS_IMAGE=%s\n' "$subscriptions_id" >> "$verification/candidate.env"
-mv "$verification/candidate.env" "$candidate_env"
+write_candidate SUBSCRIPTIONS_IMAGE "$subscriptions_id"
 
-if "${candidate[@]}" pull ai; then
+ai_replaced=$(replacement AI_INPUTS AI_IMAGE)
+[[ -z "$ai_replaced" ]] || printf "NOTE AI service: pulls this commit's image, since %s\n" "$ai_replaced"
+if [[ -z "$ai_replaced" ]]; then
+  ai_id=$(live AI_IMAGE)
+  printf 'NOTE AI service: nothing it is built from changed, so it keeps its image, %s\n' "$ai_id"
+elif "${candidate[@]}" pull ai; then
   ai_image=$("${candidate[@]}" config --format json |
     python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["ai"]["image"])')
   ai_id=$(docker image inspect --format '{{.Id}}' "$ai_image")
@@ -170,18 +224,16 @@ if "${candidate[@]}" pull ai; then
     exit 1
   fi
 else
-  ai_id=
-  [[ ! -f .env ]] || ai_id=$(sed -n 's/^AI_IMAGE=//p' .env)
+  ai_id=$(live AI_IMAGE)
   if [[ ! "$ai_id" =~ ^sha256:[a-f0-9]{64}$ ]] ||
      ! docker image inspect --format '{{.Id}}' "$ai_id" > /dev/null 2>&1; then
     printf 'FAIL no AI service image could be pulled for this commit, and none runs here to keep\n' >&2
     exit 1
   fi
   printf 'NOTE AI service: no image could be pulled for this commit, so it keeps the one it runs, %s\n' "$ai_id"
+  write_candidate AI_INPUTS "$(live AI_INPUTS)"
 fi
-sed '/^AI_IMAGE=/d' "$candidate_env" > "$verification/candidate.env"
-printf 'AI_IMAGE=%s\n' "$ai_id" >> "$verification/candidate.env"
-mv "$verification/candidate.env" "$candidate_env"
+write_candidate AI_IMAGE "$ai_id"
 
 # The inspected images and sync minimum are approved before any migration or container changes.
 [[ ! -f .env ]] || cp .env .env.bak
@@ -204,7 +256,10 @@ if docker compose exec -T caddy cat /etc/caddy/Caddyfile > "$verification/Caddyf
   caddy_changed=0
 fi
 # The ledger services wait for provisioning and start after backend verification, below.
-docker compose up -d --pull never "${backend[@]}"
+if ! docker compose up -d --pull never "${backend[@]}"; then
+  printf 'FAIL backend containers did not start on the promoted files; .env.bak holds the previous .env\n' >&2
+  exit 1
+fi
 # A single-file bind mount retains its inode across mv. Recreate to bind the new file.
 if [[ "$caddy_changed" == 1 ]]; then
   docker compose up -d --no-deps --force-recreate --pull never caddy

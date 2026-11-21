@@ -69,9 +69,9 @@
 }
 
 # The site's pause for a planned maintenance (README.md, "Pause the site"): while the host holds
-# ~/windmill/maintenance/on, mounted here read-only, every request on both hosts but an ACME challenge is answered 503,
-# read again on each request, so pausing and lifting need no reload. Import it right after the gate, so a request
-# outside Cloudflare is still refused first.
+# ~/windmill/maintenance/on, mounted here read-only, every request on both hosts but an ACME challenge and the iPhone
+# app's association file is answered 503, read again on each request, so pausing and lifting need no reload. Import it
+# right after the gate, so a request outside Cloudflare is still refused first.
 (maintenance) {
 	@paused {
 		file {
@@ -79,6 +79,8 @@
 			try_files /on
 		}
 		not path /.well-known/acme-challenge/*
+		# Apple fetches the association file on its own schedule, and a refusal fails quietly: a roadmap's link opens the browser.
+		not path /.well-known/apple-app-site-association
 	}
 	handle @paused {
 		header Retry-After 600
@@ -199,6 +201,12 @@
 		header @serviceWorker Cache-Control "no-cache"
 		@hashedAssets path /assets/*
 		header @hashedAssets Cache-Control "public, max-age=31536000, immutable"
+		# iOS takes the association file only as JSON, and the file server names no type for a file with no extension.
+		@appSiteAssociation {
+			path /.well-known/apple-app-site-association
+			file
+		}
+		header @appSiteAssociation Content-Type application/json
 		# /app is the only pathname the SPA answers that is nothing on disk — App.jsx's ownRoute is
 		# '/', '/app', '/app/*' and the product landings, and the landings ARE directories here
 		# (scripts/build-landing-shells.mjs writes /roadmap/index.html and its two siblings). Naming
