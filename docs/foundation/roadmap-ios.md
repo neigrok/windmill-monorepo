@@ -6,7 +6,8 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified, and approved by the owner on 2026-11-17; nothing is built. The iPhone app carries journal and gym.
+**Status:** Specified, and approved by the owner on 2026-11-17. `RoadmapDomain` holds the pure reads (§2) and runs
+their vector files (§10); nothing else is built. The iPhone app carries journal and gym.
 Roadmap's design for it is [Roadmap · iOS](../design/ios/roadmap.md), with its boards in
 the Roadmap Figma file; every board is a proposal until the owner approves it. The build order lives in the
 Roadmap on iOS roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node
@@ -235,6 +236,7 @@ makes it false.
 
 - The app has no third room, no associated domain and no roadmap code; its onboarding says roadmap
   is on the web. Nothing serves an association file.
+- `RoadmapDomain` holds the pure reads alone: no entity, action, replica read, Undo or Coach executor.
 - No fixture of the web's picture exists, and the web's own layout calls the platform's
   trigonometry.
 - The app's one runner deletes at once, in every room.
