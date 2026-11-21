@@ -412,22 +412,25 @@ package final class Simulator {
     return found
   }
 
-  // A record's lattice values, texts and serials, as the drawn view and the server's row both give them.
+  // A record's lattice values and the stamp of each, its texts and serials and its row's seq, as the drawn view and the
+  // server's row both give them.
   static func view(_ row: Row) -> JSON {
-    view(RecordKey: row.key, alive: row.isAlive, values: row.lattice.fields.mapValues(\.value), texts: row.texts.mapValues(\.text),
-         serials: row.serials)
+    view(RecordKey: row.key, alive: row.isAlive, values: row.lattice.fields.mapValues(\.value), stamps: row.lattice.fields.mapValues(\.stamp),
+         texts: row.texts.mapValues(\.text), serials: row.serials, seq: row.seq)
   }
 
   static func view(_ record: Record) -> JSON {
-    view(RecordKey: RecordKey(record.type, record.id), alive: record.life?.isAlive ?? true, values: record.values,
-         texts: record.texts.mapValues(\.text), serials: record.serials)
+    view(RecordKey: RecordKey(record.type, record.id), alive: record.life?.isAlive ?? true, values: record.values, stamps: record.stamps,
+         texts: record.texts.mapValues(\.text), serials: record.serials, seq: record.seq)
   }
 
-  static func view(RecordKey key: RecordKey, alive: Bool, values: [String: JSON], texts: [String: String], serials: [String: JSON]) -> JSON {
+  static func view(RecordKey key: RecordKey, alive: Bool, values: [String: JSON], stamps: [String: Stamp], texts: [String: String],
+                   serials: [String: JSON], seq: Int64?) -> JSON {
     [
       "t": .string(key.type), "id": key.id.json, "alive": .bool(alive), "f": .object(JSON.Object(uniqueKeysWithValues: values.map { ($0.key, $0.value) })),
+      "s": .object(JSON.Object(uniqueKeysWithValues: stamps.map { ($0.key, $0.value.json) })),
       "x": .object(JSON.Object(uniqueKeysWithValues: texts.map { ($0.key, .string($0.value)) })),
-      "v": .object(JSON.Object(uniqueKeysWithValues: serials.map { ($0.key, $0.value) })),
+      "v": .object(JSON.Object(uniqueKeysWithValues: serials.map { ($0.key, $0.value) })), "seq": seq.map { JSON($0) } ?? .null,
     ]
   }
 

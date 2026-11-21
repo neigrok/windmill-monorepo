@@ -137,7 +137,8 @@ extension Record {
   public init(confirmed row: Row, registry: Registry) {
     self.init(
       type: row.key.type, id: row.key.id, life: row.lattice.life, born: row.lattice.born, values: row.lattice.fields.mapValues(\.value),
-      texts: row.texts.mapValues { TextValue(text: $0.text, merged: $0.merged, pending: false) }, serials: row.serials, rc: row.rc,
-      ru: row.ru, isVisible: Visibility.of(row, registry: registry), isPending: false, isHeld: false)
+      stamps: row.lattice.fields.mapValues(\.stamp), texts: row.texts.mapValues { TextValue(text: $0.text, merged: $0.merged, pending: false) },
+      serials: row.serials, seq: row.seq, rc: row.rc, ru: row.ru, isVisible: Visibility.of(row, registry: registry), isPending: false,
+      isHeld: false)
   }
 }

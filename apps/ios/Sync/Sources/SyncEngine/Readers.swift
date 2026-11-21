@@ -250,8 +250,9 @@ final class TransactionReader: CommitContext {
       let key = RecordKey(type, id), replica = try load(RowSelection(keys: [key]))
       guard let row = replica.rows(scope).row(key) else { return nil }
       return Record(type: type, id: id, life: row.lattice.life, born: row.lattice.born,
-        values: row.lattice.fields.mapValues(\.value), texts: row.texts.mapValues { TextValue(text: $0.text, merged: $0.merged, pending: false) },
-        serials: row.serials, rc: row.rc, ru: row.ru, isVisible: Visibility.of(row, registry: registry), isPending: false, isHeld: false)
+        values: row.lattice.fields.mapValues(\.value), stamps: row.lattice.fields.mapValues(\.stamp),
+        texts: row.texts.mapValues { TextValue(text: $0.text, merged: $0.merged, pending: false) }, serials: row.serials,
+        seq: row.seq, rc: row.rc, ru: row.ru, isVisible: Visibility.of(row, registry: registry), isPending: false, isHeld: false)
     }
   }
 
@@ -414,7 +415,8 @@ final class TransactionReader: CommitContext {
     }
     return Record(
       type: record.key.type, id: record.key.id, life: record.lattice.life, born: record.lattice.born,
-      values: record.lattice.fields.mapValues(\.value), texts: texts, serials: record.serials, rc: confirmed?.rc,
-      ru: confirmed?.ru, isVisible: view.isVisible(record), isPending: pending.isPending, isHeld: pending.isHeld)
+      values: record.lattice.fields.mapValues(\.value), stamps: record.lattice.fields.mapValues(\.stamp), texts: texts,
+      serials: record.serials, seq: confirmed?.seq, rc: confirmed?.rc, ru: confirmed?.ru, isVisible: view.isVisible(record),
+      isPending: pending.isPending, isHeld: pending.isHeld)
   }
 }

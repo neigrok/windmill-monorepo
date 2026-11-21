@@ -102,7 +102,8 @@ struct JournalDomainTests {
     #expect(try JournalRules.body.apply(text, at: "body") as String == text)
     #expect(!PageDocument(body: " ").isWritten && !PageDocument(energy: 0).isWritten && !PageDocument().isWritten)
     let record = Record(type: Page.type, id: RecordID(Self.day.text), life: nil, born: nil, values: ["mood": .null, "energy": 0, "source": "typed"],
-      texts: ["body": TextValue(text: String(repeating: "x", count: 131_073), merged: false, pending: false)], serials: [:], rc: nil, ru: nil, isVisible: true, isPending: false, isHeld: false)
+      stamps: [:], texts: ["body": TextValue(text: String(repeating: "x", count: 131_073), merged: false, pending: false)], serials: [:],
+      seq: nil, rc: nil, ru: nil, isVisible: true, isPending: false, isHeld: false)
     #expect(try Page(Fields(record)).document.body.utf8.count == 131_073)
   }
 

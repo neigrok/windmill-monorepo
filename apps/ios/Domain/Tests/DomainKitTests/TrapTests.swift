@@ -93,8 +93,8 @@ enum Kit {
   }
 
   static func record(_ type: String, _ id: RecordID, _ values: [String: JSON]) -> Record {
-    Record(type: type, id: id, life: Life(.alive, .unset), born: .unset, values: values, texts: [:], serials: [:], rc: nil, ru: nil,
-           isVisible: true, isPending: false, isHeld: false)
+    Record(type: type, id: id, life: Life(.alive, .unset), born: .unset, values: values, stamps: values.mapValues { _ in Stamp.unset }, texts: [:],
+           serials: [:], seq: nil, rc: nil, ru: nil, isVisible: true, isPending: false, isHeld: false)
   }
 
   struct Card: ProductEntity, Draftable, Ordered {

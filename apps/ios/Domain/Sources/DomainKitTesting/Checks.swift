@@ -130,8 +130,8 @@ public enum RegistryCheck {
       }
       texts[name] = TextValue(text: text, merged: false, pending: false)
     }
-    let record = Record(type: E.type, id: sample.id.record, life: nil, born: nil, values: values, texts: texts, serials: [:], rc: nil,
-                        ru: nil, isVisible: true, isPending: false, isHeld: false)
+    let record = Record(type: E.type, id: sample.id.record, life: nil, born: nil, values: values, stamps: [:], texts: texts, serials: [:],
+                        seq: nil, rc: nil, ru: nil, isVisible: true, isPending: false, isHeld: false)
     let decoded = try E(Fields(record))
     let (before, after) = (JSON.object(fields: sample.fields), JSON.object(fields: decoded.fields))
     guard before == after else { throw failure(7, E.type, "the sample's fields \(before) decode as \(after)") }

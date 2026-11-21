@@ -289,8 +289,8 @@ struct ObservationTests {
   // stay as they were, in id-byte order; when nothing shown changes, there is nothing to show.
   @Test func aSnapshotTakesTheTouchedRecordsInIdOrder() {
     let record = { (id: String, name: String) in
-      Record(type: "item", id: RecordID(id), life: nil, born: nil, values: ["name": .string(name)], texts: [:], serials: [:], rc: nil,
-             ru: nil, isVisible: true, isPending: false, isHeld: false)
+      Record(type: "item", id: RecordID(id), life: nil, born: nil, values: ["name": .string(name)], stamps: [:], texts: [:], serials: [:],
+             seq: nil, rc: nil, ru: nil, isVisible: true, isPending: false, isHeld: false)
     }
     let shown = RecordsView.Snapshot(records: [record("i_a", "a"), record("i_c", "c"), record("i_e", "e"), record("i_g", "g")],
                                      firstPullComplete: true)
