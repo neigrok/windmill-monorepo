@@ -60,6 +60,36 @@ nonisolated enum ShellPalette {
   static let inkResting = ink.opacity(0.28)
 }
 
+// Asset names and values follow docs/design/ios/roadmap.md, Colour roles.
+nonisolated enum RoadmapPalette {
+  static let canvas = Color("roadmap/canvas")
+  static let card = Color("roadmap/card")
+  static let raised = Color("roadmap/raised")
+  static let sunken = Color("roadmap/sunken")
+  static let line = Color("roadmap/line")
+  static let lineStrong = Color("roadmap/line-strong")
+  static let overlay = Color("roadmap/overlay")
+  static let overlaySoft = Color("roadmap/overlay-soft")
+  static let ink = Color("roadmap/ink")
+  static let inkDim = Color("roadmap/ink-dim")
+  static let inkFaint = Color("roadmap/ink-faint")
+  static let accent = Color("roadmap/accent")
+  static let accentSoft = Color("roadmap/accent-soft")
+  static let onAccent = Color("roadmap/on-accent")
+  static let act = Color("roadmap/act")
+  static let onAct = Color("roadmap/on-act")
+  static let connector = Color("roadmap/connector")
+  static let connectorLit = Color("roadmap/connector-lit")
+  static let uiAccent = UIColor(named: "roadmap/accent")!
+  // A kind's colour by the hue it wears, as a step's `color` names it.
+  static let kinds = [
+    "terracotta": Color("roadmap/kind-build"), "olive": Color("roadmap/kind-learn"), "gold": Color("roadmap/kind-milestone"),
+    "brick": Color("roadmap/kind-brick"), "sky": Color("roadmap/kind-sky"), "plum": Color("roadmap/kind-plum"),
+  ]
+  // A hue this build does not know is drawn in the dim ink.
+  static func kind(_ hue: String) -> Color { kinds[hue] ?? inkDim }
+}
+
 // What a shared control takes from the room that hosts it; the shell lends its brand as the accent, the journal its lamp.
 struct RoomColors {
   let ink: Color
@@ -73,4 +103,6 @@ struct RoomColors {
                                 onAccent: ShellPalette.onBrand)
   static let journal = RoomColors(ink: JournalPalette.ink, inkDim: JournalPalette.inkDim, accent: JournalPalette.lamp,
                                   onAccent: JournalPalette.canvas)
+  static let roadmap = RoomColors(ink: RoadmapPalette.ink, inkDim: RoadmapPalette.inkDim, accent: RoadmapPalette.accent,
+                                  onAccent: RoadmapPalette.onAccent)
 }

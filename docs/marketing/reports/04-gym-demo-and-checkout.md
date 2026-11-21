@@ -12,11 +12,14 @@ Coach. Use a phone for workout entry. Verify every screen on the version offered
 using its recording. Use only example data in assets. [Gym product contract](../../PRODUCT_LOG.md#gym) ·
 [Phone Coach](../../foundation/mobile/gym_coach.md)
 
-**Invitation copy**
+**Invitation, in the product's voice**
 
-> I’m building Windmill Gym for lifters who repeat a program. Would you try logging two workouts you already
-> plan to do on your phone? It’s a free beta. At the end I’d like to hear where it saved time or got in your
-> way.
+> Windmill Gym is a training log for lifters who repeat a program. Would you try logging two workouts you
+> already plan to do, on your phone? It is a free beta. Afterwards we would like to hear where it saved time
+> or got in your way.
+
+An agent drafts this message for the product, and the owner approves it before it is sent. An invitation to
+someone the owner knows is his own to write. [Voice and approval](../strategy.md#what-the-owner-does-and-what-agents-do)
 
 Give the invitation before showing the demo. Observe unaided use first and record whether help was needed.
 The demonstration is available on request. Ask what the lifter would use again and what they already use or
@@ -51,6 +54,6 @@ wording out of public creative until One is on sale. [Product principles](../../
 Invite 50 qualified lifters to the working offer as a separate cohort. Five genuine non-refunded buyers
 and a second useful Coach task in a later week for at least half those buyers are the proposed learning
 thresholds. Report eligible renewals when observed. The ten free testers and general launch sales
-have their own denominators. Quote One's App Store price for each participant's storefront and keep
-incremental campaign spend at $0 under this plan.
+have their own denominators. Quote One's App Store price for each participant's storefront and spend
+nothing on the campaign without an approved proposal.
 [Demand and economics](../strategy.md) · [Cohort definitions](../funnels.md)

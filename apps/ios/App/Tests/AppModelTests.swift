@@ -15,12 +15,26 @@ import SyncTesting
 @testable import Windmill
 
 @Suite @MainActor struct AppModelTests {
-  // The shipped composition is windmill's three registries at 13 / minimum 11, and the iPhone's engine subscribes gym's
-  // and journal's scopes alone: roadmap's room is not on the iPhone.
-  @Test func theShippedCompositionSyncsGymAndJournalAlone() {
-    #expect(SyncSchema.registry.products.map(\.name) == ["gym", "journal", "roadmap"])
-    #expect(SyncSchema.version == 13 && SyncSchema.registry.minVersion == 11)
-    #expect(AppRuntime.engineConfig.products(of: SyncSchema.registry) == ["gym", "journal"])
+  // A build with the Roadmap room lists it third and reopens it at launch; one without it opens the journal instead.
+  @Test func theRoadmapRoomExistsOnlyWhereTheBuildCarriesIt() throws {
+    let suite = "roadmap-room-\(UUID().uuidString)", preferences = UserDefaults(suiteName: suite)!
+    defer { preferences.removePersistentDomain(forName: suite) }
+    let telemetry = TelemetryRecorder()
+    let carried = try AppRuntime(settings: AppSettings(arguments: ["app", "-model-server"]),
+                                 directory: URL.temporaryDirectory.appending(path: UUID().uuidString), service: "works.windmill.roadmap-tests.\(UUID())")
+    let model = try AppModel(runner: carried.runner, preferences: preferences, runtime: carried, telemetry: telemetry)
+    #expect(model.roadmap != nil && model.rooms == [.journal, .gym, .roadmap] && model.welcome)
+    model.openRoom(.roadmap)
+    #expect(model.selectedRoom == .roadmap && !model.welcome && preferences.string(forKey: "lastRoom") == "roadmap")
+    model.switchRoom(.gym); model.switchRoom(.roadmap)
+    let rooms = telemetry.entries.withLock { $0.filter { ["first_run_choice", "room_switched"].contains($0.name) }.map { "\($0.name) \($0.properties["action"] ?? $0.properties["room"] ?? "")" } }
+    #expect(rooms == ["first_run_choice open_roadmap", "room_switched gym", "room_switched roadmap"])
+    #expect(try AppModel(runner: carried.runner, preferences: preferences, runtime: carried).selectedRoom == .roadmap)
+
+    let bare = try AppRuntime(settings: AppSettings(arguments: ["app", "-model-server"], bundle: Bundle(for: TelemetryRecorder.self)),
+                              directory: URL.temporaryDirectory.appending(path: UUID().uuidString), service: "works.windmill.roadmap-tests.\(UUID())")
+    let without = try AppModel(runner: bare.runner, preferences: preferences, runtime: bare)
+    #expect(without.roadmap == nil && without.rooms == [.journal, .gym] && without.selectedRoom == .journal)
   }
 
   @Test func ordinaryBackupPreservesAnUnfinishedAdoption() async throws {

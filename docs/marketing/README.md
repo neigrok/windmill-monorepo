@@ -1,6 +1,8 @@
 # Running Windmill marketing
 
-Start with [the iOS-first strategy](strategy.md) and its [launch contract](strategy.md#launch-contract). The proposed direction is a useful companion kit through a trusted host, searchable artifacts, and iPhone pages matched to a room's job. The [24-route growth portfolio](reports/18-growth-options.md) compares these with wider options using Ansoff, Blue Ocean and a Balanced Scorecard. Launch timing follows readiness. Eight founder hours a week and zero incremental campaign spend is the proposed operating scenario; only two behavioral cohorts run at once.
+Start with [the iOS-first strategy](strategy.md), its [positioning](strategy.md#positioning) and its [launch contract](strategy.md#launch-contract). The proposed direction is a useful guide passed on by a trusted host, pages that answer a precise question, and iPhone store pages matched to one room's job. The strategy also says [how the first people are found](strategy.md#finding-the-first-people) and [what the owner does and what agents do](strategy.md#what-the-owner-does-and-what-agents-do). The [24-route growth portfolio](reports/18-growth-options.md) compares these with wider options using Ansoff, Blue Ocean and a Balanced Scorecard. Launch timing follows readiness. The scale is eight owner hours a week with no standing marketing budget: each spend is its own proposal to the owner. Only two behavioral cohorts run at once.
+
+The positioning, the voice, the scale and spending rule, and the stance on masters, the founder note, timing and what agents may write are the owner's rulings.
 
 | When you need to… | Open |
 |---|---|
@@ -22,7 +24,7 @@ Start with [the iOS-first strategy](strategy.md) and its [launch contract](strat
 | Admit native testers | [01 · Check beta access](reports/01-store-readiness.md) | Verify the TestFlight or signed APK route before inviting lifters |
 | Launch on the App Store | [01 · Release checks](reports/01-store-readiness.md), [05 · Listing and launch assets](reports/05-aso-and-featuring.md) | Prepare against launch readiness. Switch to the store link after a verified public install. |
 | Prepare Windmill One and test paid demand | [03 · Fund demonstrations](reports/03-free-pool.md), [04 · Coach and the App Store offer](reports/04-gym-demo-and-checkout.md) | Prepare the App Store offer against the launch contract now. Record sales once a purchase in the iOS app works. Recruit the paid pilot separately. |
-| Expand a working channel | [07 · Sharing](reports/07-sharing-surfaces.md), [09 · Creators](reports/09-creator-campaign.md), [14 · Apple Ads](reports/14-apple-ads-test.md) | A working destination; paid expansion also needs cohort evidence and owner approval |
+| Expand a working channel | [07 · Sharing](reports/07-sharing-surfaces.md), [09 · Masters](reports/09-creator-campaign.md), [14 · Apple Ads](reports/14-apple-ads-test.md) | A working destination; paid expansion also needs cohort evidence and owner approval |
 | Test another reason to return | [10 · Recap](reports/10-weekly-recap.md), [13 · Journal](reports/13-journal-voice-cohort.md), [16 · Cross-product invitation](reports/16-cross-product-invitation.md) | A free experiment slot and enough eligible users |
 
 Run publishing, distribution, external adaptations and earned outreach from [17 · Distribution and editorial](reports/17-distribution-and-editorial.md). Its start-relative queue reuses one companion artifact across the host trial, search and a query tutorial; the six-topic inventory is a reserve, not a publication quota.

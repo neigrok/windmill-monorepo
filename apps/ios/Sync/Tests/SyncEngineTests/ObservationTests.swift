@@ -321,13 +321,29 @@ struct ObservationTests {
     let shown = RecordsView.Snapshot(records: [record("i_a", "a"), record("i_c", "c"), record("i_e", "e"), record("i_g", "g")],
                                      firstPullComplete: true)
     let touched: Set<RecordKey> = [RecordKey("item", "i_b"), RecordKey("item", "i_c"), RecordKey("item", "i_e"), RecordKey("item", "i_h")]
-    let next = shown.updating(touched, to: [RecordKey("item", "i_b"): record("i_b", "b"), RecordKey("item", "i_e"): record("i_e", "E")],
-                              firstPullComplete: true)
+    let next = shown.updating(touched, to: [RecordKey("item", "i_b"): record("i_b", "b"), RecordKey("item", "i_e"): record("i_e", "E")])
     #expect(next == RecordsView.Snapshot(records: [record("i_a", "a"), record("i_b", "b"), record("i_e", "E"), record("i_g", "g")],
                                          firstPullComplete: true))
-    #expect(shown.updating(touched, to: [RecordKey("item", "i_c"): record("i_c", "c"), RecordKey("item", "i_e"): record("i_e", "e")],
-                           firstPullComplete: true) == nil)
-    #expect(shown.updating([], to: [:], firstPullComplete: false) == RecordsView.Snapshot(records: shown.records, firstPullComplete: false))
+    #expect(shown.updating(touched, to: [RecordKey("item", "i_c"): record("i_c", "c"), RecordKey("item", "i_e"): record("i_e", "e")]) == nil)
+    #expect(shown.updating([], to: [:]) == nil)
+  }
+
+  // The views apply the store's changes one by one, and the store may already hold a later one: the pull that completed
+  // a scope's first pull, when the change being applied is another scope's. A first pull that moved is therefore never
+  // shown beside the records the view had: the view reads both in one read, whatever the change owed touched.
+  @Test func aFirstPullThatMovedIsReadWithTheRecordsItCompletedOver() throws {
+    let view = try Rig().engine.records(Rig.scope, "card")
+    let unread = RecordsView.Snapshot(records: [], firstPullComplete: false)
+    var elsewhere = StoreChange()
+    elsewhere.firstPulls = true
+    #expect(view.refresh(of: unread, owing: elsewhere, firstPullComplete: true) == .read(.whole(shown: unread)))
+    var touching = elsewhere
+    touching.records[Rig.scope] = [RecordKey("card", "card0001")]
+    #expect(view.refresh(of: unread, owing: touching, firstPullComplete: true) == .read(.whole(shown: unread)))
+    #expect(view.refresh(of: unread, owing: touching, firstPullComplete: false)
+      == .read(.records([RecordKey("card", "card0001")], shown: unread)))
+    #expect(view.refresh(of: unread, owing: elsewhere, firstPullComplete: false) == .none)
+    #expect(view.refresh(of: unread, owing: StoreChange(), firstPullComplete: nil) == .none)
   }
 
   // ER-12 and design §4.5: after every step of a random history, each view lists what the one-shot read of its list

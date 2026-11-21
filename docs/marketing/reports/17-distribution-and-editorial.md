@@ -1,6 +1,6 @@
-# 17 · Build a useful, recurring internet presence
+# 17 · Build a useful internet presence
 
-The founder owns this queue under the proposed **eight hours a week and $0 incremental campaign cash** scenario. The [growth options report](18-growth-options.md) owns the broader portfolio, strategic choices and resource alternatives. Engineering owns HTML and publishing fixes; the release owner supplies build evidence and store readiness. The [strategy](../strategy.md#launch-contract) owns release scope. The [marketing execution tree](https://windmill.works/#/app/t_970fc0a989207ce2) owns task progress and outcomes. This is planned work, not a record of campaigns sent or articles published.
+The founder owns this queue under the scale of **eight owner hours a week, with spending only by approved proposal**. The [growth options report](18-growth-options.md) owns the broader portfolio, strategic choices and resource alternatives. Engineering owns HTML and publishing fixes; the release owner supplies build evidence and store readiness. The [strategy](../strategy.md#launch-contract) owns release scope. The [marketing execution tree](https://windmill.works/#/app/t_970fc0a989207ce2) owns task progress and outcomes. This is planned work, not a record of campaigns sent or articles published. Who does each piece follows [the three marks](../strategy.md#what-the-owner-does-and-what-agents-do): agents research, draft for the product and build; the owner rules, approves and writes what is his own. Where an agent prepares a piece, the owner's hours in that block go to reading and approving it.
 
 ## First 14 days from the actual start
 
@@ -32,7 +32,9 @@ The canonical home is an owned resource hub on `windmill.works`, linked from the
 
 These queries are hypotheses, not keyword-volume findings. Use actual Search Console terms privately to refine them. A resource earns publication by solving the question with first-hand evidence; a page without a distinct useful artifact stays a draft. [Google people-first content guidance](https://developers.google.com/search/docs/fundamentals/creating-helpful-content)
 
-## Weekly cadence and time cap
+## Weekly time allocation and cap
+
+The hours are a budget, not a publishing schedule. A piece is published when it has something to say, and a week may publish nothing. [Channel rules](../strategy.md#what-every-channel-keeps)
 
 | Founder block | Hours | Output |
 |---|---|---|
@@ -41,13 +43,13 @@ These queries are hypotheses, not keyword-volume findings. Use actual Search Con
 | Host and contextual placement | 1.5 | Host-fit conversations and one actual placement sought. One external adaptation can consume this block; no automatic second publisher. |
 | Two behavior cohorts | 2 | Invitations, consented observations and follow-ups. The host/assistant subgroups stay inside Roadmap; Gym retains the other slot. |
 | Search, store identity and scorecard | 1.5 | Provider reinspection, listing corrections, 30-minute review and actual time ledger. |
-| **Total** | **8** | $0 incremental campaign cash. Engineering time is separately recorded and scheduled, not assumed free or unlimited. |
+| **Total** | **8** | No campaign cash without an approved proposal. Engineering time is separately recorded and scheduled, not assumed free or unlimited. |
 
 This allocation is a workload hypothesis, not an output guarantee. During the first cycle, foundation work uses the same blocks. Reduce cuts and adaptations first if eight hours cannot support follow-up and repairs. Do not borrow from promised participant follow-up. A second host, workshop, utility or platform needs an explicit substitution or the [larger capacity scenario](18-growth-options.md#resource-scenarios-and-sequencing). The six topics remain an inventory. [Community practice](15-community-answering.md)
 
 ## Proposed channel choices
 
-Start with **one 3–6 minute query-led YouTube tutorial** that answers the same question as the usable artifact. The title, demonstration and destination must concern one job. Short cuts serve discovery of that tutorial; they are not assumed to deliver direct outbound clicks. This is a channel hypothesis, not evidence of an existing Windmill account or audience. Confirm account access, feature eligibility and the actual route before production.
+Start with **one 3–6 minute query-led YouTube tutorial** that answers the same question as the usable artifact. The title, demonstration and destination must concern one job. Short cuts serve discovery of that tutorial; they are not assumed to deliver direct outbound clicks. This is a channel hypothesis, not evidence of an existing Windmill account or audience. Confirm account access, feature eligibility and the actual route before production. Whether Windmill gets a video channel is decided when the first tutorial exists. There is no X or Bluesky account, and a Reddit product account is opened only when an approved place allows a product to answer.
 
 YouTube makes URLs in Shorts descriptions and comments non-clickable. A channel profile link or a related-video link can provide an onward route; external links in long-form descriptions require advanced-feature access. Test the complete path on the intended account and device: short → related tutorial/profile → owned artifact → named product action. If any part is unavailable, choose a working route and describe it accurately. Keep tutorial viewers, onward clicks and useful actions separate. [YouTube link behavior](https://support.google.com/youtube/answer/13748639?hl=en)
 
@@ -74,12 +76,12 @@ No mass copies, thin AI-generated pages, links bought to manipulate rankings, au
 
 ## Earned editorial and directories
 
-Prepare a small press kit with the Windmill identity, one-sentence three-room description, founder story, support/privacy links, synthetic screenshots, one short build-verified demo and the current destination. Give each recipient a reason their audience would care. An unpaid creator or editor may decline or cover independently; do not promise reach or imply an endorsement.
+Prepare a small press kit with the Windmill identity, one-sentence three-room description, the founder note once it is published, support/privacy links, synthetic screenshots, one short build-verified demo and the current destination. The kit does not name or show the founder. Give each recipient a reason their audience would care. An unpaid creator or editor may decline or cover independently; do not promise reach or imply an endorsement.
 
 | Route | Owner and deliverable | Gate and evidence |
 |---|---|---|
 | Apple editorial | Founder + release owner prepare a nomination explaining the native launch story. | Submit when the dependency tree supports a realistic window. App Store Connect recommends at least three weeks' lead time; save status and count only observed featuring. [Nomination guidance](https://developer.apple.com/help/app-store-connect/manage-featuring-nominations/nominate-your-app-for-featuring/) |
-| Indie-app editorial and creators | Founder shortlists a few relevant outlets and creators, such as [9to5Mac Indie App Spotlight](https://9to5mac.com/guides/indie-app-spotlight/); check its current contact route. Draft individual pitches with a usable demo. | Public iOS claims wait for the verified build; proposed embargo or beta access must be explicit. No payment commitment; paid creators use [report 09](09-creator-campaign.md). |
+| Indie-app editorial and creators | Founder shortlists a few relevant outlets and creators, such as [9to5Mac Indie App Spotlight](https://9to5mac.com/guides/indie-app-spotlight/); check its current contact route. Draft individual pitches with a usable demo. | Public iOS claims wait for the verified build; proposed embargo or beta access must be explicit. No payment commitment; a paid master follows [report 09](09-creator-campaign.md). |
 | Product and app directories | Founder chooses a small number with a relevant category and real audience, verifies rules and prepares truthful records. | Working destination, distinct identity and accurate available features. No bulk submissions or rating exchanges. Save the live listing URL and inspect it. |
 | Assistant discovery | Engineering + founder maintain the existing setup path and prepare the official registry/client record. | Technical and first-use checks in [report 12](12-directories-and-show-hn.md) apply. A retention threshold does not block truthful metadata preparation. |
 
@@ -93,4 +95,4 @@ For each piece or placement record original URL, bounded source, date, actual fo
 
 At day 14, continue a format for one more cycle if at least one attributable person completed that placement’s predeclared editorial action within its time allocation, or if its return window is still maturing after that action. With visits but no useful action, inspect the destination and promise before making more copies. With no observed referrals, change the placement or format once; if attribution is missing, repair observation and label the result unknown. This is a small operating rule, not statistical proof. Keep indexing repairs and essential identity work running even when a format is paused. Do not demand search ranking within 14 days.
 
-After launch, invite established users to share voluntarily and measure recipient first actions and returns using [the existing share path](07-sharing-surfaces.md). No Journal content is needed. Paid referrals, creators or ads wait for the owner's spend approval, functioning One offer and [contribution gates](../strategy.md#when-money-enters-the-plan); use [Apple Ads](14-apple-ads-test.md) only when its prerequisites hold. Never replace qualified outcomes with follower, impression or backlink targets.
+After launch, invite established users to share voluntarily and measure recipient first actions and returns using [the existing share path](07-sharing-surfaces.md). No Journal content is needed. Paid referrals, masters or ads wait for the owner's spend approval, functioning One offer and [contribution gates](../strategy.md#when-money-enters-the-plan); use [Apple Ads](14-apple-ads-test.md) only when its prerequisites hold. Never replace qualified outcomes with follower, impression or backlink targets.

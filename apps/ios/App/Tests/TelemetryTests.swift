@@ -127,6 +127,13 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(!TelemetryPrivacy.events.contains("gym_undo") && TelemetryPrivacy.properties(["operation": "gym_undo"]).isEmpty)
   }
 
+  @Test func theRoadmapRoomTellsItsOpeningAndItsFailedReadAndNothingOfARoadmap() {
+    #expect(TelemetryPrivacy.events.contains("roadmap_room_opened"))
+    #expect(TelemetryPrivacy.properties(["room": "roadmap", "action": "open_roadmap", "operation": "roadmap_read", "failure_kind": "decode",
+                                         "title": "private-marker", "tree": "private-id", "step": "private-id", "label": "private-marker"]) ==
+            ["room": .label("roadmap"), "action": .label("open_roadmap"), "operation": .label("roadmap_read"), "failure_kind": .label("decode")])
+  }
+
   @Test func workoutPickerStepsExcludeMovementAndRackContent() {
     #expect(TelemetryPrivacy.events.contains("gym_workout_picker"))
     for action in ["open", "select", "cancel"] {

@@ -48,6 +48,8 @@ targets:
         product: JournalDomain
       - package: WindmillDomain
         product: GymDomain
+      - package: WindmillDomain
+        product: RoadmapDomain
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app
@@ -61,6 +63,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         WM_SERVER_BASE_URL: https://windmill.works
         WM_APPLE_SIGN_IN_ENABLED: "NO"
+        # The Roadmap room, its place in the room menu, its door and its sync scopes: Debug builds only.
+        WM_ROADMAP_ROOM_ENABLED: "NO"
         IOS_SENTRY_DSN: ""
         WM_SOURCE_REVISION: ""
         WM_TELEMETRY_ENVIRONMENT: ""
@@ -74,6 +78,7 @@ targets:
       configs:
         Debug:
           CODE_SIGN_IDENTITY: "-"
+          WM_ROADMAP_ROOM_ENABLED: "YES"
         Release:
           CODE_SIGN_IDENTITY: Apple Development
           CODE_SIGN_STYLE: Automatic
@@ -106,6 +111,7 @@ targets:
           - CFBundleURLName: works.windmill.workout
             CFBundleURLSchemes: [windmill]
         WMServerBaseURL: $(WM_SERVER_BASE_URL)
+        WMRoadmapRoomEnabled: $(WM_ROADMAP_ROOM_ENABLED)
         UILaunchScreen:
           UIColorName: shell/canvas
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]

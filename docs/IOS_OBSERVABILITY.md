@@ -2,7 +2,7 @@
 
 The Journal/Gym app uses Sentry Cocoa 9.29.0 through SPM for technical failures. Product events go to
 the first-party `POST /v1/events` intake, which stores them in Postgres and forwards them to Amplitude.
-The app contains no Amplitude API key. `SyncEngine.Telemetry` is injected into the app, account coordinator, journal and gym models,
+The app contains no Amplitude API key. `SyncEngine.Telemetry` is injected into the app, account coordinator, journal, gym and roadmap models,
 authentication, HTTP transport, engine, Keychain and protected storage. Tests default to `NoopTelemetry`.
 
 Gym load validation accepts finite normalized values without a fixed kg cap; explicit zero remains
@@ -114,8 +114,9 @@ rules refuse, records `journal_save_refused` with its reason alone.
 | Introduction | `onboarding_screen_viewed`, `onboarding_skipped`, `onboarding_finished` | page: windmill, roadmap, journal, gym; presentation: first_launch, replay |
 | Introduction replay | `onboarding_replayed` | presentation: replay |
 | First-run screens | `first_run_screen_viewed` | screen: welcome, journal, ink_notes, gym, routines, log, coach, workout, keep, address, code, you, adoption, discard_adoption, 23a, 23b, 23c, 24c, 24d, apple_no_account, apple_expired, auth_pending |
-| Choices | `first_run_choice` | screen; action: open_journal, open_gym, dismiss_ink, write, done_writing, keep, close, email, back, change_email, resend, add, discard, cancel, sign_out, use_account, create_account, remove_apple, retry. Sign out and the answer to its alert (keep, discard, cancel) are screen you |
-| Rooms | `room_switched` | room: journal, gym; emitted after switching |
+| Choices | `first_run_choice` | screen; action: open_journal, open_gym, open_roadmap (the Roadmap door, in a build that carries the room), dismiss_ink, write, done_writing, keep, close, email, back, change_email, resend, add, discard, cancel, sign_out, use_account, create_account, remove_apple, retry. Sign out and the answer to its alert (keep, discard, cancel) are screen you |
+| Rooms | `room_switched` | room: journal, gym, roadmap (in a build that carries the Roadmap room); emitted after switching |
+| Roadmap room | `roadmap_room_opened` | common metadata alone; emitted each time the room comes to the front, from its door, the room menu or a launch that reopens it. No title, step text, count or id of a roadmap or a step is sent |
 | Appearance | `appearance_chosen` | appearance: light, dark, system; emitted when You's Settings changes it |
 | Update required | `client_update_required` | Android's vocabulary: state: shown with status: 426 once the alert is on screen; action: update (Get the update, from the alert or You), keep (Keep working on this phone); outcome: failed when the destination could not open. trigger: sync (the engine's flag), sign_in (a 426 at sign-in) on every row. Dismissing the could-not-open transient emits nothing |
 | Adoption | `room_adoption_answered` | room: journal, gym, one event for each room the one answer covers; action: add, discard; no counts or identifiers |
@@ -192,6 +193,11 @@ Every door to Share this workout opens one sheet, which records `gym_screen_view
 time it is presented. Signed out or paused, its *Sign in to share* opens You (`first_run_screen_viewed` with screen
 `you`); when You closes signed in, the sheet is presented again and records its view again, and a sign-in left
 unfinished shares nothing and records nothing more.
+
+The Roadmap room's boundary operation label is `roadmap_read`: a view of the person's roadmaps the room could not ask the
+engine for (failure_kind unexpected), or records the domain could not read (decode), while the room shows *Couldn’t load this
+roadmap* with *Try Again*. The model reports each kind once per launch, since a read runs again with every change; a view's own
+failed read of the store reports through the engine's `storage_read`. No report carries a roadmap's title, a step's text or an id.
 
 Gym boundary operation labels are `gym_read`, `gym_action`, `gym_flush`, `gym_rest`, `gym_reissue_workout_proposal` (a proposal a signed-out workout held that the account did not take),
 `gym_activity_request`, `gym_activity_update`, `gym_control_update`, and `gym_import_fix`, `gym_import_keep`, `gym_import_retry`

@@ -646,6 +646,13 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   sentence for several deeds of one gesture says *nodes*; a reader's History, which has no board and whose deeds are
   the owner's, not *You*; and Quests (01.7), whose nine sizes are not the roster's (*Learn to sail* 22 steps, the
   roster 17) and whose estimates lack the roster's *~*.
+- **Roadmap · iOS · two states of the room have no board.** A read of the phone's own copy that fails shows
+  *Couldn’t load this roadmap* and *Try Again* in the room, under the room menu: the one board with those words
+  (10.9) is a shared roadmap's cover, and its sentence, *It may have moved, or the server is unreachable.*, is
+  false of a read that asks no server, so the room says no sentence. While the phone's first read of the
+  person's roadmaps runs, the room is its bare canvas. To draw, with the build tree's step
+  `m0-redraw-what-the-reads-cannot-serve`: the room's failed read with a true sentence, and the room before its
+  first read.
 - **Roadmap · iOS · the Design System owes the room its door.** *Where to start?* with a third door, Roadmap, is
   ✅ Ready for dev in the Shell file
   ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)). The Design System has no
@@ -1881,13 +1888,22 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   Design System component "Account / Usage row" `89:876` shows per-product credits. Delete the
   Proposals boards and retire the component when the 🚧 views are built; board 21 takes the Plan and AI
   allowance sections then.
-- **Echoes and the AI allowance.** `journal.landing.echoes.free` and `shell.landingHead.faq.costAnswer`
-  say echoes never use the AI allowance. `backend/AI_ALLOWANCES.md` says every hosted AI call debits the
+- **Who the pricing page says you pay.** `web/public/pricing.html` names Paddle as seller of record and
+  says Paddle runs the checkout. [Marketing strategy](../marketing/strategy.md#when-money-enters-the-plan)
+  says One is sold first as an App Store subscription inside the iOS app and the web sells nothing. Make
+  the page name the store a person will buy through.
+- **Echoes and the AI allowance.** `journal.landing.echoes.free`, `shell.landingHead.faq.costAnswer` and
+  `web/public/pricing.html` say echoes never use the AI allowance. `backend/AI_ALLOWANCES.md` says every hosted AI call debits the
   allowance, including background Journal processing. Check whether echo derivation calls a hosted
   model, then make the copy or the allowance document name what is true.
 
 ## Marketing and email
 
+- **Marketing site proposal against brand foundations.** The [proposal](marketing-site-proposal.md)
+  sets Inter in place of Baloo 2 and Nunito on the public pages, the word “Windmill” in Inter beside the
+  unchanged mark, a night version of the mark, hairlines and one ground in place of card outlines,
+  shadows and a ground per room, and a first screen with no live scene. Brand foundations' Fonts, Logo
+  and Landings sections describe the pages as built. Update them when the flow is marked ✅ Ready for dev.
 - **0g / 0h · Landing colour rules.** Clarify whether several product-skin windows are allowed
   and whether a roadmap kind may use brick when brick is excluded from landing chrome.
 - **0i · Brand-root anatomy.** Reconcile the common landing roles with the root's product-band

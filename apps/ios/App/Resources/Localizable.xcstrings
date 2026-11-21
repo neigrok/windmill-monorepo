@@ -562,6 +562,17 @@
         }
       }
     },
+    "%lld of %lld done" : {
+      "comment" : "A roadmap's progress under its name: 3 of 8 done",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld done"
+          }
+        }
+      }
+    },
     "%lld of %lld pages" : {
       "comment" : "Bringing it back: the journal pages landed of the account's, 64 of 142 pages",
       "localizations" : {
@@ -1164,6 +1175,9 @@
     "Between 20 and 400 kg" : {
 
     },
+    "Board" : {
+
+    },
     "Bodyweight" : {
 
     },
@@ -1326,6 +1340,9 @@
     "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit." : {
 
     },
+    "Collapsed" : {
+
+    },
     "Comparison" : {
 
     },
@@ -1417,6 +1434,9 @@
 
     },
     "Couldn’t delete your account. Check your connection and try again." : {
+
+    },
+    "Couldn’t load this roadmap" : {
 
     },
     "Couldn’t read your connections." : {
@@ -1667,10 +1687,16 @@
     "Example of three rooms: Roadmap, Journal, Gym" : {
 
     },
+    "Expanded" : {
+
+    },
     "FEB" : {
       "comment" : "February in an echo's date stamp"
     },
     "Fewer reps" : {
+
+    },
+    "Find" : {
 
     },
     "Finish" : {
@@ -1731,6 +1757,9 @@
       "comment" : "A term in Coach's greeting: the person's goals"
     },
     "Got it" : {
+
+    },
+    "Graph" : {
 
     },
     "Gym" : {
@@ -1900,6 +1929,9 @@
     },
     "Load, 0 or more." : {
 
+    },
+    "Locked" : {
+      "comment" : "The Board's group of steps that still need another step"
     },
     "Log %@" : {
       "comment" : "The workout control's action, spoken: Log 100 × 5"
@@ -2104,7 +2136,35 @@
     "Name it to save it." : {
 
     },
+    "Needs %@ +%lld · %lld to go" : {
+      "comment" : "A Locked step's reason: the first step it still needs, how many more it needs, and how many steps stand before it",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Needs %1$@ +%2$lld · %3$lld to go"
+          }
+        }
+      }
+    },
+    "Needs %@ · %lld to go" : {
+      "comment" : "A Locked step's reason: the step it still needs, and how many steps stand before it",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Needs %1$@ · %2$lld to go"
+          }
+        }
+      }
+    },
     "Needs you" : {
+
+    },
+    "New Roadmap" : {
+
+    },
+    "New Step" : {
 
     },
     "New best" : {
@@ -2178,6 +2238,9 @@
 
     },
     "No points" : {
+
+    },
+    "No roadmaps yet" : {
 
     },
     "No routines yet" : {
@@ -2375,6 +2438,9 @@
     "Plan" : {
       "comment" : "What the finish receipt compares a set against: the routine's plan"
     },
+    "Plan a goal as steps that unlock each other." : {
+
+    },
     "Plan changes" : {
 
     },
@@ -2554,6 +2620,9 @@
 
     },
     "Search movements" : {
+
+    },
+    "See what’s up next" : {
 
     },
     "Selected" : {
@@ -2785,6 +2854,9 @@
 
     },
     "Something changed while you chose. Sign out again." : {
+
+    },
+    "Sort and filter" : {
 
     },
     "Squat" : {
@@ -3147,6 +3219,9 @@
     "Trained every week of %@" : {
 
     },
+    "Try Again" : {
+
+    },
     "Try again" : {
 
     },
@@ -3164,6 +3239,29 @@
     },
     "Type your email to confirm" : {
 
+    },
+    "Unlocks %@" : {
+      "comment" : "An Up next step's reason: the step that finishing it unlocks"
+    },
+    "Unlocks %@ +%lld" : {
+      "comment" : "An Up next step's reason: the first step that finishing it unlocks, and how many more",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Unlocks %1$@ +%2$lld"
+          }
+        }
+      }
+    },
+    "Untitled roadmap" : {
+
+    },
+    "Untitled step" : {
+
+    },
+    "Up next" : {
+      "comment" : "The Board's group of steps that can be done now"
     },
     "Update" : {
 
@@ -3205,6 +3303,9 @@
 
     },
     "Varied sets" : {
+
+    },
+    "View" : {
 
     },
     "View chat" : {
@@ -3494,6 +3595,9 @@
     "Your pages and log stay in your account and leave this phone." : {
 
     },
+    "Your roadmap, journal and training, no account needed." : {
+
+    },
     "Your routines are saved. Check the response to restore their links." : {
 
     },
@@ -3747,6 +3851,18 @@
     },
     "rest %@" : {
       "comment" : "A planned rest, read aloud: rest 2 minutes"
+    },
+    "roadmap.board.done" : {
+      "comment" : "The Board's group of completed steps",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Done"
+          }
+        }
+      }
     },
     "saved" : {
 
