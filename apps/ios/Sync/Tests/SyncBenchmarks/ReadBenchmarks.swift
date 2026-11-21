@@ -100,7 +100,8 @@ extension Benchmarks {
                   queued?.journal.acts.first?.sourceEntries.first?.recipes.count == planted else {
               throw BenchError("the act of \(planted) records is not one queued entry the journal names")
             }
-            try time(reads + [("a record the act created", { _ = try $0.drawn("day", ids[0]) })], beside: "\(planted) journaled, its entry queued")
+            let created: [(name: String, read: (any ScopeReader) throws -> Void)] = [("a record the act created", { _ = try $0.drawn("day", ids[0]) })]
+            try time(reads + created, beside: "\(planted) journaled, its entry queued")
             await phone.sync()
             let landed = try phone.store.read { tx in try tx.replica(tx.activeReplica()) }
             guard landed?.outbox.isEmpty == true, landed?.journal.acts.first?.sourceEntries.first?.attempts.count == 1 else {

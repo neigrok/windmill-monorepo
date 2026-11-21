@@ -379,7 +379,8 @@ struct ReadersTests {
     ]
     let runs = try [0, 40].map { (planted: Int) throws -> (replica: String, statements: [[String]]) in
       let rig = try Rig()
-      try rig.commit(Gesture(changes: Rig.days(1) + [Rig.card("card0001", "One")], local: [DeviceWrite(key: "rack", value: 1)]))
+      let standing: [Change] = Rig.days(1) + [Rig.card("card0001", "One")]
+      try rig.commit(Gesture(changes: standing, local: [DeviceWrite(key: "rack", value: 1)]))
       if planted > 0 {
         let ids: [RecordID] = (0..<planted).map { RecordID("3000-01-\(10 + $0)") }
         let recipes: [ActUndoRecipe] = ids.map { .createdRecord(restoreCommand: "probe.restore", record: RecordAddress(scope: Rig.scope, key: RecordKey("day", $0))) }
@@ -410,17 +411,18 @@ struct ReadersTests {
     }
     #expect(runs[0].statements == runs[1].statements)
     let replica = "SELECT * FROM replica WHERE id = '\(runs[0].replica)'"
-    #expect(runs[0].statements[0] == [
+    let touching: String = "SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)\n"
+      + #"WHERE outbox_touch.scope = 'self/probe' AND outbox_touch.type = 'day' AND outbox_touch.id = '"2026-01-01"' AND outbox.replica = 1"#
+    let byId: [String] = [
       "SELECT fork_guard, pending_sign_in, replica.id AS active FROM device JOIN replica ON replica.handle = device.active_replica",
       replica, replica, "SELECT * FROM cursor WHERE replica = 1",
       "SELECT id FROM row_set WHERE replica = 1 AND scope = 'self/probe' AND role = 'confirmed'",
-      "SELECT type, id, born, seq FROM spent WHERE replica = 1 AND scope = 'self/probe'",
-      "SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)\n"
-        + #"WHERE outbox_touch.scope = 'self/probe' AND outbox_touch.type = 'day' AND outbox_touch.id = '"2026-01-01"' AND outbox.replica = 1"#,
+      "SELECT type, id, born, seq FROM spent WHERE replica = 1 AND scope = 'self/probe'", touching,
       "SELECT local_id, commit_order FROM outbox WHERE replica = 1 ORDER BY commit_order DESC LIMIT 2",
       "SELECT scope, kind FROM known_scope WHERE replica = 1", "SELECT product, key, value FROM device_row WHERE replica = 1",
       "SELECT active_replica FROM device WHERE id = 1",
-    ])
+    ]
+    #expect(runs[0].statements[0] == byId)
   }
 
   // §7.9: true for a scope the replica does not pull (an anon replica pulls no product scope), else once booted.
