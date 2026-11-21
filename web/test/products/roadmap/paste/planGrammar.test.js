@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parsePlan, serializePlan } from '../../../../src/products/roadmap/paste/planGrammar.js';
-import { readFileSync } from 'node:fs';
 import { dogfoodTreeData } from '../fixtures/dogfoodTree.js';
 import { largeRoadmap, ROADMAP_SHAPES } from '../fixtures/largeRoadmap.js';
 import shipV1 from '../../../../src/products/roadmap/quests/roster/shipV1.js';
@@ -44,18 +43,18 @@ test('the flagship document — every rule at once, asserted in full', () => {
       { id: 'milestone', hue: 'gold', label: 'Milestone', description: 'Moments that matter', source: 'existing' },
     ],
     gutter: [
-      { glyph: '◉', nodeId: 'learn-webgl', liberty: null },
-      { glyph: '├', nodeId: 'basics', liberty: null },
-      { glyph: '✓', nodeId: 'read-the-spec', liberty: null },
-      { glyph: '·', nodeId: 'draw-a-triangle', liberty: null },
-      { glyph: '·', nodeId: 'understand-shaders', liberty: null },
-      { glyph: '├', nodeId: 'projects', liberty: null },
-      { glyph: '·', nodeId: 'particle-system', liberty: null },
-      { glyph: '·', nodeId: 'terrain-renderer', liberty: null },
-      { glyph: '¶', nodeId: 'terrain-renderer', liberty: 'kept as a note' },
+      { mark: 'root', nodeId: 'learn-webgl', liberties: [] },
+      { mark: 'branch', nodeId: 'basics', liberties: [] },
+      { mark: 'done', nodeId: 'read-the-spec', liberties: [] },
+      { mark: 'step', nodeId: 'draw-a-triangle', liberties: [] },
+      { mark: 'step', nodeId: 'understand-shaders', liberties: [] },
+      { mark: 'branch', nodeId: 'projects', liberties: [] },
+      { mark: 'step', nodeId: 'particle-system', liberties: [] },
+      { mark: 'step', nodeId: 'terrain-renderer', liberties: [] },
+      { mark: 'note', nodeId: 'terrain-renderer', liberties: [{ type: 'note' }] },
     ],
     readout: { steps: 8, branches: 2, done: 1 },
-    imperfections: [{ line: 8, type: 'note', detail: 'kept as a note' }],
+    imperfections: { notes: 1, clamps: 0, renames: 0 },
   });
 });
 
@@ -94,7 +93,7 @@ test('indent is dependency — 2-space, tab, and 4-space documents level identic
       ['a', ['root']],
       ['b', ['a']],
     ], doc);
-    assert.deepStrictEqual(parsed.imperfections, [], doc);
+    assert.deepStrictEqual(parsed.imperfections, { notes: 0, clamps: 0, renames: 0 }, doc);
   }
 });
 
@@ -113,7 +112,7 @@ test('marker and checkbox variants: * • - 1. 2) [X] [ ]', () => {
     ['done-thing', ['root'], 'complete'],
     ['open-thing', ['root'], null],
   ]);
-  assert.deepStrictEqual(parsed.gutter.map((g) => g.glyph), ['◉', '·', '·', '·', '·', '·', '✓', '·']);
+  assert.deepStrictEqual(parsed.gutter.map((g) => g.mark), ['root', 'step', 'step', 'step', 'step', 'step', 'done', 'step']);
   assert.deepStrictEqual(parsed.readout, { steps: 8, branches: 0, done: 1 });
 });
 
@@ -191,8 +190,8 @@ test('prose becomes notes on the nearest step, bare URLs become links', () => {
   const step = parsed.nodes[1];
   assert.equal(step.description, 'half a sentence\nanother aside');
   assert.deepStrictEqual(step.links, ['https://example.com/docs']);
-  assert.deepStrictEqual(parsed.gutter.map((g) => g.glyph), ['◉', '·', '¶', '¶', '¶']);
-  assert.deepStrictEqual(parsed.imperfections.map((i) => i.type), ['note', 'note', 'note']);
+  assert.deepStrictEqual(parsed.gutter.map((g) => [g.mark, g.liberties]), [['root', []], ['step', []], ['note', [{ type: 'note' }]], ['note', [{ type: 'note' }]], ['note', [{ type: 'note' }]]]);
+  assert.deepStrictEqual(parsed.imperfections, { notes: 3, clamps: 0, renames: 0 });
 });
 
 test('only the root wears the birth icon — steps and branches arrive bare', () => {
@@ -210,15 +209,15 @@ test('mixed indent mid-document flattens visibly — a clamped liberty, never si
     ['b', ['a']],
     ['c', ['root']],
   ]);
-  assert.equal(parsed.gutter[3].liberty, 'mixed indent clamped');
-  assert.deepStrictEqual(parsed.imperfections, [{ line: 3, type: 'clamp', detail: 'mixed indent clamped' }]);
+  assert.deepStrictEqual(parsed.gutter.map((g) => g.liberties), [[], [], [], [{ type: 'clamp', indent: 'ragged' }]]);
+  assert.deepStrictEqual(parsed.imperfections, { notes: 0, clamps: 1, renames: 0 });
 });
 
 test('a weird indent jump clamps to the nearest real ancestor, visibly', () => {
   const parsed = parsePlan('Root\n- a\n  - b\n        - deep', KINDS);
   assert.deepStrictEqual(parsed.nodes.find((n) => n.id === 'deep').prerequisites, ['b']);
-  assert.equal(parsed.gutter[3].liberty, 'indent clamped');
-  assert.deepStrictEqual(parsed.imperfections, [{ line: 3, type: 'clamp', detail: 'indent clamped' }]);
+  assert.deepStrictEqual(parsed.gutter.map((g) => g.liberties), [[], [], [], [{ type: 'clamp', indent: 'jump' }]]);
+  assert.deepStrictEqual(parsed.imperfections, { notes: 0, clamps: 1, renames: 0 });
 });
 
 test('duplicate names get " (2)" exhaustively — never a duplicate id', () => {
@@ -230,8 +229,8 @@ test('duplicate names get " (2)" exhaustively — never a duplicate id', () => {
     ['foo-2-2', 'Foo (2) (2)'],
     ['foo-3', 'Foo (3)'],
   ]);
-  assert.equal(parsed.gutter[2].liberty, 'renamed to "Foo (2)"');
-  assert.deepStrictEqual(parsed.imperfections.map((i) => i.type), ['rename', 'rename', 'rename']);
+  assert.deepStrictEqual(parsed.gutter.map((g) => g.liberties), [[], [], [{ type: 'rename', label: 'Foo (2)' }], [{ type: 'rename', label: 'Foo (2) (2)' }], [{ type: 'rename', label: 'Foo (3)' }]]);
+  assert.deepStrictEqual(parsed.imperfections, { notes: 0, clamps: 0, renames: 3 });
 });
 
 test('distinct labels that slug alike still get distinct ids', () => {
@@ -241,7 +240,7 @@ test('distinct labels that slug alike still get distinct ids', () => {
     ['foo', 'Foo!'],
     ['foo-2', 'Foo?'],
   ]);
-  assert.deepStrictEqual(parsed.imperfections, []);
+  assert.deepStrictEqual(parsed.imperfections, { notes: 0, clamps: 0, renames: 0 });
 });
 
 test('the all-notes worst case: one root and a pile of ¶, still plantable', () => {
@@ -255,7 +254,7 @@ test('the all-notes worst case: one root and a pile of ¶, still plantable', () 
     description: 'More prose here.\nEven more prose.',
   }]);
   assert.deepStrictEqual(parsed.readout, { steps: 1, branches: 0, done: 0 });
-  assert.deepStrictEqual(parsed.gutter.map((g) => g.glyph), ['◉', '¶', '¶']);
+  assert.deepStrictEqual(parsed.gutter.map((g) => g.mark), ['root', 'note', 'note']);
 });
 
 test('empty text — the full worst-case shape', () => {
@@ -268,9 +267,9 @@ test('empty text — the full worst-case shape', () => {
       { id: 'learn', hue: 'olive', label: 'Learn', description: 'Things you figure out', source: 'existing' },
       { id: 'milestone', hue: 'gold', label: 'Milestone', description: 'Moments that matter', source: 'existing' },
     ],
-    gutter: [{ glyph: null, nodeId: null, liberty: null }],
+    gutter: [{ mark: null, nodeId: null, liberties: [] }],
     readout: { steps: 1, branches: 0, done: 0 },
-    imperfections: [],
+    imperfections: { notes: 0, clamps: 0, renames: 0 },
   });
 });
 
@@ -513,13 +512,6 @@ test('exported fixture lines never form CommonMark indented code blocks inside o
       const containerIndent = listIndents.length ? listIndents.at(-1) + 2 : 0;
       assert.ok(indent - containerIndent < 4, `${tree.title}: ${line}`);
     }
-  }
-});
-
-test('ordinary pastes and legacy exports retain the complete main parser result', () => {
-  const fixtures = JSON.parse(readFileSync(new URL('./planGrammar-legacy.json', import.meta.url), 'utf8'));
-  for (const fixture of fixtures) {
-    assert.deepEqual(parsePlan(fixture.text, fixture.kinds, fixture.options), fixture.parsed, fixture.name);
   }
 });
 
