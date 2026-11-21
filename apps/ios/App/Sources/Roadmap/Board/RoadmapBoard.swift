@@ -11,6 +11,8 @@ struct RoadmapBoard: View {
   @State var asking: String?
   // The gesture that asked last, and how many steps follow the step it asked of.
   @State var asked: (door: RoadmapModel.Door, followers: Int) = (.swipe, 0)
+  // The column the state symbols stand in, so every row's words start on one line down the list at any text size.
+  @ScaledMetric(relativeTo: .body) var symbolColumn = 24.0
 
   var body: some View {
     // 02.15: New Step is drawn and does nothing.
@@ -80,7 +82,7 @@ struct RoadmapBoard: View {
     let arrived = roadmap.band?.arrived.contains(row.id) == true
     return HStack(alignment: .firstTextBaseline, spacing: 12) {
       Image(systemName: Self.symbol(row.card.column)).imageScale(.large).foregroundStyle(RoadmapPalette.kind(row.step.color))
-        .frame(width: 24).accessibilityLabel(colour ?? "").accessibilityHidden(colour == nil)
+        .frame(width: symbolColumn).accessibilityLabel(colour ?? "").accessibilityHidden(colour == nil)
       VStack(alignment: .leading, spacing: 2) {
         Text(name(row.step)).foregroundStyle(row.card.column == .locked ? RoadmapPalette.inkDim : RoadmapPalette.ink)
         if let reason = reason(row.card) { Text(reason).font(.footnote.weight(.semibold)).foregroundStyle(RoadmapPalette.inkDim) }

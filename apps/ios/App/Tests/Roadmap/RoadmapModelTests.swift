@@ -228,7 +228,18 @@ import SyncTesting
     engine.sync()
     await shows(model, board: atRest, on: engine)
     await shows(elsewhere, board: atRest, on: other)
-    #expect(told(telemetry) == ["roadmap_room_opened ", "roadmap_board_complete door=swipe", "roadmap_board_undo act=complete outcome=ok"])
+
+    // A completion the account has not received yet is taken back the same way, and neither reaches the other phone as done.
+    model.complete(try row("Tie a bowline", in: model), by: .menu)
+    model.undo()
+    await shows(model, board: atRest, on: engine)
+    engine.sync()
+    await shows(model, board: atRest, on: engine)
+    await shows(elsewhere, board: atRest, on: other)
+    #expect(told(telemetry) == [
+      "roadmap_room_opened ", "roadmap_board_complete door=swipe", "roadmap_board_undo act=complete outcome=ok",
+      "roadmap_board_complete door=menu", "roadmap_board_undo act=complete outcome=ok",
+    ])
   }
 
   // Signed out nothing is sent, and a completion is taken back the same way.
