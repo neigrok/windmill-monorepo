@@ -240,8 +240,10 @@ struct ReadersTests {
       type: "item", id: "i_bbbb", life: Life(.alive, receipt.stamp), born: receipt.stamp, values: ["listId": "l_one", "name": "eggs"],
       stamps: ["listId": receipt.stamp, "name": receipt.stamp], texts: [:], serials: [:], seq: nil, rc: nil, ru: nil, isVisible: true,
       isPending: true, isHeld: false)
-    let read = try rig.engine.read(Self.scope) { reader in
-      try ["i_aaaa", "i_bbbb"].flatMap { id in [try reader.confirmed("item", RecordID(id)), try reader.drawn("item", RecordID(id))] }
+    let read = try rig.engine.read(Self.scope) { (reader: any ScopeReader) throws -> [Record?] in
+      try ["i_aaaa", "i_bbbb"].flatMap { (id: String) throws -> [Record?] in
+        [try reader.confirmed("item", RecordID(id)), try reader.drawn("item", RecordID(id))]
+      }
     }
     #expect(read == [pulled, renamed, nil, made])
     let decided = try rig.engine.commit(Self.scope) { context -> (Gesture?, [Record?]) in
@@ -263,16 +265,16 @@ struct ReadersTests {
     let listed = { (reader: any ScopeReader) throws -> [[Record]] in
       [try reader.records("item", in: .drawn), try reader.records("item", in: .stored), try reader.drawn("item"), try reader.stored("item")]
     }
-    let read = try rig.engine.read(Self.scope) { reader in
-      (lists: try listed(reader), drawn: try ids.map { try reader.drawn("item", $0) }, stored: try ids.map { try reader.stored("item", $0) })
+    let (lists, drawn, stored) = try rig.engine.read(Self.scope) { (reader: any ScopeReader) throws -> ([[Record]], [Record?], [Record?]) in
+      (try listed(reader), try ids.map { try reader.drawn("item", $0) }, try ids.map { try reader.stored("item", $0) })
     }
-    #expect(read.lists[0] == read.drawn)
-    #expect(read.lists[1] == read.stored)
-    #expect(read.lists[0].map(\.isVisible) == [false, false, true, true])
-    #expect(read.lists[1].map(\.isVisible) == [true, false, true, true])
-    #expect(read.lists[2] == read.lists[0].filter(\.isVisible))
-    #expect(read.lists[3] == read.lists[1].filter(\.isVisible))
-    #expect(try rig.engine.commit(Self.scope) { context -> (Gesture?, [[Record]]) in (nil, try listed(context)) }.value == read.lists)
+    #expect(lists[0] == drawn)
+    #expect(lists[1] == stored)
+    #expect(lists[0].map(\.isVisible) == [false, false, true, true])
+    #expect(lists[1].map(\.isVisible) == [true, false, true, true])
+    #expect(lists[2] == lists[0].filter(\.isVisible))
+    #expect(lists[3] == lists[1].filter(\.isVisible))
+    #expect(try rig.engine.commit(Self.scope) { context -> (Gesture?, [[Record]]) in (nil, try listed(context)) }.value == lists)
   }
 
   // §2.5: a spent id keeps the `seq` of the dead row it came from. Both readers answer it, nil for a spent id that keeps

@@ -57,22 +57,23 @@ struct HarnessTests {
     a.sync()
     let removal = try #require(try a.runner.run(Remove<Sticky, ProbeRefusal>(dropped.id)).receipt)
     let ids = [kept.id, dropped.id].sorted()
-    let read = try a.runner.read(Probe.scope) { read in
+    let (drawn, stored, scope, found, confirmed, visible) = try a.runner.read(Probe.scope) {
+      (read: Reader) throws -> ([Record], [Record], [Record], [Record?], [Record?], [ID<Sticky>]) in
       let stickies = read.repository(Sticky.self)
-      return (drawn: try stickies.records(in: .drawn), stored: try stickies.records(in: .stored), scope: try read.records(in: .drawn),
-              found: try ids.map { try stickies.record($0, in: .drawn) }, confirmed: try ids.map { try read.confirmed(Sticky.self, $0) },
-              visible: try stickies.all(in: .drawn).map(\.id))
+      return (try stickies.records(in: .drawn), try stickies.records(in: .stored), try read.records(in: .drawn),
+              try ids.map { try stickies.record($0, in: .drawn) }, try ids.map { try read.confirmed(Sticky.self, $0) },
+              try stickies.all(in: .drawn).map(\.id))
     }
-    #expect(read.drawn == read.found)
-    #expect(read.scope == read.drawn)
-    #expect(read.visible == [kept.id])
-    #expect(read.drawn.map(\.isVisible) == ids.map { $0 == kept.id })
-    #expect(read.stored.map(\.isVisible) == [true, true])
-    #expect(read.drawn.first { $0.id == dropped.id.record }?.life == Life(.dead, removal.stamp))
+    #expect(drawn == found)
+    #expect(scope == drawn)
+    #expect(visible == [kept.id])
+    #expect(drawn.map(\.isVisible) == ids.map { $0 == kept.id })
+    #expect(stored.map(\.isVisible) == [true, true])
+    #expect(drawn.first { $0.id == dropped.id.record }?.life == Life(.dead, removal.stamp))
     let rows = a.server.rows(Probe.scope, of: "acct-1")
-    #expect(read.confirmed.map { $0?.seq } == rows.map { (row: Row) -> Int64? in row.seq })
-    #expect(read.confirmed.map { $0?.stamps } == rows.map { (row: Row) -> [String: Stamp]? in row.lattice.fields.mapValues(\.stamp) })
-    #expect(read.stored.map(\.stamps) == read.confirmed.map { $0?.stamps ?? [:] })
+    #expect(confirmed.map { $0?.seq } == rows.map { (row: Row) -> Int64? in row.seq })
+    #expect(confirmed.map { $0?.stamps } == rows.map { (row: Row) -> [String: Stamp]? in row.lattice.fields.mapValues(\.stamp) })
+    #expect(stored.map(\.stamps) == confirmed.map { $0?.stamps ?? [:] })
   }
 
   struct RemoveStickies: Action {

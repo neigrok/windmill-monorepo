@@ -210,8 +210,8 @@ public struct RecolourKind: ActAction {
 
   public func load(_ read: ActReader) throws -> (kinds: HeldKinds, steps: [RoadmapStep]) {
     try read.inScope(tree.tree) { (scope: Reader) throws -> (kinds: HeldKinds, steps: [RoadmapStep]) in
-      let held = try scope.repository(RoadmapStep.self).records(in: .drawn)
-      return (try HeldKinds(kind, in: scope), try held.map { (record: Record) throws -> RoadmapStep in try RoadmapStep(Fields(record)) })
+      (try HeldKinds(kind, in: scope),
+       try scope.repository(RoadmapStep.self).records(in: .drawn).map { (record: Record) throws -> RoadmapStep in try RoadmapStep(Fields(record)) })
     }
   }
 
