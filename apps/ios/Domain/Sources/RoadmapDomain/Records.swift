@@ -18,6 +18,21 @@ extension Dictionary where Key == [UInt8] {
 }
 
 extension Sequence {
+  // One element a key: the last given, at the place the first came.
+  func lastByKey(_ key: (Element) -> String) -> [Element] {
+    var places = ByText<Int>()
+    var kept: [Element] = []
+    for element in self {
+      if let place = places[key(element)] {
+        kept[place] = element
+      } else {
+        places[key(element)] = kept.count
+        kept.append(element)
+      }
+    }
+    return kept
+  }
+
   // Elements that tie keep the order they came in, which `sorted(by:)` leaves unspecified.
   func stablySorted(by precedes: (Element, Element) -> Bool) -> [Element] {
     enumerated().sorted { a, b in
@@ -222,10 +237,13 @@ public struct RoadmapTree: Sendable {
   public let nodes: [Step]
   public let edges: [Edge]
   public let kinds: [Kind]
+  // Its owner's marks and pointers, one a step, in the order their records came.
+  public let marks: [Mark]
+  public let pointers: [Pointer]
   public let index: TreeIndex
   let steps: ByText<Step>
-  let marks: ByText<Mark>
-  let pointers: ByText<Pointer>
+  let marksByStep: ByText<Mark>
+  let pointersByStep: ByText<Pointer>
 
   public init(id: String, present: Bool? = nil, read: Read? = nil, own: Bool? = nil, updatedAt: Instant? = nil, parent: Parent? = nil,
               meta: Metadata?, nodes: [Step] = [], edges: [Edge] = [], kinds: [Kind] = [], marks: [Mark] = [], pointers: [Pointer] = []) {
@@ -242,14 +260,16 @@ public struct RoadmapTree: Sendable {
     steps = Dictionary(nodes.map { (Array($0.id.utf8), $0) }) { _, last in last }
     let kindIds = Set(kinds.map { Array($0.id.utf8) })
     precondition(steps.count == nodes.count && kindIds.count == kinds.count, "Duplicate normalized roadmap identity")
-    self.marks = Dictionary(marks.map { (Array($0.node.utf8), $0) }) { _, last in last }
-    self.pointers = Dictionary(pointers.map { (Array($0.node.utf8), $0) }) { _, last in last }
-    index = TreeIndex(nodes: self.nodes, edges: self.edges, marks: self.marks, pointers: self.pointers)
+    self.marks = marks.lastByKey(\.node)
+    self.pointers = pointers.lastByKey(\.node)
+    marksByStep = Dictionary(uniqueKeysWithValues: self.marks.map { (Array($0.node.utf8), $0) })
+    pointersByStep = Dictionary(uniqueKeysWithValues: self.pointers.map { (Array($0.node.utf8), $0) })
+    index = TreeIndex(nodes: self.nodes, edges: self.edges, marks: marksByStep, pointers: pointersByStep)
   }
 
   public func step(_ id: String) -> Step? { steps[id] }
-  public func mark(on step: String) -> Mark? { marks[step] }
-  public func pointer(on step: String) -> Pointer? { pointers[step] }
+  public func mark(on step: String) -> Mark? { marksByStep[step] }
+  public func pointer(on step: String) -> Pointer? { pointersByStep[step] }
 }
 
 // A tree's records by slot, derived once for every read over it: its present steps in authored order, then every other id a live link names.

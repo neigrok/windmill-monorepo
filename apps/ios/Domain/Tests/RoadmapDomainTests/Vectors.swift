@@ -1,7 +1,10 @@
 import DomainKit
 import DomainKitTesting
 import RoadmapDomain
+import SyncAPI
 import SyncCore
+import SyncSchema
+import SyncTesting
 
 // The corpus's JSON as the normalized records the reads take, and each read's result in the form the corpus states it.
 
@@ -79,6 +82,63 @@ extension RoadmapTree.Edge {
   }
 
   var ends: JSON { [.string(from), .string(to)] }
+}
+
+extension Record {
+  // An engine view record, `{t, id, life?, born?, f?, rc?, ru?}`, as the engine's readers hand it to a product.
+  init(view: JSON) throws {
+    let key = RecordKey(try view.member("t").asString(), try RecordID(json: view.member("id")))
+    let row = Row(key: key, lattice: try Lattice(json: view), seq: 0, rc: try view["rc"]?.asInteger(), ru: try view["ru"]?.asInteger())
+    self.init(confirmed: row, registry: SyncSchema.registry)
+  }
+}
+
+extension StampedRecord {
+  init(view: JSON) throws {
+    self.init(try Record(view: view), stamps: try Lattice(json: view).fields.mapValues(\.stamp))
+  }
+}
+
+extension RoadmapTree {
+  // `{operation: "roadmap", id, listed, tree, overlay: {drawn, queued} | null, read}`: one roadmap's records as a replica holds them.
+  init(replica input: JSON) throws {
+    let overlay: JSON? = try input.member("overlay").nullable { $0 }
+    let queued = try (overlay?["queued"]?.asArray() ?? []).map { RecordKey(try $0.member("t").asString(), try RecordID(json: $0.member("id"))) }
+    try self.init(id: ID(RecordID(try input.member("id").asString())), listed: try input.member("listed").nullable(Record.init(view:)),
+                  tree: try input.member("tree").asArray().map(StampedRecord.init(view:)),
+                  overlay: try overlay.map { try $0.member("drawn").asArray().map(StampedRecord.init(view:)) }, queued: queued,
+                  read: try input.member("read").asBool())
+  }
+
+  var form: JSON {
+    let place: JSON = parent.map { ["tree": .string($0.tree), "step": .string($0.step)] } ?? .null
+    let words: JSON = meta.map {
+      ["title": .string($0.title), "guide": .string($0.guide), "guideInherited": .bool($0.guideInherited), "root": .string($0.root),
+       "depth": JSON($0.depth), "visibility": .string($0.visibility), "reach": .string($0.reach)]
+    } ?? .null
+    let steps: [JSON] = nodes.map { step in
+      let links: [JSON] = step.links.map { ["url": .string($0.url), "label": .string($0.label)] }
+      return ["id": .string(step.id), "present": .bool(step.present), "born": step.born.json, "rc": .of(step.rc), "ru": .of(step.ru),
+              "label": .string(step.label), "icon": .string(step.icon), "color": .string(step.color), "ord": .string(step.ord),
+              "status": .string(step.status), "description": .string(step.description), "links": .array(links), "branch": .of(step.branch),
+              "branchStamp": step.branchStamp?.json ?? .null]
+    }
+    let links: [JSON] = edges.map { ["from": .string($0.from), "to": .string($0.to), "present": .bool($0.present)] }
+    let legend: [JSON] = kinds.map {
+      ["id": .string($0.id), "present": .bool($0.present), "born": $0.born.json, "hue": .string($0.hue), "label": .string($0.label),
+       "description": .string($0.description), "ord": .string($0.ord)]
+    }
+    let marked: [JSON] = marks.map {
+      ["node": .string($0.node), "status": .string($0.status), "outOfOrder": .bool($0.outOfOrder), "stamp": $0.stamp?.json ?? .null,
+       "recordedAt": .of($0.recordedAt), "deviceAt": .of($0.deviceAt)]
+    }
+    let opened: [JSON] = pointers.map {
+      ["node": .string($0.node), "present": .bool($0.present), "opens": .string($0.opens), "setAt": $0.setAt?.json ?? .null]
+    }
+    return ["id": .string(id), "present": .bool(present), "read": .string(read.rawValue), "own": .bool(own), "updatedAt": .of(updatedAt),
+            "parent": place, "meta": words, "nodes": .array(steps), "edges": .array(links), "kinds": .array(legend), "marks": .array(marked),
+            "pointers": .array(opened)]
+  }
 }
 
 extension FollowGraph {
