@@ -624,13 +624,18 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   seconds with *Undo*; the web shows Done as its twelve newest and *Show all N* where iOS folds each group; the web's reader on an app route sees an
   *Author's note* and iOS's cover shows none; the web's private links are *Personal links* and iOS's are *Your
   links*.
-- **Roadmap · iOS · the design draws more than the spec's build reads.** For parity with the web the boards
-  include quests and a pasted plan (01.6 to 01.8b, 02.16 to 02.18), Share with its public switch and Export (09.1
-  to 09.3), the public gallery (09.12) and the roadmap's Activity (01.13). [Roadmap on iOS](../foundation/roadmap-ios.md)
-  INV-1 names three reads outside the sync engine (the owner's progress on a shared roadmap, History, Fork); the
-  gallery's list and the visibility switch are two more. The boards are approved, so the spec's invariant follows
-  them: the build tree's step `m0-say-in-the-spec-what-the-boards-add` holds that work, and its steps for quests
-  and pasted plans, Share, Export and the gallery, and Activity wait on it.
+- **Roadmap · iOS · what the boards draw that no read serves.** [Roadmap on iOS](../foundation/roadmap-ios.md)
+  names every read and command the boards need (§3 INV-1, §7.1 to §7.4). Where a board and what is read still
+  disagree, for the owner to rule or the board to be redrawn: Activity (01.13) and History (03.12) draw dated
+  *unlocked* rows, and the activity feed tells no unlock, while the web shows one only in the session it happens.
+  The same boards word *added*, *renamed* and *completed*; the feed also tells steps removed and recolored, links
+  drawn and taken away, and kinds added, renamed, described, recolored, reordered and removed, and counts
+  several deeds of one gesture in a sentence of the server's that says *nodes*. A reader's History has no board,
+  and a deed there is the owner's, not *You*. A gallery row (09.12a) names its roadmap's author and its caption
+  says newest first; `GET /v1/gallery` answers no author and ranks by forks, then by last activity. Quests
+  (01.7) draws sizes that are not the roster's, all nine (*Learn to sail* 22 steps, the roster 17), and its
+  estimates without the roster's *~*. Share draws public and private; a roadmap may hold `unlisted`, which no
+  surface writes and the web reads as a live link.
 - **Roadmap · iOS · the Design System owes the room its door.** *Where to start?* with a third door, Roadmap, is
   ✅ Ready for dev in the Shell file
   ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)). The Design System has no
