@@ -20,7 +20,8 @@
     "test:sync:server": "node scripts/replay-sync-server.mjs",
     "test:journal:server": "node scripts/install-sync-browser.mjs && node scripts/e2e-journal.mjs",
     "test:roadmap:server": "node scripts/install-sync-browser.mjs && node scripts/e2e-roadmap-replica.mjs",
-    "check:domain": "node --test test/domain-layering.test.js && tsc -p tsconfig.domain.json"
+    "check:domain": "node --test test/domain-layering.test.js && tsc -p tsconfig.domain.json",
+    "generate:roadmap-layout": "node scripts/roadmap-layout-fixtures.mjs"
   },
   "dependencies": {
     "@fontsource/baloo-2": "^5.2.7",

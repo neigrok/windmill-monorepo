@@ -158,7 +158,7 @@ test('sin, cos, asin, atan and atan2 return the correctly rounded double or its 
   assert.deepEqual(measured, { sin: [0.71, 1], cos: [0.786, 1], asin: [0.744, 1], atan: [0.725, 1], atan2: [1.238, 1], hypot: [1.91, 2] });
 });
 
-test('the picture’s files take from the platform’s Math only what is exact, and import only one another', () => {
+test('the picture’s files take from the platform’s Math only what is exact, import only one another, and are each named to a port', () => {
   const picture = [
     'layout/arithmetic.js', 'layout/BubbleLayoutEngine.js', 'layout/LayoutEngine.js', 'layout/RadialLayoutEngine.js', 'layout/index.js',
     'model/SkillTree.js', 'model/SpatialGrid.js', 'model/TrunkTree.js', 'model/UnlockRules.js', 'model/footprint.js',
@@ -177,4 +177,6 @@ test('the picture’s files take from the platform’s Math only what is exact, 
   assert.deepEqual([...members].sort(), ['Math.abs', 'Math.ceil', 'Math.floor', 'Math.imul', 'Math.max', 'Math.min', 'Math.sqrt', 'Math.trunc']);
   assert.deepEqual(raised, []);
   assert.deepEqual([...imported].filter((file) => !picture.includes(file)), []);
+  const readme = readFileSync(new URL('../../../../../packages/api-contract/roadmap/layout/README.md', import.meta.url), 'utf8');
+  assert.deepEqual(picture.filter((file) => !readme.includes(`\`${file}\``)), []);
 });

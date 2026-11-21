@@ -6,12 +6,14 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified; nothing is built. The owner approved it on 2026-11-17; what it says of
-quests, plans, Export, Share, the gallery and Activity follows the boards and has not been before
-the owner. The iPhone app carries journal and gym. Roadmap's design for it is
-[Roadmap · iOS](../design/ios/roadmap.md), with its boards in the Roadmap Figma file, every one
-✅ Ready for dev since the owner's approval of 2026-11-21. The build order lives in the Roadmap on
-iOS roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node `roadmap-ios`.
+**Status:** Specified. The web's half of §5 is built: its picture is computed with its own
+arithmetic and held by the fixtures. Nothing of the iPhone's room is built. The owner approved the
+specification on 2026-11-17; what it says of quests, plans, Export, Share, the gallery and Activity
+follows the boards and has not been before the owner. The iPhone app carries journal and gym.
+Roadmap's design for it is [Roadmap · iOS](../design/ios/roadmap.md), with its boards in the
+Roadmap Figma file, every one ✅ Ready for dev since the owner's approval of 2026-11-21. The build
+order lives in the Roadmap on iOS roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens
+from the node `roadmap-ios`.
 
 **Scope:** How the Roadmap room is built in the iPhone app: where its code lives, what it reads and
 writes, links that open it, the Graph, nested roadmaps and guides, starting a roadmap from a quest
@@ -163,15 +165,19 @@ browser's.
   by more than a hundred units, because the layout rounds and compares. So the layout calls its own
   sine, cosine, arcsine, arctangent and hypotenuse, one implementation written the same in
   JavaScript and in Swift, on the web as on the iPhone, and never the platform's.
-- **Input.** A step's id as its bytes, its label, its `ord`, the stamp of its creation, which is
-  the record's `born`, and the ids it follows ([Roadmap on the sync engine](roadmap-on-the-engine.md)
-  D-5). Ids and ties compare as the web compares them, by UTF-16 code unit, never by a rule that
+- **Input.** A step's id as its bytes, its label, its kind's hue, its `ord`, the stamp of its
+  creation, which is the record's `born`, and the ids it follows
+  ([Roadmap on the sync engine](roadmap-on-the-engine.md) D-5); for the tiers, the steps that stand
+  complete. Ids and ties compare as the web compares them, by UTF-16 code unit, never by a rule that
   treats two spellings of a character as one. A label's length is counted in code points.
 - **Fixtures.** `packages/api-contract/roadmap/layout/` holds roadmaps and what the web gives for
-  each: seats, caption placements at fixed zooms and selections, link bows and framing. Among them:
-  the eight-step fixture, a wide one, a deep one, labels in several scripts, ids outside the basic
-  plane and ids that differ only in spelling, and 5,000 steps. The web generates them and checks
-  them on every run; Swift reproduces every number exactly.
+  each: seats, tiers, caption placements at fixed zooms and selections, link bows and framing; and
+  the arithmetic's own values. Among them: the eight-step fixture, a wide one, a deep one, labels
+  in several scripts, ids outside the basic plane and ids that differ only in spelling, one that
+  spends the bubble layout's budget of work, two seated by the fallback, and 5,000 steps. Its
+  [README](../../packages/api-contract/roadmap/layout/README.md) says how each number is derived
+  and what a port must reproduce of JavaScript's arithmetic, ordering and text. The web generates
+  them and checks them on every run; Swift reproduces every number exactly.
 - The canvas draws with SwiftUI's `Canvas` and redraws only on change. It also draws a proposal as
   the changes it would make, for Coach's review. Structure is edited in the step form, never on the
   canvas.
@@ -354,8 +360,6 @@ makes it false.
 
 - The app has no third room, no associated domain and no roadmap code; its onboarding says roadmap
   is on the web. Nothing serves an association file.
-- No fixture of the web's picture exists, and the web's own layout calls the platform's
-  trigonometry.
 - The app's one runner deletes at once, in every room.
 - The plan grammar and the quest roster are the web's code and the web's own tests alone
   (`web/src/products/roadmap/paste/`, `web/src/products/roadmap/quests/roster/`): no shared case

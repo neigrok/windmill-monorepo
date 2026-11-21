@@ -99,6 +99,15 @@ A locally-born tree's first sync converges with the server's empty tree only whi
 byte-equal to the backend's (`Legend::seededDefaults` + `Hlc{1,0,"genesis"}`). Read by
 `web/vite.config.js`, which fails the build on drift; pinned backend-side by `TreeRegistryTest`.
 
+## `roadmap/layout/`
+
+Roadmaps and the picture the web's Graph draws of each — seats, tiers, link bows, framing and caption
+placements — with the values of the arithmetic the picture is computed with
+([roadmap-ios.md](../../docs/foundation/roadmap-ios.md) §5). The web writes the files and
+`web/test/products/roadmap/layout/fixtures.test.js` fails when one is not what it draws; a port reproduces every
+number. [roadmap/layout/README.md](roadmap/layout/README.md) has the format, how each number is derived, and the
+arithmetic, ordering and text rules a port must keep.
+
 ## `roadmap-addresses.json`
 
 Where a roadmap and its steps open on the web, as what follows the app's origin: `/#/app/<treeId>` and

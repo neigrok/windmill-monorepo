@@ -20,8 +20,8 @@ point for the component showcase.
 | `board/` | Query and columns, regroup, held actions, the shared toast, card gestures and selection |
 | `step/` | The shared step document, workspace, composer and its picker, the tree picker and its choices, and the step's address |
 | `graph/`, `graph/tree/`, `graph/tablet/` | Canvas chrome, docks, writes, selection and what a changed lattice does to the picture; the desktop step panel; the tablet's panel |
-| `layout/` | Deterministic layout engines behind `index.js` |
-| `scene/` | WebGL batches, camera, DOM overlays, picking and pointer tools |
+| `layout/` | Deterministic layout engines behind `index.js`, and the arithmetic the Graph's picture is computed with |
+| `scene/` | WebGL batches, camera and its framing rules, DOM overlays, picking and pointer tools |
 | `sync/` | Shared structure and private progress lattices, gesture materialization, socket and IndexedDB, and what signing out takes from the device |
 | `persistence/` | HTTP repository, account tree registry and device preferences and ledgers |
 | `shortcuts/`, `input/` | The room's keys and the pure hold recognizer |
@@ -1147,6 +1147,13 @@ engine controls reorder gestures and saved-camera identity.
 | Radial, fallback | Trunk-depth rings and subtree-sized angular wedges | Ring |
 | Rings | Caption-aware contour packing on depth rings, with separate root islands | None |
 | Mindmap | Tidy branches distributed across twelve directions | None |
+
+The picture — the bubble layout and its radial fallback, caption placement, each link's bow, the framing
+(`scene/framing.js`) and the tiers — takes sin, cos, asin, atan2, hypot and π from `layout/arithmetic.js`, written
+from exact operations only, and never from the platform: a last-place difference between engines can move a
+seat. `packages/api-contract/roadmap/layout/` holds roadmaps and the picture drawn of each, which the iPhone's port
+reproduces; `npm run generate:roadmap-layout` rewrites them, `test/products/roadmap/layout/fixtures.test.js` fails
+when they are stale, and `arithmetic.test.js` names the picture's files and what they may take from `Math`.
 
 Engines are synchronous, stateless and deterministic. `readsCaptions` declares whether renaming requires
 layout. Bubble's tuck has a deterministic work ceiling; an unfinished move is discarded, leaving the remaining
