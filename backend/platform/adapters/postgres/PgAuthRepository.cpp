@@ -203,9 +203,6 @@ bool PgAuthRepository::eraseAccount(const UserId& userId, UnixMs now) {
     txn.exec_params("DELETE FROM feedback WHERE user_id = $1::uuid OR (user_id IS NULL AND lower(email) = lower($2))",
                     userId.str(), email);
     txn.exec_params("DELETE FROM server_errors WHERE actor = $1::uuid", userId.str());
-    // The Paddle mirror the schema still holds, by account and by the address that bridged to a Paddle customer.
-    txn.exec_params("DELETE FROM paddle_subscriptions WHERE user_id = $1::uuid", userId.str());
-    txn.exec_params("DELETE FROM paddle_customers WHERE email = $1", email);
     // Everything else references the row and cascades with it: sessions, doors, keys, grants, reminders, journal, gym.
     txn.exec_params("DELETE FROM users WHERE id = $1::uuid", userId.str());
     txn.commit();

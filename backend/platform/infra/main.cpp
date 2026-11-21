@@ -347,7 +347,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                 {"gym_preferences", "user_id"},
                 {"org_members", "user_id"},
                 {"feedback", "user_id"},
-                {"paddle_subscriptions", "user_id"},  // platform
                 {"account_entitlements", "account_id"},
                 {"mcp_keys", "user_id"},              // platform
                 {"oauth_grants", "user_id"},          // platform
