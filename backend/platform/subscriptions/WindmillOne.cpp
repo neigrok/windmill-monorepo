@@ -11,14 +11,17 @@ namespace wm::subscriptions {
 
 namespace {
 // D-1's stores in order, each with the page where its customer manages what it sold them, linked only for a store that
-// sells Windmill One. The Play Store's page (play.google.com/store/account/subscriptions) waits until Play sells it, and
-// Paddle has no page at a fixed address, so a subscription either sold shows no manage link.
+// sells Windmill One, and whether the paid line may open it. The Play Store's page
+// (play.google.com/store/account/subscriptions) waits until Play sells it, and Paddle has no page at a fixed address, so a
+// subscription either sold shows no manage link. No surface holds a Paddle checkout, so the paid line never opens Paddle.
 struct Store {
   const char* name;
   const char* managePage;
+  bool purchasable;
 };
-constexpr std::array<Store, 3> kStores{{
-    {"app_store", "https://apps.apple.com/account/subscriptions"}, {"play_store", nullptr}, {"paddle", nullptr}}};
+constexpr std::array<Store, 3> kStores{{{"app_store", "https://apps.apple.com/account/subscriptions", true},
+                                         {"play_store", nullptr, true},
+                                         {"paddle", nullptr, false}}};
 
 const char* nameOf(Environment environment) {
   return environment == Environment::Production ? "production" : "sandbox";
@@ -97,7 +100,7 @@ PaidLine::PaidLine(std::string_view purchasableStores, long long aiAllowanceNano
     at = end + 1;
   }
   for (const Store& store : kStores)
-    if (named.count(store.name)) openStores.emplace_back(store.name);
+    if (store.purchasable && named.count(store.name)) openStores.emplace_back(store.name);
   namesUnknownStore = openStores.size() < named.size();
 }
 

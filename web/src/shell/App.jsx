@@ -5,7 +5,6 @@ import EntitlementsProvider from './billing/EntitlementsProvider.jsx';
 import SignInDoorProvider, { useSignInDoor } from './auth/SignInDoor.jsx';
 import { verifyToken } from './auth/AuthClient.js';
 import { BrandLanding } from './marketing/BrandLanding.jsx';
-import { pendingTransactionId, openCheckout } from './billing/checkout.js';
 import { PRODUCTS, activeProduct } from './products.js';
 import { ProductSessions } from './ProductSessions.jsx';
 import { PageFrame } from './PageFrame.jsx';
@@ -205,21 +204,6 @@ function AppRoutes() {
   return <BrandLanding />;
 }
 
-// Resume only once the server has confirmed an account and this tab minted the id.
-function ResumeCheckout() {
-  const { account } = useAuth();
-  React.useEffect(() => {
-    if (!account) return;
-    const transactionId = pendingTransactionId();
-    const url = new URL(window.location.href);
-    if (!url.searchParams.has('_ptxn')) return;
-    url.searchParams.delete('_ptxn');
-    replaceLocation(url.toString());
-    if (transactionId) openCheckout(transactionId);
-  }, [account]);
-  return null;
-}
-
 function AppSession() {
   const { dataScope } = useAuth();
   return <Suspense fallback={<RouteFallback />}><ProductSessions products={PRODUCTS} dataScope={dataScope}><AppRoutes /></ProductSessions></Suspense>;
@@ -230,7 +214,6 @@ export default function App() {
     <AuthProvider>
       <EntitlementsProvider>
         <SignInDoorProvider>
-          <ResumeCheckout />
           <AppSession />
         </SignInDoorProvider>
       </EntitlementsProvider>

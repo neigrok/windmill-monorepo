@@ -81,7 +81,7 @@ std::string privacySafeLogBody(const std::string& body, const std::string& sourc
       "main.cpp", "mcp_http_main.cpp", "RoomRegistry.cpp", "TreeRoom.cpp", "HttpEmbedder.cpp",
       "OpenAiTranscriber.cpp", "ReminderSweep.cpp", "Collab.cpp", "SyncSocket.cpp", "AuthService.cpp",
       "RetentionSweep.h", "ClosedAccountSweep.h", "ResendWebhookApi.cpp", "PgSweepMutex.h", "EventsApi.cpp",
-      "FeedbackApi.cpp", "OAuthApi.cpp", "BillingApi.cpp", "ForkSignup.cpp", "EchoSweep.cpp", "NudgeSweep.cpp",
+      "FeedbackApi.cpp", "OAuthApi.cpp", "ForkSignup.cpp", "EchoSweep.cpp", "NudgeSweep.cpp",
       "EchoDerivations.cpp", "AppleOAuthClient.cpp", "AnthropicStream.cpp", "AnthropicAgent.cpp", "AiCallBudget.cpp",
       "TurnService.cpp", "PhoneToolHost.cpp", "OwnerFollows.cpp", "GalleryApi.cpp", "TreeRegistry.cpp",
       "WsPresenceBus.cpp", "ForkService.cpp", "DoorForks.cpp", "FeedFollower.cpp", "AiBudgetService.cpp",

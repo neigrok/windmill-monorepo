@@ -413,12 +413,11 @@ deletes real data.** The list is the review surface, an empty one is refused at 
 fourth product adds one line to it.
 
 The probes cover every user-owned product table in `schema.sql`, including text-owned
-`node_progress`, history, reminders, settings and feedback, plus org membership, billing,
+`node_progress`, history, reminders, settings and feedback, plus org membership, Windmill One entitlements,
 MCP/OAuth credentials and sync state. Child-only tables are covered by their owning parent.
 `sessions` and `user_identities` are the doors, not an account's data; `magic_links` and
 `apple_tickets` are pending credentials without user ownership. `events`, `server_errors` and
-`ai_usage` are telemetry, excluded from emptiness. `paddle_customers` is email-addressed;
-its user-owned subscription rows count.
+`ai_usage` are telemetry, excluded from emptiness.
 
 Apple POST doors and verify-code with an Apple ticket require the `application/json` media-type essence. Requests
 carrying cookies must supply an Origin from the same allowlist used for credentialed CORS;

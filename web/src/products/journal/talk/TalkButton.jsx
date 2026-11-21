@@ -10,7 +10,6 @@ import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Mic, Pause, X } from 'lucide-react';
 import { useAuth } from '../../../shell/auth/AuthProvider.jsx';
 import { useEntitlements } from '../../../shell/billing/EntitlementsProvider.jsx';
-import { beginUpgrade, paidPlansOpen } from '../../../shell/billing/checkout.js';
 import { track } from '../../../telemetry/beacon.js';
 import { captureError } from '../../../telemetry/sentry.js';
 import { Refusal } from './refusal.js';
@@ -278,7 +277,7 @@ export function TalkButton({ onTranscript, onNeedSignIn }) {
           ) : talking ? (
             <TalkSheet phase={shown} onStop={stop} onClose={close} />
           ) : (
-            <LockedSheet onClose={close} onFlash={flash} onRefresh={refreshPlan} />
+            <LockedSheet onClose={close} />
           )}
           {note && <p className="journal-talk-note">{note}</p>}
         </div>
@@ -310,24 +309,13 @@ function TalkSheet({ phase, onStop, onClose }) {
   );
 }
 
-// While `paidPlansOpen()` is false there is no door behind the price; the same button becomes a checkout
-// the moment plans arm.
-function LockedSheet({ onClose, onFlash, onRefresh }) {
-  const openDoor = async () => {
-    // The webhook that flips the subscription live can trail checkout.completed, so re-read twice.
-    const opened = await beginUpgrade({ onCompleted: () => { onRefresh(); setTimeout(onRefresh, 2500); } });
-    if (!opened) onFlash(t('journal.talk.checkoutFailed'));
-  };
+// The web sells nothing, so the locked face says Windmill One is not on sale and only closes.
+function LockedSheet({ onClose }) {
   return (
     <>
-      <p className="journal-talk-detail">
-        {t('journal.talk.promise')}
-        {!paidPlansOpen() && ` ${t('journal.talk.notOnSale')}`}
-      </p>
+      <p className="journal-talk-detail">{t('journal.talk.promise')} {t('journal.talk.notOnSale')}</p>
       <div className="journal-talk-acts">
-        {paidPlansOpen()
-          ? <button type="button" className="journal-talk-act" onClick={openDoor}>{t('journal.talk.seeOffer')}</button>
-          : <button type="button" className="journal-talk-act" onClick={onClose}>{t('journal.talk.close')}</button>}
+        <button type="button" className="journal-talk-act" onClick={onClose}>{t('journal.talk.close')}</button>
       </div>
     </>
   );
