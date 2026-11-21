@@ -74,33 +74,50 @@ struct ProductCorpusTests {
     }
   }
 
-  static func tag(_ id: String, _ label: String) -> JSON {
-    ["t": "tag", "id": .string(id), "seq": 1, "born": "1000:0:r_aaaaaaaaaaaa", "life": ["alive", "1000:0:r_aaaaaaaaaaaa"],
+  static func tag(_ id: String, _ label: String, seq: Int64 = 1, life: String = "alive") -> JSON {
+    ["t": "tag", "id": .string(id), "seq": JSON(seq), "born": "1000:0:r_aaaaaaaaaaaa", "life": [.string(life), "1000:0:r_aaaaaaaaaaaa"],
      "f": ["label": [.string(label), "1000:0:r_aaaaaaaaaaaa"]]]
   }
 
-  // A scope's `confirmed` is the server's copy as the device pulled it, by default what it stores; its `spent` ids are what
-  // it keeps of records deleted elsewhere.
-  @Test func aSceneReadsEachScopesConfirmedRecordsAndSpentIds() throws {
+  // A scope's `confirmed` is the server's copy as the device pulled it, each row with its `seq`, by default what it
+  // stores; its `spent` ids are what it keeps of records deleted elsewhere, each with its born and the `seq` it keeps; and
+  // its records are listed whole, a dead one among them, by the repository and by the reader.
+  @Test func aSceneReadsEachScopesConfirmedRecordsSpentIdsAndEveryRecord() throws {
+    let born: JSON = "900:0:r_bbbbbbbbbbbb"
     let scopes: JSON = [
-      "tree/b_00000001": ["drawn": [ProductCorpusTests.tag("tag00001", "Mine"), ProductCorpusTests.tag("tag00002", "Kept")],
-                          "confirmed": [ProductCorpusTests.tag("tag00001", "Theirs")],
-                          "spent": [["t": "tag", "id": "tag00003", "born": "900:0:r_bbbbbbbbbbbb", "seq": 7]]],
-      "tree/b_00000002": ["drawn": [ProductCorpusTests.tag("tag00001", "Other")]],
+      "tree/b_00000001": ["drawn": [ProductCorpusTests.tag("tag00004", "Dropped", life: "dead"), ProductCorpusTests.tag("tag00001", "Mine"),
+                                    ProductCorpusTests.tag("tag00002", "Kept")],
+                          "confirmed": [ProductCorpusTests.tag("tag00001", "Theirs", seq: 5)],
+                          "spent": [["t": "tag", "id": "tag00003", "born": born, "seq": 7], ["t": "tag", "id": "tag00005", "born": born]]],
+      "tree/b_00000002": ["drawn": [ProductCorpusTests.tag("tag00001", "Other", seq: 2)]],
     ]
     let vector = try ProductCorpusTests.vector(["scopes": scopes, "now": 1_800_000_000_000, "offsetSeconds": 0])
     let held = { (read: Reader) throws -> JSON in
       let tags = read.repository(Tag.self)
       let confirmed: [JSON] = try ["tag00001", "tag00002"].map { (id: String) throws -> JSON in
-        try read.confirmed(Tag.self, ID(RecordID(id)))?.values["label"] ?? .null
+        let record = try read.confirmed(Tag.self, ID(RecordID(id)))
+        return [record?.values["label"] ?? .null, record?.seq.map { JSON($0) } ?? .null]
       }
-      let spent: [JSON] = try ["tag00002", "tag00003"].map { (id: String) throws -> JSON in try tags.spentBorn(ID(RecordID(id)))?.json ?? .null }
-      return ["confirmed": .array(confirmed), "spent": .array(spent)]
+      let spent: [JSON] = try ["tag00002", "tag00003", "tag00005"].map { (id: String) throws -> JSON in
+        [try tags.spentBorn(ID(RecordID(id)))?.json ?? .null, try tags.spentSeq(ID(RecordID(id))).map { JSON($0) } ?? .null]
+      }
+      let listed: [[Record]] = [try tags.records(in: .drawn), try tags.records(in: .stored), try read.records(in: .drawn)]
+      let every: [JSON] = listed.map { (records: [Record]) -> JSON in
+        .array(records.map { (record: Record) -> JSON in [record.id.json, .bool(record.isVisible)] })
+      }
+      return ["confirmed": .array(confirmed), "spent": .array(spent), "every": .array(every),
+              "visible": .array(try tags.all(in: .drawn).map(\.id.json))]
     }
-    #expect(try ProductCorpusTests.corpus().read(vector, in: Probe.tree, held)
-      == ["result": ["confirmed": ["Theirs", .null], "spent": [.null, "900:0:r_bbbbbbbbbbbb"]]])
-    #expect(try ProductCorpusTests.corpus().read(vector, in: .tree("b_00000002"), held)
-      == ["result": ["confirmed": ["Other", .null], "spent": [.null, .null]]])
+    let tree: JSON = [["tag00001", true], ["tag00002", true], ["tag00004", false]]
+    #expect(try ProductCorpusTests.corpus().read(vector, in: Probe.tree, held) == ["result": [
+      "confirmed": [["Theirs", 5], [.null, .null]], "spent": [[.null, .null], [born, 7], [born, .null]], "every": [tree, tree, tree],
+      "visible": ["tag00001", "tag00002"],
+    ]])
+    let other: JSON = [["tag00001", true]]
+    #expect(try ProductCorpusTests.corpus().read(vector, in: .tree("b_00000002"), held) == ["result": [
+      "confirmed": [["Other", 2], [.null, .null]], "spent": [[.null, .null], [.null, .null], [.null, .null]], "every": [other, other, other],
+      "visible": ["tag00001"],
+    ]])
   }
 
   struct Relabel: ActAction {
