@@ -1,0 +1,2 @@
+Domain/Package.swift: layer RoadmapLayout (picture) may not depend on DomainKit (kit)
+Domain/Sources/RoadmapLayout/Seats.swift:1: import DomainKit

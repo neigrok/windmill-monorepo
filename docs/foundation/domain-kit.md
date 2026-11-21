@@ -53,8 +53,8 @@ with their test support `DomainKitTesting` and `:domain-kit-testing`.
 product, its scope and names (`Gym.scope`, `Gym.Types.note`). Together they are the kit's whole lower
 boundary.
 
-**D-3 Layer.** One of: engine API, engine runtime, kit, product domain, agent, UI, test, composition
-(the app). Each module belongs to exactly one, the row of §2.2 that lists it.
+**D-3 Layer.** One of: engine API, engine runtime, kit, product domain, picture, agent, UI, test,
+composition (the app). Each module belongs to exactly one, the row of §2.2 that lists it.
 
 **D-4 Entity.** A product type whose values are records of one registry type (engine D-6, D-7). It
 has a typed id and a constructor from a record, and when the client writes it, the fields it writes
@@ -147,7 +147,7 @@ reach them.
 | Package | Path | Package dependencies | May hold (test targets aside) |
 |---|---|---|---|
 | `WindmillSync` | `apps/ios/Sync/` | `GRDB.swift` | `SyncCore`, `SyncAPI`, `SyncSchema`, `SyncReplica`, `SyncStore`, `SyncModelServer`, `SyncEngine`, `SyncIOS`, `SyncSchemaGen`, `SyncTesting` |
-| `WindmillDomain` | `apps/ios/Domain/` | `WindmillSync`; `swift-syntax` for `LayeringTests` | `DomainKitNFC`, `DomainKit`, `DomainKitTesting`, `GymDomain`, `JournalDomain`, `RoadmapDomain` |
+| `WindmillDomain` | `apps/ios/Domain/` | `WindmillSync`; `swift-syntax` for `LayeringTests` | `DomainKitNFC`, `DomainKit`, `DomainKitTesting`, `GymDomain`, `JournalDomain`, `RoadmapDomain`, `RoadmapLayout` |
 | `WindmillAgent` | `apps/ios/Agent/` | `WindmillSync`, its `SyncCore` product only | `Agent` |
 | `WindmillKit` | `apps/ios/WindmillKit/` | `WindmillDomain`, `WindmillSync`, `WindmillAgent` | `WindmillPlatform`, `WindmillGym`, `WindmillJournal` |
 | `SyncTestingSurface` | `apps/ios/SyncTestingSurface/` | `WindmillSync`, its `SyncTesting` product only | test targets only |
@@ -164,6 +164,7 @@ closed by package identity; the checked-in `Package.resolved` pins their revisio
 | `DomainKitTesting` | `DomainKit`, `SyncCore`, `SyncAPI`, `SyncEngine`, `SyncTesting` |
 | `<P>Domain` | `DomainKit`, `SyncCore`, `SyncAPI`, `SyncSchema` |
 | `<P>DomainTests` | `<P>Domain`, `DomainKit`, `DomainKitTesting`, `SyncCore`, `SyncAPI`, `SyncSchema`, `SyncTesting` |
+| `RoadmapLayout` | — (imports nothing: the picture of a roadmap's Graph, [Roadmap on iOS](roadmap-ios.md) §5) |
 | `Agent` | `SyncCore` |
 | `Windmill<P>` | `<P>Domain`, `DomainKit`, `SyncCore`, `SyncAPI`, `SyncEngine`, `WindmillPlatform` |
 
@@ -198,6 +199,7 @@ manifest. A test target is in the test layer. Every other module is in the one r
 | kit | `DomainKit`, `DomainKitNFC` | `:domain-kit` | engine API, kit |
 | kit test support | `DomainKitTesting` | `:domain-kit-testing` | kit, engine API, `SyncEngine`, `SyncTesting` |
 | product domain | `GymDomain`, `JournalDomain`, `RoadmapDomain` | `:gym:domain` | kit, engine API |
+| picture | `RoadmapLayout` | — | nothing |
 | agent | `Agent` | `:agent` | `SyncCore` / `:sync-core` |
 | platform | `WindmillPlatform` | `:platform` | kit, engine API, `SyncEngine`, agent |
 | product UI | `WindmillGym`, `WindmillJournal` | `:gym` | its own product domain, kit, engine API, `SyncEngine`, platform, agent |
@@ -224,6 +226,7 @@ literals are not tokens.
 | `DomainKitNFC` | `Foundation` | — (its content is pinned, below) |
 | `DomainKit` | `SyncCore`, `SyncAPI`, `DomainKitNFC` | yes |
 | `<P>Domain` | `SyncCore`, `SyncAPI`, `SyncSchema`, `DomainKit` | yes |
+| `RoadmapLayout` | none | yes |
 | `SyncCore` | `CryptoKit`, in its digest file only | — |
 | `SyncAPI`, `SyncSchema` | `SyncCore` | — |
 | `Agent` | `SyncCore` | — |
@@ -240,7 +243,7 @@ literals are not tokens.
 - In every module the table lists by name, no attribute, directive or macro name begins `_` (`@_spi`,
   `#_hasSymbol`), and none of `#if`, `#elseif`, `#available`, `#unavailable` and `@available` appears.
 
-**The determinism lint**, for `DomainKit` and every product domain, fails on these tokens: `random`,
+**The determinism lint**, for `DomainKit`, every product domain and `RoadmapLayout`, fails on these tokens: `random`,
 `randomElement`, `shuffle`, `shuffled`, `SystemRandomNumberGenerator`, `hashValue`, `Hasher` followed
 by `(`, `ContinuousClock`, `SuspendingClock`, `continuous`, `suspending`, `CommandLine`, `readLine`,
 `print`, `debugPrint`, `dump`, `Task`, `async`, `await`, `MainActor`, `nonisolated`, `@unchecked`,

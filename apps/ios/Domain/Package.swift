@@ -17,6 +17,7 @@ let package = Package(
     .library(name: "GymDomain", targets: ["GymDomain"]),
     .library(name: "JournalDomain", targets: ["JournalDomain"]),
     .library(name: "RoadmapDomain", targets: ["RoadmapDomain"]),
+    .library(name: "RoadmapLayout", targets: ["RoadmapLayout"]),
   ],
   dependencies: [
     .package(path: "../Sync"),
@@ -29,6 +30,7 @@ let package = Package(
     .target(name: "JournalDomain", dependencies: ["DomainKit", syncCore, syncAPI, syncSchema], swiftSettings: memberImportVisibility),
     .target(name: "GymDomain", dependencies: ["DomainKit", syncCore, syncAPI, syncSchema], swiftSettings: memberImportVisibility),
     .target(name: "RoadmapDomain", dependencies: ["DomainKit", syncCore, syncAPI, syncSchema], swiftSettings: memberImportVisibility),
+    .target(name: "RoadmapLayout"),
     .executableTarget(name: "GymCatalogGen", dependencies: [syncCore]),
     .testTarget(name: "DomainKitTests", dependencies: ["DomainKit", syncCore, syncAPI, syncTesting], exclude: ["Attacks"]),
     .testTarget(name: "GymCatalogGenTests", dependencies: ["GymCatalogGen", syncCore]),
@@ -41,6 +43,7 @@ let package = Package(
       name: "GymDomainTests", dependencies: ["GymDomain", "DomainKit", "DomainKitTesting", syncCore, syncAPI, syncSchema, syncTesting, .product(name: "SyncModelServer", package: "Sync")]),
     .testTarget(name: "JournalDomainTests", dependencies: ["JournalDomain", "DomainKit", "DomainKitTesting", syncCore, syncAPI, syncSchema, syncEngine, syncTesting, .product(name: "SyncReplica", package: "Sync"), .product(name: "SyncModelServer", package: "Sync"), .product(name: "SyncStore", package: "Sync")]),
     .testTarget(name: "RoadmapDomainTests", dependencies: ["RoadmapDomain", "DomainKit", "DomainKitTesting", syncCore]),
+    .testTarget(name: "RoadmapLayoutTests", dependencies: ["RoadmapLayout"]),
     .testTarget(
       name: "LayeringTests",
       dependencies: [.product(name: "SwiftParser", package: "swift-syntax"), .product(name: "SwiftSyntax", package: "swift-syntax")],
