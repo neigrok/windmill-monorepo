@@ -57,6 +57,9 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     // Signed-in pulls past this many are held without an answer, so a restore stops part-way; each answered one waits first.
     var pullsAnsweredBeforeHold: Int?
     var pullDelaySeconds: Double?
+    // A push is received this long after the clock reads, so a fixture under the board's still clock gives its pushes
+    // moments in their order. The server's time never goes back.
+    var pushesReceivedLaterMs: Int64 = 0
   }
   struct Ticket: Sendable {
     let subject: String
@@ -246,7 +249,7 @@ nonisolated final class JournalModelTransport: SyncTransport, Sendable {
     return state.withLock { state in
       if state.upgradeRequired { return Reply(status: 426, body: ["error": "upgrade-required"]) }
       let c = credential(token, state)
-      let reply = state.server.push(request.json, credential: c, at: now)
+      let reply = state.server.push(request.json, credential: c, at: now + state.pushesReceivedLaterMs)
       guard persist(&state) else { return .unreachable }
       return Reply(status: reply.status, body: reply.body)
     }

@@ -1,7 +1,9 @@
 import SwiftUI
+import UIKit
 import RoadmapDomain
 
-// The Roadmap room (Roadmap · iOS S.1, 11.22a): one stack, the open roadmap under its name with the switch row, its Board and New step.
+// The Roadmap room (Roadmap · iOS S.1, 11.22a): one stack, the open roadmap under its name with the switch row, its Board,
+// and at the foot the one band over New step.
 struct RoadmapRoom: View {
   // The room's two views of a roadmap.
   enum Lens { case board, graph }
@@ -47,16 +49,47 @@ struct RoadmapRoom: View {
   }
 
   func board(_ open: RoadmapModel.OpenRoadmap) -> some View {
-    let progress = String(localized: "\(open.board.overall.done) of \(open.board.overall.total) done", locale: .copy,
-                          comment: "A roadmap's progress under its name: 3 of 8 done")
-    return pinnedUnderBar(RoadmapBoard(open: open))
+    let counts = open.board.overall
+    let progress = counts.total == 0 ? String(localized: "No steps yet")
+      : String(localized: "\(counts.done) of \(counts.total) done", locale: .copy, comment: "A roadmap's progress under its name: 3 of 8 done")
+    return pinnedUnderBar(RoadmapBoard(roadmap: roadmap, open: open))
       .roomTitle(open.listed.title?.nilIfEmpty ?? String(localized: "Untitled roadmap"), subtitle: progress)
       .reachBand {
-        HStack {
-          Spacer()
-          Button("New Step", systemImage: "plus") {}.modifier(GlassCircle()).disabled(true).accessibilityIdentifier("roadmap-new-step")
-        }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
+        VStack(spacing: 0) {
+          if let band = roadmap.band {
+            RoomTransient(message: Self.words(band.says), room: .roadmap, actionTitle: String(localized: "Undo"), actionIdentifier: "roadmap-undo",
+                          action: band.undo == nil ? nil : { roadmap.undo() }, dismiss: { roadmap.endBand() },
+                          type: .subheadline, actionWeight: .semibold)
+              .accessibilityIdentifier("roadmap-band")
+          }
+          HStack {
+            Spacer()
+            Button("New Step", systemImage: "plus") {}.modifier(GlassCircle()).disabled(true).accessibilityIdentifier("roadmap-new-step")
+          }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
+        }.roomMotion(roadmap.band)
       }
+      .onChange(of: roadmap.band) { _, band in
+        if let band { UIAccessibility.post(notification: .announcement, argument: Self.words(band.says)) }
+      }
+  }
+
+  // What the band says, in the boards' words over what the model tells of the act.
+  static func words(_ says: RoadmapModel.Band.Says) -> String {
+    switch says {
+    case .completed(let step, let upNext):
+      let done = RoadmapBoard.name(of: step)
+      if upNext.isEmpty { return String(localized: "\(done) done", comment: "The band after a step is completed: the step's name") }
+      if upNext.count == 1 {
+        return String(localized: "\(done) done · \(RoadmapBoard.name(of: upNext[0])) up next", locale: .copy,
+                      comment: "The band after a step is completed: the step's name, and the one step it brought up next")
+      }
+      return String(localized: "\(done) done · \(upNext.count) up next", locale: .copy,
+                    comment: "The band after a step is completed: the step's name, and how many steps it brought up next")
+    case .deleted(let step):
+      return String(localized: "\(RoadmapBoard.name(of: step)) deleted", comment: "The band while a step's delete is held: the step's name")
+    case .refused(.keepsStartingStep): return String(localized: "A roadmap keeps one starting step")
+    case .refused(.full): return String(localized: "This roadmap is at its limit.")
+    }
   }
 
   // Graph, Find, and Sort and filter are drawn and do nothing: the row stands disabled.

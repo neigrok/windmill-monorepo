@@ -51,7 +51,7 @@ import SyncSchema
                                service: "works.windmill.roadmap-tests.\(UUID())", syncTransport: server)
     defer { try? other.tokens.delete(for: identity.account) }
     _ = try await other.engine.signIn(account: identity.account, token: identity.token)
-    let tree = try RoadmapFixture.plantLearnToSail(other.roadmapRunner)
+    let tree = try RoadmapFixture.plantLearnToSail(other.roadmapRunner).tree
     try other.engine.leave()
     for _ in 0..<40 where try other.store.read({ try $0.device().activeReplica.outbox.contains { $0.state != .acked } }) {
       await other.engine.flushOnLeave()

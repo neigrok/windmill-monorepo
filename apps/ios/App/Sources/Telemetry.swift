@@ -41,7 +41,8 @@ nonisolated enum TelemetryPrivacy {
     "gym_workout_adjusted", "gym_exercise_updated", "gym_setup_step", "gym_ask_started", "gym_ask_outcome", "coach_turn", "coach_ability", "gym_proposal_outcome", "gym_connect_tool", "gym_import_recovery",
     "gym_workout_picker", "gym_rest_target_reached", "gym_workout_plan_changed", "gym_receipt_plan_saved", "gym_workout_load_typed",
     "gym_moment_opened", "gym_hidden_workout", "client_update_required", "appearance_chosen",
-    "gym_intent_opened", "quick_action", "sign_in_restore", "account_delete", "roadmap_room_opened"
+    "gym_intent_opened", "quick_action", "sign_in_restore", "account_delete", "roadmap_room_opened",
+    "roadmap_board_complete", "roadmap_board_delete", "roadmap_board_undo", "roadmap_write_refused"
   ]
   static let labels: [String: Set<String>] = [
     "room": ["journal", "gym", "roadmap"],
@@ -63,14 +64,21 @@ nonisolated enum TelemetryPrivacy {
     "item": ["write", "start", "open_workout", "weigh_in", "bodyweight", "date", "movement", "targets", "routine"],
     "stage": ["started", "room_opened", "complete"],
     "trigger": ["sync", "sign_in"],
-    "door": ["accessory", "row", "tab", "history", "handoff", "new_chat", "workout"],
+    "door": ["accessory", "row", "tab", "history", "handoff", "new_chat", "workout", "swipe", "menu"],
+    // The Roadmap room's writes, in the web's vocabulary: the act a Board event tells of, a delete's step, the view it was
+    // made on, the write a refusal or a failure names, and the refusal's kind.
+    "act": ["complete", "delete"],
+    "step": ["held"],
+    "view": ["board"],
+    "write": ["mark", "DeleteNode", "undo", "release"],
+    "refusal": ["invalid", "gone", "taken", "tooLarge", "full", "roadmapGone", "unreachable", "notARoot", "stepOpensARoadmap", "depthLimit", "other", "startingStep"],
     "appearance": ["light", "dark", "system"],
     "method": ["GET", "POST", "PUT", "DELETE", "email", "apple"],
     "day_kind": ["today"],
     "scope_kind": ["product", "tree", "overlay", "unknown"],
     "route": ["/v1/ai", "/v1/auth", "/v1/me", "/v1/sync", "/v1/events", "/v1/gym", "/v1/journal"],
     "failure_kind": ["offline", "timeout", "transport", "http", "decode", "encode", "storage", "refusal", "keychain", "flush", "unexpected", "admission", "digest_reset", "doubt_exhausted", "overflow", "rejected", "tls", "sqlite", "digest_mismatch", "malformed", "unexpected_admission", "backoff_exhausted"],
-    "operation": ["ai_installation", "gym_coach_turn", "gym_activity_request", "gym_activity_update", "gym_control_update", "gym_read", "gym_action", "gym_flush", "gym_rest", "gym_import_fix", "gym_import_keep", "gym_import_retry", "gym_import_discard", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "journal_echoes", "roadmap_read", "auth_sign_in", "auth_sign_out", "auth_adopt", "account_delete", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
+    "operation": ["ai_installation", "gym_coach_turn", "gym_activity_request", "gym_activity_update", "gym_control_update", "gym_read", "gym_action", "gym_flush", "gym_rest", "gym_import_fix", "gym_import_keep", "gym_import_retry", "gym_import_discard", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "journal_echoes", "roadmap_read", "roadmap_write", "auth_sign_in", "auth_sign_out", "auth_adopt", "account_delete", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
   ]
 
   // The counts a Coach turn carries (Coach §10.2) and an Undo of an act's operations, requests and wait (`sync_inverse`):

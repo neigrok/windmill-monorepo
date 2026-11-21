@@ -154,7 +154,7 @@ final class AppModel {
     gym = GymModel(runner: runner, runtime: runtime, telemetry: telemetry, phone: preferences)
     roadmap = runtime.flatMap { (runtime: AppRuntime) -> RoadmapModel? in
       guard runtime.settings.roadmapRoom else { return nil }
-      return RoadmapModel(records: RoadmapFixture.records(runtime), phone: preferences, telemetry: telemetry)
+      return RoadmapModel(records: RoadmapFixture.records(runtime), runner: runtime.roadmapRunner, phone: preferences, telemetry: telemetry)
     }
     let lastRoom = Room(rawValue: preferences.string(forKey: "lastRoom") ?? "") ?? .journal
     selectedRoom = lastRoom == .roadmap && roadmap == nil ? .journal : lastRoom
@@ -367,7 +367,8 @@ final class AppModel {
     }
   }
 
-  func background() { journal.background(); gym.background() }
+  // Leaving releases every delete the engine holds, so the Roadmap room's band goes with its Undo.
+  func background() { journal.background(); gym.background(); roadmap?.endBand() }
 
   @discardableResult func flushRooms() -> Bool {
     if journal.dirty && !journal.save() { error = journal.error; return false }
