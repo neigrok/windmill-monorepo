@@ -208,7 +208,7 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
       return;
     }
 
-    // Anything else is a note on the nearest step; a bare URL becomes a link. Nothing is dropped.
+    // Anything else is a note on the node made last, a bare URL a link; only an export's text before its first step has none.
     const nearest = nodes.length - 1;
     if (nearest < 0) return;
     if (/^https?:\/\/\S+$/.test(line.content)) nodes[nearest].links.push(line.content);
