@@ -102,11 +102,10 @@
 .front-sitemap-columns { grid-column: span 2; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: 32px; }
 .front-sitemap-title { font-weight: 400; font-size: 13px; line-height: 18px; color: var(--look-ink-3); }
 .front-sitemap-columns ul { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; font-size: 14px; line-height: 20px; }
-.front-feedback { font-size: 14px; line-height: 20px; }
 .front-sitemap-columns a, .front-feedback { color: var(--look-ink-2); }
 .front-sitemap-columns a:hover, .front-feedback:hover { color: var(--look-ink-1); }
 .front-foot { display: flex; align-items: center; justify-content: space-between; padding: 20px 0 32px; border-top: 1px solid var(--look-line-faint); }
-.front-feedback { padding: 0; border: none; background: none; font-family: inherit; cursor: pointer; }
+.front-feedback { padding: 0; border: none; background: none; font-family: inherit; font-size: 14px; line-height: 20px; cursor: pointer; }
 
 /* The design-system bar, redrawn for this look: a hairline pill whose segment in use is a wash. */
 .front-switch .wm-segmented { display: flex; gap: 0; height: auto; padding: 3px; border: 1px solid var(--look-line);
@@ -116,7 +115,7 @@
                                       color: var(--look-ink-3); }
 .front-switch .wm-segmented-segment:hover { background: transparent; color: var(--look-ink-1); }
 .front-switch .wm-segmented-segment[aria-checked="true"],
-.front-switch .wm-segmented-segment[aria-checked="true"]:hover { background: color-mix(in srgb, var(--look-ink-1) 8%, transparent); color: var(--look-ink-1); }
+.front-switch .wm-segmented-segment[aria-checked="true"]:hover { background: var(--look-line-faint); color: var(--look-ink-1); }
 .front-switch .wm-segmented-segment svg,
 .front-switch .wm-segmented-segment[aria-checked="true"] svg { width: 13px; height: 13px; color: inherit; }
 .front-switch .wm-segmented-segment:focus-visible { box-shadow: none; }
@@ -127,9 +126,6 @@
 }
 @media (min-width: 1360px) {
   .front-heading br { display: inline; }
-}
-@media (max-width: 1023px) {
-  .front-what, .front-stance, .front-tool-name { font-size: 19px; line-height: 26px; }
 }
 
 /* ---- the phone boards ---- */
@@ -153,7 +149,7 @@
 
   .front-first { padding: 32px 0 24px; }
   .front-heading { font-size: 40px; line-height: 42px; }
-  .front-what { margin-top: 16px; font-size: 22px; line-height: 30px; }
+  .front-what { margin-top: 16px; }
   .front-stance { font-size: 16px; line-height: 24px; letter-spacing: 0; }
 
   .front-tools-row { display: block; padding: 0 0 24px; border-top: none; }
