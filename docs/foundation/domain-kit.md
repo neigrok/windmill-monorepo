@@ -1897,15 +1897,21 @@ public enum Contract { public static func vectors(_ path: String) throws -> [Vec
 public struct Vector: Sendable {
   public let file: String, name: String, input: JSON, expect: JSON
   public init(file: String, name: String, input: JSON, expect: JSON)   // a runner's own vector over another corpus's shape
+  public var withRecordsReversed: Vector
 }
 ```
 
 Each product's tests run `RegistryCheck` for every entity (§3.4) and command (§8.4), `RuleBookCheck`
 and `RuleBookParity` over its rule book (§6.3), and `ProductCorpus` over every case of its
 `values.json`, each feature's `<feature>-actions.json` and each `rules/<read>.json` (§15.3),
-comparing the result with the case's `expect` by JCS. An act's case is a scene of several scopes, `{scopes: {<scope>: {drawn, stored?}}, device?,
-ids?, now, offsetSeconds}`, decided as `{write: {segments: [{scope, gesture}], result}}`, `{unchanged:
-{result}}` or `{refuse}`. `vectors`, `file` and `Contract.vectors` take
+comparing the result with the case's `expect` by JCS. An act's case is a scene of several scopes, `{scopes: {<scope>: {drawn, stored?,
+confirmed?, spent?}}, device?, ids?, now, offsetSeconds}`, decided as `{write: {segments: [{scope, gesture, undo?}],
+result}}`, `{unchanged: {result}}` or `{refuse}`: `confirmed` is the server's copy of the scope as the device pulled
+it, by default `stored`, `spent` its spent ids (`{t, id, born, seq?}`), and `undo` a segment's Undo recipes where its
+plan opts in. Swift's `ProductCorpus` reads `confirmed` and each spent id's born, its readers answering no `seq` (§7.2),
+and gives `undo`; the web kit's act form reads `drawn`, `stored` and `spent` and gives `{scope, gesture}`, a product's
+runner there adding `confirmed` and `undo`. `Vector.withRecordsReversed` is a case with its `drawn`, `stored` and
+`spent` rows in reverse, which a decision that follows row order fails. `vectors`, `file` and `Contract.vectors` take
 paths under `packages/api-contract/`. A feature's actions test maps each case's `action` to the
 decider it names, built from the case's `input`, and gives the JSON forms of its result and its
 product refusal; a draft's save runs through `save`, which opens the draft of `blank`'s id over the
