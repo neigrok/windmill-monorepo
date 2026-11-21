@@ -13,8 +13,9 @@ const SELECT_KEPT_UNSETTLED: &str = "select store, notification_id, environment,
 const SELECT_UNSETTLED: &str = "select store, notification_id, environment, signed_payload from inbox \
      where settled_at is null and (next_attempt_at is null or next_attempt_at <= now_millis()) \
      order by received_at, notification_id limit $1";
-// A kept notification's lock. Every write of its inbox row holds it first, so the door, a redelivery and the sweep apply
-// it once, and a settle, a postponement or a failed attempt counted beside an apply waits for the apply to end.
+// A kept notification's lock. Every write that changes its inbox row holds it first, so the door, a redelivery and the
+// sweep apply it once, and a settle, a postponement or a failed attempt counted beside an apply waits for the apply to
+// end. `receive` only inserts the row.
 const HOLD_NOTIFICATION: &str = "select pg_advisory_xact_lock(hashtextextended(\
      format('notification %s %s', $1::text, $2::text), 0))";
 const IS_UNSETTLED: &str = "select exists (select from inbox \

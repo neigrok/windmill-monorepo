@@ -4,8 +4,9 @@ use domain::{
     ProductId, Renewal, Span, State, Status, Store, StoreSubscriptionId, StoreTransactionId,
     Storefront, Subscription, SubscriptionId,
 };
-use sqlx::FromRow;
-use sqlx::postgres::PgConnection;
+use sqlx::postgres::{PgArguments, PgConnection};
+use sqlx::query::QueryAs;
+use sqlx::{FromRow, Postgres};
 use uuid::Uuid;
 
 use crate::ledger::{self, Ledger, PgQuery, StorageError};
@@ -52,12 +53,24 @@ const SELECT_BY_ID: &str = concat!(
     subscription_columns!(),
     " from subscriptions where id = $1::uuid"
 );
-// The lineages holding anything of an account: a subscription bound to it, or a period it paid for that a new purchase
-// moved away (R-11), in the one order every erasure locks them in.
-const SELECT_LINEAGES_OF_ACCOUNT: &str = "select store, environment, store_subscription_id from subscriptions s \
+// The one order a write that locks several lineages takes them in, so two such writes never wait on each other.
+macro_rules! in_lineage_order {
+    () => {
+        " order by store, environment, store_subscription_id collate \"C\""
+    };
+}
+
+pub(crate) use in_lineage_order;
+
+// The lineages holding anything of an account: a subscription bound to it, a period it paid for that a new purchase
+// moved away (R-11), or a hint owed to the store for it.
+const SELECT_LINEAGES_OF_ACCOUNT: &str = concat!(
+    "select store, environment, store_subscription_id from subscriptions s \
      where s.account_id = $1::uuid \
      or exists (select from periods p where p.subscription_id = s.id and p.left_with = $1::uuid) \
-     order by store, environment, store_subscription_id collate \"C\"";
+     or exists (select from store_hints h where h.subscription_id = s.id and h.account_id = $1::uuid)",
+    in_lineage_order!()
+);
 const SELECT_BOUND_TO: &str = concat!(
     "select ",
     subscription_columns!(),
@@ -117,12 +130,21 @@ pub(crate) async fn lock(
     connection: &mut PgConnection,
     lineage: &Lineage,
 ) -> Result<domain::Ledger, StorageError> {
+    hold(connection, lineage).await?;
+    load(connection, lineage, SELECT_LINEAGE_LOCKED).await
+}
+
+// Holds the lineage's lock until the transaction ends. It guards every row of the lineage, its subscription, periods
+// and the hint owed for it, so a write locks one of those rows only once it holds the lineage.
+pub(crate) async fn hold(
+    connection: &mut PgConnection,
+    lineage: &Lineage,
+) -> Result<(), StorageError> {
     let lock = sqlx::query(LOCK_LINEAGE)
         .bind(lineage.store.name())
         .bind(lineage.environment.name())
         .bind(lineage.store_subscription_id.as_str());
-    ledger::hold(connection, lock).await?;
-    load(connection, lineage, SELECT_LINEAGE_LOCKED).await
+    ledger::hold(connection, lock).await
 }
 
 async fn load(
@@ -214,16 +236,26 @@ pub(crate) async fn stamp_verified(
     Ok(())
 }
 
-// The lineages an erasure of the account changes (§6.4). Read before their locks are taken; only a move away from the
-// account changes what one holds of it meanwhile, and a lineage moved away still holds the periods the account paid for.
+// The lineages an erasure of the account changes (§6.4), in lineage order. Read before their locks are taken; only a
+// move away from the account changes what one holds of it meanwhile, and a lineage moved away still holds the periods
+// the account paid for.
 pub(crate) async fn of_account(
     connection: &mut PgConnection,
     account_id: &AccountId,
 ) -> Result<Vec<Lineage>, StorageError> {
-    let rows: Vec<(String, String, String)> = sqlx::query_as(SELECT_LINEAGES_OF_ACCOUNT)
-        .bind(account_id.as_str())
-        .fetch_all(connection)
-        .await?;
+    lineages(
+        connection,
+        sqlx::query_as(SELECT_LINEAGES_OF_ACCOUNT).bind(account_id.as_str()),
+    )
+    .await
+}
+
+// The lineages a query answers as rows of store, environment and store subscription id.
+pub(crate) async fn lineages(
+    connection: &mut PgConnection,
+    query: QueryAs<'_, Postgres, (String, String, String), PgArguments>,
+) -> Result<Vec<Lineage>, StorageError> {
+    let rows = query.fetch_all(connection).await?;
     rows.into_iter()
         .map(|(store, environment, store_subscription_id)| {
             Ok(Lineage {

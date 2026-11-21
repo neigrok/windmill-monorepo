@@ -5,7 +5,7 @@ use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
 
 use crate::ledger::{Ledger, StorageError, commit};
-use crate::subscriptions::named;
+use crate::subscriptions::{self, in_lineage_order, named};
 
 const OWE: &str = "insert into store_hints (subscription_id, store, environment, store_subscription_id, \
      account_id) values ($1::uuid, $2, $3, $4, $5::uuid) \
@@ -17,8 +17,20 @@ const SELECT_OWED: &str = "select h.subscription_id, h.store, h.environment, h.s
      from store_hints h join subscriptions s on s.id = h.subscription_id and s.account_id = h.account_id \
      where h.abandoned_at is null and (h.next_attempt_at is null or h.next_attempt_at <= now_millis()) \
      order by h.owed_since, h.subscription_id limit $1";
-const FORGET_STALE: &str = "delete from store_hints h \
-     where not exists (select from subscriptions s where s.id = h.subscription_id and s.account_id = h.account_id)";
+macro_rules! stale {
+    () => {
+        "not exists (select from subscriptions s where s.id = h.subscription_id and s.account_id = h.account_id)"
+    };
+}
+const SELECT_STALE_LINEAGES: &str = concat!(
+    "select store, environment, store_subscription_id from store_hints h where ",
+    stale!(),
+    in_lineage_order!()
+);
+const FORGET_STALE: &str = concat!(
+    "delete from store_hints h where store = $1 and environment = $2 and store_subscription_id = $3 and ",
+    stale!()
+);
 const FORGET_OTHER_ACCOUNTS: &str = "delete from store_hints \
      where subscription_id = $1::uuid and account_id is distinct from $2::uuid";
 const FORGET_ACCOUNT: &str = "delete from store_hints where account_id = $1::uuid";
@@ -72,11 +84,26 @@ impl Ledger {
     }
 
     // Drops every hint no longer owed, its subscription bound to another account since, and answers how many it dropped.
+    // The lineages of the stale hints are read first and held in lineage order, and each lineage's hint is dropped
+    // only if it is still stale under the lock.
     pub async fn forget_stale_store_hints(&self) -> Result<u64, StorageError> {
         let mut transaction = self.begin_write().await?;
-        let forgotten = sqlx::query(FORGET_STALE).execute(&mut *transaction).await?;
+        let stale =
+            subscriptions::lineages(&mut transaction, sqlx::query_as(SELECT_STALE_LINEAGES))
+                .await?;
+        let mut forgotten = 0;
+        for lineage in stale {
+            subscriptions::hold(&mut transaction, &lineage).await?;
+            forgotten += sqlx::query(FORGET_STALE)
+                .bind(lineage.store.name())
+                .bind(lineage.environment.name())
+                .bind(lineage.store_subscription_id.as_str())
+                .execute(&mut *transaction)
+                .await?
+                .rows_affected();
+        }
         commit(transaction).await?;
-        Ok(forgotten.rows_affected())
+        Ok(forgotten)
     }
 
     // The store refused the hint for a reason a retry cannot change. A refusal of a hint no longer owed changes
@@ -86,6 +113,7 @@ impl Ledger {
         hint: &StoreHint,
     ) -> Result<HintRefusal, StorageError> {
         let mut transaction = self.begin_write().await?;
+        subscriptions::hold(&mut transaction, &hint.lineage).await?;
         let abandoned: Option<bool> = sqlx::query_scalar(COUNT_REFUSAL)
             .bind(hint.subscription_id.as_str())
             .bind(hint.account_id.as_str())
@@ -101,6 +129,7 @@ impl Ledger {
     // The store took the hint. A hint owed to another account since stays owed.
     pub async fn clear_store_hint(&self, hint: &StoreHint) -> Result<(), StorageError> {
         let mut transaction = self.begin_write().await?;
+        subscriptions::hold(&mut transaction, &hint.lineage).await?;
         sqlx::query(CLEAR)
             .bind(hint.subscription_id.as_str())
             .bind(hint.account_id.as_str())
@@ -125,7 +154,8 @@ pub(crate) async fn forget_other_accounts(
 }
 
 // Drops every hint owed to the stores for the account, in the transaction that records its erasure (§4, §6.4), and
-// answers how many it dropped.
+// answers how many it dropped. The erasure holds the lineage of each already: it read them once it held the account's
+// lock alone, and no hint is owed to an account from then on.
 pub(crate) async fn forget_account(
     connection: &mut PgConnection,
     account_id: &AccountId,

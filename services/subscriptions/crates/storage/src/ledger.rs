@@ -180,7 +180,9 @@ pub enum StorageError {
 
 // Takes one of a write's locks, a notification's, an account's, a lineage's or the seq queue: an advisory lock, held
 // until the transaction ends, which Postgres grants in one step, unlike a row's lock, so lock_timeout, set first to what
-// is left of the lock bound, bounds the whole wait. A lock not granted by then fails as `busy`.
+// is left of the lock bound, bounds the whole wait. A lock not granted by then fails as `busy`. lock_timeout is set so
+// again once the lock is granted: a row the write then locks under it is held by another only if that one went around
+// the advisory lock, and the wait for it is bounded by what is left as well.
 pub(crate) async fn hold(
     connection: &mut PgConnection,
     lock: PgQuery<'_>,
@@ -188,7 +190,8 @@ pub(crate) async fn hold(
     sqlx::query(LOCK_TIMEOUT_LEFT)
         .execute(&mut *connection)
         .await?;
-    lock.execute(connection).await?;
+    lock.execute(&mut *connection).await?;
+    sqlx::query(LOCK_TIMEOUT_LEFT).execute(connection).await?;
     Ok(())
 }
 

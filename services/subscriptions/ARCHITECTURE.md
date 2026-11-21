@@ -600,9 +600,11 @@ door reads a store's token that is not one as no hint; the claim, when a claim d
 `pulled_at`, when the service read the state from the store's API. `verified_at` is the newest
 `pulled_at` applied.
 
-Every write of a kept notification's inbox row, `apply_notification`, `settle`, `postpone` and a failed
-attempt counted, holds the notification's advisory lock first, so the door, a redelivery and the sweep apply
-it once, and a settlement, a postponement or a count beside an apply waits for the apply to end.
+Every write that changes a kept notification's inbox row, `apply_notification`, `settle`, `postpone` and a
+failed attempt counted, holds the notification's advisory lock first, so the door, a redelivery and the sweep
+apply it once, and a settlement, a postponement or a count beside an apply waits for the apply to end.
+`receive` inserts the row and changes none: a second `receive` of one notification that arrives before the
+first commits waits for it, once.
 
 Every write, the inbox's among them, begins `read committed` whatever the database's default, since the
 seq lock needs each statement to see what committed before it. It holds a notification's, an account's, a
@@ -610,7 +612,11 @@ lineage's or the seq queue's lock ([below](#the-seq-lock)) before it changes wha
 5 s at most for those locks, all of them together, counted from its start: a lock is held for milliseconds,
 so a longer wait means its holder stalled, and the write answers `busy` rather than hold a connection behind
 it. Each is an advisory lock, which Postgres grants in one step, taken in a statement of its own once
-`lock_timeout` is set to what is left of the 5 s. Each of its statements runs at most 10 s
+`lock_timeout` is set to what is left of the 5 s, and set so again once it is granted. A row's lock, which
+Postgres grants in as many steps as there are writers in line for the row, a write takes only under the
+advisory lock guarding the row: a subscription, its periods and the hint owed for it under its lineage's, an
+inbox row under its notification's, the `ledger` row under the seq queue. Only a writer that went around
+that lock can hold the row, and the write waits for one such writer at most what is left of its 5 s. Each of its statements runs at most 10 s
 (`statement_timeout`), which ends a statement stalled for any other reason, so no write holds a connection
 past it. An apply is one transaction, the action of [Domain](#domain):
 
@@ -640,12 +646,13 @@ An erasure is one transaction too:
 
 1. Hold the account's advisory lock alone, record it in `erased_accounts` unless it is there, and read its
    `erased_at`.
-2. Read the lineages holding anything of it, a subscription bound to it or a period `left_with` it, in
-   the order of `(store, environment, store_subscription_id)`, and lock each as an apply does, in that
-   order.
+2. Read the lineages holding anything of it, a subscription bound to it, a period `left_with` it or a
+   hint owed for it, in the order of `(store, environment, store_subscription_id)`, and lock each as an
+   apply does, in that order.
 3. Call `domain::erase` for each and write what it changes: the subscription unbound, its periods
    restated with no one.
-4. Drop every hint owed to a store for the account.
+4. Drop every hint owed to a store for the account. Each is in a lineage step 2 locked, since no hint is
+   owed to an account while its lock is held alone.
 5. Take the seqs of every change's events under the seq lock and append them, each `unbound` with the
    subscriptions the account's entitlement carries as the transaction leaves it, none. Commit.
 
@@ -653,8 +660,12 @@ Only a move away from the account changes what a lineage holds of it between ste
 moved away still holds the periods the account paid for, so the read of step 2 finds every lineage the
 erasure changes. Two erasures lock the lineages they share in the same order.
 
-Locks are taken in one order, a notification, then accounts, then lineage, then the seq queue and the seq
+Locks are taken in one order, a notification, then accounts, then lineages, then the seq queue and the seq
 lock, and an erasure holds its account's lock alone, so no binding to an account commits beside its erasure.
+A write that locks several lineages, an erasure or the drop of stale hints, takes them in the order of
+`(store, environment, store_subscription_id)`. The store hint sweep's writes hold lineages alone: a clear and
+a refusal counted hold the hint's, and the drop of stale hints reads their lineages first, holds each, and
+drops a lineage's hint only if it is still stale under the lock.
 The row lock is `for no key update` because a transaction holding the seq lock inserts entitlement rows whose foreign
 key takes a key-share lock on each subscription the account's entitlement carries, which `for update` refuses: the two
 transactions would deadlock.
