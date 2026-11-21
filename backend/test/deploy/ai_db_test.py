@@ -223,17 +223,17 @@ class AiDbTest(unittest.TestCase):
             ("rejected", "rejected"), ("rejected", "rejected"), ("windmill_ai", "windmill_ai"),
             ("windmill_subscriptions", "windmill_subscriptions"), ("3", "3")])
 
-    def test_a_block_ahead_that_could_admit_a_role_to_the_ledger_stops_the_run_and_changes_nothing(self):
+    def test_a_block_marked_as_another_ledger_stops_the_run_and_changes_nothing(self):
         self.compose("exec", "-T", "-u", "postgres", "db", "sed", "-i",
-                     "1i # BEGIN windmill_aa: written by hand\\nhost all all all trust\\n# END windmill_aa", HBA)
+                     "1i # BEGIN windmill_aa: written by hand\\nlocal all all trust # reject\\n# END windmill_aa", HBA)
         before = self.hba()
         self.write_env(self.password)
 
         result = self.provision()
 
         self.assertEqual(result.returncode, 1)
-        self.assertIn("FAIL AI database: a ledger block ahead of windmill_ai in pg_hba.conf could admit a role to it,"
-                      " so it is left as it was", result.stderr.splitlines())
+        self.assertIn("FAIL AI database: pg_hba.conf holds a block marked as a ledger other than windmill_ai and"
+                      " windmill_subscriptions, so it is left as it was", result.stderr.splitlines())
         self.assertEqual(self.hba(), before)
         self.assertEqual(self.backend(), ("3", "3"))
 

@@ -294,7 +294,7 @@ so the deploy decides what to replace from what each image is built from. Three 
 
 | Unit | Its images | Built from |
 | --- | --- | --- |
-| backend | the server's, which `migrate` runs too, and `embedder-<sha>`; the stack's `postgres:16` and `caddy:2` are pulled only with it | `backend/` but `deploy/` and `test/deploy/`, though `deploy/sync_compatibility.py` counts; `services/embedder/`; `packages/api-contract/`, which `backend/Dockerfile` copies whole |
+| backend | the server's, which `migrate` runs too, and `embedder-<sha>`; every other image its services run, `postgres:16` and `caddy:2` among them, is pulled on every deploy | `backend/` but `deploy/` and `test/deploy/`, though `deploy/sync_compatibility.py` counts; `services/embedder/`; `packages/api-contract/`, which `backend/Dockerfile` copies whole |
 | subscription service | `subscriptions-<sha>` | `services/subscriptions/` |
 | AI service | `ai-<sha>` | `services/ai/` |
 
@@ -304,12 +304,18 @@ commit it deploys, `BACKEND_INPUTS`, `SUBSCRIPTIONS_INPUTS` and `AI_INPUTS`: the
 tree entries the unit counts there. A unit is unchanged when its fingerprint is the live `.env`'s and
 the image it is pinned to (`SERVER_IMAGE`, `SUBSCRIPTIONS_IMAGE`, `AI_IMAGE`) is still on the host,
 which the prune leaves any image a container uses; the backend also needs the live `.env` to name its
-commit, `BACKEND_TAG`. An unchanged unit keeps its pin, and the backend its `BACKEND_TAG`; nothing is
-pulled for it, and the run prints `NOTE backend: nothing it is built from changed, so it keeps its
-image, built at <sha>`, or `NOTE subscription service: …` and `NOTE AI service: …, sha256:…`. Every
-other unit is pulled at the commit and pinned to the content ID it was pulled as. A commit that
-changes the backend and a service replaces both, and a deploy over a `.env` that holds no fingerprint,
-as the first one on a host, pulls every unit.
+commit, `BACKEND_TAG`. An unchanged unit keeps its pin, and the backend its `BACKEND_TAG`; nothing
+pinned is pulled for it, and the run prints `NOTE backend: nothing it is built from changed, so it keeps
+its image, built at <sha>`, or `NOTE subscription service: …` and `NOTE AI service: …, sha256:…`. A
+kept backend still pulls every image of its services that no content ID pins (its embedder's at
+`BACKEND_TAG`, the database's, Caddy's and the one-shots'), so a compose file that names another one
+finds it. Every other unit is pulled at the commit and pinned to the content ID it was pulled as, and
+the run says why: `NOTE <unit>: pulls this commit's image, since` this commit changes what it is built
+from, the live deployment holds no fingerprint for it (as on the first deploy on a host), pins no
+image for it or records no commit for it, or the image it is pinned to is not on this host. A service
+kept for want of an image at the commit keeps the live fingerprint too, so the next deploy pulls it
+again. A backend whose containers do not start under the promoted files stops the run with `FAIL
+backend containers did not start on the promoted files; .env.bak holds the previous .env`.
 
 `BACKEND_TAG` names the server's image, its embedder's and the server's Sentry release, which is also
 the MCP handshake's `serverInfo.version`; a kept backend goes on reporting the commit it was built
@@ -556,10 +562,15 @@ backend does, as `windmill` over the network to the backend's database.
    `# BEGIN windmill_subscriptions` and `# END windmill_subscriptions` that each run replaces. The
    ledgers' blocks (this one and `ai-db`'s `windmill_ai`) lead the cluster's `pg_hba.conf` in the order
    of their names, so `windmill_ai` stands first and either one-shot, run again with its rules as they
-   are, writes the file it found. A block ahead of this one that does not reject, and names this
-   database or role, `all` or any pattern that could match them, stops the run with the file as it was,
-   and so does a live file holding a ledger block with no end. A rewrite that does not parse, or whose first rule for `windmill` on
-   its database, over the network or the socket, rejects it, is never put in force. Otherwise it holds a
+   are, writes the file it found. A live file holding a ledger block with no end, or a block marked as
+   any ledger but the two, stops the run with the file as it was. What stands ahead of this block is
+   read as Postgres reads the file, from `pg_hba_file_rules`, so comments, continued lines and included
+   files count as they do for a connection: every rule ahead of the block's first must reject, or name
+   neither `windmill_subscriptions` nor its role, as a name, `all`, a `same…` keyword, a group or a
+   pattern. A rule that does not stops the run and leaves the file as it was, in force or not, for that
+   rule to be removed by hand; a run over such a file never reports `rules unchanged`. A rewrite that
+   does not parse, or whose first rule for `windmill` on its database, over the network or the socket,
+   rejects it, is never put in force. Otherwise it holds a
    session of `windmill` open, reloads Postgres, and waits until `windmill` is refused
    `windmill_subscriptions` while a fresh connection of `windmill` still reaches its own database; when
    either does not hold, it puts the previous file back and reloads through the held session. Unchanged
@@ -569,8 +580,12 @@ backend does, as `windmill` over the network to the backend's database.
    `SUBSCRIPTIONS_DB_PASSWORD`, makes the role the database's owner and revokes the database from
    `PUBLIC`. A changed secret is the role's password from the next deploy on. That session logs no
    statement on the server, since one carries the password.
-3. It signs in as the role, checks that the backend's database refuses the role, and that `windmill`
-   still reaches its own database.
+3. It signs in as the role, checks over the network that `windmill` is refused
+   `windmill_subscriptions` and the role both the backend's database and `windmill_ai`, and that
+   `windmill` still reaches its own database. The one-shot has no path to the cluster's socket, so the
+   socket's rules are the ones step 1 read from Postgres's own parse. `ai-db` checks the pairs its rules
+   refuse the same way: `windmill` and `windmill_subscriptions` on `windmill_ai`, and `windmill_ai` on
+   the backend's database and `windmill_subscriptions`.
 
 It ends in one line, `PASS subscriptions database: …` with `rules installed` or `rules unchanged`, or
 `FAIL subscriptions database: <what failed>` on stderr with exit code 1. Only the subscription service

@@ -34,10 +34,11 @@ admitted() {
 }
 
 # 1. The rules go in first, so the database never exists without them. Each ledger's rules stand
-#    between markers of its own, and the ledgers' blocks lead pg_hba.conf, where the first matching line
-#    decides, in the order of their names: every run of either one-shot writes the same file, so a run
-#    that changes no rule leaves it as it is. A block ahead of this one is checked to admit nothing to
-#    this database or its role. A rewrite that would turn the backend away is never put in force.
+#    between markers of its own, and the two ledgers' blocks lead pg_hba.conf, where the first matching
+#    line decides, in the order of their names: every run of either one-shot writes the same file, so a
+#    run that changes no rule leaves it as it is. What stands ahead of this block is read as Postgres
+#    reads it, and must admit nothing to this database or its role. A rewrite that would turn the
+#    backend away is never put in force.
 hba=$(psql -XAtq -c 'show hba_file') || fail "the cluster does not answer the backend's role"
 [[ -w "$hba" ]] || fail "the cluster's pg_hba.conf is not writable from this container"
 block=$(mktemp)
@@ -52,23 +53,21 @@ trap 'rm -f "$block" "$next" "$previous"' EXIT
   printf '# END windmill_ai\n'
 } > "$block"
 # The live file's leading blocks are read whole, this ledger's own dropped wherever it stands, and the
-# rest kept as it is. A block left open would take every line after it, so it stops the run instead. A
-# rule ahead of this block admits nothing to it when it rejects, or names neither this database nor this
-# role by any pattern that could match them.
+# rest kept as it is. A block left open would take every line after it, and a block of a ledger other
+# than the two would stand ahead of theirs, so either stops the run instead.
 status=0
 awk -v mine=windmill_ai -v block="$block" '
-  function matches(names, count, token, i) {
-    count = split(names, token, ",")
-    for (i = 1; i <= count; i++)
-      if (token[i] !~ /^[a-z_][a-z0-9_]*$/ || token[i] ~ /^(all|sameuser|samerole|samegroup|replication)$/ ||
-          token[i] == mine)
-        return 1
-    return 0
+  index($0, "# BEGIN windmill_") == 1 {
+    ledger = substr($0, 9)
+    sub(/[: \t].*/, "", ledger)
+    if (ledger != "windmill_ai" && ledger != "windmill_subscriptions") {
+      forged = 1
+      exit
+    }
   }
   BEGIN { leading = 1 }
   leading && open == "" && index($0, "# BEGIN windmill_") == 1 {
-    open = substr($0, 9)
-    sub(/[: \t].*/, "", open)
+    open = ledger
     if (open != mine) ledgers[++count] = open
   }
   open != "" {
@@ -81,18 +80,9 @@ awk -v mine=windmill_ai -v block="$block" '
   !inside { rest = rest $0 "\n" }
   index($0, "# END " mine) == 1 { inside = 0 }
   END {
+    if (forged) exit 2
     if (inside || open == mine) exit 1
     if (open != "") exit 3
-    for (i = 1; i <= count; i++) {
-      if (ledgers[i] > mine) continue
-      lines = split(text[ledgers[i]], line, "\n")
-      for (j = 1; j <= lines; j++) {
-        if (line[j] ~ /^[ \t]*(#|$)/) continue
-        fields = split(line[j], field, " ")
-        if (field[fields] == "reject") continue
-        if (field[1] ~ /^include/ || matches(field[2]) || matches(field[3])) exit 2
-      }
-    }
     for (i = 1; i <= count; i++) if (ledgers[i] < mine) printf "%s", text[ledgers[i]]
     while ((getline rule < block) > 0) print rule
     for (i = 1; i <= count; i++) if (ledgers[i] > mine) printf "%s", text[ledgers[i]]
@@ -100,9 +90,11 @@ awk -v mine=windmill_ai -v block="$block" '
   }' "$hba" > "$next" || status=$?
 case $status in
   1) fail "pg_hba.conf holds a windmill_ai block with no end, so it is left as it was" ;;
-  2) fail "a ledger block ahead of windmill_ai in pg_hba.conf could admit a role to it, so it is left as it was" ;;
+  2) fail "pg_hba.conf holds a block marked as a ledger other than windmill_ai and windmill_subscriptions, so it is left as it was" ;;
   3) fail "pg_hba.conf holds another ledger's block with no end, so it is left as it was" ;;
 esac
+first=$(grep -n -m 1 '^# BEGIN windmill_ai:' "$next" | cut -d: -f1)
+last=$(grep -n -m 1 '^# END windmill_ai$' "$next" | cut -d: -f1)
 
 # Through the session held open across the reload, from which a reload never takes the connection away.
 held() {
@@ -121,7 +113,23 @@ admits_backend="select not exists (select from pg_hba_file_rules where error is 
     order by rule_number limit 1), false))
   from unnest(array['local', 'host']) as path;"
 
-if cmp -s "$next" "$hba" && refused windmill windmill_ai; then
+# Whether, as Postgres parses the file on disk, comments, continued lines and included files alike, every
+# rule ahead of this block's first rejects, or names neither this database nor this role, by name,
+# keyword, group or pattern.
+ahead_clear="select not exists (select from pg_hba_file_rules where error is not null)
+  and block.first is not null
+  and not exists (
+    select from pg_hba_file_rules ahead
+    where ahead.rule_number < block.first and ahead.auth_method <> 'reject'
+      and (exists (select from unnest(ahead.database) as named
+                   where named = 'windmill_ai' or named !~ '^[a-z_][a-z0-9_]*\$'
+                     or named in ('all', 'sameuser', 'samerole', 'samegroup', 'replication'))
+        or exists (select from unnest(ahead.user_name) as named
+                   where named = 'windmill_ai' or named = 'all' or named !~ '^[a-z_][a-z0-9_]*\$')))
+  from (select min(rule_number) as first from pg_hba_file_rules
+        where file_name = '$hba' and line_number between $first and $last) as block;"
+
+if cmp -s "$next" "$hba" && refused windmill windmill_ai && [[ "$(psql -XAtq -c "$ahead_clear")" == t ]]; then
   rules=unchanged
 else
   coproc HELD { exec psql -XAtq -v VERBOSITY=sqlstate 2>&1; }
@@ -132,6 +140,10 @@ else
   if ! held "$admits_backend" || [[ "$held_answer" != t ]]; then
     mv "$previous" "$hba"
     fail "the rewritten pg_hba.conf would not admit the backend's role, so it is left as it was"
+  fi
+  if ! held "$ahead_clear" || [[ "$held_answer" != t ]]; then
+    mv "$previous" "$hba"
+    fail "a rule ahead of the windmill_ai block in pg_hba.conf could admit a role to it, so the file is left as it was, for that rule to be removed by hand"
   fi
   if ! held 'select pg_reload_conf();'; then
     mv "$previous" "$hba"
@@ -176,13 +188,17 @@ alter database windmill_ai owner to windmill_ai;
 revoke all on database windmill_ai from public;
 SQL
 
-# 3. The service's own credentials work, its role reaches nothing of the backend's, and the backend
-#    still reaches its own database.
+# 3. The service's own credentials work; over the network, the path this one-shot has, the backend's
+#    role is refused this database, this role is refused the backend's and the other ledger's, and the
+#    other ledger's role is refused this one; and the backend still reaches its own database. The
+#    socket's rules are the ones read above from Postgres's own parse.
 PGPASSWORD=$AI_DB_PASSWORD \
   psql -XAtq "dbname=windmill_ai user=windmill_ai" -c 'select 1' > /dev/null 2>&1 ||
   fail "the role windmill_ai cannot sign in to its database"
-refused windmill_ai "$PGDATABASE" ||
-  fail "the role windmill_ai reaches the backend's database"
+for pair in "windmill windmill_ai" "windmill_ai $PGDATABASE" "windmill_ai windmill_subscriptions" "windmill_subscriptions windmill_ai"; do
+  read -r role database <<< "$pair"
+  refused "$role" "$database" || fail "the role $role reaches the database $database"
+done
 admitted || fail "the backend's role no longer reaches its own database"
 
 printf 'PASS AI database: windmill_ai provisioned, refused to other roles (rules %s)\n' "$rules"
