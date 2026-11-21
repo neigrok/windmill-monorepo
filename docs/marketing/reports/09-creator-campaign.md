@@ -19,12 +19,11 @@ returning use. [Roadmap cohort](11-roadmap-seed-trees.md)
    [FTC disclosure guidance](https://www.ftc.gov/business-guidance/resources/disclosures-101-social-media-influencers)
 3. There is no script. Nothing Windmill supplies is presented as theirs. Windmill may check product claims
    for accuracy; the opinion and the words are the master's.
-4. "I did not like it" and silence are allowed outcomes. The fee pays for the time spent trying the
-   product and depends on neither what they say nor whether they publish. It buys their time, never their
-   verdict.
+4. "I did not like it" and silence are allowed outcomes. The fee never depends on what they say. It buys
+   their time, never their verdict.
 
-Agree in writing on the trial period, the flat fee, the disclosure, whether Windmill may reuse the piece,
-maximum liability and the reporting window. An unpaid opinion needs no agreement and is theirs to give or
+Agree in writing on the trial period, the flat fee, whether it is owed when nothing is published, the
+disclosure, whether Windmill may reuse the piece, maximum liability and the reporting window. An unpaid opinion needs no agreement and is theirs to give or
 withhold. [Earned editorial](17-distribution-and-editorial.md#earned-editorial-and-directories)
 
 **If they publish.** Give the master a dedicated source link. Before publication, check the journey through

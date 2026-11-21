@@ -22,7 +22,7 @@ The proposed operating scenario is **eight founder hours per week and $0 increme
 - **Nothing that frightens or belittles.** No "AI will replace you", no "don't fall behind", no "fix yourself".
 - **Publish only when there is something to say.** There is no posting cadence, and nothing is made to keep activity. Every piece shows real work or a real idea.
 - **Work follows readiness.** No campaign is timed to a season or a launch date. Observation windows are measurement, not deadlines.
-- **Brand-led, with one founder note.** The note is written in the first person under a pseudonym and tells why Windmill exists and what the name means. It is published once and posted only where disclosed self-posts are allowed. Public creative and posts do not name or show the founder; a post still discloses that its author builds Windmill.
+- **Brand-led, with at most one founder note.** Publishing it is the owner's choice. If it is published, it is written in the first person under a pseudonym, tells why Windmill exists and what the name means, appears once, and is posted only where disclosed self-posts are allowed. Public creative and posts do not name or show the founder; a post still discloses that its author builds Windmill.
 - **A master is paid for their time, never their verdict.** [Masters](reports/09-creator-campaign.md)
 - **The honesty rules hold in every channel.** [Honesty](../design/brand-foundations.md#honesty)
 
@@ -105,5 +105,5 @@ For scale, retain the stricter gate: 50 unique non-refunded payers across succes
 ## Owner decisions the positioning opens
 
 - Whether the pricing page states where the $12 goes: the AI allowance, the store's fee, running Windmill and the work. It states none of this today.
-- The cash ceiling for a master's fee. No fee benchmark is recorded in [the evidence](benchmarks.md), and no ceiling is approved.
+- The cash ceiling for a master's fee, and whether the fee is owed when the master publishes nothing. No fee benchmark is recorded in [the evidence](benchmarks.md), and no ceiling is approved.
 - Whether Windmill will take a person's own provider key or token. It takes none today.

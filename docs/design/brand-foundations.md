@@ -42,8 +42,9 @@ the work, never "at cost".
 - **Voice**: encouraging and a little playful, but not jokey. Copy stays domain-neutral — it
   works for a room makeover, a fitness goal, or a product launch alike.
 - **Person**: second person ("your roadmap", "you unlock") in the product; first-person
-  plural ("we") only in about/company copy. First-person singular has one place: the founder note,
-  a single piece signed with a pseudonym that tells why Windmill exists and what the name means.
+  plural ("we") only in about/company copy. First-person singular has one place: a founder note,
+  should the owner publish one. It is a single piece signed with a pseudonym that tells why Windmill
+  exists and what the name means.
 - **Casing**: sentence case everywhere — headings, buttons, nav. No ALL-CAPS except tiny
   badge/eyebrow labels, which use small-caps-style letter-spacing instead of visual shouting.
 - **Emoji**: not used. The metaphor is carried by icons and glow, not emoji.
