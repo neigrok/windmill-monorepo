@@ -6,7 +6,9 @@ anything but a SUCCESSFUL `push`-triggered Backend CI/CD on `main` — a red `ct
 pull request all stop at the image. It deploys the sha that passed, never `:latest`, so two pushes in
 a row cannot ship each other's binary. A manual dispatch runs from `main` and requires a full image
 commit SHA. The server, migration, subscription and AI services are pinned to the inspected Docker
-content IDs before promotion.
+content IDs before promotion. The backend, the subscription service and the AI service each get a new
+image only from a commit that changes what it is built from; a commit that changes only a service
+replaces that service's container alone ([What a deploy replaces](#what-a-deploy-replaces)).
 Every candidate carries `sync-compatibility.json`, generated from the same composed registries as its
 binary. A missing manifest or unreadable live hello stops deployment before migration, environment
 promotion or container replacement. Any change to the minimum accepted schema needs the manual
@@ -59,6 +61,7 @@ check the Web Deploy run of the last merge that touched the web and re-run it if
 | Pause the site or lift the pause (by hand) | `/.github/workflows/ops-maintenance.yml` |
 | Run a cutover's restore again where it stopped (by hand, with the owner's word; production's host refuses it, its floor written) | `/.github/workflows/ops-roadmap-restore.yml` |
 | Generate image metadata, guard the cutoff and verify sync admission | `deploy/sync_compatibility.py` |
+| What each unit's images are built from, and its fingerprint at a commit, which the deploy renders | `deploy/image_inputs.py` |
 | TLS + reverse proxy, and the test that drives it against stand-ins for all public upstreams | `deploy/Caddyfile`, `test/deploy/caddyfile_routes_test.py` |
 | The subscription service's database, its role and its `pg_hba.conf` rules (the `subscriptions-db` one-shot; shipped as `subscriptions-db.next` and promoted with the compose file) | `deploy/subscriptions-db/` |
 | The AI ledger's database, role and HBA rules, serialized after subscription provisioning | `deploy/ai-db/` |
@@ -140,13 +143,14 @@ must be public.
 
 - **Deploy**: automatic on every green Backend CI/CD run on `main`; Actions → Deploy to VPS → Run
   workflow is the by-hand path. It rewrites `~/windmill/.env` wholesale from GitHub secrets +
-  variables — only `POSTGRES_PASSWORD` is preserved from the host — and refuses before touching the
+  variables — only `POSTGRES_PASSWORD` is preserved from the host, beside the commit and image pins of
+  each unit it keeps ([What a deploy replaces](#what-a-deploy-replaces)) — and refuses before touching the
   box if `DOMAIN_APP`, `DOMAIN_API`, `ACME_EMAIL`, `POSTGRES_PASSWORD`, `SUBSCRIPTIONS_DB_PASSWORD` or
   `RESEND_FROM`, `AI_DB_PASSWORD`, `AI_CARRY_KEY`, `AI_FUNDING_SECRET` or `AI_OPERATOR_SECRET` is unset.
   `CF_IPS` is configured nowhere: the job fetches Cloudflare's live edge list, falls back to the
   committed default in `deploy/docker-compose.yml`, and refuses on the same guard if both come back
   empty — an empty allow-list would make Caddy 403 the whole site.
-  Success also requires the running server's image reference and content ID to match the pulled
+  Success also requires the running server's image reference and content ID to match the pinned
   image, a hello advertising that image's exact schema/minimum, and the PID 1 allowance mode and
   Coach output cap to match resolved Compose configuration. Readiness is retried up to 30 times;
   each probe has a timeout. The excluded boundary schema and every previously supported schema
@@ -159,10 +163,13 @@ must be public.
   image serves HTTP; output-cap enforcement requires a binary that supports that setting.
 - **Logs**: `cd ~/windmill && docker compose logs -f server` (or `caddy`, `db`, `embedder`, `subscriptions`, `ai`).
 - **Status**: `docker compose ps`.
-- **Rollback**: dispatch the deploy workflow with `image_tag` set to the chosen commit SHA. The
-  server and `embedder-<sha>` images must exist, and the server image must contain its compatibility
-  manifest. A commit with no `subscriptions-<sha>`, as one built before Backend CI published the service,
-  deploys its backend and leaves the running subscription container as it is, never recreating it, printing
+- **Rollback**: dispatch the deploy workflow with `image_tag` set to the chosen commit SHA. Each unit
+  whose inputs at that commit differ from the live deployment's goes back to that commit's image, and
+  one whose inputs match keeps the image it runs, which was built from them
+  ([What a deploy replaces](#what-a-deploy-replaces)). A backend that goes back needs the server and
+  `embedder-<sha>` images, and the server image must contain its compatibility manifest. A commit
+  with no `subscriptions-<sha>`, as one built before Backend CI published the service, deploys its
+  backend and leaves the running subscription container as it is, never recreating it, printing
   `NOTE subscription service: no image could be pulled for this commit, so its running container is kept as
   it is, on sha256:…` and `PASS subscription service: its running container kept, not recreated, healthy on
   its image`. On a host where no subscription container runs, it is refused before anything changes with
@@ -215,18 +222,21 @@ global runtime log encoder removes request objects and headers, including on ups
 neither passes in `Sec-WebSocket-Protocol` nor caller IDs in URLs enter those logs.
 
 `windmill_ai` is a separate database owned by the nonsuperuser role `windmill_ai`. The `ai-db`
-one-shot runs after `subscriptions-db`, giving the shared HBA file one writer at a time. Its rules
-admit only that role to its ledger, reject every other role (including the backend's superuser),
-and deny its role access to all other databases. Before reloading, it validates that the backend
-can still connect; after reloading, it probes that path and restores the old HBA file on failure.
-Both TCP and local socket paths use these rules. The AI process migrates its ledger on startup.
+one-shot runs after `subscriptions-db`, giving the shared HBA file one writer at a time, and writes
+its block as `subscriptions-db` writes its own ([The subscription database](#the-subscription-database)):
+the two blocks lead the file, `windmill_ai` first, so a deploy that changes neither set of rules prints
+`rules unchanged` for both. Its rules admit only that role to its ledger, reject every other role
+(including the backend's superuser), and deny its role access to all other databases. Before
+reloading, it validates that the backend can still connect; after reloading, it probes that path and
+restores the old HBA file on failure. Both TCP and local socket paths use these rules. The AI
+process migrates its ledger on startup.
 
-A deployment validates the AI credentials and pins `ai-<sha>` to its immutable image ID before
-promoting any files. When that tag is absent, an existing pinned AI image may be retained; a fresh
-host is refused. AI provisioning and startup happen after backend verification, so an AI startup
-failure makes deployment red while the backend continues serving. The process has a read-only root,
-a small memory-backed `/tmp`, no host ports, no Linux capabilities, no privilege escalation and
-core dumps disabled. Its image contains the release identity used by Sentry.
+A deployment validates the AI credentials and, before promoting any files, pins `ai-<sha>` to its
+immutable image ID, or keeps the pinned image when nothing it is built from changed. When that tag is
+absent, an existing pinned AI image may be retained; a fresh host is refused. AI provisioning and
+startup happen after backend verification, so an AI startup failure makes deployment red while the
+backend continues serving. The process has a read-only root, a small memory-backed `/tmp`, no host
+ports, no Linux capabilities, no privilege escalation and core dumps disabled. Its image contains the release identity used by Sentry.
 
 Docker allows AI 720 seconds to stop, beyond its 660-second drain and 600-second text-call deadline.
 The infrastructure check asserts this ordering. The deploy waits for graceful replacement and then
@@ -278,16 +288,60 @@ owner has reconciled the interval after the backup with provider accounting: a b
 recover missing calls or their charges, and restoring an older fuse total is not evidence of new
 spending capacity. Reopening admission is a separate decision after that accounting gap is settled.
 
+## What a deploy replaces
+
+Backend CI builds every image again for each commit it runs on, and no two builds share a content ID,
+so the deploy decides what to replace from what each image is built from. Three units deploy apart:
+
+| Unit | Its images | Built from |
+| --- | --- | --- |
+| backend | the server's, which `migrate` runs too, and `embedder-<sha>`; every other image its services run, `postgres:16` and `caddy:2` among them, is pulled on every deploy | `backend/` but `deploy/` and `test/deploy/`, though `deploy/sync_compatibility.py` counts; `services/embedder/`; `packages/api-contract/`, which `backend/Dockerfile` copies whole |
+| subscription service | `subscriptions-<sha>` | `services/subscriptions/` |
+| AI service | `ai-<sha>` | `services/ai/` |
+
+`.github/workflows/backend.yml`, which builds them all, counts for every unit, and Markdown for none;
+`deploy/image_inputs.py` holds the rules. The deploy workflow renders each unit's fingerprint at the
+commit it deploys, `BACKEND_INPUTS`, `SUBSCRIPTIONS_INPUTS` and `AI_INPUTS`: the sha256 of the git
+tree entries the unit counts there. A unit is unchanged when its fingerprint is the live `.env`'s and
+the image it is pinned to (`SERVER_IMAGE`, `SUBSCRIPTIONS_IMAGE`, `AI_IMAGE`) is still on the host,
+which the prune leaves any image a container uses; the backend also needs the live `.env` to name its
+commit, `BACKEND_TAG`. An unchanged unit keeps its pin, and the backend its `BACKEND_TAG`; nothing
+pinned is pulled for it, and the run prints `NOTE backend: nothing it is built from changed, so it keeps
+its image, built at <sha>`, or `NOTE subscription service: …` and `NOTE AI service: …, sha256:…`. A
+kept backend still pulls every image of its services that no content ID pins (its embedder's at
+`BACKEND_TAG`, the database's, Caddy's and the one-shots'), so a compose file that names another one
+finds it. Every other unit is pulled at the commit and pinned to the content ID it was pulled as, and
+the run says why: `NOTE <unit>: pulls this commit's image, since` this commit changes what it is built
+from, the live deployment holds no fingerprint for it (as on the first deploy on a host), pins no
+image for it or records no commit for it, or the image it is pinned to is not on this host. A service
+kept for want of an image at the commit keeps the live fingerprint too, so the next deploy pulls it
+again. A backend whose containers do not start under the promoted files stops the run with `FAIL
+backend containers did not start on the promoted files; .env.bak holds the previous .env`.
+
+`BACKEND_TAG` names the server's image, its embedder's and the server's Sentry release, which is also
+the MCP handshake's `serverInfo.version`; a kept backend goes on reporting the commit it was built
+from. Each service's image carries its own release.
+
+Every deploy still runs `docker compose up` for every service, and every check in this runbook.
+Compose recreates a container whose resolved configuration changed, on the image it is pinned to:
+a secret or variable a kept unit reads that changed in GitHub, or a change to its own definition in
+`docker-compose.yml`, recreates that unit's container, which the run then verifies like any other; one
+it does not read leaves it running. The one-shots `migrate`, `subscriptions-db` and `ai-db` run again,
+and Caddy follows the rule below.
+
+A rollback fingerprints the commit it names, so it returns each unit whose inputs there differ from
+the live ones to that commit's image ([Rollback](#day-to-day)).
+
 ## What a deploy does to the running server
 
-Every deploy replaces the server's container, a commit that changes only `services/subscriptions`
-included: Backend CI builds and deploys every image for each commit it runs on. While the old container
-stops and the new one starts, Caddy answers 502 to a request the server does not take. A deploy that
-ships a changed Caddyfile also recreates Caddy, which refuses connections until it listens again. A
-rehearsal of such a deploy on a stand-in server, probing the edge every 0.2 s, saw about 2 s of 502 and
-then about 1 s of refused connections.
+A deploy replaces the server's container when the backend changed, or a value the server reads did
+([What a deploy replaces](#what-a-deploy-replaces)). While the old container stops and the new one
+starts, Caddy answers 502 to a request the server does not take. A deploy that ships a changed
+Caddyfile also recreates Caddy, which refuses connections until it listens again. A rehearsal of such
+a deploy on a stand-in server, probing the edge every 0.2 s, saw about 2 s of 502 and then about 1 s
+of refused connections.
 
-`docker compose up -d` replaces the server's container: Docker sends it `SIGTERM`, waits
+When `docker compose up -d` replaces the server's container, Docker sends it `SIGTERM`, waits
 `stop_grace_period`, then sends `SIGKILL`. Two numbers decide whether the server gets to finish, and
 they are kept together:
 
@@ -481,7 +535,8 @@ alone, and 404s every other path; no App Store Connect setting sends notificatio
   `operation` tag, such as `ledger.open`, names a failure.
 - **Restart**: `docker compose restart subscriptions`. It stops within Docker's 10 s and exits 0.
 - **In a deploy**: `deploy-production.sh` pins the service to the content ID it pulled
-  (`SUBSCRIPTIONS_IMAGE` in `.env`) before anything changes and starts it with
+  (`SUBSCRIPTIONS_IMAGE` in `.env`), or keeps the one it is pinned to when nothing it is built from
+  changed ([What a deploy replaces](#what-a-deploy-replaces)), before anything changes, and starts it with
   `docker compose up -d --no-deps --pull never subscriptions` once the backend is verified and
   `subscriptions-db` has passed. AI provisioning follows the subscription service's health check.
   It waits up to 60 s for `healthy`, checks that the container runs the
@@ -492,9 +547,9 @@ alone, and 404s every other path; no App Store Connect setting sends notificatio
   service as it was. A commit without its own `subscriptions-<sha>` keeps the live service's container as it runs
   ([Rollback](#day-to-day)).
 - **What gates it**: Backend CI calls the service's own checks, `subscriptions.yml`, as a job its image
-  publish needs, so a red check publishes no image and deploys nothing. A commit under
-  `services/subscriptions` deploys the whole stack and replaces the server's container too
-  ([What a deploy does](#what-a-deploy-does-to-the-running-server)).
+  publish needs, so a red check publishes no image and deploys nothing. A commit that changes only
+  `services/subscriptions` runs every Backend CI check and replaces the service's container alone
+  ([What a deploy replaces](#what-a-deploy-replaces)).
 
 ## The subscription database
 
@@ -504,11 +559,19 @@ cluster, owned by a role of the same name. The `subscriptions-db` one-shot
 every deploy and against the existing volume, as `migrate` applies the schema. Its `psql` connects as the
 backend does, as `windmill` over the network to the backend's database.
 
-1. It puts the rules in `deploy/subscriptions-db/pg_hba.conf` at the head of the cluster's
-   `pg_hba.conf`, between lines starting `# BEGIN windmill_subscriptions` and
-   `# END windmill_subscriptions` that each run replaces. A live file holding a block with no end stops
-   the run with the file as it was. A rewrite that does not parse, or whose first rule for `windmill` on
-   its database, over the network or the socket, rejects it, is never put in force. Otherwise it holds a
+1. It puts the rules in `deploy/subscriptions-db/pg_hba.conf` between lines starting
+   `# BEGIN windmill_subscriptions` and `# END windmill_subscriptions` that each run replaces. The
+   ledgers' blocks (this one and `ai-db`'s `windmill_ai`) lead the cluster's `pg_hba.conf` in the order
+   of their names, so `windmill_ai` stands first and either one-shot, run again with its rules as they
+   are, writes the file it found. A live file holding a ledger block with no end, or a block marked as
+   any ledger but the two, stops the run with the file as it was. What stands ahead of this block is
+   read as Postgres reads the file, from `pg_hba_file_rules`, so comments, continued lines and included
+   files count as they do for a connection: every rule ahead of the block's first must reject, or name
+   neither `windmill_subscriptions` nor its role, as a name, `all`, a `same…` keyword, a group or a
+   pattern. A rule that does not stops the run and leaves the file as it was, in force or not, for that
+   rule to be removed by hand; a run over such a file never reports `rules unchanged`. A rewrite that
+   does not parse, or whose first rule for `windmill` on its database, over the network or the socket,
+   rejects it, is never put in force. Otherwise it holds a
    session of `windmill` open, reloads Postgres, and waits until `windmill` is refused
    `windmill_subscriptions` while a fresh connection of `windmill` still reaches its own database; when
    either does not hold, it puts the previous file back and reloads through the held session. Unchanged
@@ -518,8 +581,12 @@ backend does, as `windmill` over the network to the backend's database.
    `SUBSCRIPTIONS_DB_PASSWORD`, makes the role the database's owner and revokes the database from
    `PUBLIC`. A changed secret is the role's password from the next deploy on. That session logs no
    statement on the server, since one carries the password.
-3. It signs in as the role, checks that the backend's database refuses the role, and that `windmill`
-   still reaches its own database.
+3. It signs in as the role, checks over the network that `windmill` is refused
+   `windmill_subscriptions` and the role both the backend's database and `windmill_ai`, and that
+   `windmill` still reaches its own database. The one-shot has no path to the cluster's socket, so the
+   socket's rules are the ones step 1 read from Postgres's own parse. `ai-db` checks the pairs its rules
+   refuse the same way: `windmill` and `windmill_subscriptions` on `windmill_ai`, and `windmill_ai` on
+   the backend's database and `windmill_subscriptions`.
 
 It ends in one line, `PASS subscriptions database: …` with `rules installed` or `rules unchanged`, or
 `FAIL subscriptions database: <what failed>` on stderr with exit code 1. Only the subscription service
@@ -863,7 +930,10 @@ the restore door seals them.
   `PASS roadmap: …`.
 - **The image**: `~/windmill/roadmap-engine.floor` names the commit the cutover ran from. While that file names a
   commit, **Deploy to VPS** refuses, before anything reaches the host, an `image_tag` that does not descend from it, a
-  rollback among them: an older image ignores the switch.
+  rollback among them: an older image ignores the switch. A deploy that keeps the backend's image
+  ([What a deploy replaces](#what-a-deploy-replaces)) runs every check here as one that replaces it: the floor is
+  checked against the `image_tag` dispatched, whose backend inputs the kept image was built from, and the kept server's
+  switch and `410` are checked after `up` like a new one's.
 - **The web**: Web Deploy reads the running server's switch before it builds, and builds `VITE_ROADMAP_REPLICA_ROOM` `on`
   or `off` from it, `on` in production; a pull request's build reaches no host and builds it off. Its preflight holds any
   release whose room the running server's is not, the cutover's own among them.
@@ -925,8 +995,8 @@ containers get the variables as empty strings: the server reads an empty `SUBSCR
 `SUBSCRIPTIONS_INTERNAL_TOKEN` as unset, so the follower stays off, and every internal door answers 401. The
 deploy after the secret is set turns the follower on, and it reads the feed from zero. That deploy starts the
 server before it replaces the subscription container, so until it does the follower writes `subscription follow:
-the feed is unavailable (401)`; every later deploy recreates the container, and the read that meets it gone
-writes `(unreachable)` once. The follower reads again 30 s after either, and files a stall Issue only past 60 s
+the feed is unavailable (401)`; a later deploy that replaces the container leaves the read that meets it gone
+to write `(unreachable)` once. The follower reads again 30 s after either, and files a stall Issue only past 60 s
 without progress.
 
 The subscription service reads Apple's App Store Server API with the in-app purchase key an App Store Connect

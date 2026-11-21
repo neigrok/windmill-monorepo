@@ -524,8 +524,8 @@ What changes is built only from boards marked ✅ Ready for dev:
   device tells by §6, and the reads: what a step follows through absent steps, its state, what it
   owes and unlocks, what an opened roadmap comes to, standing, the guides above a roadmap, the
   Board's groups and order, the legend and a hue two kinds wear, search, sort and filter, and
-  diagnostics. JavaScript and Swift run every file, the server runs the reads it shares, and a rule
-  lands as a vector first.
+  diagnostics. JavaScript runs every file, Swift runs the pure reads' files and names each other file as
+  waiting for its actions, the server runs the reads it shares, and a rule lands as a vector first.
 - **The engine's corpus** gains E-1 to E-5 on its test product, and roadmap's commands and
   consequences. All four implementations run it.
 - **Size.** Before the registry is fixed, the engine is measured on the server and on each client:
