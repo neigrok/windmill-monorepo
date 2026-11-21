@@ -108,6 +108,13 @@ placements — with the values of the arithmetic the picture is computed with
 number. [roadmap/layout/README.md](roadmap/layout/README.md) has the format, how each number is derived, and the
 arithmetic, ordering and text rules a port must keep.
 
+## `roadmap/plan/`
+
+The plan grammar's cases ([roadmap-ios.md](../../docs/foundation/roadmap-ios.md) §7.1): a pasted text read to a plan,
+a plan as the input of the domain's `CreateRoadmap` and `ImportSteps`, and a roadmap written as Markdown and read back.
+[roadmap/plan/README.md](roadmap/plan/README.md) states the grammar and each file's shapes. Read as a test by
+`web/test/products/roadmap/paste/corpus.test.js`, which claims every file by name.
+
 ## `roadmap-addresses.json`
 
 Where a roadmap and its steps open on the web, as what follows the app's origin: `/#/app/<treeId>` and

@@ -1,0 +1,486 @@
+[
+  {
+    "name": "A heading the roadmap has a kind for binds it, whatever its case, and no kind is renamed",
+    "input": {
+      "text": "Plan\n## build\n- thing\n## MILESTONE\n- moment",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "build", "label": "build", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "thing", "label": "thing", "color": "terracotta", "prerequisites": ["build"]},
+        {"id": "milestone", "label": "MILESTONE", "color": "gold", "prerequisites": ["plan"]},
+        {"id": "moment", "label": "moment", "color": "gold", "prerequisites": ["milestone"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "branch", "nodeId": "build", "liberties": []},
+        {"mark": "step", "nodeId": "thing", "liberties": []},
+        {"mark": "branch", "nodeId": "milestone", "liberties": []},
+        {"mark": "step", "nodeId": "moment", "liberties": []}
+      ],
+      "readout": {"steps": 5, "branches": 2, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A heading the roadmap has no kind for adds one in the first hue no kind wears",
+    "input": {
+      "text": "Plan\n## Deploy\n- ship",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "deploy", "label": "Deploy", "color": "brick", "prerequisites": ["plan"]},
+        {"id": "ship", "label": "ship", "color": "brick", "prerequisites": ["deploy"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"},
+        {"id": "deploy", "hue": "brick", "label": "Deploy", "description": "", "source": "added"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "branch", "nodeId": "deploy", "liberties": []},
+        {"mark": "step", "nodeId": "ship", "liberties": []}
+      ],
+      "readout": {"steps": 3, "branches": 1, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A kind added and a kind bound in one paste",
+    "input": {
+      "text": "Plan\n## Brand new\n- a\n## Build\n- b",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"}
+      ]
+    },
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "brand-new", "label": "Brand new", "color": "gold", "prerequisites": ["plan"]},
+        {"id": "a", "label": "a", "color": "gold", "prerequisites": ["brand-new"]},
+        {"id": "build", "label": "Build", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["build"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "brand-new", "hue": "gold", "label": "Brand new", "description": "", "source": "added"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "branch", "nodeId": "brand-new", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "branch", "nodeId": "build", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []}
+      ],
+      "readout": {"steps": 5, "branches": 2, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "An added kind takes its id from its heading, counts up past a taken id, and is kind where the heading has no ASCII letter or digit",
+    "input": {
+      "text": "Plan\n## Research\n- a\n## Исследование\n- b\n## 研究\n- c",
+      "kinds": [{"id": "research", "hue": "terracotta", "label": "Reading", "description": ""}]
+    },
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "research", "label": "Research", "color": "olive", "prerequisites": ["plan"]},
+        {"id": "a", "label": "a", "color": "olive", "prerequisites": ["research"]},
+        {"id": "step", "label": "Исследование", "color": "gold", "prerequisites": ["plan"]},
+        {"id": "b", "label": "b", "color": "gold", "prerequisites": ["step"]},
+        {"id": "step-2", "label": "研究", "color": "brick", "prerequisites": ["plan"]},
+        {"id": "c", "label": "c", "color": "brick", "prerequisites": ["step-2"]}
+      ],
+      "kinds": [
+        {"id": "research", "hue": "terracotta", "label": "Reading", "description": "", "source": "existing"},
+        {"id": "research-2", "hue": "olive", "label": "Research", "description": "", "source": "added"},
+        {"id": "kind", "hue": "gold", "label": "Исследование", "description": "", "source": "added"},
+        {"id": "kind-2", "hue": "brick", "label": "研究", "description": "", "source": "added"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "branch", "nodeId": "research", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "branch", "nodeId": "step", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "branch", "nodeId": "step-2", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []}
+      ],
+      "readout": {"steps": 7, "branches": 3, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "Where every hue is worn a heading with no kind goes round the roadmap's kinds in their order, and adds none",
+    "input": {
+      "text": "Plan\n## One\n- a\n## Two\n- b\n## Explore\n- c\n## Three\n- d",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": ""},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": ""},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": ""},
+        {"id": "fix", "hue": "brick", "label": "Fix", "description": ""},
+        {"id": "explore", "hue": "sky", "label": "Explore", "description": ""},
+        {"id": "rest", "hue": "plum", "label": "Rest", "description": ""}
+      ]
+    },
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "one", "label": "One", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["one"]},
+        {"id": "two", "label": "Two", "color": "olive", "prerequisites": ["plan"]},
+        {"id": "b", "label": "b", "color": "olive", "prerequisites": ["two"]},
+        {"id": "explore", "label": "Explore", "color": "sky", "prerequisites": ["plan"]},
+        {"id": "c", "label": "c", "color": "sky", "prerequisites": ["explore"]},
+        {"id": "three", "label": "Three", "color": "gold", "prerequisites": ["plan"]},
+        {"id": "d", "label": "d", "color": "gold", "prerequisites": ["three"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "", "source": "existing"},
+        {"id": "fix", "hue": "brick", "label": "Fix", "description": "", "source": "existing"},
+        {"id": "explore", "hue": "sky", "label": "Explore", "description": "", "source": "existing"},
+        {"id": "rest", "hue": "plum", "label": "Rest", "description": "", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "branch", "nodeId": "one", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "branch", "nodeId": "two", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "branch", "nodeId": "explore", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []},
+        {"mark": "branch", "nodeId": "three", "liberties": []},
+        {"mark": "step", "nodeId": "d", "liberties": []}
+      ],
+      "readout": {"steps": 9, "branches": 4, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A roadmap with no kinds: every heading adds one",
+    "input": {"text": "Plan\n## One\n- a\n## Two\n- b", "kinds": []},
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "one", "label": "One", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["one"]},
+        {"id": "two", "label": "Two", "color": "olive", "prerequisites": ["plan"]},
+        {"id": "b", "label": "b", "color": "olive", "prerequisites": ["two"]}
+      ],
+      "kinds": [
+        {"id": "one", "hue": "terracotta", "label": "One", "description": "", "source": "added"},
+        {"id": "two", "hue": "olive", "label": "Two", "description": "", "source": "added"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "branch", "nodeId": "one", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "branch", "nodeId": "two", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []}
+      ],
+      "readout": {"steps": 5, "branches": 2, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "The roadmap's first kind colours the name and every step before the first heading",
+    "input": {
+      "text": "Plan\n- before\n## Rest\n- after",
+      "kinds": [
+        {"id": "rest", "hue": "plum", "label": "Rest", "description": "Days off"},
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": ""}
+      ]
+    },
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "plum", "prerequisites": [], "icon": "sparkles"},
+        {"id": "before", "label": "before", "color": "plum", "prerequisites": ["plan"]},
+        {"id": "rest", "label": "Rest", "color": "plum", "prerequisites": ["plan"]},
+        {"id": "after", "label": "after", "color": "plum", "prerequisites": ["rest"]}
+      ],
+      "kinds": [
+        {"id": "rest", "hue": "plum", "label": "Rest", "description": "Days off", "source": "existing"},
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "step", "nodeId": "before", "liberties": []},
+        {"mark": "branch", "nodeId": "rest", "liberties": []},
+        {"mark": "step", "nodeId": "after", "liberties": []}
+      ],
+      "readout": {"steps": 4, "branches": 1, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A kind is matched by its label trimmed, and a kind with an empty label is never matched",
+    "input": {
+      "text": "Plan\n## build\n- a\n## Other\n- b",
+      "kinds": [{"id": "padded", "hue": "sky", "label": "  Build\u00a0", "description": ""}, {"id": "blank", "hue": "plum", "label": "", "description": ""}]
+    },
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "sky", "prerequisites": [], "icon": "sparkles"},
+        {"id": "build", "label": "build", "color": "sky", "prerequisites": ["plan"]},
+        {"id": "a", "label": "a", "color": "sky", "prerequisites": ["build"]},
+        {"id": "other", "label": "Other", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["other"]}
+      ],
+      "kinds": [
+        {"id": "padded", "hue": "sky", "label": "  Build\u00a0", "description": "", "source": "existing"},
+        {"id": "blank", "hue": "plum", "label": "", "description": "", "source": "existing"},
+        {"id": "other", "hue": "terracotta", "label": "Other", "description": "", "source": "added"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "branch", "nodeId": "build", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "branch", "nodeId": "other", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []}
+      ],
+      "readout": {"steps": 5, "branches": 2, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "Lowercasing is Unicode's: a final sigma, a dotted capital I and a Cyrillic capital bind; a sharp s does not bind SS",
+    "input": {
+      "text": "Plan\n## ΟΔΟΣ\n- a\n## İş\n- b\n## СБОРКА\n- c\n## STRASSE\n- d",
+      "kinds": [
+        {"id": "road", "hue": "sky", "label": "οδος", "description": ""},
+        {"id": "work", "hue": "plum", "label": "i\u0307ş", "description": ""},
+        {"id": "build", "hue": "gold", "label": "Сборка", "description": ""},
+        {"id": "street", "hue": "olive", "label": "straße", "description": ""}
+      ]
+    },
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "sky", "prerequisites": [], "icon": "sparkles"},
+        {"id": "step", "label": "ΟΔΟΣ", "color": "sky", "prerequisites": ["plan"]},
+        {"id": "a", "label": "a", "color": "sky", "prerequisites": ["step"]},
+        {"id": "i", "label": "İş", "color": "plum", "prerequisites": ["plan"]},
+        {"id": "b", "label": "b", "color": "plum", "prerequisites": ["i"]},
+        {"id": "step-2", "label": "СБОРКА", "color": "gold", "prerequisites": ["plan"]},
+        {"id": "c", "label": "c", "color": "gold", "prerequisites": ["step-2"]},
+        {"id": "strasse", "label": "STRASSE", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "d", "label": "d", "color": "terracotta", "prerequisites": ["strasse"]}
+      ],
+      "kinds": [
+        {"id": "road", "hue": "sky", "label": "οδος", "description": "", "source": "existing"},
+        {"id": "work", "hue": "plum", "label": "i\u0307ş", "description": "", "source": "existing"},
+        {"id": "build", "hue": "gold", "label": "Сборка", "description": "", "source": "existing"},
+        {"id": "street", "hue": "olive", "label": "straße", "description": "", "source": "existing"},
+        {"id": "strasse", "hue": "terracotta", "label": "STRASSE", "description": "", "source": "added"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "branch", "nodeId": "step", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "branch", "nodeId": "i", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []},
+        {"mark": "branch", "nodeId": "step-2", "liberties": []},
+        {"mark": "step", "nodeId": "c", "liberties": []},
+        {"mark": "branch", "nodeId": "strasse", "liberties": []},
+        {"mark": "step", "nodeId": "d", "liberties": []}
+      ],
+      "readout": {"steps": 9, "branches": 4, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A heading whose accent is composed differently from the kind's does not bind it",
+    "input": {"text": "Plan\n## Cafe\u0301\n- a\n## Café\n- b", "kinds": [{"id": "cafe", "hue": "sky", "label": "Café", "description": ""}]},
+    "expect": {
+      "title": "Plan",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "plan", "label": "Plan", "color": "sky", "prerequisites": [], "icon": "sparkles"},
+        {"id": "cafe", "label": "Cafe\u0301", "color": "terracotta", "prerequisites": ["plan"]},
+        {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["cafe"]},
+        {"id": "caf", "label": "Café", "color": "sky", "prerequisites": ["plan"]},
+        {"id": "b", "label": "b", "color": "sky", "prerequisites": ["caf"]}
+      ],
+      "kinds": [
+        {"id": "cafe", "hue": "sky", "label": "Café", "description": "", "source": "existing"},
+        {"id": "cafe-2", "hue": "terracotta", "label": "Cafe\u0301", "description": "", "source": "added"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "plan", "liberties": []},
+        {"mark": "branch", "nodeId": "cafe", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "branch", "nodeId": "caf", "liberties": []},
+        {"mark": "step", "nodeId": "b", "liberties": []}
+      ],
+      "readout": {"steps": 5, "branches": 2, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A marked file's kind marker binds the roadmap's kind of that hue and label",
+    "input": {
+      "text": "# Sail\n<!-- windmill:roadmap -->\n- [x] Wind <!-- windmill:kind sky Sailing -->\n  - Dock <!-- windmill:kind olive learn -->",
+      "kinds": [
+        {"id": "sailing", "hue": "sky", "label": "Sailing", "description": "On the water"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": ""}
+      ]
+    },
+    "expect": {
+      "title": "Sail",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "wind", "label": "Wind", "color": "sky", "prerequisites": [], "icon": "sparkles", "status": "complete"},
+        {"id": "dock", "label": "Dock", "color": "olive", "prerequisites": ["wind"]}
+      ],
+      "kinds": [
+        {"id": "sailing", "hue": "sky", "label": "Sailing", "description": "On the water", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "done", "nodeId": "wind", "liberties": []},
+        {"mark": "step", "nodeId": "dock", "liberties": []}
+      ],
+      "readout": {"steps": 2, "branches": 0, "done": 1},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A marked file's kind whose hue another kind of the roadmap wears is bound by its label alone, or added in the first free hue",
+    "input": {
+      "text": "# Sail\n<!-- windmill:roadmap -->\n- Wind <!-- windmill:kind sky Sailing -->\n- Dock <!-- windmill:kind sky Tides -->",
+      "kinds": [
+        {"id": "weather", "hue": "sky", "label": "Weather", "description": "Keep this label."},
+        {"id": "sailing", "hue": "olive", "label": "Sailing", "description": ""}
+      ]
+    },
+    "expect": {
+      "title": "Sail",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "wind", "label": "Wind", "color": "olive", "prerequisites": [], "icon": "sparkles"},
+        {"id": "dock", "label": "Dock", "color": "terracotta", "prerequisites": []}
+      ],
+      "kinds": [
+        {"id": "weather", "hue": "sky", "label": "Weather", "description": "Keep this label.", "source": "existing"},
+        {"id": "sailing", "hue": "olive", "label": "Sailing", "description": "", "source": "existing"},
+        {"id": "tides", "hue": "terracotta", "label": "Tides", "description": "", "source": "added"}
+      ],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "wind", "liberties": []},
+        {"mark": "step", "nodeId": "dock", "liberties": []}
+      ],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A marked file's kind whose hue no kind of the roadmap wears is added in that hue, beside a kind of the same label on another",
+    "input": {
+      "text": "# Sail\n<!-- windmill:roadmap -->\n- Wind <!-- windmill:kind sky Sailing -->\n- Dock <!-- windmill:kind gold Build -->",
+      "kinds": [{"id": "build", "hue": "terracotta", "label": "Build", "description": ""}]
+    },
+    "expect": {
+      "title": "Sail",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "wind", "label": "Wind", "color": "sky", "prerequisites": [], "icon": "sparkles"},
+        {"id": "dock", "label": "Dock", "color": "gold", "prerequisites": []}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "", "source": "existing"},
+        {"id": "sailing", "hue": "sky", "label": "Sailing", "description": "", "source": "added"},
+        {"id": "build-2", "hue": "gold", "label": "Build", "description": "", "source": "added"}
+      ],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "wind", "liberties": []},
+        {"mark": "step", "nodeId": "dock", "liberties": []}
+      ],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "A bare kind marker colours its steps and adds no kind",
+    "input": {
+      "text": "# Sail\n<!-- windmill:roadmap -->\n- Wind <!-- windmill:kind plum -->\n  - Dock",
+      "kinds": [{"id": "build", "hue": "terracotta", "label": "Build", "description": ""}]
+    },
+    "expect": {
+      "title": "Sail",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "wind", "label": "Wind", "color": "plum", "prerequisites": [], "icon": "sparkles"},
+        {"id": "dock", "label": "Dock", "color": "plum", "prerequisites": ["wind"]}
+      ],
+      "kinds": [{"id": "build", "hue": "terracotta", "label": "Build", "description": "", "source": "existing"}],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "wind", "liberties": []},
+        {"mark": "step", "nodeId": "dock", "liberties": []}
+      ],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  },
+  {
+    "name": "Empty text into a roadmap is one unnamed step in the roadmap's first hue",
+    "input": {"text": "", "kinds": [{"id": "rest", "hue": "plum", "label": "Rest", "description": ""}]},
+    "expect": {
+      "title": "",
+      "missingRoot": true,
+      "nodes": [{"id": "root", "label": "", "color": "plum", "prerequisites": [], "icon": "sparkles"}],
+      "kinds": [{"id": "rest", "hue": "plum", "label": "Rest", "description": "", "source": "existing"}],
+      "gutter": [{"mark": null, "nodeId": null, "liberties": []}],
+      "readout": {"steps": 1, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+    }
+  }
+]
