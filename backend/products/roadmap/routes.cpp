@@ -1,6 +1,5 @@
 #include "products/roadmap/routes.h"
 
-#include "products/roadmap/adapters/http/ComposeApi.h"
 #include "products/roadmap/adapters/http/GalleryApi.h"
 #include "products/roadmap/adapters/http/TreeApi.h"
 #include "products/roadmap/adapters/http/OgImageApi.h"
@@ -37,7 +36,6 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
   auto tendingApi = std::make_shared<TendingApi>(deps.tendingService, deps.authService);
   auto remindersApi = std::make_shared<RemindersApi>(deps.reminderSweep, deps.reminderRepo, deps.authService,
                                                      deps.tokens, deps.clock, deps.remindersAdminToken);
-  auto composeApi = std::make_shared<ComposeApi>(deps.composer);
 
   // The rooms' doors: the collab socket and the routes that read or write a roadmap through its room. Where the engine
   // serves roadmap's scopes each is retired, answering 410 `client-update-required` before authentication or parsing, so
@@ -235,13 +233,6 @@ void registerRoutes(drogon::HttpAppFramework& app, const RoadmapDeps& deps) {
         ogImageApi->getImage(req, std::move(cb), id);
       },
       {drogon::Get});
-
-  // Paste-import escalation: anonymous allowed (the birth canvas has no account); abuse is
-  // the compose rate-limit pair above. CORS rides the shared policy like every other route.
-  routes.registerHandler(
-      "/v1/compose",
-      [composeApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { composeApi->compose(req, std::move(cb)); },
-      {drogon::Post});
 }
 
 }

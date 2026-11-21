@@ -178,8 +178,7 @@ contract names USD and links the shared allowance endpoint.
 Anonymous Gym Coach previews use the authenticated installation path described below, and so does
 a phone Coach turn opened under an installation credential: every round of a turn (operation
 `turn`) reserves against the installation's lifetime allowance, or against the account's when a
-session opened it. Anonymous roadmap composition remains `compose-unavailable`; it is not wired to
-this credential.
+session opened it.
 
 Journal Talk (`POST /v1/journal/transcribe`, operation `transcribe`) runs on OpenAI
 `gpt-4o-transcribe`, which bills tokens. Its model page prices audio tokens at $2.50 per 1M input

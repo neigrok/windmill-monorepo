@@ -43,7 +43,6 @@ TEST(access_log_reads_an_expected_5xx_refusal_as_a_warning_and_keeps_failures_er
   const auto unrouted = request(drogon::Get, "/v1/test/unrouted");
 
   CHECK(accessSeverity(written("ai.installation.issue"), answer(drogon::k503ServiceUnavailable, "anonymous_ai_unavailable")) == Severity::warn);
-  CHECK(accessSeverity(written("roadmap.POST.v1.compose"), answer(drogon::k503ServiceUnavailable, "compose-unavailable")) == Severity::warn);
   CHECK(accessSeverity(read, answer(drogon::k503ServiceUnavailable, "anonymous_ai_unavailable")) == Severity::warn);
   CHECK(accessSeverity(unrouted, answer(drogon::k503ServiceUnavailable, "unavailable")) == Severity::warn);
   CHECK(accessSeverity(unrouted, answer(drogon::k503ServiceUnavailable, "anonymous_ai_unavailable")) == Severity::error);

@@ -279,7 +279,6 @@ TEST(write_http_ai_allowance_and_funding_refusals_keep_their_codes_without_issue
     drogon::HttpStatusCode status = drogon::k503ServiceUnavailable;
   };
   std::vector<Refusal> refusals{
-      {"roadmap.POST.v1.compose", "compose-unavailable"},
       {"journal.POST.v1.journal.transcribe", "voice_unavailable"},
       {"journal.POST.v1.journal.transcribe", "voice_busy"},
       {"journal.POST.v1.journal.transcribe", "voice_ration_spent", drogon::k429TooManyRequests},
@@ -299,7 +298,7 @@ TEST(write_http_ai_allowance_and_funding_refusals_keep_their_codes_without_issue
       {"platform.POST.v1.paddle.webhook", "funding_conflict", drogon::k409Conflict},
       {"gym.POST.v1.gym.ask", "subject_exhausted", drogon::k429TooManyRequests}};
   for (const auto* operation : {"gym.POST.v1.gym.ask", "roadmap.POST.v1.trees.id.tend",
-                                "roadmap.POST.v1.compose", "journal.POST.v1.journal.transcribe"})
+                                "journal.POST.v1.journal.transcribe"})
     for (const auto* code : {"free_month_exhausted", "free_day_exhausted", "subject_exhausted",
                              "debt_outstanding", "concurrency_exhausted", "funding_required", "device_bound",
                              "unconfigured", "unsupported_ai_pricing", "device_verification_required"})
@@ -333,9 +332,8 @@ TEST(write_http_accounting_and_unknown_server_failures_still_create_one_issue) {
       {"platform.POST.v1.unrelated", "checkout_closed"},
       {"gym.POST.v1.gym.ask", "free_day_exhausted", drogon::k500InternalServerError}};
   for (const auto* operation : {"gym.POST.v1.gym.ask", "roadmap.POST.v1.trees.id.tend",
-                                "roadmap.POST.v1.compose", "journal.POST.v1.journal.transcribe",
-                                "platform.POST.v1.billing.checkout", "platform.POST.v1.paddle.webhook",
-                                "platform.GET.v1.ai.allowance"})
+                                "journal.POST.v1.journal.transcribe", "platform.POST.v1.billing.checkout",
+                                "platform.POST.v1.paddle.webhook", "platform.GET.v1.ai.allowance"})
     for (const auto* code : {"ai_accounting_unavailable", "PRIVATE UNKNOWN CODE", ""})
       failures.push_back({operation, code});
   for (const auto& failure : failures) {

@@ -885,7 +885,6 @@ surface).
 | POST | `/v1/reminders/pause` |
 | POST | `/v1/reminders/unsubscribe` |
 | POST | `/v1/admin/reminders/sweep` |
-| POST | `/v1/compose` |
 | GET | `/v1/gallery` |
 | GET | `/gallery` |
 | GET | `/t/{id}` |
@@ -1062,8 +1061,7 @@ about its reader and never changes which trees are listed, the public roots alon
 as `readerView` shows them, in at most one follow per owner whose listed trees hold a pointer
 (Model, `readerView`), and its time (`updatedAt`) is the later of the tree's own last edit and the
 latest `markedAt` among those rows, so a card's time and place on the wall come from what a reader is
-shown and from no mark they are not. `/v1/compose` is anonymous-allowed (the birth canvas has no
-account) behind a rate limit. The reminders pause POST carries no
+shown and from no mark they are not. The reminders pause POST carries no
 credential — only the secret from the recipient's own mail — and answers 204 either way. The admin
 sweep is closed unless `REMINDERS_ADMIN_TOKEN` is set.
 

@@ -110,8 +110,7 @@ TEST(roadmap_routes_where_the_rooms_serve_mount_every_room_route_and_the_collab_
       {"GET", "/t/{id}", "read", "roadmap.GET.t.id"},
       {"GET", "/gallery", "read", "roadmap.GET.gallery"},
       {"GET", "/v1/gallery", "read", "roadmap.GET.v1.gallery"},
-      {"GET", "/og/{id}.png", "read", "roadmap.GET.og.id.png"},
-      {"POST", "/v1/compose", "write", "roadmap.POST.v1.compose"}}));
+      {"GET", "/og/{id}.png", "read", "roadmap.GET.og.id.png"}}));
   CHECK_EQ(mounted.socket, (std::set<std::string>{"WebsocketController: wm::TreeSocket"}));
 }
 
@@ -162,7 +161,6 @@ TEST(roadmap_routes_where_the_engine_serves_roadmap_retire_every_room_route_and_
       {"GET", "/t/{id}", "read", "roadmap.GET.t.id"},
       {"GET", "/gallery", "read", "roadmap.GET.gallery"},
       {"GET", "/v1/gallery", "read", "roadmap.GET.v1.gallery"},
-      {"GET", "/og/{id}.png", "read", "roadmap.GET.og.id.png"},
-      {"POST", "/v1/compose", "write", "roadmap.POST.v1.compose"}}));
+      {"GET", "/og/{id}.png", "read", "roadmap.GET.og.id.png"}}));
   CHECK_EQ(mounted.socket, (std::set<std::string>{"WebsocketController: wm::RetiredSocket"}));
 }

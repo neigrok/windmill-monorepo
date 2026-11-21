@@ -276,7 +276,7 @@ TEST(pg_ai_usage_passive_operations_are_separate_from_active_allowance_and_retai
   const AiOperationFilter active{AiOperationMatch::Exclude, passive.operations};
 
   for (const auto& [product, operation] : std::vector<std::pair<std::string, std::string>>{
-           {"pgtest-roadmap", "compose"}, {"pgtest-roadmap", "tend"},
+           {"pgtest-gym", "turn"}, {"pgtest-roadmap", "tend"},
            {"pgtest-gym", "ask"}, {"pgtest-journal", "transcribe"},
            {"pgtest-journal", "echo.segment"}, {"pgtest-journal", "echo.curate"},
            {"pgtest-gym", "future-active-operation"}}) {

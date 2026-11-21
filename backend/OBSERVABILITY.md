@@ -254,7 +254,6 @@ listed separately because their only server writes are authentication refresh or
 | `POST /v1/reminders/pause` (roadmap; rest) | `roadmap.POST.v1.reminders.pause` | completion; bounded refusal or result | unexpected |
 | `POST /v1/reminders/unsubscribe` (roadmap; rest) | `roadmap.POST.v1.reminders.unsubscribe` | completion; bounded refusal or result | unexpected |
 | `POST /v1/admin/reminders/sweep` (roadmap; rest) | `roadmap.POST.v1.admin.reminders.sweep` | completion; bounded refusal or result | unexpected |
-| `POST /v1/compose` (roadmap; rest) | `roadmap.POST.v1.compose` | completion; bounded refusal or result | unexpected |
 | `POST /v1/gym/exercises` (gym; rest; retired) | `gym.POST.v1.gym.exercises` | completion; `client-update-required` | none: expected refusal |
 | `PATCH /v1/gym/exercises/{id}` (gym; rest; retired) | `gym.PATCH.v1.gym.exercises.id` | completion; `client-update-required` | none: expected refusal |
 | `POST /v1/gym/sessions` (gym; rest; retired) | `gym.POST.v1.gym.sessions` | completion; `client-update-required` | none: expected refusal |
@@ -446,8 +445,6 @@ listed separately because their only server writes are authentication refresh or
 | `products/journal/application/EchoSweep.cpp run` (background) | `journal.echo.sweep` | completion; bounded stage outcome | unexpected |
 | `products/journal/application/EchoSweep.cpp settlePage` (background) | `journal.echo.derive` | completion; bounded stage outcome | unexpected |
 | `products/journal/application/EchoSweep.cpp derivePage` (background) | `journal.echo.derive_page` | completion; bounded stage outcome | unexpected |
-| `products/roadmap/adapters/llm/AnthropicComposer.cpp` (rest) | `roadmap.compose.buffered` | completion; bounded stage outcome | unexpected |
-| `products/roadmap/adapters/llm/AnthropicComposer.cpp` (rest) | `roadmap.compose.stream` | completion; bounded stage outcome | unexpected |
 | `AuthService::revalidate` (REST/MCP/WS reads and writes) | `auth.session.refresh` | DEBUG completion only for actual session UPDATE; ERROR on failure | unexpected |
 | Sign-in (link, code, Google, Apple, account link) meeting a close past its grace | `auth.account.erase` | DEBUG completion, door `server-origin`, nested in the sign-in route's INFO completion, before the new account is made; one INFO `auth: closed account erased` line with the door, the erased account's id and the route's `request_id` | unexpected |
 | `ForkSignup::plant` | `roadmap.signup.fork` | completion; `ok`, `source-missing-or-id-taken`, `failed` | unexpected |

@@ -35,7 +35,6 @@
 #include "platform/adapters/http/RateLimiter.h"
 #include "platform/adapters/http/ReplyWait.h"
 #include "products/roadmap/adapters/llm/AnthropicAgent.h"
-#include "products/roadmap/adapters/llm/AnthropicComposer.h"
 #include "platform/adapters/mcp/CompositeToolHost.h"
 #include "platform/adapters/mcp/McpHttpEndpoint.h"
 #include "platform/adapters/mcp/McpServer.h"
@@ -741,11 +740,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.watch(closedAccountSweep, authService, authRepo, systemClock);
   closedAccountSweep->start();
 
-  // No ANTHROPIC_API_KEY leaves /v1/compose answering 503.
-  const char* anthropicKey = std::getenv("ANTHROPIC_API_KEY");
-  auto composer = std::make_shared<AnthropicComposer>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink, aiCallBudget);
-  lifetime.watch(composer);
-
   // MCP runs in this process, so agent edits go through the same RoomRegistry as REST and the
   // socket. Tokens are audience-bound to the MCP resource URL, which defaults to this host.
   const char* mcpPathEnv = std::getenv("WINDMILL_MCP_PATH");
@@ -769,8 +763,9 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   TendingService::AccessOf treeAccess = [registry](const TreeId& tree) { return registry->accessOf(tree); };
   if (roadmapOnEngine) treeAccess = [roadmapDoor](const TreeId& tree) { return roadmapDoor->accessOf(tree); };
 
-  // Tending runs a server-side agent over the same tools MCP drives, on the same ANTHROPIC_API_KEY
-  // the composer uses. TENDING_ENABLED must be "true"/"1" AND the agent configured to arm it.
+  // Tending runs a server-side agent over the same tools MCP drives, on ANTHROPIC_API_KEY.
+  // TENDING_ENABLED must be "true"/"1" AND the agent configured to arm it.
+  const char* anthropicKey = std::getenv("ANTHROPIC_API_KEY");
   const char* tendingEnabledEnv = std::getenv("TENDING_ENABLED");
   const std::string tendingEnabledFlag = tendingEnabledEnv ? tendingEnabledEnv : "";
   auto tendRuns = std::make_shared<PgTendRunRepository>(pool);
@@ -969,21 +964,19 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto magicPerIp = std::make_shared<RateLimiter>(30.0 / 600.0, 30.0);  // ~30 links / 10 min / client
   auto magicGlobal = std::make_shared<RateLimiter>(0.5, 60.0);          // global email send ceiling
   auto codePerIp = std::make_shared<RateLimiter>(10.0 / 60.0, 10.0);    // ~10 code tries / min / client
-  auto composePerIp = std::make_shared<RateLimiter>(10.0 / 600.0, 5.0);  // ~10 plans / 10 min / client
-  auto composeGlobal = std::make_shared<RateLimiter>(0.5, 20.0);         // global LLM spend ceiling
   auto tendPerIp = std::make_shared<RateLimiter>(5.0 / 600.0, 3.0);   // ~5 runs / 10 min / client
   auto tendGlobal = std::make_shared<RateLimiter>(0.2, 8.0);          // global agent-spend ceiling
   auto claimPerIp = std::make_shared<RateLimiter>(20.0 / 60.0, 10.0);  // ~20 App Store claims / min / client
   app.registerSyncAdvice(
-      [apiLimiter, magicPerIp, magicGlobal, codePerIp, composePerIp, composeGlobal, tendPerIp,
+      [apiLimiter, magicPerIp, magicGlobal, codePerIp, tendPerIp,
        tendGlobal, claimPerIp, writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
         if (req->method() == drogon::Options) return nullptr;  // preflight already answered above
         if (retiredRoute(req)) return nullptr;
         const std::string ip = clientIp(req);
         if (ip.empty()) return nullptr;  // internal / health-check traffic
         // Per-IP before global, so a hammering client never drains the shared ceiling. Drogon routes
-        // case-insensitively while path() preserves casing, so compare lowercased or /V1/Compose
-        // walks past the spend ceilings.
+        // case-insensitively while path() preserves casing, so compare lowercased or /V1/Auth/Magic-Link
+        // walks past the send ceilings.
         std::string path = req->path();
         std::transform(path.begin(), path.end(), path.begin(),
                        [](unsigned char c) { return std::tolower(c); });
@@ -994,8 +987,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
         if (ok && path == "/v1/auth/magic-link")
           ok = magicPerIp->allow(ip) && magicGlobal->allow("global");
         if (ok && path == "/v1/auth/verify-code") ok = codePerIp->allow(ip);
-        if (ok && path == "/v1/compose")
-          ok = composePerIp->allow(ip) && composeGlobal->allow("global");
         // Only the POST that starts a run carries the agent cost; the GET catch-up is a plain read.
         if (ok && path.rfind("/v1/trees/", 0) == 0 && path.size() >= 5 &&
             path.compare(path.size() - 5, 5, "/tend") == 0)
@@ -1306,7 +1297,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       .ogImages = ogImages, .ogVideos = ogVideos, .webRoot = webRootEnv ? webRootEnv : "", .appBaseUrl = appBaseUrl,
       .tendingService = tendingService, .reminderSweep = reminderSweep, .reminderRepo = reminderRepo,
       .tokens = tokens, .clock = systemClock,
-      .remindersAdminToken = remindersAdminEnv ? remindersAdminEnv : "", .composer = composer,
+      .remindersAdminToken = remindersAdminEnv ? remindersAdminEnv : "",
       .engineReads = engineReads, .allowedOrigins = allowedOrigins};
   lifetime.onStop([] { stopCollab(); }, registry, oplog, bus, progressService, ownerProgress, progress, authService,
                   presence, systemClock, authRepo, emailSender, resendClient, tokens, oauthService, oauthRepo,
