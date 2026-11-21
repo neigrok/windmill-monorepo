@@ -129,17 +129,19 @@ extension ActDecision {
   }
 }
 
+extension UndoTarget {
+  // K-3 a field an Undo writes back to its value before the act. A field unset then takes the value the registry reads an
+  // unset register as; `ord` has none, as every create writes it.
+  static func restored<E: Entity>(_ id: ID<E>, _ name: String, in scope: ScopeRef? = nil) -> (target: UndoTarget, default: JSON?) {
+    (.field(id, name, in: scope), SyncSchema.registry.type(E.type)?.field(name)?.defaultValue)
+  }
+}
+
 extension UndoRecipe {
-  // K-3 an Undo that writes back the named fields of one record, and its life where `life` says so, each from its value
-  // before the act. A field unset then takes the value the registry reads an unset register as; `ord` has none, as every
-  // create writes it.
-  static func restoring<E: Entity>(_ id: ID<E>, fields names: [String] = [], life: Bool = false, by restoreCommand: String,
-                                   in scope: ScopeRef? = nil) -> UndoRecipe {
-    let definition = SyncSchema.registry.type(E.type)
-    var targets: [(target: UndoTarget, default: JSON?)] = names.map { (name: String) -> (target: UndoTarget, default: JSON?) in
-      (UndoTarget.field(id, name, in: scope), definition?.field(name)?.defaultValue)
-    }
-    if life { targets.append((UndoTarget.life(id, in: scope), nil)) }
+  // An Undo that writes back the named fields of one record, and its life where `life` says so.
+  static func restoring<E: Entity>(_ id: ID<E>, fields names: [String] = [], life: Bool = false, by restoreCommand: String) -> UndoRecipe {
+    var targets = names.map { (name: String) -> (target: UndoTarget, default: JSON?) in UndoTarget.restored(id, name) }
+    if life { targets.append((.life(id), nil)) }
     return .fields(restoreCommand: restoreCommand, targets: targets)
   }
 }

@@ -62,6 +62,13 @@ extension FractionalKey {
     do { try self.init(between: last, and: nil) }
     catch { preconditionFailure("no order key follows \(last?.text ?? "the start"): \(error)") }
   }
+
+  // The key that drops a record below `above` among `members`, which do not hold it, or at their top: after `above` and
+  // before the member that follows it.
+  init(dropping moved: JSON, below above: JSON?, among members: [ListMember]) {
+    do { try self.init(dropping: moved, below: above, stored: members, drawn: members) }
+    catch { preconditionFailure("no order key drops \(moved.jcsText) below \(above?.jcsText ?? "the top"): \(error)") }
+  }
 }
 
 func edgeOrder(_ a: RoadmapTree.Edge, _ b: RoadmapTree.Edge) -> Bool {
