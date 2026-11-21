@@ -313,13 +313,14 @@ final class ViewHub {
 
   nonisolated static func loadNotices(_ tx: StoreTransaction, of product: String) throws -> [Notice] {
     let active = try tx.activeReplica()
-    return try tx.replica(active, notices: true)?.notices.filter { !$0.isDismissed && $0.product.utf8.elementsEqual(product.utf8) } ?? []
+    let replica = try tx.replica(active, entries: EntrySelection(), notices: true, journal: false)
+    return replica?.notices.filter { !$0.isDismissed && $0.product.utf8.elementsEqual(product.utf8) } ?? []
   }
 
   // §7.3: a held gesture is offered for Undo while every entry of it is held and `releaseAt` is still ahead.
   nonisolated static func loadOffers(_ tx: StoreTransaction, deviceNow: Int64) throws -> [UndoOffer] {
     let active = try tx.activeReplica()
-    let outbox = try tx.replica(active)?.outbox ?? []
+    let outbox = try tx.replica(active, journal: false)?.outbox ?? []
     var offers: [UndoOffer] = []
     for entry in outbox where !offers.contains(where: { $0.id.utf8.elementsEqual(entry.gestureId.utf8) }) {
       let gesture = outbox.filter { $0.gestureId.utf8.elementsEqual(entry.gestureId.utf8) }
@@ -330,7 +331,7 @@ final class ViewHub {
   }
 
   nonisolated static func loadStatus(_ tx: StoreTransaction, core: EngineCore) throws -> SyncStatus.Snapshot {
-    guard let device = try tx.deviceMeta(), let replica = try tx.replica(device.active) else { throw StoreError.noDevice }
+    guard let device = try tx.deviceMeta(), let replica = try tx.replica(device.active, journal: false) else { throw StoreError.noDevice }
     let failed = core.failedPushScopes.withLock { $0[Array(replica.meta.replica.utf8)] ?? [:] }
     var failedPushes: [ScopeRef: Set<RecordKey>] = [:]
     var unansweredPushes: Set<ScopeRef> = []

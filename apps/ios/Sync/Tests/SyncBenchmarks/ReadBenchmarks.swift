@@ -11,17 +11,24 @@ import Testing
 // §7.6: a read runs on the caller's thread and a gesture makes about ten, so what a read costs is what a tap waits for.
 // Each kind of read a domain makes is timed on a phone of the probe product, on disk and in memory, beside one act opted
 // into Undo and not released (§7.3) that created 0, 120 or 500 records: while the act's entry is still queued, and once
-// it has landed and only the journal holds the act. Beside them, an act that makes ten reads and one write.
+// it has landed and only the journal holds the act. Beside them, an act that makes ten reads and one write. A read loads
+// what it names, so each read, and the act's ten, is held to the same measure with nothing journaled, taken in the same
+// run: a median past `growth` times that one fails the benchmark, since a read that does not grow is what it names. A
+// read of a record the queued act created folds the act's entry, and the act's write reads the journal: those two are
+// reported with no budget.
 extension Benchmarks {
   @Suite struct Reads {
     static let scope = ScopeRef.product("probe")
     static let warmUp = 10
     static let rounds = 100
     static let actRounds = 20
+    static let growth = 2.0
+    static let slackMs = 0.05
 
     @Test(arguments: ["disk", "memory"])
     func besideAJournaledAct(_ storage: String) async throws {
       let registry = try Corpus.probeRegistry()
+      var unjournaled: [String: Samples] = [:]
       for planted in [0, 120, 500] {
         try await Bench.inDirectory { directory in
           let network = SimNetwork(server: ModelServer(registry: registry, rules: ProbeServerRules(), state: ServerState(epoch: "ep-1")),
@@ -59,13 +66,24 @@ extension Benchmarks {
           }
           guard stands == Array(repeating: true, count: reads.count) else { throw BenchError("the phone does not hold what the reads name: \(stands)") }
 
+          // A measure reported: taken with nothing journaled, it is what the same measure is held to beside an act; one
+          // never taken so carries no budget.
+          func report(_ taken: Samples, of measure: String) {
+            guard planted > 0 else {
+              unjournaled[measure] = taken
+              return taken.report()
+            }
+            guard let still = unjournaled[measure] else { return taken.report() }
+            #expect(!taken.report(growthBudget: Self.growth, slackMs: Self.slackMs, from: still), "\(taken.measure) grows with the journal")
+          }
+
           // Each read of `kinds` in turn, a round after a round, each a call of the engine's reader of its own.
-          let time = { (state: String, kinds: [(name: String, read: (any ScopeReader) throws -> Void)]) throws -> Void in
+          func time(_ kinds: [(name: String, read: (any ScopeReader) throws -> Void)], beside state: String) throws {
             var samples: [Samples] = kinds.map { Samples("read · \($0.name) · \(storage), \(state)") }
             for _ in 0..<(Self.warmUp + Self.rounds) {
               for (index, kind) in kinds.enumerated() { try samples[index].time { try phone.engine.read(Self.scope, kind.read) } }
             }
-            for taken in samples { taken.afterWarmUp(Self.warmUp).report() }
+            for (kind, taken) in zip(kinds, samples) { report(taken.afterWarmUp(Self.warmUp), of: "read · \(kind.name)") }
           }
 
           var state = "nothing journaled"
@@ -82,7 +100,7 @@ extension Benchmarks {
                   queued?.journal.acts.first?.sourceEntries.first?.recipes.count == planted else {
               throw BenchError("the act of \(planted) records is not one queued entry the journal names")
             }
-            try time("\(planted) journaled, its entry queued", reads + [("a record the act created", { _ = try $0.drawn("day", ids[0]) })])
+            try time(reads + [("a record the act created", { _ = try $0.drawn("day", ids[0]) })], beside: "\(planted) journaled, its entry queued")
             await phone.sync()
             let landed = try phone.store.read { tx in try tx.replica(tx.activeReplica()) }
             guard landed?.outbox.isEmpty == true, landed?.journal.acts.first?.sourceEntries.first?.attempts.count == 1 else {
@@ -90,7 +108,7 @@ extension Benchmarks {
             }
             state = "\(planted) journaled, landed"
           }
-          try time(state, reads)
+          try time(reads, beside: state)
 
           // An act as a domain runs one: ten reads through its context, then one write; the phone syncs after each, so
           // its outbox stands empty.
@@ -110,7 +128,7 @@ extension Benchmarks {
             guard case .committed? = act.outcome else { throw BenchError("the act of ten reads did not commit") }
             await phone.sync()
           }
-          tenReads.afterWarmUp(Self.warmUp).report()
+          report(tenReads.afterWarmUp(Self.warmUp), of: "act · its ten reads")
           whole.afterWarmUp(Self.warmUp).report()
         }
       }

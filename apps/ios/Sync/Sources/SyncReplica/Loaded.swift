@@ -22,8 +22,8 @@ public struct LoadedReplica: Sendable {
   public private(set) var known: [ScopeRef: KnownKind]
   private(set) var loadedNotices: [Notice]?
   public private(set) var deviceRows: [String: JSON.Object]
-  // K-3 the journal, always loaded whole with the entries it names (§7.3 Undo of an act).
-  public private(set) var journal: Journal
+  // K-3 the journal (§7.3 Undo of an act): whole, with the entries it names, or nil when the load read none of it.
+  private(set) var loadedJournal: Journal?
   // The inverse requests unsettled as the load found them: each one this transaction settles is reported.
   let loadedUnsettledRequests: [String]
   public private(set) var writes: [StoreWrite] = []
@@ -34,13 +34,14 @@ public struct LoadedReplica: Sendable {
   // The device's active replica (§7.12): a re-identify of it announces its new id.
   public internal(set) var isActive: Bool
 
-  // Cursors, known scopes and staging digests are always loaded whole; rows, outbox entries and notices as a planner
-  // needs, `notices` nil when they were not loaded. Device rows are keyed by product, then by their key's bytes.
+  // Cursors, known scopes and staging digests are always loaded whole; rows, outbox entries, notices and the journal as a
+  // planner needs, `notices` and `journal` nil when they were not loaded. Device rows are keyed by product, then by their
+  // key's bytes.
   public init(meta: ReplicaMeta, outbox: [OutboxEntry] = [], entries: EntrySelection = .every, unreadCommitOrder: Int64 = 0,
               projectionTargets: [ScopeRef] = [], confirmed: [ScopeRef: Rows] = [:], staging: [ScopeRef: Staging] = [:],
               spent: [ScopeRef: [RecordKey: SpentID]] = [:], cursors: [ScopeRef: CursorRecord] = [:],
               known: [ScopeRef: KnownKind] = [:], notices: [Notice]? = [], deviceRows: [String: JSON.Object] = [:],
-              journal: Journal = Journal(), wholeScopes: Bool, isActive: Bool = false) {
+              journal: Journal? = Journal(), wholeScopes: Bool, isActive: Bool = false) {
     self.meta = meta
     loadedEntries = outbox.sorted { $0.commitOrder < $1.commitOrder }
     entrySelection = entries
@@ -53,8 +54,8 @@ public struct LoadedReplica: Sendable {
     self.known = known
     loadedNotices = notices
     self.deviceRows = deviceRows
-    self.journal = journal
-    loadedUnsettledRequests = journal.inverses.filter { $0.state != .settled }.map(\.requestId)
+    loadedJournal = journal
+    loadedUnsettledRequests = (journal?.inverses ?? []).filter { $0.state != .settled }.map(\.requestId)
     self.wholeScopes = wholeScopes
     self.isActive = isActive
   }
@@ -211,6 +212,15 @@ public struct LoadedReplica: Sendable {
   public var notices: [Notice] {
     guard let loadedNotices else { preconditionFailure("the notices of \(meta.replica) were read but not loaded") }
     return loadedNotices
+  }
+
+  // Reading or writing a journal a load did not cover is a loader bug, and traps.
+  public private(set) var journal: Journal {
+    get {
+      guard let loadedJournal else { preconditionFailure("the journal of \(meta.replica) was read but not loaded") }
+      return loadedJournal
+    }
+    set { loadedJournal = newValue }
   }
 
   public func cursor(_ scope: ScopeRef) -> CursorRecord? {
