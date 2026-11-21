@@ -474,6 +474,52 @@ async fn a_claim_retried_after_it_committed_answers_its_seq_and_its_store_hint_s
     .await;
 }
 
+#[tokio::test]
+#[cfg_attr(not(postgres_tests), ignore = "needs SUBSCRIPTIONS_TEST_DATABASE_URL")]
+async fn dropping_stale_store_hints_drops_each_hint_whose_subscription_is_bound_elsewhere_and_no_other()
+ {
+    with_empty_database(async |url| {
+        let ledger = Ledger::open(&url.parse().unwrap()).await.unwrap();
+        let claimant = Uuid::new_v4();
+        for lineage in ["kept", "stale one", "stale two"] {
+            for claim in [None, Some(claimant)] {
+                ledger
+                    .apply(Observed {
+                        observation: renewing(lineage, 0),
+                        hint: None,
+                        claim: claim.map(|account_id| AccountClaim {
+                            account_id,
+                            at: Instant::from_epoch_millis(1_798_765_200_000),
+                        }),
+                        pulled_at: None,
+                    })
+                    .await
+                    .unwrap();
+            }
+        }
+        let mut control = PgConnection::connect(&url).await.unwrap();
+        control
+            .execute(
+                "update store_hints set account_id = gen_random_uuid() \
+                 where store_subscription_id like 'stale%'",
+            )
+            .await
+            .unwrap();
+
+        let forgotten = ledger.forget_stale_store_hints().await.unwrap();
+        let forgotten_again = ledger.forget_stale_store_hints().await.unwrap();
+        let left: Vec<String> = sqlx::query_scalar("select store_subscription_id from store_hints")
+            .fetch_all(&mut control)
+            .await
+            .unwrap();
+
+        assert_eq!((forgotten, forgotten_again), (2, 0));
+        assert_eq!(left, ["kept"]);
+        ledger.close().await;
+    })
+    .await;
+}
+
 // The system column xmin names the transaction that wrote each row's current version.
 async fn row_versions(connection: &mut PgConnection) -> (Vec<String>, i64, i64) {
     let versions: Vec<String> = sqlx::query_scalar(

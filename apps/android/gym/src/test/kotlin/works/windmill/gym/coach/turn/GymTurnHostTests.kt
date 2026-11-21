@@ -13,6 +13,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
+import works.windmill.agent.AllowanceShortfall
 import works.windmill.agent.TurnEvent
 import works.windmill.agent.TurnSeat
 import works.windmill.agent.json
@@ -120,8 +121,9 @@ class GymTurnHostTests(private val name: String) {
             val silent = vector["phone"]?.str() == "silent"
             val code = end["code"]?.str() ?: if (silent) "coach-turn-order" else null
             val closing = events.last()["data"]
-            val spent = closing?.get("allowance")?.member("remaining")?.str() == "0.000000000"
-            val refused = if (state == "failed") code?.let { CoachTurnRefusal.of(it, resetsAtMs = closing?.get("budgetResetsAtMs")?.long(), spent = spent) } else null
+            val allowance = closing?.get("allowance")
+            val shortfall = allowance?.let { AllowanceShortfall.of(it.member("remaining").str(), it.member("reserved").str()) }
+            val refused = if (state == "failed") code?.let { CoachTurnRefusal.of(it, resetsAtMs = closing?.get("budgetResetsAtMs")?.long(), shortfall = shortfall) } else null
             assertEquals(refused.takeUnless { it == CoachTurnRefusal.Unanswered }, phone.turns.refusal.value)
             assertNull(phone.turns.fault.value)
             assertNull(phone.turns.withdrawn.value)

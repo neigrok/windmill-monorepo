@@ -125,6 +125,9 @@
         <item quantity="other">Too long by %1$s bytes. The limit is %2$s bytes.\nEnglish letters take 1 byte each. Other letters and emoji take more.</item>
     </plurals>
     <string name="gym_coach_allowance_spent">You have used all of your AI allowance.</string>
+    <string name="gym_coach_allowance_held">Your earlier AI requests hold the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began.</string>
+    <string name="gym_coach_allowance_too_large">This request needs more AI capacity than your remaining allowance.</string>
+    <string name="gym_coach_allowance_no_room">Your AI allowance has no room for this request.</string>
     <string name="gym_coach_free_day_exhausted">Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.</string>
     <string name="gym_coach_concurrency_exhausted">Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.</string>
     <string name="gym_coach_allowance_unavailable">Coach’s AI allowance is unavailable right now.</string>

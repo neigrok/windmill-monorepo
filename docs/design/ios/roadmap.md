@@ -1,7 +1,7 @@
 # Roadmap — iOS
 
-Status: 🧪 Proposal. Every board is drawn and waits for the owner's review; none is ✅ Ready for dev, so
-none is built. The boards are on the Roadmap file's
+Status: ✅ Ready for dev. The owner approved every board on 2026-11-21; none is built. The boards are on
+the Roadmap file's
 [Roadmap · iOS](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=648-2) page. Each board's
 caption names the SwiftUI element of every part, and each section ends with a NOTE of its stock parts, its
 differences from the web and the rules it keeps.
@@ -68,8 +68,8 @@ One `NavigationStack`, no `TabView`.
 - **A roadmap gone into** is pushed on the same stack: Back · its title and progress · a `…` `Menu` of its
   own verbs (*Guide*, *Kinds*, *Activity*, *Export*).
 
-`AppModel.Room` gains `.roadmap` (title *Roadmap*, symbol `map`). The Shell's *Where to start?* needs a
-Roadmap door: a proposal is drawn in the Shell file ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)).
+`AppModel.Room` gains `.roadmap` (title *Roadmap*, symbol `map`). The Shell's *Where to start?* gains a
+Roadmap door, third after Journal and Gym: ✅ Ready for dev in the Shell file ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)).
 
 ## Coach is on the open screen
 

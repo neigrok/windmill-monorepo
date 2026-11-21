@@ -167,7 +167,7 @@ class PictureFilesTests {
             val picture = small()
             checkNotNull(phone.turns.send("Look at this", picture, null, anonymous = true))
             advanceUntilIdle()
-            assertEquals(CoachTurnRefusal.Allowance("subject_exhausted"), phone.turns.refusal.value)
+            assertEquals(CoachTurnRefusal.Shortfall(null), phone.turns.refusal.value)
             assertEquals(WithdrawnTurn("Look at this", picture, null), phone.turns.withdrawn.value)
             assertEquals(emptyList<Any>(), phone.messages())
             assertEquals(emptyList<Any>(), phone.threads())

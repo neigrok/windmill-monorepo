@@ -3,7 +3,7 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::events::{self, RecordedEvent};
-use crate::ledger::{Ledger, StorageError, commit};
+use crate::ledger::{self, Ledger, StorageError, commit};
 use crate::{store_hints, subscriptions};
 
 // Each account has one lock. A write that may bind a subscription to the account holds it shared, and the account's
@@ -62,10 +62,11 @@ impl Ledger {
     pub async fn erase_account(&self, account_id: Uuid) -> Result<Erasure, StorageError> {
         let erased = AccountId::new(account_id.to_string());
         let mut transaction = self.begin_write().await?;
-        sqlx::query(HOLD_ACCOUNT_ALONE)
-            .bind(account_id)
-            .execute(&mut *transaction)
-            .await?;
+        ledger::hold(
+            &mut transaction,
+            sqlx::query(HOLD_ACCOUNT_ALONE).bind(account_id),
+        )
+        .await?;
         let recorded = sqlx::query(RECORD_ERASURE)
             .bind(account_id)
             .execute(&mut *transaction)
@@ -140,10 +141,7 @@ pub(crate) async fn live(
     connection: &mut PgConnection,
     account_id: Uuid,
 ) -> Result<Option<AccountId>, StorageError> {
-    sqlx::query(HOLD_ACCOUNT)
-        .bind(account_id)
-        .execute(&mut *connection)
-        .await?;
+    ledger::hold(connection, sqlx::query(HOLD_ACCOUNT).bind(account_id)).await?;
     let erased: bool = sqlx::query_scalar(IS_ERASED)
         .bind(account_id)
         .fetch_one(connection)
