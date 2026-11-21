@@ -40,6 +40,21 @@ struct RoadmapsTests {
     }
   }
 
+  // The corpus's two revivals before a subtree hold no note. Every write of the note first lets go of each entry whose
+  // write has landed and that says nothing: the web's module decides each case with the device noting step `b`, which has
+  // landed, as it decides the case itself, and Swift is held to that decision.
+  @Test(arguments: ["a subtree on a step this device deleted itself", "a subtree on a step another device deleted"])
+  func aSubtreesRevivalLetsGoOfWhatTheNoteHeldThatLandedAndSaysNothing(_ revival: String) throws {
+    let vector = try #require(try Contract.vectors("roadmap/domain/roadmaps-actions.json").first { $0.name.hasPrefix(revival) })
+    var input = try vector.input.asObject()
+    input["device"] = ["landing:t_0000000000000001": ["nodes": ["b"], "edges": [], "revived": [], "names": []]]
+    let scene = Vector(file: vector.file, name: vector.name, input: .object(input), expect: vector.expect)
+    for decided in [scene, scene.withRecordsReversed] {
+      let actual = try Self.decision(decided)
+      #expect(actual == vector.expect, "got    \(actual.jcsText)\n  expect \(vector.expect.jcsText)")
+    }
+  }
+
   static func phone() -> Harness {
     Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000), rules: RoadmapServerRules())
   }

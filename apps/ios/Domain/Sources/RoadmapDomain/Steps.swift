@@ -69,7 +69,7 @@ public struct RoadmapStep: Writable, Removable {
 }
 
 // A link: an `edge` record keyed by the step it comes from and the step it leads to.
-public struct RoadmapLink: Writable, Removable {
+public struct RoadmapLink: Writable, Removable, Hashable {
   public static let type = Roadmap.Types.edge
   public static let heldRemoval = false
 
@@ -89,6 +89,16 @@ public struct RoadmapLink: Writable, Removable {
   public var id: ID<RoadmapLink> { ID(.pair(from.description, to.description)) }
   public var fields: [String: JSON] { [:] }
   public static let checks: [Check<RoadmapLink>] = []
+}
+
+extension RoadmapTree {
+  // The steps and links of one tree scope, every record a reader holds, absent ones kept: what a step follows, and its
+  // loops, are read through absent steps (D-5).
+  init(stepsOf tree: ID<RoadmapEntry>, in read: Reader) throws {
+    precondition(read.scope == tree.tree, "the steps of \(tree) are read in its tree scope")
+    let records = try read.repository(RoadmapStep.self).records(in: .drawn) + read.repository(RoadmapLink.self).records(in: .drawn)
+    try self.init(id: tree, listed: nil, tree: records, overlay: nil)
+  }
 }
 
 // A step a gesture brings before it has an id, under a key of the gesture's own that its links name.
@@ -216,5 +226,29 @@ struct StepsImport {
       bytes += unit.bytes
     }
     return chunks
+  }
+}
+
+// What the device holds of one step a change names (§5), and, where it found the step absent, its note of the roadmap as a
+// write of it takes it: any change to a step carries its life as alive under the gesture's stamp, so a step deleted
+// elsewhere comes back with the change (P-4, INV-1), and the device notes the step it brought back (§6).
+public struct HeldStep: Sendable {
+  public let tree: ID<RoadmapEntry>
+  public let held: HeldRecord<RoadmapStep>
+  public let note: LandingNote?
+  public let moment: Moment
+
+  init(_ step: ID<RoadmapStep>, of tree: ID<RoadmapEntry>, in read: Reader) throws {
+    self.tree = tree
+    held = try HeldRecord(RoadmapStep(id: step), in: read.repository(RoadmapStep.self))
+    note = held.isAbsent ? try LandingNote(settledOf: tree, in: read, roadmap: RoadmapTree(stepsOf: tree, in: read)) : nil
+    moment = read.moment
+  }
+
+  // The revival a change plans, with the device's note of a step it brings back.
+  func reviving(_ valid: Valid<RoadmapStep>, fields: [String]) -> Plan {
+    var plan = held.reviving(valid, fields: fields)
+    if let note { plan.note(note.adding(revived: [held.value.id]), of: tree) }
+    return plan
   }
 }

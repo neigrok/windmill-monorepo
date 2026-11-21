@@ -427,8 +427,7 @@ public struct CreateSubtree: ActAction {
     public let creation: (root: ID<RoadmapEntry>, revived: Bool)?
   }
 
-  public typealias Loaded = (roadmap: RoadmapEntry?, pointer: StepPointer?, meta: RoadmapMeta, held: HeldRecord<RoadmapStep>, note: LandingNote?,
-                             moment: Moment)
+  public typealias Loaded = (roadmap: RoadmapEntry?, pointer: StepPointer?, meta: RoadmapMeta, step: HeldStep)
 
   public let tree: ID<RoadmapEntry>
   public let step: ID<RoadmapStep>
@@ -442,21 +441,20 @@ public struct CreateSubtree: ActAction {
     let roadmap = try read.inScope(RoadmapEntry.scope) { (account: Reader) throws -> RoadmapEntry? in
       try account.repository(RoadmapEntry.self).find(tree, in: .drawn)
     }
-    let held = try read.inScope(tree.tree) { (scope: Reader) throws -> (meta: RoadmapMeta, step: HeldRecord<RoadmapStep>, note: LandingNote?) in
-      let step = try HeldRecord(RoadmapStep(id: step), in: scope.repository(RoadmapStep.self))
-      return (try scope.repository(RoadmapMeta.self).find(RoadmapMeta.singleton, in: .drawn) ?? RoadmapMeta(), step,
-              step.isAbsent ? try LandingNote(of: tree, in: scope) : nil)
+    let held = try read.inScope(tree.tree) { (scope: Reader) throws -> (meta: RoadmapMeta, step: HeldStep) in
+      (try scope.repository(RoadmapMeta.self).find(RoadmapMeta.singleton, in: .drawn) ?? RoadmapMeta(), try HeldStep(step, of: tree, in: scope))
     }
     let pointer = try read.inScope(tree.overlay) { (overlay: Reader) throws -> StepPointer? in
       try overlay.repository(StepPointer.self).find(ID(step.record), in: .drawn)
     }
-    return (roadmap, pointer, held.meta, held.step, held.note, read.moment)
+    return (roadmap, pointer, held.meta, held.step)
   }
 
   public func decide(_ loaded: Loaded, ids: ActIDSource) throws(Violation) -> ActDecision<Result, RoadmapRefusal> {
     guard loaded.roadmap != nil else { return .refuse(.gone(tree.ref, .predicted)) }
-    guard loaded.held.isKnown else { return .refuse(.gone(step.ref, .predicted)) }
-    if let owned = loaded.held.value.branch { return .unchanged(Result(subtree: owned, creation: nil)) }
+    let held = loaded.step.held
+    guard held.isKnown else { return .refuse(.gone(step.ref, .predicted)) }
+    if let owned = held.value.branch { return .unchanged(Result(subtree: owned, creation: nil)) }
     guard loaded.pointer == nil else {
       return .refuse(.stepOpensARoadmap(Refused(Roadmap.Codes.stepOpensATree, subject: step.ref, path: .predicted)))
     }
@@ -480,10 +478,9 @@ public struct CreateSubtree: ActAction {
                                ownedFields: [.field(step, "branch", in: tree.tree)], unchangedCreatedRecords: [.of(subtree)],
                                unchangedCreatedScopes: [subtree.tree]))
     let connected = ScopedPlan(RoadmapEntry.scope, connection)
-    let result = Result(subtree: subtree, creation: (root, loaded.held.isAbsent))
-    guard let note = loaded.note else { return .write(ActPlan([connected]), result) }
-    var revival = loaded.held.reviving(try Valid(loaded.held.value, fields: [], at: loaded.moment), fields: [])
-    revival.device(LandingNote.key(of: tree), note.adding(revived: [step]).json)
+    let result = Result(subtree: subtree, creation: (root, held.isAbsent))
+    guard held.isAbsent else { return .write(ActPlan([connected]), result) }
+    let revival = loaded.step.reviving(try Valid(held.value, fields: [], at: loaded.step.moment), fields: [])
     return .write(ActPlan([ScopedPlan(tree.tree, revival), connected]), result)
   }
 }
