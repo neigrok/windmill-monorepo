@@ -7,7 +7,7 @@ const ICON_CACHE = 'windmill-icons-v2';
 const GENERATION_PREFIX = 'windmill-generation-';
 const POINTER = '/offline-generation';
 const ICON_PATHS = [
-  '/brand-logo.svg', '/brand-mark.svg', '/site.webmanifest', '/icon-192.png', '/icon-512.png',
+  '/brand-logo.svg', '/brand-mark.svg', '/brand-mark-night.svg', '/site.webmanifest', '/icon-192.png', '/icon-512.png',
   '/apple-touch-icon.png', '/favicon.ico', '/favicon.svg', '/favicon-32.png',
 ];
 let priming;

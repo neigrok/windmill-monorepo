@@ -24,7 +24,7 @@ globalThis.fetch = async (url, request) => {
 };
 const told = () => { flush?.(); flush = null; return sent.splice(0); };
 
-const OWN = ['Header', 'Footer', 'Tool', 'Room', 'ArrowLink', 'Brand'];
+const OWN = ['Header', 'Footer', 'ArrowLink', 'Brand'];
 
 async function frontPage(t, { status, user }) {
   const { BrandLanding } = await loadScreen('shell/marketing/BrandLanding.jsx');
@@ -207,7 +207,7 @@ test('signed in, the seat stands where Sign in stood and the pill opens the last
   assert.deepEqual(told(), [{ name: 'front_open', props: { signedIn: true } }]);
   assert.deepEqual(page.buttons.map(textOf), ['Feedback']);
   const seat = page.named('AccountSeat');
-  assert.deepEqual([seat.props.user, seat.props.size, seat.props.appearance], [user, 28, false]);
+  assert.deepEqual([seat.props.user, seat.props.size, seat.props.display, seat.props.appearance], [user, 28, 'glyph', false]);
   const pill = page.links.find((link) => textOf(link) === 'Open Windmill');
   assert.equal(pill.props.href, homeHash());
 

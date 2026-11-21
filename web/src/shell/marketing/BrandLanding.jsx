@@ -82,14 +82,17 @@ function Header({ night }) {
         {/* While auth is unanswered the cluster keeps its box and shows nothing, so neither state flashes. */}
         <div className="front-cluster" style={status === 'loading' ? { visibility: 'hidden' } : undefined}>
           {signedIn ? (
-            <AccountSeat
-              user={user}
-              status={status}
-              size={28}
-              appearance={false}
-              onSettings={() => { used('settings'); window.location.hash = '#/settings'; }}
-              onSignOut={() => { used('sign_out'); signOut(); }}
-            />
+            <span className="front-seat">
+              <AccountSeat
+                user={user}
+                status={status}
+                size={28}
+                display="glyph"
+                appearance={false}
+                onSettings={() => { used('settings'); window.location.hash = '#/settings'; }}
+                onSignOut={() => { used('sign_out'); signOut(); }}
+              />
+            </span>
           ) : pendingLink ? (
             <button type="button" className="front-signin" onClick={() => { used('link_sent'); openSignInDoor({ resume: pendingMagicLink(), onSent: noteLinkSent }); }}>
               {t('shell.landing.linkSent')}
@@ -106,52 +109,6 @@ function Header({ night }) {
   );
 }
 
-function Tool({ product }) {
-  const { kind, line, link } = product.landing.root;
-  return (
-    <li className="front-tool">
-      <h2 className="front-tool-name">{t('shell.brandLanding.toolName', { product: product.label })}</h2>
-      <p className="front-tool-kind">{kind}</p>
-      <p className="front-tool-line">{line}</p>
-      <ArrowLink href={link.href} onFollow={followed('tools', link.to, product.id)}>{link.label}</ArrowLink>
-    </li>
-  );
-}
-
-function Room({ product, theme }) {
-  const { title, paragraph, link, features, picture } = product.landing.root;
-  const { Picture } = picture;
-  return (
-    <section className="front-room" aria-labelledby={`front-${product.id}`}>
-      <div className="front-wrap front-rule">
-        <div className="front-room-head">
-          <h2 className="front-title" id={`front-${product.id}`}>{title}</h2>
-          <div>
-            <p className="front-text">{paragraph}</p>
-            <ArrowLink href={link.href} onFollow={followed('room', link.to, product.id)}>{link.label}</ArrowLink>
-          </div>
-        </div>
-        <figure className="front-picture">
-          <figcaption className="front-picture-bar">{picture.label}</figcaption>
-          {/* The composed picture is spared a screen reader and the keyboard; its label above is what is said of it. */}
-          <div className="front-picture-body" aria-hidden="true" inert="" data-brand={product.id} data-theme={theme}
-            style={{ '--front-picture-wide': picture.reserve.wide, '--front-picture-narrow': picture.reserve.narrow }}>
-            <Suspense fallback={null}><Picture /></Suspense>
-          </div>
-        </figure>
-        <ul className="front-features">
-          {features.map((feature) => (
-            <li key={feature.title}>
-              <h3 className="front-feature-title">{feature.title}</h3>
-              <p className="front-text">{feature.text}</p>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
 function Footer({ night }) {
   const { choice, set } = useAppearance();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -159,7 +116,7 @@ function Footer({ night }) {
 
   return (
     <>
-      <footer className="front-footer">
+      <footer>
         <div className="front-wrap front-sitemap front-rule">
           <div className="front-brand"><Brand night={night} /></div>
           <nav className="front-sitemap-columns" aria-label={t('shell.brandLanding.footerNav')}>
@@ -208,15 +165,51 @@ export function BrandLanding() {
         </div>
       </section>
 
-      <section className="front-tools" aria-label={t('shell.brandLanding.tools')}>
+      <section aria-label={t('shell.brandLanding.tools')}>
         <ul className="front-wrap front-tools-row front-rule">
-          {open.map((product) => <Tool key={product.id} product={product} />)}
+          {open.map(({ id, label, landing: { root } }) => (
+            <li key={id} className="front-tool">
+              <h2 className="front-tool-name">{t('shell.brandLanding.toolName', { product: label })}</h2>
+              <p className="front-tool-kind">{root.kind}</p>
+              <p className="front-tool-line">{root.line}</p>
+              <ArrowLink href={root.link.href} onFollow={followed('tools', root.link.to, id)}>{root.link.label}</ArrowLink>
+            </li>
+          ))}
         </ul>
       </section>
 
-      {open.map((product) => <Room key={product.id} product={product} theme={theme} />)}
+      {open.map(({ id, landing: { root: { title, paragraph, link, features, picture } } }) => (
+        <section key={id} className="front-room" aria-labelledby={`front-${id}`}>
+          <div className="front-wrap front-rule">
+            <div className="front-room-head">
+              <h2 className="front-title" id={`front-${id}`}>{title}</h2>
+              <div>
+                <p className="front-text">{paragraph}</p>
+                <ArrowLink href={link.href} onFollow={followed('room', link.to, id)}>{link.label}</ArrowLink>
+              </div>
+            </div>
+            <figure className="front-picture">
+              <figcaption className="front-picture-bar">{picture.label}</figcaption>
+              {/* The composed picture is spared a screen reader and the keyboard; its label above is what is said of it.
+                  It stands on its own product's ground at the page's hour. */}
+              <div className="front-picture-body" aria-hidden="true" inert="" data-brand={id} data-theme={theme}
+                style={{ '--front-picture-wide': picture.reserve.wide, '--front-picture-narrow': picture.reserve.narrow }}>
+                <Suspense fallback={null}><picture.Picture /></Suspense>
+              </div>
+            </figure>
+            <ul className="front-features">
+              {features.map((feature) => (
+                <li key={feature.title}>
+                  <h3 className="front-feature-title">{feature.title}</h3>
+                  <p className="front-text">{feature.text}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      ))}
 
-      <section className="front-ai" aria-labelledby="front-ai">
+      <section aria-labelledby="front-ai">
         <div className="front-wrap front-ai-row front-rule">
           <div>
             <h2 className="front-title" id="front-ai">{t('shell.brandLanding.aiTitle', { break: <br /> })}</h2>
