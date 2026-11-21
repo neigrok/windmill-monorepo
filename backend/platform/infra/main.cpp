@@ -629,7 +629,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.onStop([] {}, aiCallBudget, aiBudgets, aiBudgetRepo, entitlements, authRepo, sentry);
 
   // Roadmap's scopes are served through the engine only where ROADMAP_ENGINE_ENABLED is "true"/"1". Production reads it
-  // from the host's roadmap-engine.env, which roadmap's cutover writes (roadmap-on-the-engine.md §8.1).
+  // from the host's roadmap-engine.env, which holds ROADMAP_ENGINE_ENABLED=1 (roadmap-on-the-engine.md §8.1).
   const char* roadmapEngineEnv = std::getenv("ROADMAP_ENGINE_ENABLED");
   const std::string roadmapEngineFlag = roadmapEngineEnv ? roadmapEngineEnv : "";
   const bool roadmapEngine = roadmapEngineFlag == "true" || roadmapEngineFlag == "1";
@@ -655,7 +655,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   // Every server write for a person goes through roadmap's door where the engine serves roadmap's scopes (Roadmap on the
   // sync engine §7): MCP's tools, tending, the fork and the fork at sign-up, beside the engine's own admissions on its
-  // store and clock. Elsewhere they write through roadmap's rooms, as before the cutover.
+  // store and clock. Elsewhere they write through roadmap's rooms.
   const bool roadmapOnEngine = productsCatalog->serves("roadmap");
   auto roadmapDoor = std::make_shared<roadmap::RoadmapDoor>(*productsCatalog, syncEngine->store, *syncEngine->live,
                                                            syncEngine->serverClock, *systemClock, *sentry);

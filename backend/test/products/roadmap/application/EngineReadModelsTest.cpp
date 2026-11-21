@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-// The gallery on the engine's records keeps the bounds today's gallery keeps (OwnerFollows): a public root is listed
+// The gallery on the engine's records keeps the bounds the rooms' gallery keeps (OwnerFollows): a public root is listed
 // read alone, and its owner's other roadmaps, which its steps open, are followed within the request's cap, with the
 // owner cooled off after a follow that ran past its budget.
 

@@ -13,7 +13,7 @@ point for the component showcase.
 | `SkillTreeView.jsx` | The room's composition: it wires the hooks in `room/` and mounts every surface below |
 | `i18n/`, `copy.js`, `resume.js`, `reportFailure.js` | The catalogs every visible string reads from; the words and count sentences several surfaces read; the newest roadmap as the home card and the landing offer it back, and the person's roadmaps it is read from; the static-name Sentry report |
 | `OpeningMarks.jsx` | The marks of a step that opens a tree, its subtree or the tree its pointer names: one glyph and one bar for the Board, the step, the Graph's chrome and a node's centre |
-| `room/` | What the room holds: the load and its two readings of a roadmap (today's, and the device's copy behind its switch, with a roadmap's birth there) and where the tree sits, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band, who holds the roadmap and the lines that tell its owner a change of theirs landed |
+| `room/` | What the room holds: the load and its two readings of a roadmap (roadmap's own sync with the switch off, and the device's copy with it on, with a roadmap's birth there) and where the tree sits, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band, who holds the roadmap and the lines that tell its owner a change of theirs landed |
 | `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to and where a tree sits among the trees, the rule the device judges its own trees by, and what attaching one sets aside, legend, workspace and spatial queries. Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
 | `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, the guides of the holder's trees above it, its entry on the tree (in the identity row from 744px, in the owner’s Roadmap sheet on phones, below the head for phone readers) and the note it opens |
@@ -154,9 +154,9 @@ have no Board presentation and are absent; their undrawn states are in the
 [Roadmap on the sync engine](../../../../docs/foundation/roadmap-on-the-engine.md) §8.4 moves the room onto the replica.
 A build that sets `VITE_ROADMAP_REPLICA_ROOM=on`, read in one place (`replicaRoom.js`), has the route table hand the room
 `replica`, and Settings' export reads the device's copy too (`settings/YourDataSection.jsx`). Only roadmap's cutover
-and Web Deploy set it: Web Deploy builds the room on exactly when the running server serves roadmap's scopes
-(`test/products/roadmap/routes.test.js` holds every other workflow to building it off). Built off, the room and export
-read as above.
+and Web Deploy set it: Web Deploy builds the room on exactly when the running server serves roadmap's scopes, as
+production's does, so production's room reads the device's copy (`test/products/roadmap/routes.test.js` holds every
+other workflow to building it off). Built off, the room and export read as above.
 With the switch on, every room reads through `ReplicaReading`, the demo's among them:
 
 - **Scopes.** It subscribes the roadmap's `tree/T` as the room opens (the engine subscribes the account's overlay with
@@ -261,7 +261,7 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   device row from each replica the device holds (Keep leaves the account's dormant replica with its device rows), the
   told notice ids, and the legend, the return and milestone ledgers, the last place and the share residue of every
   roadmap but the anonymous ones (the anon replica's and those it reads, and the old index's rows that name nobody,
-  `persistence/deviceResidue.js`). It leaves the stores today's sync wrote to the carry-over (INV-4), but where the
+  `persistence/deviceResidue.js`). It leaves the stores roadmap's own sync wrote to the carry-over (INV-4), but where the
   account's replica went with a Discard: then it takes the old roadmaps that sign-out's question named, while they hold
   what it counted (`CarryNotes.counted`, noted as the person answers Discard), or for a closure every one whose index
   row names the account. What Keep holds for the next sign-in, unsent work, kept notices and the carry-over's ledger, the
@@ -271,8 +271,8 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   reported once a visit (`roadmap-progress-load`, through a repository that knows the server keeps the roadmap, `served`,
   as the activity read's does, Following above). The replica holds none of
   the owner's marks of a subtree, so a step that owns one stands on what that read's `subtrees` says the subtree has come
-  to (`HttpTreeRepository.loadProgress`, then `ReplicaRoadmap.seedOf`), the pill and its words as today's room shows
-  them, through every change the room follows until its next load; one the read says nothing of, or whose read fails,
+  to (`HttpTreeRepository.loadProgress`, then `ReplicaRoadmap.seedOf`), the pill and its words as the room with the switch off
+  shows them, through every change the room follows until its next load; one the read says nothing of, or whose read fails,
   stands `unread`. No subtree is subscribed for it. A link to a readable roadmap opens it this way signed in or not (the
   anon replica pulls the readable trees it opens), its tree scope and each roadmap's above it subscribed as the room opens
   and dropped as it leaves; a subtree's door is a new room, so the subtree is subscribed as the person goes in. A
@@ -301,56 +301,56 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   there reports `marks` and costs the marks alone, so a retry never makes a second roadmap. A birth that plants nothing
   throws a `BirthFailure` with a bounded reason, `unkept`, `unopened` or `refused`, which the door's
   `roadmap_board_create` carries; only `unopened` and `marks` report. A browser whose copy could not open is told before
-  anyone types, signed in or not, as a browser that will not keep a plan is today. `#/app` with no roadmap named goes to
+  anyone types, signed in or not, as the room with the switch off tells a browser that will not keep a plan. `#/app` with no roadmap named goes to
   the newest of the person's list as the replica keeps it (`ReplicaReading.readList`), or to the quests; where the copy
   cannot open it cannot say which, so it stays, and the reading tells why (`roadmap_load`).
 - **The person's roadmaps outside the room.** The home card and the landing offer the newest of the person's roadmaps
   back through `useYourRoadmaps` (`resume.js`), which reads the copy's list (`ReplicaReading.followRoadmaps`, a reading
   of no roadmap) once the device can say what each roadmap is, and again as it changes: the account's signed in and the
-  browser's own signed out, where today's surfaces read `GET /v1/trees` signed in alone. It loads the reading with its
+  browser's own signed out, where with the switch off they read `GET /v1/trees` signed in alone. It loads the reading with its
   first use, so neither surface carries the room's modules where the switch is off; the landing's cache of the list
   still stands for the first paint of a person signed in. A list the copy has not read is unread, not empty: the home
   card and the landing keep what they held, so the cache stands and nothing overwrites it, and the landing's chrome
-  waits on the copy as it waits on today's list, signed out too, until the copy lists the roadmaps, does not open within
+  waits on the copy as it waits on the server's list with the switch off, signed out too, until the copy lists the roadmaps, does not open within
   `FIRST_COPY_MS`, or cannot open at all; a copy that opens after its bound is listed then. The demo's coach reads the
   copy's list to know whether a person signed in owns a roadmap. Its rows carry no `dominantKind`, so each surface draws
   a roadmap in its default hue (Open work).
 - **Writes.** `ReplicaReading` is the room's write door: the kit's `ActionRunner` over the engine, and
   `room/ReplicaSession.js` over it, which on the person's own roadmap stands in `sessionRef` where roadmap's own session
-  stands and takes the slice of its calls the room's write paths make. The owner's screens and events are today's
-  (`SkillTreeView.replica.browser.test.js`), but for a roadmap's own deletion, held (The switcher's delete, below).
-  - *Out of the Undo stack, as today:* the owner's marks are each step's `Complete` or `Reset` (whether a step's pointer
+  stands and takes the slice of its calls the room's write paths make. The owner's screens and events are those of the room with the
+  switch off (`SkillTreeView.replica.browser.test.js`), but for a roadmap's own deletion, held (The switcher's delete, below).
+  - *Out of the Undo stack, as with the switch off:* the owner's marks are each step's `Complete` or `Reset` (whether a step's pointer
     opens a standing roadmap read from the account, as the domain asks); a roadmap's name, from the room or a switcher's
     row, is `WriteRoadmap`, and a subtree's is its owning step's label (`ChangeStep`); the guide is `WriteRoadmap`, the
     share dialog's visibility `SetVisibility`; the workspace's edits go through `ReplicaWorkspace`, subtasks and links by
     the domain's workspace actions and the note through the kit's one draft of it, saved in place. Each such act is
     released at once, so the engine keeps no Undo of it.
-  - *Gestures:* `dispatch(gesture)` as today, each one or more of the domain's acts. They are decided first over what
+  - *Gestures:* `dispatch(gesture)` as with the switch off, each one or more of the domain's acts. They are decided first over what
     the replica holds (`ReplicaSession.decide`, the kit runner's `decideAct` and gone check, each act on its own, before
-    anything is written): a gesture the domain refuses is null, so the room shows what it shows today for that
-    gesture's failure, and its refusal is said in today's words where there are some. Then they are written as one
+    anything is written): a gesture the domain refuses is null, so the room shows what it shows with the switch off for
+    that gesture's failure, and its refusal is said in that room's words where there are some. Then they are written as one
     composed act (`runner.runComposed`, domain-kit.md §9.7), each part reading what the parts before it plan; a part
     refused there writes nothing of the gesture. The receipt's `landed` answers the parts' results once the act was
     taken, and the room says a gesture's success (its toast, its `saved` event, its activity line) only then (`onceLanded` in
     `board/acts.js`, at once on roadmap's own session). A paste's steps are pulsed and told under the ids the domain
     gave them, from the import's result. A new step is `CreateStep` under the id the room minted for it, so the room
-    selects and reveals it as today; a change of its words or kind `ChangeStep`, a reorder `MoveStep` below the sibling
+    selects and reveals it as with the switch off; a change of its words or kind `ChangeStep`, a reorder `MoveStep` below the sibling
     the drop names, a delete `DeleteStep`, links `ChangePrerequisites` on the step they lead to, a paste `ImportSteps`
     under the step it lands beneath and its new kinds `CreateKind` after; an edit of a step's words and prerequisites, a
     link moved to another step and a gesture on several steps are each act in turn, parts of the one act. The legend's kinds are
     `CreateKind`, `ChangeKind`, `RecolourKind` and `DeleteKind`; the tree a step opens `SetPointer` or `ClearPointer`,
     its picker listing the person's roadmaps as the replica keeps them and reading an address there too: one of theirs
     from the room's reading, and any other by a reading of its own (`ReplicaReading.readCard`), which subscribes the
-    roadmap while it reads it, as a reader's room does, where today's picker asks `GET /v1/trees/{id}` (§7 retires it);
+    roadmap while it reads it, as a reader's room does, where the picker with the switch off asks `GET /v1/trees/{id}` (§7 retires it);
     reads of one address while its reading is out share that reading (`heldTrees.read` in `room/useRoomLoad.js`).
     The copy names no author, so a roadmap the person can only read is said as readable, without whose.
   - *Undo:* a receipt holds a gesture's one act, and its Undo (`revert`) is that act's Undo, every part of it; ⌘Z and
-    ⇧⌘Z walk the session's stack of receipts over `runner.undo` and `runner.redo`, bumping `receiptVersion` as today. A
+    ⇧⌘Z walk the session's stack of receipts over `runner.undo` and `runner.redo`, bumping `receiptVersion` as roadmap's own session does. A
     step's held delete stays the room's own hold until it is released, and an act the engine still holds is cancelled in
     place. Each act leaves the engine's journal (`runner.release`) as its receipt leaves the stacks. What each Undo and
     Redo came to (`applied`, `skipped`, `unavailable`) is emitted as `roadmap_undo` once the engine knows: the reading's
     every change asks the session to follow the ones the server still settles (`followInverses`).
-  - *Refusals and failures:* a write the domain refuses is said in today's words where there are some (a roadmap at its
+  - *Refusals and failures:* a write the domain refuses is said in the words of the room with the switch off where there are some (a roadmap at its
     cap, a link that would close a loop) and emits `roadmap_write_refused`; a mark it refuses marks nothing. One the
     store does not take reports `roadmap-replica-write`, its one report: the doors above it (the switcher's rename and
     delete, the share dialog's visibility) hear a `BoundaryFailure` and say their own failure without reporting it.
@@ -363,11 +363,11 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   cannot reach the server, until the device's stored rows are loaded, while the server answers within `FIRST_COPY_MS` of
   its last answer. Each root of the list is
   then a file from `ReplicaRoadmap.seedOf` and `marksOf`, the reads the room opens a roadmap from; one the device has not
-  read stays out, and a copy that does not open is the export's error. For the same records the file is the one today's
-  export makes, but where the replica reads them otherwise: steps in their authored order (`ord`, born, id) where today's
-  server sends them in id order, so siblings and a step's first prerequisite follow the roadmap's order; a step that
-  followed a step deleted elsewhere follows what that step followed (D-5) where today's server drops the link; and a step
-  is done by the owner's mark alone, as the room shows it, where today's export falls back to the steps' seed `status`
+  read stays out, and a copy that does not open is the export's error. For the same records the file is the one the
+  export with the switch off makes, but where the replica reads them otherwise: steps in their authored order (`ord`, born, id) where the
+  rooms' routes send them in id order, so siblings and a step's first prerequisite follow the roadmap's order; a step that
+  followed a step deleted elsewhere follows what that step followed (D-5) where the rooms' routes drop the link; and a step
+  is done by the owner's mark alone, as the room shows it, where that export falls back to the steps' seed `status`
   for a roadmap the owner never marked.
 
 ## A step that opens a tree
@@ -390,7 +390,7 @@ confirmation or reconnect, and the same round asks nothing twice. A load that re
 a `503`) leaves every pointer `unread` and asks nothing more.
 
 The device's copy of a server roadmap holds its pointers, the ids of the trees its steps open, in the stored lattice,
-and nothing else of those trees. Where the room reads today's sync, it goes when the account that held the device signs
+and nothing else of those trees. Where the room reads roadmap's own sync, it goes when the account that held the device signs
 out or another signs in (`forgetDeviceTrees`), and a lapsed session keeps it.
 
 **On the device.** A tree that lives only on this device (`LocalTreeRegistry.onDevice`: a row its holder sees that no
@@ -762,7 +762,7 @@ not found and following its mark, to detach or delete by hand. Nothing on the se
 **A held deletion on the device's copy.** Where the room reads the device's copy, the confirmed delete is the domain's
 `DeleteRoadmap` (`ReplicaSession.deleteRoadmap`), held nine seconds and permanent once the hold ends (R-7): the roadmap
 and its branch leave every list at once, and no request is made. The deletion answers itself as a `HeldDeletion`
-(`identity/HeldDeletion.js`). A row that is not the open roadmap goes as today. The open roadmap's lands the person on
+(`identity/HeldDeletion.js`). A row that is not the open roadmap goes as with the switch off. The open roadmap's lands the person on
 their roadmaps (`#/app/roadmaps`, `identity/YourRoadmaps.jsx`, flow 51), the deletion in that history entry: the page
 lists the person's roots as the replica keeps them, one row each leading into it (a chevron from 744px), and while the
 hold stands says *Roadmap deleted* with Undo in the room's toast, for what is left of the hold, with no countdown, its
@@ -1197,8 +1197,10 @@ needs a separate run.
 
 ## Synchronization and storage
 
-The [graph synchronization contract](../../../../docs/GRAPH_SYNC_DESIGN.md) defines the wire format, coverage,
-acknowledgements and durability limits.
+This section is roadmap's own sync, which the room reads with the switch off; production's room reads the device's
+copy (Reading the device's copy, above), and this sync goes with the Roadmap on the engine tree's node
+`m5-delete-roadmaps-own-sync`. The [graph synchronization contract](../../../../docs/GRAPH_SYNC_DESIGN.md) defines
+the wire format, coverage, acknowledgements and durability limits.
 
 **Registers.** A node's last-writer-wins registers are one list (`NODE_REGISTERS` in `sync/lattice.js`) that the join's
 clock, the frontier, the frame and Undo all read. `opens`, the tree a step opens, is one of them: joined by its stamp,
@@ -1410,7 +1412,7 @@ selectable; owners can make a tree private again.
 - The unlinked-node reconnect tag, activity burst coalescing and narrow activity-dock collapse are not built.
   Design gaps belong in the [consistency ledger](../../../../docs/design/consistency.md).
 - Where the room reads the device's copy, the person's list (the domain's `list`, `ReplicaRoadmap.list`) carries no
-  `dominantKind`, the most-worn hue today's server list sends, so the home card's and the landing's dot, the switcher's
+  `dominantKind`, the most-worn hue `GET /v1/trees` sends with the switch off, so the home card's and the landing's dot, the switcher's
   ring and the sheet's hue draw every roadmap in the default hue. Signed out, the list orders the roadmaps the server
   has received nothing of by id, so the home card and the landing offer back the one with the smallest id, not the
   newest.

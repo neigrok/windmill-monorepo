@@ -188,7 +188,7 @@ Use `npm run build` as the gate. `prebuild` fetches self-hosted weights into `pu
 `vite build` alone skips that step, tests and static-page generation.
 
 Web Deploy runs a pull request's suite a second time with `VITE_ROADMAP_REPLICA_ROOM=on` (its `room-on-tests` job), as
-roadmap's cutover builds; `VITE_ROADMAP_REPLICA_ROOM=on npm test` runs it locally. Only Vite-served tests read the switch,
+production's build sets it; `VITE_ROADMAP_REPLICA_ROOM=on npm test` runs it locally. Only Vite-served tests read the switch,
 so a browser test about one reading pins `replicaRoom.js` in its fixture and says which in its name.
 
 When Roadmap events or failure boundaries change, run the existing cheap observability audit before
@@ -293,9 +293,10 @@ read-only, with the event intake and Sentry blocked and the sync engine's pull l
 error, a console error, a failed same-origin request other than the anonymous `/v1/me` 401, a Graph with no painted pixels, a
 session the server never answered, any Sentry attempt, a `client_error` beacon, a landing the app never mounted over, or a
 service worker that never took the page and primed its shell or answers a returning visit badly. It calls no route roadmap's
-move onto the engine retires, so it walks production on either side of the move: the step link takes its step from the
-reader's Board and the roadmap's visibility from its share page, and a session is answered once today's socket answers its
-subscribe or once the engine has pulled the roadmap and follows it live. Against a local stack (`serve-built.mjs` renders no
+move onto the engine retires, so it walks a server with roadmap's switch on, as production's is, or off: the step link
+takes its step from the reader's Board and the roadmap's visibility from its share page, and a session is answered once
+the engine has pulled the roadmap and follows it live, or, with the switch off, once the room's socket answers its
+subscribe. Against a local stack (`serve-built.mjs` renders no
 share page), pass the backend as `--api`. `scripts/benchmark-board.mjs` measures the Board under CPU throttling, on roadmaps
 it plants through MCP (`scripts/roadmap-rig/planter.mjs`); it is a measuring tool, not a gate.
 

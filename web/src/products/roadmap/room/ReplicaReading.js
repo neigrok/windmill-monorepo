@@ -158,9 +158,10 @@ export class ReplicaReading {
   }
 
   // What an address comes to for the person, for the tree picker, read from the copy as the room reads its roadmap, where
-  // today's server answered `GET /v1/trees/{id}` (§7: a device computes it from its copy): its name, how many steps it
-  // holds and whether it is theirs. The copy names no author. Null where no roadmap they may read stands there; a copy that
-  // did not open, or no answer within the bound, throws as a read the server never answered does (status 0).
+  // with the switch off the server answers `GET /v1/trees/{id}` (§7: a device computes it from its copy): its name, how
+  // many steps it holds and whether it is theirs. The copy names no author. Null where no roadmap they may read stands
+  // there; a copy that did not open, or no answer within the bound, throws as a read the server never answered does
+  // (status 0).
   async readCard() {
     const answer = await this.open(this.stopped.signal);
     if (answer?.unshown === 'missing') return null;

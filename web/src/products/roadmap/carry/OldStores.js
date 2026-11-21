@@ -1,6 +1,6 @@
 // What roadmap's old bundle kept in this browser (roadmap-on-the-engine.md §8.2), read for the carry-over and deleted once
 // carried: each roadmap's record in the sync database (`SyncStore`), its row of the device index (`LocalTreeRegistry`),
-// its workspaces (`WorkspaceStore`) and the marks left undrained from before roadmap's present sync (`ProgressStore`).
+// its workspaces (`WorkspaceStore`) and the marks left undrained from before roadmap's own sync (`ProgressStore`).
 // `OldRoadmap` says what one roadmap's entries come to as the domain's acts; the carry-over decides where they go. The
 // stores that are not sync's stay: the last place, the view, the legend and the ledgers, and the demo's own workspace.
 // `CarryNotes` is what the carry-over remembers of them in this browser from one load to the next.
@@ -206,7 +206,7 @@ export class OldRoadmap {
       .map((step) => part(new CarryMark(to, step.id), { t: 'progress', id: step.id }, { mark: { status: 'complete' } }, 'mark'));
   }
 
-  // §8.2 The marks left undrained from before roadmap's present sync: each completed step, unless the person holds a mark
+  // §8.2 The marks left undrained from before roadmap's own sync: each completed step, unless the person holds a mark
   // of it.
   undrained(to) {
     return ProgressStore.marksOf(this.marks).filter((mark) => mark.status === 'complete')

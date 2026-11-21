@@ -25,7 +25,7 @@ matching the container does not establish that its inherited text is current.
   Shared component typography and mixed prose/numeral runs must not be flattened into one Gym style.
 - **F5 / 1w · Unused glow.** Audit the Gym library's Daylight `glow/set-done` values and remove
   unused bindings. Daylight web has no set-done glow.
-- **Planned-maintenance page.** While `ops-maintenance.yml` or roadmap's cutover pauses the site,
+- **Planned-maintenance page.** While `ops-maintenance.yml` pauses the site,
   `backend/deploy/Caddyfile` answers every page and API path with a 503 and one plain-text sentence,
   "Windmill is down for a planned update and will be back shortly." No board draws it. Draw the page a
   person lands on during a pause, in the brand's voice and both themes, and say what an open tab shows.
@@ -607,10 +607,12 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   land; sign-in's Add or Discard and sign-out's Keep or Discard; nine-second roadmap-delete Undo;
   and the room and activity without presence. Deletion is permanent after the hold. The
   [interaction handoff](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1412-1555)
-  specifies the paths. The web implementation is pending; flow 43's refused-change states and the
-  Restore offer for a hidden link retire with that build.
+  specifies the paths. Production's web room, the one on the device's copy, is built from them; flow 43's
+  refused-change states and the Restore offer for a hidden link belong to roadmap's own sync, which serves
+  the room with the switch off, and go with it (the Roadmap on the engine tree's node
+  `m5-delete-roadmaps-own-sync`).
 - **Roadmap on the sync engine · two steps of flow 51 the boards do not draw.** Built behind the room's replica switch
-  (off in production) from [journeys 48–52](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1412-1531): the
+  (on in production) from [journeys 48–52](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1412-1531): the
   switcher's confirm before a roadmap's delete still says *This can't be undone*, which is untrue once the delete is held
   nine seconds with *Undo* (R-7); and *Your roadmaps* with no roadmap left shows only its heading. To draw, for the web's
   owner: the confirm's copy (or no confirm, since Undo stands for nine seconds), and the empty *Your roadmaps*. Phones

@@ -776,9 +776,9 @@ create index if not exists sync_requests_started_at on sync_requests (started_at
 
 -- ── Roadmap on the engine (products/roadmap/sync/, docs/foundation/roadmap-on-the-engine.md §4, §7) ─────────────
 -- Roadmap's records as the sync engine stores them (engine.md §2.2, Appendix A.1), beside trees, tree_nodes,
--- tree_edges, tree_kinds and node_progress, which roadmap's own sync keeps writing until the cutover fills these
--- (roadmap-on-the-engine.md §8.1). Nothing here alters a table roadmap's own sync reads. Until then production writes
--- nothing into them: windmill_server withholds roadmap's scopes unless ROADMAP_ENGINE_ENABLED says otherwise.
+-- tree_edges, tree_kinds and node_progress, the tables of roadmap's own sync, from which the cutover adopted these
+-- (roadmap-on-the-engine.md §8.1). Nothing here alters a table roadmap's own sync reads. windmill_server withholds
+-- roadmap's scopes, and writes nothing into these, unless ROADMAP_ENGINE_ENABLED says otherwise, as production's does.
 --
 -- Every table carries the envelope PgTableType reads: scope_key, id, seq, rc and ru (epoch ms); born for a minted or
 -- derived type; life where dead rows are kept; life_stamp for a type with life; <field>_stamp beside every lattice

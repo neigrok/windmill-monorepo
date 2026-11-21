@@ -1,6 +1,6 @@
-// Today's reading of a roadmap, the room's default while the replica's waits behind its switch: the server's tree, or
-// the device's copy where the server has none to give, then roadmap's own session for every change after. It works out
-// what the trees a step opens come to: the server's read, or the device's own rule for a tree that lives only here.
+// The reading of a roadmap through roadmap's own sync, the room's where the replica's switch is off: the server's tree,
+// or the device's copy where the server has none to give, then roadmap's own session for every change after. It works
+// out what the trees a step opens come to: the server's read, or the device's own rule for a tree that lives only here.
 
 import { stagedMarks } from '../demo/demoStage.js';
 import { Openings } from '../model/Opening.js';

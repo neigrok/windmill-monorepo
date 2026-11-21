@@ -1,11 +1,11 @@
 // The room's writes on the device's copy (roadmap-on-the-engine.md §5, §8.4): the slice of roadmap's own session that the
 // room's write paths call, each write one of the domain's acts on the kit's runner, so every control, toast and event
 // stays the room's own. A gesture is decided before anything is written: one the domain refuses applies nothing, as a
-// gesture nothing applies to today, and is said in today's words; one it takes is written, and its receipt says once it
-// has landed, so the room shows a success only for what was written. A gesture made of several of the domain's acts is
-// one composed act (domain-kit.md §9.7): each part reads what the parts before it plan, a refusal of any part writes
-// nothing, and its one Undo takes back every part. The keyboard's Undo and Redo walk the room's own stack of those
-// receipts (§5 Undo). It decides nothing itself: what a write is and what it refuses are the domain's.
+// gesture nothing applies to with the switch off, and is said in that room's words; one it takes is written, and its
+// receipt says once it has landed, so the room shows a success only for what was written. A gesture made of several of
+// the domain's acts is one composed act (domain-kit.md §9.7): each part reads what the parts before it plan, a refusal
+// of any part writes nothing, and its one Undo takes back every part. The keyboard's Undo and Redo walk the room's own
+// stack of those receipts (§5 Undo). It decides nothing itself: what a write is and what it refuses are the domain's.
 
 import { ActDecision } from '../../../platform/domain-kit/acts.js';
 import { firstGone } from '../../../platform/domain-kit/actions.js';
@@ -112,7 +112,8 @@ export class ReplicaSession {
     return decided;
   }
 
-  // The first of the acts the domain refuses at plan time, said in today's words, or null where it takes them all.
+  // The first of the acts the domain refuses at plan time, said in the switch-off room's words, or null where it takes
+  // them all.
   refusedOf(acts, what) {
     const refused = acts.map((act) => this.decide(act)).find((decided) => decided.kind === 'refuse');
     if (!refused) return null;

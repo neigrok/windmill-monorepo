@@ -91,13 +91,14 @@ finds it with no configuration. The default is `:8080`, which Docker Desktop usu
 Everything else is optional and each feature stays dark without its key — copy `.env.example` to
 `.env` and `set -a; source .env; set +a` before the binary.
 
-`ROADMAP_ENGINE_ENABLED=1` serves roadmap's scopes through the sync engine (`products/roadmap/sync/`), on the
+`ROADMAP_ENGINE_ENABLED=1`, which production's host sets (`deploy/README.md`, "Roadmap's cutover onto the sync
+engine"), serves roadmap's scopes through the sync engine (`products/roadmap/sync/`), on the
 `roadmap_*` tables `db/schema.sql` builds, and feeds roadmap's read models from them: the activity feed, the owner's
 progress, the share page with its card and video, the gallery and reminders' readiness (`application/EngineReadModels`).
 It also retires the rooms' socket and routes (`products/roadmap/routes.cpp`): `/v1/socket`, `GET`/`POST /v1/trees`,
 `GET`/`PATCH`/`DELETE /v1/trees/{id}`, its `/guides` and `/diagnostics` and `PUT …/subtree` answer 410
 `client-update-required` before authentication. Without it the server
-composes and binds roadmap but withholds its scopes, as production does until roadmap's cutover: hello says roadmap
+composes and binds roadmap but withholds its scopes: hello says roadmap
 holds nothing, `self/roadmap` pulls empty, its trees are not found, every roadmap intent is refused, and the read
 models read the rooms and roadmap's own tables.
 
@@ -441,8 +442,8 @@ a sync pull a worker answers late — and checks its exit code, the deadline it 
 after the signal and its log. `roadmap_routes` runs only under `WM_PG_TEST`: it starts `windmill_server` over
 `DATABASE_URL` with `ROADMAP_ENGINE_ENABLED` unset and set, and asks every route of roadmap's rooms, `/v1/socket`'s upgrade
 and a plain GET of it, and the routes the move keeps, signed out and signed in, with a body none can parse: unset, each
-answers through its handler as before the move; set, each of the rooms' answers 410 `client-update-required` with the
-CORS headers an allow-listed origin reads, logged once under its static operation in a line that names no tree, session
+answers through its handler, as roadmap's rooms serve it; set, each of the rooms' answers 410 `client-update-required`
+with the CORS headers an allow-listed origin reads, logged once under its static operation in a line that names no tree, session
 or body, and the kept routes answer as they do unset. `subtree_inventory` checks the subtree inventory tool's refusals; under `WM_PG_TEST` it builds
 databases of its own beside `DATABASE_URL`'s, which the role must be allowed to create, and checks the
 counts the tool prints, that they name no tree, account or title, that the tool writes nothing, and that
@@ -537,8 +538,8 @@ with the same two-database setup above (`windmill_test` for `DATABASE_URL`, `win
 `WM_SYNC_DATABASE_URL`). It then serves the stage's own `windmill_server_probe` on the sync database
 and runs `test/e2e/deployment_conformance.mjs` against it, and serves `windmill_server` on a third
 database holding `db/schema.sql` alone, where `WM_E2E_CATALOG=products` runs the same direct and edge
-suite over the product composition's catalog, roadmap's scopes withheld as production runs them, and its
-three product scopes. On the runner
+suite over the product composition's catalog, roadmap's scopes withheld there with `ROADMAP_ENGINE_ENABLED` unset, and
+its three product scopes. On the runner
 itself, `test/deploy/schema_reapplication_test.py` checks that re-applying `db/schema.sql`, as every
 deploy does, changes nothing, and that repeated application removes retired cutover storage and the
 retired tree columns while preserving live rows.

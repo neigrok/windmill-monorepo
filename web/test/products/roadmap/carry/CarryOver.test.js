@@ -172,7 +172,7 @@ const NOTHING_OLD = { sync: [], index: [], workspaces: [], marks: [] };
 const queued = (engine) => engine.device.activeReplica.outbox.filter((entry) => entry.state !== 'acked').length;
 
 // The old bundle plants a roadmap with nobody signed in, as its new-roadmap door does from a paste, and marks a step in
-// its room; it keeps a workspace on two steps, and a mark left undrained from before roadmap's present sync.
+// its room; it keeps a workspace on two steps, and a mark left undrained from before roadmap's own sync.
 async function plantedSignedOut(owner = null) {
   globalThis.window.wmDeviceConfirmation = { owner };
   const id = await bearImportedTree({ title: 'Learn to sail', kinds: DEFAULT_KINDS, nodes: [

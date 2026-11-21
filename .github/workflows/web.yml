@@ -40,9 +40,9 @@ defaults:
     working-directory: web
 
 jobs:
-  # A pull request's suite again with roadmap's room reading the device's copy, as the cutover builds it, so a change that
-  # breaks the room on fails before it merges. It runs the tests alone: the build below builds the room off and is what
-  # ships.
+  # A pull request's suite again with roadmap's room reading the device's copy, as production's build reads it, so a
+  # change that breaks the room on fails before it merges. It runs the tests alone: a pull request's build below reaches
+  # no host, builds the room off and ships nothing.
   room-on-tests:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04

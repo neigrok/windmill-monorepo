@@ -1,7 +1,7 @@
-# By hand only, on the day the owner set: roadmap's cutover onto the sync engine in production (Roadmap on the sync
-# engine §8.1), its host stages in backend/deploy/roadmap-cutover.sh. Every stage prints counts and verdicts alone; the
-# move's private record leaves the host only sealed to the owner. The runbook: backend/deploy/README.md, "Roadmap's
-# cutover onto the sync engine".
+# By hand only: roadmap's cutover onto the sync engine in production (Roadmap on the sync engine §8.1), its host stages
+# in backend/deploy/roadmap-cutover.sh. Every stage prints counts and verdicts alone; the move's private record leaves
+# the host only sealed to the owner. It moved production in run 44846026848, and on that host its check now refuses:
+# roadmap-engine.env holds the switch. The runbook: backend/deploy/README.md, "Roadmap's cutover onto the sync engine".
 name: Roadmap cutover
 
 on:

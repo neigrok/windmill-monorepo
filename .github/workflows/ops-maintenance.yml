@@ -1,6 +1,5 @@
 # By hand only, from main: pause the whole site for a planned maintenance, or lift the pause (backend/deploy/README.md,
-# "Pause the site"). Roadmap's cutover pauses and lifts the site itself; this is the door to lift the pause a cutover
-# leaves when it fails after writes resumed, once what failed is fixed. It refuses while a cutover or its restore runs.
+# "Pause the site"). It refuses while a roadmap cutover or its restore runs.
 name: Ops · maintenance
 
 on:

@@ -100,7 +100,7 @@ struct OldReading {
 // The old server's reading of every roadmap it reads, by id, owned by its account, or by the house account where the move
 // was told to expect it with none. Nothing of the move's rules is in it: a record's life is its element set's (present
 // while added and not removed after), a step or a kind a record with a stamp, a link one the old server reads between
-// two of its steps (liveEdges: never from a step to itself), and the order of steps and kinds today's.
+// two of its steps (liveEdges: never from a step to itself), and the order of steps and kinds its own.
 std::map<std::string, Document> documentsBefore(const std::vector<OldReading>& readings, const Expectation& expectation,
                                                 const std::set<std::string>& accounts);
 

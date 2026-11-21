@@ -215,7 +215,7 @@ export class CarryRoadmap {
 }
 
 // A mark the carry-over found where no gesture made it, from a step's seed or a mark left undrained from before roadmap's
-// present sync: it stands only where the person's overlay holds no mark of the step, so a mark the server has is never
+// own sync: it stands only where the person's overlay holds no mark of the step, so a mark the server has is never
 // overwritten by an older one.
 export class CarryMark {
   /**
