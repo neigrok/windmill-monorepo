@@ -358,8 +358,9 @@ makes it false.
 
 ## §13 Gaps this build closes
 
-- The app has no third room, no associated domain and no roadmap code; its onboarding says roadmap
-  is on the web. Nothing serves an association file.
+- The app has no third room and no associated domain, and of roadmap's code `apps/ios` holds the
+  picture's module alone; its onboarding says roadmap is on the web. Nothing serves an association
+  file.
 - The app's one runner deletes at once, in every room.
 - The plan grammar and the quest roster are the web's code and the web's own tests alone
   (`web/src/products/roadmap/paste/`, `web/src/products/roadmap/quests/roster/`): no shared case

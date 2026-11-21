@@ -7,6 +7,7 @@ enum Layer: String, Sendable {
   case kit
   case kitTestSupport = "kit test support"
   case productDomain = "product domain"
+  case picture
   case platform
   case productUI = "product UI"
   case test
@@ -32,6 +33,7 @@ enum Layers {
     LayerRow(
       layer: .kitTestSupport, modules: ["DomainKitTesting"], mayDependOn: [.kit, .engineAPI], mayAlsoDependOn: ["SyncEngine", "SyncTesting"]),
     LayerRow(layer: .productDomain, modules: ["GymDomain", "JournalDomain"], mayDependOn: [.kit, .engineAPI], mayAlsoDependOn: []),
+    LayerRow(layer: .picture, modules: ["RoadmapLayout"], mayDependOn: [], mayAlsoDependOn: []),
     LayerRow(layer: .platform, modules: ["WindmillPlatform"], mayDependOn: [.kit, .engineAPI, .agent], mayAlsoDependOn: ["SyncEngine"]),
     LayerRow(
       layer: .productUI, modules: ["WindmillGym", "WindmillJournal"], mayDependOn: [.productDomain, .kit, .engineAPI, .platform],

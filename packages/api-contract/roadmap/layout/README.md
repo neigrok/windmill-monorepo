@@ -8,6 +8,9 @@ The web writes the files: `npm run generate:roadmap-layout` in `web/` (`web/scri
 `web/test/products/roadmap/layout/fixtures.test.js` fails when a file is not what the web draws today, so a change
 to the picture lands with regenerated fixtures or not at all. No file is edited by hand.
 
+Swift runs every file: `apps/ios/Domain/Tests/RoadmapLayoutTests` draws each roadmap with `RoadmapLayout` and compares
+every number here bit for bit, and fails on a file it does not name.
+
 | File | The roadmap | Why it is here |
 | --- | --- | --- |
 | `learn-to-sail.json` | The design's fixture: eight steps, three of them done | The roadmap the boards draw |
