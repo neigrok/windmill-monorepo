@@ -7,8 +7,10 @@ import SyncReplica
 // `StoreTransaction`: an open transaction as the rest of the engine sees it, naming no GRDB type and no handle. Its loaders
 // build the working copies planners change; its queries serve the readers. Each finds a replica by its id once, then
 // reads by its handle. The cursors, staging digests, known scopes and device rows of a replica are always loaded whole;
-// rows only as a planner's read set names them, and outbox entries whole or as its entry selection names them. A legacy
-// entry is found in a scope by its own columns, an opted one by its projections (`outbox_projection`).
+// rows only as a planner's read set names them, and outbox entries whole or as its entry selection names them. The journal
+// loads whole, with the entries it names, for a planner that reads it; a reader's load leaves it, so a read costs the same
+// whatever the journal holds. A legacy entry is found in a scope by its own columns, an opted one by its projections
+// (`outbox_projection`).
 
 public struct StoreTransaction {
   let db: Database
@@ -32,13 +34,14 @@ public struct StoreTransaction {
     try String.fetchAll(db, sql: "SELECT id FROM replica ORDER BY handle")
   }
 
-  // One replica with the rows `reads` names and the outbox entries `entries` names; `notices` loads its notices too.
+  // One replica with the rows `reads` names and the outbox entries `entries` names; `notices` loads its notices too, and
+  // `journal` false leaves its journal and the entries that names unread.
   public func replica(_ id: String, reads: [ScopeRef: RowSelection] = [:], entries selection: EntrySelection = .every,
-                      notices: Bool = false) throws -> LoadedReplica? {
+                      notices: Bool = false, journal readsJournal: Bool = true) throws -> LoadedReplica? {
     guard let (handle, meta, journaled) = try record(of: id) else { return nil }
-    let journal = journaled ? try self.journal(of: handle) : Journal()
+    let journal = readsJournal ? (journaled ? try self.journal(of: handle) : Journal()) : nil
     var entries = selection
-    entries.localIds.formUnion(journal.namedLocalIds)
+    entries.localIds.formUnion(journal?.namedLocalIds ?? [])
     let cursors = try cursors(of: handle)
     var confirmed: [ScopeRef: Rows] = [:]
     var spent: [ScopeRef: [RecordKey: SpentID]] = [:]

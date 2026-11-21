@@ -99,7 +99,7 @@ extension Store {
         guard let meta = try tx.meta(of: active) else { throw StoreError.noReplica(active) }
         try planners.commits.checkWritable(meta)
         let identities = UniqueGestureIDs(identities, carries: tx.carries(gestureId:))
-        let firstOrder = try loaded(active, in: tx).nextCommitOrder
+        let firstOrder = try loaded(active, in: tx, entries: EntrySelection(), journal: false).nextCommitOrder
         var preparation: (request: ActRequest?, value: T)?
         try db.inSavepoint {
           let staging = ActStaging { (gesture: Gesture, scope: ScopeRef, offset: Int) throws -> (outcome: CommitOutcome, written: Bool) in
@@ -117,8 +117,8 @@ extension Store {
         guard let request, !request.scopes.isEmpty else { return Written(value: (nil, prepared), events: [], change: StoreChange()) }
         if let id = request.gestureId, try tx.carries(gestureId: id) { throw CommitFailure.malformed("the act gesture id is taken") }
         let undoReads = UndoPlan.reads(of: request.undo, scopes: request.scopes)
-        let undoPlan = try planners.commits.undoPlan(request.undo, scopes: request.scopes,
-                                                     in: try loaded(active, in: tx, reads: undoReads, entries: EntrySelection()))
+        let undoPlan = try planners.commits.undoPlan(
+          request.undo, scopes: request.scopes, in: try loaded(active, in: tx, reads: undoReads, entries: EntrySelection(), journal: false))
         let gestureId = try request.gestureId ?? identities.gestureID()
         var receipts: [ActSegmentReceipt] = []
         var retired: [String] = [], superseded: [String] = []
@@ -291,7 +291,7 @@ extension Store {
   // What the scopes asked make of `replica`'s next request; nil when the replica is no longer active.
   public func pullPlan(_ scopes: [ScopeRef], replica id: String) throws -> PullPlan? {
     try read { tx in
-      guard try tx.activeReplica().utf8.elementsEqual(id.utf8), let replica = try tx.replica(id) else { return nil }
+      guard try tx.activeReplica().utf8.elementsEqual(id.utf8), let replica = try tx.replica(id, journal: false) else { return nil }
       return planners.pages.plan(scopes, in: replica)
     }
   }
@@ -445,21 +445,23 @@ extension Store {
   // waits for its governing record's create. Nil when the store holds no such replica.
   public func subscriptions(of replica: String, _ subscribed: SubscriptionSet) throws -> (set: [ScopeRef], pulled: [ScopeRef])? {
     try read { tx in
-      guard let loaded = try tx.replica(replica, reads: planners.lifecycle.reads(of: subscribed)) else { return nil }
+      guard let loaded = try tx.replica(replica, reads: planners.lifecycle.reads(of: subscribed), journal: false) else { return nil }
       let set = try planners.lifecycle.subscriptionSet(of: loaded, subscribed)
       return (set, set.filter { planners.pages.pulls($0, in: loaded) })
     }
   }
 
   public func anonCount(of product: String, in replica: String) throws -> [String: Int] {
-    try read { tx in planners.lifecycle.anonCount(of: product, in: try loaded(replica, in: tx)) }
+    try read { tx in planners.lifecycle.anonCount(of: product, in: try loaded(replica, in: tx, journal: false)) }
   }
 
   // MARK: The Action shapes
 
   func loaded(_ id: String, in tx: StoreTransaction, reads: [ScopeRef: RowSelection] = [:], entries: EntrySelection = .every,
-              notices: Bool = false) throws -> LoadedReplica {
-    guard let replica = try tx.replica(id, reads: reads, entries: entries, notices: notices) else { throw StoreError.noReplica(id) }
+              notices: Bool = false, journal: Bool = true) throws -> LoadedReplica {
+    guard let replica = try tx.replica(id, reads: reads, entries: entries, notices: notices, journal: journal) else {
+      throw StoreError.noReplica(id)
+    }
     return replica
   }
 

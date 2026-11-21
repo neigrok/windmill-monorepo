@@ -87,6 +87,17 @@ struct ModelTests {
     }
   }
 
+  @Test func readingOrWritingTheJournalTheLoadLeftOutTraps() async {
+    await #expect(processExitsWith: .failure) {
+      let replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), journal: nil, wholeScopes: false)
+      _ = replica.journal
+    }
+    await #expect(processExitsWith: .failure) {
+      var replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), journal: nil, wholeScopes: false)
+      replica.updateJournal { $0.acts.append(ReversibleAct(actId: "g1", sourceEntries: [])) }
+    }
+  }
+
   @Test func readingTheWholeOutboxOfAPartialLoadTraps() async {
     await #expect(processExitsWith: .failure) {
       let replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), entries: EntrySelection(heldGestures: true),

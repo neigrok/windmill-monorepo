@@ -585,7 +585,7 @@ public struct EntrySelection: Sendable, Hashable {
   public var scopes: Set<ScopeRef>
   // The scopes uncovered projections target, which a subscription set read in the transaction joins (§7.9).
   public var projectionTargets: Bool
-  // Entries by local id: those the journal names, loaded with it (§7.3 Undo of an act).
+  // Entries by local id: those the journal names, loaded with it where a load reads the journal (§7.3 Undo of an act).
   public var localIds: Set<String>
 
   public init(all: Bool = false, heldGestures: Bool = false, numbered: Set<Int64> = [], covered: CoveredEntries? = nil,

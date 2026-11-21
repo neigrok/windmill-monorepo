@@ -144,10 +144,11 @@ struct Listing: Hashable, Sendable {
 
 // One scope of the active replica, read inside one open transaction: the `ScopeReader` a `read` passes and the
 // `CommitContext` a commit's body decides through (§7.1, §7.6), and the loads the views refresh from. Each read folds the
-// rows it names with the pending entries that touch them. A misuse of the reader (a scope the registry does not hold, a type
-// outside it, a field that is no ref, a mint of a type that mints none, a read or a mint after its call returned) throws
-// a malformed `CommitFailure` where it happens, so it is malformed wherever it surfaces. The first failure of a read or
-// a mint is kept, and fails the commit whose body met it.
+// rows it names with the pending entries that touch them, and leaves the journal and every other entry unread, so its
+// cost does not follow what they hold. A misuse of the reader (a scope the registry does not hold, a type outside it, a
+// field that is no ref, a mint of a type that mints none, a read or a mint after its call returned) throws a malformed
+// `CommitFailure` where it happens, so it is malformed wherever it surfaces. The first failure of a read or a mint is
+// kept, and fails the commit whose body met it.
 
 final class TransactionReader: CommitContext {
   // What a read throws once the call that passed the reader has returned.
@@ -281,7 +282,9 @@ final class TransactionReader: CommitContext {
   func commands() throws -> [QueuedCommand] {
     try reading {
       guard isOpen else { throw TransactionReader.ended }
-      guard let replica = try tx.replica(meta.replica, entries: EntrySelection(scopes: [scope])) else { throw StoreError.noReplica(meta.replica) }
+      guard let replica = try tx.replica(meta.replica, entries: EntrySelection(scopes: [scope]), journal: false) else {
+        throw StoreError.noReplica(meta.replica)
+      }
       return replica.entries(in: scope).filter { $0.scope == scope }.compactMap { entry in
         entry.intent.command.map { QueuedCommand(gestureId: entry.gestureId, command: $0,
           canSupersede: meta.state == .anon && entry.isQueued && entry.n == nil, isAdmitted: entry.state == .acked) }
@@ -377,10 +380,10 @@ final class TransactionReader: CommitContext {
     return held
   }
 
-  // The rows `selection` names, with the entries that touch them.
+  // The rows `selection` names, with the entries that touch them, and nothing of the journal.
   func load(_ selection: RowSelection) throws -> LoadedReplica {
     guard isOpen else { throw TransactionReader.ended }
-    guard let replica = try tx.replica(meta.replica, reads: [scope: selection], entries: EntrySelection()) else {
+    guard let replica = try tx.replica(meta.replica, reads: [scope: selection], entries: EntrySelection(), journal: false) else {
       throw StoreError.noReplica(meta.replica)
     }
     return replica
