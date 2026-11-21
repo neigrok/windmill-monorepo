@@ -13,7 +13,7 @@ struct RoadmapRulesTests {
   }
 
   @Test func everyCodeMapsAndEveryLocalRuleHasVectors() throws {
-    let actions = ["roadmaps", "steps", "kinds", "progress"].map { "roadmap/domain/\($0)-actions.json" }
+    let actions = ["roadmaps", "steps", "kinds", "progress", "workspace"].map { "roadmap/domain/\($0)-actions.json" }
     try RuleBookCheck.check(RoadmapRules.book, refusal: RoadmapRefusal.self, vectors: "roadmap/domain/values.json", actionVectors: actions)
   }
 
