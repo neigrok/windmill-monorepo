@@ -31,9 +31,10 @@ public struct LandingRead: Sendable {
 
   public init(of tree: ID<RoadmapEntry>, in read: Reader) throws {
     let note = try LandingNote(of: tree, in: read)
-    let roadmap = try RoadmapTree(stepsOf: tree, in: read)
+    let steps = try DrawnSteps(of: tree, in: read)
+    let roadmap = steps.roadmap
     let name = { (step: String) -> String? in roadmap.step(step)?.label ?? note.name(of: ID(RecordID(step))) }
-    let said = try note.saying(of: roadmap, by: LandingOrder(read)).map { (link: RoadmapLink) -> RoadmapTree.Edge in
+    let said = try note.saying(by: LandingOrder(read, over: steps)).map { (link: RoadmapLink) -> RoadmapTree.Edge in
       RoadmapTree.Edge(from: link.from.description, to: link.to.description, present: true)
     }
     follows = FollowGraph(roadmap).landingFacts(own: said).map { (fact: LandingFact) -> Line in
@@ -72,7 +73,7 @@ public struct ClearLanding: ActAction {
     }
     guard !listed.gone else { return (listed.held, nil) }
     return (listed.held, try read.inScope(tree.tree) { (scope: Reader) throws -> LandingNote in
-      try LandingNote(settledOf: tree, in: scope, roadmap: RoadmapTree(stepsOf: tree, in: scope))
+      try LandingNote(settledOver: DrawnSteps(of: tree, in: scope), in: scope)
     })
   }
 

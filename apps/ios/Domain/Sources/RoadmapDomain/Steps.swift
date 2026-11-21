@@ -143,15 +143,24 @@ extension RoadmapTree.Edge {
   var link: RoadmapLink { RoadmapLink(from: ID(RecordID(from)), to: ID(RecordID(to))) }
 }
 
-extension RoadmapTree {
-  // The steps and links of one tree scope, every record a reader holds, absent ones kept: what a step follows, and its
-  // loops, are read through absent steps (D-5).
-  init(stepsOf tree: ID<RoadmapEntry>, in read: Reader) throws {
-    precondition(read.scope == tree.tree, "the steps of \(tree) are read in its tree scope")
-    let records = try read.repository(RoadmapStep.self).records(in: .drawn) + read.repository(RoadmapLink.self).records(in: .drawn)
-    try self.init(id: tree, listed: nil, tree: records, overlay: nil)
-  }
+// The steps and links of one tree scope as its reader holds them: every record `drawn` folds, visible or not, by its key,
+// and the roadmap they make, absent ones kept, so that what a step follows, and its loops, are read through absent steps
+// (D-5). They are read once for an act: a call of the engine's reader is a read of the device's store.
+struct DrawnSteps: Sendable {
+  let tree: ID<RoadmapEntry>
+  let records: [RecordKey: Record]
+  let roadmap: RoadmapTree
 
+  init(of tree: ID<RoadmapEntry>, in read: Reader) throws {
+    precondition(read.scope == tree.tree, "the steps of \(tree) are read in its tree scope")
+    let folded = try read.repository(RoadmapStep.self).records(in: .drawn) + read.repository(RoadmapLink.self).records(in: .drawn)
+    self.tree = tree
+    records = Dictionary(folded.map { (RecordKey($0.type, $0.id), $0) }) { (first: Record, _: Record) -> Record in first }
+    roadmap = try RoadmapTree(id: tree, listed: nil, tree: folded, overlay: nil)
+  }
+}
+
+extension RoadmapTree {
   // The first of the new links on a loop among what steps follow: one from a step to itself, or one that closes a loop
   // holding a present step. A loop of absent steps alone is read without harm.
   func firstLoop(closedBy links: [RoadmapLink]) -> Int? {
@@ -316,14 +325,14 @@ public struct HeldSteps: Sendable {
 
   init(of tree: ID<RoadmapEntry>, naming named: [ID<RoadmapStep>], in read: Reader) throws {
     let held = read.repository(RoadmapStep.self)
-    let roadmap = try RoadmapTree(stepsOf: tree, in: read)
-    self.roadmap = roadmap
+    let drawn = try DrawnSteps(of: tree, in: read)
+    roadmap = drawn.roadmap
     known = Set(try named.filter { (step: ID<RoadmapStep>) throws -> Bool in
-      try roadmap.step(step.description) != nil || held.spentBorn(step) != nil
+      try drawn.roadmap.step(step.description) != nil || held.spentBorn(step) != nil
     })
     steps = try held.capacity()
     links = try read.repository(RoadmapLink.self).capacity()
-    note = try LandingNote(settledOf: tree, in: read, roadmap: roadmap)
+    note = try LandingNote(settledOver: drawn, in: read)
     moment = read.moment
   }
 
@@ -394,7 +403,7 @@ public struct HeldStep: Sendable {
   init(_ step: ID<RoadmapStep>, of tree: ID<RoadmapEntry>, in read: Reader) throws {
     self.tree = tree
     held = try HeldRecord(RoadmapStep(id: step), in: read.repository(RoadmapStep.self))
-    note = held.isAbsent ? try LandingNote(settledOf: tree, in: read, roadmap: RoadmapTree(stepsOf: tree, in: read)) : nil
+    note = held.isAbsent ? try LandingNote(settledOver: DrawnSteps(of: tree, in: read), in: read) : nil
     moment = read.moment
   }
 
@@ -452,12 +461,12 @@ public struct MoveStep: ActAction {
     self.siblings = siblings.filter { $0 != step }
   }
 
-  // The siblings the roadmap draws that hold a key that orders, each with its key.
+  // The siblings the roadmap draws that hold a key that orders, each with its key, from one read of its steps.
   public func load(_ read: ActReader) throws -> (step: HeldStep, members: [ListMember]) {
     try read.inScope(tree.tree) { (scope: Reader) throws -> (step: HeldStep, members: [ListMember]) in
-      let steps = scope.repository(RoadmapStep.self)
-      let members = try siblings.compactMap { (sibling: ID<RoadmapStep>) throws -> ListMember? in
-        try steps.find(sibling, in: .drawn)?.key.map { ListMember(id: sibling.json, key: $0) }
+      let named = Set(siblings)
+      let members = try scope.repository(RoadmapStep.self).all(in: .drawn).compactMap { (drawn: RoadmapStep) -> ListMember? in
+        named.contains(drawn.id) ? drawn.key.map { ListMember(id: drawn.id.json, key: $0) } : nil
       }
       return (try HeldStep(step, of: tree, in: scope), members)
     }

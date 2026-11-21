@@ -383,24 +383,33 @@ public struct TreeIndex: Sendable {
 // the server has not yet sent back among them, meets nothing. Before the roadmap's first pull completes nothing has landed.
 struct LandingOrder {
   let read: Reader
+  let steps: DrawnSteps
   let pulled: Bool
 
-  init(_ read: Reader) throws {
+  init(_ read: Reader, over steps: DrawnSteps) throws {
     self.read = read
+    self.steps = steps
     pulled = try read.firstPullComplete()
   }
 
+  // A record no queued entry changes is its confirmed row, and one with no confirmed `seq` has no such row: only a record
+  // an entry still changes over a row the server sent is read again, and compared with that row.
   func landed<E: Entity>(_ id: ID<E>) throws -> Bool {
     guard pulled else { return false }
-    guard let drawn = try read.repository(E.self).record(id, in: .drawn) else { return true }
-    guard let confirmed = try read.confirmed(E.self, id) else { return false }
+    guard let drawn = steps.records[RecordKey(E.type, id.record)] else { return true }
+    guard drawn.isPending else { return true }
+    guard drawn.seq != nil, let confirmed = try read.confirmed(E.self, id) else { return false }
     return drawn.life == confirmed.life && drawn.born == confirmed.born && drawn.values == confirmed.values && drawn.stamps == confirmed.stamps
   }
 
-  func met(_ link: RoadmapLink) throws -> Bool {
-    guard let deleted = try read.repository(RoadmapStep.self).spentSeq(link.from),
-          let linked = try read.confirmed(RoadmapLink.self, link.id)?.seq else { return false }
-    return try landed(link.id) && deleted < linked
+  // The links among `links` that met the delete of the step they come from, each step's spent `seq` read once.
+  func met(among links: [RoadmapLink]) throws -> [RoadmapLink] {
+    var deleted: [ID<RoadmapStep>: Int64] = [:]
+    for step in Set(links.map(\.from)) { deleted[step] = try read.repository(RoadmapStep.self).spentSeq(step) }
+    return try links.filter { (link: RoadmapLink) throws -> Bool in
+      guard let taken = deleted[link.from], let linked = steps.records[RecordKey(RoadmapLink.type, link.id.record)]?.seq else { return false }
+      return try taken < linked && landed(link.id)
+    }
   }
 }
 
@@ -427,7 +436,8 @@ public struct LandingNote: Sendable {
     self.nodes = nodes
     self.edges = edges
     self.revived = revived
-    self.names = names.filter { name in edges.contains { $0.from == name.id } }
+    let linkedFrom = Set(edges.map(\.from))
+    self.names = names.filter { linkedFrom.contains($0.id) }
   }
 
   // The note a device row holds, read leniently: a part that is not what the note keeps there is left out.
@@ -462,17 +472,17 @@ public struct LandingNote: Sendable {
   // that says nothing of the roadmap as it now stands, a step or a link of the device's through which no line is said, and
   // a step its change brought back that is absent again. A line is said only of a delete the server took before the write,
   // and once the write has landed the device holds every such delete, so an entry let go of could never say more.
-  init(settledOf tree: ID<RoadmapEntry>, in read: Reader, roadmap: RoadmapTree) throws {
-    let held = try LandingNote(of: tree, in: read)
-    let order = try LandingOrder(read)
-    let said = try held.saying(of: roadmap, by: order)
+  init(settledOver steps: DrawnSteps, in read: Reader) throws {
+    let held = try LandingNote(of: steps.tree, in: read)
+    let order = try LandingOrder(read, over: steps)
+    let said = try held.saying(by: order)
     self.init(
       nodes: try held.nodes.filter { (step: ID<RoadmapStep>) throws -> Bool in
         try !order.landed(step) || said.contains { $0.to == step }
       },
       edges: try held.edges.filter { (link: RoadmapLink) throws -> Bool in try !order.landed(link.id) || said.contains(link) },
       revived: try held.revived.filter { (step: ID<RoadmapStep>) throws -> Bool in
-        try !order.landed(step) || roadmap.step(step.description)?.present == true
+        try !order.landed(step) || steps.roadmap.step(step.description)?.present == true
       },
       names: held.names)
   }
@@ -494,12 +504,12 @@ public struct LandingNote: Sendable {
 
   // The links whose lines the note says of the roadmap as it now stands: each link it notes, and each into a step it notes,
   // that is read through a step the server took the delete of before it took the link.
-  func saying(of roadmap: RoadmapTree, by order: LandingOrder) throws -> [RoadmapLink] {
+  func saying(by order: LandingOrder) throws -> [RoadmapLink] {
     let through = { (step: ID<RoadmapStep>) -> [RoadmapLink] in
-      roadmap.index.absentParents(step.description).map { RoadmapLink(from: ID(RecordID($0)), to: step) }
+      order.steps.roadmap.index.absentParents(step.description).map { RoadmapLink(from: ID(RecordID($0)), to: step) }
     }
     let bridging = nodes.flatMap(through) + edges.filter { through($0.to).contains($0) }
-    return try bridging.unique.filter(order.met)
+    return try order.met(among: bridging.unique)
   }
 
   // The name the note keeps of a step.
