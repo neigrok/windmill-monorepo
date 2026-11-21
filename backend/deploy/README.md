@@ -227,14 +227,15 @@ the two blocks lead the file, `windmill_ai` first, so a deploy that changes neit
 `rules unchanged` for both. Its rules admit only that role to its ledger, reject every other role
 (including the backend's superuser), and deny its role access to all other databases. Before
 reloading, it validates that the backend can still connect; after reloading, it probes that path and
-restores the old HBA file on failure. Both TCP and local socket paths use these rules. The AI process migrates its ledger on startup.
+restores the old HBA file on failure. Both TCP and local socket paths use these rules. The AI
+process migrates its ledger on startup.
 
 A deployment validates the AI credentials and, before promoting any files, pins `ai-<sha>` to its
 immutable image ID, or keeps the pinned image when nothing it is built from changed. When that tag is
 absent, an existing pinned AI image may be retained; a fresh host is refused. AI provisioning and
-startup happen after backend verification, so an AI startup failure makes deployment red while the backend continues serving. The process has a read-only root,
-a small memory-backed `/tmp`, no host ports, no Linux capabilities, no privilege escalation and
-core dumps disabled. Its image contains the release identity used by Sentry.
+startup happen after backend verification, so an AI startup failure makes deployment red while the
+backend continues serving. The process has a read-only root, a small memory-backed `/tmp`, no host
+ports, no Linux capabilities, no privilege escalation and core dumps disabled. Its image contains the release identity used by Sentry.
 
 Docker allows AI 720 seconds to stop, beyond its 660-second drain and 600-second text-call deadline.
 The infrastructure check asserts this ordering. The deploy waits for graceful replacement and then
