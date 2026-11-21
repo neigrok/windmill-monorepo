@@ -38,8 +38,6 @@ public struct Diagnostics: Sendable {
     public let nodes: Counted
   }
 
-  static let hueOrder = ["terracotta", "olive", "gold", "brick", "sky", "plum"]
-
   // Loops that hold a present step, each by its present steps; a step that follows itself is one.
   public let cycles: Listed<Counted>
   // Loops of absent steps alone, which add no prerequisite.
@@ -49,7 +47,7 @@ public struct Diagnostics: Sendable {
   public let selfEdges: Listed<RoadmapTree.Edge>
   public let smells: [Smell]
   public let legendEmpty: Bool
-  // The hues steps wear that no kind claims, in the legend's hue order.
+  // The hues steps wear that no kind claims, in the rule book's hue order.
   public let unclaimedHues: [UnclaimedHue]
 
   public init(_ graph: FollowGraph) {
@@ -77,8 +75,8 @@ public struct Diagnostics: Sendable {
       if !legendEmpty && !legend.claims(node.color) { unclaimed[node.color, default: (node.color, [])].nodes.append(node.id) }
     }
     let found: [(kind: Smell.Kind, nodes: [String])] = [(.labelTooLong, longLabel), (.emptyIcon, emptyIcon), (.highInDegree, highDegree)]
-    // A hue the legend's order does not name comes first.
-    let rank = { (hue: String) in Diagnostics.hueOrder.firstIndex { $0.utf8.elementsEqual(hue.utf8) } ?? -1 }
+    // A hue the rule book does not name comes first.
+    let rank = { (hue: String) in RoadmapRules.hues.firstIndex { $0.utf8.elementsEqual(hue.utf8) } ?? -1 }
     let unclaimedHues = unclaimed.values.sorted { a, b in
       rank(a.hue) != rank(b.hue) ? rank(a.hue) < rank(b.hue) : a.hue.utf8.lexicographicallyPrecedes(b.hue.utf8)
     }

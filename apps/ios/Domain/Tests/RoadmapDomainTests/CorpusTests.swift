@@ -7,10 +7,11 @@ import Testing
 struct CorpusTests {
   static let reads = ["account", "board", "diagnostics", "graph", "guides", "landing", "legend", "pointers", "progress", "search"]
 
+  // `rules.json` and `values.json` run in RoadmapRulesTests.
   @Test func everyFileIsClaimedOrWaitsForTheActions() throws {
-    let waiting = ["kinds-actions", "landing-actions", "progress-actions", "replica", "roadmaps-actions", "rules", "steps-actions", "undo",
-                   "values", "workspace-actions"]
-    let named = (Self.reads + waiting).map { "roadmap/domain/\($0).json" }.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
+    let claimed = Self.reads + ["rules", "values"]
+    let waiting = ["kinds-actions", "landing-actions", "progress-actions", "replica", "roadmaps-actions", "steps-actions", "undo", "workspace-actions"]
+    let named = (claimed + waiting).map { "roadmap/domain/\($0).json" }.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
     #expect(try Contract.files(under: "roadmap/domain") == named)
   }
 
