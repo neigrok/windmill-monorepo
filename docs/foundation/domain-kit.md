@@ -870,6 +870,7 @@ public struct Reader {                                  // valid only inside one
   public let moment: Moment
   public var replica: String { get }                   // the replica a run's commit writes to (engine §7.12), "" in a read
   public func repository<E: Entity>(_ type: E.Type) -> Repository<E>
+  public func records(in view: ViewMode) throws -> [Record]   // every record of the scope, visible or not (§7.2)
   public func device(_ key: String) throws -> JSON?    // device/<product> rows (engine §2.5)
   public func firstPullComplete() throws -> Bool       // engine §7.9, for the reader's scope
 }
@@ -888,7 +889,9 @@ public struct Repository<E: Entity> {
   public func all(in view: ViewMode) throws -> [E]
   public func children<P: Entity>(of parent: ID<P>, via field: String, in view: ViewMode) throws -> [E]
   public func capacity() throws -> Capacity
+  public func records(in view: ViewMode) throws -> [Record]
   public func spentBorn(_ id: ID<E>) throws -> Stamp?
+  public func spentSeq(_ id: ID<E>) throws -> Int64?
   public static func decode(_ records: some Sequence<Record>) throws(DecodeError) -> [E]
 }
 extension Repository where E: Ordered {
@@ -905,12 +908,18 @@ extension Repository where E: Ordered {
   `RecordsView`.
 - `children` reads through the engine's indexed read (ER-12), so its cost follows the children, not
   the type.
+- Swift's `records(in:)` lists every record of the type as the view folds it, visible or not, in id order, each
+  with the stamp of each register and its confirmed row's `seq` (ER-3); `Reader.records(in:)` lists every record
+  of the scope the same way, in record order (its type, then its id, by bytes), as the web reads `views.drawn`.
+  A record its device deleted and has not yet settled is dead in `drawn`: `all` leaves it out, and `records(in:)`
+  lists it.
 - `spentBorn` is the born of the scope's spent id of the record (engine §2.5 `SpentId`): what the device
   keeps of a derived record deleted elsewhere once its row is gone (engine §7.5), nil for any other id. Such a
   record is in neither view, and a revival (§8.1) takes this born; an id the device never knew has neither.
-  On the web the repository also answers `spentSeq(id)`, the `seq` of the dead row the spent id came from (engine
-  §2.5), null where it keeps none, and a confirmed record (`Reader.confirmed`) keeps its row's `seq`: the server's
-  order of a delete and of a write the device holds. Swift's and Kotlin's repositories carry no `spentSeq`.
+  On the web and in Swift the repository also answers `spentSeq(id)`, the `seq` of the dead row the spent id came
+  from (engine §2.5), null where it keeps none, and a confirmed record (`Reader.confirmed`) keeps its row's `seq`:
+  the server's order of a delete and of a write the device holds. Kotlin's repository carries no `spentSeq`, and its
+  record no `seq`.
 - A record that fails to decode throws `DecodeError`: a schema fault, surfaced, never skipped.
 - A product declares an aggregate's repository as a function composing these.
 
@@ -1908,7 +1917,7 @@ comparing the result with the case's `expect` by JCS. An act's case is a scene o
 confirmed?, spent?}}, device?, ids?, now, offsetSeconds}`, decided as `{write: {segments: [{scope, gesture, undo?}],
 result}}`, `{unchanged: {result}}` or `{refuse}`: `confirmed` is the server's copy of the scope as the device pulled
 it, by default `stored`, `spent` its spent ids (`{t, id, born, seq?}`), and `undo` a segment's Undo recipes where its
-plan opts in. Swift's `ProductCorpus` reads `confirmed` and each spent id's born, its readers answering no `seq` (§7.2),
+plan opts in. Swift's `ProductCorpus` reads `confirmed`, each row with its `seq`, and each spent id's born and `seq` (§7.2),
 and gives `undo`; the web kit's act form reads `drawn`, `stored` and `spent` and gives `{scope, gesture}`, a product's
 runner there adding `confirmed` and `undo`. `Vector.withRecordsReversed` is a case with its `drawn`, `stored` and
 `spent` rows in reverse, which a decision that follows row order fails. `vectors`, `file` and `Contract.vectors` take
@@ -2019,7 +2028,7 @@ stated here; ER-10 is the Kotlin engine owner's.
 |---|---|---|
 | ER-1 | `SyncAPI` (Kotlin `:sync-api`, plain JVM) holds the values of D-2, the `Replica` port and the readers, and depends only on `SyncCore`. Every value type has a public memberwise initialiser. | Swift engine §5.2 |
 | ER-2 | `Replica.commit<T>(scope, body) -> (outcome: CommitOutcome?, value: T)`: the body may return no gesture, which writes nothing and ticks no clock. It throws only before its transaction commits. | engine §7.1, the read-and-commit form |
-| ER-3 | `ScopeReader` and `CommitContext` offer `stored(type)` and `drawn(type)` (visible records), lookups by id (the folded record, visible or not), the born of the scope's spent id of a record (nil where it keeps none), `device(key)` and `firstPullComplete()`. | engine §7.6, §7.9, §7.5, §2.5 `DeviceRow` and `SpentId` |
+| ER-3 | `ScopeReader` and `CommitContext` offer `stored(type)` and `drawn(type)` (visible records), lookups by id (the folded record, visible or not), the born of the scope's spent id of a record (nil where it keeps none), `device(key)` and `firstPullComplete()`. Swift's also offer `records(type, in: view)`, every folded record of a type, visible or not, in id-byte order, which a `RecordsView` asked with `visibleOnly: false` observes, and `spentSeq(type, id)`, the `seq` that spent id keeps; and a Swift `Record` carries the stamp of each lattice register (`stamps`) and its confirmed row's `seq`. | engine §7.6, §7.9, §7.5, §2.5 `DeviceRow` and `SpentId`, §9.1 |
 | ER-4 | `Change.create(…, anchor: OrderAnchor?)` and `Change.move(t, id, to: OrderAnchor)`; the anchor may be a member only `stored` holds. | engine D-25, §7.1 step 4 |
 | ER-5 | `Gesture.guards: [RegisterRef]` guards exactly the lattice registers named; a text field is never guarded. | engine §7.1 step 6, D-19 |
 | ER-6 | `Gesture.retire: [RecordRef]` undoes held, command-free gestures whose every delta removes a named record, in the commit's transaction; `CommitReceipt.retired` lists them. | engine §7.1 step 4, §8.1, INV-10 |
