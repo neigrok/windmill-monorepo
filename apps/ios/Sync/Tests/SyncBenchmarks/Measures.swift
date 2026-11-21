@@ -115,11 +115,14 @@ struct Samples {
     Bench.report(measure, distribution, budget: budget.map { "p95 ≤ \(Bench.format($0))" }, over: budget.map { percentile(95) > $0 })
   }
 
-  // Prints the distribution held to `still`'s, the same measure taken in the same run where what must not move it is
-  // absent: over budget when its median passes `factor` times that median and `slackMs` more. True when it is over.
+  // Prints the distribution and its fastest sample, held to `still`'s, the same measure taken in the same run where what
+  // must not move it is absent: over budget when the fastest passes `factor` times that one's fastest and `slackMs` more.
+  // The fastest sample is the work alone, which a busy machine only adds to. True when it is over.
   func report(growthBudget factor: Double, slackMs: Double, from still: Samples) -> Bool {
-    let over = percentile(50) > still.percentile(50) * factor + slackMs
-    Bench.report(measure, distribution, budget: "p50 ≤ \(factor) × \(Bench.format(still.percentile(50))) + \(Bench.format(slackMs))", over: over)
+    let (fastest, unmoved) = (ms.min() ?? .nan, still.ms.min() ?? .nan)
+    let over = fastest > unmoved * factor + slackMs
+    Bench.report(measure, distribution + [("min", Bench.format(fastest))],
+                 budget: "min ≤ \(factor) × \(Bench.format(unmoved)) + \(Bench.format(slackMs))", over: over)
     return over
   }
 }

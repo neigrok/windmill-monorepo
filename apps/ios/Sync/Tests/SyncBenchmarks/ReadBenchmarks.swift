@@ -13,9 +13,9 @@ import Testing
 // into Undo and not released (§7.3) that created 0, 120 or 500 records: while the act's entry is still queued, and once
 // it has landed and only the journal holds the act. Beside them, an act that makes ten reads and one write. A read loads
 // what it names, so each read, and the act's ten, is held to the same measure with nothing journaled, taken in the same
-// run: a median past `growth` times that one fails the benchmark, since a read that does not grow is what it names. A
-// read of a record the queued act created folds the act's entry, and the act's write reads the journal: those two are
-// reported with no budget.
+// run: a fastest sample past `growth` times that one's fails the benchmark, since a read that does not grow is what it
+// names. A read of a record the queued act created folds the act's entry, and the act's write reads the journal: those
+// two are reported with no budget.
 extension Benchmarks {
   @Suite struct Reads {
     static let scope = ScopeRef.product("probe")
