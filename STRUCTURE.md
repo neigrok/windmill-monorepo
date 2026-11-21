@@ -75,7 +75,6 @@ room machinery.
 
 Raw design tokens are mirrored in `web/src/styles/tokens/` and
 `apps/android/platform/src/main/kotlin/works/windmill/platform/design/Tokens.kt`. Edit them together.
-`PLAN_COPY`, shared subscription wording, still lives in roadmap's web settings module.
 
 ## CI and deployment
 

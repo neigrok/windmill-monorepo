@@ -28,7 +28,7 @@ every band and visitors to the Graph; birth trees open on the Graph, and an owne
 Board. Phone is below 744px, tablet 744–1023px, desktop 1024px and up. Ordinary step activation opens the
 shared document. The 320px tablet panel and 360px desktop inspector remain for Graph naming and tools.
 The document's right-side Coach placeholder is 56px collapsed, or 280/340/400px expanded across tablet,
-1024–1439px and 1440px-up widths. No checkout is offered: the web holds none, and PlanSection is not registered.
+1024–1439px and 1440px-up widths. No checkout or plan section is offered: the web holds none.
 
 ## Reference family map
 
