@@ -5,7 +5,7 @@ import Testing
 
 // The runner of roadmap's shared vectors, `packages/api-contract/roadmap/domain/`: each read over the records a case states.
 struct CorpusTests {
-  static let reads = ["account", "graph", "guides", "progress"]
+  static let reads = ["account", "board", "graph", "guides", "landing", "legend", "progress", "search"]
 
   @Test(arguments: try reads.flatMap { try Contract.vectors("roadmap/domain/\($0).json") })
   func read(_ vector: Vector) throws {
@@ -39,7 +39,17 @@ struct CorpusTests {
     }
     let tree = try RoadmapTree(form: input.member("tree"))
     switch operation {
+    case "legend": return LegendRead(tree).form
+    case "search": return .strings(tree.selectNodes(try NodeFilter(form: input.member("query"))))
     case "graph": return FollowGraph(tree).form(subjects: try input.member("subjects").asArray().map { try $0.asString() })
+    case "board": return BoardRead(FollowGraph(tree), try BoardQuery(form: input["query"] ?? [:])).form
+    case "landing":
+      let own = try input.member("edges").asArray().map { link in
+        let ends = try link.asArray().map { try $0.asString() }
+        guard ends.count == 2 else { throw ContractError("a link is [from, to], found \(link)") }
+        return RoadmapTree.Edge(from: ends[0], to: ends[1], present: true)
+      }
+      return .array(FollowGraph(tree).landingFacts(own: own).map(\.form))
     default: throw ContractError("no roadmap read \(operation)")
     }
   }

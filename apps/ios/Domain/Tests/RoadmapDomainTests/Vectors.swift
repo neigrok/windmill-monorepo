@@ -144,3 +144,52 @@ extension Guide {
 extension ListedRoadmap {
   var form: JSON { ["id": .string(id), "title": .of(title), "counts": counts?.form ?? .null, "updatedAt": .of(updatedAt)] }
 }
+
+extension LegendRead {
+  var form: JSON {
+    let owners: [JSON] = hues.map { ["hue": .string($0.name), "id": .string($0.owner)] }
+    let collisions: [JSON] = hues.filter { !$0.others.isEmpty }.map {
+      ["hue": .string($0.name), "owner": .string($0.owner), "others": .strings($0.others)]
+    }
+    return ["ids": .strings(kinds.map(\.id)), "owners": .array(owners), "collisions": .array(collisions)]
+  }
+}
+
+extension NodeFilter {
+  init(form: JSON) throws {
+    self.init(query: try form.optionalString("query") ?? "", color: try form.optionalString("color"), kind: try form.optionalString("kind"))
+  }
+}
+
+extension BoardQuery {
+  init(form: JSON) throws {
+    let sort = try form.optional("sort") { name in
+      guard let sort = Sort(rawValue: try name.asString()) else { throw ContractError("no Board sort \(name)") }
+      return sort
+    }
+    self.init(sort: sort ?? .roadmap, kinds: try form.optional("kinds") { try $0.asArray().map { try $0.asString() } } ?? [],
+              search: try form.optionalString("search") ?? "", branch: try form.optionalString("branch"),
+              doneExpanded: try form.optionalBool("doneExpanded") ?? false)
+  }
+}
+
+extension BoardRead {
+  var form: JSON {
+    let columns: [JSON] = self.columns.map {
+      ["name": .string($0.name.rawValue), "count": JSON($0.ids.count), "ids": .strings($0.ids), "shown": .strings($0.shown),
+       "folded": .bool($0.folded)]
+    }
+    let cards: [JSON] = self.cards.map { card in
+      let needs: JSON = card.needs.map { ["first": .string($0.first), "extra": JSON($0.extra), "toGo": JSON($0.toGo)] } ?? .null
+      let unlocks: JSON = card.unlocks.map { ["first": .string($0.first), "extra": JSON($0.extra)] } ?? .null
+      return ["id": .string(card.id), "column": .string(card.column.rawValue), "needs": needs, "unlocks": unlocks,
+              "unlockCount": JSON(card.unlockCount)]
+    }
+    return ["overall": overall.form, "sort": .string(sort.rawValue), "branch": .of(branch), "recovery": .of(recovery?.rawValue),
+            "columns": .array(columns), "cards": .array(cards)]
+  }
+}
+
+extension LandingFact {
+  var form: JSON { ["node": .string(node), "incoming": .array(incoming.map(\.ends)), "followed": .array(followed.map(\.form))] }
+}
