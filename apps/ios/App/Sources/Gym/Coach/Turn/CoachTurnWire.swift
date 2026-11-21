@@ -96,7 +96,7 @@ nonisolated enum TurnEvent: Equatable, Sendable {
   case text(String)
   case calls(TurnBatch)
   case done(state: MessageState, truncated: Bool)
-  case error(code: String, allowance: AiAllowance?)
+  case error(code: String, budgetResetsAtMs: Int64?, allowance: AiAllowance?)
 
   init(event: String, data: JSON) throws {
     switch event {
@@ -106,7 +106,9 @@ nonisolated enum TurnEvent: Equatable, Sendable {
     case "text": self = .text(try data.member("delta").asString())
     case "calls": self = .calls(try TurnBatch(data))
     case "done": self = .done(state: try Self.state(of: data), truncated: (try? data.member("truncated").asBool()) ?? false)
-    case "error": self = .error(code: try data.member("code").asString(), allowance: (try? data.member("allowance")).flatMap { try? AiAllowance($0) })
+    case "error":
+      self = .error(code: try data.member("code").asString(), budgetResetsAtMs: try? data.member("budgetResetsAtMs").asInteger(),
+                    allowance: (try? data.member("allowance")).flatMap { try? AiAllowance($0) })
     default: throw TurnWireFault.unknownEvent
     }
   }

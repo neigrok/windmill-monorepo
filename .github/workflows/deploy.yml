@@ -97,7 +97,6 @@ jobs:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_ENVIRONMENT: ${{ vars.SENTRY_ENVIRONMENT || 'production' }}
           SENTRY_LOG_LEVEL: ${{ vars.SENTRY_LOG_LEVEL || 'info' }}
-          SENTRY_RELEASE: ${{ inputs.image_tag || github.event.workflow_run.head_sha }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
@@ -270,6 +269,8 @@ jobs:
           : > rendered.env
           {
             printf 'IMAGE_TAG=%s\n' "${IMAGE_TAG:-latest}"
+            # What each unit is built from at that commit; deploy-production.sh keeps a unit this leaves unchanged.
+            python3 backend/deploy/image_inputs.py "$IMAGE_TAG"
             for key in POSTGRES_PASSWORD SUBSCRIPTIONS_DB_PASSWORD SUBSCRIPTIONS_INTERNAL_TOKEN AI_DB_PASSWORD AI_PASS_KEYS AI_CARRY_KEY \
                        AI_PASS_PRIVATE_SEED AI_PASS_KID AI_PASS_MIN_VERSIONS AI_PASS_ENVIRONMENT \
                        AI_FUNDING_SECRET AI_OPERATOR_SECRET AI_ANTHROPIC_KEY AI_OPENAI_KEY AI_AZURE_KEY \
@@ -281,7 +282,7 @@ jobs:
                        AI_INSTALLATIONS_ENABLED AI_INSTALLATION_IP_HMAC_KEY \
                        AI_INSTALLATION_ISSUES_PER_DAY AI_INSTALLATION_GENERATIONS_PER_HOUR \
                        SENTRY_DSN SENTRY_ENVIRONMENT SENTRY_LOG_LEVEL \
-                       SENTRY_RELEASE AMPLITUDE_API_KEY AMPLITUDE_HOST \
+                       AMPLITUDE_API_KEY AMPLITUDE_HOST \
                        WINDMILL_EVENTS_RETENTION_DAYS WINDMILL_FEEDBACK_RETENTION_DAYS \
                        WINDMILL_SERVER_ERROR_RETENTION_DAYS \
                        GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \

@@ -3,7 +3,8 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use sqlx::migrate::{MigrateError, Migrator};
-use sqlx::postgres::{PgConnectOptions, PgConnection, PgPool, PgPoolOptions};
+use sqlx::postgres::{PgArguments, PgConnectOptions, PgConnection, PgPool, PgPoolOptions};
+use sqlx::query::Query;
 use sqlx::{Connection, Postgres, Transaction};
 use url::Url;
 use uuid::Uuid;
@@ -15,13 +16,25 @@ static MIGRATIONS: Migrator = sqlx::migrate!("../../migrations");
 const CONNECT_BOUND: Duration = Duration::from_secs(5);
 // How long a health check waits for the database: under the image's 3 s HEALTHCHECK timeout.
 const CHECK_BOUND: Duration = Duration::from_secs(2);
-// How long a write waits for any lock, the seq lock among them, and how long any of its statements may run. A lock is
-// normally held for milliseconds, so a longer wait means a holder has stalled: the write gives its connection back
-// as `busy` rather than every connection queueing behind the holder, and the sweep retries it. A statement runs for
-// milliseconds too; twice the lock bound lets the lock bound answer every wait for a lock, and ends a statement
+// The lock bound: a write waits 5 s at most for its locks, all of them together, counted from the transaction's start.
+// A lock is normally held for milliseconds, so a longer wait means a holder has stalled: the write gives its connection
+// back as `busy` rather than every connection queueing behind the holder, and the sweep retries it. lock_timeout is
+// what is left of the 5 s, and at least a millisecond, since 0 would wait without bound.
+macro_rules! lock_timeout_left {
+    () => {
+        "set_config('lock_timeout', greatest(5000 - (extract(epoch from clock_timestamp() - transaction_timestamp()) \
+         * 1000)::bigint, 1)::text, true)"
+    };
+}
+// A write's bounds from its start: all of the lock bound, and 10 s for each of its statements, which ends a statement
 // stalled for any other reason, so no write holds a connection past it.
-const WRITE_BOUNDS: &str =
-    "select set_config('lock_timeout', '5s', true), set_config('statement_timeout', '10s', true)";
+const WRITE_BOUNDS: &str = concat!(
+    "select set_config('statement_timeout', '10s', true), ",
+    lock_timeout_left!()
+);
+const LOCK_TIMEOUT_LEFT: &str = concat!("select ", lock_timeout_left!());
+
+pub(crate) type PgQuery<'q> = Query<'q, Postgres, PgArguments>;
 
 // The service's own database, `windmill_subscriptions` in production (spec §9). It holds every fact
 // about a paid subscription; a `Ledger` exists only once its schema is this build's.
@@ -165,6 +178,23 @@ pub enum StorageError {
     Database { sqlstate: Option<String> },
 }
 
+// Takes one of a write's locks, a notification's, an account's, a lineage's or the seq queue: an advisory lock, held
+// until the transaction ends, which Postgres grants in one step, unlike a row's lock, so lock_timeout, set first to what
+// is left of the lock bound, bounds the whole wait. A lock not granted by then fails as `busy`. lock_timeout is set so
+// again once the lock is granted: a row the write then locks under it is held by another only if that one went around
+// the advisory lock, and the wait for it is bounded by what is left as well.
+pub(crate) async fn hold(
+    connection: &mut PgConnection,
+    lock: PgQuery<'_>,
+) -> Result<(), StorageError> {
+    sqlx::query(LOCK_TIMEOUT_LEFT)
+        .execute(&mut *connection)
+        .await?;
+    lock.execute(&mut *connection).await?;
+    sqlx::query(LOCK_TIMEOUT_LEFT).execute(connection).await?;
+    Ok(())
+}
+
 // Commits a write. A commit whose answer never comes back may have committed: only a rollback the database answered
 // with, an integrity violation or a serialization failure found at commit, says it did not.
 pub(crate) async fn commit(
@@ -242,7 +272,7 @@ impl From<sqlx::Error> for StorageError {
                         sqlstate: sqlstate.into_owned(),
                     }
                 }
-                // lock_not_available: a lock was not granted within WRITE_BOUNDS.
+                // lock_not_available: a lock was not granted within the lock bound.
                 Some(sqlstate) if sqlstate == "55P03" => StorageError::Busy,
                 sqlstate => StorageError::Database {
                     sqlstate: sqlstate.map(|sqlstate| sqlstate.into_owned()),

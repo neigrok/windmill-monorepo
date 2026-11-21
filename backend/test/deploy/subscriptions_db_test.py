@@ -143,6 +143,31 @@ class SubscriptionsDbTest(unittest.TestCase):
         self.assertEqual(self.hba(), before)
         self.assertEqual(self.backend(), ("3", "3"))
 
+    def test_a_rule_ahead_that_postgres_reads_as_admitting_stops_the_run_however_it_is_written(self):
+        self.write_env(self.password)
+        self.assertEqual(self.provision().returncode, 0)
+        installed = self.hba()
+        for name, rule in (("a trailing comment", "local all all trust # reject"),
+                           ("a continued line", "local\\\n  windmill_subscriptions windmill trust")):
+            with self.subTest(name):
+                edited = "# BEGIN windmill_ai: edited by hand\n" + rule + "\n# END windmill_ai\n" + installed
+                self.put_in_force(edited)
+
+                result = self.provision()
+
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("FAIL subscriptions database: a rule ahead of the windmill_subscriptions block in pg_hba.conf"
+                              " could admit a role to it, so the file is left as it was, for that rule to be removed by"
+                              " hand", result.stderr.splitlines())
+                self.assertEqual(self.hba(), edited)
+                self.put_in_force(installed)
+
+    # Writes pg_hba.conf as its OS user and reloads it, as a hand edit on the host would.
+    def put_in_force(self, text):
+        subprocess.run(["docker", "compose", "-p", self.name, "exec", "-T", "-u", "postgres", "db", "sh", "-c",
+                        "cat > " + HBA], cwd=self.project, input=text, text=True, check=True, timeout=60)
+        self.compose("exec", "-T", "db", "psql", "-XAq", "-U", "windmill", "windmill", "-c", "select pg_reload_conf()")
+
     def test_rules_that_would_turn_the_backend_away_are_never_put_in_force(self):
         self.add_rule("host    all    windmill    all    reject")
         before = self.hba()

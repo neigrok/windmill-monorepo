@@ -7,11 +7,16 @@ use domain::{
 use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
 
-use crate::ledger::{Ledger, StorageError};
+use crate::ledger::{self, Ledger, StorageError};
 use crate::subscriptions::{
     self, PeriodRow, SubscriptionRow, bind_period, named, subscription_columns,
 };
 
+// The seq queue: every write that records an event waits for the ledger's one row, so each waits here first, for an
+// advisory lock granted in one step, and reaches the row only once no other write holds it. Waiting for the row itself,
+// a write second in line would wait twice, for its place in line and then for the holder, each up to what is left of
+// the lock bound.
+const QUEUE_FOR_SEQS: &str = "select pg_advisory_xact_lock(hashtextextended('seqs', 0))";
 // INV-8: the seq lock. Updating the ledger's one row takes its lock, which the transaction holds until it ends,
 // so no transaction takes a seq while another that took one has yet to commit, and seq order is commit order.
 // recordedAt is read under the lock, so it rises with seq as long as the database's clock does.
@@ -150,6 +155,7 @@ pub(crate) async fn append(
         return Ok(Vec::new());
     }
     let count = change.events.len() as i64;
+    ledger::hold(connection, sqlx::query(QUEUE_FOR_SEQS)).await?;
     let (latest_seq, recorded_at): (i64, i64) = sqlx::query_as(TAKE_SEQS)
         .bind(count)
         .fetch_one(&mut *connection)

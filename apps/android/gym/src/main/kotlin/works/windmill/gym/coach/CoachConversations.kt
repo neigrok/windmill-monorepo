@@ -463,7 +463,7 @@ private fun CoachExchange(record: CoachOnboardingRecord, saved: CoachImportRecei
     }
     val words = when {
         answered || code == "account_required" -> null
-        code == "subject_exhausted" -> CoachTurnRefusal.of(code, spent = response?.spent == true).words
+        code == "subject_exhausted" -> CoachTurnRefusal.of(code, shortfall = response?.shortfall).words
         code in setOf("free_day_exhausted", "free_month_exhausted", "concurrency_exhausted") ->
             (response?.message?.takeIf { it.isNotBlank() } ?: record.refusalMessage)?.let(Words::Plain) ?: Words.Message(R.string.gym_coach_could_not_take)
         else -> Words.Message(R.string.gym_coach_could_not_take)

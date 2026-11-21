@@ -25,32 +25,34 @@ class TurnWireTests {
         assertEquals(TurnEvent.Error("free_month_exhausted", 1_793_491_200_000), TurnEvent.of("error", data("""{"code":"free_month_exhausted","budgetResetsAtMs":1793491200000}""")))
         assertEquals(TurnEvent.Error("free_month_exhausted", null), TurnEvent.of("error", data("""{"code":"free_month_exhausted","budgetResetsAtMs":null}""")))
         assertEquals(TurnEvent.Error("free_month_exhausted", null), TurnEvent.of("error", data("""{"code":"free_month_exhausted","budgetResetsAtMs":1.5}""")))
-        assertEquals(TurnEvent.Error("subject_exhausted", null, spent = true), TurnEvent.of("error", data("""{"code":"subject_exhausted","allowance":{"remaining":"0.000000000","reserved":"0.000000000"}}""")))
+        assertEquals(TurnEvent.Error("subject_exhausted", null, AllowanceShortfall.spent), TurnEvent.of("error", data("""{"code":"subject_exhausted","allowance":{"remaining":"0.000000000","reserved":"0.000000000"}}""")))
     }
 
-    // §7.1: a balance is gone only when the read says nothing remains and nothing is held, in a frame or a refusal's body. Any other read, or none, says nothing of it.
-    @Test fun anAllowanceReadSaysABalanceIsGoneOnlyWhenNothingRemainsOrIsHeld() {
-        for ((allowance, spent) in listOf(
-            """{"remaining":"0.000000000","reserved":"0.000000000"}""" to true,
-            """{"remaining":"0","reserved":"0"}""" to true,
-            """{"remaining":"0.007075000","reserved":"0.000000000"}""" to false,
-            """{"remaining":"0.000000001","reserved":"0.000000000"}""" to false,
-            """{"remaining":"0.000000000","reserved":"0.040775000"}""" to false,
-            """{"remaining":"0.000000000"}""" to false,
-            """{"reserved":"0.000000000"}""" to false,
-            """{"remaining":0,"reserved":0}""" to false,
-            """{"remaining":"none","reserved":"0"}""" to false,
-            """{"remaining":null,"reserved":null}""" to false,
-            """[]""" to false,
-            """"none"""" to false,
-            "null" to false,
+    // §7.1: the allowance a frame or a refusal's body carries shows what holds the request: nothing left or held, earlier requests holding the rest, or a request larger than what is left, whatever the read's own code. A read that is absent or cannot be read shows nothing.
+    @Test fun anAllowanceShowsWhatHoldsTheRequest() {
+        for ((allowance, shortfall) in listOf(
+            """{"remaining":"0.000000000","reserved":"0.000000000"}""" to AllowanceShortfall.spent,
+            """{"remaining":"0","reserved":"0"}""" to AllowanceShortfall.spent,
+            """{"code":"subject_exhausted","remaining":"0.000000000","reserved":"0.040775000"}""" to AllowanceShortfall.held,
+            """{"remaining":"0.000000000","reserved":"0.000000001"}""" to AllowanceShortfall.held,
+            """{"code":"ok","remaining":"0.007075000","reserved":"0.000000000"}""" to AllowanceShortfall.tooLarge,
+            """{"remaining":"0.000000001","reserved":"0.000000000"}""" to AllowanceShortfall.tooLarge,
+            """{"remaining":"0.010000000","reserved":"0.040000000"}""" to AllowanceShortfall.tooLarge,
+            """{"remaining":"0.000000000"}""" to null,
+            """{"reserved":"0.000000000"}""" to null,
+            """{"remaining":0,"reserved":0}""" to null,
+            """{"remaining":"none","reserved":"0"}""" to null,
+            """{"remaining":null,"reserved":null}""" to null,
+            """[]""" to null,
+            """"none"""" to null,
+            "null" to null,
         )) {
             val body = """{"code":"subject_exhausted","allowance":$allowance}"""
-            assertEquals(allowance, TurnEvent.Error("subject_exhausted", null, spent), TurnEvent.of("error", data(body)))
-            assertEquals(allowance, TurnRefusal(429, "subject_exhausted", null, spent), TurnRefusal.of(429, body.encodeToByteArray()))
+            assertEquals(allowance, TurnEvent.Error("subject_exhausted", null, shortfall), TurnEvent.of("error", data(body)))
+            assertEquals(allowance, TurnRefusal(429, "subject_exhausted", null, shortfall), TurnRefusal.of(429, body.encodeToByteArray()))
         }
-        assertEquals(TurnEvent.Error("subject_exhausted", null, false), TurnEvent.of("error", data("""{"code":"subject_exhausted"}""")))
-        assertEquals(TurnRefusal(429, "subject_exhausted", null, false), TurnRefusal.of(429, """{"code":"subject_exhausted"}""".encodeToByteArray()))
+        assertEquals(TurnEvent.Error("subject_exhausted", null, null), TurnEvent.of("error", data("""{"code":"subject_exhausted"}""")))
+        assertEquals(TurnRefusal(429, "subject_exhausted", null, null), TurnRefusal.of(429, """{"code":"subject_exhausted"}""".encodeToByteArray()))
     }
 
     @Test fun aFrameThatCannotBeReadIsAFault() {
