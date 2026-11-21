@@ -153,8 +153,25 @@ package struct VectorRecords: Sendable {
                   spent: rows["spent"], registry: registry)
   }
 
+  // Each row as the engine's readers hand it to a product. A row that states no `seq` is a record the device wrote that
+  // the server has not yet taken, so it reads with none; a text that states no `merged` is not merged.
   static func records(_ rows: JSON?, registry: Registry) throws -> [Record] {
-    try (rows?.asArray() ?? []).map { json in Record(confirmed: try Row(json: json), registry: registry) }
+    try (rows?.asArray() ?? []).map { (json: JSON) throws -> Record in
+      var row = try json.asObject()
+      let taken = row["seq"] != nil
+      if !taken { row["seq"] = 0 }
+      if case .object(let texts)? = row["x"] {
+        row["x"] = .object(JSON.Object(uniqueKeysWithValues: texts.members.map { (name: String, text: JSON) -> (String, JSON) in
+          guard case .object(var state) = text, state["merged"] == nil else { return (name, text) }
+          state["merged"] = false
+          return (name, .object(state))
+        }))
+      }
+      let read = Record(confirmed: try Row(json: .object(row)), registry: registry)
+      guard !taken else { return read }
+      return Record(type: read.type, id: read.id, life: read.life, born: read.born, values: read.values, stamps: read.stamps, texts: read.texts,
+                    serials: read.serials, seq: nil, rc: read.rc, ru: read.ru, isVisible: read.isVisible, isPending: false, isHeld: false)
+    }
   }
 }
 

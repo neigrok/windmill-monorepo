@@ -120,6 +120,30 @@ struct ProductCorpusTests {
     ]])
   }
 
+  // A product's scene may state a record the device wrote that the server has not yet taken, with no `seq`, and a text
+  // with no `merged`: the first reads with no `seq`, as a record with no confirmed row does, the second as not merged.
+  @Test func aRowReadsWithNoSeqWhereItStatesNoneAndATextThatStatesNoMergedIsNotMerged() throws {
+    var unsent = try ProductCorpusTests.tag("tag00002", "Unsent").asObject()
+    unsent["seq"] = nil
+    let mark: JSON = ["t": "mark", "id": "tag00001", "seq": 4, "x": ["memo": ["text": "Kept", "rev": 2]]]
+    let scopes: JSON = ["tree/b_00000001": ["drawn": [ProductCorpusTests.tag("tag00001", "Sent", seq: 3), .object(unsent)]],
+                        "self/overlay/b_00000001": ["drawn": [mark]]]
+    let vector = try ProductCorpusTests.vector(["scopes": scopes, "now": 1_800_000_000_000, "offsetSeconds": 0])
+    let tags = { (read: Reader) throws -> JSON in
+      .array(try read.repository(Tag.self).records(in: .drawn).map { (record: Record) -> JSON in
+        [record.values["label"] ?? .null, record.seq.map { JSON($0) } ?? .null]
+      })
+    }
+    #expect(try ProductCorpusTests.corpus().read(vector, in: Probe.tree, tags) == ["result": [["Sent", 3], ["Unsent", .null]]])
+    let marks = { (read: Reader) throws -> JSON in
+      .array(try read.repository(Mark.self).records(in: .drawn).map { (record: Record) -> JSON in
+        let memo = record.texts["memo"]
+        return [.string(memo?.text ?? ""), .bool(memo?.merged ?? true), record.seq.map { JSON($0) } ?? .null]
+      })
+    }
+    #expect(try ProductCorpusTests.corpus().read(vector, in: Probe.overlay, marks) == ["result": [["Kept", false, 4]]])
+  }
+
   struct Relabel: ActAction {
     func load(_ read: ActReader) throws -> (moment: Moment, tags: [Tag]) {
       (read.moment, try ["tag00001", "tag00002", "tag00003"].map { (id: String) throws -> Tag in try Tag.decoding(RecordID(id), [:]) })

@@ -151,6 +151,13 @@ public struct Repository<E: Entity> {
   }
 }
 
+extension Repository where E: Ordered {
+  // §7.5 the member a new one placed so lands below, resolved in the load phase.
+  public func anchor(_ placement: Placement) throws -> RecordID? {
+    try anchor(placement, orderField: E.orderField)
+  }
+}
+
 // §7.3 how full a capped type is: `used` counts the visible `stored` records, so a record inside its delete window keeps
 // its slot, as the engine's commit-time check counts it.
 public struct Capacity: Equatable, Sendable {
