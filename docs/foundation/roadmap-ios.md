@@ -22,7 +22,7 @@ how it is tested.
 [Roadmap on the sync engine](roadmap-on-the-engine.md) holds. Coach's abilities, records and turn,
 which [Roadmap Coach](roadmap-coach.md) holds. What the design leaves out, which its section 13
 lists: ceremonies, presence, editing on the canvas, keyboard shortcuts and iPad, widgets and App
-Intents, the reminder switch, the all-roadmaps export, *Shape* on a pasted plan, a reader's
+Intents, the reminder switch, the all-roadmaps export, a reader's
 Activity and the web demo.
 
 **Depends on:**

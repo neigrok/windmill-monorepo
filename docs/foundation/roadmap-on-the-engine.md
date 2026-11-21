@@ -335,7 +335,7 @@ What a device tells a person when a change of theirs met one made elsewhere.
 | `/v1/sync` | every read of a roadmap's records and every change a device makes |
 | `POST /v1/trees/{id}/fork` | stays, through the door |
 | `GET /v1/trees/{id}/activity`, `GET /v1/trees/{id}/progress` | stay as reads |
-| The share page, the gallery, the cards and their uploads, compose, reminders, tending | stay |
+| The share page, the gallery, the cards and their uploads, reminders, tending | stay |
 | `GET /v1/trees`, `GET /v1/trees/{id}`, `GET /v1/trees/{id}/guides`, `GET /v1/trees/{id}/diagnostics` | answer `410` (§8.3): a device computes each from its copy, and the old tables stop changing at the move |
 | `POST /v1/trees`, `PATCH /v1/trees/{id}`, `DELETE /v1/trees/{id}`, `PUT /v1/trees/{tree}/steps/{step}/subtree` | answer `410` (§8.3); MCP reaches the same acts through the door |
 | `/v1/socket` | answers its upgrade and a plain `GET` `410` (§8.3) |
