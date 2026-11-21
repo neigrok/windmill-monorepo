@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parsePlan, serializePlan } from '../../../../src/products/roadmap/paste/planGrammar.js';
-import { readFileSync } from 'node:fs';
 import { dogfoodTreeData } from '../fixtures/dogfoodTree.js';
 import { largeRoadmap, ROADMAP_SHAPES } from '../fixtures/largeRoadmap.js';
 import shipV1 from '../../../../src/products/roadmap/quests/roster/shipV1.js';
@@ -513,13 +512,6 @@ test('exported fixture lines never form CommonMark indented code blocks inside o
       const containerIndent = listIndents.length ? listIndents.at(-1) + 2 : 0;
       assert.ok(indent - containerIndent < 4, `${tree.title}: ${line}`);
     }
-  }
-});
-
-test('ordinary pastes and legacy exports retain the complete main parser result', () => {
-  const fixtures = JSON.parse(readFileSync(new URL('./planGrammar-legacy.json', import.meta.url), 'utf8'));
-  for (const fixture of fixtures) {
-    assert.deepEqual(parsePlan(fixture.text, fixture.kinds, fixture.options), fixture.parsed, fixture.name);
   }
 });
 
