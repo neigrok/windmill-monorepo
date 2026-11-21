@@ -257,11 +257,11 @@ test('reportError — a caller adds bounded labels to the Sentry report, and the
   sent.length = 0;
   at('#/app/new', '/app/roadmap');
 
-  wired.reportError(new Error('shape'), 'shape', { reason: 'unavailable', size: 'under-1kb' });
+  wired.reportError(new Error('render'), 'render', { reason: 'unavailable', size: 'under-1kb' });
 
-  assert.deepEqual(wired.envelopes[0].tags, { failure_kind: 'Error', kind: 'shape', reason: 'unavailable', size: 'under-1kb' });
+  assert.deepEqual(wired.envelopes[0].tags, { failure_kind: 'Error', kind: 'render', reason: 'unavailable', size: 'under-1kb' });
   assert.equal(wired.envelopes[0].exception.values[0].value, 'client-error');
-  assert.deepEqual(JSON.parse(await sent[0].text()).events[0].props, { kind: 'shape', failure_kind: 'Error', route: '/app/roadmap' });
+  assert.deepEqual(JSON.parse(await sent[0].text()).events[0].props, { kind: 'render', failure_kind: 'Error', route: '/app/roadmap' });
 });
 
 test('reportError — a frame naming a capability never reaches Sentry, and the frames around it do', async () => {
@@ -300,7 +300,7 @@ test('reportError — a kind or an error outside the closed sets reads other', a
   reportError(undefined, 'promise');
   reportError({ constructor: { name: 'Rig the boat' } }, 'window');
   reportError(new RangeError('out of range'), 'Rig the boat');
-  reportError(new DOMException('aborted', 'AbortError'), 'shape');
+  reportError(new DOMException('aborted', 'AbortError'), 'window');
 
   const props = await Promise.all(sent.map(async (blob) => JSON.parse(await blob.text()).events[0].props));
   assert.deepEqual(props, [
@@ -309,7 +309,7 @@ test('reportError — a kind or an error outside the closed sets reads other', a
     { kind: 'promise', failure_kind: 'other', route: '/app/gym' },
     { kind: 'window', failure_kind: 'other', route: '/app/gym' },
     { kind: 'other', failure_kind: 'RangeError', route: '/app/gym' },
-    { kind: 'shape', failure_kind: 'DOMException', route: '/app/gym' },
+    { kind: 'window', failure_kind: 'DOMException', route: '/app/gym' },
   ]);
 });
 

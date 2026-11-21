@@ -106,9 +106,9 @@ navigation; an error does not drop that responsibility. Admission context carrie
 `sign-out` kind and is not a telemetry payload. Roadmap registers its shared-field draft blocker and reports its bounded decisions below.
 
 The shell's reporter, `reportError` in `src/telemetry/beacon.js`, takes window errors and unhandled
-rejections from `main.jsx`, render crashes from an `ErrorBoundary` with no `onCrash`, and failed paste
-shapes. Each emits one `client_error` with only `kind` (`window`, `promise`, `render` or `shape`),
-`failure_kind` (the error's constructor name: `Error`, `TypeError`, `RangeError`, `ReferenceError`,
+rejections from `main.jsx` and render crashes from an `ErrorBoundary` with no `onCrash`. Each emits
+one `client_error` with only `kind` (`window`, `promise` or `render`), `failure_kind` (the error's
+constructor name: `Error`, `TypeError`, `RangeError`, `ReferenceError`,
 `SyntaxError`, `URIError`, `EvalError`, `AggregateError` or `DOMException`) and `route`, the family of
 the current address: `/`, `/app`, `/app/roadmap`, `/app/gym`, `/app/journal`, `/app/settings`,
 `/app/connect`, `/t`, `/demo`, `/browse`, `/gym/shared`, `/auth`, `/oauth/authorize`, `/showcase`,
@@ -120,9 +120,7 @@ column and function name only), parsing both V8's `at fn (url:line:col)` and Saf
 `fn@url:line:col`. The exception message reaches neither: the stack's head line, where V8
 repeats it, is cut before the frames are read, frames are only the last unbroken run of frame lines,
 and share addresses, `token=` and `code=` values are struck out of them. A rejected non-error has no
-frames. A failed paste shape adds the Sentry tags `reason` (`unavailable`, `unreachable`, `failed`,
-`no-first-word` or `stopped-mid-plan`) and `size` (`under-1kb`, `1-8kb` or `over-8kb`), and no text,
-status or count. Sentry collapses a repeat of one kind, operation, route, tags and crashing frame
+frames. Sentry collapses a repeat of one kind, operation, route, tags and crashing frame
 within ten seconds.
 
 A message the translator cannot show reports its first failure to Sentry, once per key per page load
