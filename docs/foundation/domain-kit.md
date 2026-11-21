@@ -19,7 +19,7 @@ each product declares its own entities, value objects, aggregates, repositories,
 kit names no product concept. Appendices A–C illustrate it; they are not kit content.
 
 **Consumers.** Gym (iOS, Android) and journal (iOS), with the phone Coach, and roadmap (iOS), whose
-`RoadmapDomain` holds its pure reads and declares no entity or action. An entity can bind to a
+`RoadmapDomain` declares its entities in tree and overlay scopes and its actions as acts (§9.5). An entity can bind to a
 product, tree or overlay scope (engine D-4). An ordinary
 reader, action and plan addresses one scope; an act composes ordered scoped plans in one local transaction (§9.5).
 

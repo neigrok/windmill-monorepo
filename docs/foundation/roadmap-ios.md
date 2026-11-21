@@ -6,8 +6,9 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified. `RoadmapDomain` holds the pure reads (§2) and runs their vector files (§10);
-nothing else is built. The owner approved it on 2026-11-17; what it says of
+**Status:** Specified. `RoadmapDomain` holds the pure reads, roadmap's entities and rule book, the read
+of a roadmap from a replica's records, and the actions of a roadmap, its kinds and progress (§2), and
+runs their vector files (§10); nothing else is built. The owner approved it on 2026-11-17; what it says of
 quests, plans, Export, Share, the gallery and Activity follows the boards and has not been before
 the owner. The iPhone app carries journal and gym. Roadmap's design for it is
 [Roadmap · iOS](../design/ios/roadmap.md), with its boards in the Roadmap Figma file, every one
@@ -355,8 +356,13 @@ makes it false.
 
 - The app has no third room, no associated domain and no roadmap code; its onboarding says roadmap
   is on the web. Nothing serves an association file.
-- `RoadmapDomain` holds the pure reads alone: no entity, action, replica read, Undo, plan grammar, quest or Coach
-  executor.
+- `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and the actions of a
+  roadmap, its kinds and progress: no step, workspace or landing action, no Undo scene, plan grammar, quest or
+  Coach executor.
+- The Swift engine hands a product no register's stamp, lists only a scope's visible records, and answers no
+  `seq` of a confirmed row or a spent id. So the replica read takes each record's stamps beside it, a recolour
+  predicts no step the device holds deleted, and the order a landing line is said by (Roadmap on the sync
+  engine §6) cannot be read on the phone.
 - No fixture of the web's picture exists, and the web's own layout calls the platform's
   trigonometry.
 - The app's one runner deletes at once, in every room.
