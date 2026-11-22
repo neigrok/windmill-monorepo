@@ -664,6 +664,22 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   a Delete shows nothing ([Roadmap on iOS](../foundation/roadmap-ios.md) §3) and tells only its kind in an event; no
   board says how long a band without *Undo* stands, and it takes a receipt's six seconds; and a receipt's band leaves
   after its six seconds, or a delete's nine, under VoiceOver too, where reaching *Undo* takes longer.
+- **Roadmap · iOS · what the step page leaves for the boards.** A step's page is built in Debug builds from 03.1 and
+  03.4 to 03.9, with the row's chevron of 01.1. To draw or rule: 03.4 draws a just-completed step's status row as
+  *Sky* alone, where the section's NOTE keeps what Reset would do on a Done step's second line always and 03.6
+  draws it, so the page is built to the NOTE and 03.4's row reads *Sky · Reset returns 1 step to Locked*; no board
+  words the band after a step completed on its page opens nothing, or after a Reset that locks nothing, and they are
+  built as *Read the wind done*, the Board's sentence, and *Read the wind reset*; every board of the page draws
+  *Edit*, the Coach circle or composer, the workspace and History, and the page is built without them until their
+  screens are, so a Locked or a Done step's foot holds the band alone and the … menu holds *Delete Step* alone; the
+  roadmap's one starting step, which keeps no *Delete Step*, has no … button while that is the menu's one item, and
+  no board draws that step's menu; a link row shows the address's host as it is written, so *www.* stays where the
+  address has it; an Undo of Reset marks the step done at the Undo's time, as the web's does, so the step then leads
+  Done, and no board says so; the name is drawn as the first card's header, about 10 pt lower than 03.1 has it,
+  with the list's own spacing between the cards (55 pt from card to card where the boards draw 43); and a Board row
+  is now the system's link, so a slide toward a side that holds no action for it, right on a Locked or a Done row,
+  ends as a tap and opens the step where it ends on the row: seen under a UI test's synthesized swipe, not tried by
+  hand, and no board says what such a slide does.
 - **Roadmap · iOS · the Design System owes the room its door.** *Where to start?* with a third door, Roadmap, is
   ✅ Ready for dev in the Shell file
   ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)). The Design System has no
