@@ -48,21 +48,12 @@ export class AbilityRequest {
   }
 
   // gym Coach G-7: the abilities that create a record, and the type each creates. The turn names the record, never the
-  // model: its id is seeded from the turn's id and the turn-wide ordinal of the records the turn has created, in call
-  // order, so a call run again under its `callId` creates the same id.
+  // model (`RunAbility.ordinal`).
   static creates = Object.freeze(/** @type {Record<string, string>} */ ({ create_routine: Routine.type, create_exercise: Exercise.type,
     save_note: Note.type, propose_routine_change: Proposal.type, propose_routine_removal: Proposal.type, propose_workout_change: WorkoutProposal.type }));
 
-  /** @param {CoachMessageValue} turn */
-  seeded(turn) {
-    const type = AbilityRequest.creates[this.name];
-    const input = this.input;
-    if (type === undefined || input === null || typeof input !== 'object' || Array.isArray(input)) return this;
-    const slot = turn.calls.findIndex((call) => call.callId === this.callId);
-    const before = slot < 0 ? turn.calls : turn.calls.slice(0, slot);
-    const ordinal = 1 + before.reduce((count, call) => count + call.created.length, 0);
-    return new AbilityRequest(this.callId, this.name, { ...input, id: seededId(registry.type(type), String(turn.id.record), ordinal) });
-  }
+  /** @param {Json} input */
+  with(input) { return new AbilityRequest(this.callId, this.name, input); }
 }
 
 // The bounds a provider's strict mode cannot state (gym Coach on the AI service §3, R-11), held by each ability's rule
@@ -76,7 +67,7 @@ const ArgumentBounds = Object.freeze(/** @type {Record<string, JsonSchema>} */ (
   get_sessions: new JsonSchema({ properties: { sessionIds: idListBounds } }),
   get_last_times: new JsonSchema({ properties: { exerciseIds: idListBounds } }),
   create_exercise: new JsonSchema({ properties: { name: { maxLength: 240 } } }),
-  create_routine: new JsonSchema({ properties: { entries: lineBounds(true), name: { maxLength: 240 }, position: { minimum: 0, maximum: 10_000 } } }),
+  create_routine: new JsonSchema({ properties: { entries: lineBounds(true), name: { maxLength: 240 }, position: { minimum: RoutineRules.position.min, maximum: RoutineRules.position.max } } }),
   propose_routine_change: new JsonSchema({ properties: { entries: lineBounds(true), name: { maxLength: 240 }, summary: { maxLength: 400 } } }),
   propose_routine_removal: new JsonSchema({ properties: { summary: { maxLength: 400 } } }),
   propose_workout_change: new JsonSchema({ properties: { entries: lineBounds(false), summary: { maxLength: 400 } } }),
@@ -161,25 +152,52 @@ export class RunAbility {
   scope = CoachMessage.scope;
   refusals = GymRefusals;
 
+  // The codes of a call the gate refuses before it admits it (G-1 to G-3): such a call mints no ordinal and holds no slot.
+  static notAdmitted = /** @type {readonly string[]} */ (Object.freeze([AbilityRefusals.notOffered, AbilityRefusals.seatRequired, AbilityRefusals.invalidInput]));
+
+  /** @param {AbilityCall} call */
+  static admitted(call) { return !RunAbility.notAdmitted.includes(call.outcome); }
+
   /** @param {AbilityRequest} request @param {Id<CoachMessageValue>} message @param {Seat} seat @param {Catalog} catalog @param {string} appBaseUrl */
   constructor(request, message, seat, catalog, appBaseUrl) {
     this.request = request;
     this.message = message;
-    this.gate = RunAbility.gate(request, seat, catalog, appBaseUrl);
+    this.appBaseUrl = appBaseUrl;
+    this.admission = RunAbility.admit(request, seat, catalog);
   }
 
-  // gym Coach §5 on the device: G-1 offered, G-2 the seat, the server's own abilities, G-3 the shape at every depth, then
-  // the bounds the schema cannot state, the depth a record can hold, and the ability's decider from its input.
-  /** @param {AbilityRequest} request @param {Seat} seat @param {Catalog} catalog @param {string} appBaseUrl @returns {{ refuse: string } | { run: AbilityDecider }} */
-  static gate(request, seat, catalog, appBaseUrl) {
+  // gym Coach §5 on the device: G-1 offered, G-2 the seat, the server's own abilities, G-3 the shape at every depth.
+  /** @param {AbilityRequest} request @param {Seat} seat @param {Catalog} catalog @returns {string | null} the code it refuses with */
+  static admit(request, seat, catalog) {
     const ability = catalog.ability(request.name);
-    if (ability === null || ability.agent === 'withheld' || !ability.declared || SERVER_RUN.includes(request.name)) return { refuse: AbilityRefusals.notOffered };
-    if (!ability.admits(seat)) return { refuse: AbilityRefusals.seatRequired };
-    if (new JsonSchema(ability.input).fault(request.input) !== null) return { refuse: AbilityRefusals.invalidInput };
-    if (ArgumentBounds[request.name]?.fault(request.input) || depth(request.input) > CoachRules.maxInputDepth) return { refuse: AbilityRefusals.invalidArguments };
-    try { return { run: deciderOf(request, appBaseUrl) }; }
+    if (ability === null || ability.agent === 'withheld' || !ability.declared || SERVER_RUN.includes(request.name)) return AbilityRefusals.notOffered;
+    if (!ability.admits(seat)) return AbilityRefusals.seatRequired;
+    if (new JsonSchema(ability.input).fault(request.input) !== null) return AbilityRefusals.invalidInput;
+    return null;
+  }
+
+  // gym Coach G-7, as the server's gate seeds: every admitted call that mints a record takes the next turn-wide ordinal,
+  // whatever its outcome, so a call refused by its rule still holds its number. A call run again under its `callId` keeps
+  // the place an admitted first run holds, and with it its ordinal; one whose first run the gate refused takes the next.
+  /** @param {CoachMessageValue} turn @param {string} callId */
+  static ordinal(turn, callId) {
+    const slot = turn.calls.findIndex((call) => call.callId === callId && RunAbility.admitted(call));
+    const before = slot < 0 ? turn.calls.filter((call) => call.callId !== callId) : turn.calls.slice(0, slot);
+    return 1 + before.filter((call) => AbilityRequest.creates[call.name] !== undefined && RunAbility.admitted(call)).length;
+  }
+
+  // The admitted call's input as the ability reads it: the record it mints named from the turn, then the bounds the schema
+  // cannot state, the depth a record can hold, and the ability's decider from that input.
+  /** @param {AbilityRequest} request @param {CoachMessageValue} turn @returns {{ request: AbilityRequest, refuse: string } | { request: AbilityRequest, run: AbilityDecider }} */
+  gate(request, turn) {
+    const type = AbilityRequest.creates[request.name];
+    const input = /** @type {Record<string, Json>} */ (request.input);
+    const seeded = type === undefined ? request
+      : request.with({ ...input, id: seededId(registry.type(type), String(turn.id.record), RunAbility.ordinal(turn, request.callId)) });
+    if (ArgumentBounds[seeded.name]?.fault(seeded.input) || depth(seeded.input) > CoachRules.maxInputDepth) return { request: seeded, refuse: AbilityRefusals.invalidArguments };
+    try { return { request: seeded, run: deciderOf(seeded, this.appBaseUrl) }; }
     catch (error) {
-      if (error instanceof DecodeError) return { refuse: AbilityRefusals.invalidArguments };
+      if (error instanceof DecodeError) return { request: seeded, refuse: AbilityRefusals.invalidArguments };
       throw error;
     }
   }
@@ -187,8 +205,9 @@ export class RunAbility {
   /** @param {Reader} read */
   load(read) {
     const coach = read.repository(CoachMessage).find(this.message, 'drawn');
-    const own = writersOwn(coach, read.replica);
-    return { message: coach, own, deciding: own && 'run' in this.gate ? this.gate.run.load(read) : null, moment: read.moment };
+    const own = coach !== null && writersOwn(coach, read.replica);
+    const gate = own && this.admission === null ? this.gate(this.request, /** @type {CoachMessageValue} */ (coach)) : null;
+    return { message: coach, own, gate, deciding: gate !== null && 'run' in gate ? gate.run.load(read) : null, moment: read.moment };
   }
 
   /** @param {ReturnType<RunAbility['load']>} loaded @param {IDSource} ids */
@@ -196,49 +215,52 @@ export class RunAbility {
     const coach = loaded.message?.isCoach ? loaded.message : null;
     if (coach === null) return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-record', this.message.ref, null, 'predicted')));
     if (!loaded.own) return Decision.refuse(GymRefusals.ofRefused(new Refused('message-final', this.message.ref, null, 'predicted')));
-    if ('refuse' in this.gate) return this.refusing(this.gate.refuse, null, coach, loaded.moment);
-    const decided = decision(this.gate.run, loaded.deciding, ids);
+    const gate = loaded.gate;
+    if (gate === null) return this.refusing(this.request, /** @type {string} */ (this.admission), null, coach, loaded.moment);
+    if ('refuse' in gate) return this.refusing(gate.request, gate.refuse, gate.request.input, coach, loaded.moment);
+    const decided = decision(gate.run, loaded.deciding, ids);
     if (decided.kind === 'refuse') {
       const refusal = decided.refusal;
       const code = refusal.kind === 'invalid' && refusal.violation.rule === RoutineRules.loadFloor ? AbilityRefusals.loadFloor : AbilityRefusals.refused;
-      return this.refusing(code, this.request.input, coach, loaded.moment);
+      return this.refusing(gate.request, code, gate.request.input, coach, loaded.moment);
     }
-    return this.answering(decided.result, decided.kind === 'write' ? decided.plan : new Plan(), coach, loaded.moment);
+    return this.answering(gate.request, decided.result, decided.kind === 'write' ? decided.plan : new Plan(), coach, loaded.moment);
   }
 
-  /** @param {string} code @param {Json | null} input @param {CoachMessageValue} coach @param {import('../../../../platform/domain-kit/time.js').Moment} moment */
-  refusing(code, input, coach, moment) {
-    return this.recording(new AbilityCall({ callId: this.request.callId, name: this.request.name, input, outcome: code }), { kind: 'refused', code }, new Plan(), coach, moment);
+  /** @param {AbilityRequest} request @param {string} code @param {Json | null} input @param {CoachMessageValue} coach @param {import('../../../../platform/domain-kit/time.js').Moment} moment */
+  refusing(request, code, input, coach, moment) {
+    return this.recording(new AbilityCall({ callId: request.callId, name: request.name, input, outcome: code }), { kind: 'refused', code }, new Plan(), coach, moment);
   }
 
   // gym Coach §4.3 step 2, §6.4: the result as the server answers it, with the tally of what the call served when it
   // served anything, measured before anything commits; past `TOOL_RESULT_BYTES` the call is refused `result-too-large`,
   // its writes dropped, so no result the device cannot send is ever written.
-  /** @param {AbilityAnswer} answer @param {Plan} plan @param {CoachMessageValue} coach @param {import('../../../../platform/domain-kit/time.js').Moment} moment */
-  answering(answer, plan, coach, moment) {
+  /** @param {AbilityRequest} request @param {AbilityAnswer} answer @param {Plan} plan @param {CoachMessageValue} coach @param {import('../../../../platform/domain-kit/time.js').Moment} moment */
+  answering(request, answer, plan, coach, moment) {
     const payload = answer.payload;
     const tallied = !answer.served.isEmpty && payload !== null && typeof payload === 'object' && !Array.isArray(payload)
       ? { ...payload, read: answer.served.tally.json } : payload;
     const bytes = jcsBytes(tallied);
-    if (bytes.length > CoachRules.maxResultBytes) return this.refusing(AbilityRefusals.resultTooLarge, this.request.input, coach, moment);
-    const call = new AbilityCall({ callId: this.request.callId, name: this.request.name, input: this.request.input, outcome: 'ok',
-      created: answer.created, read: answer.served });
+    if (bytes.length > CoachRules.maxResultBytes) return this.refusing(request, AbilityRefusals.resultTooLarge, request.input, coach, moment);
+    const call = new AbilityCall({ callId: request.callId, name: request.name, input: request.input, outcome: 'ok', created: answer.created, read: answer.served });
     return this.recording(call, { kind: 'result', jcs: bytes, sha256: sha256(bytes) }, plan, coach, moment);
   }
 
   // The call on the Coach message, in the same gesture as the ability's writes (kit §9.3), in the fullest form the
   // message's calls hold (`recorded`): refused `coach-turn-volume`, writes dropped, when only a bare record fits the
   // bound; and refused unrecorded, as the message's own bound, when not even that fits. Calls hold no U+0000, so an input
-  // that does records without itself. A call run again under a `callId` the message already holds keeps one record, in its
-  // place: this run's, holding every id either run created. A first record that answered stands only when this run was
-  // refused.
+  // that does records without itself. A call run again under a `callId` the message already holds keeps one record: this
+  // run's, holding every id either run created, in the first's place when the gate admitted the first, and last
+  // otherwise, as its ordinal stands. A first record that answered stands when this run was refused, and one the gate
+  // admitted stands when this run's was not, so no admitted call ever gives up its ordinal.
   /** @param {AbilityCall} call @param {AbilityOutcome} outcome @param {Plan} plan @param {CoachMessageValue} coach @param {import('../../../../platform/domain-kit/time.js').Moment} moment */
   recording(call, outcome, plan, coach, moment) {
-    const first = coach.calls.findIndex((each) => each.callId === call.callId);
-    const prior = coach.calls[first] ?? null;
+    const found = coach.calls.findIndex((each) => each.callId === call.callId);
+    const prior = coach.calls[found] ?? null;
     const answered = prior?.isOk === true;
-    if (answered && !call.isOk) return Decision.unchanged(outcome);
-    const others = coach.calls.filter((_, index) => index !== first);
+    if ((answered && !call.isOk) || (prior !== null && RunAbility.admitted(prior) && !RunAbility.admitted(call))) return Decision.unchanged(outcome);
+    const first = prior !== null && RunAbility.admitted(prior) ? found : -1;
+    const others = coach.calls.filter((_, index) => index !== found);
     const created = [...(prior?.created ?? []), ...call.created]
       .filter((ref, index, all) => all.findIndex((other) => sameJson(other, ref)) === index);
     const whole = call.with({ created });
@@ -256,4 +278,3 @@ export class RunAbility {
     return Decision.write(written, fits ? outcome : volume);
   }
 }
-

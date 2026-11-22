@@ -52,8 +52,8 @@ entities, a call's record and the receipt the calls derive; `turn.js` the writes
 withdraw, a conversation's delete), the `runningTurn` and `runningRound` mark and the `picture:<id>` rows, and
 `ForgetCoachAtSignOut`. `runAbility.js` is the replica executor: `RunAbility` gates a call against `catalog/3` and
 the bounds strict mode cannot state, runs the ability of `abilityReads.js` or `abilityWrites.js` over the gym domain, and
-records the call on the Coach message in the same write; `AbilityRequest.seeded` names a new record from the turn's id
-and ordinal. The room still speaks the server's Coach; nothing in it runs these yet.
+records the call on the Coach message in the same write; `RunAbility.ordinal` names a new record from the turn's id
+and the admitted minting calls before it, as the server's gate does. The room still speaks the server's Coach; nothing in it runs these yet.
 
 `TrainingHistory` composes typed domain reads into screen documents. The global seed catalogue
 is outside sync and is checked against `schema.sql` in CI. Observation updates refresh local reads

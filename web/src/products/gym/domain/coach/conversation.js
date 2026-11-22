@@ -31,6 +31,8 @@ export const CoachRules = Object.freeze({
   text: new TextSpec('message.text', { unit: 'bytes', min: 0, max: 131_072, trim: false, nfc: false }),
   pictures: new CountSpec('message.pictures', { min: 0, max: 1 }),
   pictureId: new TextSpec('message.pictures.id', { unit: 'chars', min: 8, max: 64, trim: false, nfc: false }),
+  // The registry's pattern for a picture's id, which its row key repeats: the spec measures it, this names its characters.
+  pictureIdPattern: /^[A-Za-z0-9_-]{8,64}$/u,
   mediaType: new TextSpec('message.pictures.mediaType', { unit: 'bytes', min: 1, max: 255, trim: false, nfc: false }),
   /** @param {Json} json @param {number} max @param {string} rule @param {Path} at */
   within(json, max, rule, at) {
@@ -81,7 +83,9 @@ export class Picture {
 
   /** @param {Path} at */
   validated(at) {
-    return new Picture(CoachRules.pictureId.apply(this.id, at.plus('id')), CoachRules.mediaType.apply(this.mediaType, at.plus('mediaType')), this.localOnly);
+    const id = CoachRules.pictureId.apply(this.id, at.plus('id'));
+    if (!CoachRules.pictureIdPattern.test(id)) throw new Violation(CoachRules.pictureId.path, at.plus('id'), { kind: 'custom', custom: 'notAnId' });
+    return new Picture(id, CoachRules.mediaType.apply(this.mediaType, at.plus('mediaType')), this.localOnly);
   }
 
   /** @param {import('../../../../platform/domain-kit/entities.js').Fields} f */
@@ -375,6 +379,8 @@ export const CoachTurnBounds = Object.freeze({
   contextBytes: 24_000,
   contextPictures: 2,
   contextReadBytes: 64 * 1024,
+  pictureEdge: 4096,
+  pictureBytes: 5 * 1024 * 1024,
   modelPictureEdge: 1568,
   modelPictureBytes: 1024 * 1024,
   contextReads: Object.freeze(['list_sessions', 'list_notes', 'list_exercises', 'list_routines']),

@@ -208,15 +208,20 @@ export class EndTurn {
   /** @param {Reader} read */
   load(read) { return { message: read.repository(CoachMessage).find(this.message, 'drawn'), moment: read.moment, mark: Mark.read(read) }; }
 
+  // The end itself: the state, the whole text, `truncated` and the receipt the calls derive.
+  /** @param {Plan} plan @param {CoachMessageValue} running @param {MessageState} state @param {string} text @param {boolean} truncated @param {import('../../../../platform/domain-kit/time.js').Moment} moment */
+  static write(plan, running, state, text, truncated, moment) {
+    const written = ['state', 'text', 'receipt', 'truncated'];
+    plan.update(new Valid(running.with({ state, text, truncated, receipt: AbilityCall.receipt(running.calls) }), moment, written), { fields: written });
+  }
+
   /** @param {ReturnType<EndTurn['load']>} loaded @param {IDSource} ids */
   decide(loaded, ids) {
     const running = loaded.message?.isCoach ? loaded.message : null;
     if (running === null) return Decision.refuse(gone(this.message));
     if (MessageStates.isWritersTerminal(running.state)) return Decision.unchanged(null);
-    const ended = running.with({ state: this.state, text: this.text ?? running.text, truncated: this.truncated, receipt: AbilityCall.receipt(running.calls) });
-    const written = ['state', 'text', 'receipt', 'truncated'];
     const plan = new Plan();
-    plan.update(new Valid(ended, loaded.moment, written), { fields: written });
+    EndTurn.write(plan, running, this.state, this.text ?? running.text, this.truncated, loaded.moment);
     if (loaded.mark.turnId === null || loaded.mark.names(this.message)) loaded.mark.clear(plan);
     return Decision.write(plan, null);
   }
@@ -361,13 +366,17 @@ export class CoachPictureRow {
   }
 }
 
+// Both copies within gym Coach §9.3's bounds: the original's `PICTURE_EDGE` and `PICTURE_BYTES`, the model copy's own.
 export class KeepPicture {
   scope = CoachMessage.scope;
   refusals = GymRefusals;
 
   /** @param {CoachPictureRow} picture */
   constructor(picture) {
-    const { model } = picture;
+    const { original, model } = picture;
+    precondition(CoachRules.pictureIdPattern.test(picture.id), 'a picture\'s id is one its row key admits');
+    precondition(Math.max(original.width, original.height) <= CoachTurnBounds.pictureEdge && original.bytes <= CoachTurnBounds.pictureBytes,
+      'a picture\'s original is within its bounds');
     precondition(Math.max(model.width, model.height) <= CoachTurnBounds.modelPictureEdge && model.bytes <= CoachTurnBounds.modelPictureBytes,
       'a picture\'s model copy is within its bounds');
     this.picture = picture;
@@ -448,8 +457,10 @@ export class ForgetUnclaimedPictures {
 }
 
 // Signing out takes what Coach keeps in the browser (gym Coach on the AI service §5): the mark, and every picture but
-// those a message not yet sent names, which stay with the unsent work a Keep keeps. Run on the account's replica
-// before the sign-out finishes; a Discard then takes the rest with the replica. It answers the picture ids removed.
+// those a message not yet sent names, which stay with the unsent work a Keep keeps. A seat change ends this replica's
+// running turn `interrupted` (Coach engine §5), in the same write that clears the mark, so the account's record carries
+// the end. Run on the account's replica as the sign-out begins; a Discard then takes the rest with the replica. It
+// answers the picture ids removed.
 export class ForgetCoachAtSignOut {
   scope = CoachMessage.scope;
   refusals = GymRefusals;
@@ -457,7 +468,10 @@ export class ForgetCoachAtSignOut {
   /** @param {Reader} read */
   load(read) {
     const unsent = drawnMessages(read).filter((message) => message !== null && read.confirmed(CoachMessage, message.id) === null);
-    return { rows: Object.keys(read.devices(CoachPictureRow.prefix)), mark: Mark.read(read), markHeld: read.device(Mark.turnKey) !== null,
+    const mark = Mark.read(read);
+    const named = mark.turnId === null ? null : read.repository(CoachMessage).find(new Id(mark.turnId, CoachMessage), 'drawn');
+    return { rows: Object.keys(read.devices(CoachPictureRow.prefix)), mark, markHeld: read.device(Mark.turnKey) !== null, moment: read.moment,
+      running: named !== null && writersOwn(named, read.replica) ? named : null,
       named: new Set(unsent.flatMap((message) => message?.pictures ?? []).map((picture) => CoachPictureRow.key(picture.id))) };
   }
 
@@ -466,6 +480,7 @@ export class ForgetCoachAtSignOut {
     const forgotten = loaded.rows.filter((key) => !loaded.named.has(key));
     if (forgotten.length === 0 && !loaded.markHeld && !loaded.mark.roundRow) return Decision.unchanged(/** @type {string[]} */ ([]));
     const plan = new Plan();
+    if (loaded.running !== null) EndTurn.write(plan, loaded.running, 'interrupted', loaded.running.text, loaded.running.truncated, loaded.moment);
     if (loaded.markHeld || loaded.mark.roundRow) loaded.mark.clear(plan);
     for (const key of forgotten) plan.device(key, null);
     return Decision.write(plan, forgotten.map((key) => key.slice(CoachPictureRow.prefix.length)));

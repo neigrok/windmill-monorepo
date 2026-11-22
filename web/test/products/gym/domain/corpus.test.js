@@ -32,6 +32,7 @@ import { Collation } from '../../../../src/platform/domain-kit/collation.js';
 import { AbilityRefusals } from '../../../../src/products/gym/domain/coach/conversation.js';
 import { AbilityRequest, RunAbility, SERVER_RUN } from '../../../../src/products/gym/domain/coach/runAbility.js';
 import { between } from '../../../../../packages/api-contract/sync/reference/core/fracindex.js';
+import { parseSeeded } from '../../../../../packages/api-contract/sync/reference/core/derive.js';
 import { compareJcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { RegistryCheck, RuleBookCheck, RuleBookParity } from '../../../platform/domain-kit/checks.js';
@@ -86,9 +87,15 @@ function ability(each) {
   const stamp = `${each.now}:0:r_aaaaaaaaaaaa`;
   /** @param {string} t @param {string} id @param {number} seq @param {Record<string, Json>} fields */
   const row = (t, id, seq, fields) => ({ t, id, seq, life: ['alive', stamp], f: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, [value, stamp]])) });
-  const turn = new Id('turnAAAAAAAAAAA1', CoachMessage);
+  // A minting call's id is the server gate's seeded id (G-7): the turn is its seed, and the calls before it the ordinal's
+  // admitted predecessors, refused by their rule.
+  const seeded = AbilityRequest.creates[each.call.name] === undefined ? null : parseSeeded(each.call.input.id);
+  const turn = new Id(seeded?.seed ?? 'turnAAAAAAAAAAA1', CoachMessage);
+  const before = Array.from({ length: (seeded?.n ?? 1) - 1 }, (_, index) => ({ callId: `prior-${index + 1}`, name: each.call.name, outcome: 'refused',
+    created: [], read: { sessions: [], sets: [], weeks: [] } }));
   const conversation = [row('thread', 'thrdAAAAAAAAAAA1', 1_000_000, { title: 'How heavy today?' }),
-    row('message', 'turnAAAAAAAAAAA1', 1_000_001, { threadId: 'thrdAAAAAAAAAAA1', role: 'coach', replica: 'rp_00000000000000000000000000000001', state: 'running', at: each.now })];
+    row('message', String(turn.record), 1_000_001, { threadId: 'thrdAAAAAAAAAAA1', role: 'coach', replica: 'rp_00000000000000000000000000000001', state: 'running',
+      at: each.now, calls: before })];
   const vector = { file: each.file, name: each.case, input: { records: { drawn: [...each.given.records, ...conversation] }, now: each.now, offsetSeconds: 0, ids: [] }, expect: each.expect };
   const action = new RunAbility(new AbilityRequest('call-1', each.call.name, each.call.input), turn, each.seat, catalog, each.given.appBaseUrl ?? 'https://windmill.works');
   const decided = /** @type {any} */ (corpus.decision(action, vector, (outcome) => outcome.kind === 'result'
@@ -627,8 +634,13 @@ test('every book entity agrees with the registry and every writable sample round
   }
 });
 
+// A minting call whose id no turn seeds is a case the server's gate never hands its tool host, so no seeding executor can
+// replay it; it waits for its corpus to give it a seeded id.
+/** @param {AbilityCase} each */
+const unseeded = (each) => AbilityRequest.creates[each.call.name] !== undefined && parseSeeded(each.call.input.id) === null;
 for (const each of abilityFiles.flatMap(abilityCases)) {
-  test(`${each.file} · ${each.case}`, () => assert.equal(jcs(ability(each)), jcs(abilityExpected(each))));
+  test(`${each.file} · ${each.case}`, { skip: unseeded(each) && 'its id is no seeded id a turn mints' },
+    () => assert.equal(jcs(ability(each)), jcs(abilityExpected(each))));
 }
 
 for (const [file, run] of Object.entries(handlers)) for (const vector of Contract.vectors(file)) {

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { GymProduct } from '../../../../../../packages/api-contract/sync/reference/gym/product.js';
 import { Fields, Id } from '../../../../../src/platform/domain-kit/entities.js';
+import { Fault } from '../../../../../src/platform/domain-kit/values.js';
 import { Instant } from '../../../../../src/platform/domain-kit/time.js';
 import { registry } from '../../../../../src/platform/sync/schema.js';
 import { AbilityCall, CoachBook, CoachMessage, CoachMessageValue, CoachThread, CoachThreadValue, Conversation, Picture } from '../../../../../src/products/gym/domain/coach/conversation.js';
@@ -169,6 +170,7 @@ for (const choice of /** @type {const} */ (['keep', 'discard'])) {
     await a.sync();
     assert.match(await persisted(a), /runningRound/);
     assert.deepEqual(await committed(a, new ForgetCoachAtSignOut()), [picture.id]);
+    await a.sync(); // the sign-out's flush sends the turn's end before the replica goes
     a.engine.online = false;
     await a.engine.beginSignOut();
     assert.equal((await a.engine.finishSignOut({ choice })).complete, true);
@@ -187,10 +189,38 @@ test('a picture an unsent question names stays with the unsent work a Keep keeps
   const turn = await open(a, 'This one?', [new Picture(picture.id, 'image/jpeg', true)]);
   assert.deepEqual(await committed(a, new ForgetCoachAtSignOut()), ['picture00000002']);
   assert.deepEqual(Object.keys(rows(a)), [CoachPictureRow.key(picture.id)]);
-  assert.equal((await a.engine.beginSignOut()).unsent, 1);
+  assert.equal((await a.engine.beginSignOut()).unsent, 2, 'the question and the end its turn took at sign-out');
   assert.equal((await a.engine.finishSignOut({ choice: 'keep' })).complete, true);
   const stored = await persisted(a);
   assert.equal(stored.includes(CoachPictureRow.key(picture.id)), true);
   assert.equal(stored.includes('runningTurn'), false);
   assert.equal(stored.includes(String(turn.coach.record)), true, 'the unsent turn waits for the next sign-in');
+});
+
+test('signing out ends this replica\'s running turn interrupted in the write that clears its mark', async (t) => {
+  const { a, b } = await phones(t);
+  const turn = await open(a);
+  await committed(a, new BeginRound(turn.coach, callId, 0));
+  await committed(a, new StreamTurnText(turn.coach, 'Add 5'));
+  const outcome = await a.runner.run(new ForgetCoachAtSignOut());
+  assert.equal(outcome.kind, 'committed');
+  assert.deepEqual(rows(a), {});
+  const message = a.drawn(CoachMessage).find((each) => each.id.equals(turn.coach));
+  assert.deepEqual([message?.state, message?.text, message?.receipt], ['interrupted', 'Add 5', AbilityCall.receipt([])]);
+  await a.sync();
+  assert.equal(b.drawn(CoachMessage).find((each) => each.id.equals(turn.coach))?.state, 'interrupted');
+  assert.equal((await b.runner.run(new ForgetCoachAtSignOut())).kind, 'unchanged', 'another replica ends no turn it does not run');
+});
+
+test('a picture id the registry refuses never reaches a message or a row, and both copies keep their bounds', async (t) => {
+  const { a } = await phones(t);
+  const refused = await a.runner.run(new OpenTurn({ question: 'This one?', pictures: [new Picture('pic.ture0001', 'image/jpeg', true)] }));
+  assert.equal(refused.kind, 'refused');
+  assert.deepEqual(/** @type {any} */ (refused).refusal.violation.json, { rule: 'message.pictures.id', path: 'pictures.0.id', reason: 'custom', custom: 'notAnId' });
+  const copy = picture.model;
+  assert.throws(() => new KeepPicture(new CoachPictureRow('pic.ture0001', copy, copy)), Fault);
+  assert.throws(() => new KeepPicture(new CoachPictureRow(picture.id, new PictureCopy('image/jpeg', 4097, 10, 'AAAA'), copy)), Fault);
+  assert.throws(() => new KeepPicture(new CoachPictureRow(picture.id, new PictureCopy('image/jpeg', 10, 10, 'A'.repeat(4 * 1024 * 1024 * 5 / 3 + 8)), copy)), Fault);
+  assert.throws(() => new KeepPicture(new CoachPictureRow(picture.id, copy, new PictureCopy('image/jpeg', 1569, 10, 'AAAA'))), Fault);
+  new KeepPicture(new CoachPictureRow(picture.id, new PictureCopy('image/jpeg', 4096, 3072, 'AAAA'), copy));
 });

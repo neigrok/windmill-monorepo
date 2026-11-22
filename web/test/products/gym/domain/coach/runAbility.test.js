@@ -38,11 +38,10 @@ const coach = (phone, turn) => {
   return message;
 };
 
-// The call as the host sends it: its id seeded from the turn (G-7), whatever id the model named.
+// The call as the model made it; the executor names its record from the turn (G-7).
 /** @param {Harness} phone @param {Turn} turn @param {string} callId @param {string} name @param {any} input */
-async function call(phone, turn, callId, name, input) {
-  const request = new AbilityRequest(callId, name, input).seeded(coach(phone, turn));
-  return phone.runner.run(new RunAbility(request, turn.coach, 'bound', catalog, 'https://windmill.works'));
+function call(phone, turn, callId, name, input) {
+  return phone.runner.run(new RunAbility(new AbilityRequest(callId, name, input), turn.coach, 'bound', catalog, 'https://windmill.works'));
 }
 
 /** @param {any} outcome */
@@ -76,6 +75,36 @@ test('a call run again under its id seeds the same record and keeps one record o
   answered(await call(a, turn, 'call-2', 'save_note', note('Shoulder')));
   assert.deepEqual(a.drawn(Note).map((value) => value.id.record), [`${turn.coach.record}-1`, `${turn.coach.record}-2`]);
   assert.deepEqual(coach(a, turn).calls.map((each) => each.callId), ['call-1', 'call-2']);
+});
+
+test('two calls of one round, made before either ran, take an ordinal each', async (t) => {
+  const { a } = await phones(t);
+  const turn = await open(a);
+  const both = [new RunAbility(new AbilityRequest('call-1', 'save_note', note('Knee')), turn.coach, 'bound', catalog, ''),
+    new RunAbility(new AbilityRequest('call-2', 'save_note', note('Shoulder')), turn.coach, 'bound', catalog, '')];
+  for (const each of both) answered(await a.runner.run(each));
+  assert.deepEqual(a.drawn(Note).map((value) => [value.id.record, value.title]), [[`${turn.coach.record}-1`, 'Knee'], [`${turn.coach.record}-2`, 'Shoulder']]);
+});
+
+test('a call its rule refused holds its ordinal, so running it again names no record a later call took', async (t) => {
+  const { a } = await phones(t);
+  const turn = await open(a);
+  assert.deepEqual(answered(await call(a, turn, 'call-1', 'save_note', note(''))), { kind: 'refused', code: 'invalid-arguments' });
+  answered(await call(a, turn, 'call-2', 'save_note', note('Shoulder')));
+  assert.equal(answered(await call(a, turn, 'call-1', 'save_note', note('Knee'))).kind, 'result');
+  assert.deepEqual(a.drawn(Note).map((value) => [value.id.record, value.title]).sort(), [[`${turn.coach.record}-1`, 'Knee'], [`${turn.coach.record}-2`, 'Shoulder']]);
+  assert.deepEqual(coach(a, turn).calls.map((each) => [each.callId, each.outcome]), [['call-1', 'ok'], ['call-2', 'ok']]);
+});
+
+test('a call the gate refused holds no ordinal, and running it again takes the next one, last', async (t) => {
+  const { a } = await phones(t);
+  const turn = await open(a);
+  assert.deepEqual(answered(await call(a, turn, 'call-1', 'save_note', { id: 'x', title: 'Knee' })), { kind: 'refused', code: 'invalid-input' });
+  answered(await call(a, turn, 'call-2', 'save_note', note('Shoulder')));
+  answered(await call(a, turn, 'call-1', 'save_note', note('Knee')));
+  assert.deepEqual(a.drawn(Note).map((value) => [value.id.record, value.title]).sort(), [[`${turn.coach.record}-1`, 'Shoulder'], [`${turn.coach.record}-2`, 'Knee']]);
+  assert.deepEqual(coach(a, turn).calls.map((each) => [each.callId, each.outcome]), [['call-2', 'ok'], ['call-1', 'ok']]);
+  assert.equal((await call(a, turn, 'call-2', 'save_note', { id: 'x' })).kind, 'unchanged', 'a refused run again leaves the call that answered');
 });
 
 test('a call runs on a turn another device marked interrupted, and on no message its writer ended or another replica wrote', async (t) => {
