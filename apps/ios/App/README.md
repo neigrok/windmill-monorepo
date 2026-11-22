@@ -204,10 +204,10 @@ counts the whole roadmap whatever the Board shows. Select and Select Steps put t
 (`BoardSelectionBar`): *Select All* or *Deselect All* and the checkmark in the bar, the switch waiting, and the bottom
 toolbar's *Recolor*, a menu of the six kinds, and *Delete N Steps*, which asks once on itself with what it costs and is
 dimmed while the steps chosen hold every starting step, which the band then says, at once where the selection starts on
-them. *Select All* takes the steps whose rows the Board shows, so a folded group's are not taken, as the web's selection
-takes only the cards its columns show; the button's count and the delete's question follow. Recolor is one gesture with
-six seconds of *Undo*, and the delete one gesture held nine seconds with *Undo*; either ends the selection, and a step the
-Board stops showing is chosen no longer. `Board/BoardReading.swift` and `Board/BoardSelection.swift` are the Board's query
+them. *Select All* takes every step the Board's query keeps, a folded group's too, as 02.12 draws it taking the starting
+step from a folded Done; the delete's question counts what it takes, which is the person's check. Recolor is one gesture
+with six seconds of *Undo*, and the delete one gesture held nine seconds with *Undo*; either ends the selection, and a
+step the Board stops showing is chosen no longer. `Board/BoardReading.swift` and `Board/BoardSelection.swift` are the Board's query
 and its selection, each the domain's read and acts. `Board/BoardFrames.swift` measures the time from the switch to the
 Board's first frame and the frames each scroll is given, on a launch that names a file for them, and reports nothing.
 
@@ -1026,6 +1026,10 @@ python3 Tools/export_design_captures.py --result "$RESULT" --output "$CAPTURES"
 ```
 
 Repeat `-only-testing:` for more tests, or name `WindmillUITests/RoutinesCaptures` for an area.
+`RoadmapCaptures/testFiveThousandSteps` (02.14) needs a Release-configuration build that compiles the room in, as
+`Tools/board_bench.sh` builds it (`-configuration Release ENABLE_TESTABILITY=YES WM_ROADMAP_ROOM_ENABLED=YES
+'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) DEBUG'`): in a Debug build the app plants the 5,000-step handbook as
+it launches and answers no query for longer than XCTest waits for one, so the capture's first query fails.
 `TEST_RUNNER_WM_CAPTURE_ARGUMENTS` adds launch arguments to every capture the app launches itself, such as
 `-AppleLanguages (ar) -AppleLocale ar_SA` to capture the app under another system language. The exporter writes
 one PNG per capture named by the capture, `$CAPTURES/02L.1-routines-dark.png`, replacing that capture's PNG from an

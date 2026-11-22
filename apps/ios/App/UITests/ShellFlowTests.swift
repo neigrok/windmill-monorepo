@@ -356,7 +356,9 @@ import XCTest
     more.tap()
     XCTAssertTrue(app.buttons["View Branch"].waitForExistence(timeout: 5))
     XCTAssertFalse(confirm.exists, "The roadmap's one starting step offers no Delete")
-    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)).tap()
+    // The menu closes on a tap beside it on the step's name, which does nothing: a tap there reaches the page too, so one
+    // lower would open the Note row, and the bar's middle is under the menu.
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.06, dy: 0.15)).tap()
     XCTAssertTrue(app.buttons["View Branch"].waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.buttons["roadmap-reset"].exists)
   }
@@ -644,7 +646,7 @@ import XCTest
     // The bar's field starts from the name, selected: what is typed takes its place.
     let field = app.navigationBars.textFields.firstMatch
     openTitleMenu("Learn to cook", in: app)
-    for unbuilt in ["Guide", "Kinds", "Activity", "Share…", "Export"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
+    for unbuilt in ["Guide", "Activity", "Share…", "Export"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
     app.buttons["Rename"].tap()
     XCTAssertTrue(field.waitForValue("Learn to cook"))
     field.typeText("Cook at home\n")
@@ -686,13 +688,13 @@ import XCTest
     assertLearnToSailBoard(app)
     openTitleMenu("Learn to sail", in: app)
     // The menu's items, in order, outside the bar, whose title the system may report as a button of the same name.
-    let named = NSPredicate(format: "label IN %@", ["Learn to sail", "Spanish B1", "Become a day skipper", "All Roadmaps…", "New Roadmap", "Rename", "Delete Roadmap"])
+    let listed = ["Learn to sail", "Spanish B1", "Become a day skipper", "All Roadmaps…", "New Roadmap", "Kinds", "Rename", "Delete Roadmap"]
+    let named = NSPredicate(format: "label IN %@", listed)
     let items = app.buttons.matching(named)
     let inBar = app.navigationBars.buttons.matching(named).count
-    XCTAssertEqual((inBar..<items.count).map { items.element(boundBy: $0).label },
-                   ["Learn to sail", "Spanish B1", "Become a day skipper", "All Roadmaps…", "New Roadmap", "Rename", "Delete Roadmap"])
+    XCTAssertEqual((inBar..<items.count).map { items.element(boundBy: $0).label }, listed)
     XCTAssertTrue(items.element(boundBy: inBar).isSelected && !items.element(boundBy: inBar + 1).isSelected)
-    for unbuilt in ["Guide", "Kinds", "Activity", "Share…", "Export"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
+    for unbuilt in ["Guide", "Activity", "Share…", "Export"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
     app.buttons["Spanish B1"].tap()
     XCTAssertTrue(app.navigationBars["Spanish B1"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.staticTexts["2 of 7 done"].waitForExistence(timeout: 5))

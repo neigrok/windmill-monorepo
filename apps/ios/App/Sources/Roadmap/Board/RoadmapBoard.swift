@@ -131,15 +131,13 @@ struct RoadmapBoard: View {
   // While Find narrows, each group with a match stands open and its header folds it for that search alone; otherwise a
   // header folds its group as the Board keeps it.
   func expanded(_ group: BoardRead.Column.Name, finding: Bool) -> Binding<Bool> {
-    let (roadmap, reading) = (roadmap, roadmap.reading)
-    return Binding(get: { !roadmap.folded(finding: finding).contains(group) }, set: { opens in
-      switch (finding, opens) {
-      case (true, true): reading.foldedWhileFinding.remove(group)
-      case (true, false): reading.foldedWhileFinding.insert(group)
-      case (false, true): roadmap.folded.remove(group)
-      case (false, false): roadmap.folded.insert(group)
-      }
-    })
+    let reading = roadmap.reading
+    guard !finding else {
+      return Binding(get: { !reading.foldedWhileFinding.contains(group) }, set: {
+        if $0 { reading.foldedWhileFinding.remove(group) } else { reading.foldedWhileFinding.insert(group) }
+      })
+    }
+    return Binding(get: { !roadmap.folded.contains(group) }, set: { if $0 { roadmap.folded.remove(group) } else { roadmap.folded.insert(group) } })
   }
 
   // The header is the control that folds its section: this list style draws none of its own.
@@ -270,7 +268,7 @@ struct BoardSelectionBar: ToolbarContent {
     let selection: BoardSelection
 
     var body: some View {
-      Button(selection.holdsEveryShown ? String(localized: "Deselect All") : String(localized: "Select All")) { selection.selectAll() }
+      Button(selection.holdsEveryKept ? String(localized: "Deselect All") : String(localized: "Select All")) { selection.selectAll() }
         .accessibilityIdentifier("roadmap-select-all")
     }
   }

@@ -52,24 +52,22 @@ final class BoardSelection {
   // Delete is dimmed while the choice holds every step the roadmap starts from.
   var takesEveryStart: Bool { open?.takesEveryStart(steps) ?? false }
 
-  // The steps whose rows the Board shows: a folded group's are not shown, so Select All takes none of them, as the web's
-  // selection takes only the cards its columns show.
-  var shownSteps: Set<String> {
+  // The steps the Board's query keeps, a folded group's too: what Select All takes, as 02.12 draws it taking a roadmap's
+  // starting step from its folded Done.
+  var kept: Set<String> {
     guard let open else { return [] }
-    let shown = room.reading.shown(in: open)
-    let folded = room.folded(finding: shown.finding)
-    return Set(shown.groups.filter { !folded.contains($0.id) }.flatMap { (group: RoadmapModel.Group) -> [String] in group.rows.map(\.id) })
+    return Set(room.reading.shown(in: open).groups.flatMap { (group: RoadmapModel.Group) -> [String] in group.rows.map(\.id) })
   }
 
-  // Every step whose row the Board shows is chosen, so the bar offers Deselect All.
-  var holdsEveryShown: Bool {
-    let shown = shownSteps
-    return !shown.isEmpty && shown.isSubset(of: steps)
+  // Every step the query keeps is chosen, so the bar offers Deselect All.
+  var holdsEveryKept: Bool {
+    let kept = kept
+    return !kept.isEmpty && kept.isSubset(of: steps)
   }
 
-  // Select All takes every step whose row the Board shows; Deselect All chooses none.
+  // Select All takes every step the query keeps; Deselect All chooses none.
   func selectAll() {
-    steps = holdsEveryShown ? [] : shownSteps
+    steps = holdsEveryKept ? [] : kept
   }
 
   // The Board shows these steps now: a step it no longer shows is chosen no longer.

@@ -407,9 +407,6 @@ final class RoadmapModel {
     open.board.overall.total == 0 ? .board : lens
   }
 
-  // The groups folded on the Board as it reads now: while Find narrows, those a header folded for that search alone.
-  func folded(finding: Bool) -> Set<BoardRead.Column.Name> { finding ? reading.foldedWhileFinding : folded }
-
   // The room came to the front.
   func roomOpened() {
     telemetry.event("roadmap_room_opened")

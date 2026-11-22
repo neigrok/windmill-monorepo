@@ -171,27 +171,30 @@ import SyncTesting
     ])
   }
 
-  // Select All takes the steps whose rows the Board shows: Done, folded at rest, keeps its steps out of it, as the web's
-  // selection takes only the cards its columns show; once Done is open it takes them too. Deselect All chooses none.
-  @Test func selectAllTakesTheStepsWhoseRowsTheBoardShows() async throws {
+  // 02.12: Select All takes every step the Board's query keeps, a folded group's too, so on *Learn to sail* at rest it
+  // takes all eight, the starting step in the folded Done among them, and the band says why Delete is dimmed; under a
+  // kind filter it takes the kind's steps alone. Deselect All chooses none.
+  @Test func selectAllTakesEveryStepTheQueryKeepsFoldedGroupsIncluded() async throws {
     let (engine, runner, memory, suite) = phone()
     defer { memory.removePersistentDomain(forName: suite) }
     let model = room(engine, runner, memory)
     try await learnToSail(model, on: engine, runner)
     let labels = { (steps: Set<String>) -> [String] in
-      (model.shown?.tree.index.nodes ?? []).filter { steps.contains($0.id) }.map { $0.label }
+      (model.shown?.tree.index.nodes ?? []).filter { steps.contains($0.id) }.map { $0.label }.sorted()
     }
     model.startSelecting(nil, from: .tool)
     let selection = try #require(model.selection)
 
+    #expect(model.folded == [.done])
     selection.selectAll()
-    #expect(labels(selection.steps).sorted() == ["Leave the dock", "Read the wind", "Sail a triangle", "Sail solo", "Tie a bowline"])
-    #expect(selection.holdsEveryShown && !selection.takesEveryStart)
+    #expect(labels(selection.steps) == ["Choose a sailing course", "Leave the dock", "Name the boat parts", "Read the wind", "Rig the boat",
+                                        "Sail a triangle", "Sail solo", "Tie a bowline"])
+    #expect(selection.holdsEveryKept && selection.takesEveryStart && model.band?.says == .refused(.keepsStartingStep))
     selection.selectAll()
     #expect(selection.steps.isEmpty)
-    model.folded.remove(.done)
+    model.reading.toggle("olive")
     selection.selectAll()
-    #expect(selection.steps.count == 8 && selection.takesEveryStart)
+    #expect(labels(selection.steps) == ["Sail a triangle", "Tie a bowline"] && !selection.takesEveryStart)
   }
 
   // The steps chosen are what the Board shows: a step it stops showing is chosen no longer, and the selection ends once
