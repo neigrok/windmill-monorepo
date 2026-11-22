@@ -147,23 +147,15 @@ struct GlassCircle: ViewModifier {
 // lists the three most recent roadmaps, each over its progress and the open one checked, then All Roadmaps…, New Roadmap,
 // Kinds, Rename and Delete Roadmap. Rename is the system's: it turns the bar into one field, whose return key commits a name
 // and leaves the old one where the field was emptied. Delete Roadmap asks under the title, on a view that stays on
-// screen once the menu has closed. While several steps are selected the title counts them, with no progress and no
-// menu (02.10); the same modifiers stay, so the screen under them is not made anew.
+// screen once the menu has closed. While several steps are selected the title counts them, with no progress, no menu
+// and no rename (02.10). The title stands on a view of its own behind the screen, which changes with it, so the screen
+// under the title is not made anew as a selection starts and ends.
 struct RoadmapTitle: ViewModifier {
   let roadmap: RoadmapModel
   let open: RoadmapModel.OpenRoadmap
 
   func body(content: Content) -> some View {
-    // The field starts from the name the bar shows, so a name committed as it was shown writes nothing.
-    let name = open.listed.name
-    let selected = roadmap.selection.map { (selection: BoardSelection) -> String in
-      String(localized: "\(selection.steps.count) Selected", locale: .copy, comment: "The bar while several steps are selected: how many")
-    }
-    titled(content, Binding(get: { selected ?? name }, set: { if selected == nil && $0 != name { roadmap.rename(to: $0) } }),
-           subtitle: selected == nil ? open.board.overall.progress : "")
-      .toolbarTitleMenu {
-        if selected == nil { menu }
-      }
+    content.background { title }
       .overlay(alignment: .top) { Color.clear.frame(width: 1, height: 1).modifier(DeleteRoadmapQuestion(roadmap: roadmap, row: nil)) }
   }
 
@@ -179,16 +171,35 @@ struct RoadmapTitle: ViewModifier {
     Divider()
     Button("New Roadmap", systemImage: "plus") { roadmap.nameRoadmap(from: .menu) }.tint(RoadmapPalette.ink)
     Divider()
-    Button("Kinds", systemImage: "paintpalette") { roadmap.openKinds(from: .menu) }
+    Button("Kinds", systemImage: "paintpalette") { roadmap.openKinds(from: .menu) }.tint(RoadmapPalette.ink)
     RenameButton()
     Divider()
     Button("Delete Roadmap", systemImage: "trash", role: .destructive) { roadmap.askDelete(open.listed, from: .menu) }
   }
 
   // iOS 26 draws the progress under the inline title, whose menu and field are the system's; before it the name and
-  // the progress stand in the bar's principal slot, as on every room's screen.
-  @ViewBuilder func titled(_ content: Content, _ name: Binding<String>, subtitle: String) -> some View {
-    if #available(iOS 26.0, *) { content.navigationTitle(name).navigationSubtitle(subtitle) }
-    else { content.roomTitle(name.wrappedValue, subtitle: subtitle.nilIfEmpty) }
+  // the progress stand in the bar's principal slot, as on every room's screen. The field starts from the name the bar
+  // shows, so a name committed as it was shown writes nothing.
+  @ViewBuilder var title: some View {
+    let name = open.listed.name
+    if let selection = roadmap.selection {
+      SelectedTitle(selection: selection)
+    } else if #available(iOS 26.0, *) {
+      Color.clear.navigationTitle(Binding(get: { name }, set: { if $0 != name { roadmap.rename(to: $0) } }))
+        .navigationSubtitle(open.board.overall.progress).toolbarTitleMenu { menu }
+    } else {
+      Color.clear.roomTitle(name, subtitle: open.board.overall.progress)
+    }
+  }
+
+  // The title while several steps are selected, which reads the steps chosen on its own, so a tap on a row redraws it
+  // alone.
+  struct SelectedTitle: View {
+    let selection: BoardSelection
+
+    var body: some View {
+      Color.clear.navigationTitle(String(localized: "\(selection.steps.count) Selected", locale: .copy,
+                                         comment: "The bar while several steps are selected: how many"))
+    }
   }
 }

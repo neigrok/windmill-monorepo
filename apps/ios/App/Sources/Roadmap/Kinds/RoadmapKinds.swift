@@ -28,7 +28,10 @@ struct RoadmapKinds: View {
         .navigationTitle("Kinds").navigationBarTitleDisplayMode(.inline)
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { close }
-          ToolbarItem(placement: .topBarTrailing) { EditButton().accessibilityIdentifier("roadmap-kinds-edit") }
+          // Edit in the bar's ink; active, the system's checkmark in the room's accent, as 06.5 draws it.
+          ToolbarItem(placement: .topBarTrailing) {
+            EditButton().tint(editing.isEditing ? RoadmapPalette.accent : RoadmapPalette.ink).accessibilityIdentifier("roadmap-kinds-edit")
+          }
         }.roomBar(.roadmap)
         .environment(\.editMode, $editing)
         .navigationDestination(for: RoadmapLegend.Subject.self) { subject in
@@ -67,7 +70,8 @@ struct RoadmapKinds: View {
           }
         }
         if open.legend.freeHue != nil {
-          Button("Add Kind", systemImage: "plus") { added = roadmap.addKind() }.foregroundStyle(RoadmapPalette.accent).accessibilityIdentifier("roadmap-kinds-add")
+          Button("Add Kind", systemImage: "plus") { added = roadmap.addKind() }.foregroundStyle(RoadmapPalette.accent)
+            .accessibilityIdentifier("roadmap-kinds-add")
         }
       } header: {
         Text(open.listed.name).font(.footnote.weight(.semibold)).foregroundStyle(RoadmapPalette.inkDim).textCase(nil)

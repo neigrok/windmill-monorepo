@@ -55,12 +55,14 @@ struct RoadmapBoard: View {
         }
         ForEach(shown.groups) { group in
           Section(isExpanded: expanded(group.id, finding: shown.finding)) {
-            ForEach(group.rows) { row in self.row(row, selecting: selection != nil) }
+            ForEach(group.rows) { row in self.row(row, selecting: selection != nil, chosen: selection?.steps.contains(row.id) == true) }
           } header: {
             header(group.id, count: group.rows.count, finding: shown.finding)
           }.headerProminence(.increased)
         }
       }.listStyle(.insetGrouped).scrollContentBackground(.hidden)
+        // A first row that says what narrows the Board stands right under the switch row, as 02.8 and 02.9 draw it.
+        .contentMargins(.top, shown.branch == nil && shown.kinds.isEmpty ? nil : RoomSpace.inset, for: .scrollContent)
         .environment(\.editMode, .constant(selection == nil ? .inactive : .active))
         .roomMotion(shown.groups.map { (group: RoadmapModel.Group) -> [String] in group.rows.map(\.id) })
         .onChange(of: kept) { _, shown in selection?.keep(shown) }
@@ -94,7 +96,7 @@ struct RoadmapBoard: View {
       } label: {
         Text(says).foregroundStyle(RoadmapPalette.ink).accessibilityIdentifier(identifier)
       }
-    }.listRowBackground(RoadmapPalette.card)
+    }.listRowBackground(RoadmapPalette.card).listSectionSpacing(RoomSpace.related)
   }
 
   // 02.6, 02.6b: the Board left with nothing. Find's words offer a new step of that name; a kind filter offers to show
@@ -155,11 +157,12 @@ struct RoadmapBoard: View {
   }
 
   // A step's row, with why it stands in its group and its excerpt. A step the last act brought up next is washed while
-  // the band says so. While several are selected the row is chosen by a tap, and slides and presses for nothing.
-  func row(_ row: RoadmapModel.Row, selecting: Bool) -> some View {
+  // the band says so. While several are selected the row is chosen by a tap, a chosen one on the raised ground, and
+  // slides and presses for nothing.
+  func row(_ row: RoadmapModel.Row, selecting: Bool, chosen: Bool) -> some View {
     let arrived = roadmap.band?.arrived.contains(row.id) == true
     return RoadmapStepRow(row: row, door: .card, line: open.reason(row.card), excerpt: true)
-      .listRowBackground(ZStack { RoadmapPalette.card; if arrived { RoadmapPalette.accentSoft } }.roomMotion(arrived))
+      .listRowBackground(ZStack { chosen ? RoadmapPalette.raised : RoadmapPalette.card; if arrived { RoadmapPalette.accentSoft } }.roomMotion(arrived))
       .swipeActions(edge: .leading, allowsFullSwipe: false) {
         if row.completes && !selecting { Button("Complete", systemImage: "checkmark") { roadmap.complete(row, by: .swipe) }.tint(RoadmapPalette.act) }
       }
@@ -173,9 +176,9 @@ struct RoadmapBoard: View {
   // 02.4: what a long press offers. Ask Coach and Copy Link wait for their screens.
   @ViewBuilder func menu(_ row: RoadmapModel.Row) -> some View {
     if row.completes { Button("Complete", systemImage: "checkmark") { roadmap.complete(row, by: .menu) }.tint(RoadmapPalette.ink) }
-    Button("Edit", systemImage: "pencil") { if let page = open.page(of: row.id) { roadmap.edit(page, from: .menu) } }
-    Button("Open in Graph", systemImage: "point.3.connected.trianglepath.dotted") { roadmap.openInGraph(row.id, from: .menu) }
-    Button("Select", systemImage: "checkmark.circle") { roadmap.startSelecting(row.id, from: .menu) }
+    Button("Edit", systemImage: "pencil") { if let page = open.page(of: row.id) { roadmap.edit(page, from: .menu) } }.tint(RoadmapPalette.ink)
+    Button("Open in Graph", systemImage: "point.3.connected.trianglepath.dotted") { roadmap.openInGraph(row.id, from: .menu) }.tint(RoadmapPalette.ink)
+    Button("Select", systemImage: "checkmark.circle") { roadmap.startSelecting(row.id, from: .menu) }.tint(RoadmapPalette.ink)
     if row.deletes {
       Divider()
       Button("Delete Step", systemImage: "trash", role: .destructive) { roadmap.askDelete(row, by: .menu) }
@@ -210,13 +213,12 @@ struct BoardTool: View {
   var body: some View {
     let reading = roadmap.reading
     Menu {
-      Picker(selection: Binding(get: { reading.sort }, set: { reading.pick($0) })) {
-        Text("Roadmap Order").tag(BoardQuery.Sort.roadmap)
-        Text("Newest First").tag(BoardQuery.Sort.newest)
-        Text("Oldest First").tag(BoardQuery.Sort.oldest)
-      } label: {
-        Text(String(localized: "Sort", comment: "The Board's Sort and filter menu: the order of Up next and Locked"))
-      }.pickerStyle(.inline).onAppear { roadmap.telemetry.event("roadmap_board_menu", properties: ["menu": "sortFilter"]) }
+      // An inline picker in a menu drops its label on iOS 26.5, so the order is a section of three toggles under Sort.
+      Section(String(localized: "Sort", comment: "The Board's Sort and filter menu: the order of Up next and Locked")) {
+        order(.roadmap, "Roadmap Order")
+        order(.newest, "Newest First")
+        order(.oldest, "Oldest First")
+      }
       if !open.legend.inUse.isEmpty {
         Section(String(localized: "Filter by Kind", comment: "The Board's Sort and filter menu: the kinds in use, each shown or not")) {
           ForEach(open.legend.inUse) { entry in
@@ -226,10 +228,17 @@ struct BoardTool: View {
           }
         }
       }
+      // The menu's items are made as it opens, so its last one tells the opening.
       Button("Select Steps", systemImage: "checkmark.circle") { roadmap.startSelecting(nil, from: .tool) }
+        .onAppear { roadmap.telemetry.event("roadmap_board_menu", properties: ["menu": "sortFilter"]) }
     } label: {
       Label("Sort and filter", systemImage: reading.narrows ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
     }.menuOrder(.fixed).modifier(GlassCircle()).accessibilityIdentifier("roadmap-board-tool")
+  }
+
+  // One order, checked while it stands.
+  func order(_ sort: BoardQuery.Sort, _ name: LocalizedStringResource) -> some View {
+    Toggle(isOn: Binding(get: { roadmap.reading.sort == sort }, set: { _ in roadmap.reading.pick(sort) })) { Text(name) }
   }
 }
 
@@ -246,7 +255,7 @@ struct BoardSelectionBar: ToolbarContent {
   var body: some ToolbarContent {
     ToolbarItem(placement: .topBarLeading) { SelectAll(roadmap: roadmap, selection: selection, open: open) }
     ToolbarItem(placement: .topBarTrailing) {
-      Button("Done", systemImage: "checkmark") { roadmap.endSelecting(via: "done") }.labelStyle(.iconOnly).modifier(SelectionDone())
+      Button("Done", systemImage: "checkmark") { roadmap.endSelecting(via: .done) }.labelStyle(.iconOnly).modifier(SelectionDone())
         .accessibilityIdentifier("roadmap-select-done")
     }
     ToolbarItemGroup(placement: .bottomBar) {
@@ -283,7 +292,7 @@ struct BoardSelectionBar: ToolbarContent {
           Image(systemName: "paintpalette")
           Text("Recolor")
         }
-      }.disabled(selection.steps.isEmpty).accessibilityIdentifier("roadmap-recolor")
+      }.menuOrder(.fixed).disabled(selection.steps.isEmpty).accessibilityIdentifier("roadmap-recolor")
       Spacer()
       Button { selection.askDelete() } label: {
         HStack(spacing: 6) {

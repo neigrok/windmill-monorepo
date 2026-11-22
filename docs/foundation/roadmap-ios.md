@@ -358,17 +358,21 @@ makes it false.
 - The app's third room exists only behind a build switch that is off in Release (`WM_ROADMAP_ROOM_ENABLED`), where it
   shows a roadmap's Board, its Graph and a step's page from the phone's copy, writes five gestures on a step, Create
   and Edit from the step form and Complete, Reset and Delete, each with its Undo, and makes, opens, renames and
-  deletes a roadmap from the title menu, All Roadmaps and New Roadmap. The step form sets a step's name, description
-  and kind, what it requires, what it opens and the links it shares, and has no *Roadmap* row, *Edit Kinds* or Coach
-  composer. A step's page holds the person's workspace of it, subtasks, a note and links read live from their overlay
-  on the phone's copy, each written by an act of the domain, and has no History or *Open Roadmap*, and its menu holds
-  *Delete Step* alone; the note's field sets bold and italic alone, from the system's Format menu on iOS 26; the title menu has
-  no *Guide*, *Kinds*, *Activity*, *Share…* or *Export*, New Roadmap starts a blank roadmap alone, from no quest, plan
-  or file, and All Roadmaps has no gallery. The Graph draws the picture, pans and zooms it, selects a step and opens
-  its page, lists the Up next steps under *Next* and brings the one chosen into view, and shows the whole roadmap
-  alone under *Fit*; it has no Find, no mark on a step that opens a roadmap, and draws no proposal and no
-  reader's cover; no link or Coach is built, and the Board has no Find, sort and filter, branch, selection or pasted
-  steps. The app has no associated domain, and its onboarding says roadmap is on the web.
+  deletes a roadmap from the title menu, All Roadmaps and New Roadmap. The Board finds steps by the domain's read,
+  orders them, narrows them to the kinds a person picks or to a step's branch, and selects several steps to recolor or
+  delete, each as one gesture with its Undo; New Step at a roadmap's cap of steps is refused where it is tapped; and a
+  roadmap's kinds are added, named, described, recolored and removed in the Kinds sheet, from the title menu and from
+  the step form's *Edit Kinds*. The step form sets a step's name, description and kind, what it requires, what it opens
+  and the links it shares, and has no *Roadmap* row or Coach composer. A step's page holds the person's workspace of
+  it, subtasks, a note and links read live from their overlay on the phone's copy, each written by an act of the
+  domain, and has no History or *Open Roadmap*, and its menu has no *Attach a Roadmap* or *Copy Link*; the note's field
+  sets bold and italic alone, from the system's Format menu on iOS 26; the title menu has no *Guide*, *Activity*,
+  *Share…* or *Export*, New Roadmap starts a blank roadmap alone, from no quest, plan or file, and All Roadmaps has no
+  gallery. The Graph draws the picture, pans and zooms it, selects a step and opens its page, lists the Up next steps
+  under *Next*, brings the one chosen there or by *Open in Graph* into view, and shows the whole roadmap alone under
+  *Fit*; it has no Find, no mark on a step that opens a roadmap, and draws no proposal and no reader's cover; no link
+  or Coach is built, and the Board has no pasted steps. The app has no associated domain, and its onboarding says
+  roadmap is on the web.
 - `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
   room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once: no Undo scene,
   plan grammar, quest or Coach executor.
@@ -390,12 +394,16 @@ makes it false.
   under all four and so cannot choose, and no phone has run the three. No older phone has measured the Graph, and a
   canvas that misses the budget on a phone reports it (§11).
 - Roadmap's runner holds a removal for the engine's nine seconds (`AppRuntime.roadmapRunner`), and the room runs
-  fourteen acts through it: `MarkStep` (Complete and Reset), `DeleteStep` and `DeleteRoadmap`, each with *Undo*;
-  `CreateStep`, `ChangeStep` and `ChangePrerequisites`, composed into the step form's one save with one *Undo*;
-  `CreateRoadmap` for a blank roadmap and `WriteRoadmap` for a roadmap's name, of which it keeps none; and of a step's
-  workspace `ChangeSubtask`, with *Undo* of a subtask checked, `DeleteSubtask` and `DeleteStepLink`, each held with
-  *Undo*, and `AddSubtask`, `AddStepLink` and the note's draft save, `SaveStepNote`, of which it keeps none. Every
-  other action of the domain has no door in the room, a subtask's or a link's change of words and its move among them.
+  eighteen acts through it: `MarkStep` (Complete and Reset), `DeleteStep` and `DeleteRoadmap`, each with *Undo*, and
+  `DeleteStep` composed for several steps chosen on the Board, with one *Undo*; `CreateStep`, `ChangeStep` and
+  `ChangePrerequisites`, composed into the step form's one save with one *Undo*, and `ChangeStep` composed for several
+  steps recolored on the Board, with one *Undo*; `CreateRoadmap` for a blank roadmap and `WriteRoadmap` for a roadmap's
+  name, of which it keeps none; of a roadmap's kinds `CreateKind`, `ChangeKind` and `RecolourKind`, of which it keeps
+  none, and `DeleteKind`, which the engine does not hold, with *Undo* for six seconds; and of a step's workspace
+  `ChangeSubtask`, with *Undo* of a subtask checked, `DeleteSubtask` and `DeleteStepLink`, each held with *Undo*, and
+  `AddSubtask`, `AddStepLink` and the note's draft save, `SaveStepNote`, of which it keeps none. Every other action of
+  the domain has no door in the room: `MoveKind`, `MoveStep`, a subtask's or a link's change of words and its move
+  among them.
 - The plan grammar has no Swift port: the web's (`web/src/products/roadmap/paste/`) is its one
   implementation, and the web alone runs its cases (`packages/api-contract/roadmap/plan/`).
 - The grammar's writer does not write every roadmap so that it reads back the same, as §7.3 needs.

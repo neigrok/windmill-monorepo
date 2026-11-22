@@ -113,7 +113,16 @@ switched, as the web's `ViewPrefs` keeps it), the step selected on the Graph (`s
 once its step does or another roadmap opens), and the open roadmap's Graph (`graph`, a `RoadmapGraph`), which it has
 follow the roadmap as the phone's copy reads it while the Graph is the view. `pick(_:)` selects a step chosen from the
 Graph's *Next*, while it stands, and has the Graph bring it into view, and `fit()` and `unfit()` start and end the
-Graph's Fit.
+Graph's Fit. `openInGraph(_:from:)`, from a Board row's long-press menu or a step page's … menu, shows the Graph with the
+step selected and has the Graph bring it into view once its picture is laid out. Beside the model, and held by it, stand
+what the Board asks of the open roadmap (`reading`, a `BoardReading`: the order of Up next and Locked, the kinds shown, a
+branch and Find's words, which last the visit as the web's room keeps its query, so another roadmap opening or a launch
+starts it over), the steps chosen while the Board selects several (`selection`, a `BoardSelection`, which
+`startSelecting(_:from:)` makes and `endSelecting(via:)` lets go, and which goes once another roadmap opens), and what the
+Board measures of itself (`boardFrames`, a `BoardFrames`). `viewBranch(of:)` returns to the Board staying in a step's
+branch. The model also holds whether the Kinds sheet stands open and from where (`kindsDoor`). The open roadmap reads its
+legend once (`OpenRoadmap.legend`, a `RoadmapLegend`), which the step form's Kind list, the Kinds sheet, the Board's filter
+and Recolor all show.
 
 The model's write door is `write(_:as:)`: one act of `RoadmapDomain` run on `AppRuntime.roadmapRunner`, several as one
 gesture (`ActionRunner.runComposed`), each reading what the ones before it wrote, or a draft's one save
@@ -125,13 +134,15 @@ whoever asked (`told(as:_:)`): a refusal as an event, and in the band where it i
 Step*, `delete(_:by:)` runs `DeleteStep` and leaves the room on the Board, the form that asked closed. `create(named:)` runs `CreateRoadmap` and
 `rename(to:)` runs `WriteRoadmap`, and the engine keeps no Undo of either. A roadmap's delete is asked first too
 (`askDelete(_:from:)`, with what else goes) and, answered *Delete Roadmap*, `delete(_:from:taking:)` runs `DeleteRoadmap`:
-the room then opens the most recent other roadmap, or holds none. Each receipt is the room's one band
+the room then opens the most recent other roadmap, or holds none. `newStep(from:named:)` reads first how many steps the
+roadmap holds against the registry's cap, through the kit's `Capacity`, and at the cap refuses where the gesture is
+made, in the band, with no form. Each receipt is the room's one band
 (`RoadmapModel.Band`), which a newer one replaces. Its Undo cancels a removal while the engine holds it
 (`ActionRunner.cancelHeld`, for the engine's nine seconds) and takes any other act back by the kit's Undo of it
 (`ActionRunner.undo`, for six seconds); when the band leaves, the engine keeps no Undo of the act (`ActionRunner.release`). An
 Undo of Reset marks the step done anew, so it leads Done, and an Undo of a roadmap's delete opens the roadmap again where
 the room had it open. The band says a refusal only where it is a limit the boards word, and any other refusal shows
-nothing. Six facts the model reads or settles itself, as the web's room does. From the domain's graph: the one starting step a
+nothing. Facts the model reads or settles itself, as the web's room does. From the domain's graph: the one starting step a
 roadmap keeps, which offers no Delete; the steps that follow a step (`OpenRoadmap.followers`, the web's `childrenOf`),
 which a step's page lists under *Opens* and the delete question counts; and what Reset would return to Locked
 (`OpenStep.relocks`, the web's `resetRelocks`), the steps a Done step opened that stand Up next. From the domain's read of
@@ -139,20 +150,30 @@ every roadmap: what else a roadmap's delete takes (`openers(of:)`, the web's `Op
 the steps of the person's other roadmaps whose pointer opens it, which the server deletes with it. And of a name: it is
 written without the blanks around it (`name(typed:)`, the web's `NewTreeBirth.plant` and `ReplicaSession.renameTree`), and a
 blank roadmap starts with one step, named as the roadmap, in the first kind's colour (`create(named:)`, the web's
-`NewTreeBirth.plant`).
+`NewTreeBirth.plant`). Of a roadmap's kinds (`RoadmapLegend`): its legend is each kind that owns its hue in the roadmap's
+order, then each hue steps wear that no kind claims, called by the hue (the web's `deriveLegend` over the kinds
+`ReplicaRoadmap` keeps), each with how many steps wear it (`withCounts`); the six kinds a step may wear, the named ones
+first (`kindChoices`); the kinds the Board's filter offers, the ones steps wear, none where steps wear one hue alone
+(`kindOptions`); the hue Add Kind takes, the first no entry has (`freeHue`); and only a kind no step wears may be removed
+(`onRemoveKind`). Of several steps: they cannot be deleted while they hold every step the roadmap starts from
+(`OpenRoadmap.takesEveryStart`, the web's `takesEveryRoot`), and their delete costs the steps outside them that follow
+one of them (`deletionCost`). And of the Board's query: a step the form made that the query hides is shown by clearing
+each part that alone hides it (`BoardReading.reveal`, the web's `BoardQuery.revealing`).
 
 `RoadmapRoom.swift` is the room's one `NavigationStack` over the model's `path`: the room capsule and the account in the bar,
-the roadmap's name and progress, the switch row pinned under the bar, whose *Board | Graph* chooses the roadmap's view
-and whose one tool on the Graph is *Fit*, and at the foot the band over New step, which raises the step form. While
-Fit stands the bar, the switch row and the foot are away and the status bar stays. It announces
+the roadmap's name and progress, the switch row pinned under the bar, whose *Board | Graph* chooses the roadmap's view,
+whose Find is the Board's and whose one tool is the Board's *Sort and filter* or the Graph's *Fit*, and at the foot the
+band over New step, which raises the step form. New step leaves the foot while Find is up and while several steps are
+selected. While Fit stands the bar, the switch row and the foot are away and the status bar stays. It announces
 and plays the band's haptic once, whichever screen stands over it. The title's menu (`RoadmapTitle`, `.toolbarTitleMenu`)
 lists the three most recent roadmaps, each name over its progress and the open one checked, then *All Roadmaps…*, *New
-Roadmap*, *Rename* and *Delete Roadmap*. *Rename* is the system's (`RenameButton` over a title that is a binding): the bar
+Roadmap*, *Kinds*, *Rename* and *Delete Roadmap*. *Rename* is the system's (`RenameButton` over a title that is a binding): the bar
 becomes one field, and its return key commits. A name the domain refuses leaves the old one; the field itself commits no
 empty name, so the old one stays there too; and a name of blanks alone is written empty, so the roadmap reads *Untitled
 roadmap*. *Delete Roadmap* asks once under the title, naming the steps of other roadmaps that open this one, and then
 the band holds *Undo* for the hold's nine seconds. The menu's other verbs wait for their screens and are left out:
-*Guide*, *Kinds*, *Activity*, *Share…* and *Export*. Before iOS 26 the name and the progress stand in the bar's
+*Guide*, *Activity*, *Share…* and *Export*. While several steps are selected the title counts them, with no progress and
+no menu. Before iOS 26 the name and the progress stand in the bar's
 principal slot (`roomTitle`); the menu and the rename are not tried there.
 
 `Roadmaps/RoadmapsList.swift` is All Roadmaps, pushed on the stack: every roadmap in the domain's order, the open one
@@ -164,22 +185,38 @@ sheet the title menu, All Roadmaps and *No roadmaps yet* all open: a name, held 
 domain takes, *Cancel* and *Create*, which plants a blank roadmap with its one starting step and opens it. Its *Start
 from* section (a quest, a copied plan, a file) is left out. All of it works on the phone's copy, signed in or out.
 
-`Board/RoadmapBoard.swift` is the Board's list, its groups
-under headers that fold them. A row opens its step's page. An Up next row that opens no roadmap slides right for *Complete*;
-every row but the kept one slides left for *Delete*, which asks once on the row with what it costs; a long press lists
-*Complete* and *Delete Step*. A full swipe commits neither. The long-press menu's other items wait for their screens and are
-left out: *Ask Coach*, *Edit*, *Open in Graph*, *Select*, and *Copy Link* on a public roadmap.
+`Board/RoadmapBoard.swift` is the Board's list, its groups under headers that fold them, as the Board's reading keeps
+them. A row opens its step's page. An Up next row that opens no roadmap slides right for *Complete*; every row but the
+kept one slides left for *Delete*, which asks once on the row with what it costs; a long press lists *Complete*, *Edit*,
+which raises the step's form, *Open in Graph*, *Select* and *Delete Step*. A full swipe commits neither. The long-press
+menu's other items wait for their screens and are left out: *Ask Coach*, and *Copy Link* on a public roadmap. Find, the
+switch row's magnifying glass, gives the list the system's search while it is up, its field at the foot above the
+keyboard with the bar and the switch row kept: the steps whose name or description holds the words stay in their groups,
+each header counting its own, Done open while it holds one, and a Board left with nothing says *No steps match “…”* with
+*New Step “…”*, which opens the form named so. The Board's tool (`BoardTool`) is one menu: the order (*Roadmap Order*,
+*Newest First*, *Oldest First*), *Filter by Kind* with a toggle for each kind steps wear, and *Select Steps*; its symbol
+fills while another order or a kind filter stands. A kind filter, and a branch from a step page's *View Branch*, say so in
+the list's first row with *Clear*, and a filter left with nothing says *No steps match* with *Clear Filters*. The subtitle
+counts the whole roadmap whatever the Board shows. Select and Select Steps put the list in the system's edit mode
+(`BoardSelectionBar`): *Select All* or *Deselect All* and the checkmark in the bar, the switch waiting, and the bottom
+toolbar's *Recolor*, a menu of the six kinds, and *Delete N Steps*, which asks once on itself with what it costs and is
+dimmed while the steps chosen hold every starting step, which the band then says. Recolor is one gesture with six
+seconds of *Undo*, and the delete one gesture held nine seconds with *Undo*; either ends the selection, and a step the
+Board stops showing is chosen no longer. `Board/BoardReading.swift` and `Board/BoardSelection.swift` are the Board's query
+and its selection, each the domain's read and acts. `Board/BoardFrames.swift` measures the time from the switch to the
+Board's first frame and the frames each scroll is given, on a launch that names a file for them, and reports nothing.
 
 `Step/RoadmapStepPage.swift` is a step's page, pushed on the room's stack: one list under the step's name, which the bar
 takes once it has scrolled away; the status row, with the state, the kind's name (the hue's where no kind names it) and why
 the step stands there, or on a Done step what Reset would return to Locked beside *Reset*; the description and the step's
 shared links, each opened where its address is `http`, `https` or `mailto`; and *Requires* and *Opens* with their counts,
 each row opening its step. An Up next step that opens no roadmap has *Complete* at its foot: the page stays, and the band says
-what opened. *Reset* asks nothing. *Edit* in the bar raises the step's form over the page. The … menu holds *Delete Step*,
-which asks on the … button and, answered, returns to the Board with the step held; the roadmap's one starting step has no
-menu. After *Opens* the page lists the person's workspace of the step, and its foot is away while *Add Subtask* has the
-keyboard. Left out until their screens are built: the menu's *Open in Graph*, *View Branch*, *Attach a Roadmap* and
-*Copy Link*, *History*, the Coach circle and composer, and a step that opens a roadmap's pill and *Open Roadmap*.
+what opened. *Reset* asks nothing. *Edit* in the bar raises the step's form over the page. The … menu holds *Open in Graph*,
+*View Branch*, which returns to the Board staying in the step's branch, and *Delete Step*, which asks on the … button and,
+answered, returns to the Board with the step held; the roadmap's one starting step's menu has no *Delete Step*. After
+*Opens* the page lists the person's workspace of the step, and its foot is away while *Add Subtask* has the keyboard. Left
+out until their screens are built: the menu's *Attach a Roadmap* and *Copy Link*, *History*, the Coach circle and
+composer, and a step that opens a roadmap's pill and *Open Roadmap*.
 
 `Step/StepWorkspace.swift` is a step's private workspace as its page reads it, and its acts. `StepWorkspace.read(_:)`
 composes every step's workspace from one overlay's records, as the web's room does (`HeldRoadmap.workspace`): the
@@ -295,6 +332,7 @@ closes one.
 over a step's page while the model holds a draft. Name and Description, then *Kind*, *Requires* and *Opens*, each a list
 pushed inside the sheet and bound to the draft, with no Apply: *Kind* returns with the kind chosen, and a tap in
 *Requires* or *Opens* takes or drops a step in place, the steps chosen as the list opened heading it under *Selected*.
+Under *Kind*'s six choices *Edit Kinds* raises the Kinds sheet over the form.
 The steps that would close a loop stand dimmed in their own group, whose footer says why; they are drawn dimmed and not
 disabled, so a tap on one can be refused and named. Under the links one footer says where the step will land, always
 for a new step and for a step only where the change would move it to another group. *Cancel* closes an unchanged draft
@@ -302,12 +340,27 @@ and asks *Discard draft?* on a changed one, which a swipe down does not send awa
 change. A step that may go has *Delete Step* in the form, which asks there as its page does. The room's band stands at
 the sheet's foot, away while a field has the keyboard. Under the placement footer *Links* lists the links the step
 shares, each sliding left for *Delete*, over *Add Link*, which raises New Link over the form; a link there only stands,
-and opens on the step's page. Left out until their screens are built: the *Roadmap* row, *Edit Kinds* and Coach's
-composer.
+and opens on the step's page. Left out until their screens are built: the *Roadmap* row and Coach's composer.
+
+`Kinds/` is a roadmap's kinds. `Kinds/RoadmapLegend.swift` is the legend the open roadmap reads once and the Kinds sheet's
+acts, each one act of the domain through the door: Add Kind makes a kind at once, unnamed, on the first hue no entry has
+(`CreateKind`); a name and a description, each held to the domain's 24 and 80 characters, are written as their field
+leaves them (`ChangeKind`), and a hue no kind names that is given one becomes a kind wearing it (`CreateKind`); a free hue
+chosen recolors the kind and every step that wears it (`RecolourKind`, the server's command, predicted on the phone), or
+moves the steps of a hue no kind names in one gesture (`ChangeStep`), with no band; and a kind no step wears is removed at
+once (`DeleteKind`), the band holding *Undo* for six seconds, since the engine does not hold a kind's removal. Add, a name,
+a description and a colour keep no *Undo*, as the web's legend keeps none. `Kinds/RoadmapKinds.swift` is the sheet, a large
+one with its own stack, which the room raises from the title menu's *Kinds* and the form from *Edit Kinds*: the legend
+under the roadmap's name, each entry with its disc, name, description and how many steps wear it, pushing its page; *Add
+Kind* while a hue is free, which opens the kind's page with Name focused once the phone's copy holds it, and at six the
+footer saying why it is gone; and the system's edit mode and swipe, which remove only a kind no step wears, the footer
+then saying why the others cannot go. A kind's page is a settings-style form with no Save: Name, *What belongs here?*,
+and *Color*, the six hues as an inline picker, a hue another entry has dimmed with whose it is. The band stands at the
+sheet's foot.
 
 A roadmap with no step says *Your first step* over *New Step*, which opens the form as the foot's + does, under the Graph
-as under the Board, and one with every step done says so over Done. Find, the Board's Sort and filter and a finished
-Board's *Share* are drawn disabled. Debug simulator boards
+as under the Board, and one with every step done says so over Done. A finished Board's *Share* is drawn disabled. Debug
+simulator boards
 (`RoadmapFixture`): `-board roadmap-empty` opens the room on a phone that holds no roadmap; `-board roadmap-learn-to-sail`
 signs the phone in to an account whose eight-step roadmap another phone planted on the model server, three steps done a second
 apart and *Read the wind* sharing one link, so it arrives by sync; `-board roadmap-all-done` is that roadmap with every step
@@ -322,9 +375,11 @@ the subtask *Ask about the tide table* to that step; `-board roadmap-many` is a 
 roadmap-handbook` is a phone never signed in that holds *Coastal navigation handbook*, the 5,000 steps, links and colours
 of the layout's shared fixture, read from the repository the build was made in and planted through the domain, so its
 steps' ids are the phone's, with the first 120 of the fixture's 1,800 done steps marked, since signed out each mark's
-commit reads everything the phone has still to send; and `-board roadmap-unreadable` opens the room over views it cannot
-make. A simulator launch
-with `-graph-measures <path>` appends what the Graph measures of itself to that file, one JSON line a measure; with
+commit reads everything the phone has still to send; `-board roadmap-full` is a phone never signed in that holds *Every
+harbour in Europe*, as many steps as the registry lets a roadmap hold, each harbour entered Up next and its berth Locked
+behind it; and `-board roadmap-unreadable` opens the room over views it cannot make. A simulator launch with
+`-graph-measures <path>` appends what the Graph measures of itself to that file, and with `-board-measures <path>` what
+the Board measures, one JSON line a measure; with
 `-graph-pinch <way>` it keeps a pinch's frames that way, and with `-graph-crowd <count>` it does so from that many
 steps in view, so a way can act on a board of eight steps. The roadmaps under *Learn to sail* hold a few steps
 each, not the counts the boards draw, and the account's board holds three roadmaps, not nine: it is planted by a
@@ -879,6 +934,28 @@ printed and not judged. The budgets are held on the Mac that runs the simulator,
 the app supports: a run under budget does not say a phone holds it, and the share says how wide the margin is. A
 display link sees the main actor's frames, not what the screen composited after them. Both classes
 run only under `WM_GRAPH_BENCH=1`, which the script sets, so the unit scheme and the UI shards skip them.
+
+## The Board's benchmark
+
+`Tools/board_bench.sh` measures the Board against the same budget ([Roadmap on iOS](../../../docs/foundation/roadmap-ios.md)
+§5: from the tap that opens a roadmap of 5,000 steps to the Board's first frame under a second, and 60 frames a second)
+inside an iOS simulator, on the same kind of Release-configuration build:
+
+```sh
+bash apps/ios/App/Tools/board_bench.sh    # SIM=<udid> uses a booted simulator, DERIVED_DATA=<path> a build folder
+```
+
+`Tests/Roadmap/Board/BoardBenchmarks.swift`, hosted in the app, plants the 5,000-step handbook through the domain and
+times the room's read of the open roadmap, which the model takes at every change of the phone's copy (the account's
+read, the domain's Board and legend, every step's row, the groups and what follows each step), against the first
+frame's second; and the Board read again under each query a person asks of it (*Newest First*, one kind shown, Find's
+first key, a word, a branch), against a frame at 60 a second, since Find reads it at every key.
+`UITests/RoadmapBoardBenchmarks.swift` launches `-board roadmap-handbook`, switches to the Graph and back to the Board
+three times, and flings the list eight times down through Up next and Locked and eight times back. The app measures
+itself there (`BoardFrames`, written to the launch's `-board-measures` file): the time from the switch's tap to the
+Board's first frame, and for each scroll, from the finger's first move to the list at rest, the gaps between the frames
+a display link on the main actor sees and how long the main actor worked in each, judged as a Graph gesture's are.
+BOARD-NUMBERS
 
 ## Design captures
 

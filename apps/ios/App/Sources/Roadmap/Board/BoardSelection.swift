@@ -13,9 +13,14 @@ import SyncCore
 // Board stops showing leaves the selection, as the web's selection drops it.
 @Observable @MainActor
 final class BoardSelection {
-  // The gesture that started it, as its event names it: a row's long-press menu, or the Board's tool.
+  // The gesture that started it, as its event names it: a row's long-press menu, or the Board's tool; and what ended it,
+  // the checkmark, or an act on the steps chosen.
   enum Door: String {
     case menu, tool
+  }
+
+  enum Ending: String {
+    case done, act
   }
 
   unowned let room: RoadmapModel
@@ -68,7 +73,7 @@ final class BoardSelection {
     }
     guard let written = room.write(acts, as: "BulkRecolor").committed else { return }
     room.telemetry.event("roadmap_board_bulk", properties: ["step": "recolor", "count": RoadmapModel.bucket(rows.count)])
-    room.endSelecting(via: "act")
+    room.endSelecting(via: .act)
     room.show(RoadmapModel.Band(.recolored(count: rows.count), of: written.receipt, act: .step("recolor")))
   }
 
@@ -91,7 +96,7 @@ final class BoardSelection {
     guard let written = room.write(acts, as: "BulkDelete").committed else { return }
     room.telemetry.event("roadmap_board_delete", properties: ["step": "held", "door": "bulk", "view": "board"])
     room.telemetry.event("roadmap_board_bulk", properties: ["step": "delete", "count": RoadmapModel.bucket(rows.count)])
-    room.endSelecting(via: "act")
+    room.endSelecting(via: .act)
     let says = rows.count == 1 ? RoadmapModel.Band.Says.deleted(step: rows[0].step.label) : .deletedSteps(count: rows.count)
     room.show(RoadmapModel.Band(says, of: written.receipt, act: .step("delete")))
   }

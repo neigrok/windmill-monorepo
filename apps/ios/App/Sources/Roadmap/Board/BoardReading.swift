@@ -52,7 +52,7 @@ final class BoardReading {
     self.telemetry = telemetry
   }
 
-  // What Find looks for without the blanks around it; the domain trims a query the same way.
+  // What Find looks for without the blanks around it, as the Board says it; the domain's read trims the words itself.
   var needle: String { finding.trimmingCharacters(in: .whitespacesAndNewlines) }
 
   // The Sort and filter tool says so in its symbol while it narrows: another order, or a kind filter. A branch is the
@@ -62,7 +62,7 @@ final class BoardReading {
   // The Board as the query keeps it. With nothing asked it is the open roadmap's own groups; otherwise the domain reads
   // the roadmap under the query, and each step kept is the row the open roadmap holds for it.
   func shown(in open: RoadmapModel.OpenRoadmap) -> Shown {
-    let query = BoardQuery(sort: sort, kinds: kinds, search: needle, branch: branch)
+    let query = BoardQuery(sort: sort, kinds: kinds, search: finding, branch: branch)
     guard narrows || !needle.isEmpty || branch != nil else {
       return Shown(groups: open.groups, kinds: [], branch: nil, recovery: nil, finding: false)
     }

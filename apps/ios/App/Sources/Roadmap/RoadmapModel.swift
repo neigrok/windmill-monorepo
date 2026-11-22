@@ -470,9 +470,9 @@ final class RoadmapModel {
       return
     }
     if !listed.id.utf8.elementsEqual(last.utf8) { phone.set(listed.id, forKey: Self.lastOpen) }
-    // Another roadmap opens with its Board at rest, Done folded unless every step is done, asking nothing and selecting
-    // nothing, in the view it was last switched to, and with no step selected; one that opens on its Graph is told. On the one shown, Done opens by
-    // itself once every step is done, and rests folded again once one is not.
+    // Another roadmap opens with its Board at rest, Done folded unless every step is done, asking nothing and choosing no
+    // steps, in the view it was last switched to, and with no step selected; one that opens on its Graph is told. On the
+    // one shown, Done opens by itself once every step is done, and rests folded again once one is not.
     let again = shown.map { $0.listed.id.utf8.elementsEqual(listed.id.utf8) } ?? false
     if let shown, again {
       if open.everyStepDone && !shown.everyStepDone { folded.remove(.done) }
@@ -747,10 +747,10 @@ final class RoadmapModel {
   }
 
   // The checkmark, or an act on the steps chosen, ends the selection.
-  func endSelecting(via way: String) {
+  func endSelecting(via way: BoardSelection.Ending) {
     guard selection != nil else { return }
     selection = nil
-    telemetry.event("roadmap_board_select", properties: ["step": "end", "via": way])
+    telemetry.event("roadmap_board_select", properties: ["step": "end", "via": way.rawValue])
   }
 
   // A roadmap chosen in the title menu or in All Roadmaps is the open one, in the view it was last switched to, and
