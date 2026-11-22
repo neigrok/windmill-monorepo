@@ -1,6 +1,7 @@
 import XCTest
 
-// The Roadmap room's boards (Roadmap · iOS): its Board, a step's page, and its door on Where to start? (Shell 02a).
+// The Roadmap room's boards (Roadmap · iOS): its Board, a step's page, its roadmaps, and its door on Where to start?
+// (Shell 02a).
 final class RoadmapCaptures: DesignCapture {
   // 01.1: *Learn to sail* on its Board, as it arrives from its account.
   func testBoardAtRest() {
@@ -199,6 +200,76 @@ final class RoadmapCaptures: DesignCapture {
       roomMenuOpen("01.2-roadmap-room-menu", look, app, current: "Roadmap")
       app.terminate()
     }
+  }
+
+  // 01.3: the title's menu over the Board, the three most recent roadmaps under the open one's checkmark.
+  func testTitleMenu() {
+    captureBoard("01.3-roadmap-title-menu", settle: 0.6) { look in titleMenu(of: "roadmap-several", look) }
+  }
+
+  // 01.4: All Roadmaps past eight, with its search field. The phone was never signed in, so the list has no order a
+  // server gave it.
+  func testAllRoadmaps() {
+    captureBoard("01.4-roadmap-all-roadmaps") { look in
+      let app = titleMenu(of: "roadmap-many", look)
+      app.buttons["All Roadmaps…"].tap()
+      XCTAssertTrue(app.searchFields["Find a roadmap"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // 01.6: New Roadmap over the Board.
+  func testNewRoadmap() {
+    captureBoard("01.6-roadmap-new-roadmap") { look in
+      let app = titleMenu(of: "roadmap-several", look)
+      app.buttons["New Roadmap"].tap()
+      XCTAssertTrue(app.textFields["roadmap-new-name"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 01.9: Rename has turned the bar into the system's field, the name selected.
+  func testRenaming() {
+    captureBoard("01.9-roadmap-renaming") { look in
+      let app = titleMenu(of: "roadmap-several", look)
+      app.buttons["Rename"].tap()
+      XCTAssertTrue(app.navigationBars.textFields.firstMatch.waitForValue("Learn to sail"))
+      return app
+    }
+  }
+
+  // 01.10: the roadmap's delete question under the title, naming the step of another roadmap that opens it.
+  func testDeleteRoadmapQuestion() {
+    captureBoard("01.10-roadmap-delete-roadmap-question") { look in askDeleteRoadmap(look) }
+  }
+
+  // 01.11: the roadmap deleted and held, the room on the next most recent with Undo in the band.
+  func testRoadmapDeletedHeld() {
+    captureBoard("01.11-roadmap-deleted-held") { look in
+      let app = askDeleteRoadmap(look)
+      app.buttons["Delete Roadmap"].tap()
+      XCTAssertTrue(app.buttons["roadmap-undo"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.navigationBars["Spanish B1"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // *Learn to sail* on a board that holds other roadmaps, with its title's menu open.
+  func titleMenu(of board: String, _ look: Look) -> XCUIApplication {
+    let app = launch(board, look)
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    // The roadmap's name leads the label of the bar's title, which the system reports as a button or as a text.
+    app.navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Learn to sail")).firstMatch.tap()
+    XCTAssertTrue(app.buttons["All Roadmaps…"].waitForExistence(timeout: 5))
+    return app
+  }
+
+  // Delete Roadmap from the title's menu, up to its question.
+  func askDeleteRoadmap(_ look: Look) -> XCUIApplication {
+    let app = titleMenu(of: "roadmap-several", look)
+    app.buttons["Delete Roadmap"].tap()
+    XCTAssertTrue(app.staticTexts["Delete Learn to sail?"].waitForExistence(timeout: 5))
+    return app
   }
 
   // 01.5: a phone that holds no roadmap.
