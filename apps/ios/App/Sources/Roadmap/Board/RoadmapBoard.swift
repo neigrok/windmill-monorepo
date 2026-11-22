@@ -64,6 +64,8 @@ struct RoadmapBoard: View {
         .environment(\.editMode, .constant(selection == nil ? .inactive : .active))
         .roomMotion(shown.groups.map { (group: RoadmapModel.Group) -> [String] in group.rows.map(\.id) })
         .onChange(of: kept) { _, shown in selection?.keep(shown) }
+        .onAppear { roadmap.boardFrames.appeared(steps: open.board.overall.total) }
+        .onScrollPhaseChange { _, phase in roadmap.boardFrames.scroll(moving: phase.isScrolling, steps: open.board.overall.total) }
         .onChange(of: made, initial: true) { _, step in
           guard let step else { return }
           if !shown.groups.contains(where: { $0.rows.contains { $0.id == step } }) { roadmap.reading.reveal(step, in: open) }
@@ -121,7 +123,7 @@ struct RoadmapBoard: View {
       if recovery != .search {
         Button("Clear Filters") { roadmap.reading.clearKinds(from: .empty) }.buttonStyle(RoomSecondaryStyle()).accessibilityIdentifier("roadmap-clear-filters")
       }
-    }.accessibilityIdentifier("roadmap-nothing-matches")
+    }
   }
 
   // While Find narrows, each group with a match stands open and its header folds it for that search alone; otherwise a
@@ -208,13 +210,13 @@ struct BoardTool: View {
   var body: some View {
     let reading = roadmap.reading
     Menu {
-      Section(String(localized: "Sort", comment: "The Board's Sort and filter menu: the order of Up next and Locked")) {
-        Picker("Sort", selection: Binding(get: { reading.sort }, set: { reading.pick($0) })) {
-          Text("Roadmap Order").tag(BoardQuery.Sort.roadmap)
-          Text("Newest First").tag(BoardQuery.Sort.newest)
-          Text("Oldest First").tag(BoardQuery.Sort.oldest)
-        }.pickerStyle(.inline).labelsHidden()
-      }.onAppear { roadmap.telemetry.event("roadmap_board_menu", properties: ["menu": "sortFilter"]) }
+      Picker(selection: Binding(get: { reading.sort }, set: { reading.pick($0) })) {
+        Text("Roadmap Order").tag(BoardQuery.Sort.roadmap)
+        Text("Newest First").tag(BoardQuery.Sort.newest)
+        Text("Oldest First").tag(BoardQuery.Sort.oldest)
+      } label: {
+        Text(String(localized: "Sort", comment: "The Board's Sort and filter menu: the order of Up next and Locked"))
+      }.pickerStyle(.inline).onAppear { roadmap.telemetry.event("roadmap_board_menu", properties: ["menu": "sortFilter"]) }
       if !open.legend.inUse.isEmpty {
         Section(String(localized: "Filter by Kind", comment: "The Board's Sort and filter menu: the kinds in use, each shown or not")) {
           ForEach(open.legend.inUse) { entry in
@@ -232,9 +234,10 @@ struct BoardTool: View {
 }
 
 // The bar and the bottom toolbar while several steps are selected (Roadmap · iOS 02.10 to 02.12): Select All, or
-// Deselect All once every step shown is chosen; how many are chosen; the checkmark that ends it; Recolor with the six
-// kinds; and Delete N Steps, which asks on itself and is dimmed while the choice holds every starting step. Each item
-// reads the choice in its own view, so a tap on a row redraws the items and nothing of the room around them.
+// Deselect All once every step shown is chosen; the checkmark that ends it; Recolor with the six kinds; and Delete N
+// Steps, which asks on itself and is dimmed while the choice holds every starting step. The title counts the steps
+// chosen (`RoadmapTitle`). Each item reads the choice in its own view, so a tap on a row redraws the items and nothing
+// of the room around them.
 struct BoardSelectionBar: ToolbarContent {
   let roadmap: RoadmapModel
   let selection: BoardSelection
@@ -242,7 +245,6 @@ struct BoardSelectionBar: ToolbarContent {
 
   var body: some ToolbarContent {
     ToolbarItem(placement: .topBarLeading) { SelectAll(roadmap: roadmap, selection: selection, open: open) }
-    ToolbarItem(placement: .principal) { SelectedCount(selection: selection) }
     ToolbarItem(placement: .topBarTrailing) {
       Button("Done", systemImage: "checkmark") { roadmap.endSelecting(via: "done") }.labelStyle(.iconOnly).modifier(SelectionDone())
         .accessibilityIdentifier("roadmap-select-done")
@@ -265,29 +267,30 @@ struct BoardSelectionBar: ToolbarContent {
     }
   }
 
-  struct SelectedCount: View {
-    let selection: BoardSelection
-
-    var body: some View {
-      Text(String(localized: "\(selection.steps.count) Selected", locale: .copy, comment: "The bar while several steps are selected: how many"))
-        .font(.headline).foregroundStyle(RoadmapPalette.ink).accessibilityIdentifier("roadmap-selected-count")
-    }
-  }
-
   struct SelectionActions: View {
     let roadmap: RoadmapModel
     let selection: BoardSelection
     let choices: [RoadmapLegend.Choice]
 
     var body: some View {
-      Menu("Recolor", systemImage: "paintpalette") {
+      // A bar's item shows its symbol alone; these name their act beside it, as the board words them.
+      Menu {
         ForEach(choices) { choice in
           Button { selection.recolor(choice.hue) } label: { Label { Text(choice.name) } icon: { Image.kindDisc(choice.hue) } }
         }
-      }.labelStyle(.titleAndIcon).disabled(selection.steps.isEmpty).accessibilityIdentifier("roadmap-recolor")
+      } label: {
+        HStack(spacing: 6) {
+          Image(systemName: "paintpalette")
+          Text("Recolor")
+        }
+      }.disabled(selection.steps.isEmpty).accessibilityIdentifier("roadmap-recolor")
       Spacer()
-      Button(DeleteStepsQuestion.delete(selection.steps.count), systemImage: "trash") { selection.askDelete() }.labelStyle(.titleAndIcon)
-        .disabled(selection.steps.isEmpty || selection.takesEveryStart)
+      Button { selection.askDelete() } label: {
+        HStack(spacing: 6) {
+          Image(systemName: "trash")
+          Text(DeleteStepsQuestion.delete(selection.steps.count))
+        }
+      }.disabled(selection.steps.isEmpty || selection.takesEveryStart)
         .modifier(DeleteStepsQuestion(roadmap: roadmap)).accessibilityIdentifier("roadmap-delete-steps")
     }
   }

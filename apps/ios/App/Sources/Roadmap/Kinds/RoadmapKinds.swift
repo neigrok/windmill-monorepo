@@ -11,8 +11,13 @@ struct RoadmapKinds: View {
   let roadmap: RoadmapModel
   @State private var path: [RoadmapLegend.Subject] = []
   @State private var editing = EditMode.inactive
-  // The kind Add Kind made, whose page opens with Name focused.
+  // The kind Add Kind made, whose page opens once the phone's copy holds it, and that page, which opens with Name
+  // focused.
   @State private var added: RoadmapLegend.Subject?
+  @State private var naming: RoadmapLegend.Subject?
+  // The kinds removed here that the phone's copy is still read with: the list lets a row go as its delete is made, as
+  // the system's edit mode asks, and the copy follows a moment later.
+  @State private var removing: Set<RoadmapLegend.Subject> = []
   @ScaledMetric(relativeTo: .body) private var disc = 22.0
 
   var body: some View {
@@ -23,13 +28,19 @@ struct RoadmapKinds: View {
         .navigationTitle("Kinds").navigationBarTitleDisplayMode(.inline)
         .toolbar {
           ToolbarItem(placement: .cancellationAction) { close }
-          ToolbarItem(placement: .confirmationAction) { EditButton().accessibilityIdentifier("roadmap-kinds-edit") }
+          ToolbarItem(placement: .topBarTrailing) { EditButton().accessibilityIdentifier("roadmap-kinds-edit") }
         }.roomBar(.roadmap)
         .environment(\.editMode, $editing)
         .navigationDestination(for: RoadmapLegend.Subject.self) { subject in
-          RoadmapKindPage(roadmap: roadmap, subject: subject, focusesName: subject == added)
+          RoadmapKindPage(roadmap: roadmap, subject: subject, focusesName: subject == naming)
         }
         .roadmapFoot(roadmap) {}
+        .onChange(of: added.flatMap { roadmap.shown?.legend.entry($0) } != nil) { _, held in
+          guard held, let added else { return }
+          (naming, self.added) = (added, nil)
+          path.append(added)
+        }
+        .onChange(of: path.isEmpty) { _, back in if back { naming = nil } }
     }.tint(RoadmapPalette.accent).presentationDetents([.large]).presentationDragIndicator(.visible)
   }
 
@@ -43,21 +54,20 @@ struct RoadmapKinds: View {
   }
 
   func list(_ open: RoadmapModel.OpenRoadmap) -> some View {
-    let entries = open.legend.entries
+    let entries = open.legend.entries.filter { !removing.contains($0.id) }
     return List {
       Section {
         ForEach(entries) { entry in
           NavigationLink(value: entry.id) { row(entry) }.deleteDisabled(!entry.removable)
             .accessibilityIdentifier("roadmap-kinds-row")
         }.onDelete { places in
-          for place in places where entries.indices.contains(place) { roadmap.remove(entries[place]) }
+          for place in places where entries.indices.contains(place) {
+            removing.insert(entries[place].id)
+            roadmap.remove(entries[place])
+          }
         }
         if open.legend.freeHue != nil {
-          Button("Add Kind", systemImage: "plus") {
-            guard let made = roadmap.addKind() else { return }
-            added = made
-            path.append(made)
-          }.foregroundStyle(RoadmapPalette.accent).accessibilityIdentifier("roadmap-kinds-add")
+          Button("Add Kind", systemImage: "plus") { added = roadmap.addKind() }.foregroundStyle(RoadmapPalette.accent).accessibilityIdentifier("roadmap-kinds-add")
         }
       } header: {
         Text(open.listed.name).font(.footnote.weight(.semibold)).foregroundStyle(RoadmapPalette.inkDim).textCase(nil)
@@ -69,6 +79,7 @@ struct RoadmapKinds: View {
         }
       }.listRowBackground(RoadmapPalette.card)
     }.listStyle(.insetGrouped).scrollContentBackground(.hidden)
+      .onChange(of: open.legend.entries.map(\.id)) { _, read in removing.formIntersection(read) }
   }
 
   // An entry's row: its disc, its name over its description, and how many steps wear it.
@@ -148,6 +159,7 @@ struct RoadmapKindPage: View {
         .onChange(of: focused) { left, _ in if let left { write(left) } }
         .onAppear {
           roadmap.kindOpened()
+          // A kind Add Kind made opens with Name focused.
           if focusesName {
             focusesName = false
             focused = .name

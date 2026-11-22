@@ -3,15 +3,17 @@ import DomainKit
 import RoadmapDomain
 import SyncCore
 import SyncEngine
+import SyncSchema
 
 // Simulator boards. An account's roadmaps arriving by sync: roadmap-learn-to-sail (three steps done), roadmap-all-done
 // (all eight), roadmap-no-steps (*Night sailing*, with no step), roadmap-several (*Learn to sail* over two more, the
 // most recent first), roadmap-workspace (*Learn to sail* with the workspace the boards draw on *Read the wind*) and
 // roadmap-two-phones (*Learn to sail*, where the account's other phone adds a subtask to the first step whose page is
-// opened). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no order a
-// server gave them; roadmap-handbook, the 5,000 steps the Graph's budget is measured at; and roadmap-empty, which
-// holds none. roadmap-unreadable cannot make its views. A launch can also name where the Graph's measures go and how
-// it keeps a pinch's frames (`graph(telemetry:)`).
+// opened). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no order a server gave
+// them; roadmap-handbook, the 5,000 steps the Graph's and the Board's budget is measured at; roadmap-full, a roadmap at
+// the steps the registry lets it hold; and roadmap-empty, which holds none. roadmap-unreadable cannot make its views. A
+// launch can also name where the Graph's measures go and how it keeps a pinch's frames (`graph(telemetry:)`), and where
+// the Board's go (`boardFrames()`).
 enum RoadmapFixture {
   // The engine's views of every record of a type in a scope, visible or not, as the room's model takes them.
   static func records(_ runtime: AppRuntime) -> RoadmapModel.Records {
@@ -54,6 +56,31 @@ enum RoadmapFixture {
     #endif
   }
 
+  // What the Board measures of itself. A simulator launch has it append its measures to the file `-board-measures` names,
+  // one JSON line each.
+  static func boardFrames() -> BoardFrames {
+    #if DEBUG && targetEnvironment(simulator)
+    let arguments = ProcessInfo.processInfo.arguments
+    guard let named = arguments.firstIndex(of: "-board-measures"), named + 1 < arguments.count else { return BoardFrames() }
+    let file = URL(fileURLWithPath: arguments[named + 1])
+    return BoardFrames(measured: { measure in
+      let line: [String: Any]
+      switch measure {
+      case .firstFrame(let ms, let steps): line = ["measure": "firstFrame", "ms": ms, "steps": steps]
+      case .frames(let gapsMs, let workMs, let steps): line = ["measure": "frames", "gapsMs": gapsMs, "workMs": workMs, "steps": steps]
+      }
+      guard let data = try? JSONSerialization.data(withJSONObject: line, options: [.sortedKeys]) else { return }
+      if !FileManager.default.fileExists(atPath: file.path) { FileManager.default.createFile(atPath: file.path, contents: nil) }
+      guard let handle = try? FileHandle(forWritingTo: file) else { return }
+      handle.seekToEndOfFile()
+      handle.write(data + Data("\n".utf8))
+      try? handle.close()
+    })
+    #else
+    return BoardFrames()
+    #endif
+  }
+
   static func prepare(_ board: String, model: AppModel) async -> Bool {
     #if DEBUG && targetEnvironment(simulator)
     guard board.hasPrefix("roadmap-") else { return false }
@@ -62,14 +89,18 @@ enum RoadmapFixture {
     let completed = ["roadmap-learn-to-sail": ["choose", "parts", "rig"], "roadmap-several": ["choose", "parts", "rig"],
                      "roadmap-workspace": ["choose", "parts", "rig"], "roadmap-two-phones": ["choose", "parts", "rig"],
                      "roadmap-all-done": ["choose", "parts", "rig", "read", "tie", "leave", "tri", "solo"]][board]
-    guard completed != nil || ["roadmap-no-steps", "roadmap-many", "roadmap-handbook"].contains(board) else { return true }
+    guard completed != nil || ["roadmap-no-steps", "roadmap-many", "roadmap-handbook", "roadmap-full"].contains(board) else { return true }
     do {
-      // roadmap-many and roadmap-handbook are made on the phone itself, signed out: the first with *Learn to sail*
-      // remembered as the roadmap last open, the second holding the handbook alone.
-      if board == "roadmap-many" || board == "roadmap-handbook" {
+      // roadmap-many, roadmap-handbook and roadmap-full are made on the phone itself, signed out: the first with *Learn
+      // to sail* remembered as the roadmap last open, the others holding their one roadmap alone.
+      if ["roadmap-many", "roadmap-handbook", "roadmap-full"].contains(board) {
         guard let runner = model.runtime?.roadmapRunner else { throw AppFailure(message: "no runtime") }
         if board == "roadmap-handbook" {
           try plantHandbook(runner)
+          return true
+        }
+        if board == "roadmap-full" {
+          try plantFull(runner)
           return true
         }
         let sail = try plantLearnToSail(runner).tree
@@ -245,6 +276,22 @@ enum RoadmapFixture {
     let done = Set(handbook.done.prefix(120))
     let marks = created.steps.filter { done.contains($0.key) }.map { AnyActAction<RoadmapRefusal>(MarkStep.complete(tree: created.tree, step: $0.id)) }
     guard case .committed = try runner.runComposed(marks) else { throw AppFailure(message: "The handbook's done steps were not marked.") }
+    return created
+  }
+
+  // *Every harbour in Europe* at the steps the registry lets a roadmap hold (10.6a): a harbour entered, and its berth,
+  // which follows it, for each harbour, so half the steps stand Up next and half Locked.
+  @discardableResult
+  static func plantFull(_ runner: ActionRunner) throws -> CreateRoadmap.Result {
+    guard let cap = SyncSchema.registry.type(RoadmapStep.type)?.cap else { throw AppFailure(message: "The registry caps no roadmap's steps.") }
+    let harbours = (0..<cap / 2).flatMap { (harbour: Int) -> [ImportedStep] in
+      [ImportedStep(key: "enter-\(harbour)", RoadmapStep.Changes(label: "Enter harbour \(harbour + 1)", color: "sky")),
+       ImportedStep(key: "berth-\(harbour)", RoadmapStep.Changes(label: "Berth in harbour \(harbour + 1)", color: "terracotta"))]
+    }
+    let planted = ImportedSteps(steps: harbours, links: (0..<cap / 2).map { (from: "enter-\($0)", to: "berth-\($0)") })
+    guard case .committed(let created, _) = try runner.runAct(CreateRoadmap(title: "Every harbour in Europe", steps: planted)) else {
+      throw AppFailure(message: "Every harbour in Europe was not planted.")
+    }
     return created
   }
 

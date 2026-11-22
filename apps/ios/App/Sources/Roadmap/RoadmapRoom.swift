@@ -147,7 +147,8 @@ struct GlassCircle: ViewModifier {
 // lists the three most recent roadmaps, each over its progress and the open one checked, then All Roadmaps…, New Roadmap,
 // Kinds, Rename and Delete Roadmap. Rename is the system's: it turns the bar into one field, whose return key commits a name
 // and leaves the old one where the field was emptied. Delete Roadmap asks under the title, on a view that stays on
-// screen once the menu has closed.
+// screen once the menu has closed. While several steps are selected the title counts them, with no progress and no
+// menu (02.10); the same modifiers stay, so the screen under them is not made anew.
 struct RoadmapTitle: ViewModifier {
   let roadmap: RoadmapModel
   let open: RoadmapModel.OpenRoadmap
@@ -155,30 +156,39 @@ struct RoadmapTitle: ViewModifier {
   func body(content: Content) -> some View {
     // The field starts from the name the bar shows, so a name committed as it was shown writes nothing.
     let name = open.listed.name
-    titled(content, Binding(get: { name }, set: { if $0 != name { roadmap.rename(to: $0) } }))
+    let selected = roadmap.selection.map { (selection: BoardSelection) -> String in
+      String(localized: "\(selection.steps.count) Selected", locale: .copy, comment: "The bar while several steps are selected: how many")
+    }
+    titled(content, Binding(get: { selected ?? name }, set: { if selected == nil && $0 != name { roadmap.rename(to: $0) } }),
+           subtitle: selected == nil ? open.board.overall.progress : "")
       .toolbarTitleMenu {
-        ForEach(roadmap.roadmaps.prefix(3), id: \.id) { listed in
-          Toggle(isOn: Binding(get: { listed.id == open.listed.id }, set: { _ in roadmap.open(listed.id, from: .menu) })) {
-            Text(listed.name)
-            if let counts = listed.counts { Text(counts.tally) }
-          }
-        }
-        Button("All Roadmaps…") { roadmap.path = [.roadmaps] }
-        Divider()
-        Button("New Roadmap", systemImage: "plus") { roadmap.nameRoadmap(from: .menu) }.tint(RoadmapPalette.ink)
-        Divider()
-        Button("Kinds", systemImage: "paintpalette") { roadmap.openKinds(from: .menu) }
-        RenameButton()
-        Divider()
-        Button("Delete Roadmap", systemImage: "trash", role: .destructive) { roadmap.askDelete(open.listed, from: .menu) }
+        if selected == nil { menu }
       }
       .overlay(alignment: .top) { Color.clear.frame(width: 1, height: 1).modifier(DeleteRoadmapQuestion(roadmap: roadmap, row: nil)) }
   }
 
+  // The title's menu: the three most recent roadmaps, then this roadmap's verbs.
+  @ViewBuilder var menu: some View {
+    ForEach(roadmap.roadmaps.prefix(3), id: \.id) { listed in
+      Toggle(isOn: Binding(get: { listed.id == open.listed.id }, set: { _ in roadmap.open(listed.id, from: .menu) })) {
+        Text(listed.name)
+        if let counts = listed.counts { Text(counts.tally) }
+      }
+    }
+    Button("All Roadmaps…") { roadmap.path = [.roadmaps] }
+    Divider()
+    Button("New Roadmap", systemImage: "plus") { roadmap.nameRoadmap(from: .menu) }.tint(RoadmapPalette.ink)
+    Divider()
+    Button("Kinds", systemImage: "paintpalette") { roadmap.openKinds(from: .menu) }
+    RenameButton()
+    Divider()
+    Button("Delete Roadmap", systemImage: "trash", role: .destructive) { roadmap.askDelete(open.listed, from: .menu) }
+  }
+
   // iOS 26 draws the progress under the inline title, whose menu and field are the system's; before it the name and
   // the progress stand in the bar's principal slot, as on every room's screen.
-  @ViewBuilder func titled(_ content: Content, _ name: Binding<String>) -> some View {
-    if #available(iOS 26.0, *) { content.navigationTitle(name).navigationSubtitle(open.board.overall.progress) }
-    else { content.roomTitle(name.wrappedValue, subtitle: open.board.overall.progress) }
+  @ViewBuilder func titled(_ content: Content, _ name: Binding<String>, subtitle: String) -> some View {
+    if #available(iOS 26.0, *) { content.navigationTitle(name).navigationSubtitle(subtitle) }
+    else { content.roomTitle(name.wrappedValue, subtitle: subtitle.nilIfEmpty) }
   }
 }

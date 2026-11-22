@@ -1,7 +1,8 @@
 import XCTest
 
-// The Roadmap room's flows on the simulator's boards: a step's workspace (Roadmap · iOS 03.2, 03.3, 03.10, 03.11, 03.14)
-// and the step form's links (05.1, 05.8), then the Graph's (04.1 to 04.5, 04.7). The canvas is one element, as
+// The Roadmap room's flows on the simulator's boards: a step's workspace (Roadmap · iOS 03.2, 03.3, 03.10, 03.11, 03.14),
+// the step form's links (05.1, 05.8), the Board's Find, sort and filter, branch and several steps with Kinds (02.4 to
+// 02.12, 03.7, 06.1 to 06.5b), then the Graph's (04.1 to 04.5, 04.7). The canvas is one element, as
 // VoiceOver hears it, so a step is tapped where the layout seats it: *Learn to sail* opens at the phone's working zoom
 // with the middle of its seats' box at the centre of what the bars leave, and each step stands a known way from that
 // centre (`packages/api-contract/roadmap/layout/learn-to-sail.json` pins the seats). The zoom floor is half the opening
@@ -186,6 +187,204 @@ import XCTest
     XCTAssertTrue(app.roadmapStepPage("Read the wind") && link("Telltale guide, rya.org.uk", in: app).waitForExistence(timeout: 10) && !beaufort.exists)
     app.buttons["roadmap-undo"].tap()
     XCTAssertTrue(beaufort.waitForExistence(timeout: 10) && link("Telltale guide, rya.org.uk", in: app).waitForNonExistence(timeout: 5))
+  }
+
+  // The Board's Sort and filter menu, open.
+  func boardTool(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+    XCTAssertTrue(app.buttons["roadmap-board-tool"].waitForHittable(timeout: 10), file: file, line: line)
+    app.buttons["roadmap-board-tool"].tap()
+    XCTAssertTrue(app.buttons["Select Steps"].waitForExistence(timeout: 5), file: file, line: line)
+  }
+
+  // Find, up with words typed, or closed by its own close.
+  func find(_ words: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+    app.buttons["roadmap-find"].tap()
+    let field = app.searchFields.firstMatch
+    XCTAssertTrue(field.waitForExistence(timeout: 5) && app.keyboards.firstMatch.waitForExistence(timeout: 10), file: file, line: line)
+    field.typeText(words)
+    XCTAssertTrue(field.waitForValue(words), file: file, line: line)
+  }
+
+  func closeFind(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+    let close = app.buttons.matching(NSPredicate(format: "label ==[c] %@", "close")).firstMatch
+    XCTAssertTrue(close.waitForExistence(timeout: 5), file: file, line: line)
+    close.tap()
+    XCTAssertTrue(app.searchFields.firstMatch.waitForNonExistence(timeout: 5) && app.buttons["roadmap-new-step"].waitForExistence(timeout: 5),
+                  file: file, line: line)
+  }
+
+  // The steps the Board lists on screen, by what each row says.
+  func rows(_ app: XCUIApplication) -> [String] {
+    let rows = app.descendants(matching: .any).matching(identifier: "roadmap-step")
+    return (0..<rows.count).map { rows.element(boundBy: $0).label }
+  }
+
+  // Roadmap · iOS 06.1, 06.3, 02.10, 02.11, 02.5 and 02.8, on a phone never signed in and on its copy alone: Kinds from
+  // the title menu adds a kind on the next free hue and names it; two steps selected through Select Steps are recolored
+  // to it in one gesture; Find finds a step by its words; the Board's tool shows the new kind alone; and after a relaunch
+  // the kind, the steps' colour and both reads are all there.
+  func testAKindAddedStepsRecoloredAFindAndAFilterAreWrittenSignedOutAndFoundAfterARelaunch() {
+    let app = launch("roadmap-many")
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 60))
+    let practice = app.buttons.matching(NSPredicate(format: "identifier == %@ AND label BEGINSWITH %@", "roadmap-kinds-row", "Practice")).firstMatch
+    app.navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Learn to sail")).firstMatch.tap()
+    XCTAssertTrue(app.buttons["Kinds"].waitForExistence(timeout: 5))
+    app.buttons["Kinds"].tap()
+    XCTAssertTrue(app.buttons["roadmap-kinds-add"].waitForExistence(timeout: 10))
+    let listed = app.buttons.matching(identifier: "roadmap-kinds-row")
+    XCTAssertEqual((0..<listed.count).map { listed.element(boundBy: $0).label },
+                   ["Build, Things you make, 3", "Learn, Things you figure out, 2", "Milestone, Moments that matter, 1", "Sky, 2"])
+    app.buttons["roadmap-kinds-add"].tap()
+    let name = app.textFields["roadmap-kind-name"]
+    XCTAssertTrue(app.navigationBars["Brick"].waitForExistence(timeout: 5) && app.keyboards.firstMatch.waitForExistence(timeout: 10))
+    name.typeText("Practice")
+    app.textFields["roadmap-kind-description"].tap()
+    app.textFields["roadmap-kind-description"].typeText("Hours on the water")
+    XCTAssertTrue(app.navigationBars["Practice"].waitForExistence(timeout: 5))
+    app.navigationBars["Practice"].buttons.element(boundBy: 0).tap()
+    XCTAssertTrue(practice.waitForLabel("Practice, Hours on the water, 0"))
+    app.buttons["roadmap-kinds-close"].tap()
+    XCTAssertTrue(app.buttons["roadmap-kinds-add"].waitForNonExistence(timeout: 5))
+
+    boardTool(app)
+    app.buttons["Select Steps"].tap()
+    XCTAssertTrue(app.buttons["roadmap-select-done"].waitForExistence(timeout: 5) && app.navigationBars["0 Selected"].exists)
+    XCTAssertFalse(app.segmentedControls.firstMatch.isEnabled || app.buttons["roadmap-new-step"].exists)
+    app.roadmapStep("Tie a bowline").tap()
+    app.roadmapStep("Sail a triangle").tap()
+    XCTAssertTrue(app.navigationBars["2 Selected"].waitForExistence(timeout: 5))
+    app.buttons["roadmap-recolor"].tap()
+    XCTAssertTrue(app.buttons["Practice"].waitForExistence(timeout: 5))
+    app.buttons["Practice"].tap()
+    XCTAssertTrue(app.staticTexts["2 steps recolored"].waitForExistence(timeout: 10) && app.buttons["roadmap-new-step"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.roadmapStep("Tie a bowline").label.hasPrefix("Practice, Tie a bowline"))
+
+    find("bowline", in: app)
+    XCTAssertTrue(app.roadmapStep("Tie a bowline").waitForExistence(timeout: 5))
+    XCTAssertEqual(rows(app), ["Practice, Tie a bowline, Tie a secure loop that is easy to undo, then practise it with your eyes closed."])
+    closeFind(app)
+
+    boardTool(app)
+    app.buttons["Practice"].firstMatch.tap()
+    XCTAssertTrue(app.staticTexts["roadmap-showing"].waitForLabel("Showing Practice"))
+    XCTAssertEqual([app.buttons["roadmap-group-upNext"].label, app.buttons["roadmap-group-locked"].label], ["Up next, 1", "Locked, 1"])
+    XCTAssertFalse(app.buttons["roadmap-group-done"].exists)
+    XCTAssertTrue(app.staticTexts["3 of 8 done"].exists)
+
+    app.terminate()
+    app.launchArguments.append("-restore-board")
+    app.launch()
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    XCTAssertFalse(app.staticTexts["roadmap-showing"].exists)
+    XCTAssertTrue(app.roadmapStep("Sail a triangle").label.hasPrefix("Practice, Sail a triangle"))
+    boardTool(app)
+    app.buttons["Practice"].firstMatch.tap()
+    XCTAssertTrue(app.staticTexts["roadmap-showing"].waitForLabel("Showing Practice"))
+    XCTAssertEqual(rows(app).count, 2)
+    app.buttons["roadmap-showing-clear"].tap()
+    XCTAssertTrue(app.staticTexts["roadmap-showing"].waitForNonExistence(timeout: 5))
+    find("bowline", in: app)
+    XCTAssertTrue(app.roadmapStep("Tie a bowline").waitForExistence(timeout: 5) && rows(app).count == 1)
+  }
+
+  // 03.7, 02.9, 02.4 and 02.10 to 02.12: View Branch on a step's page narrows the Board to it, whose first row clears it;
+  // Open in Graph from a row's menu shows the step selected on the Graph; two steps selected are deleted after one
+  // question with what it costs and held with one Undo; and Select All, which takes the starting step, dims Delete while
+  // the band says why.
+  func testABranchOpenInGraphAndSeveralStepsDeletedWithOneUndo() {
+    let app = launch("roadmap-learn-to-sail")
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    page(of: "Read the wind", in: app)
+    app.buttons["roadmap-step-more"].tap()
+    XCTAssertTrue(app.buttons["View Branch"].waitForExistence(timeout: 5))
+    app.buttons["View Branch"].tap()
+    XCTAssertTrue(app.staticTexts["roadmap-branch"].waitForLabel("Branch · Read the wind"))
+    XCTAssertEqual([app.buttons["roadmap-group-upNext"].label, app.buttons["roadmap-group-locked"].label], ["Up next, 1", "Locked, 3"])
+    app.buttons["roadmap-branch-clear"].tap()
+    XCTAssertTrue(app.buttons["roadmap-group-upNext"].waitForLabel("Up next, 2"))
+
+    app.roadmapStep("Sail solo").press(forDuration: 1)
+    XCTAssertTrue(app.buttons["Open in Graph"].waitForExistence(timeout: 5))
+    app.buttons["Open in Graph"].tap()
+    XCTAssertTrue(app.descendants(matching: .any)["roadmap-graph"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["roadmap-graph-step"].waitForExistence(timeout: 10))
+    XCTAssertEqual(app.buttons["roadmap-graph-step"].label, "Milestone, Sail solo")
+    app.segmentedControls.buttons["Board"].tap()
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 10))
+
+    let undo = app.buttons["roadmap-undo"], delete = app.buttons["roadmap-delete-steps"]
+    boardTool(app)
+    app.buttons["Select Steps"].tap()
+    XCTAssertTrue(delete.waitForExistence(timeout: 5) && !delete.isEnabled)
+    app.roadmapStep("Tie a bowline").tap()
+    app.roadmapStep("Sail a triangle").tap()
+    XCTAssertTrue(delete.waitForLabel("Delete 2 Steps") && delete.isEnabled)
+    delete.tap()
+    XCTAssertTrue(app.staticTexts["Delete 2 steps?"].waitForExistence(timeout: 5) && app.staticTexts["Removes 2 steps · 1 branch resplices"].exists)
+    let answer = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "Delete 2 Steps", "roadmap-delete-steps")).firstMatch
+    answer.tap()
+    // The band keeps Undo for the hold's nine seconds: it is taken as soon as the Board is seen without the steps.
+    XCTAssertTrue(app.staticTexts["3 of 6 done"].waitForExistence(timeout: 10) && app.staticTexts["2 steps deleted"].exists)
+    XCTAssertTrue(app.buttons["roadmap-new-step"].exists && !delete.exists)
+    undo.tap()
+    XCTAssertTrue(app.staticTexts["3 of 8 done"].waitForExistence(timeout: 10) && app.roadmapStep("Tie a bowline").waitForExistence(timeout: 5))
+
+    app.roadmapStep("Read the wind").press(forDuration: 1)
+    XCTAssertTrue(app.buttons["Select"].waitForExistence(timeout: 5))
+    app.buttons["Select"].tap()
+    XCTAssertTrue(app.navigationBars["1 Selected"].waitForExistence(timeout: 5))
+    app.buttons["roadmap-select-all"].tap()
+    XCTAssertTrue(app.navigationBars["8 Selected"].waitForExistence(timeout: 5) && app.buttons["Deselect All"].exists)
+    XCTAssertTrue(app.staticTexts["A roadmap keeps one starting step"].waitForExistence(timeout: 5) && !delete.isEnabled)
+    XCTAssertTrue(app.buttons["roadmap-recolor"].isEnabled)
+    app.buttons["roadmap-select-done"].tap()
+    XCTAssertTrue(app.buttons["roadmap-new-step"].waitForExistence(timeout: 5) && app.segmentedControls.firstMatch.isEnabled)
+  }
+
+  // 02.6, 05.2, 06.2, 06.5 and 06.5b: Find that matches nothing offers a new step of its words, whose form opens named
+  // so; Edit Kinds in the form's Kind list raises Kinds over the form, where a hue another kind wears is dimmed and
+  // cannot be chosen; and a kind no step wears is removed at once in edit mode, with Undo in the band at the sheet's foot.
+  func testFindOffersANewStepOfItsWordsAndAKindNoStepWearsIsRemovedWithUndo() {
+    let app = launch("roadmap-learn-to-sail")
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    find("reef", in: app)
+    XCTAssertTrue(app.staticTexts["No steps match “reef”"].waitForExistence(timeout: 5))
+    app.buttons["roadmap-find-new-step"].tap()
+    XCTAssertTrue(app.textFields["roadmap-form-name"].waitForValue("reef"))
+    app.buttons["roadmap-form-kind"].tap()
+    XCTAssertTrue(app.buttons["roadmap-edit-kinds"].waitForExistence(timeout: 5))
+    app.buttons["roadmap-edit-kinds"].tap()
+    XCTAssertTrue(app.buttons["roadmap-kinds-add"].waitForExistence(timeout: 10))
+
+    app.buttons.matching(NSPredicate(format: "identifier == %@ AND label BEGINSWITH %@", "roadmap-kinds-row", "Build")).firstMatch.tap()
+    XCTAssertTrue(app.navigationBars["Build"].waitForExistence(timeout: 5))
+    let olive = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Olive")).firstMatch
+    XCTAssertTrue(olive.exists)
+    XCTAssertEqual(olive.label, "Olive, In use by Learn")
+    olive.tap()
+    XCTAssertTrue(app.navigationBars["Build"].exists)
+    XCTAssertFalse(olive.isSelected || olive.isEnabled)
+    app.navigationBars["Build"].buttons.element(boundBy: 0).tap()
+
+    app.buttons["roadmap-kinds-add"].tap()
+    XCTAssertTrue(app.navigationBars["Brick"].waitForExistence(timeout: 5))
+    app.navigationBars["Brick"].buttons.element(boundBy: 0).tap()
+    // In edit mode a row says its delete control first: *Remove, Brick, 0*.
+    let brick = app.buttons.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@", "roadmap-kinds-row", "Brick")).firstMatch
+    XCTAssertTrue(brick.waitForExistence(timeout: 5))
+    app.buttons["roadmap-kinds-edit"].tap()
+    XCTAssertTrue(app.staticTexts["A kind that steps wear can’t be removed."].waitForExistence(timeout: 5) && brick.waitForLabel("Remove, Brick, 0"))
+    let build = app.buttons.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@", "roadmap-kinds-row", "Build")).firstMatch
+    XCTAssertEqual(build.label, "Build, Things you make, 3")
+    brick.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5)).tap()
+    let remove = app.buttons["Delete"]
+    XCTAssertTrue(remove.waitForExistence(timeout: 5))
+    remove.tap()
+    XCTAssertTrue(app.staticTexts["Brick removed"].waitForExistence(timeout: 10) && brick.waitForNonExistence(timeout: 5))
+    // The band stands at the foot of each screen under the sheet too: the sheet's own, on top, is the last.
+    let undo = app.buttons.matching(identifier: "roadmap-undo")
+    undo.element(boundBy: undo.count - 1).tap()
+    XCTAssertTrue(brick.waitForExistence(timeout: 10))
   }
 
   // The canvas of the open roadmap, once the switch has shown the Graph, and the centre of what the bars leave of it.

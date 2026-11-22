@@ -309,6 +309,8 @@ final class RoadmapModel {
   let wait: Wait
   // The Graph of the open roadmap: its picture, its camera and its captions.
   let graph: RoadmapGraph
+  // What the Board measures of itself, where a launch asks for it.
+  let boardFrames: BoardFrames
   // A step that goes while its page or its note is open, deleted here or by another device, takes the stack back to the
   // Board, and so does the last roadmap going while All Roadmaps is open. The form closes once its roadmap is not the
   // open one, or the step it edits is gone, and a selected step that is gone is selected no longer. A note open on its
@@ -383,9 +385,10 @@ final class RoadmapModel {
   @ObservationIgnored var bandTime: Task<Void, Never>?
 
   init(records: @escaping Records, runner: ActionRunner, phone: UserDefaults, telemetry: any Telemetry = NoopTelemetry(),
-       wait: @escaping Wait = { try await Task.sleep(for: $0) }, graph: RoadmapGraph? = nil) {
+       wait: @escaping Wait = { try await Task.sleep(for: $0) }, graph: RoadmapGraph? = nil, boardFrames: BoardFrames = BoardFrames()) {
     self.records = records; self.runner = runner; self.phone = phone; self.telemetry = telemetry; self.wait = wait
     self.graph = graph ?? RoadmapGraph(telemetry: telemetry)
+    self.boardFrames = boardFrames
     reading = BoardReading(telemetry: telemetry)
   }
 
@@ -495,7 +498,7 @@ final class RoadmapModel {
     self.lens = lens
     phone.set((phone.dictionary(forKey: Self.lastLens) ?? [:]).merging([shown.listed.id: lens.rawValue]) { _, chosen in chosen }, forKey: Self.lastLens)
     viewOpened(shown)
-    guard view(of: shown) == .graph else { return }
+    guard view(of: shown) == .graph else { return boardFrames.opened() }
     graph.opened()
     graph.follow(shown.graph, of: shown.listed.id)
   }
