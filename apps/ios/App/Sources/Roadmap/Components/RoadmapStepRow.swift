@@ -14,7 +14,7 @@ struct RoadmapStepRow: View {
   @ScaledMetric(relativeTo: .body) var symbolColumn = 24.0
 
   var body: some View {
-    NavigationLink(value: RoadmapModel.Visit(step: row.id, door: door)) {
+    NavigationLink(value: RoadmapModel.Visit.step(row.id, by: door)) {
       HStack(alignment: .firstTextBaseline, spacing: 12) {
         Image(systemName: row.card.column.symbol).imageScale(.large).foregroundStyle(RoadmapPalette.kind(row.step.color))
           .frame(width: symbolColumn).accessibilityLabel(row.colour ?? "").accessibilityHidden(row.colour == nil)

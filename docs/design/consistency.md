@@ -680,6 +680,31 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   is now the system's link, so a slide toward a side that holds no action for it, right on a Locked or a Done row,
   ends as a tap and opens the step where it ends on the row: seen under a UI test's synthesized swipe, not tried by
   hand, and no board says what such a slide does.
+- **Roadmap · iOS · what the room's roadmaps leave for the boards.** The title menu, All Roadmaps, New Roadmap for a
+  blank roadmap, renaming in the bar and a roadmap's delete held with *Undo* are built in Debug builds from 01.3 to
+  01.6 and 01.9 to 01.11. To draw or rule: 01.10 words what else goes as *the step that opens it in Become a day
+  skipper, and its 3 Coach conversations*, and no domain reads a roadmap's Coach conversations, the web's and Swift's
+  alike, so the question is built naming the steps alone; the board words one step in one roadmap, and the rest are
+  the web's sentences with *roadmap* for *tree* (*Also removes 3 steps that open it in …*, *…, in A and B*, *…, in A,
+  B and 2 more roadmaps*), a roadmap a step owns named by that step where the web counts it unnamed; a roadmap no step
+  opens asks with no second line; the steps go with the roadmap on the server, so on a phone never signed in, and
+  until the account has the delete, the step stays and opens nothing, where the sentence says *removes*; 01.9 keeps an
+  emptied name as *Untitled roadmap*, and the system's title field commits no empty name, so the old name stays, as on
+  the web, while a name of blanks alone is written empty and reads *Untitled roadmap*; while that field has the
+  keyboard the foot rides above it, the band and the disabled New Step with it, where 01.9 draws nothing there, and
+  the system tells the room nothing of its rename; the system's Rename has no pencil in the menu (01.3), and a long
+  name there wraps onto a second line where the board truncates it; the menu
+  lists the three most recent, so an open roadmap that is not among them has no checkmark there; with *Start from*
+  left out, New Roadmap has lost its footer *Create alone plants one step, named as the roadmap.*, and nothing on the
+  sheet says what Create plants; the name field stops at the domain's 200 characters with no counter, and no board
+  draws the bound; no board draws All Roadmaps when a search finds nothing, and it is built as the system's own
+  `ContentUnavailableView.search`; a delete made on a row of All Roadmaps leaves the list on screen with the band at
+  its foot, and its *Undo* brings the row back without opening it, where 01.11 draws the Board alone; *No roadmaps yet*
+  stands over the band while the last roadmap's delete is held, and 01.5 draws no band; a new roadmap is opened once
+  the phone's copy holds it, with no band, where 01.8b draws *Roadmap planted* for a quest and a plan and no board
+  draws it for a blank one; 01.3 and 01.4 group a count's digits (*3,200 of 5,000*) and the app writes every count as
+  Swift does, *3200 of 5000*; and the domain orders a person's roadmaps by when a server last received each, so on a
+  phone never signed in the title menu's three and All Roadmaps stand in the order of their ids, which no board says.
 - **Roadmap · iOS · the Design System owes the room its door.** *Where to start?* with a third door, Roadmap, is
   ✅ Ready for dev in the Shell file
   ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)). The Design System has no

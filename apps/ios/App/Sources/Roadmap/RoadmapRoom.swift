@@ -2,9 +2,9 @@ import SwiftUI
 import UIKit
 import RoadmapDomain
 
-// The Roadmap room (Roadmap · iOS S.1, 11.22a): one stack, the open roadmap under its name with the switch row, its Board,
-// and at the foot the one band over New step. A step's page is pushed on the stack. What the band says is announced and
-// felt once, whichever screen stands over it.
+// The Roadmap room (Roadmap · iOS S.1, 01.3, 01.5, 11.22a): one stack, the open roadmap under its name with the switch
+// row, its Board, and at the foot the one band over New step. All Roadmaps and a step's page are pushed on the stack, and
+// New Roadmap is the room's one sheet. What the band says is announced and felt once, whichever screen stands over it.
 struct RoadmapRoom: View {
   // The room's two views of a roadmap.
   enum Lens { case board, graph }
@@ -23,8 +23,14 @@ struct RoadmapRoom: View {
           ToolbarItem(placement: .topBarLeading) { RoomMenu(app: app) }
           ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: app.openYou).disabled(app.editorReadOnly) }
         }.roomBar(.roadmap)
-        .navigationDestination(for: RoadmapModel.Visit.self) { visit in RoadmapStepPage(roadmap: roadmap, step: visit.step) }
+        .navigationDestination(for: RoadmapModel.Visit.self) { visit in
+          switch visit {
+          case .roadmaps: RoadmapsList(roadmap: roadmap)
+          case .step(let step, _): RoadmapStepPage(roadmap: roadmap, step: step)
+          }
+        }
     }.onAppear { roadmap.roomOpened() }
+      .sheet(isPresented: Binding(get: { roadmap.naming }, set: { if !$0 { roadmap.cancelNaming() } })) { NewRoadmap(roadmap: roadmap) }
       .sensoryFeedback(trigger: roadmap.band) { _, band in
         switch band?.says {
         case .completed: .success
@@ -41,15 +47,15 @@ struct RoadmapRoom: View {
     switch roadmap.phase {
     case .unread: Color.clear
     case .open(let open): board(open)
-    // 01.5: New Roadmap is drawn and does nothing.
+    // 01.5: the room with no roadmap, where the band still holds the Undo of the last one's delete.
     case .empty:
       ContentUnavailableView {
         Label { Text("No roadmaps yet").foregroundStyle(RoadmapPalette.ink) } icon: { Image(systemName: "map").foregroundStyle(RoadmapPalette.inkDim) }
       } description: {
         Text("Plan a goal as steps that unlock each other.").foregroundStyle(RoadmapPalette.inkDim)
       } actions: {
-        Button("New Roadmap") {}.buttonStyle(RoomSecondaryStyle()).disabled(true).accessibilityIdentifier("roadmap-new")
-      }
+        Button("New Roadmap") { roadmap.nameRoadmap(from: .empty) }.buttonStyle(RoomSecondaryStyle()).accessibilityIdentifier("roadmap-new")
+      }.roadmapFoot(roadmap) {}
     // 10.9, for a read of the phone's copy that failed: the board's sentence speaks of a server, so it is not said here.
     case .failed:
       ContentUnavailableView {
@@ -61,11 +67,8 @@ struct RoadmapRoom: View {
   }
 
   func board(_ open: RoadmapModel.OpenRoadmap) -> some View {
-    let counts = open.board.overall
-    let progress = counts.total == 0 ? String(localized: "No steps yet")
-      : String(localized: "\(counts.done) of \(counts.total) done", locale: .copy, comment: "How many are done, of how many: a roadmap's steps under its name, and the steps a step requires")
-    return pinnedUnderBar(RoadmapBoard(roadmap: roadmap, open: open))
-      .roomTitle(open.listed.title?.nilIfEmpty ?? String(localized: "Untitled roadmap"), subtitle: progress)
+    pinnedUnderBar(RoadmapBoard(roadmap: roadmap, open: open))
+      .modifier(RoadmapTitle(roadmap: roadmap, open: open))
       .roadmapFoot(roadmap) {
         HStack {
           Spacer()
@@ -102,5 +105,44 @@ struct GlassCircle: ViewModifier {
   @ViewBuilder func shaped(_ control: some View) -> some View {
     if #available(iOS 26.0, *) { control.buttonStyle(.glass) }
     else { control.buttonStyle(.bordered) }
+  }
+}
+
+// The bar's title over the Board (Roadmap · iOS 01.3, 01.9, 01.10): the open roadmap's name over its progress. Its menu
+// lists the three most recent roadmaps, each over its progress and the open one checked, then All Roadmaps…, New Roadmap,
+// Rename and Delete Roadmap. Rename is the system's: it turns the bar into one field, whose return key commits a name
+// and leaves the old one where the field was emptied. Delete Roadmap asks under the title, on a view that stays on
+// screen once the menu has closed.
+struct RoadmapTitle: ViewModifier {
+  let roadmap: RoadmapModel
+  let open: RoadmapModel.OpenRoadmap
+
+  func body(content: Content) -> some View {
+    // The field starts from the name the bar shows, so a name committed as it was shown writes nothing.
+    let name = open.listed.name
+    titled(content, Binding(get: { name }, set: { if $0 != name { roadmap.rename(to: $0) } }))
+      .toolbarTitleMenu {
+        ForEach(roadmap.roadmaps.prefix(3), id: \.id) { listed in
+          Toggle(isOn: Binding(get: { listed.id == open.listed.id }, set: { _ in roadmap.open(listed.id, from: .menu) })) {
+            Text(listed.name)
+            if let counts = listed.counts { Text(counts.tally) }
+          }
+        }
+        Button("All Roadmaps…") { roadmap.path = [.roadmaps] }
+        Divider()
+        Button("New Roadmap", systemImage: "plus") { roadmap.nameRoadmap(from: .menu) }.tint(RoadmapPalette.ink)
+        Divider()
+        RenameButton()
+        Divider()
+        Button("Delete Roadmap", systemImage: "trash", role: .destructive) { roadmap.askDelete(open.listed, from: .menu) }
+      }
+      .overlay(alignment: .top) { Color.clear.frame(width: 1, height: 1).modifier(DeleteRoadmapQuestion(roadmap: roadmap, row: nil)) }
+  }
+
+  // iOS 26 draws the progress under the inline title, whose menu and field are the system's; before it the name and
+  // the progress stand in the bar's principal slot, as on every room's screen.
+  @ViewBuilder func titled(_ content: Content, _ name: Binding<String>) -> some View {
+    if #available(iOS 26.0, *) { content.navigationTitle(name).navigationSubtitle(open.board.overall.progress) }
+    else { content.roomTitle(name.wrappedValue, subtitle: open.board.overall.progress) }
   }
 }

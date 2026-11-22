@@ -55,15 +55,15 @@ final class RoadmapModel {
     let relocks: Int
   }
 
-  // A step's page on the room's stack, and the row that opened it as its event names it: a Board row, the web's card,
-  // or a row of another step's page.
-  struct Visit: Hashable {
+  // A screen on the room's stack over the Board: All Roadmaps, or a step's page with the row that opened it as its
+  // event names it, a Board row, the web's card, or a row of another step's page.
+  enum Visit: Hashable {
     enum Door: String {
       case card, step
     }
 
-    let step: String
-    let door: Door
+    case roadmaps
+    case step(String, by: Door)
   }
 
   // The roadmap the room has open: its row in the person's list, its records as the domain reads them, and its Board.
@@ -147,17 +147,33 @@ final class RoadmapModel {
     case keepsStartingStep, full
   }
 
-  // The gesture a write came by, as its event names it: a Board row's swipe or its long-press menu, or the step's page.
+  // The gesture a write to a step came by, as its event names it: a Board row's swipe or its long-press menu, or the
+  // step's page.
   enum Door: String {
     case swipe, menu, page
   }
 
-  // The question a delete asks before anything is written: the step, the gesture that asked, and how many steps follow
-  // the step, which is what the delete costs. It stands where it was asked: on the step's Board row, or on its page.
-  struct Question {
-    let row: Row
-    let door: Door
-    let followers: Int
+  // Where a gesture on a roadmap is made, as its event names it: the title menu, All Roadmaps, or the room that holds
+  // no roadmap.
+  enum Place: String {
+    case menu, list, empty
+  }
+
+  // What else a roadmap's delete takes: the server deletes each step of the person's other roadmaps whose pointer opens
+  // it. The steps are counted, and the roadmaps that hold them named as each is known, a roadmap a step owns by that
+  // step: those the list holds first, in its order.
+  struct Openers: Equatable {
+    let steps: Int
+    let roadmaps: [String?]
+  }
+
+  // The question a delete asks before anything is written, standing where it was asked.
+  enum Question {
+    // A step's, on its Board row or on its page: the step, the gesture that asked, and how many steps follow the
+    // step, which is what the delete costs.
+    case step(Row, by: Door, followers: Int)
+    // A roadmap's, under the title whose menu asked or on its row in All Roadmaps: the roadmap, and what else goes.
+    case roadmap(ListedRoadmap, from: Place, openers: Openers?)
   }
 
   // The one band at the room's foot: a receipt with its Undo, or a limit that refused a gesture.
@@ -169,14 +185,23 @@ final class RoadmapModel {
       // A step reset, and how many steps it returned to Locked.
       case reset(step: String, locked: Int)
       case deleted(step: String)
+      // A roadmap deleted, by its title.
+      case deletedRoadmap(String?)
       case refused(Limit)
     }
 
-    // A receipt's Undo: the gesture its act wrote, whether the engine holds that act, and the act's name in the room's events.
+    // A receipt's Undo: the gesture its act wrote, whether the engine holds that act, and the act it takes back.
     struct Undo: Equatable {
+      // A step's act, by its name in the room's events, or a roadmap's delete, with the roadmap where the room had it
+      // open, which its Undo opens again.
+      enum Act: Equatable {
+        case step(String)
+        case roadmapDelete(reopens: String?)
+      }
+
       let gesture: String
       let held: Bool
-      let act: String
+      let act: Act
     }
 
     let says: Says
@@ -186,7 +211,7 @@ final class RoadmapModel {
     let lasts: Duration
 
     // A receipt: a removal the engine holds offers its Undo for the engine's hold, any other act for six seconds.
-    init(_ says: Says, of receipt: ActReceipt, act: String, arrived: [String] = []) {
+    init(_ says: Says, of receipt: ActReceipt, act: Undo.Act, arrived: [String] = []) {
       let held = receipt.releaseAt != nil
       self.says = says
       undo = Undo(gesture: receipt.gestureId, held: held, act: act)
@@ -214,28 +239,43 @@ final class RoadmapModel {
   let phone: UserDefaults
   let telemetry: any Telemetry
   let wait: Wait
-  // A step that goes while its page is open, deleted here or by another device, takes the stack back to the Board.
+  // A step that goes while its page is open, deleted here or by another device, takes the stack back to the Board, and
+  // so does the last roadmap going while All Roadmaps is open.
   private(set) var phase = Phase.unread {
     didSet {
       guard !path.isEmpty else { return }
-      if case .open(let open) = phase, path.allSatisfy({ open.step($0.step) != nil }) { return }
+      if case .open(let open) = phase, path.allSatisfy({ (visit: Visit) -> Bool in
+        guard case .step(let step, _) = visit else { return true }
+        return open.step(step) != nil
+      }) { return }
       path = []
     }
   }
-  // The step pages open over the Board, the one on screen last. A page pushed is told once, with the group its step
-  // stands in.
+  // The screens open over the Board, the one on screen last. A screen pushed is told once: All Roadmaps, or a step's
+  // page with the group its step stands in.
   var path: [Visit] = [] {
     didSet {
-      guard path.count > oldValue.count, let pushed = path.last, case .open(let open) = phase, let row = open.step(pushed.step) else { return }
-      telemetry.event("roadmap_board_step_open", properties: ["surface": "document", "column": row.card.column.rawValue, "door": pushed.door.rawValue])
+      guard path.count > oldValue.count, let pushed = path.last else { return }
+      switch pushed {
+      case .roadmaps: telemetry.event("roadmap_sheet", properties: ["step": "open"])
+      case .step(let step, let door):
+        guard case .open(let open) = phase, let row = open.step(step) else { return }
+        telemetry.event("roadmap_board_step_open", properties: ["surface": "document", "column": row.card.column.rawValue, "door": door.rawValue])
+      }
     }
   }
   // The person's own roadmaps, the most recent first.
   private(set) var roadmaps: [ListedRoadmap] = []
   private(set) var band: Band?
   private(set) var question: Question?
+  // The New Roadmap sheet stands open.
+  private(set) var naming = false
   // The Board's groups that stand folded: Done at rest, until every step is done.
   var folded: Set<BoardRead.Column.Name> = [.done]
+  // Every roadmap the phone holds as the domain last read them together, which says what opens what.
+  @ObservationIgnored var account = RoadmapAccount([])
+  // A roadmap the room made, or brought back by Undo, which it opens once the list holds it.
+  @ObservationIgnored var arriving: String?
   // Every view the room asked the engine for, kept so each stays live.
   @ObservationIgnored var views: [ViewKey: RecordsView] = [:]
   // The observation now live; one begun later ends the one before it.
@@ -294,8 +334,12 @@ final class RoadmapModel {
     }
     views = views.filter { scopes.contains($0.key.scope) }
     guard loaded else { return }
-    let account = RoadmapAccount(trees)
+    account = RoadmapAccount(trees)
     roadmaps = account.list()
+    if let arrived = arriving, roadmaps.contains(where: { $0.id.utf8.elementsEqual(arrived.utf8) }) {
+      phone.set(arrived, forKey: Self.lastOpen)
+      arriving = nil
+    }
     // The room opens the roadmap last open, else the most recent.
     let last = phone.string(forKey: Self.lastOpen) ?? ""
     guard let listed = roadmaps.first(where: { $0.id.utf8.elementsEqual(last.utf8) }) ?? roadmaps.first else {
@@ -307,11 +351,14 @@ final class RoadmapModel {
       return
     }
     if !listed.id.utf8.elementsEqual(last.utf8) { phone.set(listed.id, forKey: Self.lastOpen) }
-    // Done opens by itself once every step is done, and rests folded again once one is not.
-    var wasDone = false
-    if case .open(let shown) = phase { wasDone = shown.everyStepDone }
-    if open.everyStepDone && !wasDone { folded.remove(.done) }
-    if !open.everyStepDone && wasDone { folded.insert(.done) }
+    // Another roadmap opens with its Board at rest: Done folded, unless every step is done. On the one shown, Done opens
+    // by itself once every step is done, and rests folded again once one is not.
+    if case .open(let shown) = phase, shown.listed.id.utf8.elementsEqual(listed.id.utf8) {
+      if open.everyStepDone && !shown.everyStepDone { folded.remove(.done) }
+      if !open.everyStepDone && shown.everyStepDone { folded.insert(.done) }
+    } else {
+      folded = open.everyStepDone ? [] : [.done]
+    }
     phase = .open(open)
   }
 
@@ -361,7 +408,7 @@ final class RoadmapModel {
     else { telemetry.event("roadmap_board_complete", properties: ["door": door.rawValue]) }
     let upNext = open.graph.unlocks(row.id)
     show(Band(.completed(step: row.step.label, upNext: upNext.compactMap { open.tree.step($0)?.label }, inPlace: door == .page),
-              of: written.receipt, act: "complete", arrived: upNext))
+              of: written.receipt, act: .step("complete"), arrived: upNext))
   }
 
   // Reset, on a Done step's page: the mark comes off and nothing is asked. Its receipt counts the steps it locked again.
@@ -369,22 +416,29 @@ final class RoadmapModel {
     guard case .open(let open) = phase else { return }
     guard let written = write(MarkStep.reset(tree: open.id, step: ID(RecordID(step.row.id))), as: "mark") else { return }
     telemetry.event("roadmap_board_step_action", properties: ["surface": "document", "action": "reset"])
-    show(Band(.reset(step: step.row.step.label, locked: step.relocks), of: written.receipt, act: "reset"))
+    show(Band(.reset(step: step.row.step.label, locked: step.relocks), of: written.receipt, act: .step("reset")))
   }
 
   // Delete asks once, on the step.
   func askDelete(_ row: Row, by door: Door) {
     guard case .open(let open) = phase else { return }
     if door == .page { telemetry.event("roadmap_board_step_action", properties: ["surface": "document", "action": "delete"]) }
-    question = Question(row: row, door: door, followers: open.followers(of: row.id))
+    question = .step(row, by: door, followers: open.followers(of: row.id))
   }
 
-  // The question's answer: Delete Step deletes the step; closed any other way, nothing is written.
+  // The question's answer: Delete Step or Delete Roadmap deletes what was asked of; closed any other way, nothing is
+  // written.
   func answer(delete confirmed: Bool) {
     guard let asked = question else { return }
     question = nil
-    telemetry.event("roadmap_board_delete", properties: ["step": confirmed ? "confirm" : "cancel", "view": "board"])
-    if confirmed { delete(asked.row, by: asked.door) }
+    switch asked {
+    case .step(let row, let door, _):
+      telemetry.event("roadmap_board_delete", properties: ["step": confirmed ? "confirm" : "cancel", "view": "board"])
+      if confirmed { delete(row, by: door) }
+    case .roadmap(let roadmap, let place, let openers):
+      telemetry.event("roadmap_deletion", properties: ["step": confirmed ? "confirm" : "cancel"])
+      if confirmed { delete(roadmap, from: place, taking: openers) }
+    }
   }
 
   // Delete: the step alone goes, held by the engine, and its receipt keeps Undo for the hold. The room stands on the
@@ -399,11 +453,100 @@ final class RoadmapModel {
     guard let written = write(DeleteStep(tree: open.id, step: ID(RecordID(row.id))), as: "DeleteNode") else { return }
     path = []
     telemetry.event("roadmap_board_delete", properties: ["step": "held", "door": door.rawValue, "view": "board"])
-    show(Band(.deleted(step: row.step.label), of: written.receipt, act: "delete"))
+    show(Band(.deleted(step: row.step.label), of: written.receipt, act: .step("delete")))
+  }
+
+  // A roadmap chosen in the title menu or in All Roadmaps is the open one, on its Board, and the one the phone
+  // remembers. Choosing the open one only returns to its Board.
+  func open(_ roadmap: String, from place: Place) {
+    path = []
+    if case .open(let shown) = phase, shown.listed.id.utf8.elementsEqual(roadmap.utf8) { return }
+    guard roadmaps.contains(where: { $0.id.utf8.elementsEqual(roadmap.utf8) }) else { return }
+    arriving = nil
+    phone.set(roadmap, forKey: Self.lastOpen)
+    telemetry.event("roadmap_sheet", properties: ["step": "switch", "door": place.rawValue])
+    observe()
+  }
+
+  // The first search of All Roadmaps in one visit is told.
+  func searchedRoadmaps() {
+    telemetry.event("roadmap_sheet", properties: ["step": "search"])
+  }
+
+  // New Roadmap, in the title menu, on All Roadmaps and in the room that holds no roadmap, opens the one sheet that
+  // names it.
+  func nameRoadmap(from place: Place) {
+    naming = true
+    telemetry.event("roadmap_sheet", properties: ["step": "new", "door": place.rawValue])
+  }
+
+  // Cancel, or the sheet sent away: nothing is written.
+  func cancelNaming() {
+    guard naming else { return }
+    naming = false
+    telemetry.event("roadmap_board_create", properties: ["step": "cancel", "door": "blank"])
+  }
+
+  // A name as the web's room takes one before the domain reads it (`NewTreeBirth.plant`, `ReplicaSession.renameTree`):
+  // without the blanks around it.
+  static func name(typed: String) -> String { typed.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+  // Create: a blank roadmap starts with one step, named as the roadmap and in the first kind's colour, as the web's
+  // birth plants it (`NewTreeBirth.plant`). The room opens it on its Board once the phone's copy holds it; the engine
+  // keeps no Undo of a birth. A name the domain refuses leaves the sheet open.
+  func create(named typed: String) {
+    let title = Self.name(typed: typed)
+    let start = ImportedStep(key: "start", RoadmapStep.Changes(label: title, icon: "sparkles", color: RoadmapRules.genesisKinds[0].hue))
+    guard let written = write(CreateRoadmap(title: title, steps: ImportedSteps(steps: [start])), as: "createRoadmap") else { return }
+    forget(written.receipt.gestureId)
+    naming = false
+    path = []
+    arriving = written.result.tree.description
+    telemetry.event("birth")
+  }
+
+  // Rename, committed in the bar's field: the open roadmap's name as the domain takes it. A name of blanks alone is
+  // written as no name, and the roadmap then reads as one without a title. The room offers no Undo of a rename.
+  func rename(to typed: String) {
+    guard case .open(let open) = phase, let written = write(WriteRoadmap(tree: open.id, title: Self.name(typed: typed)), as: "title") else { return }
+    forget(written.receipt.gestureId)
+    telemetry.event("roadmap_sheet", properties: ["step": "rename"])
+  }
+
+  // What goes with a roadmap, read as the web's switcher reads it for a roadmap kept on the device (`OpenedTrees.openersOf`,
+  // `deleteCost`): the pointers of every other roadmap that stands outside its branch. None where no step opens it.
+  func openers(of roadmap: String) -> Openers? {
+    let listed = roadmaps.map(\.id)
+    let owned = account.trees.map(\.id).filter { (tree: String) -> Bool in !listed.contains { $0.utf8.elementsEqual(tree.utf8) } }
+    let holders = (listed + owned).compactMap { (tree: String) -> (title: String?, steps: Int)? in
+      let location = account.location(of: tree)
+      guard let root = location.place?.root, !root.utf8.elementsEqual(roadmap.utf8) else { return nil }
+      let steps = account.openings(of: tree).count { $0.opening.kind == .pointer && $0.opening.tree.utf8.elementsEqual(roadmap.utf8) }
+      return steps == 0 ? nil : (location.title, steps)
+    }
+    guard !holders.isEmpty else { return nil }
+    return Openers(steps: holders.reduce(0) { (sum: Int, holder: (title: String?, steps: Int)) -> Int in sum + holder.steps }, roadmaps: holders.map(\.title))
+  }
+
+  // Delete Roadmap asks once, with what else goes.
+  func askDelete(_ roadmap: ListedRoadmap, from place: Place) {
+    telemetry.event("roadmap_deletion", properties: ["step": "ask", "door": place.rawValue])
+    question = .roadmap(roadmap, from: place, openers: openers(of: roadmap.id))
+  }
+
+  // Delete Roadmap: the roadmap's entry goes, held by the engine, and its receipt keeps Undo for the hold. Once the
+  // list is read without it the room opens the most recent other roadmap, or holds none.
+  func delete(_ roadmap: ListedRoadmap, from place: Place, taking openers: Openers?) {
+    guard let written = write(DeleteRoadmap(tree: ID(RecordID(roadmap.id))), as: "deleteRoadmap") else { return }
+    telemetry.event("roadmap_deletion", properties: ["step": "held", "door": place.rawValue, "openers": openers == nil ? "none" : "some"])
+    var wasOpen = false
+    if case .open(let shown) = phase { wasOpen = shown.listed.id.utf8.elementsEqual(roadmap.id.utf8) }
+    show(Band(.deletedRoadmap(roadmap.title), of: written.receipt, act: .roadmapDelete(reopens: wasOpen ? roadmap.id : nil)))
   }
 
   // The band's Undo: a removal the engine holds is cancelled while it is held, and any other act is taken back by the
-  // kit's Undo of it. The engine then keeps nothing more of the act, nor of its Undo, which the room never redoes.
+  // kit's Undo of it. The engine then keeps nothing more of the act, nor of its Undo, which the room never redoes. A
+  // roadmap brought back is the open one again where it was.
   func undo() {
     guard let undo = band?.undo else { return }
     bandTime?.cancel()
@@ -421,7 +564,12 @@ final class RoadmapModel {
         }
       }
       try runner.release(undo.gesture)
-      telemetry.event("roadmap_board_undo", properties: ["act": undo.act, "outcome": taken ? "ok" : "unavailable"])
+      switch undo.act {
+      case .step(let act): telemetry.event("roadmap_board_undo", properties: ["act": act, "outcome": taken ? "ok" : "unavailable"])
+      case .roadmapDelete(let reopens):
+        telemetry.event("roadmap_deletion", properties: ["step": "undo", "outcome": taken ? "cancelled" : "released"])
+        if taken, let reopens { arriving = reopens }
+      }
     } catch {
       report(error, write: "undo")
     }
@@ -443,8 +591,12 @@ final class RoadmapModel {
     bandTime?.cancel()
     let undo = band?.undo
     band = nil
-    guard let undo else { return }
-    do { try runner.release(undo.gesture) }
+    if let undo { forget(undo.gesture) }
+  }
+
+  // The engine keeps nothing more of an act the room offers no Undo of, or offers one of no longer.
+  func forget(_ gesture: String) {
+    do { try runner.release(gesture) }
     catch { report(error, write: "release") }
   }
 

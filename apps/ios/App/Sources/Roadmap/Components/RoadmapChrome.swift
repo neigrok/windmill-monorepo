@@ -1,7 +1,8 @@
 import SwiftUI
+import RoadmapDomain
 
-// The room's foot (Roadmap · iOS 02.2, 03.4, 03.6b, 03.9): the one band, a receipt with its Undo or a limit that refused
-// a gesture, over the control the screen keeps there. The Board and a step's page stand on the same band.
+// The room's foot (Roadmap · iOS 01.11, 02.2, 03.4, 03.6b, 03.9): the one band, a receipt with its Undo or a limit that
+// refused a gesture, over the control the screen keeps there. Every screen of the room stands on the same band.
 struct RoadmapFoot<Control: View>: ViewModifier {
   let roadmap: RoadmapModel
   let control: Control
@@ -48,34 +49,39 @@ extension RoadmapModel.Band.Says {
       return String(localized: "\(locked) steps locked again", locale: .copy,
                     comment: "The band after a step is reset: how many steps it returned to Locked")
     case .deleted(let step):
-      return String(localized: "\(RoadmapModel.Row.name(of: step)) deleted", comment: "The band while a step's delete is held: the step's name")
+      return String(localized: "\(RoadmapModel.Row.name(of: step)) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap")
+    case .deletedRoadmap(let title):
+      return String(localized: "\(ListedRoadmap.name(of: title)) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap")
     case .refused(.keepsStartingStep): return String(localized: "A roadmap keeps one starting step")
     case .refused(.full): return String(localized: "This roadmap is at its limit.")
     }
   }
 }
 
-// A delete's question (Roadmap · iOS 03.8), on the view that stays on screen once the swipe or the menu that asked has
-// closed, a step's Board row or its page's … button: the step's name, what the delete costs, and Delete Step. Closed any
-// other way, it deletes nothing.
+// A step's delete question (Roadmap · iOS 03.8), on the view that stays on screen once the swipe or the menu that asked
+// has closed, a step's Board row or its page's … button: the step's name, what the delete costs, and Delete Step. Closed
+// any other way, it deletes nothing.
 struct DeleteQuestion: ViewModifier {
   let roadmap: RoadmapModel
-  let asked: Bool
+  let asked: (name: String, followers: Int)?
 
   // The question is read as the screen draws, so the screen draws again once it is asked: a Board row the system slid
   // away with its destructive action is back under the question.
   init(roadmap: RoadmapModel, step: String, onPage: Bool) {
     self.roadmap = roadmap
-    asked = roadmap.question.map { $0.row.id == step && ($0.door == .page) == onPage } ?? false
+    guard case .step(let row, let door, let followers) = roadmap.question, row.id == step, (door == .page) == onPage else {
+      asked = nil
+      return
+    }
+    asked = (row.name, followers)
   }
 
   func body(content: Content) -> some View {
-    let name = roadmap.question?.row.name ?? ""
-    content.confirmationDialog(String(localized: "Delete \(name)?", comment: "The question a step's delete asks, with the step's name"),
-                               isPresented: Binding(get: { asked }, set: { if !$0 { roadmap.answer(delete: false) } }), titleVisibility: .visible) {
+    content.confirmationDialog(String(localized: "Delete \(asked?.name ?? "")?", comment: "The question a delete asks, with the name of the step or of the roadmap"),
+                               isPresented: Binding(get: { asked != nil }, set: { if !$0 { roadmap.answer(delete: false) } }), titleVisibility: .visible) {
       Button("Delete Step", role: .destructive) { roadmap.answer(delete: true) }
     } message: {
-      Text(Self.cost(followers: roadmap.question?.followers ?? 0))
+      Text(Self.cost(followers: asked?.followers ?? 0))
     }
   }
 
@@ -84,6 +90,52 @@ struct DeleteQuestion: ViewModifier {
     if followers == 0 { return String(localized: "Removes this step") }
     return String(localized: "Removes this step · \(followers) branches resplice", locale: .copy,
                   comment: "A step's delete question: how many steps that follow the step are linked past it")
+  }
+}
+
+// A roadmap's delete question (Roadmap · iOS 01.10), on the view that stays on screen once the title menu or the swipe
+// that asked has closed, the Board or the roadmap's row in All Roadmaps: the roadmap's name, what else goes, and Delete
+// Roadmap. Closed any other way, it deletes nothing.
+struct DeleteRoadmapQuestion: ViewModifier {
+  let roadmap: RoadmapModel
+  let asked: (name: String, openers: RoadmapModel.Openers?)?
+
+  // `row` is the roadmap whose row in All Roadmaps this is; none on the Board, whose title menu asks of the open roadmap.
+  init(roadmap: RoadmapModel, row: String?) {
+    self.roadmap = roadmap
+    guard case .roadmap(let listed, let place, let openers) = roadmap.question, row.map({ place == .list && $0 == listed.id }) ?? (place == .menu) else {
+      asked = nil
+      return
+    }
+    asked = (listed.name, openers)
+  }
+
+  func body(content: Content) -> some View {
+    content.confirmationDialog(String(localized: "Delete \(asked?.name ?? "")?", comment: "The question a delete asks, with the name of the step or of the roadmap"),
+                               isPresented: Binding(get: { asked != nil }, set: { if !$0 { roadmap.answer(delete: false) } }), titleVisibility: .visible) {
+      Button("Delete Roadmap", role: .destructive) { roadmap.answer(delete: true) }
+    } message: {
+      if let openers = asked?.openers { Text(Self.cost(openers)) }
+    }
+  }
+
+  // What else goes, in the web's sentences with roadmap for its tree: the steps of the person's other roadmaps that open
+  // this one, and the roadmaps that hold them, the first two by name.
+  static func cost(_ openers: RoadmapModel.Openers) -> String {
+    let names = openers.roadmaps.map { (title: String?) -> String in ListedRoadmap.name(of: title) }
+    if names.count == 1 && openers.steps == 1 {
+      return String(localized: "Also removes the step that opens it in \(names[0])", comment: "A roadmap's delete question: the one roadmap whose one step opens it")
+    }
+    if names.count == 1 {
+      return String(localized: "Also removes \(openers.steps) steps that open it in \(names[0])", locale: .copy,
+                    comment: "A roadmap's delete question: how many steps open it, and the one roadmap that holds them")
+    }
+    if names.count == 2 {
+      return String(localized: "Also removes \(openers.steps) steps that open it, in \(names[0]) and \(names[1])", locale: .copy,
+                    comment: "A roadmap's delete question: how many steps open it, and the two roadmaps that hold them")
+    }
+    return String(localized: "Also removes \(openers.steps) steps that open it, in \(names[0]), \(names[1]) and \(names.count - 2) more roadmaps", locale: .copy,
+                  comment: "A roadmap's delete question: how many steps open it, the first two roadmaps that hold them, and how many more roadmaps do")
   }
 }
 

@@ -78,6 +78,15 @@ import SyncTesting
     #expect(board(model) == expected)
   }
 
+  // The model reads again until its list holds the roadmaps expected, by their titles in its order.
+  func shows(_ model: RoadmapModel, roadmaps expected: [String], on engine: SteppedEngine) async {
+    for _ in 0..<100 where model.roadmaps.map({ $0.title ?? "" }) != expected {
+      await engine.settleViews()
+      model.observe()
+    }
+    #expect(model.roadmaps.map { $0.title ?? "" } == expected)
+  }
+
   func row(_ label: String, in model: RoadmapModel) throws -> RoadmapModel.Row {
     guard case .open(let open) = model.phase else { throw AppFailure(message: "no roadmap is open") }
     return try #require(open.groups.flatMap(\.rows).first { $0.step.label == label })
@@ -96,6 +105,17 @@ import SyncTesting
     return ["\(told(page.row)) [\(page.row.kind?.label ?? page.row.step.color)]\(offers)",
             "requires: " + page.requires.map(told).joined(separator: ", "), "opens: " + page.opens.map(told).joined(separator: ", "),
             "relocks \(page.relocks)"]
+  }
+
+  // The delete question the model holds, as its parts tell it.
+  func asked(_ model: RoadmapModel) -> String {
+    switch model.question {
+    case nil: return "nothing"
+    case .step(let row, let door, let followers): return "step \(row.step.label) by \(door.rawValue), \(followers) follows"
+    case .roadmap(let roadmap, let place, let openers):
+      let also = openers.map { ", with \($0.steps) steps in \($0.roadmaps.map { $0 ?? "" }.joined(separator: " and "))" } ?? ""
+      return "roadmap \(roadmap.title ?? "") from \(place.rawValue)\(also)"
+    }
   }
 
   func told(_ telemetry: TelemetryRecorder) -> [String] {
@@ -226,7 +246,7 @@ import SyncTesting
     model.complete(try row("Read the wind", in: model), by: .swipe)
     let band = try #require(model.band)
     #expect(band.says == .completed(step: "Read the wind", upNext: ["Leave the dock"], inPlace: false))
-    #expect(band.arrived == [leave] && band.lasts == .seconds(6) && band.undo?.held == false && band.undo?.act == "complete")
+    #expect(band.arrived == [leave] && band.lasts == .seconds(6) && band.undo?.held == false && band.undo?.act == .step("complete"))
     let completed = ["4 of 8", "upNext: Leave the dock, Tie a bowline", "locked: Sail a triangle, Sail solo",
                      "done: Read the wind, Rig the boat, Name the boat parts, Choose a sailing course"]
     await shows(model, board: completed, on: engine)
@@ -292,7 +312,7 @@ import SyncTesting
     await shows(model, board: atRest, on: engine)
 
     model.askDelete(try row("Read the wind", in: model), by: .swipe)
-    #expect(model.question?.followers == 1)
+    #expect(asked(model) == "step Read the wind by swipe, 1 follows")
     model.answer(delete: false)
     #expect(model.question == nil && model.band == nil && engine.undoOffers().isEmpty)
     model.askDelete(try row("Read the wind", in: model), by: .swipe)
@@ -446,8 +466,8 @@ import SyncTesting
     let model = room(engine, runner, memory, telemetry: telemetry)
     model.roomOpened()
     await shows(model, "open Learn to sail", on: engine)
-    let read = RoadmapModel.Visit(step: try row("Read the wind", in: model).id, door: .card)
-    let leave = RoadmapModel.Visit(step: try row("Leave the dock", in: model).id, door: .step)
+    let read = RoadmapModel.Visit.step(try row("Read the wind", in: model).id, by: .card)
+    let leave = RoadmapModel.Visit.step(try row("Leave the dock", in: model).id, by: .step)
 
     model.path.append(read)
     model.path.append(leave)
@@ -491,13 +511,13 @@ import SyncTesting
     let atRest = ["3 of 8", "upNext: Read the wind, Tie a bowline", "locked: Leave the dock, Sail a triangle, Sail solo",
                   "done: Rig the boat, Name the boat parts, Choose a sailing course"]
     await shows(model, board: atRest, on: engine)
-    let visit = RoadmapModel.Visit(step: try row("Read the wind", in: model).id, door: .card)
+    let visit = RoadmapModel.Visit.step(try row("Read the wind", in: model).id, by: .card)
     model.path = [visit]
 
     model.complete(try row("Read the wind", in: model), by: .page)
     let band = try #require(model.band)
     #expect(band.says == .completed(step: "Read the wind", upNext: ["Leave the dock"], inPlace: true))
-    #expect(band.lasts == .seconds(6) && band.undo?.held == false && band.undo?.act == "complete")
+    #expect(band.lasts == .seconds(6) && band.undo?.held == false && band.undo?.act == .step("complete"))
     await shows(model, board: ["4 of 8", "upNext: Leave the dock, Tie a bowline", "locked: Sail a triangle, Sail solo",
                                "done: Read the wind, Rig the boat, Name the boat parts, Choose a sailing course"], on: engine)
     #expect(try page("Read the wind", in: model) == [
@@ -533,13 +553,13 @@ import SyncTesting
     guard case .open(let open) = model.phase else { return }
     let named = try row("Name the boat parts", in: model).id
     let parts = try #require(open.page(of: named))
-    let visit = RoadmapModel.Visit(step: parts.row.id, door: .card)
+    let visit = RoadmapModel.Visit.step(parts.row.id, by: .card)
     model.path = [visit]
 
     model.reset(parts)
     let band = try #require(model.band)
     #expect(band.says == .reset(step: "Name the boat parts", locked: 2) && band.arrived.isEmpty)
-    #expect(band.lasts == .seconds(6) && band.undo?.held == false && band.undo?.act == "reset")
+    #expect(band.lasts == .seconds(6) && band.undo?.held == false && band.undo?.act == .step("reset"))
     let reset = ["2 of 8", "upNext: Name the boat parts", "locked: Read the wind, Tie a bowline, Leave the dock, Sail a triangle, Sail solo",
                  "done: Rig the boat, Choose a sailing course"]
     await shows(model, board: reset, on: engine)
@@ -592,11 +612,11 @@ import SyncTesting
     await shows(model, board: atRest, on: engine)
     #expect(try row("Choose a sailing course", in: model).deletes == false)
     let read = try row("Read the wind", in: model)
-    let visit = RoadmapModel.Visit(step: read.id, door: .card)
+    let visit = RoadmapModel.Visit.step(read.id, by: .card)
     model.path = [visit]
 
     model.askDelete(read, by: .page)
-    #expect(model.question?.door == .page && model.question?.row.id == read.id && model.question?.followers == 1)
+    #expect(asked(model) == "step Read the wind by page, 1 follows")
     model.answer(delete: false)
     #expect(model.question == nil && model.band == nil && model.path == [visit] && engine.undoOffers().isEmpty)
 
@@ -672,5 +692,261 @@ import SyncTesting
     for waiting in time.withLock({ $0 }) { waiting.resume() }
     for _ in 0..<1_000 where model.band != nil { await Task.yield() }
     #expect(model.band == nil)
+  }
+
+  // Roadmap · iOS 01.3 and 01.4: a roadmap chosen in the title menu or in All Roadmaps is the open one, on its Board at
+  // rest, and the one a relaunch opens; choosing the open one only returns to its Board, and All Roadmaps is told as
+  // it is pushed.
+  @Test func aRoadmapChosenIsTheOpenOneOnItsBoardAtRestAndTheOneARelaunchOpens() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let basics = ImportedSteps(steps: [ImportedStep(key: "first", RoadmapStep.Changes(label: "Basics"))])
+    guard case .committed(let rust, _) = try runner.runAct(CreateRoadmap(title: "Learn Rust", steps: basics)) else {
+      Issue.record("Learn Rust was not created")
+      return
+    }
+    engine.sync()
+    engine.advance(ms: 60_000)
+    let sail = try learnToSail(on: engine, runner).tree
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    model.roomOpened()
+    await shows(model, "open Learn to sail", on: engine)
+
+    model.folded = [.locked]
+    model.path = [.step(try row("Read the wind", in: model).id, by: .card)]
+    model.open(rust.tree.description, from: .menu)
+    #expect(name(model.phase) == "open Learn Rust" && model.path.isEmpty && model.folded == [.done])
+    #expect(memory.string(forKey: RoadmapModel.lastOpen) == rust.tree.description)
+
+    model.path = [.roadmaps]
+    model.open(rust.tree.description, from: .list)
+    #expect(name(model.phase) == "open Learn Rust" && model.path.isEmpty)
+    model.path = [.roadmaps]
+    model.open(sail.description, from: .list)
+    #expect(name(model.phase) == "open Learn to sail" && model.path.isEmpty)
+    model.open("t_missing", from: .menu)
+    #expect(name(model.phase) == "open Learn to sail" && memory.string(forKey: RoadmapModel.lastOpen) == sail.description)
+    #expect(told(telemetry) == [
+      "roadmap_room_opened ", "roadmap_board_step_open column=upNext door=card surface=document", "roadmap_sheet door=menu step=switch",
+      "roadmap_sheet step=open", "roadmap_sheet step=open", "roadmap_sheet door=list step=switch",
+    ])
+
+    let relaunched = room(engine, runner, memory)
+    relaunched.roomOpened()
+    await shows(relaunched, "open Learn to sail", on: engine)
+  }
+
+  // Roadmap · iOS 01.5 and 01.6, signed out: Cancel writes nothing; Create plants a blank roadmap with its one starting
+  // step, named as the roadmap and kept, and the room opens it once the phone's copy holds it, in place of the one it
+  // had open. A name the domain refuses plants nothing and leaves the sheet open.
+  @Test func aNewRoadmapStartsWithOneStepNamedAsItAndIsTheOpenOne() async throws {
+    let (engine, runner, memory, suite) = phone(account: nil)
+    defer { memory.removePersistentDomain(forName: suite) }
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    model.roomOpened()
+    await shows(model, "empty", on: engine)
+
+    model.nameRoadmap(from: .empty)
+    #expect(model.naming)
+    model.cancelNaming()
+    await engine.settleViews()
+    model.observe()
+    #expect(!model.naming && name(model.phase) == "empty")
+
+    model.nameRoadmap(from: .empty)
+    model.create(named: "  Learn to cook \n")
+    #expect(!model.naming && engine.undoOffers().isEmpty)
+    await shows(model, board: ["0 of 1", "upNext: Learn to cook"], on: engine)
+    guard case .open(let cook) = model.phase else { return }
+    #expect(cook.listed.title == "Learn to cook" && memory.string(forKey: RoadmapModel.lastOpen) == cook.listed.id)
+    let start = try row("Learn to cook", in: model)
+    #expect(start.kind?.label == "Build" && start.step.icon == "sparkles" && start.completes && !start.deletes)
+    #expect(cook.keptStep == start.id)
+
+    model.path = [.roadmaps]
+    model.nameRoadmap(from: .list)
+    model.create(named: "Run a 10k")
+    #expect(!model.naming && model.path.isEmpty)
+    await shows(model, board: ["0 of 1", "upNext: Run a 10k"], on: engine)
+    guard case .open(let run) = model.phase else { return }
+    #expect(memory.string(forKey: RoadmapModel.lastOpen) == run.listed.id)
+    #expect(model.roadmaps.map { $0.title ?? "" }.sorted() == ["Learn to cook", "Run a 10k"])
+
+    model.nameRoadmap(from: .menu)
+    model.create(named: String(repeating: "a", count: 201))
+    await engine.settleViews()
+    model.observe()
+    #expect(model.naming && model.roadmaps.count == 2 && board(model) == ["0 of 1", "upNext: Run a 10k"])
+    #expect(told(telemetry) == [
+      "roadmap_room_opened ", "roadmap_sheet door=empty step=new", "roadmap_board_create door=blank step=cancel", "roadmap_sheet door=empty step=new",
+      "birth ", "roadmap_sheet step=open", "roadmap_sheet door=list step=new", "birth ", "roadmap_sheet door=menu step=new",
+      "roadmap_write_refused refusal=invalid write=createRoadmap",
+    ])
+  }
+
+  // Roadmap · iOS 01.9: the name committed in the bar is written through the domain without the blanks around it, and
+  // the account's other phone reads it. The same name writes nothing, a name the domain refuses keeps the old one, and
+  // an emptied name is written.
+  @Test func renamingARoadmapWritesItsNameAndARefusedNameKeepsTheOldOne() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    _ = try learnToSail(on: engine, runner)
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    model.roomOpened()
+    await shows(model, "open Learn to sail", on: engine)
+
+    model.rename(to: " Learn to sail well ")
+    await shows(model, "open Learn to sail well", on: engine)
+    model.rename(to: "Learn to sail well")
+    model.rename(to: String(repeating: "a", count: 201))
+    await engine.settleViews()
+    model.observe()
+    #expect(name(model.phase) == "open Learn to sail well")
+    let other = engine.device()
+    let elsewhere = room(other, ActionRunner(replica: other.replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0)), memory)
+    engine.sync()
+    elsewhere.roomOpened()
+    await shows(elsewhere, "open Learn to sail well", on: other)
+    #expect(board(elsewhere).first == "3 of 8")
+
+    model.rename(to: "  ")
+    await shows(model, "open ", on: engine)
+    #expect(model.roadmaps.map(\.title) == [""])
+    #expect(told(telemetry) == [
+      "roadmap_room_opened ", "roadmap_sheet step=rename", "roadmap_write_refused refusal=invalid write=title", "roadmap_sheet step=rename",
+    ])
+  }
+
+  // Roadmap · iOS 01.4 and 01.10, on a row of All Roadmaps: the question names the step of another roadmap that opens
+  // this one and, closed unanswered, writes nothing; answered, the roadmap is held with Undo and the list stays, the open
+  // roadmap as it was; Undo brings it back and opens nothing; and once the hold ends the delete stands, on the account's
+  // other phone too, where the step that opened it is gone with it.
+  @Test func deletingARoadmapFromTheListHoldsItWithUndoAndTakesTheStepThatOpenedIt() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let berth = ImportedSteps(steps: [ImportedStep(key: "berth", RoadmapStep.Changes(label: "Find a berth"))])
+    guard case .committed(let harbour, _) = try runner.runAct(CreateRoadmap(title: "Harbour days", steps: berth)) else {
+      Issue.record("Harbour days was not created")
+      return
+    }
+    engine.sync()
+    engine.advance(ms: 60_000)
+    let sail = try learnToSail(on: engine, runner)
+    guard let tie = sail.steps.first(where: { $0.key == "tie" })?.id,
+          case .committed = try runner.runAct(PointStep.set(tree: sail.tree, step: tie, opens: harbour.tree)) else {
+      Issue.record("Tie a bowline does not open Harbour days")
+      return
+    }
+    engine.sync()
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    model.roomOpened()
+    await shows(model, roadmaps: ["Learn to sail", "Harbour days"], on: engine)
+    #expect(name(model.phase) == "open Learn to sail")
+    let listed = try #require(model.roadmaps.last)
+    #expect(model.openers(of: sail.tree.description) == nil)
+    model.path = [.roadmaps]
+
+    model.askDelete(listed, from: .list)
+    #expect(asked(model) == "roadmap Harbour days from list, with 1 steps in Learn to sail")
+    model.answer(delete: false)
+    #expect(model.question == nil && model.band == nil && engine.undoOffers().isEmpty)
+    model.askDelete(listed, from: .list)
+    model.answer(delete: true)
+    let held = try #require(model.band)
+    #expect(held.says == .deletedRoadmap("Harbour days") && held.lasts == .milliseconds(9_000))
+    #expect(held.undo.map { [$0.gesture] } == engine.undoOffers().map(\.id) && held.undo?.held == true)
+    #expect(held.undo?.act == .roadmapDelete(reopens: nil))
+    await shows(model, roadmaps: ["Learn to sail"], on: engine)
+    #expect(name(model.phase) == "open Learn to sail" && model.path == [.roadmaps])
+
+    model.undo()
+    #expect(model.band == nil && engine.undoOffers().isEmpty)
+    await shows(model, roadmaps: ["Learn to sail", "Harbour days"], on: engine)
+    #expect(name(model.phase) == "open Learn to sail" && model.path == [.roadmaps])
+    #expect(memory.string(forKey: RoadmapModel.lastOpen) == sail.tree.description)
+
+    model.askDelete(listed, from: .list)
+    model.answer(delete: true)
+    engine.advance(ms: Constants.holdMs)
+    #expect(engine.undoOffers().isEmpty)
+    model.endBand()
+    engine.sync()
+    let other = engine.device()
+    let elsewhere = room(other, ActionRunner(replica: other.replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0)), memory)
+    engine.sync()
+    elsewhere.roomOpened()
+    let without = ["3 of 7", "upNext: Read the wind", "locked: Leave the dock, Sail a triangle, Sail solo",
+                   "done: Rig the boat, Name the boat parts, Choose a sailing course"]
+    await shows(elsewhere, board: without, on: other)
+    await shows(elsewhere, roadmaps: ["Learn to sail"], on: other)
+    await shows(model, board: without, on: engine)
+    #expect(told(telemetry) == [
+      "roadmap_room_opened ", "roadmap_sheet step=open", "roadmap_deletion door=list step=ask", "roadmap_deletion step=cancel",
+      "roadmap_deletion door=list step=ask", "roadmap_deletion step=confirm", "roadmap_deletion door=list openers=some step=held",
+      "roadmap_deletion outcome=cancelled step=undo", "roadmap_deletion door=list step=ask", "roadmap_deletion step=confirm",
+      "roadmap_deletion door=list openers=some step=held",
+    ])
+  }
+
+  // Roadmap · iOS 01.10 and 01.11, from the title menu: the open roadmap goes, held with Undo, and the room moves to
+  // the most recent other one; Undo brings it back and opens it again. An Undo asked after the hold ended leaves the
+  // delete standing. The last roadmap gone leaves the room with none, All Roadmaps closed, and Undo opens it again.
+  @Test func deletingTheOpenRoadmapMovesTheRoomToTheNextAndUndoOpensItAgain() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let basics = ImportedSteps(steps: [ImportedStep(key: "first", RoadmapStep.Changes(label: "Basics"))])
+    guard case .committed(let rust, _) = try runner.runAct(CreateRoadmap(title: "Learn Rust", steps: basics)) else {
+      Issue.record("Learn Rust was not created")
+      return
+    }
+    engine.sync()
+    engine.advance(ms: 60_000)
+    let sail = try learnToSail(on: engine, runner).tree
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    model.roomOpened()
+    await shows(model, "open Learn to sail", on: engine)
+    guard case .open(let open) = model.phase else { return }
+
+    model.askDelete(open.listed, from: .menu)
+    #expect(asked(model) == "roadmap Learn to sail from menu")
+    model.answer(delete: true)
+    let held = try #require(model.band)
+    #expect(held.says == .deletedRoadmap("Learn to sail") && held.lasts == .milliseconds(9_000) && held.arrived.isEmpty)
+    #expect(held.undo?.held == true && held.undo?.act == .roadmapDelete(reopens: sail.description))
+    await shows(model, "open Learn Rust", on: engine)
+    #expect(model.roadmaps.map { $0.title ?? "" } == ["Learn Rust"] && memory.string(forKey: RoadmapModel.lastOpen) == rust.tree.description)
+
+    model.undo()
+    #expect(model.band == nil && engine.undoOffers().isEmpty)
+    await shows(model, "open Learn to sail", on: engine)
+    #expect(board(model).first == "3 of 8" && memory.string(forKey: RoadmapModel.lastOpen) == sail.description)
+
+    guard case .open(let again) = model.phase else { return }
+    model.delete(again.listed, from: .menu, taking: nil)
+    await shows(model, "open Learn Rust", on: engine)
+    engine.advance(ms: Constants.holdMs)
+    model.undo()
+    #expect(model.band == nil)
+    await engine.settleViews()
+    model.observe()
+    #expect(name(model.phase) == "open Learn Rust" && model.roadmaps.count == 1)
+
+    guard case .open(let last) = model.phase else { return }
+    model.path = [.roadmaps]
+    model.delete(last.listed, from: .list, taking: nil)
+    await shows(model, "empty", on: engine)
+    #expect(model.path.isEmpty && model.band?.says == .deletedRoadmap("Learn Rust"))
+    model.undo()
+    await shows(model, "open Learn Rust", on: engine)
+    #expect(told(telemetry) == [
+      "roadmap_room_opened ", "roadmap_deletion door=menu step=ask", "roadmap_deletion step=confirm", "roadmap_deletion door=menu openers=none step=held",
+      "roadmap_deletion outcome=cancelled step=undo", "roadmap_deletion door=menu openers=none step=held", "roadmap_deletion outcome=released step=undo",
+      "roadmap_sheet step=open", "roadmap_deletion door=list openers=none step=held", "roadmap_deletion outcome=cancelled step=undo",
+    ])
   }
 }

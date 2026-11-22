@@ -13,14 +13,33 @@ import Testing
       .completed(step: "Name the boat parts", upNext: ["Rig the boat", "Read the wind"], inPlace: true), .completed(step: "", upNext: [""], inPlace: true),
       .reset(step: "Name the boat parts", locked: 2), .reset(step: "Read the wind", locked: 1), .reset(step: "Rig the boat", locked: 0),
       .reset(step: "", locked: 0),
-      .deleted(step: "Read the wind"), .refused(.keepsStartingStep), .refused(.full),
+      .deleted(step: "Read the wind"), .deletedRoadmap("Learn to sail"), .deletedRoadmap(""), .deletedRoadmap(nil),
+      .refused(.keepsStartingStep), .refused(.full),
     ]
     #expect(said.map(\.words) == [
       "Read the wind done · Leave the dock up next", "Tie a bowline done", "Name the boat parts done · 3 up next",
       "Untitled step done · Untitled step up next",
       "Leave the dock is up next", "Tie a bowline done", "2 steps up next", "Untitled step is up next",
       "2 steps locked again", "1 step locked again", "Rig the boat reset", "Untitled step reset",
-      "Read the wind deleted", "A roadmap keeps one starting step", "This roadmap is at its limit.",
+      "Read the wind deleted", "Learn to sail deleted", "Untitled roadmap deleted", "Untitled roadmap deleted",
+      "A roadmap keeps one starting step", "This roadmap is at its limit.",
+    ])
+  }
+
+  // Roadmap · iOS 01.10: what else a roadmap's delete takes, by how many steps open it and the roadmaps that hold them,
+  // the first two by name and one without a title by the room's words for it.
+  @Test func aRoadmapsDeleteQuestionSaysWhatElseGoes() {
+    let openers = [
+      RoadmapModel.Openers(steps: 1, roadmaps: ["Become a day skipper"]), RoadmapModel.Openers(steps: 3, roadmaps: [""]),
+      RoadmapModel.Openers(steps: 2, roadmaps: ["Become a day skipper", nil]),
+      RoadmapModel.Openers(steps: 3, roadmaps: ["Become a day skipper", "Ship v1", "Run a 10k"]),
+      RoadmapModel.Openers(steps: 5, roadmaps: ["Become a day skipper", "Ship v1", "Run a 10k", "Room makeover"]),
+    ]
+    #expect(openers.map(DeleteRoadmapQuestion.cost) == [
+      "Also removes the step that opens it in Become a day skipper", "Also removes 3 steps that open it in Untitled roadmap",
+      "Also removes 2 steps that open it, in Become a day skipper and Untitled roadmap",
+      "Also removes 3 steps that open it, in Become a day skipper, Ship v1 and 1 more roadmap",
+      "Also removes 5 steps that open it, in Become a day skipper, Ship v1 and 2 more roadmaps",
     ])
   }
 

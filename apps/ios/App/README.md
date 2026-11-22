@@ -95,26 +95,57 @@ every step's row by the step's id (`OpenRoadmap.step(_:)`; `Row`: the step, its 
 the room offers Complete, Reset and Delete on it). That one row is what a Board group, the step's own page and a row of
 another step's page show. `OpenRoadmap.page(of:)` composes a step's page from it (`OpenStep`: the row, the rows of the steps
 the step requires and of the steps it opens, and how many of those Reset would lock again). The model opens the roadmap last
-open, else the most recent, and makes no request. It keeps which groups stand folded, Done at rest and open by itself once
-every step is done, and the step pages on the room's stack (`path`, each a `Visit`: the step and the row that opened it),
-which empties once a step whose page is open goes, deleted here or by another device.
+open, else the most recent, and makes no request. `open(_:from:)` makes another roadmap the open one and remembers it
+(`RoadmapModel.lastOpen`), and a roadmap the room made, or brought back by Undo, is opened once the list holds it
+(`arriving`). The model keeps which groups stand folded, Done at rest and open by itself once every step is done, another
+roadmap opening with its Board at rest, and the screens on the room's stack (`path`, each a `Visit`: All Roadmaps, or a
+step's page with the row that opened it), which empties once a step whose page is open goes, deleted here or by another
+device, or once the last roadmap goes.
 
 The model's write door is `write(_:as:)`: one act of `RoadmapDomain` run on `AppRuntime.roadmapRunner`, a refusal told as an
 event and a failed commit reported. `complete(_:by:)` and `reset(_:)` run `MarkStep`; a delete is asked first
 (`askDelete(_:by:)`, the question the model holds with what the delete costs and where it was asked) and, answered *Delete
-Step*, `delete(_:by:)` runs `DeleteStep` and leaves the room on the Board. Each receipt is the room's one band
+Step*, `delete(_:by:)` runs `DeleteStep` and leaves the room on the Board. `create(named:)` runs `CreateRoadmap` and
+`rename(to:)` runs `WriteRoadmap`, and the engine keeps no Undo of either. A roadmap's delete is asked first too
+(`askDelete(_:from:)`, with what else goes) and, answered *Delete Roadmap*, `delete(_:from:taking:)` runs `DeleteRoadmap`:
+the room then opens the most recent other roadmap, or holds none. Each receipt is the room's one band
 (`RoadmapModel.Band`), which a newer one replaces. Its Undo cancels a removal while the engine holds it
 (`ActionRunner.cancelHeld`, for the engine's nine seconds) and takes any other act back by the kit's Undo of it
 (`ActionRunner.undo`, for six seconds); when the band leaves, the engine keeps no Undo of the act (`ActionRunner.release`). An
-Undo of Reset marks the step done anew, so it leads Done. The band says a refusal only where it is a limit the boards word,
-and any other refusal shows nothing. Three facts the model reads from the domain's graph itself, as the web's room does: the
-one starting step a roadmap keeps, which offers no Delete; the steps that follow a step (`OpenRoadmap.followers`, the web's
-`childrenOf`), which a step's page lists under *Opens* and the delete question counts; and what Reset would return to Locked
-(`OpenStep.relocks`, the web's `resetRelocks`), the steps a Done step opened that stand Up next.
+Undo of Reset marks the step done anew, so it leads Done, and an Undo of a roadmap's delete opens the roadmap again where
+the room had it open. The band says a refusal only where it is a limit the boards word, and any other refusal shows
+nothing. Six facts the model reads or settles itself, as the web's room does. From the domain's graph: the one starting step a
+roadmap keeps, which offers no Delete; the steps that follow a step (`OpenRoadmap.followers`, the web's `childrenOf`),
+which a step's page lists under *Opens* and the delete question counts; and what Reset would return to Locked
+(`OpenStep.relocks`, the web's `resetRelocks`), the steps a Done step opened that stand Up next. From the domain's read of
+every roadmap: what else a roadmap's delete takes (`openers(of:)`, the web's `OpenedTrees.openersOf` and `deleteCost`),
+the steps of the person's other roadmaps whose pointer opens it, which the server deletes with it. And of a name: it is
+written without the blanks around it (`name(typed:)`, the web's `NewTreeBirth.plant` and `ReplicaSession.renameTree`), and a
+blank roadmap starts with one step, named as the roadmap, in the first kind's colour (`create(named:)`, the web's
+`NewTreeBirth.plant`).
 
 `RoadmapRoom.swift` is the room's one `NavigationStack` over the model's `path`: the room capsule and the account in the bar,
 the roadmap's name and progress, the switch row pinned under the bar, and at the foot the band over New step. It announces
-and plays the band's haptic once, whichever screen stands over it. `Board/RoadmapBoard.swift` is the Board's list, its groups
+and plays the band's haptic once, whichever screen stands over it. The title's menu (`RoadmapTitle`, `.toolbarTitleMenu`)
+lists the three most recent roadmaps, each name over its progress and the open one checked, then *All Roadmaps…*, *New
+Roadmap*, *Rename* and *Delete Roadmap*. *Rename* is the system's (`RenameButton` over a title that is a binding): the bar
+becomes one field, and its return key commits. A name the domain refuses leaves the old one; the field itself commits no
+empty name, so the old one stays there too; and a name of blanks alone is written empty, so the roadmap reads *Untitled
+roadmap*. *Delete Roadmap* asks once under the title, naming the steps of other roadmaps that open this one, and then
+the band holds *Undo* for the hold's nine seconds. The menu's other verbs wait for their screens and are left out:
+*Guide*, *Kinds*, *Activity*, *Share…* and *Export*. Before iOS 26 the name and the progress stand in the bar's
+principal slot (`roomTitle`); the menu and the rename are not tried there.
+
+`Roadmaps/RoadmapsList.swift` is All Roadmaps, pushed on the stack: every roadmap in the domain's order, the open one
+checked. That order is by when a server last received each, the most recent first, so on a phone never signed in it is
+the order of their ids. A row opens its roadmap on its Board and slides left for *Delete*, which asks on the row, never
+commits by a full swipe, and leaves the list on screen under the band; past eight roadmaps the bar's drawer finds them
+by name; and + names a new one. Its last row on the board, the gallery, is left out. `Roadmaps/NewRoadmap.swift` is the
+room's one sheet, which the title menu, All Roadmaps and *No roadmaps yet* all open: a name, held to the length the
+domain takes, *Cancel* and *Create*, which plants a blank roadmap with its one starting step and opens it. Its *Start
+from* section (a quest, a copied plan, a file) is left out. All of it works on the phone's copy, signed in or out.
+
+`Board/RoadmapBoard.swift` is the Board's list, its groups
 under headers that fold them. A row opens its step's page. An Up next row that opens no roadmap slides right for *Complete*;
 every row but the kept one slides left for *Delete*, which asks once on the row with what it costs; a long press lists
 *Complete* and *Delete Step*. A full swipe commits neither. The long-press menu's other items wait for their screens and are
@@ -130,16 +161,24 @@ Board with the step held; the roadmap's one starting step has no menu. Left out 
 *Open in Graph*, *View Branch*, *Attach a Roadmap* and *Copy Link*, the bar's *Edit*, the workspace (*Subtasks*, *Note*, *Your
 links*), *History*, the Coach circle and composer, and a step that opens a roadmap's pill and *Open Roadmap*.
 `Components/RoadmapStepRow.swift` is the row every list of steps draws and the words a step is said in;
-`Components/RoadmapChrome.swift` is the foot both screens stand on (`roadmapFoot`: the band over the screen's own control), the
-band's words, and the delete question both the Board row and the page ask.
+`Components/RoadmapChrome.swift` is the foot every screen of the room stands on (`roadmapFoot`: the band over the screen's
+own control), the band's words, the delete question both a step's Board row and its page ask, and the one both the Board's
+title and a roadmap's row in All Roadmaps ask.
 
 A roadmap with no step says *Your first step*, and one with every step done says so over Done. Graph, Find, Sort and filter,
-New step, New Roadmap and a finished Board's *Share* are drawn disabled, and the title has no menu. Debug simulator boards
+New step and a finished Board's *Share* are drawn disabled. Debug simulator boards
 (`RoadmapFixture`): `-board roadmap-empty` opens the room on a phone that holds no roadmap; `-board roadmap-learn-to-sail`
 signs the phone in to an account whose eight-step roadmap another phone planted on the model server, three steps done a second
 apart and *Read the wind* sharing one link, so it arrives by sync; `-board roadmap-all-done` is that roadmap with every step
-done; `-board roadmap-no-steps` is *Night sailing*, with no step; and `-board roadmap-unreadable` opens the room over views it
-cannot make. A board's clock stands still, so the engine's release timer never ends a hold there: a held delete is sent once
+done; `-board roadmap-no-steps` is *Night sailing*, with no step; `-board roadmap-several` is that account with two
+more roadmaps, each received a second after the one before so the list has an order: *Learn to sail* the most recent,
+then *Spanish B1* with the steps 01.11 draws, and *Become a day skipper*, whose step *Learn to sail* opens that roadmap
+by its pointer; `-board roadmap-many` is a phone never signed in that holds the nine roadmaps All Roadmaps draws,
+*Learn to sail* the one last open, listed in the order of their ids since no server has received them; and `-board
+roadmap-unreadable` opens the room over views it cannot make. The roadmaps under *Learn to sail* hold a few steps
+each, not the counts the boards draw, and the account's board holds three roadmaps, not nine: it is planted by a
+second engine on the model server, which takes about half a second longer for every roadmap the account already
+holds. A board's clock stands still, so the engine's release timer never ends a hold there: a held delete is sent once
 the app leaves or launches again.
 
 `GymModel(runner:runtime:telemetry:)` exposes engine-backed log/catalogue/routines/notes/bodyweight/
