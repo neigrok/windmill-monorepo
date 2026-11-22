@@ -1,6 +1,6 @@
 import XCTest
 
-// The Roadmap room's boards (Roadmap · iOS), and its door on Where to start? (Shell 02a).
+// The Roadmap room's boards (Roadmap · iOS): its Board, a step's page, and its door on Where to start? (Shell 02a).
 final class RoadmapCaptures: DesignCapture {
   // 01.1: *Learn to sail* on its Board, as it arrives from its account.
   func testBoardAtRest() {
@@ -99,14 +99,67 @@ final class RoadmapCaptures: DesignCapture {
     }
   }
 
-  // 03.9: the step deleted and held, with Undo in the band.
+  // 03.1: an Up next step's page, with Complete at its foot.
+  func testStepUpNext() {
+    captureBoard("03.1-roadmap-step-up-next") { look in stepPage(["Read the wind"], look) }
+  }
+
+  // 03.4: the step completed in place, the page turned Done with Reset and the band saying what opened.
+  func testStepCompletedInPlace() {
+    captureBoard("03.4-roadmap-step-completed-in-place") { look in
+      let app = stepPage(["Read the wind"], look)
+      app.buttons["roadmap-complete"].tap()
+      XCTAssertTrue(app.buttons["roadmap-undo"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.buttons["roadmap-reset"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // 03.5: a Locked step's page, whose way through is its Requires rows.
+  func testStepLocked() {
+    captureBoard("03.5-roadmap-step-locked") { look in stepPage(["Sail solo"], look) }
+  }
+
+  // 03.6: a Done step's page, saying what Reset would lock.
+  func testStepDone() {
+    captureBoard("03.6-roadmap-step-done") { look in stepPage(["Read the wind", "Name the boat parts"], look) }
+  }
+
+  // 03.6b: the step reset, Up next again with Complete, what it had opened Locked and the band saying so.
+  func testStepReset() {
+    captureBoard("03.6b-roadmap-step-reset") { look in
+      let app = stepPage(["Read the wind", "Name the boat parts"], look)
+      app.buttons["roadmap-reset"].tap()
+      XCTAssertTrue(app.buttons["roadmap-undo"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.buttons["roadmap-complete"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // 03.7: a step page's … menu.
+  func testStepMenu() {
+    captureBoard("03.7-roadmap-step-menu") { look in
+      let app = stepPage(["Read the wind"], look)
+      app.buttons["roadmap-step-more"].tap()
+      XCTAssertTrue(app.buttons["Delete Step"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // 03.8: the delete question on the page's … button, with what the delete costs.
+  func testStepDeleteQuestion() {
+    captureBoard("03.8-roadmap-step-delete-question") { look in
+      let app = stepPage(["Read the wind"], look)
+      askDelete(app)
+      return app
+    }
+  }
+
+  // 03.9: the step deleted from its page and held, back on the Board with Undo in the band.
   func testDeletedHeld() {
     captureBoard("03.9-roadmap-deleted-held") { look in
-      let app = learnToSail(look)
-      app.roadmapStep("Read the wind").swipeLeft()
-      XCTAssertTrue(app.buttons["Delete"].waitForExistence(timeout: 5))
-      app.buttons["Delete"].tap()
-      XCTAssertTrue(app.buttons["Delete Step"].waitForExistence(timeout: 5))
+      let app = stepPage(["Read the wind"], look)
+      askDelete(app)
       app.buttons["Delete Step"].tap()
       XCTAssertTrue(app.buttons["roadmap-undo"].waitForExistence(timeout: 10))
       XCTAssertTrue(app.staticTexts["3 of 7 done"].waitForExistence(timeout: 5))
@@ -118,6 +171,24 @@ final class RoadmapCaptures: DesignCapture {
     let app = launch("roadmap-learn-to-sail", look)
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
     return app
+  }
+
+  // The page of the last step named, reached from the Board through a row of each page before it.
+  func stepPage(_ steps: [String], _ look: Look) -> XCUIApplication {
+    let app = learnToSail(look)
+    for step in steps {
+      reach(app.roadmapStep(step), app).tap()
+      XCTAssertTrue(app.roadmapStepPage(step))
+    }
+    return app
+  }
+
+  // Delete Step from the page's … menu, up to its question.
+  func askDelete(_ app: XCUIApplication) {
+    app.buttons["roadmap-step-more"].tap()
+    XCTAssertTrue(app.buttons["Delete Step"].waitForExistence(timeout: 5))
+    app.buttons["Delete Step"].tap()
+    XCTAssertTrue(app.staticTexts["Delete Read the wind?"].waitForExistence(timeout: 5))
   }
 
   // 01.2: the room capsule's menu, with Roadmap checked.
