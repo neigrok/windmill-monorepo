@@ -72,9 +72,11 @@ std::optional<std::string> undeclaredArgument(const ToolDeclaration& tool, const
   return undeclaredKey(tool.descriptor["inputSchema"], arguments, "");
 }
 
-Json::Value withoutReadBack(const ToolDeclaration& tool, Json::Value arguments) {
-  for (const std::string& path : tool.readBack) dropPath(arguments, path);
-  return arguments;
+const Json::Value& withoutReadBack(const ToolDeclaration& tool, const Json::Value& sent, Json::Value& stripped) {
+  if (tool.readBack.empty()) return sent;
+  stripped = sent;
+  for (const std::string& path : tool.readBack) dropPath(stripped, path);
+  return stripped;
 }
 
 }

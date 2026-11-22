@@ -120,7 +120,7 @@ released build opens a `catalog/2` turn.
   empty) and the same `expect`, and a refusal for each value just outside every bound that moved out
   of a schema. The fields `list_routines` answers with that a write ignores are not in
   `catalog/3`'s write schemas, so no case sends them; that a day read back over MCP is a day sent is
-  the server door's own test (`GymToolsTest.cpp`).
+  the server doors' own tests (`GymToolsTest.cpp`, `AskServiceTest.cpp`, `TurnGateTest.cpp`).
 - `start_session`, `log_set`, `log_sets`, `import_session`, `finish_session` and `update_exercise`
   are withheld from Coach; their files hold the refusals of their moved bounds alone, for the server
   executor, which runs them for MCP.

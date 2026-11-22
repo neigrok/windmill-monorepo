@@ -131,9 +131,11 @@ own executors and MCP. (R-11)
   routine's or a workout's line stays optional.
 - The fields `list_routines` returns that a write ignores (a line's `position`; a new routine's
   `revision`, `lastTrainedAt` and `pendingProposal`) are not declared on `create_routine` and
-  `propose_routine_change`, where they would spend strict mode's room on nothing. MCP's door drops
-  exactly those from the two tools' arguments before it checks them, so a day an outside assistant
-  reads back is a day sent; a Coach turn's model, held to the declared schema, never sends them.
+  `propose_routine_change`, where they would spend strict mode's room on nothing. Every door the
+  server hosts — MCP, the server's own Coach and the `catalog/3` turn gate — drops exactly those from
+  the two tools' arguments before it checks them, so a day a model reads back is a day sent wherever
+  the model is not held to the schema. The AI service sends every tool strict, so a device turn's
+  model never sends them.
 - The corpora are written again for `catalog/3` in `abilities-3/`, and every executor will claim
   them: the server's, Swift's, Kotlin's and the web's. The server's claims them; their refusals are
   the contract each other executor is held to when it moves. The withheld abilities whose bounds moved

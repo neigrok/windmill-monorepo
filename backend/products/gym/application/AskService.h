@@ -46,7 +46,7 @@ public:
   const std::vector<AskStep>& steps() const { return steps_; }
 
 private:
-  ToolResult dispatch(const std::string& name, const Json::Value& arguments, const ToolCaller& caller);
+  ToolResult dispatch(const std::string& name, const Json::Value& sent, const ToolCaller& caller);
   // Coach's own writes: routine drafts only for a client that reviews them, notes and movement edits always.
   bool writes(const std::string& name) const;
   // A routine draft is held, never written, and names only movements the catalog holds.

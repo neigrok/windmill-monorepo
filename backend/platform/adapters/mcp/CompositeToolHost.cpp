@@ -152,7 +152,8 @@ ToolResult CompositeToolHost::callTool(const std::string& name, const Json::Valu
   const auto run = [&] {
     if (!caller.scope.allows(declared.product, declared.access))
       return ToolResult::failure(name + ": " + notGrantedSentence(declared.product, declared.access), "not-granted");
-    const Json::Value taken = withoutReadBack(declared, arguments);
+    Json::Value stripped;
+    const Json::Value& taken = withoutReadBack(declared, arguments, stripped);
     if (std::optional<std::string> unknown = undeclaredArgument(declared, taken))
       return ToolResult::failure(name + ": " + *unknown, "invalid-arguments");
     return tool.host->callTool(declared.name(), taken, caller);

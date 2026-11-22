@@ -36,7 +36,8 @@ std::vector<ToolDeclaration> declarationsOf(std::string_view catalogText) {
 }
 
 // Duplicating a day is reading it with list_routines and sending it back under a fresh id. What only the read answers
-// with is not declared on catalog/3's writes, where it would spend strict mode's room on nothing; MCP drops it unread.
+// with is not declared on catalog/3's writes, where it would spend strict mode's room on nothing; every door the server
+// hosts drops it unread.
 std::vector<ToolDeclaration> gymToolCatalog() {
   std::vector<ToolDeclaration> tools = declarationsOf(catalog3Text());
   for (ToolDeclaration& tool : tools) {
