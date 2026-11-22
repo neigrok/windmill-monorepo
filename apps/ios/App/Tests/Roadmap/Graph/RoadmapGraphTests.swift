@@ -48,8 +48,9 @@ import SyncTesting
   // The room's model over the engine's views, with a Graph on an iPhone 17's canvas under the room's bars. Neither a
   // band's time nor a caption's ends unless a test ends it.
   func room(_ engine: SteppedEngine, _ runner: ActionRunner, _ memory: UserDefaults, telemetry: any Telemetry = NoopTelemetry(),
-            clock: Clock = Clock()) -> RoadmapModel {
-    let graph = RoadmapGraph(telemetry: telemetry, now: { clock.seconds.withLock { $0 } }, wait: { _ in try await Task.sleep(for: .seconds(3_600)) })
+            clock: Clock = Clock(), pinch: GraphPinch = .room, crowd: Int = GraphPinch.crowd) -> RoadmapModel {
+    let graph = RoadmapGraph(telemetry: telemetry, now: { clock.seconds.withLock { $0 } }, wait: { _ in try await Task.sleep(for: .seconds(3_600)) },
+                             pinch: pinch, crowd: crowd)
     graph.resize(Viewport(width: 402, height: 874), under: Insets(top: 158, bottom: 140))
     return RoadmapModel(records: { scope, type in try engine.records(scope, type, .drawn, visibleOnly: false) }, runner: runner, phone: memory,
                         telemetry: telemetry, wait: { _ in try await Task.sleep(for: .seconds(3_600)) }, graph: graph)
@@ -229,6 +230,49 @@ import SyncTesting
     model.delete(try row("Read the wind", in: model), by: .page)
     #expect(await draws(model, on: engine) { $0.model.nodes.count == 7 })
     #expect(model.selected == nil)
+  }
+
+  // §5: however the Graph keeps a pinch's frames, the surface is given at rest what `live` is given at that camera, and
+  // a tap then takes the step the camera holds under it. While the pinch moves a crowd, `held` gives the surface the
+  // pinch's nearest stop without its captions, which the camera carries to where a person sees it, and `coarse` the
+  // camera itself with its discs squared. The pinch is under way from its first report to the fingers' leaving.
+  @Test func howeverAPinchsFramesAreKeptTheSurfaceIsGivenAtRestWhatLiveIsGiven() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    try RoadmapFixture.plantLearnToSail(runner)
+    engine.sync()
+    var moved: [String] = []
+    for way in GraphPinch.allCases {
+      let model = room(engine, runner, memory, pinch: way, crowd: 2)
+      model.roomOpened()
+      await opens(model, "Learn to sail", on: engine)
+      model.show(.graph)
+      #expect(await draws(model, on: engine) { $0.model.nodes.count == 8 })
+      let graph = model.graph
+      let picture = try #require(graph.picture)
+      let given = { () throws -> GraphDrawing in
+        GraphDrawing(picture: picture, camera: try #require(graph.camera), captions: graph.captions, selected: nil, pinched: graph.pinched, by: way,
+                     crowd: graph.crowd)
+      }
+      let live = { () throws -> GraphDrawing in GraphDrawing(picture: picture, camera: try #require(graph.camera), captions: graph.captions, selected: nil) }
+      let (opening, fingers) = (try #require(graph.camera), CGPoint(x: 240, y: 500))
+      #expect(try given() == live() && graph.pinched == nil)
+
+      graph.zoom(by: 1.1, about: fingers)
+      graph.zoom(by: 1.3 / 1.1, about: fingers)
+      #expect(graph.pinched == GraphCamera.Pinched(from: opening, about: fingers) && !graph.captions.isEmpty)
+      let (pinched, camera) = (try given(), try #require(graph.camera))
+      let read = picture.model.nodes[try place("Read the wind", in: picture)]
+      let seen = pinched.camera.screen(read.x, read.y).applying(camera.carries(from: pinched.camera))
+      moved.append(String(format: "%@: zoom %.2f of %.2f", way.rawValue, pinched.camera.frame.zoom / opening.frame.zoom, camera.frame.zoom / opening.frame.zoom)
+                   + (pinched.captions.isEmpty ? ", no caption" : "") + (pinched.squared ? ", squared" : "")
+                   + (hypot(seen.x - camera.screen(read.x, read.y).x, seen.y - camera.screen(read.x, read.y).y) < 1e-9 ? "" : ", astray"))
+
+      graph.rest()
+      #expect(try given() == live() && graph.pinched == nil)
+      #expect(graph.step(at: camera.screen(read.x, read.y)).flatMap { model.shown?.step($0)?.step.label } == "Read the wind")
+    }
+    #expect(moved == ["live: zoom 1.30 of 1.30", "held: zoom 1.50 of 1.30, no caption", "coarse: zoom 1.30 of 1.30, squared", "layered: zoom 1.30 of 1.30"])
   }
 
   // §5 and §11: a roadmap the bubble layout refuses is drawn by the fallback and reported once a launch, and so is a

@@ -43,4 +43,21 @@ import RoadmapLayout
     let barred = GraphCamera(opening, over: bounds, in: Viewport(width: 402, height: 874), under: Insets(top: 158, bottom: 196))
     #expect(barred.frame == opening.frame)
   }
+
+  // What the canvas drew under one camera is carried to another by one transform: every point of the picture lands
+  // where the other camera sees it, and a drawing under the camera itself is left where it is.
+  @Test func aDrawingIsCarriedFromTheCameraItWasDrawnUnderToWhereAnotherSeesIt() {
+    let drawn = GraphCamera(framing: Rect(minX: -56, maxX: 342.37030535759345, minY: -272.5490019647696, maxY: 242.33549663746913),
+                            in: Viewport(width: 402, height: 874), under: Insets(top: 158, bottom: 140))
+    var camera = drawn
+    camera.zoom(by: 1.3, about: CGPoint(x: 260, y: 520))
+    camera.pan(by: CGSize(width: -24, height: 10))
+    let carried = camera.carries(from: drawn)
+    let apart = [Point(x: 0, y: 0), Point(x: 300, y: -200), Point(x: -50, y: 240)].map { (seat: Point) -> Double in
+      let (from, to) = (drawn.screen(seat.x, seat.y).applying(carried), camera.screen(seat.x, seat.y))
+      return Double(hypot(from.x - to.x, from.y - to.y))
+    }
+    #expect(apart.allSatisfy { $0 < 1e-9 })
+    #expect(camera.carries(from: camera) == .identity)
+  }
 }

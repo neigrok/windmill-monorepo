@@ -130,4 +130,9 @@ nonisolated struct GraphPicture: Sendable {
     placeOf = Dictionary(steps.seated.enumerated().map { ($0.element.id, $0.offset) }) { first, _ in first }
     grid = SpatialGrid(model.nodes, cellSize: Theme.nodeSize * 2)
   }
+
+  // How many steps are seated inside a world rectangle.
+  func steps(in box: Rect) -> Int {
+    model.nodes.count { $0.x >= box.minX && $0.x <= box.maxX && $0.y >= box.minY && $0.y <= box.maxY }
+  }
 }

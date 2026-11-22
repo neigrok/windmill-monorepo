@@ -2,11 +2,10 @@ import SwiftUI
 import RoadmapDomain
 import RoadmapLayout
 
-// The Graph (Roadmap · iOS 04.1, 04.2, 04.4): the open roadmap's picture on one Canvas, which runs under the room's
+// The Graph (Roadmap · iOS 04.1, 04.2, 04.4): the open roadmap's picture on its surface, which runs under the room's
 // bars. One finger pans and a pinch zooms about the point it began at; a tap selects the step it lands on, by its disc
-// or by a 44 pt target where the disc is smaller, and a tap on empty canvas selects none. The canvas draws again only
-// when the picture, the camera, the captions or the selection change. VoiceOver hears one element, which says how far
-// the roadmap is and names the Board as the way to its steps.
+// or by a 44 pt target where the disc is smaller, and a tap on empty canvas selects none. VoiceOver hears one element,
+// which says how far the roadmap is and names the Board as the way to its steps.
 struct RoadmapGraphCanvas: View {
   let roadmap: RoadmapModel
   // How far the roadmap is, in the bar's words.
@@ -27,11 +26,9 @@ struct RoadmapGraphCanvas: View {
     } else {
       GeometryReader { space in
         let bars = space.safeAreaInsets
-        Canvas { context, _ in
-          guard let picture, let camera else { return }
-          GraphDrawing(picture: picture, camera: camera, captions: captions, selected: selected).draw(in: &context)
-          graph.drew()
-        }.gesture(moves)
+        GraphSurface(picture: picture, camera: camera, captions: captions, selected: selected, pinched: graph.pinched, pinch: graph.pinch,
+                     crowd: graph.crowd) { _ in graph.drew() }
+          .gesture(moves)
           .simultaneousGesture(SpatialTapGesture().onEnded { tap in roadmap.select(graph.step(at: tap.location)) })
           .ignoresSafeArea()
           .accessibilityHidden(true)

@@ -9,9 +9,9 @@ import XCTest
 @MainActor final class RoadmapFlowTests: XCTestCase {
   override func setUp() { continueAfterFailure = false }
 
-  func launch(_ board: String) -> XCUIApplication {
+  func launch(_ board: String, asking more: [String] = []) -> XCUIApplication {
     let app = XCUIApplication()
-    app.launchArguments = ["-model-server", "-board", board]
+    app.launchArguments = ["-model-server", "-board", board] + more
     app.launch()
     return app
   }
@@ -114,6 +114,26 @@ import XCTest
     middle.press(forDuration: 0.1, thenDragTo: point(app, from: centre, right: 0, down: 80))
     point(app, from: centre, right: 46, down: 105).tap()
     XCTAssertTrue(bar("Sky, Read the wind", in: app).waitForExistence(timeout: 5))
+  }
+
+  // Roadmap on iOS §5: however the Graph keeps a pinch's frames, the picture at rest is the camera's. Each launch names
+  // a way and has it act on a roadmap of any size; after a pinch in to the ceiling and one out to the floor, a tap
+  // finds the step that stands under the finger.
+  func testAPinchWhoseFramesAreKeptAnyWayLeavesEachStepUnderTheFinger() {
+    for way in ["held", "coarse", "layered"] {
+      let app = launch("roadmap-learn-to-sail", asking: ["-graph-pinch", way, "-graph-crowd", "0"])
+      let (canvas, centre) = graph(of: app)
+      let selected = app.buttons["roadmap-graph-step"]
+      canvas.pinch(withScale: 6, velocity: 3)
+      point(app, from: centre, right: -6, down: 93).tap()
+      XCTAssertTrue(bar("Sky, Name the boat parts", in: app).waitForExistence(timeout: 5), way)
+      point(app, from: centre, right: -100, down: -150).tap()
+      XCTAssertTrue(selected.waitForNonExistence(timeout: 5), way)
+      canvas.pinch(withScale: 0.1, velocity: -3)
+      point(app, from: centre, right: 46, down: 31).tap()
+      XCTAssertTrue(bar("Sky, Read the wind", in: app).waitForExistence(timeout: 5), way)
+      app.terminate()
+    }
   }
 
   // 04.7: a roadmap with no step shows the Board's first step under the Graph too, and its New Step opens the form.

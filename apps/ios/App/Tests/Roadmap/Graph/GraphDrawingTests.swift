@@ -37,10 +37,10 @@ import RoadmapLayout
   }
 
   // One frame on the night canvas at an iPhone 17's size, three pixels a point, and the colour it holds at a point.
-  func frame(_ picture: GraphPicture, _ camera: GraphCamera, selected: String?) throws -> (CGPoint) -> String {
-    let drawing = GraphDrawing(picture: picture, camera: camera, captions: [], selected: selected.flatMap { picture.placeOf[UTF16Text($0)] })
+  func frame(_ drawing: GraphDrawing) throws -> (CGPoint) -> String {
     let renderer = ImageRenderer(content: Canvas { context, _ in drawing.draw(in: &context) }
-      .frame(width: camera.viewport.width, height: camera.viewport.height).background(RoadmapPalette.canvas).environment(\.colorScheme, .dark))
+      .frame(width: drawing.camera.viewport.width, height: drawing.camera.viewport.height).background(RoadmapPalette.canvas)
+      .environment(\.colorScheme, .dark))
     renderer.scale = 3
     let image = try #require(renderer.cgImage)
     let colours = try #require(CGColorSpace(name: CGColorSpace.sRGB))
@@ -62,7 +62,7 @@ import RoadmapLayout
   @Test func eachStepIsDrawnInItsStatesFormAndEachLinkLitOrNot() async throws {
     let picture = try await learnToSail()
     let camera = GraphCamera(framing: picture.model.bounds, in: Viewport(width: 402, height: 874), under: Insets(top: 158, bottom: 140))
-    let colour = try frame(picture, camera, selected: "read")
+    let colour = try frame(GraphDrawing(picture: picture, camera: camera, captions: [], selected: picture.placeOf[UTF16Text("read")]))
     let seat = { (step: String) -> CGPoint in
       let node = picture.model.nodes[picture.placeOf[UTF16Text(step)] ?? 0]
       return camera.screen(node.x, node.y)
@@ -111,7 +111,7 @@ import RoadmapLayout
     let seat = opening.screen(tie.x, tie.y)
     edged.zoom(by: ceiling, about: CGPoint(x: (ceiling * seat.x + 20) / (ceiling - 1), y: seat.y))
     #expect(abs(edged.screen(tie.x, tie.y).x + 20) < 1e-6)
-    #expect(try frame(picture, edged, selected: nil)(CGPoint(x: 10, y: edged.screen(tie.x, tie.y).y)) == "#9DAF5C")
+    #expect(try frame(GraphDrawing(picture: picture, camera: edged, captions: [], selected: nil))(CGPoint(x: 10, y: edged.screen(tie.x, tie.y).y)) == "#9DAF5C")
 
     // The middle of the long link from *Sail a triangle* to *Sail solo*, brought to the canvas's centre at the ceiling.
     let bow = try #require(picture.bows.first { $0.from == picture.placeOf[UTF16Text("tri")] && $0.to == picture.placeOf[UTF16Text("solo")] })
@@ -122,6 +122,54 @@ import RoadmapLayout
     crossed.pan(by: CGSize(width: centre.x - opening.screen(middle.x, middle.y).x, height: centre.y - opening.screen(middle.x, middle.y).y))
     crossed.zoom(by: ceiling, about: centre)
     #expect([crossed.screen(tri.x, tri.y).y < 0, crossed.screen(solo.x, solo.y).y > 874] == [true, true])
-    #expect(try frame(picture, crossed, selected: nil)(centre) == "#2E2E32")
+    #expect(try frame(GraphDrawing(picture: picture, camera: crossed, captions: [], selected: nil))(centre) == "#2E2E32")
+  }
+
+  // Roadmap on iOS §5: a way of keeping a pinch's frames acts on a crowd alone, more steps in view than its count.
+  // `held` then draws the pinch's nearest stop, the zooms half again apart counted from where the pinch began, each
+  // about the pinch's point; `coarse` draws the camera itself with its discs squared; and `live` and `layered` draw
+  // the camera as it is, as every way does a pinch of fewer steps.
+  @Test func aPinchOfACrowdIsDrawnAtItsNearestStopOrSquaredAndOneOfFewerStepsAsItIs() async throws {
+    let picture = try await learnToSail()
+    let opening = GraphCamera(framing: picture.model.bounds, in: Viewport(width: 402, height: 874), under: Insets(top: 158, bottom: 140))
+    let fingers = CGPoint(x: 201, y: 446)
+    let drawn = { (factor: Double, way: GraphPinch, crowd: Int) -> String in
+      var camera = opening
+      camera.zoom(by: factor, about: fingers)
+      let drawing = GraphDrawing(picture: picture, camera: camera, captions: [], selected: nil, pinched: GraphCamera.Pinched(from: opening, about: fingers),
+                                 by: way, crowd: crowd)
+      let apart = hypot(drawing.camera.world(fingers).x - opening.world(fingers).x, drawing.camera.world(fingers).y - opening.world(fingers).y)
+      return String(format: "%.3f", drawing.camera.frame.zoom / opening.frame.zoom) + (drawing.squared ? " squared" : "") + (apart < 1e-9 ? "" : " moved")
+    }
+    #expect([1, 1.2, 1.25, 1.8, 1.85, 0.85, 0.8].map { drawn($0, .held, 0) } == ["1.000", "1.000", "1.500", "1.500", "2.250", "1.000", "0.667"])
+    #expect([drawn(1.25, .live, 0), drawn(1.25, .coarse, 0), drawn(1.25, .layered, 0)] == ["1.250", "1.250 squared", "1.250"])
+    #expect(GraphPinch.allCases.map { drawn(1.25, $0, 8) } == ["1.250", "1.250", "1.250", "1.250"])
+  }
+
+  // A squared step is one square as wide as its disc: a Done or an Up next one in its kind's colour to its corners,
+  // with no dot and no halo, and a Locked one in its kind's locked fill.
+  @Test func aSquaredStepIsOneSquareOfItsColour() async throws {
+    let picture = try await learnToSail()
+    let camera = GraphCamera(framing: picture.model.bounds, in: Viewport(width: 402, height: 874), under: Insets(top: 158, bottom: 140))
+    let squared = GraphDrawing(picture: picture, camera: camera, captions: [], selected: nil, pinched: GraphCamera.Pinched(from: camera, about: .zero),
+                               by: .coarse, crowd: 0)
+    let colour = try frame(squared)
+    let by = { (step: String, right: Double, down: Double) -> String in
+      let node = picture.model.nodes[picture.placeOf[UTF16Text(step)] ?? 0]
+      let seat = camera.screen(node.x, node.y)
+      return colour(CGPoint(x: seat.x + right, y: seat.y + down))
+    }
+    #expect(squared.squared)
+    #expect([
+      "the root's centre \(by("choose", 0, 0))", "the root's corner \(by("choose", 29, 29))", "past the root's corner \(by("choose", 33, 33))",
+      "a Done centre \(by("parts", 0, 0))", "a Done corner \(by("parts", 18, 18))", "past a Done corner \(by("parts", 22, 22))",
+      "an Up next centre \(by("tie", 0, 0))", "an Up next corner \(by("tie", -18, 18))", "where its halo was \(by("tie", -23, 0))",
+      "a Locked centre \(by("leave", 0, 0))", "a Locked corner \(by("leave", 18, -18))",
+    ] == [
+      "the root's centre #D98B5F", "the root's corner #D98B5F", "past the root's corner #0B0B0C",
+      "a Done centre #7BA6B8", "a Done corner #7BA6B8", "past a Done corner #0B0B0C",
+      "an Up next centre #9DAF5C", "an Up next corner #9DAF5C", "where its halo was #0B0B0C",
+      "a Locked centre #3F2A1D", "a Locked corner #3F2A1D",
+    ])
   }
 }

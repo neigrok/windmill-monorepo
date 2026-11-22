@@ -39,12 +39,17 @@ final class RoadmapGraph {
   let wait: Wait
   // Where a measure goes beside the budget's own report: the benchmark's file, on a simulator launch that names one.
   let measured: ((Measure) -> Void)?
+  // How the canvas keeps a pinch's frames, and the count of steps in view past which it does.
+  let pinch: GraphPinch
+  let crowd: Int
   // The roadmap's picture as last laid out; none until the first layout ends, or where the steps cannot be seated.
   private(set) var picture: GraphPicture?
   private(set) var unseated = false
   // None until both the picture and the canvas's size are known.
   private(set) var camera: GraphCamera?
   private(set) var captions: [Caption] = []
+  // The pinch under way, from its first report to the fingers' leaving or the first drag after it.
+  private(set) var pinched: GraphCamera.Pinched?
   // The roadmap this Graph shows, and its latest read still waiting for the layout.
   @ObservationIgnored var roadmap: String?
   @ObservationIgnored var awaiting: FollowGraph?
@@ -61,8 +66,10 @@ final class RoadmapGraph {
 
   init(telemetry: any Telemetry = NoopTelemetry(), layout: any LayoutEngine = BubbleLayoutEngine(),
        now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
-       wait: @escaping Wait = { try await Task.sleep(for: $0) }, measured: ((Measure) -> Void)? = nil) {
+       wait: @escaping Wait = { try await Task.sleep(for: $0) }, measured: ((Measure) -> Void)? = nil, pinch: GraphPinch = .room,
+       crowd: Int = GraphPinch.crowd) {
     self.telemetry = telemetry; self.layout = layout; self.now = now; self.wait = wait; self.measured = measured
+    self.pinch = pinch; self.crowd = crowd
   }
 
   // A tap made the Graph what the room shows: the time to its first frame runs from here.
@@ -73,6 +80,7 @@ final class RoadmapGraph {
   // The canvas left the screen: a first frame still to come is not that tap's, and no gesture is under way.
   func closed() {
     opening = nil
+    pinched = nil
     _ = frames.end()
   }
 
@@ -160,9 +168,10 @@ final class RoadmapGraph {
     name()
   }
 
-  // One finger's drag.
+  // One finger's drag, which no pinch is under way with.
   func pan(by translation: CGSize) {
     frames.begin()
+    pinched = nil
     camera?.pan(by: translation)
     name()
   }
@@ -170,12 +179,14 @@ final class RoadmapGraph {
   // A pinch about the point it began at.
   func zoom(by factor: Double, about point: CGPoint) {
     frames.begin()
+    pinched = pinched ?? camera.map { GraphCamera.Pinched(from: $0, about: point) }
     camera?.zoom(by: factor, about: point)
     name()
   }
 
   // The fingers left: the frames the gesture was given are measured against the budget.
   func rest() {
+    pinched = nil
     let (gaps, work) = frames.end()
     guard let steps = picture?.steps.done.count, let camera, !gaps.isEmpty else { return }
     measured?(.frames(gapsMs: gaps, workMs: work, zoom: camera.frame.zoom, steps: steps))

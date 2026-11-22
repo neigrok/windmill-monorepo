@@ -1,13 +1,14 @@
 import Foundation
 import DomainKit
 import RoadmapDomain
+import SyncEngine
 
 // Simulator boards. An account's roadmaps arriving by sync: roadmap-learn-to-sail (three steps done), roadmap-all-done
 // (all eight), roadmap-no-steps (*Night sailing*, with no step) and roadmap-several (*Learn to sail* over two more, the
 // most recent first). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no order a
 // server gave them; roadmap-handbook, the 5,000 steps the Graph's budget is measured at; and roadmap-empty, which
-// holds none. roadmap-unreadable cannot make its views. A launch with `-graph-measures <path>` appends what the Graph
-// measures of itself to that file.
+// holds none. roadmap-unreadable cannot make its views. A launch can also name where the Graph's measures go and how
+// it keeps a pinch's frames (`graph(telemetry:)`).
 enum RoadmapFixture {
   // The engine's views of every record of a type in a scope, visible or not, as the room's model takes them.
   static func records(_ runtime: AppRuntime) -> RoadmapModel.Records {
@@ -17,28 +18,36 @@ enum RoadmapFixture {
     return { scope, type in try runtime.engine.records(scope, type, .drawn, visibleOnly: false) }
   }
 
-  // Where the Graph's measures go: one JSON line each, appended to the file a simulator launch names.
-  static func graphMeasures() -> ((RoadmapGraph.Measure) -> Void)? {
+  // The Graph the room holds. A simulator launch has it append its measures to the file `-graph-measures` names, one
+  // JSON line each, keep a pinch's frames the way `-graph-pinch` names, and do so past the steps in view `-graph-crowd`
+  // counts.
+  static func graph(telemetry: any Telemetry) -> RoadmapGraph {
     #if DEBUG && targetEnvironment(simulator)
     let arguments = ProcessInfo.processInfo.arguments
-    guard let named = arguments.firstIndex(of: "-graph-measures"), named + 1 < arguments.count else { return nil }
-    let file = URL(fileURLWithPath: arguments[named + 1])
-    return { measure in
-      let line: [String: Any]
-      switch measure {
-      case .firstFrame(let ms, let layoutMs, let steps): line = ["measure": "firstFrame", "ms": ms, "layoutMs": layoutMs, "steps": steps]
-      case .frames(let gapsMs, let workMs, let zoom, let steps):
-        line = ["measure": "frames", "gapsMs": gapsMs, "workMs": workMs, "zoom": zoom, "steps": steps]
-      }
-      guard let data = try? JSONSerialization.data(withJSONObject: line, options: [.sortedKeys]) else { return }
-      if !FileManager.default.fileExists(atPath: file.path) { FileManager.default.createFile(atPath: file.path, contents: nil) }
-      guard let handle = try? FileHandle(forWritingTo: file) else { return }
-      handle.seekToEndOfFile()
-      handle.write(data + Data("\n".utf8))
-      try? handle.close()
+    let asked = { (name: String) -> String? in
+      arguments.firstIndex(of: name).flatMap { (named: Int) -> String? in named + 1 < arguments.count ? arguments[named + 1] : nil }
     }
+    let measured = asked("-graph-measures").map { (path: String) -> (RoadmapGraph.Measure) -> Void in
+      let file = URL(fileURLWithPath: path)
+      return { measure in
+        let line: [String: Any]
+        switch measure {
+        case .firstFrame(let ms, let layoutMs, let steps): line = ["measure": "firstFrame", "ms": ms, "layoutMs": layoutMs, "steps": steps]
+        case .frames(let gapsMs, let workMs, let zoom, let steps):
+          line = ["measure": "frames", "gapsMs": gapsMs, "workMs": workMs, "zoom": zoom, "steps": steps]
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: line, options: [.sortedKeys]) else { return }
+        if !FileManager.default.fileExists(atPath: file.path) { FileManager.default.createFile(atPath: file.path, contents: nil) }
+        guard let handle = try? FileHandle(forWritingTo: file) else { return }
+        handle.seekToEndOfFile()
+        handle.write(data + Data("\n".utf8))
+        try? handle.close()
+      }
+    }
+    return RoadmapGraph(telemetry: telemetry, measured: measured, pinch: asked("-graph-pinch").flatMap { GraphPinch(rawValue: $0) } ?? .room,
+                        crowd: asked("-graph-crowd").flatMap { Int($0) } ?? GraphPinch.crowd)
     #else
-    return nil
+    return RoadmapGraph(telemetry: telemetry)
     #endif
   }
 

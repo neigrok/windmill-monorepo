@@ -6,6 +6,12 @@ import RoadmapLayout
 // the roadmap and stays inside what that framing gives: no zoom under the layout's floor, none over the web's pinch
 // ceiling, and the roadmap's box never out of what the bars leave.
 nonisolated struct GraphCamera: Equatable {
+  // A pinch under way: the camera it began from, and the point of the canvas it zooms about.
+  struct Pinched: Equatable {
+    let from: GraphCamera
+    let about: CGPoint
+  }
+
   // The web's pinch ceiling (`Camera2D.PINCH_MAX_ZOOM`).
   static let pinchCeiling = 2.5
 
@@ -75,6 +81,13 @@ nonisolated struct GraphCamera: Equatable {
   func holds(margin: Double = 0) -> Rect {
     let (halfWidth, halfHeight) = ((viewport.width / 2 + margin) / frame.zoom, (viewport.height / 2 + margin) / frame.zoom)
     return Rect(minX: frame.x - halfWidth, maxX: frame.x + halfWidth, minY: frame.y - halfHeight, maxY: frame.y + halfHeight)
+  }
+
+  // The transform that carries what the canvas drew under `drawn` to where this camera sees it.
+  func carries(from drawn: GraphCamera) -> CGAffineTransform {
+    let scale = frame.zoom / drawn.frame.zoom
+    return CGAffineTransform(a: scale, b: 0, c: 0, d: scale, tx: viewport.width / 2 * (1 - scale) + (drawn.frame.x - frame.x) * frame.zoom,
+                             ty: viewport.height / 2 * (1 - scale) + (drawn.frame.y - frame.y) * frame.zoom)
   }
 
   // A step's body across, in points: the layout's body at this zoom, a crowned root's wider, and never under the floor
