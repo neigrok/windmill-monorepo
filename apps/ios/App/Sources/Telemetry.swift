@@ -74,8 +74,9 @@ nonisolated enum TelemetryPrivacy {
     // when its page opens or its form makes it, whether a step of another roadmap opens the one deleted, the write a
     // refusal or a failure names, and the refusal's kind. A step's page is the web's document, and its acts are the three
     // actions above. A saved edit says of each part of the step whether it changed: `name` above, and the five below.
-    // Of the Graph: the view the switch chose, *Next*'s menu opened and a step picked from it with the steps Up next
-    // as a bucket, Fit shown and left, and under a missed budget which one and the roadmap's size as a bucket.
+    // Of the Graph: the view the switch chose or a roadmap opened on, with the roadmap's size as a bucket where the
+    // Graph comes up, *Next*'s menu opened and a step picked from it with the steps Up next as a bucket, Fit shown and
+    // left, and under a missed budget which one and the roadmap's size as a bucket.
     // Of a step's workspace: the act, among the actions above in the web's words, and the act its Undo took back.
     "act": ["complete", "reset", "delete", "create", "edit", "subtaskToggle", "subtaskDelete", "linkDelete"],
     "step": ["confirm", "cancel", "held", "ask", "undo", "open", "switch", "search", "new", "rename", "saved", "discard", "pick", "close"],

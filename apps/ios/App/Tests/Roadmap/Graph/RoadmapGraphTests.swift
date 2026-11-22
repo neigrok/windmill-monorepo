@@ -88,6 +88,8 @@ import SyncTesting
 
   // Roadmap · iOS 04.1: the switch shows the Graph, which draws the roadmap as the layout frames it. The choice is the
   // roadmap's on this phone: another roadmap opens on its Board, and this one on its Graph again, at the next launch too.
+  // The Graph's coming up is told once each time, by the switch or by a roadmap opening on it, with the roadmap's size
+  // as a bucket (§11), and not as the phone's copy is read again.
   @Test func theSwitchShowsTheGraphAsTheLayoutFramesItAndTheChoiceIsKeptForTheRoadmap() async throws {
     let (engine, runner, memory, suite) = phone()
     defer { memory.removePersistentDomain(forName: suite) }
@@ -112,7 +114,7 @@ import SyncTesting
     #expect(model.lens == .graph && model.graph.picture?.engine == .bubble)
     #expect(model.graph.camera?.frame == Frame(x: 143.18515267879673, y: -25.69075266365024, zoom: 0.8503401360544218))
     model.show(.graph)
-    #expect(telemetry.lines.withLock { $0 } == ["roadmap_room_opened", "roadmap_view_switch view=graph"])
+    #expect(telemetry.lines.withLock { $0 } == ["roadmap_room_opened", "roadmap_view_switch steps=1-100 view=graph"])
 
     model.open(rust.tree.description, from: .menu)
     await opens(model, "Learn Rust", on: engine)
@@ -120,13 +122,20 @@ import SyncTesting
     model.open(sail.description, from: .menu)
     await opens(model, "Learn to sail", on: engine)
     #expect(model.lens == .graph)
+    #expect(await draws(model, on: engine) { $0.model.nodes.count == 8 })
+    #expect(telemetry.lines.withLock { $0 } == [
+      "roadmap_room_opened", "roadmap_view_switch steps=1-100 view=graph", "roadmap_sheet door=menu step=switch", "roadmap_sheet door=menu step=switch",
+      "roadmap_view_switch steps=1-100 view=graph",
+    ])
 
-    let relaunched = room(engine, runner, memory)
+    let told = Told()
+    let relaunched = room(engine, runner, memory, telemetry: told)
     relaunched.roomOpened()
     await opens(relaunched, "Learn to sail", on: engine)
     #expect(relaunched.lens == .graph)
     #expect(await draws(relaunched, on: engine) { $0.model.nodes.count == 8 })
     relaunched.show(.board)
+    #expect(told.lines.withLock { $0 } == ["roadmap_room_opened", "roadmap_view_switch steps=1-100 view=graph", "roadmap_view_switch view=board"])
     let again = room(engine, runner, memory)
     again.roomOpened()
     await opens(again, "Learn to sail", on: engine)
@@ -222,7 +231,7 @@ import SyncTesting
     model.select(nil)
     #expect(model.selected == nil)
     #expect(telemetry.lines.withLock { $0 } == [
-      "roadmap_room_opened", "roadmap_view_switch view=graph", "roadmap_graph_select column=upNext",
+      "roadmap_room_opened", "roadmap_view_switch steps=1-100 view=graph", "roadmap_graph_select column=upNext",
       "roadmap_board_step_open column=upNext door=graph surface=document",
     ])
 
@@ -337,7 +346,7 @@ import SyncTesting
     #expect(still.graph.camera == opening.centred(on: tie) && still.graph.camera != opening && still.graph.pinched == nil)
 
     #expect(telemetry.lines.withLock { $0 } == [
-      "roadmap_room_opened", "roadmap_view_switch view=graph", "roadmap_whats_next count=2-5 step=open",
+      "roadmap_room_opened", "roadmap_view_switch steps=1-100 view=graph", "roadmap_whats_next count=2-5 step=open",
       "roadmap_whats_next count=2-5 step=pick", "roadmap_whats_next count=2-5 step=pick",
     ])
     #expect([0, 1, 2, 5, 6, 20, 21, 5_000].map(RoadmapModel.bucket) == ["0", "1", "2-5", "2-5", "6-20", "6-20", "21+", "21+"])
@@ -397,7 +406,7 @@ import SyncTesting
     graph.closed()
     #expect(!graph.fitted && graph.pinched == nil)
     #expect(telemetry.lines.withLock { $0 } == [
-      "roadmap_room_opened", "roadmap_view_switch view=graph", "roadmap_graph_fit step=open", "roadmap_graph_fit step=close",
+      "roadmap_room_opened", "roadmap_view_switch steps=1-100 view=graph", "roadmap_graph_fit step=open", "roadmap_graph_fit step=close",
       "roadmap_graph_fit step=open",
     ])
   }

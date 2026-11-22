@@ -440,9 +440,10 @@ final class RoadmapModel {
     }
     if !listed.id.utf8.elementsEqual(last.utf8) { phone.set(listed.id, forKey: Self.lastOpen) }
     // Another roadmap opens with its Board at rest, Done folded unless every step is done, in the view it was last
-    // switched to, and with no step selected. On the one shown, Done opens by itself once every step is done, and rests
-    // folded again once one is not.
-    if let shown, shown.listed.id.utf8.elementsEqual(listed.id.utf8) {
+    // switched to, and with no step selected; one that opens on its Graph is told. On the one shown, Done opens by
+    // itself once every step is done, and rests folded again once one is not.
+    let again = shown.map { $0.listed.id.utf8.elementsEqual(listed.id.utf8) } ?? false
+    if let shown, again {
       if open.everyStepDone && !shown.everyStepDone { folded.remove(.done) }
       if !open.everyStepDone && shown.everyStepDone { folded.insert(.done) }
     } else {
@@ -451,7 +452,9 @@ final class RoadmapModel {
       selected = nil
     }
     phase = .open(open)
-    if view(of: open) == .graph { graph.follow(open.graph, of: listed.id) }
+    guard view(of: open) == .graph else { return }
+    if !again { viewOpened(open) }
+    graph.follow(open.graph, of: listed.id)
   }
 
   // The switch row's choice: the open roadmap's view, kept for it on this phone. The Graph then follows the roadmap as
@@ -460,10 +463,20 @@ final class RoadmapModel {
     guard let shown, lens != self.lens else { return }
     self.lens = lens
     phone.set((phone.dictionary(forKey: Self.lastLens) ?? [:]).merging([shown.listed.id: lens.rawValue]) { _, chosen in chosen }, forKey: Self.lastLens)
-    telemetry.event("roadmap_view_switch", properties: ["view": lens.rawValue])
+    viewOpened(shown)
     guard view(of: shown) == .graph else { return }
     graph.opened()
     graph.follow(shown.graph, of: shown.listed.id)
+  }
+
+  // The view the open roadmap came to, told as the web tells its switch (§11): the switch row's choice, and a roadmap
+  // opening on its Graph, which comes up with the roadmap's size as a bucket.
+  func viewOpened(_ open: OpenRoadmap) {
+    guard view(of: open) == .graph else {
+      telemetry.event("roadmap_view_switch", properties: ["view": lens.rawValue])
+      return
+    }
+    telemetry.event("roadmap_view_switch", properties: ["view": lens.rawValue, "steps": RoadmapGraph.bucket(open.board.overall.total)])
   }
 
   // A tap on the Graph: the step it took is the selected one, and a tap on empty canvas selects none.

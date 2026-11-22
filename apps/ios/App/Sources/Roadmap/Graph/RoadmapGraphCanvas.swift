@@ -113,7 +113,9 @@ struct GraphNextBar: View {
       }
     } label: {
       HStack(spacing: 10) {
-        Text("Next").font(.subheadline.weight(.semibold)).foregroundStyle(RoadmapPalette.inkDim)
+        Text(String(localized: "roadmap.graph.next", defaultValue: "Next",
+                    comment: "The Graph's bar, before the name of the first Up next step: the step to take next"))
+          .font(.subheadline.weight(.semibold)).foregroundStyle(RoadmapPalette.inkDim)
         Text(rows.first?.name ?? "").font(.body.weight(.semibold)).foregroundStyle(RoadmapPalette.ink).lineLimit(1)
           .frame(maxWidth: .infinity, alignment: .leading)
         Image(systemName: "chevron.up.chevron.down").imageScale(.small).foregroundStyle(RoadmapPalette.inkDim)
