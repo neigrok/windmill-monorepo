@@ -83,7 +83,9 @@ What gym gives the engine, for each seat. Its name is `gym.coach` and its versio
 
   Today all three are in the backend's source. A person can read them in the app; they hold no
   secret. (R-8)
-- **The catalog** is `packages/api-contract/gym/catalog.json` at `catalog/3` (below). The model
+- **The catalog** is `catalog/3`, `packages/api-contract/gym/catalog-3.json` (below), with its
+  corpora in `abilities-3/`. It stands beside `catalog/2`'s `catalog.json` and `abilities/` until
+  those are deleted (§9). The model
   reads each ability's `description` from the copy the app ships, so the iPhone's generated catalog
   carries it, which it does not today.
 - **The limits** are those of [phone-hosted Coach abilities](mobile/gym_coach.md) Appendix A:
@@ -98,22 +100,32 @@ What gym gives the engine, for each seat. Its name is `gym.coach` and its versio
 
 **The catalog and the provider's strict mode.** The AI service sends every tool to the provider in
 strict mode ([AI service §6.2](ai-service.md#62-the-wire)); the backend sends none so. `catalog/2`
-cannot be sent that way. Read on Anthropic's documentation on 2026-11-15: strict mode refuses the
-bounds the catalog states on numbers, strings and lists (`minimum`, `maximum`, `maxLength`,
-`maxItems`), allows 24 optional parameters across a request's strict tools, where the tools of a
-`bound` turn have 31, and allows 16 parameters that take more than one type.
+cannot be sent that way. Read on Anthropic's documentation (structured outputs, its JSON Schema
+limitations and schema complexity limits) on 2026-11-15 and again on 2026-11-22: strict mode refuses
+the bounds the catalog states on numbers, strings and lists (`minimum`, `maximum`, `multipleOf`,
+`minLength`, `maxLength`, `maxItems`, `uniqueItems`, and `minItems` other than 0 or 1) and an object
+whose `additionalProperties` is not `false`; it allows 20 strict tools in a request, 24 optional
+parameters across them, where the tools of a `bound` turn have 31 in `catalog/2`, and 16 parameters
+that take more than one type, a type list such as `["string", "null"]` included.
 
 The catalog is therefore rewritten as `catalog/3`, for every door: Coach on each surface, the apps'
 own executors and MCP. (R-11)
 
 - Every input schema of `catalog/3` is one strict mode accepts, and the tools a seat is offered fit
-  its limits together. A check in CI counts both from the file.
-- A bound strict mode cannot state moves into the ability's rule, which refuses a value outside it,
-  and into its description, which tells the model. What an ability does and returns is unchanged.
-- Fewer inputs may be left out. Which become required, and which take null, is fixed when the file
-  is written, ability by ability.
-- The corpora under `abilities/` are written again for `catalog/3`, and every executor claims them:
-  the server's, Swift's, Kotlin's and the web's.
+  its limits together. `packages/api-contract/gym/strict.py` counts both from the file in the Coach
+  contracts workflow, and refuses a keyword strict mode refuses in any ability's input.
+- A bound strict mode cannot state moves into the ability's rule, which refuses a value outside it
+  as `invalid-arguments` before any rule reads the store, and into the description of the
+  parameter it bounds, which tells the model. What an ability does and returns is unchanged.
+- Fewer inputs may be left out. A parameter whose usual value the model can state is required:
+  `limit`, `review`. One whose absence means something no value says (every routine, the first
+  page, keep the name, no summary, the equipment's step) is required and takes `null`. A field of a
+  routine's or a workout's line stays optional, so a line read back is a line sent. The inputs an
+  ability ignored are gone: a line's `position`, and a new routine's `revision`, `lastTrainedAt` and
+  `pendingProposal`.
+- The corpora are written again for `catalog/3` in `abilities-3/`, and every executor claims them:
+  the server's, Swift's, Kotlin's and the web's. The withheld abilities whose bounds moved have a
+  file of refusals there, which the server claims.
 - An outside assistant sees the new schemas over MCP. A build released before the move goes on
   opening `catalog/2` turns, which the server serves beside `catalog/3` until the cutover (§8).
 
@@ -196,7 +208,7 @@ The web's Coach becomes the Coach the phones have. This is the largest part of t
 
 - The web's domain kit gains the catalog types, and `web/src/products/gym/domain/coach/` gains the
   replica executor: every ability the phones run, each over the reads and actions the web's gym
-  domain already has. It claims every case of `packages/api-contract/gym/abilities/` and
+  domain already has. It claims every case of `packages/api-contract/gym/abilities-3/` and
   `rules/collation.json`, by the SHA-256 of canonical bytes, as the Swift and Kotlin executors do.
 - The web's gym domain gains the `thread` and `message` entities and the actions of a turn's
   records, and claims `gym/domain/coach-conversation-actions.json`.
@@ -307,15 +319,17 @@ and compose still use them.
   stories are told again in the engine's vectors.
 - **In each app:** the turn wire's client, and on the web `coach/stream.js`, the photo upload, the
   routine-draft review and the localStorage a request is kept in.
+- **`catalog/2`:** `packages/api-contract/gym/catalog.json` and `abilities/`, once no released
+  build opens a `catalog/2` turn.
 - **Documents:** [phone-hosted Coach abilities](mobile/gym_coach.md) is rewritten to describe what
   is then true, and the [Coach conversation contract](../gym-coach-contract.md) is deleted.
 
-What stays: the catalog at `catalog/3` with its `abilities/` and `rules/`, the server executor for MCP, the records, and
+What stays: the catalog at `catalog/3`, `catalog-3.json` with its `abilities-3/` and `rules/`, the server executor for MCP, the records, and
 every proposal door.
 
 ## §10 Testing
 
-- Each engine replays the engine's vectors; each executor claims `abilities/` and `rules/`, the
+- Each engine replays the engine's vectors; each executor claims `abilities-3/` and `rules/`, the
   web's included (§5).
 - Every tool of the profile is sent to the provider in a real round, once by hand with the AI
   service's own key, on each seat. The provider counts tokens without compiling a schema, so a

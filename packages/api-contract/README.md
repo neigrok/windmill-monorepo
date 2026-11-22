@@ -93,6 +93,28 @@ WM_PG_TEST=1 WM_GENERATE_ABILITIES=1 DATABASE_URL="postgresql:///wm_rest_test?ho
   WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" ./backend/build/windmill_mcp_tests
 ```
 
+## `gym/catalog-3.json` and `gym/abilities-3/`
+
+`catalog/3` ([Gym Coach on the AI service](../../docs/foundation/gym-coach-on-ai-service.md) §3), the
+catalog written to the provider's strict mode. It has `catalog.json`'s shape and abilities, and
+differs only in its inputs: no keyword strict mode refuses, every object lists `required`, and a
+bound strict mode cannot state is in the description of the parameter it bounds. No executor reads it
+yet; `catalog.json` and `abilities/` are deleted when no released build opens a `catalog/2` turn.
+
+- `strict.py` checks it in the Coach contracts workflow: every ability's input holds only keywords
+  strict mode accepts, and each seat's tools (`agent` `runs` or `proposes`, declared, admitting the
+  seat) stay within 20 strict tools, 24 optional parameters and 16 union-typed parameters, counted at
+  every depth. It prints the counts; `python3 packages/api-contract/gym/strict.py [catalog]`.
+- `abilities-3/` has `abilities/`'s case format. Its 18 files hold `abilities/`'s cases with the
+  inputs `catalog/3` asks for (a required `review` or `limit`, `null` where a parameter is left
+  empty, no ignored `position`) and the same `expect`, and a refusal for each value just outside
+  every bound that moved out of a schema.
+- `start_session`, `log_set`, `log_sets`, `import_session`, `finish_session` and `update_exercise`
+  are withheld from Coach; their files hold the refusals of their moved bounds alone, and the server
+  executor, which runs them for MCP, claims them.
+- A value outside a moved bound is refused `invalid-arguments` before any rule reads the store, so a
+  refusal case's records need not make the rest of the call succeed, though each case's do.
+
 ## `genesis.js`
 
 A locally-born tree's first sync converges with the server's empty tree only while this seed is

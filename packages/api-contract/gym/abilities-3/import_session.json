@@ -1,0 +1,258 @@
+[
+  {
+    "case": "a start at instant 0 is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"finishedAt":1789903600000,"id":"tn7Qm2Kx9Lp4Wz8R-9","sets":[{"completedAt":1789901000000,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-8","reps":5,"weightKg":100}],"startedAt":0},
+      "name": "import_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a start past the end of time is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"finishedAt":1789903600000,"id":"tn7Qm2Kx9Lp4Wz8R-9","sets":[{"completedAt":1789901000000,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-8","reps":5,"weightKg":100}],"startedAt":253402300799001},
+      "name": "import_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "an end at instant 0 is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"finishedAt":0,"id":"tn7Qm2Kx9Lp4Wz8R-9","sets":[{"completedAt":1789901000000,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-8","reps":5,"weightKg":100}],"startedAt":1789900000000},
+      "name": "import_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "an end past the end of time is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"finishedAt":253402300799001,"id":"tn7Qm2Kx9Lp4Wz8R-9","sets":[{"completedAt":1789901000000,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-8","reps":5,"weightKg":100}],"startedAt":1789900000000},
+      "name": "import_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "201 sets are refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"finishedAt":1789903600000,"id":"tn7Qm2Kx9Lp4Wz8R-9","sets":[{"completedAt":1789901000000,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s000","reps":5,"weightKg":100},{"completedAt":1789901000001,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s001","reps":5,"weightKg":100},{"completedAt":1789901000002,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s002","reps":5,"weightKg":100},{"completedAt":1789901000003,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s003","reps":5,"weightKg":100},{"completedAt":1789901000004,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s004","reps":5,"weightKg":100},{"completedAt":1789901000005,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s005","reps":5,"weightKg":100},{"completedAt":1789901000006,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s006","reps":5,"weightKg":100},{"completedAt":1789901000007,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s007","reps":5,"weightKg":100},{"completedAt":1789901000008,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s008","reps":5,"weightKg":100},{"completedAt":1789901000009,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s009","reps":5,"weightKg":100},{"completedAt":1789901000010,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s010","reps":5,"weightKg":100},{"completedAt":1789901000011,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s011","reps":5,"weightKg":100},{"completedAt":1789901000012,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s012","reps":5,"weightKg":100},{"completedAt":1789901000013,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s013","reps":5,"weightKg":100},{"completedAt":1789901000014,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s014","reps":5,"weightKg":100},{"completedAt":1789901000015,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s015","reps":5,"weightKg":100},{"completedAt":1789901000016,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s016","reps":5,"weightKg":100},{"completedAt":1789901000017,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s017","reps":5,"weightKg":100},{"completedAt":1789901000018,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s018","reps":5,"weightKg":100},{"completedAt":1789901000019,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s019","reps":5,"weightKg":100},{"completedAt":1789901000020,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s020","reps":5,"weightKg":100},{"completedAt":1789901000021,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s021","reps":5,"weightKg":100},{"completedAt":1789901000022,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s022","reps":5,"weightKg":100},{"completedAt":1789901000023,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s023","reps":5,"weightKg":100},{"completedAt":1789901000024,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s024","reps":5,"weightKg":100},{"completedAt":1789901000025,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s025","reps":5,"weightKg":100},{"completedAt":1789901000026,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s026","reps":5,"weightKg":100},{"completedAt":1789901000027,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s027","reps":5,"weightKg":100},{"completedAt":1789901000028,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s028","reps":5,"weightKg":100},{"completedAt":1789901000029,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s029","reps":5,"weightKg":100},{"completedAt":1789901000030,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s030","reps":5,"weightKg":100},{"completedAt":1789901000031,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s031","reps":5,"weightKg":100},{"completedAt":1789901000032,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s032","reps":5,"weightKg":100},{"completedAt":1789901000033,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s033","reps":5,"weightKg":100},{"completedAt":1789901000034,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s034","reps":5,"weightKg":100},{"completedAt":1789901000035,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s035","reps":5,"weightKg":100},{"completedAt":1789901000036,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s036","reps":5,"weightKg":100},{"completedAt":1789901000037,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s037","reps":5,"weightKg":100},{"completedAt":1789901000038,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s038","reps":5,"weightKg":100},{"completedAt":1789901000039,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s039","reps":5,"weightKg":100},{"completedAt":1789901000040,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s040","reps":5,"weightKg":100},{"completedAt":1789901000041,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s041","reps":5,"weightKg":100},{"completedAt":1789901000042,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s042","reps":5,"weightKg":100},{"completedAt":1789901000043,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s043","reps":5,"weightKg":100},{"completedAt":1789901000044,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s044","reps":5,"weightKg":100},{"completedAt":1789901000045,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s045","reps":5,"weightKg":100},{"completedAt":1789901000046,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s046","reps":5,"weightKg":100},{"completedAt":1789901000047,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s047","reps":5,"weightKg":100},{"completedAt":1789901000048,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s048","reps":5,"weightKg":100},{"completedAt":1789901000049,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s049","reps":5,"weightKg":100},{"completedAt":1789901000050,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s050","reps":5,"weightKg":100},{"completedAt":1789901000051,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s051","reps":5,"weightKg":100},{"completedAt":1789901000052,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s052","reps":5,"weightKg":100},{"completedAt":1789901000053,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s053","reps":5,"weightKg":100},{"completedAt":1789901000054,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s054","reps":5,"weightKg":100},{"completedAt":1789901000055,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s055","reps":5,"weightKg":100},{"completedAt":1789901000056,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s056","reps":5,"weightKg":100},{"completedAt":1789901000057,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s057","reps":5,"weightKg":100},{"completedAt":1789901000058,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s058","reps":5,"weightKg":100},{"completedAt":1789901000059,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s059","reps":5,"weightKg":100},{"completedAt":1789901000060,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s060","reps":5,"weightKg":100},{"completedAt":1789901000061,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s061","reps":5,"weightKg":100},{"completedAt":1789901000062,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s062","reps":5,"weightKg":100},{"completedAt":1789901000063,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s063","reps":5,"weightKg":100},{"completedAt":1789901000064,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s064","reps":5,"weightKg":100},{"completedAt":1789901000065,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s065","reps":5,"weightKg":100},{"completedAt":1789901000066,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s066","reps":5,"weightKg":100},{"completedAt":1789901000067,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s067","reps":5,"weightKg":100},{"completedAt":1789901000068,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s068","reps":5,"weightKg":100},{"completedAt":1789901000069,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s069","reps":5,"weightKg":100},{"completedAt":1789901000070,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s070","reps":5,"weightKg":100},{"completedAt":1789901000071,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s071","reps":5,"weightKg":100},{"completedAt":1789901000072,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s072","reps":5,"weightKg":100},{"completedAt":1789901000073,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s073","reps":5,"weightKg":100},{"completedAt":1789901000074,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s074","reps":5,"weightKg":100},{"completedAt":1789901000075,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s075","reps":5,"weightKg":100},{"completedAt":1789901000076,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s076","reps":5,"weightKg":100},{"completedAt":1789901000077,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s077","reps":5,"weightKg":100},{"completedAt":1789901000078,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s078","reps":5,"weightKg":100},{"completedAt":1789901000079,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s079","reps":5,"weightKg":100},{"completedAt":1789901000080,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s080","reps":5,"weightKg":100},{"completedAt":1789901000081,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s081","reps":5,"weightKg":100},{"completedAt":1789901000082,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s082","reps":5,"weightKg":100},{"completedAt":1789901000083,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s083","reps":5,"weightKg":100},{"completedAt":1789901000084,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s084","reps":5,"weightKg":100},{"completedAt":1789901000085,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s085","reps":5,"weightKg":100},{"completedAt":1789901000086,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s086","reps":5,"weightKg":100},{"completedAt":1789901000087,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s087","reps":5,"weightKg":100},{"completedAt":1789901000088,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s088","reps":5,"weightKg":100},{"completedAt":1789901000089,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s089","reps":5,"weightKg":100},{"completedAt":1789901000090,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s090","reps":5,"weightKg":100},{"completedAt":1789901000091,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s091","reps":5,"weightKg":100},{"completedAt":1789901000092,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s092","reps":5,"weightKg":100},{"completedAt":1789901000093,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s093","reps":5,"weightKg":100},{"completedAt":1789901000094,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s094","reps":5,"weightKg":100},{"completedAt":1789901000095,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s095","reps":5,"weightKg":100},{"completedAt":1789901000096,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s096","reps":5,"weightKg":100},{"completedAt":1789901000097,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s097","reps":5,"weightKg":100},{"completedAt":1789901000098,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s098","reps":5,"weightKg":100},{"completedAt":1789901000099,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s099","reps":5,"weightKg":100},{"completedAt":1789901000100,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s100","reps":5,"weightKg":100},{"completedAt":1789901000101,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s101","reps":5,"weightKg":100},{"completedAt":1789901000102,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s102","reps":5,"weightKg":100},{"completedAt":1789901000103,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s103","reps":5,"weightKg":100},{"completedAt":1789901000104,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s104","reps":5,"weightKg":100},{"completedAt":1789901000105,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s105","reps":5,"weightKg":100},{"completedAt":1789901000106,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s106","reps":5,"weightKg":100},{"completedAt":1789901000107,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s107","reps":5,"weightKg":100},{"completedAt":1789901000108,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s108","reps":5,"weightKg":100},{"completedAt":1789901000109,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s109","reps":5,"weightKg":100},{"completedAt":1789901000110,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s110","reps":5,"weightKg":100},{"completedAt":1789901000111,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s111","reps":5,"weightKg":100},{"completedAt":1789901000112,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s112","reps":5,"weightKg":100},{"completedAt":1789901000113,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s113","reps":5,"weightKg":100},{"completedAt":1789901000114,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s114","reps":5,"weightKg":100},{"completedAt":1789901000115,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s115","reps":5,"weightKg":100},{"completedAt":1789901000116,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s116","reps":5,"weightKg":100},{"completedAt":1789901000117,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s117","reps":5,"weightKg":100},{"completedAt":1789901000118,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s118","reps":5,"weightKg":100},{"completedAt":1789901000119,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s119","reps":5,"weightKg":100},{"completedAt":1789901000120,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s120","reps":5,"weightKg":100},{"completedAt":1789901000121,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s121","reps":5,"weightKg":100},{"completedAt":1789901000122,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s122","reps":5,"weightKg":100},{"completedAt":1789901000123,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s123","reps":5,"weightKg":100},{"completedAt":1789901000124,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s124","reps":5,"weightKg":100},{"completedAt":1789901000125,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s125","reps":5,"weightKg":100},{"completedAt":1789901000126,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s126","reps":5,"weightKg":100},{"completedAt":1789901000127,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s127","reps":5,"weightKg":100},{"completedAt":1789901000128,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s128","reps":5,"weightKg":100},{"completedAt":1789901000129,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s129","reps":5,"weightKg":100},{"completedAt":1789901000130,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s130","reps":5,"weightKg":100},{"completedAt":1789901000131,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s131","reps":5,"weightKg":100},{"completedAt":1789901000132,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s132","reps":5,"weightKg":100},{"completedAt":1789901000133,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s133","reps":5,"weightKg":100},{"completedAt":1789901000134,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s134","reps":5,"weightKg":100},{"completedAt":1789901000135,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s135","reps":5,"weightKg":100},{"completedAt":1789901000136,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s136","reps":5,"weightKg":100},{"completedAt":1789901000137,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s137","reps":5,"weightKg":100},{"completedAt":1789901000138,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s138","reps":5,"weightKg":100},{"completedAt":1789901000139,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s139","reps":5,"weightKg":100},{"completedAt":1789901000140,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s140","reps":5,"weightKg":100},{"completedAt":1789901000141,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s141","reps":5,"weightKg":100},{"completedAt":1789901000142,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s142","reps":5,"weightKg":100},{"completedAt":1789901000143,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s143","reps":5,"weightKg":100},{"completedAt":1789901000144,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s144","reps":5,"weightKg":100},{"completedAt":1789901000145,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s145","reps":5,"weightKg":100},{"completedAt":1789901000146,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s146","reps":5,"weightKg":100},{"completedAt":1789901000147,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s147","reps":5,"weightKg":100},{"completedAt":1789901000148,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s148","reps":5,"weightKg":100},{"completedAt":1789901000149,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s149","reps":5,"weightKg":100},{"completedAt":1789901000150,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s150","reps":5,"weightKg":100},{"completedAt":1789901000151,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s151","reps":5,"weightKg":100},{"completedAt":1789901000152,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s152","reps":5,"weightKg":100},{"completedAt":1789901000153,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s153","reps":5,"weightKg":100},{"completedAt":1789901000154,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s154","reps":5,"weightKg":100},{"completedAt":1789901000155,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s155","reps":5,"weightKg":100},{"completedAt":1789901000156,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s156","reps":5,"weightKg":100},{"completedAt":1789901000157,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s157","reps":5,"weightKg":100},{"completedAt":1789901000158,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s158","reps":5,"weightKg":100},{"completedAt":1789901000159,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s159","reps":5,"weightKg":100},{"completedAt":1789901000160,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s160","reps":5,"weightKg":100},{"completedAt":1789901000161,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s161","reps":5,"weightKg":100},{"completedAt":1789901000162,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s162","reps":5,"weightKg":100},{"completedAt":1789901000163,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s163","reps":5,"weightKg":100},{"completedAt":1789901000164,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s164","reps":5,"weightKg":100},{"completedAt":1789901000165,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s165","reps":5,"weightKg":100},{"completedAt":1789901000166,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s166","reps":5,"weightKg":100},{"completedAt":1789901000167,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s167","reps":5,"weightKg":100},{"completedAt":1789901000168,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s168","reps":5,"weightKg":100},{"completedAt":1789901000169,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s169","reps":5,"weightKg":100},{"completedAt":1789901000170,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s170","reps":5,"weightKg":100},{"completedAt":1789901000171,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s171","reps":5,"weightKg":100},{"completedAt":1789901000172,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s172","reps":5,"weightKg":100},{"completedAt":1789901000173,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s173","reps":5,"weightKg":100},{"completedAt":1789901000174,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s174","reps":5,"weightKg":100},{"completedAt":1789901000175,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s175","reps":5,"weightKg":100},{"completedAt":1789901000176,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s176","reps":5,"weightKg":100},{"completedAt":1789901000177,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s177","reps":5,"weightKg":100},{"completedAt":1789901000178,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s178","reps":5,"weightKg":100},{"completedAt":1789901000179,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s179","reps":5,"weightKg":100},{"completedAt":1789901000180,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s180","reps":5,"weightKg":100},{"completedAt":1789901000181,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s181","reps":5,"weightKg":100},{"completedAt":1789901000182,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s182","reps":5,"weightKg":100},{"completedAt":1789901000183,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s183","reps":5,"weightKg":100},{"completedAt":1789901000184,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s184","reps":5,"weightKg":100},{"completedAt":1789901000185,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s185","reps":5,"weightKg":100},{"completedAt":1789901000186,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s186","reps":5,"weightKg":100},{"completedAt":1789901000187,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s187","reps":5,"weightKg":100},{"completedAt":1789901000188,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s188","reps":5,"weightKg":100},{"completedAt":1789901000189,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s189","reps":5,"weightKg":100},{"completedAt":1789901000190,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s190","reps":5,"weightKg":100},{"completedAt":1789901000191,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s191","reps":5,"weightKg":100},{"completedAt":1789901000192,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s192","reps":5,"weightKg":100},{"completedAt":1789901000193,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s193","reps":5,"weightKg":100},{"completedAt":1789901000194,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s194","reps":5,"weightKg":100},{"completedAt":1789901000195,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s195","reps":5,"weightKg":100},{"completedAt":1789901000196,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s196","reps":5,"weightKg":100},{"completedAt":1789901000197,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s197","reps":5,"weightKg":100},{"completedAt":1789901000198,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s198","reps":5,"weightKg":100},{"completedAt":1789901000199,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s199","reps":5,"weightKg":100},{"completedAt":1789901000200,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-s200","reps":5,"weightKg":100}],"startedAt":1789900000000},
+      "name": "import_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a set completed at instant 0 is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"finishedAt":1789903600000,"id":"tn7Qm2Kx9Lp4Wz8R-9","sets":[{"completedAt":0,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-8","reps":5,"weightKg":100}],"startedAt":1789900000000},
+      "name": "import_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a set completed past the end of time is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"finishedAt":1789903600000,"id":"tn7Qm2Kx9Lp4Wz8R-9","sets":[{"completedAt":253402300799001,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-8","reps":5,"weightKg":100}],"startedAt":1789900000000},
+      "name": "import_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "an empty movement id is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"finishedAt":1789903600000,"id":"tn7Qm2Kx9Lp4Wz8R-9","sets":[{"completedAt":1789901000000,"exerciseId":"","id":"tn7Qm2Kx9Lp4Wz8R-8","reps":5,"weightKg":100}],"startedAt":1789900000000},
+      "name": "import_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a movement id of 129 characters is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"finishedAt":1789903600000,"id":"tn7Qm2Kx9Lp4Wz8R-9","sets":[{"completedAt":1789901000000,"exerciseId":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","id":"tn7Qm2Kx9Lp4Wz8R-8","reps":5,"weightKg":100}],"startedAt":1789900000000},
+      "name": "import_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a set of 0 reps is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"finishedAt":1789903600000,"id":"tn7Qm2Kx9Lp4Wz8R-9","sets":[{"completedAt":1789901000000,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-8","reps":0,"weightKg":100}],"startedAt":1789900000000},
+      "name": "import_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a set of 501 reps is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"finishedAt":1789903600000,"id":"tn7Qm2Kx9Lp4Wz8R-9","sets":[{"completedAt":1789901000000,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-8","reps":501,"weightKg":100}],"startedAt":1789900000000},
+      "name": "import_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "an exertion under 1 is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"finishedAt":1789903600000,"id":"tn7Qm2Kx9Lp4Wz8R-9","sets":[{"completedAt":1789901000000,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-8","reps":5,"weightKg":100,"rpe":0.9}],"startedAt":1789900000000},
+      "name": "import_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "an exertion over 10 is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"finishedAt":1789903600000,"id":"tn7Qm2Kx9Lp4Wz8R-9","sets":[{"completedAt":1789901000000,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-8","reps":5,"weightKg":100,"rpe":10.1}],"startedAt":1789900000000},
+      "name": "import_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "an exertion finer than a tenth is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"finishedAt":1789903600000,"id":"tn7Qm2Kx9Lp4Wz8R-9","sets":[{"completedAt":1789901000000,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-8","reps":5,"weightKg":100,"rpe":7.25}],"startedAt":1789900000000},
+      "name": "import_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a load finer than a hundredth is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"finishedAt":1789903600000,"id":"tn7Qm2Kx9Lp4Wz8R-9","sets":[{"completedAt":1789901000000,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-8","reps":5,"weightKg":100.005}],"startedAt":1789900000000},
+      "name": "import_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a note of 4001 bytes is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"finishedAt":1789903600000,"id":"tn7Qm2Kx9Lp4Wz8R-9","sets":[{"completedAt":1789901000000,"exerciseId":"back-squat","id":"tn7Qm2Kx9Lp4Wz8R-8","reps":5,"weightKg":100,"note":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}],"startedAt":1789900000000},
+      "name": "import_session"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  }
+]

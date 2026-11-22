@@ -6,12 +6,16 @@ on:
     paths:
       - 'packages/api-contract/agent/**'
       - 'packages/api-contract/ai/**'
+      - 'packages/api-contract/gym/catalog-3.json'
+      - 'packages/api-contract/gym/strict.py'
       - '.github/workflows/coach.yml'
       - '!packages/api-contract/**/*.md'
   pull_request:
     paths:
       - 'packages/api-contract/agent/**'
       - 'packages/api-contract/ai/**'
+      - 'packages/api-contract/gym/catalog-3.json'
+      - 'packages/api-contract/gym/strict.py'
       - '.github/workflows/coach.yml'
       - '!packages/api-contract/**/*.md'
   workflow_dispatch:
@@ -32,3 +36,5 @@ jobs:
         run: |
           python3 packages/api-contract/agent/generate.py --check
           python3 packages/api-contract/agent/check.py
+      - name: Check the gym catalog against strict mode
+        run: python3 packages/api-contract/gym/strict.py
