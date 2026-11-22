@@ -162,6 +162,29 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
             ["step": .label("held"), "door": .label("page"), "view": .label("board")])
   }
 
+  @Test func theRoomsRoadmapsTellTheirStepsByKindAndNothingOfARoadmap() {
+    let events = ["roadmap_sheet", "birth", "roadmap_board_create", "roadmap_deletion"]
+    #expect(events.filter(TelemetryPrivacy.events.contains) == events)
+    for (step, door) in [("switch", "menu"), ("switch", "list"), ("new", "menu"), ("new", "list"), ("new", "empty"), ("ask", "menu"), ("ask", "list")] {
+      #expect(TelemetryPrivacy.properties(["step": step, "door": door, "tree": "private-id", "title": "private-marker", "roadmaps": "9"]) ==
+              ["step": .label(step), "door": .label(door)])
+    }
+    for step in ["open", "search", "rename", "confirm", "cancel"] {
+      #expect(TelemetryPrivacy.properties(["step": step, "name": "Learn to sail", "query": "private-marker", "count": "2-5"]) == ["step": .label(step)])
+    }
+    #expect(TelemetryPrivacy.properties(["step": "cancel", "door": "blank", "name": "Learn to sail"]) == ["step": .label("cancel"), "door": .label("blank")])
+    for openers in ["none", "some"] {
+      #expect(TelemetryPrivacy.properties(["step": "held", "door": "list", "openers": openers, "steps": "1", "in": "Become a day skipper"]) ==
+              ["step": .label("held"), "door": .label("list"), "openers": .label(openers)])
+    }
+    for outcome in ["cancelled", "released"] {
+      #expect(TelemetryPrivacy.properties(["step": "undo", "outcome": outcome, "tree": "private-id"]) == ["step": .label("undo"), "outcome": .label(outcome)])
+    }
+    for write in ["createRoadmap", "title", "deleteRoadmap"] {
+      #expect(TelemetryPrivacy.properties(["write": write, "refusal": "invalid", "title": "private-marker"]) == ["write": .label(write), "refusal": .label("invalid")])
+    }
+  }
+
   @Test func workoutPickerStepsExcludeMovementAndRackContent() {
     #expect(TelemetryPrivacy.events.contains("gym_workout_picker"))
     for action in ["open", "select", "cancel"] {

@@ -69,7 +69,7 @@ import XCTest
     XCTAssertEqual(editor.value as? String, page)
   }
 
-  // Shell 02a, Roadmap · iOS 01.2 and 01.5: the third door, the empty room with New Roadmap disabled, three rooms, and a relaunch.
+  // Shell 02a, Roadmap · iOS 01.2 and 01.5: the third door, the empty room with New Roadmap, three rooms, and a relaunch.
   func testTheRoadmapDoorOpensTheRoomOnAPhoneWithNoRoadmap() {
     let app = launch("shell-anonymous")
     let door = app.buttons["open-roadmap"]
@@ -81,8 +81,7 @@ import XCTest
     XCTAssertTrue(app.staticTexts["No roadmaps yet"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.staticTexts["Plan a goal as steps that unlock each other."].exists)
     XCTAssertEqual(app.buttons["room-menu"].label, "Roadmap")
-    XCTAssertTrue(app.buttons["roadmap-new"].exists)
-    XCTAssertFalse(app.buttons["roadmap-new"].isEnabled)
+    XCTAssertTrue(app.buttons["roadmap-new"].isEnabled)
     XCTAssertFalse(app.buttons["roadmap-new-step"].exists || app.tabBars.firstMatch.exists)
     switchRoom("Gym", in: app)
     assertGym(app)
@@ -368,6 +367,196 @@ import XCTest
     XCTAssertTrue(inBar.waitForExistence(timeout: 5))
     app.swipeDown()
     XCTAssertTrue(inBar.waitForNonExistence(timeout: 5))
+  }
+
+  // The title's menu, opened from the bar's title, whose label the open roadmap's name leads: the system reports the
+  // title as a button or as a text, and adds words of its own to the label.
+  func openTitleMenu(_ title: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+    let name = app.navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch
+    XCTAssertTrue(name.waitForExistence(timeout: 10), file: file, line: line)
+    name.tap()
+    XCTAssertTrue(app.buttons["All Roadmaps…"].waitForExistence(timeout: 5), file: file, line: line)
+  }
+
+  // The labels of the roadmaps' rows on screen in All Roadmaps, in order.
+  func listedRoadmaps(_ app: XCUIApplication) -> [String] {
+    let rows = app.buttons.matching(identifier: "roadmap-listed")
+    return (0..<rows.count).map { rows.element(boundBy: $0).label }
+  }
+
+  // Roadmap · iOS 01.5, 01.6 and 01.9 to 01.11, signed out and on the phone's copy alone: New Roadmap names one, Cancel
+  // writes nothing and Create plants it with its one step and opens it; Rename turns the bar into a field whose return
+  // commits; a relaunch opens the roadmap again; and Delete Roadmap asks once, leaves the room with no roadmap and Undo
+  // in the band, which brings it back.
+  func testARoadmapIsMadeRenamedReopenedAndDeletedWithUndoSignedOut() {
+    let app = launch("roadmap-empty")
+    let new = app.buttons["roadmap-new"], name = app.textFields["roadmap-new-name"], create = app.buttons["roadmap-new-create"]
+    XCTAssertTrue(new.waitForExistence(timeout: 30))
+    new.tap()
+    XCTAssertTrue(name.waitForExistence(timeout: 10))
+    XCTAssertEqual(name.placeholderValue, "Name your roadmap")
+    XCTAssertTrue(app.navigationBars["New Roadmap"].exists && !create.isEnabled)
+    for unbuilt in ["Start from", "A Quest", "A Copied Plan", "A File"] { XCTAssertFalse(app.staticTexts[unbuilt].exists || app.buttons[unbuilt].exists) }
+    app.buttons["roadmap-new-cancel"].tap()
+    XCTAssertTrue(name.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["No roadmaps yet"].exists)
+
+    new.tap()
+    XCTAssertTrue(name.waitForExistence(timeout: 10))
+    name.tap()
+    name.typeText("Learn to cook")
+    XCTAssertTrue(create.wait(for: \.isEnabled, toEqual: true, timeout: 5))
+    create.tap()
+    XCTAssertTrue(app.navigationBars["Learn to cook"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["0 of 1 done"].waitForExistence(timeout: 5))
+    XCTAssertEqual(stepRows(app), ["Build, Learn to cook"])
+    XCTAssertEqual(app.buttons["roadmap-group-upNext"].label, "Up next, 1")
+
+    // The bar's field starts from the name, selected: what is typed takes its place.
+    let field = app.navigationBars.textFields.firstMatch
+    openTitleMenu("Learn to cook", in: app)
+    for unbuilt in ["Guide", "Kinds", "Activity", "Share…", "Export"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
+    app.buttons["Rename"].tap()
+    XCTAssertTrue(field.waitForValue("Learn to cook"))
+    field.typeText("Cook at home\n")
+    XCTAssertTrue(app.navigationBars["Cook at home"].waitForExistence(timeout: 10))
+
+    app.terminate()
+    app.launchArguments.append("-restore-board")
+    app.launch()
+    XCTAssertTrue(app.navigationBars["Cook at home"].waitForExistence(timeout: 30))
+    XCTAssertTrue(app.staticTexts["0 of 1 done"].exists)
+    XCTAssertEqual(stepRows(app), ["Build, Learn to cook"])
+
+    let confirm = app.buttons["Delete Roadmap"], undo = app.buttons["roadmap-undo"]
+    openTitleMenu("Cook at home", in: app)
+    confirm.tap()
+    XCTAssertTrue(app.staticTexts["Delete Cook at home?"].waitForExistence(timeout: 5))
+    // The question closed unanswered deletes nothing.
+    app.cancelConfirmation()
+    XCTAssertTrue(confirm.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.navigationBars["Cook at home"].exists)
+    openTitleMenu("Cook at home", in: app)
+    confirm.tap()
+    XCTAssertTrue(app.staticTexts["Delete Cook at home?"].waitForExistence(timeout: 5))
+    // The band keeps Undo for the hold's nine seconds: it is taken as soon as the room is seen without the roadmap.
+    confirm.tap()
+    XCTAssertTrue(app.staticTexts["No roadmaps yet"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["Cook at home deleted"].exists)
+    undo.tap()
+    XCTAssertTrue(app.navigationBars["Cook at home"].waitForExistence(timeout: 10))
+    XCTAssertTrue(undo.waitForNonExistence(timeout: 5))
+    XCTAssertEqual(stepRows(app), ["Build, Learn to cook"])
+  }
+
+  // Roadmap · iOS 01.3 and 01.4: the title menu lists the account's roadmaps, most recent first and the open one
+  // checked, over the verbs this build has; a roadmap chosen there opens on its Board and is the one a relaunch opens;
+  // All Roadmaps lists them in the same order, a row opens its roadmap, and + opens New Roadmap.
+  func testTheTitleMenuAndAllRoadmapsOpenARoadmapAndARelaunchOpensItAgain() {
+    let app = launch("roadmap-several")
+    assertLearnToSailBoard(app)
+    openTitleMenu("Learn to sail", in: app)
+    // The menu's items, in order, outside the bar, whose title the system may report as a button of the same name.
+    let named = NSPredicate(format: "label IN %@", ["Learn to sail", "Spanish B1", "Become a day skipper", "All Roadmaps…", "New Roadmap", "Rename", "Delete Roadmap"])
+    let items = app.buttons.matching(named)
+    let inBar = app.navigationBars.buttons.matching(named).count
+    XCTAssertEqual((inBar..<items.count).map { items.element(boundBy: $0).label },
+                   ["Learn to sail", "Spanish B1", "Become a day skipper", "All Roadmaps…", "New Roadmap", "Rename", "Delete Roadmap"])
+    XCTAssertTrue(items.element(boundBy: inBar).isSelected && !items.element(boundBy: inBar + 1).isSelected)
+    for unbuilt in ["Guide", "Kinds", "Activity", "Share…", "Export"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
+    app.buttons["Spanish B1"].tap()
+    XCTAssertTrue(app.navigationBars["Spanish B1"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["2 of 7 done"].waitForExistence(timeout: 5))
+    XCTAssertEqual(Array(stepRows(app).prefix(2)), ["Build, Talk about last weekend, Unlocks Tell a story, Use both past tenses in a five-minute chat about what you did.",
+                                                    "Learn, Meet the subjunctive, Unlocks Give advice, Learn the ten phrases that always take the subjunctive."])
+
+    app.terminate()
+    app.launchArguments.append("-restore-board")
+    app.launch()
+    XCTAssertTrue(app.navigationBars["Spanish B1"].waitForExistence(timeout: 30))
+
+    openTitleMenu("Spanish B1", in: app)
+    app.buttons["All Roadmaps…"].tap()
+    XCTAssertTrue(app.navigationBars["All Roadmaps"].waitForExistence(timeout: 5))
+    XCTAssertEqual(listedRoadmaps(app), ["Learn to sail, 3 of 8 done", "Spanish B1, 2 of 7 done", "Become a day skipper, 1 of 3 done"])
+    let rows = app.buttons.matching(identifier: "roadmap-listed")
+    XCTAssertEqual((0..<rows.count).map { rows.element(boundBy: $0).isSelected }, [false, true, false])
+    XCTAssertFalse(app.searchFields.firstMatch.exists, "The search field stands only past eight roadmaps")
+    XCTAssertFalse(app.staticTexts["Planted in Public"].exists || app.buttons["roadmap-new-step"].exists)
+    app.buttons["roadmap-list-new"].tap()
+    XCTAssertTrue(app.textFields["roadmap-new-name"].waitForExistence(timeout: 10))
+    app.buttons["roadmap-new-cancel"].tap()
+    XCTAssertTrue(app.textFields["roadmap-new-name"].waitForNonExistence(timeout: 5))
+    rows.element(boundBy: 2).tap()
+    XCTAssertTrue(app.navigationBars["Become a day skipper"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["1 of 3 done"].exists && app.buttons["roadmap-group-upNext"].exists)
+  }
+
+  // Roadmap · iOS 01.10 and 01.11: Delete Roadmap asks once under the title, naming the step of another roadmap that
+  // opens this one; answered, the room moves to the next most recent roadmap with Undo in the band, which opens the
+  // roadmap again. A row of All Roadmaps slides to Delete and stops there, asks on the row, and the list stays under the
+  // band, whose Undo brings the row back.
+  func testDeletingARoadmapAsksOnceMovesTheRoomOnAndUndoBringsItBack() {
+    let app = launch("roadmap-several")
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    let confirm = app.buttons["Delete Roadmap"], undo = app.buttons["roadmap-undo"]
+    openTitleMenu("Learn to sail", in: app)
+    confirm.tap()
+    XCTAssertTrue(app.staticTexts["Delete Learn to sail?"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Also removes the step that opens it in Become a day skipper"].exists)
+    // The band keeps Undo for the hold's nine seconds: it is taken as soon as the next roadmap's Board is seen.
+    confirm.tap()
+    XCTAssertTrue(app.navigationBars["Spanish B1"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["Learn to sail deleted"].exists && app.staticTexts["2 of 7 done"].exists)
+    undo.tap()
+    XCTAssertTrue(app.navigationBars["Learn to sail"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["3 of 8 done"].waitForExistence(timeout: 5))
+    XCTAssertTrue(undo.waitForNonExistence(timeout: 5))
+
+    openTitleMenu("Learn to sail", in: app)
+    app.buttons["All Roadmaps…"].tap()
+    XCTAssertTrue(app.navigationBars["All Roadmaps"].waitForExistence(timeout: 5))
+    let spanish = app.buttons.matching(NSPredicate(format: "identifier == %@ AND label BEGINSWITH %@", "roadmap-listed", "Spanish B1")).firstMatch
+    let delete = app.buttons["Delete"]
+    spanish.swipeLeft()
+    XCTAssertTrue(delete.waitForExistence(timeout: 5))
+    XCTAssertTrue(spanish.exists, "A full swipe stops at the button and deletes nothing")
+    delete.tap()
+    XCTAssertTrue(app.staticTexts["Delete Spanish B1?"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Also removes")).firstMatch.exists)
+    confirm.tap()
+    XCTAssertTrue(undo.waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["Spanish B1 deleted"].exists)
+    XCTAssertTrue(spanish.waitForNonExistence(timeout: 5))
+    XCTAssertEqual(listedRoadmaps(app), ["Learn to sail, 3 of 8 done", "Become a day skipper, 1 of 3 done"])
+    undo.tap()
+    XCTAssertTrue(spanish.waitForExistence(timeout: 10))
+    XCTAssertTrue(app.navigationBars["All Roadmaps"].exists)
+    XCTAssertEqual(listedRoadmaps(app), ["Learn to sail, 3 of 8 done", "Spanish B1, 2 of 7 done", "Become a day skipper, 1 of 3 done"])
+  }
+
+  // Roadmap · iOS 01.3 and 01.4, on a phone never signed in that holds nine roadmaps: the title menu lists three of
+  // them, and past eight All Roadmaps finds a roadmap by its name.
+  func testAllRoadmapsFindsARoadmapByNamePastEight() {
+    let app = launch("roadmap-many")
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    let rows = ["Become a day skipper, 1 of 3 done", "Coastal navigation handbook, 3 of 4 done", "Learn to sail, 3 of 8 done", "Learn watercolor, 1 of 2 done",
+                "Personal finance reset, 1 of 1 done", "Room makeover, 0 of 1 done", "Run a 10k, 1 of 2 done", "Ship v1, 1 of 2 done", "Spanish B1, 2 of 7 done"]
+    openTitleMenu("Learn to sail", in: app)
+    // The menu's roadmaps are the buttons of those names outside the bar, whose title the system may report as one.
+    let named = NSPredicate(format: "label IN %@", rows.map { $0.components(separatedBy: ", ")[0] })
+    XCTAssertEqual(app.buttons.matching(named).count - app.navigationBars.buttons.matching(named).count, 3)
+    app.buttons["All Roadmaps…"].tap()
+    let search = app.searchFields["Find a roadmap"]
+    XCTAssertTrue(search.waitForExistence(timeout: 5))
+    XCTAssertEqual(listedRoadmaps(app).sorted(), rows)
+    search.tap()
+    search.typeText("run ")
+    XCTAssertTrue(app.buttons.matching(identifier: "roadmap-listed").firstMatch.waitForLabel("Run a 10k, 1 of 2 done", timeout: 5))
+    XCTAssertEqual(listedRoadmaps(app), ["Run a 10k, 1 of 2 done"])
+    app.buttons.matching(identifier: "roadmap-listed").firstMatch.tap()
+    XCTAssertTrue(app.navigationBars["Run a 10k"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["1 of 2 done"].exists)
   }
 
   // Roadmap · iOS 02.15 and 01.12: a roadmap with no step asks for the first, and one with every step done opens Done.

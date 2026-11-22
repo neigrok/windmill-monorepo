@@ -79,7 +79,7 @@
 
     },
     "%@ deleted" : {
-      "comment" : "The band while a step's delete is held: the step's name"
+      "comment" : "The band while a delete is held: the name of the step or of the roadmap"
     },
     "%@ doesn't open a Windmill account. Try the address you signed up with, or create one with Apple." : {
 
@@ -582,6 +582,17 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "%lld of %lld" : {
+      "comment" : "How many of a roadmap's steps are done, of how many, under its name in the title menu",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld"
           }
         }
       }
@@ -1195,6 +1206,12 @@
         }
       }
     },
+    "All Roadmaps" : {
+
+    },
+    "All Roadmaps…" : {
+
+    },
     "All movements" : {
 
     },
@@ -1206,6 +1223,108 @@
     },
     "Already on Windmill?" : {
 
+    },
+    "Also removes %lld steps that open it in %@" : {
+      "comment" : "A roadmap's delete question: how many steps open it, and the one roadmap that holds them",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Also removes %1$lld step that opens it in %2$@"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Also removes %1$lld steps that open it in %2$@"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Also removes %lld steps that open it, in %@ and %@" : {
+      "comment" : "A roadmap's delete question: how many steps open it, and the two roadmaps that hold them",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Also removes %1$lld step that opens it, in %2$@ and %3$@"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Also removes %1$lld steps that open it, in %2$@ and %3$@"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Also removes %lld steps that open it, in %@, %@ and %lld more roadmaps" : {
+      "comment" : "A roadmap's delete question: how many steps open it, the first two roadmaps that hold them, and how many more roadmaps do",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Also removes %1$#@steps@, in %2$@, %3$@ and %4$#@more@"
+          },
+          "substitutions" : {
+            "more" : {
+              "argNum" : 4,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg more roadmap"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg more roadmaps"
+                    }
+                  }
+                }
+              }
+            },
+            "steps" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg step that opens it"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg steps that open it"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Also removes the step that opens it in %@" : {
+      "comment" : "A roadmap's delete question: the one roadmap whose one step opens it"
     },
     "Answer in progress" : {
 
@@ -1583,6 +1702,9 @@
     "Couldn’t save the routine. Try again." : {
 
     },
+    "Create" : {
+
+    },
     "Create account" : {
 
     },
@@ -1633,7 +1755,10 @@
       "comment" : "A button that deletes a conversation"
     },
     "Delete %@?" : {
-      "comment" : "The question a step's delete asks, with the step's name"
+      "comment" : "The question a delete asks, with the name of the step or of the roadmap"
+    },
+    "Delete Roadmap" : {
+
     },
     "Delete Step" : {
 
@@ -1841,6 +1966,9 @@
 
     },
     "Find" : {
+
+    },
+    "Find a roadmap" : {
 
     },
     "Finish" : {
@@ -2287,6 +2415,9 @@
 
     },
     "Name it to save it." : {
+
+    },
+    "Name your roadmap" : {
 
     },
     "Needs %@ +%lld · %lld to go" : {
