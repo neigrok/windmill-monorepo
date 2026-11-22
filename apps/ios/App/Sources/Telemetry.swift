@@ -44,7 +44,7 @@ nonisolated enum TelemetryPrivacy {
     "gym_intent_opened", "quick_action", "sign_in_restore", "account_delete", "roadmap_room_opened",
     "roadmap_board_complete", "roadmap_board_delete", "roadmap_board_undo", "roadmap_write_refused",
     "roadmap_board_step_open", "roadmap_board_step_action", "roadmap_sheet", "birth", "roadmap_board_create", "roadmap_deletion",
-    "roadmap_step_edit", "roadmap_board_edit", "roadmap_view_switch", "roadmap_graph_select"
+    "roadmap_step_edit", "roadmap_board_edit", "roadmap_view_switch", "roadmap_graph_select", "roadmap_whats_next", "roadmap_graph_fit"
   ]
   static let labels: [String: Set<String>] = [
     "room": ["journal", "gym", "roadmap"],
@@ -72,9 +72,11 @@ nonisolated enum TelemetryPrivacy {
     // when its page opens or its form makes it, whether a step of another roadmap opens the one deleted, the write a
     // refusal or a failure names, and the refusal's kind. A step's page is the web's document, and its acts are the three
     // actions above. A saved edit says of each part of the step whether it changed: `name` above, and the four below.
-    // Of the Graph: the view the switch chose, and under a missed budget which one and the roadmap's size as a bucket.
+    // Of the Graph: the view the switch chose, *Next*'s menu opened and a step picked from it with the steps Up next
+    // as a bucket, Fit shown and left, and under a missed budget which one and the roadmap's size as a bucket.
     "act": ["complete", "reset", "delete", "create", "edit"],
-    "step": ["confirm", "cancel", "held", "ask", "undo", "open", "switch", "search", "new", "rename", "saved", "discard"],
+    "step": ["confirm", "cancel", "held", "ask", "undo", "open", "switch", "search", "new", "rename", "saved", "discard", "pick", "close"],
+    "count": ["0", "1", "2-5", "6-20", "21+"],
     "view": ["board", "graph"],
     "column": ["locked", "upNext", "done"],
     "openers": ["none", "some"],

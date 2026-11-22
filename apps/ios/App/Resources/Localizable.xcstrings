@@ -1002,6 +1002,9 @@
         }
       }
     },
+    "%lld up next" : {
+      "comment" : "The title of Next's menu on the Graph: how many steps are Up next"
+    },
     "%lld weeks" : {
       "localizations" : {
         "en" : {
@@ -1462,6 +1465,9 @@
       "comment" : "A step's colour, said where no kind names it"
     },
     "Bringing it back" : {
+
+    },
+    "Brings the bars back." : {
 
     },
     "Build" : {
@@ -2037,6 +2043,9 @@
 
     },
     "Finishing…" : {
+
+    },
+    "Fit" : {
 
     },
     "Fix set" : {

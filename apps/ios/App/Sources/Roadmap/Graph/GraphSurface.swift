@@ -2,9 +2,10 @@ import QuartzCore
 import SwiftUI
 import RoadmapLayout
 
-// How the Graph keeps its frames while a pinch moves a crowd of steps (Roadmap on iOS §5): at 5,000 steps a phone gives
-// a pinch of the whole roadmap fewer frames than its budget when every disc is drawn anew at each of them. Each way
-// draws what `live` draws once the pinch rests, and at every camera that holds no crowd.
+// How the Graph keeps its frames while a pinch moves a crowd of steps, a finger's pinch or the one a glide is (Roadmap
+// on iOS §5): at 5,000 steps a phone gives a pinch of the whole roadmap fewer frames than its budget when every disc is
+// drawn anew at each of them. Each way draws what `live` draws once the pinch rests, and at every camera that holds no
+// crowd.
 nonisolated enum GraphPinch: String, CaseIterable, Sendable {
   // The picture drawn anew at every camera.
   case live
@@ -21,12 +22,13 @@ nonisolated enum GraphPinch: String, CaseIterable, Sendable {
   static let room = GraphPinch.live
   // A way acts while more steps than this are in view.
   static let crowd = 500
+  // How far apart in zoom `held`'s stops stand.
   static let reach = 1.5
 }
 
-// The Graph's picture on one Canvas, under a camera, as a strategy keeps a pinch's frames (Roadmap · iOS 04.1, 04.2,
-// 04.4). The canvas draws again only when its drawing differs: under `held` a pinch between two stops moves the camera
-// and not the drawing, and the canvas is scaled to the camera in place of a draw.
+// The Graph's picture on one Canvas, under a camera, with a pinch's frames kept the way `pinch` names (Roadmap · iOS
+// 04.1, 04.2, 04.4). The canvas draws again only when its drawing differs: under `held` a pinch between two stops moves
+// the camera and not the drawing, and the canvas is scaled to the camera in place of a draw.
 struct GraphSurface: View {
   let picture: GraphPicture?
   let camera: GraphCamera?

@@ -48,9 +48,9 @@ import SyncTesting
   // The room's model over the engine's views, with a Graph on an iPhone 17's canvas under the room's bars. Neither a
   // band's time nor a caption's ends unless a test ends it.
   func room(_ engine: SteppedEngine, _ runner: ActionRunner, _ memory: UserDefaults, telemetry: any Telemetry = NoopTelemetry(),
-            clock: Clock = Clock(), pinch: GraphPinch = .room, crowd: Int = GraphPinch.crowd) -> RoadmapModel {
+            clock: Clock = Clock(), pinch: GraphPinch = .room, crowd: Int = GraphPinch.crowd, reducesMotion: Bool = false) -> RoadmapModel {
     let graph = RoadmapGraph(telemetry: telemetry, now: { clock.seconds.withLock { $0 } }, wait: { _ in try await Task.sleep(for: .seconds(3_600)) },
-                             pinch: pinch, crowd: crowd)
+                             pinch: pinch, crowd: crowd, reducesMotion: { reducesMotion })
     graph.resize(Viewport(width: 402, height: 874), under: Insets(top: 158, bottom: 140))
     return RoadmapModel(records: { scope, type in try engine.records(scope, type, .drawn, visibleOnly: false) }, runner: runner, phone: memory,
                         telemetry: telemetry, wait: { _ in try await Task.sleep(for: .seconds(3_600)) }, graph: graph)
@@ -273,6 +273,132 @@ import SyncTesting
       #expect(graph.step(at: camera.screen(read.x, read.y)).flatMap { model.shown?.step($0)?.step.label } == "Read the wind")
     }
     #expect(moved == ["live: zoom 1.30 of 1.30", "held: zoom 1.50 of 1.30, no caption", "coarse: zoom 1.30 of 1.30, squared", "layered: zoom 1.30 of 1.30"])
+  }
+
+  // Roadmap · iOS 04.3: *Next* leads with the first Up next step in Roadmap Order and lists them all. A step picked is
+  // selected and the camera glides to it, by a pinch where it must come nearer, and ends with the step's seat at the
+  // centre of what the bars leave at the working zoom; a drag ends a glide where it has come to, and under Reduce
+  // Motion the camera is there at once. The menu's opening and each pick are told as the web's What's next.
+  @Test func nextListsTheUpNextStepsInRoadmapOrderAndAStepPickedIsSelectedAndBroughtToTheCentre() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    try RoadmapFixture.plantLearnToSail(runner)
+    engine.sync()
+    let (telemetry, clock) = (Told(), Clock())
+    let model = room(engine, runner, memory, telemetry: telemetry, clock: clock)
+    model.roomOpened()
+    await opens(model, "Learn to sail", on: engine)
+    model.show(.graph)
+    #expect(await draws(model, on: engine) { $0.model.nodes.count == 8 })
+    let graph = model.graph
+    let picture = try #require(graph.picture)
+    let next = try #require(model.shown).upNext
+    #expect(next.map(\.name) == ["Read the wind", "Tie a bowline"])
+    let seat = { (label: String) throws -> Point in
+      let node = picture.model.nodes[try place(label, in: picture)]
+      return Point(x: node.x, y: node.y)
+    }
+
+    graph.zoom(by: 0.001, about: CGPoint(x: 201, y: 446))
+    graph.rest()
+    let floor = try #require(graph.camera)
+    model.nextOpened()
+    model.pick(next[1])
+    #expect(model.selected == next[1].id && graph.camera == floor && graph.pinched?.from == floor)
+    clock.seconds.withLock { $0 += 0.05 }
+    graph.glided()
+    let nearer = try #require(graph.camera).frame.zoom
+    #expect(nearer > floor.frame.zoom && nearer < 0.8503401360544218 && graph.pinched?.from == floor)
+    clock.seconds.withLock { $0 += 1 }
+    graph.glided()
+    let landed = try #require(graph.camera)
+    let tie = try seat("Tie a bowline")
+    #expect(landed == floor.centred(on: tie) && graph.pinched == nil && landed.frame.zoom == 0.8503401360544218)
+    #expect(abs(landed.screen(tie.x, tie.y).x - 201) < 1e-9 && abs(landed.screen(tie.x, tie.y).y - 446) < 1e-9)
+
+    model.pick(next[0])
+    clock.seconds.withLock { $0 += 0.05 }
+    graph.glided()
+    graph.pan(by: CGSize(width: 10, height: 0))
+    let stopped = try #require(graph.camera)
+    clock.seconds.withLock { $0 += 1 }
+    graph.glided()
+    let read = try seat("Read the wind")
+    #expect(graph.camera == stopped && stopped != landed.centred(on: read) && model.selected == next[0].id)
+    graph.rest()
+
+    let still = room(engine, runner, memory, reducesMotion: true)
+    still.roomOpened()
+    await opens(still, "Learn to sail", on: engine)
+    #expect(await draws(still, on: engine) { $0.model.nodes.count == 8 })
+    let opening = try #require(still.graph.camera)
+    still.pick(next[1])
+    #expect(still.graph.camera == opening.centred(on: tie) && still.graph.camera != opening && still.graph.pinched == nil)
+
+    #expect(telemetry.lines.withLock { $0 } == [
+      "roadmap_room_opened", "roadmap_view_switch view=graph", "roadmap_whats_next count=2-5 step=open",
+      "roadmap_whats_next count=2-5 step=pick", "roadmap_whats_next count=2-5 step=pick",
+    ])
+    #expect([0, 1, 2, 5, 6, 20, 21, 5_000].map(RoadmapModel.bucket) == ["0", "1", "2-5", "2-5", "6-20", "6-20", "21+", "21+"])
+  }
+
+  // Roadmap · iOS 04.5: Fit glides the camera to the whole roadmap as the layout frames it, and frames it anew as the
+  // bars leave the canvas. Fit stands until it is ended, through a pinch too; once it is, the camera stays where Fit
+  // left it as the bars come back. A canvas that leaves the screen ends it.
+  @Test func fitFramesTheWholeRoadmapAsTheBarsLeaveAndTheCameraStaysWhereFitLeftIt() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    try RoadmapFixture.plantLearnToSail(runner)
+    engine.sync()
+    let (telemetry, clock) = (Told(), Clock())
+    let model = room(engine, runner, memory, telemetry: telemetry, clock: clock)
+    model.roomOpened()
+    await opens(model, "Learn to sail", on: engine)
+    model.show(.graph)
+    #expect(await draws(model, on: engine) { $0.model.nodes.count == 8 })
+    let graph = model.graph
+    let picture = try #require(graph.picture)
+    let (canvas, barred, bare) = (Viewport(width: 402, height: 874), Insets(top: 158, bottom: 140), Insets(top: 62, bottom: 34))
+    let whole = { (insets: Insets) -> GraphCamera in GraphCamera(framing: picture.model.bounds, in: canvas, under: insets) }
+
+    graph.zoom(by: 2, about: CGPoint(x: 120, y: 300))
+    graph.rest()
+    let close = try #require(graph.camera)
+    model.fit()
+    #expect(graph.fitted && graph.camera == close && graph.pinched?.from == close)
+    clock.seconds.withLock { $0 += 0.05 }
+    graph.glided()
+    graph.resize(canvas, under: bare)
+    #expect(graph.camera != whole(bare) && graph.pinched != nil)
+    clock.seconds.withLock { $0 += 1 }
+    graph.glided()
+    #expect(graph.camera == whole(bare) && graph.camera != whole(barred) && graph.pinched == nil && graph.fitted)
+
+    graph.zoom(by: 1.5, about: CGPoint(x: 201, y: 437))
+    graph.rest()
+    #expect(graph.fitted && graph.camera != whole(bare))
+    graph.resize(Viewport(width: 402, height: 800), under: bare)
+    clock.seconds.withLock { $0 += 1 }
+    graph.glided()
+    #expect(graph.camera == GraphCamera(framing: picture.model.bounds, in: Viewport(width: 402, height: 800), under: bare))
+    graph.resize(canvas, under: bare)
+    clock.seconds.withLock { $0 += 1 }
+    graph.glided()
+
+    model.unfit()
+    let left = try #require(graph.camera)
+    graph.resize(canvas, under: barred)
+    let kept = try #require(graph.camera)
+    #expect(!graph.fitted && left == whole(bare) && kept.frame.zoom == left.frame.zoom && abs(kept.frame.x - left.frame.x) < 1e-9
+            && abs(kept.frame.y - left.frame.y) < 1e-9)
+
+    model.fit()
+    graph.closed()
+    #expect(!graph.fitted && graph.pinched == nil)
+    #expect(telemetry.lines.withLock { $0 } == [
+      "roadmap_room_opened", "roadmap_view_switch view=graph", "roadmap_graph_fit step=open", "roadmap_graph_fit step=close",
+      "roadmap_graph_fit step=open",
+    ])
   }
 
   // §5 and §11: a roadmap the bubble layout refuses is drawn by the fallback and reported once a launch, and so is a

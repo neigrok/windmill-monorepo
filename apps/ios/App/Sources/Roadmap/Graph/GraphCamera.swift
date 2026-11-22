@@ -1,15 +1,58 @@
-import CoreGraphics
+import SwiftUI
 import RoadmapLayout
 
-// The Graph's camera (Roadmap · iOS 04.1, 04.4; the web's `Camera2D` without its glides): the world point at the
-// centre of the canvas and the zoom, over a canvas that runs under the room's bars. It opens where the layout frames
-// the roadmap and stays inside what that framing gives: no zoom under the layout's floor, none over the web's pinch
-// ceiling, and the roadmap's box never out of what the bars leave.
+// The Graph's camera (Roadmap · iOS 04.1, 04.3 to 04.5; the web's `Camera2D`): the world point at the centre of the
+// canvas and the zoom, over a canvas that runs under the room's bars. It opens where the layout frames the roadmap and
+// stays inside what that framing gives: no zoom under the layout's floor, none over the web's pinch ceiling, and the
+// roadmap's box never out of what the bars leave.
 nonisolated struct GraphCamera: Equatable {
   // A pinch under way: the camera it began from, and the point of the canvas it zooms about.
   struct Pinched: Equatable {
     let from: GraphCamera
     let about: CGPoint
+  }
+
+  // The camera's glide from one place to another, in the web's three lengths and its easing (`Camera2D.glideTo`). It
+  // zooms about the one point of the canvas at which both ends show the same place, so every step moves along a
+  // straight line and the glide is a pinch about that point; two ends at one zoom are a pan.
+  struct Glide {
+    static let ease = UnitCurve.bezier(startControlPoint: UnitPoint(x: 0.16, y: 1), endControlPoint: UnitPoint(x: 0.3, y: 1))
+
+    let from: GraphCamera
+    let to: GraphCamera
+    // 0.48 s where the camera's centre travels half the shorter side of what the bars leave or less, 0.72 s where it
+    // travels that side or more, and 0.6 s between.
+    let seconds: Double
+    // The pinch the glide is; none where it is a pan.
+    let pinched: Pinched?
+
+    init(from: GraphCamera, to: GraphCamera) {
+      self.from = from
+      self.to = to
+      let side = min(from.viewport.width - from.insets.left - from.insets.right, from.viewport.height - from.insets.top - from.insets.bottom) / from.frame.zoom
+      let travel = hypot(to.frame.x - from.frame.x, to.frame.y - from.frame.y)
+      seconds = travel <= side / 2 ? 0.48 : travel >= side ? 0.72 : 0.6
+      let (near, far) = (from.frame.zoom, to.frame.zoom)
+      guard abs(far / near - 1) > 1e-6 else {
+        pinched = nil
+        return
+      }
+      pinched = Pinched(from: from, about: from.screen((from.frame.x * near - to.frame.x * far) / (near - far),
+                                                       (from.frame.y * near - to.frame.y * far) / (near - far)))
+    }
+
+    // Where the glide has the camera so many seconds after it began: at its end from `seconds` on.
+    func camera(after elapsed: Double) -> GraphCamera {
+      guard elapsed < seconds else { return to }
+      let eased = Self.ease.value(at: max(0, elapsed) / seconds)
+      var camera = from
+      if let pinched {
+        camera.zoom(by: pow(to.frame.zoom / from.frame.zoom, eased), about: pinched.about)
+      } else {
+        camera.pan(by: CGSize(width: (from.frame.x - to.frame.x) * from.frame.zoom * eased, height: (from.frame.y - to.frame.y) * from.frame.zoom * eased))
+      }
+      return camera
+    }
   }
 
   // The web's pinch ceiling (`Camera2D.PINCH_MAX_ZOOM`).
@@ -37,6 +80,16 @@ nonisolated struct GraphCamera: Equatable {
     self.bounds = bounds
     frame = camera.frame
     hold()
+  }
+
+  // This camera brought to a seat (the web's `glideTo`): the seat at the centre of what the bars leave, no farther out
+  // than the phone's working zoom, where a disc and its caption read.
+  func centred(on seat: Point) -> GraphCamera {
+    var camera = self
+    camera.frame.zoom = max(frame.zoom, Theme.phoneWorkingZoom)
+    camera.frame.x = seat.x + (insets.right - insets.left) / (2 * camera.frame.zoom)
+    camera.frame.y = seat.y + (insets.bottom - insets.top) / (2 * camera.frame.zoom)
+    return camera
   }
 
   // The camera's own facts as the layout's framing reads them, at the phone's working zoom.

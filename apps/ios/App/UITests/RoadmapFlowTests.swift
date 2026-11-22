@@ -1,11 +1,12 @@
 import XCTest
 
-// The Graph's flows (Roadmap · iOS 04.1, 04.2, 04.4, 04.7) on the simulator's boards. The canvas is one element, as
+// The Graph's flows (Roadmap · iOS 04.1 to 04.5, 04.7) on the simulator's boards. The canvas is one element, as
 // VoiceOver hears it, so a step is tapped where the layout seats it: *Learn to sail* opens at the phone's working zoom
 // with the middle of its seats' box at the centre of what the bars leave, and each step stands a known way from that
 // centre (`packages/api-contract/roadmap/layout/learn-to-sail.json` pins the seats). The zoom floor is half the opening
-// zoom, and the pinch ceiling 2.94 times it. A selected step's bar takes room at the foot, so that centre is read
-// while no step is selected, and a pinch, which XCTest centres on the element, is made then too.
+// zoom, and the pinch ceiling 2.94 times it. The band slot holds *Next* at rest and the selected step's bar once one
+// is selected, so that centre is read while no step is selected, and a pinch, which XCTest centres on the element,
+// is made then too.
 @MainActor final class RoadmapFlowTests: XCTestCase {
   override func setUp() { continueAfterFailure = false }
 
@@ -134,6 +135,60 @@ import XCTest
       XCTAssertTrue(bar("Sky, Read the wind", in: app).waitForExistence(timeout: 5), way)
       app.terminate()
     }
+  }
+
+  // 04.1 and 04.3: with no step selected the band slot holds *Next* over the first Up next step, and its menu lists
+  // the Up next steps in Roadmap Order under their count. A step picked is selected and glides to the centre of what
+  // the bars leave, from 4 points right of it and 101 under; a tap on empty canvas brings *Next* back.
+  func testNextListsTheUpNextStepsAndAStepPickedIsSelectedAndBroughtToTheCentre() {
+    let app = launch("roadmap-learn-to-sail")
+    let (_, centre) = graph(of: app)
+    let next = app.buttons["roadmap-graph-next"]
+    XCTAssertTrue(next.waitForExistence(timeout: 10))
+    XCTAssertEqual(next.label, "Next, Read the wind")
+    next.tap()
+    XCTAssertTrue(app.staticTexts["2 up next"].waitForExistence(timeout: 5))
+    let listed = app.buttons.matching(NSPredicate(format: "label IN %@", ["Read the wind", "Tie a bowline"])).allElementsBoundByIndex
+    XCTAssertEqual(listed.map(\.label), ["Read the wind", "Tie a bowline"])
+    listed[1].tap()
+    XCTAssertTrue(bar("Learn, Tie a bowline", in: app).waitForExistence(timeout: 5))
+    XCTAssertFalse(next.exists)
+
+    // No step passes under this point while the picture glides, nor stands there once it rests.
+    point(app, from: centre, right: -150, down: 180).tap()
+    XCTAssertTrue(next.waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["roadmap-graph-step"].exists)
+    point(app, from: centre, right: 0, down: 0).tap()
+    XCTAssertTrue(bar("Learn, Tie a bowline", in: app).waitForExistence(timeout: 5))
+  }
+
+  // 04.5: Fit shows the whole roadmap and nothing else: the bar, the switch row and the foot leave, and the canvas has
+  // what the status bar and the home indicator leave. One tap anywhere brings the bars back and selects nothing, and
+  // the camera stays where Fit left it: each step a known way from the middle of what Fit had.
+  func testFitShowsTheWholeRoadmapAloneAndOneTapBringsTheBarsBack() {
+    let app = launch("roadmap-learn-to-sail")
+    let (canvas, _) = graph(of: app)
+    let barred = canvas.frame
+    let (fit, selected) = (app.buttons["roadmap-fit"], app.buttons["roadmap-graph-step"])
+    let chrome = [fit, app.buttons["roadmap-graph-next"], app.buttons["roadmap-new-step"], app.buttons["you"], app.segmentedControls.firstMatch]
+    XCTAssertEqual(chrome.map(\.exists), [true, true, true, true, true])
+    canvas.pinch(withScale: 6, velocity: 3)
+
+    fit.tap()
+    XCTAssertTrue(fit.waitForNonExistence(timeout: 5))
+    XCTAssertEqual(chrome.map(\.exists), [false, false, false, false, false])
+    let grown = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in canvas.frame.height > barred.height + 150 }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [grown], timeout: 5), .completed, "\(canvas.frame) from \(barred)")
+    let whole = CGPoint(x: canvas.frame.midX, y: canvas.frame.midY)
+
+    // *Read the wind* stands 92 points right of that middle and 62 under it; the tap there is Fit's, not the step's.
+    point(app, from: whole, right: 92, down: 62).tap()
+    XCTAssertTrue(fit.waitForExistence(timeout: 5))
+    XCTAssertEqual(chrome.map(\.exists), [true, true, true, true, true])
+    XCTAssertFalse(selected.exists)
+    XCTAssertEqual(canvas.frame, barred)
+    point(app, from: whole, right: 92, down: 62).tap()
+    XCTAssertTrue(bar("Sky, Read the wind", in: app).waitForExistence(timeout: 5))
   }
 
   // 04.7: a roadmap with no step shows the Board's first step under the Graph too, and its New Step opens the form.

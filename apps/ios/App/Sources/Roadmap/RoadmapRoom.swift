@@ -2,10 +2,11 @@ import SwiftUI
 import UIKit
 import RoadmapDomain
 
-// The Roadmap room (Roadmap · iOS S.1, S.2, 01.3, 01.5, 04.7, 11.22a): one stack, the open roadmap under its name with
-// the switch row, its Board or its Graph, and at the foot the one band over New step. All Roadmaps and a step's page are
-// pushed on the stack, and New Roadmap and the step form are its two sheets. What the band says is announced and felt
-// once, whichever screen stands over it.
+// The Roadmap room (Roadmap · iOS S.1, S.2, 01.3, 01.5, 04.5, 04.7, 11.22a): one stack, the open roadmap under its name
+// with the switch row, its Board or its Graph, and at the foot the one band over New step. All Roadmaps and a step's
+// page are pushed on the stack, and New Roadmap and the step form are its two sheets. What the band says is announced
+// and felt once, whichever screen stands over it. While the Graph's Fit stands, the bar, the switch row and the foot
+// are away.
 struct RoadmapRoom: View {
   @Bindable var roadmap: RoadmapModel
   let app: AppModel
@@ -68,15 +69,22 @@ struct RoadmapRoom: View {
   }
 
   // The open roadmap in the view the room shows of it, the Board's first step for a roadmap with no step under either
-  // choice (04.7). On the Graph the band slot holds the selected step while no band stands there (04.2).
+  // choice (04.7). On the Graph the band slot holds the selected step while no band stands there (04.2), and with none
+  // selected *Next* over the Up next steps, where there is one (04.1, 04.3). Fit leaves the Graph alone under the
+  // status bar (04.5).
   func views(of open: RoadmapModel.OpenRoadmap) -> some View {
     let graph = roadmap.view(of: open) == .graph
+    let fitted = graph && roadmap.graph.fitted
     return pinnedUnderBar(Group {
       if graph { RoadmapGraphCanvas(roadmap: roadmap, progress: open.board.overall.progress) }
       else { RoadmapBoard(roadmap: roadmap, open: open) }
-    }).modifier(RoadmapTitle(roadmap: roadmap, open: open))
-      .roadmapFoot(roadmap) {
-        if graph, roadmap.band == nil, let selected = roadmap.selected.flatMap({ open.step($0) }) { GraphStepBar(row: selected) }
+    }, graph: graph, away: fitted).modifier(RoadmapTitle(roadmap: roadmap, open: open))
+      .toolbarVisibility(fitted ? .hidden : .automatic, for: .navigationBar)
+      .roadmapFoot(roadmap, away: fitted) {
+        if graph, roadmap.band == nil {
+          if let selected = roadmap.selected.flatMap({ open.step($0) }) { GraphStepBar(row: selected) }
+          else if !open.upNext.isEmpty { GraphNextBar(roadmap: roadmap, rows: open.upNext) }
+        }
         HStack {
           Spacer()
           Button("New Step", systemImage: "plus") { roadmap.newStep(from: .foot) }.modifier(GlassCircle()).accessibilityIdentifier("roadmap-new-step")
@@ -84,23 +92,29 @@ struct RoadmapRoom: View {
       }
   }
 
-  // The switch chooses the roadmap's view. Find, and the Board's Sort and filter, are drawn and do nothing; the Graph's
-  // own tool, Fit, is not built.
-  var switchRow: some View {
+  // The switch chooses the roadmap's view, and carries the view's one tool: the Board's Sort and filter, drawn like
+  // Find and doing nothing, and the Graph's Fit (04.5), which needs the Graph on screen with its camera.
+  func switchRow(graph: Bool) -> some View {
     HStack(spacing: RoomSpace.related) {
       Picker("View", selection: Binding(get: { roadmap.lens }, set: { roadmap.show($0) })) {
         Text("Board").tag(RoadmapModel.Lens.board)
         Text("Graph").tag(RoadmapModel.Lens.graph)
       }.pickerStyle(.segmented)
       Button("Find", systemImage: "magnifyingglass") {}.modifier(GlassCircle()).disabled(true)
-      if roadmap.lens == .board { Menu("Sort and filter", systemImage: "line.3.horizontal.decrease.circle") {}.modifier(GlassCircle()).disabled(true) }
+      if roadmap.lens == .board {
+        Menu("Sort and filter", systemImage: "line.3.horizontal.decrease.circle") {}.modifier(GlassCircle()).disabled(true)
+      } else {
+        Button("Fit", systemImage: "arrow.up.left.and.arrow.down.right") { roadmap.fit() }.modifier(GlassCircle())
+          .disabled(!graph || roadmap.graph.camera == nil).accessibilityIdentifier("roadmap-fit")
+      }
     }.padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.related)
   }
 
-  // The switch row stands in the bar's own safe area on iOS 26, and on the bar material over the list before it.
-  @ViewBuilder func pinnedUnderBar(_ screen: some View) -> some View {
-    if #available(iOS 26.0, *) { screen.safeAreaBar(edge: .top) { switchRow } }
-    else { screen.safeAreaInset(edge: .top) { switchRow.background(.bar) } }
+  // The switch row stands in the bar's own safe area on iOS 26, and on the bar material over the list before it. Away,
+  // it leaves that area to the screen.
+  @ViewBuilder func pinnedUnderBar(_ screen: some View, graph: Bool, away: Bool) -> some View {
+    if #available(iOS 26.0, *) { screen.safeAreaBar(edge: .top) { if !away { switchRow(graph: graph) } } }
+    else { screen.safeAreaInset(edge: .top) { if !away { switchRow(graph: graph).background(.bar) } } }
   }
 }
 

@@ -1,14 +1,16 @@
 import Foundation
 import Observation
 import QuartzCore
+import UIKit
 import RoadmapDomain
 import RoadmapLayout
 import SyncEngine
 
-// The Graph of the open roadmap (Roadmap · iOS 04.1, 04.2, 04.4): its picture, laid out off the main actor as the
-// phone's copy reads; the camera a person moves; and the captions the layout names at that camera. The canvas draws
-// what this holds and decides nothing. It also holds the Graph to §5's budget: the first frame after the tap that
-// showed it and the frames a gesture is given are measured, and a miss is reported once a launch.
+// The Graph of the open roadmap (Roadmap · iOS 04.1 to 04.5): its picture, laid out off the main actor as the phone's
+// copy reads; the camera a person moves, which also glides to a step and to the whole roadmap; and the captions the
+// layout names at that camera. The canvas draws what this holds and decides nothing. It also holds the Graph to §5's
+// budget: the first frame after the tap that showed it and the frames a gesture or a glide is given are measured, and
+// a miss is reported once a launch.
 @Observable @MainActor
 final class RoadmapGraph {
   // What the Graph measures of itself against §5's budget, in milliseconds, each on a roadmap of this many steps.
@@ -16,8 +18,8 @@ final class RoadmapGraph {
     // From the tap that made the Graph the room's view to the first frame that draws its picture, and the layout's
     // share of it.
     case firstFrame(ms: Double, layoutMs: Double, steps: Int)
-    // The gaps between the frames the main actor was given while a gesture moved the camera, how long it worked
-    // between each two of them, and the zoom the gesture left the camera at.
+    // The gaps between the frames the main actor was given while a gesture or a glide moved the camera, how long it
+    // worked between each two of them, and the zoom the camera was left at.
     case frames(gapsMs: [Double], workMs: [Double], zoom: Double, steps: Int)
   }
 
@@ -42,14 +44,20 @@ final class RoadmapGraph {
   // How the canvas keeps a pinch's frames, and the count of steps in view past which it does.
   let pinch: GraphPinch
   let crowd: Int
+  // Whether the camera goes to a place at once, with no glide: the system's Reduce Motion.
+  let reducesMotion: () -> Bool
   // The roadmap's picture as last laid out; none until the first layout ends, or where the steps cannot be seated.
   private(set) var picture: GraphPicture?
   private(set) var unseated = false
   // None until both the picture and the canvas's size are known.
   private(set) var camera: GraphCamera?
   private(set) var captions: [Caption] = []
-  // The pinch under way, from its first report to the fingers' leaving or the first drag after it.
+  // The pinch under way, from its first report to the fingers' leaving or the first drag after it; and the pinch a
+  // glide is, while it moves the camera.
   private(set) var pinched: GraphCamera.Pinched?
+  // Fit stands (04.5): the room shows the whole roadmap and nothing else, and the camera frames it anew whenever the
+  // canvas or what covers it changes.
+  private(set) var fitted = false
   // The roadmap this Graph shows, and its latest read still waiting for the layout.
   @ObservationIgnored var roadmap: String?
   @ObservationIgnored var awaiting: FollowGraph?
@@ -61,15 +69,18 @@ final class RoadmapGraph {
   // The pass that places the captions again once the next of them is due to appear or to go.
   @ObservationIgnored var naming: Task<Void, Never>?
   @ObservationIgnored var opening: TimeInterval?
+  // The glide under way, and the moment it began.
+  @ObservationIgnored var glide: (course: GraphCamera.Glide, began: TimeInterval)?
   @ObservationIgnored let frames = GraphFrames()
   @ObservationIgnored var reported: Set<String> = []
 
   init(telemetry: any Telemetry = NoopTelemetry(), layout: any LayoutEngine = BubbleLayoutEngine(),
        now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
        wait: @escaping Wait = { try await Task.sleep(for: $0) }, measured: ((Measure) -> Void)? = nil, pinch: GraphPinch = .room,
-       crowd: Int = GraphPinch.crowd) {
+       crowd: Int = GraphPinch.crowd, reducesMotion: @escaping () -> Bool = { UIAccessibility.isReduceMotionEnabled }) {
     self.telemetry = telemetry; self.layout = layout; self.now = now; self.wait = wait; self.measured = measured
-    self.pinch = pinch; self.crowd = crowd
+    self.pinch = pinch; self.crowd = crowd; self.reducesMotion = reducesMotion
+    frames.each = { [weak self] in self?.glided() }
   }
 
   // A tap made the Graph what the room shows: the time to its first frame runs from here.
@@ -77,10 +88,10 @@ final class RoadmapGraph {
     opening = now()
   }
 
-  // The canvas left the screen: a first frame still to come is not that tap's, and no gesture is under way.
+  // The canvas left the screen: a first frame still to come is not that tap's, no gesture or glide is under way, and
+  // Fit, which only a tap on the canvas ends, stands no longer.
   func closed() {
-    opening = nil
-    pinched = nil
+    (opening, pinched, glide, fitted) = (nil, nil, nil, false)
     _ = frames.end()
   }
 
@@ -89,7 +100,7 @@ final class RoadmapGraph {
   func follow(_ read: FollowGraph, of roadmap: String) {
     if self.roadmap.map({ !$0.utf8.elementsEqual(roadmap.utf8) }) ?? true {
       self.roadmap = roadmap
-      (picture, unseated, camera, captions, placer) = (nil, false, nil, [], CaptionPlacer())
+      (picture, unseated, camera, captions, placer, glide, pinched, fitted) = (nil, false, nil, [], CaptionPlacer(), nil, nil, false)
       placer.setInsets(insets, blocks: [])
       naming?.cancel()
     }
@@ -122,7 +133,7 @@ final class RoadmapGraph {
           if picture.engine == .radial, reported.insert("fallback").inserted { telemetry.failure("roadmap_layout", kind: "fallback") }
           frame()
         case .failure:
-          (picture, unseated, camera, captions) = (nil, true, nil, [])
+          (picture, unseated, camera, captions, glide, pinched, fitted) = (nil, true, nil, [], nil, nil, false)
           if reported.insert("unseated").inserted { telemetry.failure("roadmap_layout", kind: "unseated") }
         }
       }
@@ -139,12 +150,57 @@ final class RoadmapGraph {
   }
 
   // The camera over the picture and the canvas as they now are: where the layout frames the roadmap the first time,
-  // and afterwards where the person left it, held to what the new picture and canvas allow.
+  // and afterwards where the person left it, held to what the new picture and canvas allow. While Fit stands it goes
+  // to the whole roadmap as the layout now frames it, and a glide under way goes on to where it was going.
   func frame() {
     guard let picture, let viewport else { return }
-    camera = camera.map { GraphCamera($0, over: picture.model.bounds, in: viewport, under: insets) }
-      ?? GraphCamera(framing: picture.model.bounds, in: viewport, under: insets)
+    let whole = GraphCamera(framing: picture.model.bounds, in: viewport, under: insets)
+    let bound = fitted ? whole : glide.map { GraphCamera($0.course.to, over: picture.model.bounds, in: viewport, under: insets) }
+    camera = camera.map { GraphCamera($0, over: picture.model.bounds, in: viewport, under: insets) } ?? whole
+    move(to: bound ?? camera)
+  }
+
+  // The camera goes to a place: by a glide the display's link moves each frame, or at once under Reduce Motion and
+  // where it stands there already.
+  func move(to place: GraphCamera?) {
+    guard let place, let camera else { return }
+    guard !reducesMotion(), place != camera else {
+      self.camera = place
+      name()
+      if glide != nil { rest() }
+      return
+    }
+    let course = GraphCamera.Glide(from: camera, to: place)
+    (glide, pinched) = ((course, now()), course.pinched)
+    frames.begin()
+  }
+
+  // One frame of the glide under way: the camera where the glide has it by now, and at its end the glide's frames
+  // measured as a gesture's are.
+  func glided() {
+    guard let glide else { return }
+    let elapsed = now() - glide.began
+    camera = glide.course.camera(after: elapsed)
     name()
+    if elapsed >= glide.course.seconds { rest() }
+  }
+
+  // A step brought into view (04.3): its seat at the centre of what the bars leave, at a zoom where it reads.
+  func bring(_ step: String) {
+    guard let picture, let place = picture.placeOf[UTF16Text(step)] else { return }
+    move(to: camera?.centred(on: Point(x: picture.model.nodes[place].x, y: picture.model.nodes[place].y)))
+  }
+
+  // Fit (04.5): the whole roadmap as the layout frames it, kept so while Fit stands.
+  func fit() {
+    guard let picture, let viewport else { return }
+    fitted = true
+    move(to: GraphCamera(framing: picture.model.bounds, in: viewport, under: insets))
+  }
+
+  // Fit ends, and the camera stays where it left it.
+  func unfit() {
+    fitted = false
   }
 
   // The captions the layout names at the camera now, and again once the next of them is due to appear or to go.
@@ -168,25 +224,26 @@ final class RoadmapGraph {
     name()
   }
 
-  // One finger's drag, which no pinch is under way with.
+  // One finger's drag, which no pinch is under way with and which ends a glide where it has come to.
   func pan(by translation: CGSize) {
     frames.begin()
-    pinched = nil
+    (glide, pinched) = (nil, nil)
     camera?.pan(by: translation)
     name()
   }
 
-  // A pinch about the point it began at.
+  // A pinch about the point it began at, which ends a glide where it has come to.
   func zoom(by factor: Double, about point: CGPoint) {
     frames.begin()
+    if glide != nil { (glide, pinched) = (nil, nil) }
     pinched = pinched ?? camera.map { GraphCamera.Pinched(from: $0, about: point) }
     camera?.zoom(by: factor, about: point)
     name()
   }
 
-  // The fingers left: the frames the gesture was given are measured against the budget.
+  // The fingers left, or a glide ended: the frames the camera's move was given are measured against the budget.
   func rest() {
-    pinched = nil
+    (glide, pinched) = (nil, nil)
     let (gaps, work) = frames.end()
     guard let steps = picture?.steps.done.count, let camera, !gaps.isEmpty else { return }
     measured?(.frames(gapsMs: gaps, workMs: work, zoom: camera.frame.zoom, steps: steps))
@@ -231,12 +288,13 @@ final class RoadmapGraph {
   }
 }
 
-// The frames the main actor was given while a gesture moved the camera, as the display's own link saw them: a frame the
-// canvas held the main actor through arrives late, and its gap says by how much. Beside each gap stands how long the
-// main actor worked in it, from its run loop waking to its resting again, its commit to the screen included: what a
-// frame cost, which a gap on time does not say.
+// The frames the main actor was given while a gesture or a glide moved the camera, as the display's own link saw them:
+// a frame the canvas held the main actor through arrives late, and its gap says by how much. Beside each gap stands how
+// long the main actor worked in it, from its run loop waking to its resting again, its commit to the screen included:
+// what a frame cost, which a gap on time does not say. Each frame it tells whoever moves the camera by the clock.
 @MainActor
 final class GraphFrames: NSObject {
+  var each: (() -> Void)?
   var link: CADisplayLink?
   var watching: [CFRunLoopObserver] = []
   var stamps: [CFTimeInterval] = []
@@ -268,6 +326,7 @@ final class GraphFrames: NSObject {
     stamps.append(link.timestamp)
     work.append(worked)
     worked = 0
+    each?()
   }
 
   // The gaps between the frames since `begin` and the main actor's work in each, in milliseconds; none where no

@@ -2,10 +2,11 @@ import SwiftUI
 import RoadmapDomain
 import RoadmapLayout
 
-// The Graph (Roadmap · iOS 04.1, 04.2, 04.4): the open roadmap's picture on its surface, which runs under the room's
-// bars. One finger pans and a pinch zooms about the point it began at; a tap selects the step it lands on, by its disc
-// or by a 44 pt target where the disc is smaller, and a tap on empty canvas selects none. VoiceOver hears one element,
-// which says how far the roadmap is and names the Board as the way to its steps.
+// The Graph (Roadmap · iOS 04.1, 04.2, 04.4, 04.5): the open roadmap's picture on its surface, which runs under the
+// room's bars. One finger pans and a pinch zooms about the point it began at; a tap selects the step it lands on, by
+// its disc or by a 44 pt target where the disc is smaller, and a tap on empty canvas selects none. While Fit stands a
+// tap anywhere ends it. VoiceOver hears one element, which says how far the roadmap is and names the Board as the way
+// to its steps, or under Fit what a tap does.
 struct RoadmapGraphCanvas: View {
   let roadmap: RoadmapModel
   // How far the roadmap is, in the bar's words.
@@ -29,7 +30,9 @@ struct RoadmapGraphCanvas: View {
         GraphSurface(picture: picture, camera: camera, captions: captions, selected: selected, pinched: graph.pinched, pinch: graph.pinch,
                      crowd: graph.crowd) { _ in graph.drew() }
           .gesture(moves)
-          .simultaneousGesture(SpatialTapGesture().onEnded { tap in roadmap.select(graph.step(at: tap.location)) })
+          .simultaneousGesture(SpatialTapGesture().onEnded { tap in
+            if graph.fitted { roadmap.unfit() } else { roadmap.select(graph.step(at: tap.location)) }
+          })
           .ignoresSafeArea()
           .accessibilityHidden(true)
           .onChange(of: [space.size.width, space.size.height, bars.top, bars.trailing, bars.bottom, bars.leading], initial: true) {
@@ -44,7 +47,8 @@ struct RoadmapGraphCanvas: View {
         // What VoiceOver hears of the Graph stands over what the bars leave of it, where the picture is framed.
         .overlay {
           Color.clear.allowsHitTesting(false).accessibilityElement().accessibilityLabel("Graph").accessibilityValue(progress)
-            .accessibilityHint("The Board lists every step.").accessibilityIdentifier("roadmap-graph")
+            .accessibilityHint(graph.fitted ? Text("Brings the bars back.") : Text("The Board lists every step."))
+            .accessibilityIdentifier("roadmap-graph")
         }
     }
   }
@@ -80,5 +84,48 @@ struct GraphStepBar: View {
     }.buttonStyle(RoomSecondaryStyle(room: .roadmap)).buttonBorderShape(.capsule).controlSize(.large)
       .padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.related)
       .accessibilityElement(children: .combine).accessibilityIdentifier("roadmap-graph-step")
+  }
+}
+
+// The Graph's band slot with no step selected (Roadmap · iOS 04.1, 04.3; the kit's Step bar, Next): *Next* and the first
+// Up next step, over a menu of every Up next step in Roadmap Order under their count. A step picked is selected and
+// brought to the centre of the canvas.
+struct GraphNextBar: View {
+  let roadmap: RoadmapModel
+  // The Up next steps in Roadmap Order, the first of which the bar names.
+  let rows: [RoadmapModel.Row]
+
+  var body: some View {
+    glass(Menu {
+      Section {
+        ForEach(rows) { row in
+          Button { roadmap.pick(row) } label: {
+            // A menu draws a template symbol in its own ink, so the kind's colour is the image's own.
+            Label { Text(row.name) } icon: {
+              Image(uiImage: (UIImage(systemName: row.card.column.symbol) ?? UIImage())
+                .withTintColor(UIColor(RoadmapPalette.kind(row.step.color)), renderingMode: .alwaysOriginal))
+            }
+          }
+        }
+      } header: {
+        Text(String(localized: "\(rows.count) up next", locale: .copy, comment: "The title of Next's menu on the Graph: how many steps are Up next"))
+          .onAppear { roadmap.nextOpened() }
+      }
+    } label: {
+      HStack(spacing: 10) {
+        Text("Next").font(.subheadline.weight(.semibold)).foregroundStyle(RoadmapPalette.inkDim)
+        Text(rows.first?.name ?? "").font(.body.weight(.semibold)).foregroundStyle(RoadmapPalette.ink).lineLimit(1)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        Image(systemName: "chevron.up.chevron.down").imageScale(.small).foregroundStyle(RoadmapPalette.inkDim)
+      }
+    }.menuOrder(.fixed)).buttonBorderShape(.capsule).controlSize(.large).tint(RoadmapPalette.ink)
+      .padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.related)
+      .accessibilityIdentifier("roadmap-graph-next")
+  }
+
+  // The system's regular glass, bordered before iOS 26, as the selected step's bar wears it.
+  @ViewBuilder func glass(_ menu: some View) -> some View {
+    if #available(iOS 26.0, *) { menu.buttonStyle(.glass) }
+    else { menu.buttonStyle(.bordered) }
   }
 }

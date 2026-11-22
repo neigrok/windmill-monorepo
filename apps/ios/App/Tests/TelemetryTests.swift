@@ -163,7 +163,8 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
   }
 
   @Test func theGraphTellsItsSwitchItsSelectionAndItsReportsAndNothingOfAStep() {
-    let events = ["roadmap_view_switch", "roadmap_graph_select", "roadmap_board_step_open", "roadmap_board_create"]
+    let events = ["roadmap_view_switch", "roadmap_graph_select", "roadmap_board_step_open", "roadmap_board_create", "roadmap_whats_next",
+                  "roadmap_graph_fit"]
     #expect(events.filter(TelemetryPrivacy.events.contains) == events)
     for view in ["board", "graph"] {
       #expect(TelemetryPrivacy.properties(["view": view, "tree": "private-id", "title": "private-marker"]) == ["view": .label(view)])
@@ -175,6 +176,16 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
             ["surface": .label("document"), "door": .label("graph"), "column": .label("upNext")])
     #expect(TelemetryPrivacy.properties(["step": "open", "door": "foot", "view": "graph", "node": "private-id"]) ==
             ["step": .label("open"), "door": .label("foot"), "view": .label("graph")])
+    // *Next* tells its menu's opening and a pick with the steps Up next as a bucket, never their count or the step
+    // picked; Fit tells that it was shown and left.
+    for (step, count) in [("open", "1"), ("pick", "2-5"), ("pick", "6-20"), ("open", "21+")] {
+      #expect(TelemetryPrivacy.properties(["step": step, "count": count, "node": "private-id", "label": "Read the wind"]) ==
+              ["step": .label(step), "count": .label(count)])
+    }
+    #expect(TelemetryPrivacy.properties(["step": "pick", "count": "170"]) == ["step": .label("pick")])
+    for step in ["open", "close"] {
+      #expect(TelemetryPrivacy.properties(["step": step, "tree": "private-id", "zoom": "0.85"]) == ["step": .label(step)])
+    }
     // A report says which layout or budget, and the roadmap's size as a bucket: never its count of steps.
     for kind in ["fallback", "unseated"] {
       #expect(TelemetryPrivacy.properties(["operation": "roadmap_layout", "failure_kind": kind, "tree": "private-id", "steps": "4999"]) ==
@@ -195,7 +206,7 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
               ["step": .label(step), "door": .label(door)])
     }
     for step in ["open", "search", "rename", "confirm", "cancel"] {
-      #expect(TelemetryPrivacy.properties(["step": step, "name": "Learn to sail", "query": "private-marker", "count": "2-5"]) == ["step": .label(step)])
+      #expect(TelemetryPrivacy.properties(["step": step, "name": "Learn to sail", "query": "private-marker", "count": "9"]) == ["step": .label(step)])
     }
     #expect(TelemetryPrivacy.properties(["step": "cancel", "door": "blank", "name": "Learn to sail"]) == ["step": .label("cancel"), "door": .label("blank")])
     for openers in ["none", "some"] {

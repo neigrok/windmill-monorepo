@@ -128,6 +128,9 @@ final class RoadmapModel {
 
     var everyStepDone: Bool { board.overall.total > 0 && board.overall.done == board.overall.total }
 
+    // The Up next steps in the Board's order, Roadmap Order: what the Graph's *Next* leads with and lists.
+    var upNext: [Row] { groups.first { $0.id == .upNext }?.rows ?? [] }
+
     func step(_ id: String) -> Row? { rows[Array(id.utf8)] }
 
     // How many steps follow a step, each read through it once it is gone: what the delete question says the delete costs.
@@ -435,6 +438,36 @@ final class RoadmapModel {
     let row = step.flatMap { shown?.step($0) }
     if let row, row.id != selected { telemetry.event("roadmap_graph_select", properties: ["column": row.card.column.rawValue]) }
     selected = row?.id
+  }
+
+  // Roadmap · iOS 04.3: *Next*'s menu opened over the Up next steps, and a step picked from it, which is selected and
+  // brought to the centre of the canvas. Each is told as the web's What's next is, with the steps Up next as a bucket.
+  func nextOpened() {
+    telemetry.event("roadmap_whats_next", properties: ["step": "open", "count": Self.bucket(shown?.upNext.count ?? 0)])
+  }
+
+  func pick(_ row: Row) {
+    telemetry.event("roadmap_whats_next", properties: ["step": "pick", "count": Self.bucket(shown?.upNext.count ?? 0)])
+    selected = row.id
+    graph.bring(row.id)
+  }
+
+  // Roadmap · iOS 04.5: Fit shows the whole roadmap and nothing else, until a tap on the canvas brings the bars back.
+  func fit() {
+    telemetry.event("roadmap_graph_fit", properties: ["step": "open"])
+    graph.fit()
+  }
+
+  func unfit() {
+    telemetry.event("roadmap_graph_fit", properties: ["step": "close"])
+    graph.unfit()
+  }
+
+  // A count as an event carries it, in the web's buckets (`countBucket`).
+  static func bucket(_ count: Int) -> String {
+    if count <= 1 { return String(max(0, count)) }
+    if count <= 5 { return "2-5" }
+    return count <= 20 ? "6-20" : "21+"
   }
 
   // What the view of one type in one scope holds, nil until it has loaded.

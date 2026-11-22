@@ -350,6 +350,16 @@ final class RoadmapCaptures: DesignCapture {
     }
   }
 
+  // 04.3: *Next*'s menu over its bar, the Up next steps in Roadmap Order under their count.
+  func testGraphNextMenu() {
+    captureBoard("04.3-roadmap-graph-next-menu", settle: 1.5) { look in
+      let app = graph(look).app
+      app.buttons["roadmap-graph-next"].tap()
+      XCTAssertTrue(app.staticTexts["2 up next"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
   // 04.4: pinched in to one and a half times the opening zoom, the discs grown. A pinch out is as far as XCTest is
   // asked for and a pinch in is not, so the picture is pinched in to the ceiling, 2.94 times, and back out to 1.5.
   func testGraphPinchedIn() {
@@ -357,6 +367,16 @@ final class RoadmapCaptures: DesignCapture {
       let (app, canvas) = graph(look)
       canvas.pinch(withScale: 6, velocity: 3)
       canvas.pinch(withScale: 0.51, velocity: -1)
+      return app
+    }
+  }
+
+  // 04.5: Fit, the whole roadmap alone under the status bar.
+  func testGraphFit() {
+    captureBoard("04.5-roadmap-graph-fit", settle: 1.5) { look in
+      let app = graph(look).app
+      app.buttons["roadmap-fit"].tap()
+      XCTAssertTrue(app.buttons["roadmap-fit"].waitForNonExistence(timeout: 5))
       return app
     }
   }
