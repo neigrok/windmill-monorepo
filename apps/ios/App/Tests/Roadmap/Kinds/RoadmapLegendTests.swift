@@ -11,8 +11,8 @@ import SyncTesting
 
 @Suite(.serialized) @MainActor struct RoadmapLegendTests {
   // A phone never signed in: its engine in step mode, the runner roadmap's actions take, and what the phone remembers.
-  func phone() -> (engine: SteppedEngine, runner: ActionRunner, memory: UserDefaults, suite: String) {
-    let engine = SteppedEngine(registry: SyncSchema.registry, startMs: 1_790_424_000_000, account: nil,
+  func phone(account: String? = nil) -> (engine: SteppedEngine, runner: ActionRunner, memory: UserDefaults, suite: String) {
+    let engine = SteppedEngine(registry: SyncSchema.registry, startMs: 1_790_424_000_000, account: account,
                                rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     let suite = "roadmap-legend-\(UUID().uuidString)"
     return (engine, ActionRunner(replica: engine.replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0)),
@@ -150,6 +150,74 @@ import SyncTesting
     #expect(told(telemetry).filter { $0.contains("legend=remove") || $0.hasPrefix("roadmap_board_undo") } == [
       "roadmap_board_edit legend=remove step=saved", "roadmap_board_undo act=removeKind outcome=ok",
     ])
+  }
+
+  // 06.5b: the sheet lets a removed kind's row go before the phone's copy is read again, and Undo may come first; the row
+  // stands again as the Undo is taken, and otherwise once a read no longer holds the kind.
+  @Test func aKindUndoneBeforeTheCopyIsReadAgainStandsInTheSheetAgain() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let model = try await learnToSail(engine, runner, memory)
+    let practice = try #require(model.addKind())
+    await reads(model, on: engine) { $0.shown?.legend.entry(practice) != nil }
+
+    #expect(model.remove(practice))
+    let gesture = try #require(model.band?.undo?.gesture)
+    #expect(model.removedKinds == [practice: gesture])
+    model.undo()
+    #expect(model.removedKinds.isEmpty)
+    await reads(model, on: engine) { $0.shown?.legend.entry(practice) != nil }
+
+    #expect(model.remove(practice))
+    #expect(Array(model.removedKinds.keys) == [practice])
+    await reads(model, on: engine) { $0.shown?.legend.entry(practice) == nil }
+    #expect(model.removedKinds.isEmpty)
+  }
+
+  // Signed in, a kind whose birth reached the server before its removal comes back with the removal's Undo.
+  @Test func aKindRemovedAfterItsBirthWasSentComesBackWithUndoSignedIn() async throws {
+    let (engine, runner, memory, suite) = phone(account: "acct-1")
+    defer { memory.removePersistentDomain(forName: suite) }
+    let telemetry = TelemetryRecorder()
+    let model = try await learnToSail(engine, runner, memory, telemetry: telemetry)
+    let brick = try #require(model.addKind())
+    engine.sync()
+    await reads(model, on: engine) { $0.shown?.legend.entry(brick) != nil }
+    #expect(model.remove(brick))
+    engine.sync()
+    await reads(model, on: engine) { $0.shown?.legend.entry(brick) == nil }
+
+    model.undo()
+    engine.sync()
+    await reads(model, on: engine) { $0.shown?.legend.entry(brick) != nil }
+    #expect(told(telemetry).filter { $0.hasPrefix("roadmap_board_undo") } == ["roadmap_board_undo act=removeKind outcome=ok"])
+  }
+
+  // Signed in, a kind added and removed before either reached the server goes up in one push with its removal. The
+  // engine then skips the restore the Undo sends, so the kind does not come back, and the room tells the Undo as
+  // unavailable (m1-restore-a-record-born-and-removed-in-one-push).
+  @Test func anUndoTheEngineSkipsIsToldUnavailable() async throws {
+    let (engine, runner, memory, suite) = phone(account: "acct-1")
+    defer { memory.removePersistentDomain(forName: suite) }
+    let telemetry = TelemetryRecorder()
+    let model = try await learnToSail(engine, runner, memory, telemetry: telemetry)
+    let brick = try #require(model.addKind())
+    await reads(model, on: engine) { $0.shown?.legend.entry(brick) != nil }
+    #expect(model.remove(brick))
+    engine.sync()
+    await reads(model, on: engine) { $0.shown?.legend.entry(brick) == nil }
+
+    model.undo()
+    engine.sync()
+    for _ in 0..<5 {
+      await engine.settleViews()
+      model.observe()
+    }
+    #expect(told(telemetry).filter { $0.hasPrefix("roadmap_board_undo") } == ["roadmap_board_undo act=removeKind outcome=unavailable"])
+    #expect(model.removedKinds.isEmpty)
+    withKnownIssue("The engine skips the restore of a record born and removed in one push") {
+      #expect(model.shown?.legend.entry(brick) != nil)
+    }
   }
 
   // 06.5 against a screen drawn a moment before: a kind a step has come to wear is not removed, as the web's legend reads

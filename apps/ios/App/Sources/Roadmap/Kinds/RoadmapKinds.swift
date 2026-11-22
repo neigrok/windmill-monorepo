@@ -15,9 +15,6 @@ struct RoadmapKinds: View {
   // focused.
   @State private var added: RoadmapLegend.Subject?
   @State private var naming: RoadmapLegend.Subject?
-  // The kinds removed here that the phone's copy is still read with: the list lets a row go as its delete is written, as
-  // the system's edit mode asks, and the copy follows a moment later. A delete refused leaves its row.
-  @State private var removing: Set<RoadmapLegend.Subject> = []
   @ScaledMetric(relativeTo: .body) private var disc = 22.0
 
   var body: some View {
@@ -57,16 +54,14 @@ struct RoadmapKinds: View {
   }
 
   func list(_ open: RoadmapModel.OpenRoadmap) -> some View {
-    let entries = open.legend.entries.filter { !removing.contains($0.id) }
+    let entries = open.legend.entries.filter { roadmap.removedKinds[$0.id] == nil }
     return List {
       Section {
         ForEach(entries) { entry in
           NavigationLink(value: entry.id) { row(entry) }.deleteDisabled(!entry.removable)
             .accessibilityIdentifier("roadmap-kinds-row")
         }.onDelete { places in
-          for place in places where entries.indices.contains(place) {
-            if roadmap.remove(entries[place].id) { removing.insert(entries[place].id) }
-          }
+          for place in places where entries.indices.contains(place) { roadmap.remove(entries[place].id) }
         }
         if open.legend.freeHue != nil {
           Button("Add Kind", systemImage: "plus") { added = roadmap.addKind() }.foregroundStyle(RoadmapPalette.accent)
@@ -82,7 +77,6 @@ struct RoadmapKinds: View {
         }
       }.listRowBackground(RoadmapPalette.card)
     }.listStyle(.insetGrouped).scrollContentBackground(.hidden)
-      .onChange(of: open.legend.entries.map(\.id)) { _, read in removing.formIntersection(read) }
   }
 
   // An entry's row: its disc, its name over its description, and how many steps wear it.

@@ -321,6 +321,7 @@ final class RoadmapModel {
       if let selected, shown?.step(selected) == nil { self.selected = nil }
       note?.follow()
       if let shown { reading.read(shown, shown: view(of: shown)) }
+      if !removedKinds.isEmpty { removedKinds = removedKinds.filter { shown?.legend.entry($0.key) != nil } }
       guard !path.isEmpty else { return }
       if case .open(let open) = phase, path.allSatisfy({ (visit: Visit) -> Bool in visit.step.map { open.step($0) != nil } ?? true }) { return }
       path = []
@@ -376,6 +377,10 @@ final class RoadmapModel {
   var selection: BoardSelection?
   // The Kinds sheet stands open, from where it was raised.
   var kindsDoor: KindsDoor?
+  // The kinds removed that the phone's copy is still read with, each by the gesture of its delete: the sheet lets a row
+  // go as its delete is written, as the system's edit mode asks, and the copy follows a moment later. A read without the
+  // kind ends it, and so does the delete's Undo, which may come before that read.
+  var removedKinds: [RoadmapLegend.Subject: String] = [:]
   // Every roadmap the phone holds as the domain last read them together, which says what opens what.
   @ObservationIgnored var account = RoadmapAccount([])
   // A roadmap the room made, or brought back by Undo, which it opens once the list holds it.
@@ -867,13 +872,14 @@ final class RoadmapModel {
         taken = try runner.cancelHeld(undo.gesture)
       } else {
         switch try runner.undo(undo.gesture) {
-        case .cancelled(_, let inverse, _), .pending(_, let inverse, _), .settled(_, let inverse, _, _, _):
-          taken = true
+        case .cancelled(_, let inverse, let changed), .pending(_, let inverse, let changed), .settled(_, let inverse, let changed, _, _):
+          taken = changed
           try runner.release(inverse)
         case .unavailable: break
         }
       }
       try runner.release(undo.gesture)
+      if taken { removedKinds = removedKinds.filter { $0.value != undo.gesture } }
       switch undo.act {
       case .step(let act): telemetry.event("roadmap_board_undo", properties: ["act": act, "outcome": taken ? "ok" : "unavailable"])
       case .workspace(let act):
