@@ -1,0 +1,635 @@
+[
+  {
+    "case": "a new day lands with a ramp, fractional loads and an open line",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Bench 🏋️‍♀️ Café q̇","position":1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "result": {
+        "entries": [
+          {
+            "exerciseId": "bench-press",
+            "position": 1,
+            "restSeconds": 150,
+            "sets": [
+              {
+                "reps": 5,
+                "weightKg": 62.5
+              },
+              {
+                "reps": 3,
+                "weightKg": 70
+              },
+              {
+                "reps": 8
+              }
+            ]
+          },
+          {
+            "exerciseId": "lateral-raise",
+            "position": 2,
+            "sets": [
+              {
+                "reps": 12,
+                "weightKg": 20.25
+              },
+              {
+                "reps": 12,
+                "weightKg": 20.25
+              }
+            ]
+          },
+          {
+            "exerciseId": "plank",
+            "position": 3
+          }
+        ],
+        "id": "tn7Qm2Kx9Lp4Wz8R-1",
+        "name": "Bench 🏋️‍♀️ Café q̇",
+        "position": 1,
+        "revision": 1
+      },
+      "sha256": "4068d7e8e1eb4261b6ae387a5c3ee13e2cd3900aaa9574fba5047ecd6630d214",
+      "writes": [
+        {
+          "f": {
+            "entries": [
+              {
+                "exerciseId": "bench-press",
+                "restSeconds": 150,
+                "sets": [
+                  {
+                    "reps": 5,
+                    "weightKg": 62.5
+                  },
+                  {
+                    "reps": 3,
+                    "weightKg": 70
+                  },
+                  {
+                    "reps": 8
+                  }
+                ]
+              },
+              {
+                "exerciseId": "lateral-raise",
+                "sets": [
+                  {
+                    "reps": 12,
+                    "weightKg": 20.25
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 20.25
+                  }
+                ]
+              },
+              {
+                "exerciseId": "plank"
+              }
+            ],
+            "name": "Bench 🏋️‍♀️ Café q̇",
+            "position": 1
+          },
+          "id": "tn7Qm2Kx9Lp4Wz8R-1",
+          "life": "alive",
+          "t": "routine"
+        }
+      ]
+    }
+  },
+  {
+    "case": "a decomposed name lands composed",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"id":"tn7Qm2Kx9Lp4Wz8R-2","name":"  Café 각 Push ","position":1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "result": {
+        "entries": [
+          {
+            "exerciseId": "bench-press",
+            "position": 1,
+            "restSeconds": 150,
+            "sets": [
+              {
+                "reps": 5,
+                "weightKg": 62.5
+              },
+              {
+                "reps": 3,
+                "weightKg": 70
+              },
+              {
+                "reps": 8
+              }
+            ]
+          },
+          {
+            "exerciseId": "lateral-raise",
+            "position": 2,
+            "sets": [
+              {
+                "reps": 12,
+                "weightKg": 20.25
+              },
+              {
+                "reps": 12,
+                "weightKg": 20.25
+              }
+            ]
+          },
+          {
+            "exerciseId": "plank",
+            "position": 3
+          }
+        ],
+        "id": "tn7Qm2Kx9Lp4Wz8R-2",
+        "name": "Café 각 Push",
+        "position": 1,
+        "revision": 1
+      },
+      "sha256": "24b1c441791b0ef687c6555fb7b3f4f8a283b623ee34d354942cf476a4d3001d",
+      "writes": [
+        {
+          "f": {
+            "entries": [
+              {
+                "exerciseId": "bench-press",
+                "restSeconds": 150,
+                "sets": [
+                  {
+                    "reps": 5,
+                    "weightKg": 62.5
+                  },
+                  {
+                    "reps": 3,
+                    "weightKg": 70
+                  },
+                  {
+                    "reps": 8
+                  }
+                ]
+              },
+              {
+                "exerciseId": "lateral-raise",
+                "sets": [
+                  {
+                    "reps": 12,
+                    "weightKg": 20.25
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 20.25
+                  }
+                ]
+              },
+              {
+                "exerciseId": "plank"
+              }
+            ],
+            "name": "Café 각 Push",
+            "position": 1
+          },
+          "id": "tn7Qm2Kx9Lp4Wz8R-2",
+          "life": "alive",
+          "t": "routine"
+        }
+      ]
+    }
+  },
+  {
+    "case": "a replayed create answers the routine it made",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": [
+        {"born":"1789999940000:0:r_aaaaaaaaaaaa","f":{"createdDoor":["ask","1789999940000:0:r_aaaaaaaaaaaa"],"createdEntries":[3,"1789999940000:0:r_aaaaaaaaaaaa"],"entries":[[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"1789999940000:0:r_aaaaaaaaaaaa"],"name":["Bench 🏋️‍♀️ Café q̇","1789999940000:0:r_aaaaaaaaaaaa"],"position":[1,"1789999940000:0:r_aaaaaaaaaaaa"],"revision":[1,"1789999940000:0:r_aaaaaaaaaaaa"]},"id":"tn7Qm2Kx9Lp4Wz8R-1","life":["alive","1789999940000:0:r_aaaaaaaaaaaa"],"rc":1789999940000,"ru":1789999940000,"seq":1,"t":"routine"}
+      ]
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Bench 🏋️‍♀️ Café q̇","position":1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "result": {
+        "entries": [
+          {
+            "exerciseId": "bench-press",
+            "position": 1,
+            "restSeconds": 150,
+            "sets": [
+              {
+                "reps": 5,
+                "weightKg": 62.5
+              },
+              {
+                "reps": 3,
+                "weightKg": 70
+              },
+              {
+                "reps": 8
+              }
+            ]
+          },
+          {
+            "exerciseId": "lateral-raise",
+            "position": 2,
+            "sets": [
+              {
+                "reps": 12,
+                "weightKg": 20.25
+              },
+              {
+                "reps": 12,
+                "weightKg": 20.25
+              }
+            ]
+          },
+          {
+            "exerciseId": "plank",
+            "position": 3
+          }
+        ],
+        "id": "tn7Qm2Kx9Lp4Wz8R-1",
+        "name": "Bench 🏋️‍♀️ Café q̇",
+        "position": 1,
+        "revision": 1
+      },
+      "sha256": "4068d7e8e1eb4261b6ae387a5c3ee13e2cd3900aaa9574fba5047ecd6630d214",
+      "writes": []
+    }
+  },
+  {
+    "case": "a decomposed replay answers the routine it made",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": [
+        {"born":"1789999940000:0:r_aaaaaaaaaaaa","f":{"createdDoor":["ask","1789999940000:0:r_aaaaaaaaaaaa"],"createdEntries":[3,"1789999940000:0:r_aaaaaaaaaaaa"],"entries":[[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"1789999940000:0:r_aaaaaaaaaaaa"],"name":["Bench 🏋️‍♀️ Café q̇","1789999940000:0:r_aaaaaaaaaaaa"],"position":[1,"1789999940000:0:r_aaaaaaaaaaaa"],"revision":[1,"1789999940000:0:r_aaaaaaaaaaaa"]},"id":"tn7Qm2Kx9Lp4Wz8R-1","life":["alive","1789999940000:0:r_aaaaaaaaaaaa"],"rc":1789999940000,"ru":1789999940000,"seq":1,"t":"routine"}
+      ]
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Bench 🏋️‍♀️ Café q̇","position":1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "result": {
+        "entries": [
+          {
+            "exerciseId": "bench-press",
+            "position": 1,
+            "restSeconds": 150,
+            "sets": [
+              {
+                "reps": 5,
+                "weightKg": 62.5
+              },
+              {
+                "reps": 3,
+                "weightKg": 70
+              },
+              {
+                "reps": 8
+              }
+            ]
+          },
+          {
+            "exerciseId": "lateral-raise",
+            "position": 2,
+            "sets": [
+              {
+                "reps": 12,
+                "weightKg": 20.25
+              },
+              {
+                "reps": 12,
+                "weightKg": 20.25
+              }
+            ]
+          },
+          {
+            "exerciseId": "plank",
+            "position": 3
+          }
+        ],
+        "id": "tn7Qm2Kx9Lp4Wz8R-1",
+        "name": "Bench 🏋️‍♀️ Café q̇",
+        "position": 1,
+        "revision": 1
+      },
+      "sha256": "4068d7e8e1eb4261b6ae387a5c3ee13e2cd3900aaa9574fba5047ecd6630d214",
+      "writes": []
+    }
+  },
+  {
+    "case": "another document under a spent id is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": [
+        {"born":"1789999940000:0:r_aaaaaaaaaaaa","f":{"createdDoor":["ask","1789999940000:0:r_aaaaaaaaaaaa"],"createdEntries":[3,"1789999940000:0:r_aaaaaaaaaaaa"],"entries":[[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"1789999940000:0:r_aaaaaaaaaaaa"],"name":["Bench 🏋️‍♀️ Café q̇","1789999940000:0:r_aaaaaaaaaaaa"],"position":[1,"1789999940000:0:r_aaaaaaaaaaaa"],"revision":[1,"1789999940000:0:r_aaaaaaaaaaaa"]},"id":"tn7Qm2Kx9Lp4Wz8R-1","life":["alive","1789999940000:0:r_aaaaaaaaaaaa"],"rc":1789999940000,"ru":1789999940000,"seq":1,"t":"routine"}
+      ]
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Pull","position":1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "refused": "refused"
+    }
+  },
+  {
+    "case": "an unknown movement is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"no-such-movement"}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Bench 🏋️‍♀️ Café q̇","position":1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "refused": "refused"
+    }
+  },
+  {
+    "case": "a load below its movement's floor is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","sets":[{"reps":5,"weightKg":-5}]}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Below the floor","position":1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "refused": "load-floor"
+    }
+  },
+  {
+    "case": "a day of 51 lines is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"},{"exerciseId":"farmers-carry"},{"exerciseId":"overhead-carry"},{"exerciseId":"suitcase-carry"},{"exerciseId":"ab-wheel-rollout"},{"exerciseId":"cable-crunch"},{"exerciseId":"hanging-leg-raise"},{"exerciseId":"pallof-press"},{"exerciseId":"weighted-sit-up"},{"exerciseId":"back-extension"},{"exerciseId":"deadlift"},{"exerciseId":"good-morning"},{"exerciseId":"hip-thrust"},{"exerciseId":"kettlebell-swing"},{"exerciseId":"romanian-deadlift"},{"exerciseId":"sumo-deadlift"},{"exerciseId":"trap-bar-deadlift"},{"exerciseId":"barbell-curl"},{"exerciseId":"cable-fly"},{"exerciseId":"dumbbell-curl"},{"exerciseId":"dumbbell-fly"},{"exerciseId":"hammer-curl"},{"exerciseId":"hip-abduction"},{"exerciseId":"leg-extension"},{"exerciseId":"lying-leg-curl"},{"exerciseId":"overhead-triceps-extension"},{"exerciseId":"rear-delt-fly"},{"exerciseId":"seated-calf-raise"},{"exerciseId":"skull-crusher"},{"exerciseId":"standing-calf-raise"},{"exerciseId":"triceps-pushdown"},{"exerciseId":"wrist-curl"},{"exerciseId":"close-grip-bench-press"},{"exerciseId":"dip"},{"exerciseId":"dumbbell-bench-press"},{"exerciseId":"dumbbell-shoulder-press"},{"exerciseId":"incline-bench-press"},{"exerciseId":"incline-dumbbell-press"},{"exerciseId":"machine-chest-press"},{"exerciseId":"machine-shoulder-press"},{"exerciseId":"overhead-press"},{"exerciseId":"push-press"},{"exerciseId":"push-up"},{"exerciseId":"barbell-row"},{"exerciseId":"barbell-shrug"},{"exerciseId":"chest-supported-row"},{"exerciseId":"chin-up"},{"exerciseId":"dumbbell-row"},{"exerciseId":"face-pull"}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Bench 🏋️‍♀️ Café q̇","position":1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a rest of 14 seconds is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","restSeconds":14,"sets":[{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Bench 🏋️‍♀️ Café q̇","position":1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a rest of 901 seconds is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","restSeconds":901,"sets":[{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Bench 🏋️‍♀️ Café q̇","position":1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a line of 21 sets is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Bench 🏋️‍♀️ Café q̇","position":1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a set of 0 reps is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":0,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Bench 🏋️‍♀️ Café q̇","position":1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a set of 101 reps is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":101,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Bench 🏋️‍♀️ Café q̇","position":1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a name of 241 characters is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","position":1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a position below 0 is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Bench 🏋️‍♀️ Café q̇","position":-1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a position past 10000 is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Bench 🏋️‍♀️ Café q̇","position":10001},
+      "name": "create_routine"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a day read back from list_routines lands as a new day, its read-only fields ignored",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","position":1,"restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","position":2,"sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"id":"tn7Qm2Kx9Lp4Wz8R-3","name":"Push","pendingProposal":{"changeCount":1,"id":"propAAAAAAAAAAA1","intent":"revise","routineId":"rtAAAAAAAAAAAAA1","source":{"door":"ask"},"state":"pending","summary":"Drop the bench to three sets of three."},"position":0,"revision":1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "result": {
+        "entries": [
+          {
+            "exerciseId": "bench-press",
+            "position": 1,
+            "restSeconds": 180,
+            "sets": [
+              {
+                "reps": 5,
+                "weightKg": 62.5
+              },
+              {
+                "reps": 5,
+                "weightKg": 62.5
+              },
+              {
+                "reps": 5,
+                "weightKg": 62.5
+              }
+            ]
+          },
+          {
+            "exerciseId": "lateral-raise",
+            "position": 2,
+            "sets": [
+              {
+                "reps": 12,
+                "weightKg": 20.25
+              },
+              {
+                "reps": 12,
+                "weightKg": 20.25
+              }
+            ]
+          }
+        ],
+        "id": "tn7Qm2Kx9Lp4Wz8R-3",
+        "name": "Push",
+        "position": 0,
+        "revision": 1
+      },
+      "sha256": "4f3f9474705812badf2df4a56bea7340fc1c22757a2f1dfa290b855c94f0f8e3",
+      "writes": [
+        {
+          "f": {
+            "entries": [
+              {
+                "exerciseId": "bench-press",
+                "restSeconds": 180,
+                "sets": [
+                  {
+                    "reps": 5,
+                    "weightKg": 62.5
+                  },
+                  {
+                    "reps": 5,
+                    "weightKg": 62.5
+                  },
+                  {
+                    "reps": 5,
+                    "weightKg": 62.5
+                  }
+                ]
+              },
+              {
+                "exerciseId": "lateral-raise",
+                "sets": [
+                  {
+                    "reps": 12,
+                    "weightKg": 20.25
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 20.25
+                  }
+                ]
+              }
+            ],
+            "name": "Push",
+            "position": 0
+          },
+          "id": "tn7Qm2Kx9Lp4Wz8R-3",
+          "life": "alive",
+          "t": "routine"
+        }
+      ]
+    }
+  }
+]

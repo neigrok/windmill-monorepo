@@ -1,0 +1,50 @@
+[
+  {
+    "case": "a load count of 0 is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"exerciseId":"dumbbell-row","loadCount":0},
+      "name": "update_exercise"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a load count of 3 is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"exerciseId":"dumbbell-row","loadCount":3},
+      "name": "update_exercise"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  },
+  {
+    "case": "a name of 241 characters is refused",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"exerciseId":"dumbbell-row","loadCount":1,"name":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"},
+      "name": "update_exercise"
+    },
+    "expect": {
+      "refused": "invalid-arguments"
+    }
+  }
+]
