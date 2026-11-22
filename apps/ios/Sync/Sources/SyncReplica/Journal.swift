@@ -1134,11 +1134,14 @@ extension CommitPlanner {
   public func record(act actId: String, plan: UndoPlan?, receipts: [ActSegmentReceipt], in replica: inout LoadedReplica) throws {
     guard let plan else { return }
     var sources: [JournalSource] = []
+    // One view a scope, read once for every segment the act wrote there.
+    var views: [ScopeRef: ScopeView] = [:]
     for (index, segment) in plan.segments.sorted(by: { $0.key < $1.key }) {
       let localIds = receipts[index].localIds
       if localIds.isEmpty { continue }
       guard localIds.count == 1 else { throw CommitFailure.malformed("an opted segment commits one intent") }
-      let view = try ScopeView(replica, segment.scope, .drawn, registry: registry)
+      let view = try views[segment.scope] ?? ScopeView(replica, segment.scope, .drawn, registry: registry)
+      views[segment.scope] = view
       let written: [WrittenValue] = segment.preimages.compactMap { (preimage: Preimage) -> WrittenValue? in
         view.record(preimage.target.key)?.value(of: preimage.target.slot).map { WrittenValue(target: preimage.target, value: $0) }
       }

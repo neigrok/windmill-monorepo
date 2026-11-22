@@ -16,7 +16,8 @@ import SyncSchema
 // used, and fails when it passes it. A query's read, which Find takes at every key, is held to a frame at 60 a second,
 // the frame the keystroke's redraw stands in. The budgets are held here on the Mac that runs the simulator: the share
 // says how wide the margin is for a phone, which is slower. The screen's own benchmark, `RoadmapBoardBenchmarks`, measures
-// the first frame and a scroll. The suite runs only under WM_BOARD_BENCH=1, which `Tools/board_bench.sh` sets on a
+// the first frame and a scroll. Recolor and Delete N Steps are measured as the acts they write, against the App Hang
+// report's two seconds. The suite runs only under WM_BOARD_BENCH=1, which `Tools/board_bench.sh` sets on a
 // Release-configuration build.
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["WM_BOARD_BENCH"] == "1", "the Board's benchmarks run under WM_BOARD_BENCH=1"))
 @MainActor struct BoardBenchmarks {
@@ -88,5 +89,41 @@ import SyncSchema
       held.append(report("the Board read under \(measure)", taking, budgetMs: 1_000.0 / 60))
     }
     #expect(held == [true, true, true, true, true])
+  }
+
+  // Recolor and Delete N Steps on the handbook (02.11, 02.10c): each one act of N parts, a `ChangeStep` or a `DeleteStep`
+  // a step, composed through the kit's runner as the selection writes it, on a phone never signed in that holds the
+  // handbook it planted, a hundred steps and a thousand. The room writes on the main actor, so each is held to the two
+  // seconds past which the App Hang report names the app frozen.
+  @Test func anActOnSeveralOfFiveThousandStepsIsWrittenBeforeTheAppHangs() throws {
+    let phone = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
+                        rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
+    let planted = try RoadmapFixture.plantHandbook(phone.runner)
+    let steps = planted.steps.map(\.id)
+    let write = { (acts: [AnyActAction<RoadmapRefusal>]) throws -> Double in
+      let began = ContinuousClock.now
+      guard case .committed = try phone.runner.runComposed(acts) else { throw AppFailure(message: "The act on several steps wrote nothing.") }
+      return self.ms(ContinuousClock.now - began)
+    }
+    var held: [Bool] = []
+    for parts in [100, 1_000] {
+      let recoloring = try ["plum", "sky", "plum"].map { (hue: String) throws -> Double in
+        try write(steps.prefix(parts).map { (step: ID<RoadmapStep>) -> AnyActAction<RoadmapRefusal> in
+          AnyActAction(ChangeStep(tree: planted.tree, step: step, changes: RoadmapStep.Changes(color: hue)))
+        })
+      }
+      held.append(report("Recolor of \(parts) steps", recoloring, budgetMs: 2_000))
+    }
+    // Each delete takes steps no delete before it took: three of a hundred from the thousandth step on, three of a
+    // thousand from the two-thousandth.
+    for (parts, from) in [(100, 1_000), (1_000, 2_000)] {
+      let deleting = try (0..<3).map { (round: Int) throws -> Double in
+        try write(steps[(from + round * parts)..<(from + (round + 1) * parts)].map { (step: ID<RoadmapStep>) -> AnyActAction<RoadmapRefusal> in
+          AnyActAction(DeleteStep(tree: planted.tree, step: step))
+        })
+      }
+      held.append(report("Delete of \(parts) steps", deleting, budgetMs: 2_000))
+    }
+    #expect(held == [true, true, true, true])
   }
 }

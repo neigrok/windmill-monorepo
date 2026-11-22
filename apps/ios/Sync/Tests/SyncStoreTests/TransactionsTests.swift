@@ -120,9 +120,10 @@ struct TransactionsTests {
   }
 
   // A commit reads what it touches by key: the ids it mints once drawn, the entries that touch the records it reads, the
-  // held gestures when it retires, and the commit orders above what it read; a push result's `ok` reads its own entry,
-  // and an epoch the replica already holds reads no entry. Each finds its replica's handle by id once. Every statement
-  // searches an index but each commit's read of the one device row, and none reads more for a fuller store.
+  // held gestures when it retires, and the commit orders above what it read; a delete and an edit of a capped type read
+  // the one record, not the type; a push result's `ok` reads its own entry, and an epoch the replica already holds reads
+  // no entry. Each finds its replica's handle by id once. Every statement searches an index but each commit's read of
+  // the one device row, and none reads more for a fuller store.
   @Test func aCommitAndAPushResultReadByKeyWhateverTheStoreHolds() throws {
     let runs = try [0, 40].map(Self.readsOfACommitAndAResult)
     #expect(runs[0].reads == runs[1].reads)
@@ -153,9 +154,6 @@ struct TransactionsTests {
       return [#"SELECT EXISTS (SELECT 1 FROM outbox WHERE gesture_id = '"# + gestureId + "')",
               #"SELECT id FROM notice WHERE id >= 'notice:"# + gestureId + #"/' AND id < 'notice:"# + gestureId + "0'", journal]
     }
-    let cards = #"SELECT row FROM set_row WHERE row_set = 1 AND type = 'card'"#
-    let touchingCards = "SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)\n"
-      + #"WHERE outbox_touch.scope = 'self/probe' AND outbox_touch.type = 'card' AND outbox.replica = 1"#
     let heldGestures = "SELECT gesture.* FROM outbox AS held JOIN outbox AS gesture USING (gesture_id)\n"
       + "WHERE held.replica = 1 AND held.state = 'held' AND gesture.replica = 1"
     let above = { (count: Int) in "SELECT local_id, commit_order FROM outbox WHERE replica = 1 ORDER BY commit_order DESC LIMIT \(count)" }
@@ -168,11 +166,11 @@ struct TransactionsTests {
       replica, replica, cursors, "SELECT * FROM outbox WHERE replica = 1 AND state = 'sent' AND n = 1", above(2), known, deviceRows, active, handle,
     ]
     let heldDelete: [String] = [
-      device, replica, replica, cursors, confirmed, row("card", "card0001"), cards, anyRow, spent, touching("card", "card0001"), touchingCards,
+      device, replica, replica, cursors, confirmed, row("card", "card0001"), anyRow, spent, touching("card", "card0001"),
       above(1), known, deviceRows, active,
     ]
     let retiring: [String] = [
-      device, replica, replica, cursors, confirmed, row("card", "card0001"), cards, anyRow, spent, touching("card", "card0001"), touchingCards,
+      device, replica, replica, cursors, confirmed, row("card", "card0001"), anyRow, spent, touching("card", "card0001"),
       heldGestures, above(2), known, deviceRows, active,
     ]
     let expected: [[String]] = [

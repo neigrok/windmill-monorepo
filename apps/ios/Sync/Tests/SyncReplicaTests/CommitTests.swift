@@ -132,6 +132,32 @@ struct CommitTests {
     }
   }
 
+  // A change of one record of a capped type reads that record alone, so its commit loads the same rows however many the
+  // type holds, and an act of many such changes loads one record a part; a change that may show one more record (a
+  // create, a revive, a put that may make one present) reads the whole type, which the cap counts. At the cap, an update
+  // over its one row commits.
+  @Test func aCappedTypeIsReadWholeOnlyByAChangeThatMayShowOneMoreRecord() throws {
+    let planner = CommitPlanner(registry: Self.probe)
+    let card = RecordKey("card", "card0001")
+    let reads = { (change: Change) -> [ScopeRef: RowSelection] in planner.reads(of: Gesture(changes: [change]), in: Self.product) }
+    #expect(reads(.update("card", card.id, ["title": "One"])) == [Self.product: RowSelection(keys: [card])])
+    #expect(reads(.delete("card", card.id)) == [Self.product: RowSelection(keys: [card])])
+    #expect(reads(.put("day", "2026-09-01", present: false)) == [Self.product: RowSelection(keys: [RecordKey("day", "2026-09-01")])])
+    #expect(reads(.revive("card", card.id)) == [Self.product: RowSelection(keys: [card], types: ["card"])])
+    #expect(reads(.create("card")) == [Self.product: RowSelection(types: ["card"])])
+
+    let whole = try Self.replica()
+    let gesture = Gesture(changes: [.update("card", card.id, ["title": "Held"])], gestureId: "at-cap")
+    var partial = try Self.partial(whole, reads: planner.reads(of: gesture, in: Self.product))
+    #expect(partial.rows(Self.product).loaded.count == 1)
+    let outcome = try planner.commit(gesture, in: Self.product, to: &partial, as: Self.instance(6000), identities: try QueuedIdentities([:]),
+                                     gestureIdTaken: false)
+    guard case .committed = outcome else {
+      Issue.record("an update at the cap was refused: \(outcome)")
+      return
+    }
+  }
+
   // The same replica as a store would load it: every table whole but the rows, which only `reads` names.
   static func partial(_ replica: LoadedReplica, reads: [ScopeRef: RowSelection]) throws -> LoadedReplica {
     var rows: [ScopeRef: Rows] = [:]

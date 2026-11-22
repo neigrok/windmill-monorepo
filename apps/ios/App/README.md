@@ -947,22 +947,24 @@ bash apps/ios/App/Tools/board_bench.sh    # SIM=<udid> uses a booted simulator, 
 
 `Tests/Roadmap/Board/BoardBenchmarks.swift`, hosted in the app, plants the 5,000-step handbook through the domain and
 times the room's read of the open roadmap, which the model takes at every change of the phone's copy (the account's
-read, the domain's Board and legend, every step's row, the groups and what follows each step), against the first
-frame's second; and the Board read again under each query a person asks of it (*Newest First*, one kind shown, Find's
-first key, a word, a branch), against a frame at 60 a second, since Find reads it at every key.
+read, the domain's Board and legend, every step's row, the groups and what follows each step), against the first frame's
+second; and the Board read again under each query a person asks of it (*Newest First*, one kind shown, Find's first key,
+a word, a branch), against a frame at 60 a second, since Find reads it at every key. It times *Recolor* and *Delete N
+Steps* too, each one act of a hundred parts and of a thousand on a phone never signed in, against the two seconds past
+which the App Hang report names the app frozen, since the room writes on the main actor; no run has measured them yet.
 `UITests/RoadmapBoardBenchmarks.swift` launches `-board roadmap-handbook`, switches to the Graph and back to the Board
 three times, and flings the list eight times down through Up next and Locked and eight times back. The app measures
 itself there (`BoardFrames`, written to the launch's `-board-measures` file): the time from the switch's tap to the
 Board's first frame, and for each scroll, from the finger's first move to the list at rest, the gaps between the frames
-a display link on the main actor sees and how long the main actor worked in each, judged as a Graph gesture's are.
-On an iPhone 17 simulator on an M3 Pro, one run: the room's read of the open roadmap takes 14 ms at the median of five,
-1% of the first frame's second; the Board read again under a query takes 2.3 ms (a branch) to 5.8 ms (*Newest First*),
-a seventh to a third of a frame; the switch to the Board's first frame takes 96 to 112 ms, a tenth of its second; and
-sixteen flings through the list are given 2,433 frames, one of them later than a frame and a half, with the main
-actor's work in a frame at 1.8 ms at the median, 7.5 ms at the nineteenth of twenty and 18 ms at most. The same
-cautions hold as for the Graph's: the Mac is faster than any iPhone the app supports, so the share is the margin a
-phone has to spend, and no phone has run the Board's benchmark. Both classes run only under `WM_BOARD_BENCH=1`, which
-the script sets, so the unit scheme and the UI shards skip them.
+a display link on the main actor sees and how long the main actor worked in each, judged as a Graph gesture's are. On an
+iPhone 17 simulator on an M3 Pro, one run: the room's read of the open roadmap takes 14 ms at the median of five, 1% of
+the first frame's second; the Board read again under a query takes 2.3 ms (a branch) to 5.8 ms (*Newest First*), a
+seventh to a third of a frame; the switch to the Board's first frame takes 96 to 112 ms, a tenth of its second; and
+sixteen flings through the list are given 2,433 frames, one of them later than a frame and a half, with the main actor's
+work in a frame at 1.8 ms at the median, 7.5 ms at the nineteenth of twenty and 18 ms at most. The same cautions hold as
+for the Graph's: the Mac is faster than any iPhone the app supports, so the share is the margin a phone has to spend,
+and no phone has run the Board's benchmark. Both classes run only under `WM_BOARD_BENCH=1`, which the script sets, so
+the unit scheme and the UI shards skip them.
 
 ## Design captures
 

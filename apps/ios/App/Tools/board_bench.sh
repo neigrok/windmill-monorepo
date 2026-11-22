@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The Board's budget (Roadmap on iOS §5) at 5,000 steps, inside an iOS simulator: `BoardBenchmarks` hosted in the app
-# (the room's read of the open roadmap, and the Board read under each query) and `RoadmapBoardBenchmarks` on its screen
+# (the room's read of the open roadmap, the Board read under each query, and Recolor and Delete N Steps of a hundred and a
+# thousand steps against the App Hang report's two seconds) and `RoadmapBoardBenchmarks` on its screen
 # (the switch to the Board's first frame, and the frames scripted flings are given). Both run on a Release-configuration
 # build that compiles the Roadmap room and its simulator boards in, which no release carries. Each measure prints one
 # `bench` line beside its budget, and a measure over its budget fails the run.
