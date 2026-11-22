@@ -50,6 +50,8 @@ targets:
         product: GymDomain
       - package: WindmillDomain
         product: RoadmapDomain
+      - package: WindmillDomain
+        product: RoadmapLayout
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app

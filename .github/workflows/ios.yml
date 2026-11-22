@@ -303,6 +303,7 @@ jobs:
             tests: >-
               -only-testing:WindmillUITests/OfflineFlowTests
               -only-testing:WindmillUITests/OnboardingFlowTests
+              -only-testing:WindmillUITests/RoadmapFlowTests
               -only-testing:WindmillUITests/ShellFlowTests
               -only-testing:WindmillUITests/WorkoutActivityFlowTests
               -only-testing:WindmillUITests/WorkoutOutsideFlowTests

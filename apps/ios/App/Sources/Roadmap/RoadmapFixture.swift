@@ -5,7 +5,9 @@ import RoadmapDomain
 // Simulator boards. An account's roadmaps arriving by sync: roadmap-learn-to-sail (three steps done), roadmap-all-done
 // (all eight), roadmap-no-steps (*Night sailing*, with no step) and roadmap-several (*Learn to sail* over two more, the
 // most recent first). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no order a
-// server gave them, and roadmap-empty, which holds none. roadmap-unreadable cannot make its views.
+// server gave them; roadmap-handbook, the 5,000 steps the Graph's budget is measured at; and roadmap-empty, which
+// holds none. roadmap-unreadable cannot make its views. A launch with `-graph-measures <path>` appends what the Graph
+// measures of itself to that file.
 enum RoadmapFixture {
   // The engine's views of every record of a type in a scope, visible or not, as the room's model takes them.
   static func records(_ runtime: AppRuntime) -> RoadmapModel.Records {
@@ -15,6 +17,31 @@ enum RoadmapFixture {
     return { scope, type in try runtime.engine.records(scope, type, .drawn, visibleOnly: false) }
   }
 
+  // Where the Graph's measures go: one JSON line each, appended to the file a simulator launch names.
+  static func graphMeasures() -> ((RoadmapGraph.Measure) -> Void)? {
+    #if DEBUG && targetEnvironment(simulator)
+    let arguments = ProcessInfo.processInfo.arguments
+    guard let named = arguments.firstIndex(of: "-graph-measures"), named + 1 < arguments.count else { return nil }
+    let file = URL(fileURLWithPath: arguments[named + 1])
+    return { measure in
+      let line: [String: Any]
+      switch measure {
+      case .firstFrame(let ms, let layoutMs, let steps): line = ["measure": "firstFrame", "ms": ms, "layoutMs": layoutMs, "steps": steps]
+      case .frames(let gapsMs, let workMs, let zoom, let steps):
+        line = ["measure": "frames", "gapsMs": gapsMs, "workMs": workMs, "zoom": zoom, "steps": steps]
+      }
+      guard let data = try? JSONSerialization.data(withJSONObject: line, options: [.sortedKeys]) else { return }
+      if !FileManager.default.fileExists(atPath: file.path) { FileManager.default.createFile(atPath: file.path, contents: nil) }
+      guard let handle = try? FileHandle(forWritingTo: file) else { return }
+      handle.seekToEndOfFile()
+      handle.write(data + Data("\n".utf8))
+      try? handle.close()
+    }
+    #else
+    return nil
+    #endif
+  }
+
   static func prepare(_ board: String, model: AppModel) async -> Bool {
     #if DEBUG && targetEnvironment(simulator)
     guard board.hasPrefix("roadmap-") else { return false }
@@ -22,11 +49,16 @@ enum RoadmapFixture {
     // The steps of *Learn to sail* each board's account completed, the oldest first.
     let completed = ["roadmap-learn-to-sail": ["choose", "parts", "rig"], "roadmap-several": ["choose", "parts", "rig"],
                      "roadmap-all-done": ["choose", "parts", "rig", "read", "tie", "leave", "tri", "solo"]][board]
-    guard completed != nil || ["roadmap-no-steps", "roadmap-many"].contains(board) else { return true }
+    guard completed != nil || ["roadmap-no-steps", "roadmap-many", "roadmap-handbook"].contains(board) else { return true }
     do {
-      // roadmap-many is made on the phone itself, signed out, with *Learn to sail* remembered as the roadmap last open.
-      if board == "roadmap-many" {
+      // roadmap-many and roadmap-handbook are made on the phone itself, signed out: the first with *Learn to sail*
+      // remembered as the roadmap last open, the second holding the handbook alone.
+      if board == "roadmap-many" || board == "roadmap-handbook" {
         guard let runner = model.runtime?.roadmapRunner else { throw AppFailure(message: "no runtime") }
+        if board == "roadmap-handbook" {
+          try plantHandbook(runner)
+          return true
+        }
         let sail = try plantLearnToSail(runner).tree
         model.preferences.set(sail.description, forKey: RoadmapModel.lastOpen)
         for roadmap in others { try plant(roadmap, opening: sail, by: runner) }
@@ -112,6 +144,45 @@ enum RoadmapFixture {
       throw AppFailure(message: "Learn to sail was not planted.")
     }
     for step in done { try complete(step, of: created, by: runner) }
+    return created
+  }
+
+  // The boards' *Coastal navigation handbook*: the 5,000 steps, their links and colours of the layout's shared fixture
+  // (`packages/api-contract/roadmap/layout/handbook.json`), read from the repository this build was made in and
+  // planted through the domain, so each step's id is the phone's own. Of the 1,800 steps the fixture holds done, the
+  // first 120 are marked: signed out, each mark's commit reads everything the phone has still to send.
+  @discardableResult
+  static func plantHandbook(_ runner: ActionRunner, from file: String = #filePath) throws -> CreateRoadmap.Result {
+    struct Handbook: Decodable {
+      struct Roadmap: Decodable {
+        struct Step: Decodable {
+          let id: String
+          let label: String
+          let color: String
+          let follows: [String]
+        }
+
+        let steps: [Step]
+        let done: [String]
+      }
+
+      let roadmap: Roadmap
+    }
+    var directory = URL(fileURLWithPath: file).deletingLastPathComponent()
+    let fixture = "packages/api-contract/roadmap/layout/handbook.json"
+    while directory.path != "/" && !FileManager.default.fileExists(atPath: directory.appending(path: fixture).path) {
+      directory = directory.deletingLastPathComponent()
+    }
+    let handbook = try JSONDecoder().decode(Handbook.self, from: Data(contentsOf: directory.appending(path: fixture))).roadmap
+    let planted = ImportedSteps(
+      steps: handbook.steps.map { ImportedStep(key: $0.id, RoadmapStep.Changes(label: $0.label, color: $0.color)) },
+      links: handbook.steps.flatMap { step in step.follows.map { (from: $0, to: step.id) } })
+    guard case .committed(let created, _) = try runner.runAct(CreateRoadmap(title: "Coastal navigation handbook", steps: planted)) else {
+      throw AppFailure(message: "The handbook was not planted.")
+    }
+    let done = Set(handbook.done.prefix(120))
+    let marks = created.steps.filter { done.contains($0.key) }.map { AnyActAction<RoadmapRefusal>(MarkStep.complete(tree: created.tree, step: $0.id)) }
+    guard case .committed = try runner.runComposed(marks) else { throw AppFailure(message: "The handbook's done steps were not marked.") }
     return created
   }
 

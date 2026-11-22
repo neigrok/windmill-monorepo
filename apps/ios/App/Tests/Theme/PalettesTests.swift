@@ -104,6 +104,24 @@ import Testing
       """)
   }
 
+  // Roadmap · iOS, Colour roles: a Locked step's disc on the Graph, each hue's fill, ring and dot, Dark then Light; a
+  // hue this build does not know is locked in the room's raised ground, its strong line and its faint ink.
+  @Test func roadmapLockedTiersResolveToTheirHexInBothAppearances() {
+    let table = ["terracotta", "olive", "gold", "brick", "sky", "plum", "indigo"].map { (hue: String) -> String in
+      let locked = RoadmapPalette.locked(hue)
+      return "\(hue) " + [locked.fill, locked.ring, locked.glyph].map { "\(hex($0, .dark)) \(hex($0, .light))" }.joined(separator: " · ")
+    }.joined(separator: "\n")
+    #expect(table == """
+      terracotta #3F2A1D #ECD7C6 · #5F3B26 #DFBBA4 · #74462C #D7AA8E
+      olive #31311D #DEDEC6 · #454827 #C5C9A4 · #51572D #B5BB8F
+      gold #413318 #EDE0C2 · #634D1E #E3CE9C · #785D22 #DCC184
+      brick #3B231A #E7D0C3 · #572E21 #D7AF9F · #693525 #CC9987
+      sky #2B2F2F #D7DCD8 · #384549 #B8C6C6 · #41535A #A4B7BB
+      plum #35232B #E1D0D4 · #4B2F41 #CCAFBF · #5A3650 #BE9AB2
+      indigo #222224 #FDFBF6 · #2E2E32 #D3C2A0 · #7E7C77 #92805F
+      """)
+  }
+
   // A room's primary — the band's button, a sheet's checkmark — draws on-accent on the accent fill, which reads at 4.5:1 or
   // more in both appearances.
   @Test @MainActor func primaryLabelsReadOnTheirFillInBothAppearances() {
