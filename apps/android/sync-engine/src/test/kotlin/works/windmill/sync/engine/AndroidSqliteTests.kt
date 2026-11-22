@@ -95,6 +95,33 @@ class AndroidSqliteTests {
             assertEquals(1, engine.device.current().notices.size)
         }
     }
+    // A Coach turn's round sits in `runningRound` beside `runningTurn`. A build whose registry declares no `runningRound` opens the same store, reads and clears
+    // `runningTurn`, keeps the round's row untouched, and cannot write one.
+    @Test fun aBuildThatKnowsNoRunningRoundStillReadsAndClearsTheRunningTurnOfAStoreHoldingOne() = database { file ->
+        val scope = ScopeRef.product("gym")
+        val replica = "rp_00000000000000000000000000000001"
+        val initial = Json.objectOf("active" to Json.of(replica), "replicas" to Json.array(freshReplica(replica).json()))
+        val source = Json.parse(File(System.getProperty("windmill.contract"), "sync/gym.registry.json").readBytes())
+        val gym = source.member("products").member("gym")
+        val older = Registry(source.with("products" to source.member("products").with("gym" to gym.with("device" to gym.member("device").with("runningRound" to null)))))
+        val round = Json.objectOf("message" to Json.of("coach0000000001"), "callId" to Json.of("AAAAAAAAAAAAAAAAAAAAAA"), "bytesBefore" to Json.of(17))
+        AndroidSqlite.open(file, SyncSchema.registry, initial, clock, ids, "actor").use { engine ->
+            engine.commit(scope, Gesture(emptyList(), local = listOf(DeviceWrite("runningTurn", Json.of("coach0000000001")), DeviceWrite("runningRound", round))))
+            assertEquals(listOf(Json.of("coach0000000001"), round), engine.read(scope) { listOf(it.device("runningTurn"), it.device("runningRound")) })
+        }
+        AndroidSqlite.open(file, older, initial, clock, ids, "actor").use { engine ->
+            assertEquals(listOf(Json.of("coach0000000001"), round), engine.read(scope) { listOf(it.device("runningTurn"), it.device("runningRound")) })
+            val before = engine.snapshot()
+            assertEquals(CommitFailure.Kind.malformed, assertThrows(CommitFailure::class.java) {
+                engine.commit(scope, Gesture(emptyList(), local = listOf(DeviceWrite("runningRound", null))))
+            }.kind)
+            assertEquals(before, engine.snapshot())
+            engine.commit(scope, Gesture(emptyList(), local = listOf(DeviceWrite("runningTurn", null))))
+        }
+        AndroidSqlite.open(file, SyncSchema.registry, initial, clock, ids, "actor").use { engine ->
+            assertEquals(listOf(null, round), engine.read(scope) { listOf(it.device("runningTurn"), it.device("runningRound")) })
+        }
+    }
     @Test fun failingMetadataCommitRollsBackTheWriterAndReopenShowsNoPartialIntent() = database { file ->
         open(file).use { engine ->
             val before = engine.snapshot()

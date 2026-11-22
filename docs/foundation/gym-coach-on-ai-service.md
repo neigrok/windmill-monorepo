@@ -164,8 +164,9 @@ host gives the model the one code. An `anon` turn is offered neither.
 - Text reaches the Coach message in coalesced writes at the pace each surface sets: every 250 ms
   on the iPhone; every 5 s on Android, whose room draws the answer so far from the engine; every
   second on the web.
-- The mark is the device row `runningTurn` with, beside it, a row of its own for the round in
-  flight and where its text begins (Coach engine D-6). The registry declares `runningTurn` as the
+- The mark is the device row `runningTurn` with, beside it, the row `runningRound`
+  (`{message, callId, bytesBefore}`) for the round in flight and where its text begins (Coach
+  engine D-6). The registry declares `runningTurn` as the
   message's id alone, and a mark already on a device must still read, so the round takes a new row.
   A device row never syncs, and declaring one moves no schema version.
 - The end is one local write: the state, the whole text, `truncated`, the receipt derived from the
@@ -355,7 +356,6 @@ on 2026-11-15 found these gaps. Each is work of this build.
   and no lock a turn could hold. A turn there emits no event and files no report.
 - The web keeps a Coach draft and a photo in the browser under the account's name and removes
   neither at sign-out.
-- The mark has no place for a round, and the registry declares it as an id alone.
 - Both phones refuse an ability call, and stop writing text, once their running Coach message reads
   `interrupted`. A writer whose turn another device marked stale must go on (§4.2).
 - The server's gate applies rules G-4 to G-7 that no phone applies; each moves into the device.

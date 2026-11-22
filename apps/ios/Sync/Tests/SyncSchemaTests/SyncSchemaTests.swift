@@ -114,7 +114,7 @@ struct SyncSchemaTests {
 
   @Test func theGymCoachDeviceRowsAreTheRunningTurnAndItsLocalOnlyPictures() throws {
     let gym = try #require(SyncSchema.registry.product("gym"))
-    #expect(gym.device.map(\.name) == ["movement", "movementOrder", "offer", "picture", "rack", "runningTurn"])
+    #expect(gym.device.map(\.name) == ["movement", "movementOrder", "offer", "picture", "rack", "runningRound", "runningTurn"])
     #expect(gym.device.filter(\.localOnly).map(\.name) == ["picture"])
     let runningTurn = try #require(gym.device.first { $0.name == "runningTurn" })
     #expect(runningTurn.keyPattern.matches("runningTurn"))
