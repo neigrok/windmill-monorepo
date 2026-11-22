@@ -4,11 +4,13 @@ Status: ✅ Ready for dev. The owner approved every board on 2026-11-21. Built, 
 row in the room menu, its door on *Where to start?*, the Board with its swipes to Complete and to Delete, their
 *Undo* in the band and the long-press menu's *Complete* and *Delete Step*, an empty roadmap, every step done,
 *No roadmaps yet* and the room's failed read; a step's page, opened by a Board row: its status row,
-description and shared links, *Requires* and *Opens*, *Complete* and *Reset* in place with their *Undo*, and the …
-menu's *Delete Step* with its question; the step form, New Step from the foot's + and from an empty roadmap, and *Edit*
-from a step's page: Name, Description, *Kind*, *Requires* and *Opens* pushed inside the sheet, their refusals as
-footers, *Discard draft?*, the created step shown on the Board and each save with its *Undo*, without its *Roadmap* row,
-its *Links*, *Edit Kinds* or Coach's composer; the room's roadmaps: the title menu with the three most recent, *All
+description and shared links, *Requires* and *Opens*, *Complete* and *Reset* in place with their *Undo*, the …
+menu's *Delete Step* with its question, and the person's workspace: *Subtasks* checked in place, added in the list and
+removed by a swipe, the *Note* on its own screen with bold and italic from the system's Format menu, and *Your links*
+with New Link's two fields, without *History*; the step form, New Step from the foot's + and from an empty roadmap, and
+*Edit* from a step's page: Name, Description, *Kind*, *Requires* and *Opens* pushed inside the sheet, the *Links* the
+step shares, their refusals as footers, *Discard draft?*, the created step shown on the Board and each save with its
+*Undo*, without its *Roadmap* row, *Edit Kinds* or Coach's composer; the room's roadmaps: the title menu with the three most recent, *All
 Roadmaps…*, *New Roadmap*, *Rename* and *Delete Roadmap*, All Roadmaps with its search and its swipe to Delete, New
 Roadmap for a blank roadmap, renaming in the bar, and a roadmap's delete asked once and held with *Undo*; and the Graph:
 the switch row's *Board | Graph*, the canvas with its discs, connectors and captions, one finger's pan and a pinch, a

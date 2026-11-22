@@ -670,7 +670,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   draws it, so the page is built to the NOTE and 03.4's row reads *Sky · Reset returns 1 step to Locked*; no board
   words the band after a step completed on its page opens nothing, or after a Reset that locks nothing, and they are
   built as *Read the wind done*, the Board's sentence, and *Read the wind reset*; every board of the page draws
-  the Coach circle or composer, the workspace and History, and the page is built without them until their
+  the Coach circle or composer and History, and the page is built without them until their
   screens are, so a Locked or a Done step's foot holds the band alone and the … menu holds *Delete Step* alone; the
   roadmap's one starting step, which keeps no *Delete Step*, has no … button while that is the menu's one item, and
   no board draws that step's menu; a link row shows the address's host as it is written, so *www.* stays where the
@@ -707,9 +707,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   phone never signed in the title menu's three and All Roadmaps stand in the order of their ids, which no board says.
 - **Roadmap · iOS · what the step form leaves for the boards.** New Step, from the foot's + and from an empty roadmap,
   and *Edit* from a step's page are built in Debug builds from 05.1 to 05.8, 05.10 and 02.15. To draw or rule: every
-  board of the form draws the *Roadmap* row, *Links* with *Add Link* and Coach's composer, and 05.2 draws *Edit Kinds*,
-  and the form is built without them until their screens are, so a step's shared links are neither shown nor changed
-  in its form; 05.2 draws the hues no kind names as Sky, Brick, Plum, where its NOTE keeps the web's list, whose order
+  board of the form draws the *Roadmap* row and Coach's composer, and 05.2 draws *Edit Kinds*, and the form is built
+  without them until their screens are; 05.2 draws the hues no kind names as Sky, Brick, Plum, where its NOTE keeps the web's list, whose order
   and the rule book's is Brick, Sky, Plum, and it is built so; 05.3's caption makes a step that would close a loop
   `.disabled`, and 05.6b has a tap on one name it in the footer: a disabled row takes no tap, so those rows are drawn
   dimmed and stay buttons, each with its group's reason as its hint; no board words the band after *Save*, and it is
@@ -729,6 +728,36 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   a pushed list goes back, where 05.1 draws the form at rest; the name and description fields stop at the domain's 200
   and 16,000 characters with no counter, as the NOTE rules; and the band's six seconds for *Undo* of a created step
   run under VoiceOver too, as every receipt's do.
+- **Roadmap · iOS · what a step's workspace leaves for the boards.** *Subtasks*, *Note* and *Your links* on a step's
+  page and *Links* in the step form are built in Debug builds from 03.1 to 03.3, 03.5, 03.10, 03.11, 03.14, 05.1 and
+  05.8. To draw or rule: no board draws the band after a workspace act, and it is built where the web's page gives an
+  *Undo* and where the engine holds: a subtask checked says *Check the harbour flag checked*, the web's sentence, with
+  *Undo* for six seconds, and a subtask or a link removed says *Check the harbour flag deleted*, the Board's sentence
+  for a held delete, with *Undo* for nine; an add, an uncheck and a note's save show no band, as the web's page shows
+  none; 03.3's *All subtasks done* is said under the list whenever every subtask is checked, on a Locked and a Done
+  step too, where the web offers its line with *Complete step* on an Up next step alone; a subtask's and a link's
+  *Delete* is revealed by the slide and a full swipe commits neither, the Board's rule, where the caption names the
+  swipe alone; 03.10's caption has the note saved on every change, and it is built as the kit's one draft, saved once
+  as the screen leaves by *Done* or Back, and as the app leaves the front, so a save the domain refuses or a commit
+  that fails then drops the words typed in that visit, which no board draws; 03.10's caption takes bold, italic, link
+  and list from the system's Format menu, and on iOS 26.5 that menu, reached by paging the edit menu, offers *Bold*,
+  *Italic* and *More…* alone: bold and italic are built and kept in the web's marks, a list item is a line typed with
+  its dash and a new link is typed with its marks, a link the phone opens shows in the field as its words and any
+  other stands as it is written, and *More…* raises the system's panel of typeface, size and colour, none of which the
+  note's text keeps: what the field shows of them until the screen leaves was not tried; the menu offers no *Underline*
+  there, since the field takes a font and a link alone; words set bold and italic at once are kept bold,
+  and bold or italic words that hold an asterisk lose their marks, since the web's dialect has neither; the page's
+  *Note* row shows the whole note as the web's page reads it, bold, italic, links that open and list items under
+  bullets, with no limit of lines, where 03.2 draws one plain paragraph; 03.11 draws the two fields filled, and they
+  are built with no placeholder, Title first with the keyboard, its return going on to URL; *Add* is lit once the
+  address reads as a web address, with https where it names no scheme, so one word such as *rya* lights it, and a
+  mail address cannot be added from the phone; *Your links* say a host without its *www.*, as the web's page does,
+  where the step's shared links on the same page keep it; the form's link rows stand and do not open, and list every
+  link the step holds, one no page opens by its address, so a save drops none, where the page lists only the links it
+  opens; New Link over the form is a sheet over a sheet; a workspace at the overlay's limit says *This roadmap is at
+  its limit.*, the Board's sentence; the rows are the system's 52 pt where the boards draw 44, the list's separators
+  start at the words, and the sections stand the list's own distance apart; and every board of the page draws
+  *History* and the Coach circle or composer, which are not built.
 - **Roadmap · iOS · what the Graph leaves for the boards.** The switch, the canvas, a selected step with its bar and
   an empty roadmap are built in Debug builds from 04.1, 04.2, 04.4, 04.7 and S.2. To draw or rule: the boards draw
   *Learn to sail* from the top down by hand, and the canvas seats it where the web's layout does, the first step at
