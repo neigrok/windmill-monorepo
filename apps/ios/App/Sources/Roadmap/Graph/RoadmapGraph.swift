@@ -91,7 +91,8 @@ final class RoadmapGraph {
   // The canvas left the screen: a first frame still to come is not that tap's, no gesture or glide is under way, and
   // Fit, which only a tap on the canvas ends, stands no longer.
   func closed() {
-    (opening, pinched, glide, fitted) = (nil, nil, nil, false)
+    opening = nil
+    (glide, pinched, fitted) = (nil, nil, false)
     _ = frames.end()
   }
 
@@ -100,7 +101,8 @@ final class RoadmapGraph {
   func follow(_ read: FollowGraph, of roadmap: String) {
     if self.roadmap.map({ !$0.utf8.elementsEqual(roadmap.utf8) }) ?? true {
       self.roadmap = roadmap
-      (picture, unseated, camera, captions, placer, glide, pinched, fitted) = (nil, false, nil, [], CaptionPlacer(), nil, nil, false)
+      (picture, unseated, camera, captions, placer) = (nil, false, nil, [], CaptionPlacer())
+      (glide, pinched, fitted) = (nil, nil, false)
       placer.setInsets(insets, blocks: [])
       naming?.cancel()
     }
@@ -133,7 +135,8 @@ final class RoadmapGraph {
           if picture.engine == .radial, reported.insert("fallback").inserted { telemetry.failure("roadmap_layout", kind: "fallback") }
           frame()
         case .failure:
-          (picture, unseated, camera, captions, glide, pinched, fitted) = (nil, true, nil, [], nil, nil, false)
+          (picture, unseated, camera, captions) = (nil, true, nil, [])
+          (glide, pinched, fitted) = (nil, nil, false)
           if reported.insert("unseated").inserted { telemetry.failure("roadmap_layout", kind: "unseated") }
         }
       }

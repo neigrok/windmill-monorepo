@@ -263,14 +263,15 @@ import SyncTesting
       #expect(graph.pinched == GraphCamera.Pinched(from: opening, about: fingers) && !graph.captions.isEmpty)
       let (pinched, camera) = (try given(), try #require(graph.camera))
       let read = picture.model.nodes[try place("Read the wind", in: picture)]
-      let seen = pinched.camera.screen(read.x, read.y).applying(camera.carries(from: pinched.camera))
-      moved.append(String(format: "%@: zoom %.2f of %.2f", way.rawValue, pinched.camera.frame.zoom / opening.frame.zoom, camera.frame.zoom / opening.frame.zoom)
-                   + (pinched.captions.isEmpty ? ", no caption" : "") + (pinched.squared ? ", squared" : "")
-                   + (hypot(seen.x - camera.screen(read.x, read.y).x, seen.y - camera.screen(read.x, read.y).y) < 1e-9 ? "" : ", astray"))
+      let (seen, seat) = (pinched.camera.screen(read.x, read.y).applying(camera.carries(from: pinched.camera)), camera.screen(read.x, read.y))
+      let astray: Bool = hypot(seen.x - seat.x, seen.y - seat.y) >= 1e-9
+      let zooms: String = String(format: "%@: zoom %.2f of %.2f", way.rawValue, pinched.camera.frame.zoom / opening.frame.zoom,
+                                 camera.frame.zoom / opening.frame.zoom)
+      moved.append([zooms, pinched.captions.isEmpty ? ", no caption" : "", pinched.squared ? ", squared" : "", astray ? ", astray" : ""].joined())
 
       graph.rest()
       #expect(try given() == live() && graph.pinched == nil)
-      #expect(graph.step(at: camera.screen(read.x, read.y)).flatMap { model.shown?.step($0)?.step.label } == "Read the wind")
+      #expect(graph.step(at: seat).flatMap { model.shown?.step($0)?.step.label } == "Read the wind")
     }
     #expect(moved == ["live: zoom 1.30 of 1.30", "held: zoom 1.50 of 1.30, no caption", "coarse: zoom 1.30 of 1.30, squared", "layered: zoom 1.30 of 1.30"])
   }

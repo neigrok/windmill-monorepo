@@ -138,8 +138,9 @@ import RoadmapLayout
       camera.zoom(by: factor, about: fingers)
       let drawing = GraphDrawing(picture: picture, camera: camera, captions: [], selected: nil, pinched: GraphCamera.Pinched(from: opening, about: fingers),
                                  by: way, crowd: crowd)
-      let apart = hypot(drawing.camera.world(fingers).x - opening.world(fingers).x, drawing.camera.world(fingers).y - opening.world(fingers).y)
-      return String(format: "%.3f", drawing.camera.frame.zoom / opening.frame.zoom) + (drawing.squared ? " squared" : "") + (apart < 1e-9 ? "" : " moved")
+      let apart: Double = hypot(drawing.camera.world(fingers).x - opening.world(fingers).x, drawing.camera.world(fingers).y - opening.world(fingers).y)
+      let zoom: String = String(format: "%.3f", drawing.camera.frame.zoom / opening.frame.zoom)
+      return [zoom, drawing.squared ? " squared" : "", apart < 1e-9 ? "" : " moved"].joined()
     }
     #expect([1, 1.2, 1.25, 1.8, 1.85, 0.85, 0.8].map { drawn($0, .held, 0) } == ["1.000", "1.000", "1.500", "1.500", "2.250", "1.000", "0.667"])
     #expect([drawn(1.25, .live, 0), drawn(1.25, .coarse, 0), drawn(1.25, .layered, 0)] == ["1.250", "1.250 squared", "1.250"])
