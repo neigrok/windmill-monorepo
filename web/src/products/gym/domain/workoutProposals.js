@@ -81,16 +81,17 @@ export function ProposeWorkout({ id, sessionId, entries, summary }) {
   return Object.freeze({
     scope: WorkoutProposal.scope,
     refusals: GymRefusals,
+    id,
     /** @param {Reader} read */
     load(read) { return OpenWorkout.of(read, sessionId); },
-    /** @param {OpenWorkout} loaded */
-    decide(loaded) {
+    /** @param {OpenWorkout} loaded @returns {import('./proposals.js').Proposed<WorkoutProposalValue>} */
+    proposed(loaded) {
       const refused = loaded.refusal(id.ref);
-      if (refused !== null) return Decision.refuse(refused);
+      if (refused !== null) return { kind: 'refuse', refusal: refused };
       const stored = loaded.plan.entries;
       const proposal = new Valid(new WorkoutProposalValue({ id, sessionId, summary, changes: RoutineChange.between(stored, proposed) }), loaded.moment);
       if (proposed.some((entry) => loaded.catalogue.find(entry.exerciseId) === null)) {
-        return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-exercise', id.ref, null, 'predicted')));
+        return { kind: 'refuse', refusal: GymRefusals.ofRefused(new Refused('unknown-exercise', id.ref, null, 'predicted')) };
       }
       const second = proposed.findIndex((entry, at) => proposed.slice(0, at).some((before) => before.exerciseId.equals(entry.exerciseId)));
       if (second >= 0) throw new Violation(WorkoutPlanRules.duplicate, new Path('entries').plus(second).plus('exerciseId'), { kind: 'custom', custom: 'duplicate' });
@@ -98,13 +99,20 @@ export function ProposeWorkout({ id, sessionId, entries, summary }) {
       const entryOf = (side, movement) => side.find((entry) => entry.exerciseId.equals(movement))?.json ?? null;
       const changed = [...stored, ...proposed].map((entry) => entry.exerciseId)
         .find((movement) => loaded.isLogged(movement) && !sameJson(entryOf(stored, movement), entryOf(proposed, movement)));
-      if (changed !== undefined) return Decision.refuse(loggedRefusal(changed, id.ref));
+      if (changed !== undefined) return { kind: 'refuse', refusal: loggedRefusal(changed, id.ref) };
       RoutineChange.floored(proposal.value.changes, loaded.catalogue, new Path('changes'));
-      if (sameJson(stored.map((entry) => entry.json), proposed.map((entry) => entry.json))) return Decision.unchanged(id);
+      if (sameJson(stored.map((entry) => entry.json), proposed.map((entry) => entry.json))) return { kind: 'unchanged' };
       const plan = new Plan();
       plan.create(proposal);
       plan.guardRead(sessionId, ['plan']);
-      return Decision.write(plan, id);
+      return { kind: 'minted', proposal, plan };
+    },
+    /** @param {OpenWorkout} loaded */
+    decide(loaded) {
+      const decided = this.proposed(loaded);
+      if (decided.kind === 'refuse') return Decision.refuse(decided.refusal);
+      if (decided.kind === 'unchanged') return Decision.unchanged(id);
+      return Decision.write(decided.plan, id);
     },
   });
 }

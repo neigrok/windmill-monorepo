@@ -98,8 +98,8 @@ WM_PG_TEST=1 WM_GENERATE_ABILITIES=1 DATABASE_URL="postgresql:///wm_rest_test?ho
 `catalog/3` ([Gym Coach on the AI service](../../docs/foundation/gym-coach-on-ai-service.md) §3), the
 catalog written to the provider's strict mode. It has `catalog.json`'s shape and abilities, and
 differs only in its inputs: no keyword strict mode refuses, every object lists `required`, and a
-bound strict mode cannot state is in the description of the parameter it bounds. No executor reads it
-yet; `catalog.json` and `abilities/` are deleted when no released build opens a `catalog/2` turn.
+bound strict mode cannot state is in the description of the parameter it bounds. The web's replica
+executor reads it (`web/src/products/gym/domain/coach/`); `catalog.json` and `abilities/` are deleted when no released build opens a `catalog/2` turn.
 
 - `strict.py` checks it in the Coach contracts workflow: every ability's input holds only keywords
   and shapes strict mode accepts, each seat's tools (`agent` `runs` or `proposes`, declared,
@@ -115,7 +115,9 @@ yet; `catalog.json` and `abilities/` are deleted when no released build opens a 
 - `start_session`, `log_set`, `log_sets`, `import_session`, `finish_session` and `update_exercise`
   are withheld from Coach; their files hold the refusals of their moved bounds alone, for the server
   executor, which runs them for MCP.
-- No executor claims `abilities-3/` yet. Its refusals are hand-written, not the server's golden: they
+- The web's executor claims every case: a withheld ability's and a share's as `not-offered`, which
+  the executor answers for each, and every other case byte for byte (`web/test/products/gym/domain/corpus.test.js`).
+  No other executor claims `abilities-3/` yet. Its refusals are hand-written, not the server's golden: they
   are the contract each executor is held to when it moves onto `catalog/3`.
 - A value outside a moved bound is refused `invalid-arguments` before any rule reads the store, so a
   refusal case's records need not make the rest of the call succeed, though each case's do.

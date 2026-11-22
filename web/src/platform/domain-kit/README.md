@@ -33,6 +33,7 @@ fixture per rule, then type-checks the files using `tsconfig.domain.json`.
 | `drafts.js` | §10 | `Draft`, `Saved`, `SaveResult`, `SaveDraft` (`ofDraft`, `creating`) |
 | `standardActions.js` | §11 | `Remove`, `Move` |
 | `refusals.js` | §12 | `Refused`, `commandSubject`, `DomainNotice` |
+| `collation.js` | §4.6 | `Collation`, the order `list_exercises` reads names in |
 | `runner.js` | §9.2 | `ActionRunner` over a replica port; `EngineReplica`, the port over `platform/sync/engine.js` |
 
 ## Spellings
