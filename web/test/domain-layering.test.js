@@ -17,19 +17,25 @@ const PRODUCTS = path.join(WEB, 'src', 'products');
 const FIXTURES = path.join(WEB, 'test', 'fixtures', 'domain-layering');
 
 const NAME = '[\\w-]+';
+// A domain file `depth` folders below its product's `domain/` reaches the kit, the shared core and the schema through as
+// many more `../`, and its own domain through at most that many, never above it.
 const IMPORTS = {
-  kit: [
+  kit: () => [
     new RegExp(`^(?:\\.\\./){4}packages/api-contract/sync/reference/core/${NAME}\\.js$`),
     /^\.\.\/sync\/core\/(?:encoding|content)\.js$/,
     new RegExp(`^\\./${NAME}\\.js$`),
   ],
-  domain: [
-    new RegExp(`^\\.\\./\\.\\./\\.\\./platform/domain-kit/${NAME}\\.js$`),
-    new RegExp(`^(?:\\.\\./){5}packages/api-contract/sync/reference/core/${NAME}\\.js$`),
-    /^\.\.\/\.\.\/\.\.\/platform\/sync\/core\/(?:encoding|content)\.js$/,
-    /^\.\.\/\.\.\/\.\.\/platform\/sync\/schema\.js$/,
-    new RegExp(`^\\./${NAME}\\.js$`),
-  ],
+  domain: (depth) => {
+    const up = `(?:\\.\\./){${depth}}`;
+    const own = depth === 0 ? '\\./' : `(?:\\./|(?:\\.\\./){1,${depth}})`;
+    return [
+      new RegExp(`^${up}\\.\\./\\.\\./\\.\\./platform/domain-kit/${NAME}\\.js$`),
+      new RegExp(`^${up}(?:\\.\\./){5}packages/api-contract/sync/reference/core/${NAME}\\.js$`),
+      new RegExp(`^${up}\\.\\./\\.\\./\\.\\./platform/sync/core/(?:encoding|content)\\.js$`),
+      new RegExp(`^${up}\\.\\./\\.\\./\\.\\./platform/sync/schema\\.js$`),
+      new RegExp(`^${own}(?:${NAME}/)*${NAME}\\.js$`),
+    ];
+  },
 };
 const TOKENS = new Set(['Date', 'crypto', 'performance', 'setTimeout', 'setInterval', 'queueMicrotask',
   'requestAnimationFrame', 'Promise', 'fetch', 'indexedDB', 'window', 'document', 'globalThis', 'navigator',
@@ -66,7 +72,7 @@ function findings({ layer, name, text, directory }) {
   }
 
   const checkImport = (specifier, line) => {
-    if (!IMPORTS[layer].some((shape) => shape.test(specifier))) return report(line, `import '${specifier}' is not a ${layer} import`);
+    if (!IMPORTS[layer](name.split('/').length - 1).some((shape) => shape.test(specifier))) return report(line, `import '${specifier}' is not a ${layer} import`);
     if (directory && !fs.existsSync(path.resolve(directory, specifier))) report(line, `import '${specifier}' does not exist`);
   };
   const checkName = (identifier) => {
@@ -141,7 +147,9 @@ function sourceFiles(directory) {
   });
 }
 
-const scan = (layer, file) => findings({ layer, name: path.basename(file), text: fs.readFileSync(file, 'utf8'), directory: path.dirname(file) });
+// A domain file is named by its path below its product's `domain/`, so its depth sets what its imports may reach.
+const scan = (layer, file, root = path.dirname(file)) => findings({ layer, name: path.relative(root, file).split(path.sep).join('/'),
+  text: fs.readFileSync(file, 'utf8'), directory: path.dirname(file) });
 
 // A fixture's header: `// layer: kit|domain`, `// file: <the basename it poses as>`, `// expect: <finding>`…
 function fixture(file) {
@@ -177,9 +185,9 @@ test('the exemption list is exactly runner.js, for awaiting the engine', () => {
 test('every kit and domain file has no finding', (t) => {
   const kitFiles = sourceFiles(KIT);
   const domainFiles = (fs.existsSync(PRODUCTS) ? fs.readdirSync(PRODUCTS) : [])
-    .flatMap((product) => sourceFiles(path.join(PRODUCTS, product, 'domain')));
+    .flatMap((product) => sourceFiles(path.join(PRODUCTS, product, 'domain')).map((file) => [file, path.join(PRODUCTS, product, 'domain')]));
   assert.ok(kitFiles.length > 0, 'no kit file was scanned');
-  const faulted = [...kitFiles.map((file) => [file, scan('kit', file)]), ...domainFiles.map((file) => [file, scan('domain', file)])]
+  const faulted = [...kitFiles.map((file) => [file, scan('kit', file)]), ...domainFiles.map(([file, root]) => [file, scan('domain', file, root)])]
     .filter(([, found]) => found.length > 0)
     .map(([file, found]) => `${path.relative(WEB, file)}: ${found.join('; ')}`);
   assert.deepEqual(faulted, []);

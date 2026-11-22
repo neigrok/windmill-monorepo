@@ -275,8 +275,16 @@ export function changesBetween(base, proposed) {
   return RoutineChange.between(base, proposed.map((entry) => entry.validated(new Path('entries'))));
 }
 
+// What a proposal decides before it is a decision: refused, nothing to propose, or the proposal minted with the plan that
+// writes it, which Coach's call reads as its receipt.
 /**
- * @param {{ id: Id<ProposalValue>, routineId: Id<RoutineValue>, name: string,
+ * @template P
+ * @typedef {{ kind: 'refuse', refusal: import('./gymRules.js').GymRefusal } | { kind: 'unchanged' }
+ *   | { kind: 'minted', proposal: Valid<any> & { value: P }, plan: Plan }} Proposed
+ */
+
+/**
+ * @param {{ id: Id<ProposalValue>, routineId: Id<RoutineValue>, name: string | null,
  *   entries: readonly RoutineEntry[], summary: string, removing?: boolean }} input
  */
 export function ProposeRoutine({ id, routineId, name, entries, summary, removing = false }) {
@@ -284,31 +292,40 @@ export function ProposeRoutine({ id, routineId, name, entries, summary, removing
   return Object.freeze({
     scope: Proposal.scope,
     refusals: GymRefusals,
+    id,
     /** @param {Reader} read */
     load(read) {
       const routines = read.repository(Routine);
       return { routine: routines.find(routineId, 'stored'), routineVisible: routines.find(routineId, 'drawn') !== null,
         catalogue: new Catalogue(read, 'stored'), moment: read.moment };
     },
-    /** @param {{ routine: RoutineValue | null, routineVisible: boolean, catalogue: Catalogue, moment: Moment }} loaded */
-    decide(loaded) {
+    // A null name keeps the routine's own.
+    /** @param {{ routine: RoutineValue | null, routineVisible: boolean, catalogue: Catalogue, moment: Moment }} loaded @returns {Proposed<ProposalValue>} */
+    proposed(loaded) {
       const base = loaded.routine;
-      if (base === null || !loaded.routineVisible) return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-record', routineId.ref, null, 'predicted')));
+      if (base === null || !loaded.routineVisible) return { kind: 'refuse', refusal: GymRefusals.ofRefused(new Refused('unknown-record', routineId.ref, null, 'predicted')) };
       const proposed = removing ? [] : RoutineRules.entries.apply([...requested], new Path('entries'));
-      const proposedName = removing ? '' : RoutineRules.name.apply(name, new Path('name'));
+      const proposedName = removing ? '' : RoutineRules.name.apply(name ?? base.name, new Path('name'));
       if (proposed.some((entry) => loaded.catalogue.find(entry.exerciseId) === null)) {
-        return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-exercise', id.ref, null, 'predicted')));
+        return { kind: 'refuse', refusal: GymRefusals.ofRefused(new Refused('unknown-exercise', id.ref, null, 'predicted')) };
       }
       const changes = RoutineChange.between(base.entries, proposed);
       RoutineChange.floored(changes, loaded.catalogue, new Path('changes'));
       if (!removing && base.name === proposedName && sameJson(base.entries.map((entry) => entry.json), proposed.map((entry) => entry.json))) {
-        return Decision.unchanged(id);
+        return { kind: 'unchanged' };
       }
-      const proposal = new ProposalValue({ id, routineId: base.id, intent: removing ? 'remove' : 'revise', proposedName, summary, changes });
+      const proposal = new Valid(new ProposalValue({ id, routineId: base.id, intent: removing ? 'remove' : 'revise', proposedName, summary, changes }), loaded.moment);
       const plan = new Plan();
-      plan.create(new Valid(proposal, loaded.moment));
+      plan.create(proposal);
       plan.guardRead(base.id, ['entries', 'name']);
-      return Decision.write(plan, id);
+      return { kind: 'minted', proposal, plan };
+    },
+    /** @param {{ routine: RoutineValue | null, routineVisible: boolean, catalogue: Catalogue, moment: Moment }} loaded */
+    decide(loaded) {
+      const proposed = this.proposed(loaded);
+      if (proposed.kind === 'refuse') return Decision.refuse(proposed.refusal);
+      if (proposed.kind === 'unchanged') return Decision.unchanged(id);
+      return Decision.write(proposed.plan, id);
     },
   });
 }

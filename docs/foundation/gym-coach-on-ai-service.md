@@ -6,7 +6,7 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified, and approved by the owner on 2026-11-15. Of what it changes, the words of §3 and the `catalog/3` file are written, and the server is on `catalog/3`: MCP lists its schemas, a `catalog/3` turn opens beside `catalog/1` and `catalog/2`, and the server executor claims `abilities-3/`. Nothing else is built. Gym Coach runs on the server in two forms.
+**Status:** Specified, and approved by the owner on 2026-11-15. Of what it changes, the words of §3 and the `catalog/3` file are written, and the server is on `catalog/3`: MCP lists its schemas, a `catalog/3` turn opens beside `catalog/1` and `catalog/2`, and the server executor claims `abilities-3/`. The web's Coach records and replica executor (`web/src/products/gym/domain/coach/`) are written. Nothing else is built. Gym Coach runs on the server in two forms.
 [Phone-hosted Coach abilities](mobile/gym_coach.md) is what the iPhone and Android speak: the server
 runs the loop and the phone runs the abilities. The [Coach conversation contract](../gym-coach-contract.md)
 is what the web speaks: the server runs everything. Both are metered by the backend's ledger
@@ -128,8 +128,8 @@ own executors and MCP. (R-11)
   write ignores (a line's `position`; a new routine's `revision`, `lastTrainedAt` and
   `pendingProposal`), so a day read back is a day sent.
 - The corpora are written again for `catalog/3` in `abilities-3/`, and every executor will claim
-  them: the server's, Swift's, Kotlin's and the web's. The server's claims them; their refusals are
-  the contract each other executor is held to when it moves. The withheld abilities whose bounds moved
+  them: the server's, Swift's, Kotlin's and the web's. The server's and the web's claim them; their
+  refusals are the contract each other executor is held to when it moves. The withheld abilities whose bounds moved
   have a file of refusals there, for the server executor, the one that runs them.
 - An outside assistant sees the new schemas over MCP. A build released before the move goes on
   opening `catalog/2` turns, which the server serves beside `catalog/3` until the cutover (§8).
@@ -383,12 +383,14 @@ on 2026-11-15 found these gaps. Each is work of this build.
   the words the model reads (§3).
 - The iPhone keeps its turn in the app target; it has no engine module that names no product.
   Android's `:agent` is one, and holds the wire's driver, not a loop.
-- The web has no catalog types, no executor, no `thread` or `message` entity, no agent or AI layer
-  and no lock a turn could hold. A turn there emits no event and files no report.
+- The web has no agent or AI layer and no lock a turn could hold; its executor runs no turn yet. A
+  turn there emits no event and files no report.
 - The web keeps a Coach draft and a photo in the browser under the account's name and removes
   neither at sign-out.
 - The registry declares `runningRound`, and no host writes or clears it yet: each surface's turn
-  host writes it at every round and clears it with `runningTurn` (m2–m4).
+  host writes it at every round and clears it with `runningTurn` (m2–m4). The web's domain holds the
+  writes (`coach/turn.js`: `BeginRound`, `RecoverMark`, and every clear of the mark); no web host
+  calls them yet.
 - Both phones refuse an ability call, and stop writing text, once their running Coach message reads
   `interrupted`. A writer whose turn another device marked stale must go on (§4.2).
 - The server's gate applies rules G-4 to G-7 that no phone applies; each moves into the device.

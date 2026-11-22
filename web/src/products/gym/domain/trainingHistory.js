@@ -234,15 +234,19 @@ export class TrainingHistory {
 
   /** @param {HistoryQuery} query */
   sessions(query = {}) {
-    return pageOf(this.log.drawnSessions, query).page.map((session) => {
-      const held = this.log.setsFor(session.id); const top = topSet(held);
-      const topE1rm = this.log.topE1rm(session.id);
-      return { ...sessionDocument(session), setCount: held.length, workingSetCount: held.length, tonnageKg: totals(held, this.catalogue).tonnageKg,
-        exercises: [...new Set(held.flatMap((set) => { const exercise = this.catalogue.find(set.exerciseId); return exercise ? [exercise.name] : []; }))].sort(compareText),
-        ...(top ? { topSet: { weightKg: top.weightKg, reps: top.reps } } : {}), topE1rm,
-        record: this.log.firstPullComplete && held.length >= 4 && this.recordAgainst(session) !== null,
-        closedItself: session.closedBy ? session.closedBy === 'stale' : session.finishedAt?.ms === SessionRules.lastActivity(session, held).ms };
-    });
+    return pageOf(this.log.drawnSessions, query).page.map((session) => this.summary(session));
+  }
+
+  // A workout as a list of them reads it: its document, its counts, its top set and whether it set a record.
+  /** @param {SessionValue} session @returns {Document} */
+  summary(session) {
+    const held = this.log.setsFor(session.id); const top = topSet(held);
+    const topE1rm = this.log.topE1rm(session.id);
+    return { ...sessionDocument(session), setCount: held.length, workingSetCount: held.length, tonnageKg: totals(held, this.catalogue).tonnageKg,
+      exercises: [...new Set(held.flatMap((set) => { const exercise = this.catalogue.find(set.exerciseId); return exercise ? [exercise.name] : []; }))].sort(compareText),
+      ...(top ? { topSet: { weightKg: top.weightKg, reps: top.reps } } : {}), topE1rm,
+      record: this.log.firstPullComplete && held.length >= 4 && this.recordAgainst(session) !== null,
+      closedItself: session.closedBy ? session.closedBy === 'stale' : session.finishedAt?.ms === SessionRules.lastActivity(session, held).ms };
   }
 
   /** @param {string} exerciseId */
