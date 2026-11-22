@@ -565,7 +565,8 @@ import SyncTesting
     #expect([RoadmapGraph.misses(frames(0, 120)), RoadmapGraph.misses(frames(12, 120)), RoadmapGraph.misses(frames(13, 120)),
              RoadmapGraph.misses(frames(29, 29)), RoadmapGraph.misses(frames(4, 30)), RoadmapGraph.misses([])]
             == [false, false, true, false, true, false])
-    #expect([RoadmapGraph.bucket(8), RoadmapGraph.bucket(100), RoadmapGraph.bucket(101), RoadmapGraph.bucket(1_000), RoadmapGraph.bucket(5_000)]
-            == ["1-100", "1-100", "101-1000", "101-1000", "1001-5000"])
+    #expect([RoadmapGraph.bucket(8), RoadmapGraph.bucket(100), RoadmapGraph.bucket(101), RoadmapGraph.bucket(1_000), RoadmapGraph.bucket(5_000),
+             RoadmapGraph.bucket(5_001), RoadmapGraph.bucket(10_000)]
+            == ["1-100", "1-100", "101-1000", "101-1000", "1001-5000", "5001-10000", "5001-10000"])
   }
 }

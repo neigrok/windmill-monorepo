@@ -304,11 +304,11 @@ final class RoadmapGraph {
     gapsMs.count >= judgedFrames && gapsMs.count { $0 > lateFrameMs } * 10 > gapsMs.count
   }
 
-  // A roadmap's size as a report carries it.
+  // A roadmap's size as an event or a report carries it, up to the steps the rule book's registry lets a roadmap hold.
   static func bucket(_ steps: Int) -> String {
     if steps <= 100 { return "1-100" }
     if steps <= 1_000 { return "101-1000" }
-    return "1001-5000"
+    return steps <= 5_000 ? "1001-5000" : "5001-10000"
   }
 }
 

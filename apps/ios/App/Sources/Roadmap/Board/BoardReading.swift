@@ -8,7 +8,8 @@ import SyncEngine
 // what order is the domain's `BoardRead`. A kind the filter shows stays shown once no step wears it, so the Board then
 // shows nothing and says so (02.6b) until the filter is cleared. It lasts the visit, as the web's room keeps its query:
 // another roadmap opening, or a launch, starts it over, and nothing of it is stored. The words typed change at every
-// key, so only the Board's list reads them.
+// key, so only the Board's list reads them. The room tells it each read of the open roadmap and the view it shows: Find
+// is the Board's, so it ends once the Graph is shown, and a step the form made is shown once the phone's copy holds it.
 @Observable @MainActor
 final class BoardReading {
   // The Board under the query: its groups with the steps kept, what its first rows say narrows it, and what narrows it
@@ -35,18 +36,35 @@ final class BoardReading {
   private(set) var kinds: [String] = []
   // The step whose branch the Board stays in: it, what it needs and what it opens.
   private(set) var branch: String?
-  // Find is up, with its field at the foot; closed, it looks for nothing.
+  // Find is up, with its field at the foot. Closed, by its own close or by the Board leaving the screen, it tells the
+  // words it last looked for where no search told them, and then looks for nothing.
   var finds = false {
-    didSet { if !finds { (finding, told) = ("", "") } }
+    didSet {
+      guard oldValue, !finds else { return }
+      searched()
+      (finding, looked, told) = ("", "", "")
+    }
   }
   // The words Find looks for, as typed.
   var finding = "" {
-    didSet { if needle.isEmpty { foldedWhileFinding = [] } }
+    didSet {
+      if needle.isEmpty { foldedWhileFinding = [] }
+      else { looked = needle }
+    }
   }
   // The groups a header folded while Find narrows: the person's own fold of the Board at rest stays as it was.
   var foldedWhileFinding: Set<BoardRead.Column.Name> = []
-  // The words last told as searched, so a search is told once.
+  // The words Find last looked for, kept as the field empties, which the system's close may do before it closes Find;
+  // and the words last told as searched, so a search is told once.
+  @ObservationIgnored var looked = ""
   @ObservationIgnored var told = ""
+  // The view the room shows of the open roadmap: Find is the Board's, so it ends once the Board is not shown.
+  @ObservationIgnored private(set) var lens = RoadmapModel.Lens.board {
+    didSet { if lens != .board { finds = false } }
+  }
+  // The step the form made, which the Board shows once the phone's copy holds it, whether it then draws a list or
+  // nothing left to show.
+  @ObservationIgnored private(set) var made: String?
 
   init(telemetry: any Telemetry) {
     self.telemetry = telemetry
@@ -107,22 +125,31 @@ final class BoardReading {
 
   // Find's search key, or Find closed on words it looked for: a search is told once, by no word of it.
   func searched() {
-    guard !needle.isEmpty, needle != told else { return }
-    told = needle
+    guard !looked.isEmpty, looked != told else { return }
+    told = looked
     telemetry.event("roadmap_board_search")
   }
 
-  // A step the form made that the query hides is shown: each part that alone hides it is cleared, as the web's room
-  // reveals a step (`BoardQuery.revealing`), and the order stays.
-  func reveal(_ step: String, in open: RoadmapModel.OpenRoadmap) {
+  // Create in the step form: the step it made is shown once the phone's copy holds it.
+  func reveal(_ step: String) {
+    made = step
+  }
+
+  // The room read the open roadmap, which it shows in `lens`. A step the form made that the copy now holds is shown: each
+  // part of the query that alone hides it is cleared, as the web's room reveals a step (`BoardQuery.revealing`), and the
+  // order stays.
+  func read(_ open: RoadmapModel.OpenRoadmap, shown lens: RoadmapModel.Lens) {
+    self.lens = lens
+    guard let step = made, open.step(step) != nil else { return }
+    made = nil
     let keeps = { (query: BoardQuery) -> Bool in BoardRead(open.graph, query).cards.contains { $0.id.utf8.elementsEqual(step.utf8) } }
     if !kinds.isEmpty && !keeps(BoardQuery(kinds: kinds)) { kinds = [] }
     if !needle.isEmpty && !keeps(BoardQuery(search: needle)) { finding = "" }
     if let branch, !keeps(BoardQuery(branch: branch)) { self.branch = nil }
   }
 
-  // Another roadmap opened: the Board asks nothing of it yet.
+  // Another roadmap opened: the Board asks nothing of it yet, and Find ends.
   func forget() {
-    (sort, kinds, branch, finds, foldedWhileFinding) = (.roadmap, [], nil, false, [])
+    (sort, kinds, branch, finds, foldedWhileFinding, made) = (.roadmap, [], nil, false, [], nil)
   }
 }

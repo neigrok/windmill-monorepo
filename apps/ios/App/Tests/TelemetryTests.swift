@@ -169,6 +169,11 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     for view in ["board", "graph"] {
       #expect(TelemetryPrivacy.properties(["view": view, "tree": "private-id", "title": "private-marker"]) == ["view": .label(view)])
     }
+    // A Graph that comes up carries the roadmap's size as a bucket, up to the steps a roadmap may hold, never its count.
+    for steps in ["1-100", "101-1000", "1001-5000", "5001-10000"] {
+      #expect(TelemetryPrivacy.properties(["view": "graph", "steps": steps]) == ["view": .label("graph"), "steps": .label(steps)])
+    }
+    #expect(TelemetryPrivacy.properties(["view": "graph", "steps": "10000"]) == ["view": .label("graph")])
     for column in ["upNext", "locked", "done"] {
       #expect(TelemetryPrivacy.properties(["column": column, "step": "private-id", "label": "Read the wind"]) == ["column": .label(column)])
     }

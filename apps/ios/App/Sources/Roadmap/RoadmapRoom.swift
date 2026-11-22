@@ -179,8 +179,8 @@ struct RoadmapTitle: ViewModifier {
   }
 
   // iOS 26 draws the progress under the inline title, whose menu and field are the system's; before it the name and
-  // the progress stand in the bar's principal slot, as on every room's screen. The field starts from the name the bar
-  // shows, so a name committed as it was shown writes nothing.
+  // the progress stand in the bar's principal slot, as on every room's screen, with the same menu. The field starts from
+  // the name the bar shows, so a name committed as it was shown writes nothing.
   @ViewBuilder var title: some View {
     let name = open.listed.name
     if let selection = roadmap.selection {
@@ -189,7 +189,7 @@ struct RoadmapTitle: ViewModifier {
       Color.clear.navigationTitle(Binding(get: { name }, set: { if $0 != name { roadmap.rename(to: $0) } }))
         .navigationSubtitle(open.board.overall.progress).toolbarTitleMenu { menu }
     } else {
-      Color.clear.roomTitle(name, subtitle: open.board.overall.progress)
+      Color.clear.roomTitle(name, subtitle: open.board.overall.progress).toolbarTitleMenu { menu }
     }
   }
 

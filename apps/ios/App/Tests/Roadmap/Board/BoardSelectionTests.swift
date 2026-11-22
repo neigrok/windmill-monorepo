@@ -154,6 +154,46 @@ import SyncTesting
     #expect(told(telemetry).filter { $0.contains("delete_refused") } == ["roadmap_board_bulk reason=last_root step=delete_refused"])
   }
 
+  // 02.12: a selection that starts on the roadmap's one starting step says at once why Delete is dimmed, once.
+  @Test func aSelectionStartedOnTheOnlyStartingStepSaysWhyDeleteIsDimmed() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    try await learnToSail(model, on: engine, runner)
+    let start = try #require(model.shown?.keptStep)
+
+    model.startSelecting(start, from: .menu)
+    #expect(model.selection?.takesEveryStart == true && model.band?.says == .refused(.keepsStartingStep) && model.band?.undo == nil)
+    model.selection?.steps.insert(try step("Read the wind", in: model))
+    #expect(told(telemetry).filter { $0.contains("roadmap_board_select") || $0.contains("delete_refused") } == [
+      "roadmap_board_select door=menu step=start", "roadmap_board_bulk reason=last_root step=delete_refused",
+    ])
+  }
+
+  // Select All takes the steps whose rows the Board shows: Done, folded at rest, keeps its steps out of it, as the web's
+  // selection takes only the cards its columns show; once Done is open it takes them too. Deselect All chooses none.
+  @Test func selectAllTakesTheStepsWhoseRowsTheBoardShows() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let model = room(engine, runner, memory)
+    try await learnToSail(model, on: engine, runner)
+    let labels = { (steps: Set<String>) -> [String] in
+      (model.shown?.tree.index.nodes ?? []).filter { steps.contains($0.id) }.map { $0.label }
+    }
+    model.startSelecting(nil, from: .tool)
+    let selection = try #require(model.selection)
+
+    selection.selectAll()
+    #expect(labels(selection.steps).sorted() == ["Leave the dock", "Read the wind", "Sail a triangle", "Sail solo", "Tie a bowline"])
+    #expect(selection.holdsEveryShown && !selection.takesEveryStart)
+    selection.selectAll()
+    #expect(selection.steps.isEmpty)
+    model.folded.remove(.done)
+    selection.selectAll()
+    #expect(selection.steps.count == 8 && selection.takesEveryStart)
+  }
+
   // The steps chosen are what the Board shows: a step it stops showing is chosen no longer, and the selection ends once
   // another roadmap opens.
   @Test func aStepTheBoardStopsShowingLeavesTheSelection() async throws {

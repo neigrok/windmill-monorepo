@@ -341,14 +341,18 @@ import XCTest
     XCTAssertTrue(app.buttons["roadmap-new-step"].waitForExistence(timeout: 5) && app.segmentedControls.firstMatch.isEnabled)
   }
 
-  // 02.6, 05.2, 06.2, 06.5 and 06.5b: Find that matches nothing offers a new step of its words, whose form opens named
-  // so; Edit Kinds in the form's Kind list raises Kinds over the form, where a hue another kind wears is dimmed and
-  // cannot be chosen; and a kind no step wears is removed at once in edit mode, with Undo in the band at the sheet's foot.
+  // 02.6, 05.2, 06.2, 06.5 and 06.5b: Find with a kind shown that matches nothing offers a new step of its words, whose
+  // form opens named so; Edit Kinds in the form's Kind list raises Kinds over the form, where a hue another kind wears is
+  // dimmed and cannot be chosen; a kind no step wears is removed at once in edit mode, with Undo in the band at the
+  // sheet's foot; and the step created stands on the Board, the kind filter that hid it cleared and Find's words kept.
   func testFindOffersANewStepOfItsWordsAndAKindNoStepWearsIsRemovedWithUndo() {
     let app = launch("roadmap-learn-to-sail")
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    boardTool(app)
+    app.buttons["Build"].firstMatch.tap()
+    XCTAssertTrue(app.staticTexts["roadmap-showing"].waitForLabel("Showing Build"))
     find("reef", in: app)
-    XCTAssertTrue(app.staticTexts["No steps match “reef”"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["No steps match “reef”"].waitForExistence(timeout: 5) && app.buttons["roadmap-clear-filters"].exists)
     app.buttons["roadmap-find-new-step"].tap()
     XCTAssertTrue(app.textFields["roadmap-form-name"].waitForValue("reef"))
     app.buttons["roadmap-form-kind"].tap()
@@ -381,10 +385,21 @@ import XCTest
     XCTAssertTrue(remove.waitForExistence(timeout: 5))
     remove.tap()
     XCTAssertTrue(app.staticTexts["Brick removed"].waitForExistence(timeout: 10) && brick.waitForNonExistence(timeout: 5))
-    // The band stands at the foot of each screen under the sheet too: the sheet's own, on top, is the last.
-    let undo = app.buttons.matching(identifier: "roadmap-undo")
-    undo.element(boundBy: undo.count - 1).tap()
+    // The band stands at the foot of each screen under the sheet too: the sheet's own, on top, is the one a tap reaches.
+    let undo = app.buttons.matching(identifier: "roadmap-undo").allElementsBoundByIndex.first { $0.isHittable }
+    XCTAssertNotNil(undo)
+    undo?.tap()
     XCTAssertTrue(brick.waitForExistence(timeout: 10))
+
+    app.buttons["roadmap-kinds-close"].tap()
+    XCTAssertTrue(app.buttons["roadmap-kinds-add"].waitForNonExistence(timeout: 5))
+    app.roadmapKind("Sky").tap()
+    XCTAssertTrue(app.buttons["roadmap-form-kind"].waitForLabel("Kind, Sky", timeout: 5))
+    app.buttons["roadmap-form-commit"].tap()
+    XCTAssertTrue(app.staticTexts["reef added · Up next"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.roadmapStep("reef").waitForExistence(timeout: 5) && rows(app).count == 1)
+    XCTAssertFalse(app.staticTexts["roadmap-showing"].exists || app.buttons["roadmap-clear-filters"].exists)
+    XCTAssertEqual(app.searchFields.firstMatch.value as? String, "reef")
   }
 
   // The canvas of the open roadmap, once the switch has shown the Graph, and the centre of what the bars leave of it.

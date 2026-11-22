@@ -15,8 +15,8 @@ struct RoadmapKinds: View {
   // focused.
   @State private var added: RoadmapLegend.Subject?
   @State private var naming: RoadmapLegend.Subject?
-  // The kinds removed here that the phone's copy is still read with: the list lets a row go as its delete is made, as
-  // the system's edit mode asks, and the copy follows a moment later.
+  // The kinds removed here that the phone's copy is still read with: the list lets a row go as its delete is written, as
+  // the system's edit mode asks, and the copy follows a moment later. A delete refused leaves its row.
   @State private var removing: Set<RoadmapLegend.Subject> = []
   @ScaledMetric(relativeTo: .body) private var disc = 22.0
 
@@ -65,8 +65,7 @@ struct RoadmapKinds: View {
             .accessibilityIdentifier("roadmap-kinds-row")
         }.onDelete { places in
           for place in places where entries.indices.contains(place) {
-            removing.insert(entries[place].id)
-            roadmap.remove(entries[place])
+            if roadmap.remove(entries[place].id) { removing.insert(entries[place].id) }
           }
         }
         if open.legend.freeHue != nil {
@@ -106,7 +105,8 @@ struct RoadmapKinds: View {
 // each change applies as it is made. Its name and its description, each stopping at the domain's limit, are written as
 // their field leaves them; a hue no kind names takes a name or a description by becoming a kind. Color lists the six
 // hues, the entry's checked: a hue another entry has is dimmed and says whose it is, and a free one recolors the kind
-// and every step that wears it.
+// and every step that wears it. While the entry a name or a colour moved the page to is still to be read, the page
+// draws the entry it read last.
 struct RoadmapKindPage: View {
   enum Field {
     case name, description
@@ -115,6 +115,7 @@ struct RoadmapKindPage: View {
   let roadmap: RoadmapModel
   // The entry the page stands on, which a name, or a colour of a hue no kind names, moves.
   @State private var subject: RoadmapLegend.Subject
+  @State private var last = LastRead<RoadmapLegend.Entry>()
   @State private var name: String
   @State private var description: String
   @State private var focusesName: Bool
@@ -131,18 +132,18 @@ struct RoadmapKindPage: View {
   }
 
   var body: some View {
-    if let entry = roadmap.shown?.legend.entry(subject) {
+    if let entry = last.read(roadmap.shown?.legend.entry(subject)) {
       Form {
         Section {
-          TextField("Name", text: $name).focused($focused, equals: .name).submitLabel(.done)
+          TextField("Name", text: $name).focused($focused, equals: .name)
             .onSubmit { write(.name) }.accessibilityIdentifier("roadmap-kind-name")
           TextField("What belongs here?", text: $description, axis: .vertical).focused($focused, equals: .description)
             .accessibilityIdentifier("roadmap-kind-description")
         }.foregroundStyle(RoadmapPalette.ink).listRowBackground(RoadmapPalette.card)
         Section {
-          Picker("Color", selection: Binding(get: { entry.hue }, set: { subject = roadmap.recolour(entry, to: $0) })) {
+          Picker("Color", selection: Binding(get: { entry.hue }, set: { subject = roadmap.recolour(subject, to: $0) })) {
             ForEach(RoadmapRules.hues, id: \.self) { hue in
-              let worn = roadmap.shown?.legend.wearer(of: hue).map { $0.id != entry.id } ?? false
+              let worn = hue != entry.hue && roadmap.shown?.legend.wearer(of: hue) != nil
               colour(hue, worn: worn).tag(hue).disabled(worn)
             }
           }.pickerStyle(.inline).labelsHidden().accessibilityIdentifier("roadmap-kind-colors")
@@ -193,7 +194,6 @@ struct RoadmapKindPage: View {
 
   // A field's words as it leaves them: written where they differ from the entry's.
   func write(_ field: Field) {
-    guard let entry = roadmap.shown?.legend.entry(subject) else { return }
-    subject = field == .name ? roadmap.name(entry, name) : roadmap.describe(entry, description)
+    subject = field == .name ? roadmap.name(subject, name) : roadmap.describe(subject, description)
   }
 }

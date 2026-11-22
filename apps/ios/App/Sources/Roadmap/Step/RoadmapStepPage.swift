@@ -8,14 +8,12 @@ import RoadmapDomain
 // band, and the foot is away while Add Subtask has the keyboard; Edit raises the step's form over the page, and the …
 // menu holds Open in Graph, View Branch and Delete Step (03.7).
 struct RoadmapStepPage: View {
-  // What the page last read of its step, which it goes on showing while it leaves the stack once the step is gone.
-  final class LastRead {
-    var page: (step: RoadmapModel.OpenStep, open: RoadmapModel.OpenRoadmap)?
-  }
+  typealias Read = (step: RoadmapModel.OpenStep, open: RoadmapModel.OpenRoadmap)
 
   let roadmap: RoadmapModel
   let step: String
-  @State private var last = LastRead()
+  // The page as it last read its step, which it goes on showing while it leaves the stack once the step is gone.
+  @State private var last = LastRead<Read>()
   @State private var nameHeight = 0.0
   @State private var nameScrolledAway = false
   @State private var addingLink = false
@@ -23,8 +21,8 @@ struct RoadmapStepPage: View {
   @ScaledMetric(relativeTo: .body) private var symbolColumn = 24.0
 
   var body: some View {
-    if case .open(let open) = roadmap.phase, let page = open.page(of: step) { last.page = (page, open) }
-    return last.page.map { content($0.step, in: $0.open) }
+    let read = roadmap.shown.flatMap { (open: RoadmapModel.OpenRoadmap) -> Read? in open.page(of: step).map { (step: $0, open: open) } }
+    return last.read(read).map { content($0.step, in: $0.open) }
   }
 
   func content(_ page: RoadmapModel.OpenStep, in open: RoadmapModel.OpenRoadmap) -> some View {
@@ -71,13 +69,15 @@ struct RoadmapStepPage: View {
         ToolbarItem(placement: .topBarTrailing) {
           Button("Edit") { roadmap.edit(page) }.fontWeight(.semibold).accessibilityIdentifier("roadmap-step-edit")
         }
-        // The menu lists what this build can do to the step: the kept step is offered no Delete. Attach a Roadmap and Copy
-        // Link wait for their screens.
+        // The menu lists what this build can do to the step: a Locked step is offered no View Branch, as the web offers
+        // none, and the kept step no Delete. Attach a Roadmap and Copy Link wait for their screens.
         if #available(iOS 26.0, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
         ToolbarItem(placement: .topBarTrailing) {
           Menu("More", systemImage: "ellipsis") {
             Button("Open in Graph", systemImage: "point.3.connected.trianglepath.dotted") { roadmap.openInGraph(row.id, from: .page) }
-            Button("View Branch", systemImage: "arrow.triangle.branch") { roadmap.viewBranch(of: row.id) }
+            if row.card.column != .locked {
+              Button("View Branch", systemImage: "arrow.triangle.branch") { roadmap.viewBranch(of: row.id) }
+            }
             if row.deletes {
               Divider()
               Button("Delete Step", systemImage: "trash", role: .destructive) { roadmap.askDelete(row, by: .page) }

@@ -729,28 +729,29 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Roadmap · iOS · what the Board's Find, sort and filter, several steps and Kinds leave for the boards.** Find, the
   Sort and filter menu, a branch, several steps selected, the long-press and … menus' new items, Kinds and a full
   roadmap's New Step are built in Debug builds from 02.4 to 02.14, 03.7, 01.3, 05.2, 06.1 to 06.6 and 10.6a and 10.6b.
-  To draw or rule: 02.11 draws Recolor's unnamed hues as Sky, Brick, Plum, and the menu lists the six kinds as 05.2 does,
-  the rule book's Brick, Sky, Plum; 06.4 and 06.5 draw Sky, the hue steps wear unnamed, before the kinds added after it,
-  and the legend lists the roadmap's kinds in their order and then the hues no kind names, as the web's legend does, so
-  Practice and Safety stand before Sky; the filter lists the kinds steps wear, so a kind shown that no step wears any
-  more leaves the menu and stays shown, and the Board says *No steps match · Showing Milestone* with *Clear Filters* as
-  02.6b draws, until it is cleared; a Find with a kind shown that matches nothing says *No steps match “…”* over
-  *Showing …* with both *New Step “…”* and *Clear Filters*, which no board draws; two kinds shown read *Showing Learn and
-  Sky*, which no board draws; *View Branch* stands on every step's menu, where the web offers it on a step that is not
-  Locked; one step chosen asks *Delete 1 step?* on *Delete 1 Step*, and its band says *Tie a bowline deleted*, the web's
-  sentence for one, where no board draws one; while several are selected Find and the tool stay live, and a step the
-  Board stops showing is chosen no longer, as the web's selection drops it; a kind's name and description are written as
-  their field leaves them, on return, on the next field or on Back, where 06.2's caption has every change applied as it
-  is made, so a person's typing is one write and not one a key; a kind Add Kind made and not yet named, and a hue steps
-  wear unnamed, are said in another kind's Color list as *In use*, where 10.6b words *In use by …* for a named kind
-  alone; a hue steps wear unnamed opens a page like a kind's, where a name or a description makes it a kind wearing that
-  hue and a free hue moves its steps to it, which no board draws; *Open in Graph* leaves the Graph as the roadmap's view
-  on this phone, as the switch does; 02.7's caption makes the order a `Picker`, whose label an inline picker in a menu
-  drops on iOS 26.5, so the order is built as three toggles under the *Sort* section the board draws; 02.10b draws
-  *Delete 2 Steps* beside its question, and the system's popover stands over the button; in 06.5 every row stands
-  indented in edit mode, and the system indents only the row it offers to remove; Name's return key on a kind's page is
-  *Done*, where 06.3 draws *return*; and the Board's own benchmark measures the switch to its first frame and its
-  scrolls on a Mac's simulator alone, where §5 names an iPhone XR.
+  To draw or rule: 02.11 draws Recolor's unnamed hues as Sky, Brick, Plum, and the menu lists the six kinds as 05.2
+  does, the rule book's Brick, Sky, Plum; 06.4 and 06.5 draw Sky, the hue steps wear unnamed, before the kinds added
+  after it, and the legend lists the roadmap's kinds in their order and then the hues no kind names, as the web's legend
+  does, so Practice and Safety stand before Sky; the filter lists the kinds steps wear, so a kind shown that no step
+  wears any more leaves the menu and stays shown, and the Board says *No steps match · Showing Milestone* with *Clear
+  Filters* as 02.6b draws, until it is cleared, where the web's Board narrows only among the kinds its filter offers
+  (`among()`) and so drops a kind shown once no step wears it, the Board showing every step again: which surface keeps
+  it is for the owner and the designer to rule; a Find with a kind shown that matches nothing says *No steps match “…”*
+  over *Showing …* with both *New Step “…”* and *Clear Filters*, which no board draws; two kinds shown read *Showing
+  Learn and Sky*, which no board draws; one step chosen asks *Delete 1 step?* on *Delete 1 Step*, and its band says *Tie
+  a bowline deleted*, the web's sentence for one, where no board draws one; while several are selected Find and the tool
+  stay live, and a step the Board stops showing is chosen no longer, as the web's selection drops it; a kind's name and
+  description are written as their field leaves them, on return, on the next field or on Back, where 06.2's caption has
+  every change applied as it is made, so a person's typing is one write and not one a key; a kind Add Kind made and not
+  yet named, and a hue steps wear unnamed, are said in another kind's Color list as *In use*, where 10.6b words *In use
+  by …* for a named kind alone; a hue steps wear unnamed opens a page like a kind's, where a name or a description makes
+  it a kind wearing that hue and a free hue moves its steps to it, which no board draws; *Open in Graph* leaves the
+  Graph as the roadmap's view on this phone, as the switch does; 02.7's caption makes the order a `Picker`, whose label
+  an inline picker in a menu drops on iOS 26.5, so the order is built as three toggles under the *Sort* section the
+  board draws; 02.10b draws *Delete 2 Steps* beside its question, and the system's popover stands over the button; in
+  06.5 every row stands indented in edit mode, and the system indents only the row it offers to remove; and the Board's
+  own benchmark measures the switch to its first frame and its scrolls on a Mac's simulator alone, where §5 names an
+  iPhone XR.
 - **Roadmap · iOS · what a step's workspace leaves for the boards.** *Subtasks*, *Note* and *Your links* on a step's
   page and *Links* in the step form are built in Debug builds from 03.1 to 03.3, 03.5, 03.10, 03.11, 03.14, 05.1 and
   05.8. To draw or rule: no board draws the band after a workspace act, and it is built where the web's page gives an

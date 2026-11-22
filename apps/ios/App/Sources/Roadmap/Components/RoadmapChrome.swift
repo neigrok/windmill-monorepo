@@ -199,3 +199,16 @@ extension View {
     modifier(RoadmapFoot(roadmap: roadmap, away: away, control: control()))
   }
 }
+
+// What a screen pushed on a stack last read of what it shows, which it goes on drawing while the phone's copy holds
+// nothing for it: a step's page as it leaves the stack once its step is gone, and a kind's page while the entry its name
+// or its colour moved to is still to be read, so the page keeps its form, its focus and the keyboard.
+final class LastRead<Value> {
+  private(set) var value: Value?
+
+  // What the copy holds now, kept; or, while it holds nothing, what it held last.
+  func read(_ now: Value?) -> Value? {
+    if let now { value = now }
+    return value
+  }
+}

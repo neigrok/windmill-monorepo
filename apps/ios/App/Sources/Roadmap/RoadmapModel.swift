@@ -314,12 +314,13 @@ final class RoadmapModel {
   // A step that goes while its page or its note is open, deleted here or by another device, takes the stack back to the
   // Board, and so does the last roadmap going while All Roadmaps is open. The form closes once its roadmap is not the
   // open one, or the step it edits is gone, and a selected step that is gone is selected no longer. A note open on its
-  // screen follows what the phone's copy now holds of it.
+  // screen follows what the phone's copy now holds of it, and the Board's reading what the room shows.
   private(set) var phase = Phase.unread {
     didSet {
       if let draft, draft.open == nil { self.draft = nil }
       if let selected, shown?.step(selected) == nil { self.selected = nil }
       note?.follow()
+      if let shown { reading.read(shown, shown: view(of: shown)) }
       guard !path.isEmpty else { return }
       if case .open(let open) = phase, path.allSatisfy({ (visit: Visit) -> Bool in visit.step.map { open.step($0) != nil } ?? true }) { return }
       path = []
@@ -353,8 +354,10 @@ final class RoadmapModel {
   // The delete question standing where it was asked.
   var question: Question?
   // The view the switch row chose of the open roadmap: its own on this phone, the Board until it is switched (the
-  // web's `ViewPrefs`).
-  private(set) var lens = Lens.board
+  // web's `ViewPrefs`). The Board's reading follows the view the room then shows.
+  private(set) var lens = Lens.board {
+    didSet { if let shown { reading.read(shown, shown: view(of: shown)) } }
+  }
   // The step selected on the Graph, which leads its captions.
   private(set) var selected: String? {
     didSet { graph.attend(to: selected) }
@@ -403,6 +406,9 @@ final class RoadmapModel {
   func view(of open: OpenRoadmap) -> Lens {
     open.board.overall.total == 0 ? .board : lens
   }
+
+  // The groups folded on the Board as it reads now: while Find narrows, those a header folded for that search alone.
+  func folded(finding: Bool) -> Set<BoardRead.Column.Name> { finding ? reading.foldedWhileFinding : folded }
 
   // The room came to the front.
   func roomOpened() {
@@ -565,9 +571,14 @@ final class RoadmapModel {
     return snapshot
   }
 
-  // Each kind of failed read reports once a launch, since a read runs with every change; the engine reports a view's own.
+  // A read of the phone's copy that failed: the room says so and offers Try Again.
   func fail(_ error: any Error) {
     phase = .failed
+    report(read: error)
+  }
+
+  // Each kind of failed read reports once a launch, since a read runs with every change; the engine reports a view's own.
+  func report(read error: any Error) {
     let kind = error is DecodeError ? "decode" : "unexpected"
     guard reportedFailures.insert(kind).inserted else { return }
     telemetry.failure("roadmap_read", kind: kind)
@@ -692,7 +703,8 @@ final class RoadmapModel {
 
   // New Step, at the Board's foot, on a roadmap with no step and on a Find that matched nothing, raises the form on a
   // new draft, whose step takes its id now, named as Find's words where Find asked. A roadmap already at the steps the
-  // rule book's registry lets it hold refuses where the gesture is made, in the band, and no form opens (10.6a).
+  // rule book's registry lets it hold refuses where the gesture is made, in the band, and no form opens (10.6a). A read of
+  // how many it holds that fails opens none either, and reports as the room's failed reads do.
   func newStep(from door: StepDraft.Door, named typed: String = "") {
     guard case .open(let open) = phase else { return }
     do {
@@ -702,7 +714,7 @@ final class RoadmapModel {
         return
       }
     } catch {
-      report(error, write: "CreateNode")
+      report(read: error)
       return
     }
     let made = StepDraft(new: runner.mint(RoadmapStep.self, in: open.id.tree), of: open.id, by: door, in: self)
@@ -739,11 +751,13 @@ final class RoadmapModel {
   }
 
   // Select in a row's long-press menu, with that row chosen, or Select Steps in the Board's tool, with none: the Board
-  // selects several (02.10).
+  // selects several (02.10). A choice that starts on every starting step says at once why Delete is dimmed (02.12).
   func startSelecting(_ step: String?, from door: BoardSelection.Door) {
     guard let shown, selection == nil else { return }
-    selection = BoardSelection(Set(step.map { [$0] } ?? []), of: shown.id, in: self)
+    let started = BoardSelection(Set(step.map { [$0] } ?? []), of: shown.id, in: self)
+    selection = started
     telemetry.event("roadmap_board_select", properties: ["step": "start", "door": door.rawValue])
+    if started.takesEveryStart { started.refuseDelete() }
   }
 
   // The checkmark, or an act on the steps chosen, ends the selection.

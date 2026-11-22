@@ -295,7 +295,8 @@ final class StepDraft: Identifiable {
   }
 
   // Create or Save: the draft's one write. Written, the form closes and the band holds its Undo; a new step's group
-  // opens on the Board, which shows the step washed. A save the roadmap already holds closes the form too. Refused, the
+  // opens on the Board, which shows the step washed, clearing what of its query hides it once the phone's copy holds
+  // the step. A save the roadmap already holds closes the form too. Refused, the
   // form stays: a loop the domain found is named in the footer by the first step chosen that closes one, and any other
   // refusal is the door's to tell. A commit that failed leaves the form as it was.
   func save() {
@@ -306,6 +307,7 @@ final class StepDraft: Identifiable {
       room.draft = nil
       if isNew {
         room.folded.remove(lands)
+        room.reading.reveal(step.description)
         room.telemetry.event("roadmap_board_create", properties: ["step": "saved", "column": lands.rawValue])
         room.show(RoadmapModel.Band(.created(step: label, in: lands), of: receipt, act: .step("create"), arrived: [step.description]))
       } else {

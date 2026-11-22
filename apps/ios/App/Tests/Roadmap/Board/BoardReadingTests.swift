@@ -246,9 +246,63 @@ import SyncTesting
     #expect(!model.reading.finds && model.reading.finding.isEmpty && board(model) == ["upNext: Basics"])
   }
 
-  // A step the form made that the query hides is shown: the kind filter that hides it is cleared, and Find's words that
-  // hold it stay, as the web's room reveals a step.
-  @Test func aStepMadeUnderAQueryThatHidesItIsRevealed() async throws {
+  // Find is the Board's: the switch to the Graph and Open in Graph each end it, and words it looked for that were not
+  // told are told once as it closes. A step's page pushed from the Board and popped leaves it up.
+  @Test func leavingTheBoardEndsFindAndTellsItsSearchOnce() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    _ = try learnToSail(on: engine, runner)
+    engine.sync()
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    model.roomOpened()
+    await reads(model, on: engine) { $0.shown?.board.overall.total == 8 }
+    model.reading.finds = true
+    model.reading.finding = "wind"
+    model.path = [.step(try step("Read the wind", in: model), by: .card)]
+    model.path = []
+    #expect(model.reading.finds && model.reading.finding == "wind")
+
+    model.show(.graph)
+    #expect(model.lens == .graph && !model.reading.finds && model.reading.finding.isEmpty)
+    model.show(.board)
+    #expect(!model.reading.finds)
+    model.reading.finds = true
+    model.reading.finding = "bowline"
+    model.openInGraph(try step("Tie a bowline", in: model), from: .menu)
+    #expect(model.lens == .graph && !model.reading.finds && model.reading.finding.isEmpty)
+    #expect(told(telemetry).filter { $0.hasPrefix("roadmap_board_search") } == ["roadmap_board_search ", "roadmap_board_search "])
+  }
+
+  // 02.5: Find closed on words it looked for and never searched tells the search as it closes, once, though the
+  // system's close empties the field first; words the search key told already are not told again as it closes.
+  @Test func findClosedOnWordsNotYetToldTellsTheSearchOnce() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    _ = try learnToSail(on: engine, runner)
+    engine.sync()
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    model.roomOpened()
+    await reads(model, on: engine) { $0.shown?.board.overall.total == 8 }
+
+    model.reading.finds = true
+    model.reading.finding = "telltales"
+    model.reading.finding = ""
+    model.reading.finds = false
+    model.reading.searched()
+    #expect(told(telemetry).filter { $0.hasPrefix("roadmap_board_search") } == ["roadmap_board_search "])
+    model.reading.finds = true
+    model.reading.finding = "dock"
+    model.reading.searched()
+    model.reading.finds = false
+    #expect(told(telemetry).filter { $0.hasPrefix("roadmap_board_search") } == ["roadmap_board_search ", "roadmap_board_search "])
+  }
+
+  // A step the form made that the query hides is shown once the phone's copy holds it, as the web's room reveals a step,
+  // whether the Board then draws a list or nothing: a kind filter that left the Board empty (02.6b) is cleared, and so
+  // is a kind shown beside Find, whose words, which hold the step, stay.
+  @Test(arguments: [false, true]) func aStepMadeUnderAQueryThatLeavesTheBoardEmptyIsShown(_ finding: Bool) async throws {
     let (engine, runner, memory, suite) = phone()
     defer { memory.removePersistentDomain(forName: suite) }
     let sail = try learnToSail(on: engine, runner)
@@ -256,17 +310,30 @@ import SyncTesting
     let model = room(engine, runner, memory)
     model.roomOpened()
     await reads(model, on: engine) { $0.shown?.board.overall.total == 8 }
-    model.reading.toggle("olive")
-    model.reading.finds = true
-    model.reading.finding = "reef"
-    guard case .committed(let reef, _) = try runner.runAct(CreateStep(tree: sail.tree, step: RoadmapStep.Changes(label: "Reef the main", color: "sky"))) else {
-      Issue.record("Reef the main was not made")
-      return
+    if finding {
+      model.reading.toggle("olive")
+      model.reading.finds = true
+      model.reading.finding = "reef"
+      #expect(board(model) == ["showing Learn", "nothing matches by both"])
+      model.newStep(from: .find, named: model.reading.needle)
+    } else {
+      model.reading.toggle("gold")
+      let solo = try #require(sail.steps.first { $0.key == "solo" }?.id)
+      guard case .committed = try runner.runAct(ChangeStep(tree: sail.tree, step: solo, changes: RoadmapStep.Changes(color: "olive"))) else {
+        Issue.record("Sail solo was not changed")
+        return
+      }
+      await reads(model, on: engine) { $0.shown?.legend.inUse.count == 3 }
+      #expect(board(model) == ["showing Milestone", "nothing matches by kinds"])
+      model.newStep(from: .foot, named: "Reef the main")
     }
+    try #require(model.draft).save()
     await reads(model, on: engine) { $0.shown?.board.overall.total == 9 }
 
-    model.reading.reveal(reef.description, in: try #require(model.shown))
-    #expect(model.reading.kinds.isEmpty && model.reading.finding == "reef")
-    #expect(board(model) == ["upNext: Reef the main"])
+    #expect(model.reading.kinds.isEmpty && model.reading.finding == (finding ? "reef" : ""))
+    #expect(board(model) == (finding ? ["upNext: reef"] : [
+      "upNext: Read the wind, Reef the main, Tie a bowline", "locked: Leave the dock, Sail a triangle, Sail solo",
+      "done: Rig the boat, Name the boat parts, Choose a sailing course",
+    ]))
   }
 }

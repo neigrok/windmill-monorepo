@@ -6,8 +6,9 @@ import RoadmapDomain
 // folding under its header, as the Board's reading keeps them. A row opens its step's page, slides right for Complete
 // and left for Delete, and a long press lists Complete, Edit, Open in Graph, Select and Delete Step. A narrowed Board
 // says what it shows in its first rows, with Clear, and one left with nothing says why. Find's field stands at the foot
-// while Find is up. With no step yet, or with every step done, the Board says so. A step the form made is shown and
-// scrolled to once the list holds it. While several steps are selected the list is in the system's edit mode.
+// while Find is up. With no step yet, or with every step done, the Board says so. A step the form made, which the
+// reading shows, is scrolled to once the list holds it. While several steps are selected the list is in the system's
+// edit mode.
 struct RoadmapBoard: View {
   let roadmap: RoadmapModel
   let open: RoadmapModel.OpenRoadmap
@@ -70,7 +71,6 @@ struct RoadmapBoard: View {
         .onScrollPhaseChange { _, phase in roadmap.boardFrames.scroll(moving: phase.isScrolling, steps: open.board.overall.total) }
         .onChange(of: made, initial: true) { _, step in
           guard let step else { return }
-          if !shown.groups.contains(where: { $0.rows.contains { $0.id == step } }) { roadmap.reading.reveal(step, in: open) }
           withAnimation { list.scrollTo(step, anchor: .center) }
         }
     }
@@ -131,13 +131,15 @@ struct RoadmapBoard: View {
   // While Find narrows, each group with a match stands open and its header folds it for that search alone; otherwise a
   // header folds its group as the Board keeps it.
   func expanded(_ group: BoardRead.Column.Name, finding: Bool) -> Binding<Bool> {
-    let reading = roadmap.reading
-    guard !finding else {
-      return Binding(get: { !reading.foldedWhileFinding.contains(group) }, set: {
-        if $0 { reading.foldedWhileFinding.remove(group) } else { reading.foldedWhileFinding.insert(group) }
-      })
-    }
-    return Binding(get: { !roadmap.folded.contains(group) }, set: { if $0 { roadmap.folded.remove(group) } else { roadmap.folded.insert(group) } })
+    let (roadmap, reading) = (roadmap, roadmap.reading)
+    return Binding(get: { !roadmap.folded(finding: finding).contains(group) }, set: { opens in
+      switch (finding, opens) {
+      case (true, true): reading.foldedWhileFinding.remove(group)
+      case (true, false): reading.foldedWhileFinding.insert(group)
+      case (false, true): roadmap.folded.remove(group)
+      case (false, false): roadmap.folded.insert(group)
+      }
+    })
   }
 
   // The header is the control that folds its section: this list style draws none of its own.
@@ -187,18 +189,19 @@ struct RoadmapBoard: View {
 }
 
 // Find (Roadmap · iOS 02.5, 02.6): while Find is up the Board takes the system's search, whose field stands at the foot
-// above the keyboard and keeps the bar and the switch row. Its close ends Find, and the search key tells the search.
+// above the keyboard and keeps the bar and the switch row. Its close ends Find, and the search key tells the search. The
+// search stands on a view of its own behind the Board, so the list is not made anew, nor scrolled back to its top, as
+// Find opens and closes.
 struct FindField: ViewModifier {
   @Bindable var reading: BoardReading
 
-  @ViewBuilder func body(content: Content) -> some View {
-    if reading.finds {
-      content.searchable(text: $reading.finding, isPresented: $reading.finds, prompt: Text("Find a step"))
-        .searchPresentationToolbarBehavior(.avoidHidingContent)
-        .onSubmit(of: .search) { reading.searched() }
-        .onDisappear { reading.searched() }
-    } else {
-      content
+  func body(content: Content) -> some View {
+    content.background {
+      if reading.finds {
+        Color.clear.searchable(text: $reading.finding, isPresented: $reading.finds, prompt: Text("Find a step"))
+          .searchPresentationToolbarBehavior(.avoidHidingContent)
+          .onSubmit(of: .search) { reading.searched() }
+      }
     }
   }
 }
@@ -253,7 +256,7 @@ struct BoardSelectionBar: ToolbarContent {
   let open: RoadmapModel.OpenRoadmap
 
   var body: some ToolbarContent {
-    ToolbarItem(placement: .topBarLeading) { SelectAll(roadmap: roadmap, selection: selection, open: open) }
+    ToolbarItem(placement: .topBarLeading) { SelectAll(selection: selection) }
     ToolbarItem(placement: .topBarTrailing) {
       Button("Done", systemImage: "checkmark") { roadmap.endSelecting(via: .done) }.labelStyle(.iconOnly).modifier(SelectionDone())
         .accessibilityIdentifier("roadmap-select-done")
@@ -264,14 +267,10 @@ struct BoardSelectionBar: ToolbarContent {
   }
 
   struct SelectAll: View {
-    let roadmap: RoadmapModel
     let selection: BoardSelection
-    let open: RoadmapModel.OpenRoadmap
 
     var body: some View {
-      let every = Set(roadmap.reading.shown(in: open).groups.flatMap { (group: RoadmapModel.Group) -> [String] in group.rows.map(\.id) })
-      let all = !every.isEmpty && every.isSubset(of: selection.steps)
-      Button(all ? String(localized: "Deselect All") : String(localized: "Select All")) { selection.steps = all ? [] : every }
+      Button(selection.holdsEveryShown ? String(localized: "Deselect All") : String(localized: "Select All")) { selection.selectAll() }
         .accessibilityIdentifier("roadmap-select-all")
     }
   }

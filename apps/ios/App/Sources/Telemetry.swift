@@ -101,7 +101,7 @@ nonisolated enum TelemetryPrivacy {
     "opens": ["true", "false"],
     "links": ["true", "false"],
     "budget": ["first_frame", "frames"],
-    "steps": ["1-100", "101-1000", "1001-5000"],
+    "steps": ["1-100", "101-1000", "1001-5000", "5001-10000"],
     "write": ["mark", "DeleteNode", "undo", "release", "createRoadmap", "title", "deleteRoadmap", "CreateNode", "EditNode", "workspace", "note",
               "BulkRecolor", "BulkDelete", "AddKind", "RenameKind", "DescribeKind", "RecolorKind", "RemoveKind"],
     "refusal": ["invalid", "gone", "taken", "tooLarge", "full", "roadmapGone", "unreachable", "notARoot", "stepOpensARoadmap", "depthLimit", "other", "startingStep", "noName", "loop"],

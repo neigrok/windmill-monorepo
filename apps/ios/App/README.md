@@ -117,7 +117,9 @@ Graph's Fit. `openInGraph(_:from:)`, from a Board row's long-press menu or a ste
 step selected and has the Graph bring it into view once its picture is laid out. Beside the model, and held by it, stand
 what the Board asks of the open roadmap (`reading`, a `BoardReading`: the order of Up next and Locked, the kinds shown, a
 branch and Find's words, which last the visit as the web's room keeps its query, so another roadmap opening or a launch
-starts it over), the steps chosen while the Board selects several (`selection`, a `BoardSelection`, which
+starts it over; the model tells it each read of the open roadmap and the view it shows, so Find ends once the Graph is
+shown or another roadmap opens, telling words not yet told as it closes, and stays up while a step's page is pushed from
+the Board and popped), the steps chosen while the Board selects several (`selection`, a `BoardSelection`, which
 `startSelecting(_:from:)` makes and `endSelecting(via:)` lets go, and which goes once another roadmap opens), and what the
 Board measures of itself (`boardFrames`, a `BoardFrames`). `viewBranch(of:)` returns to the Board staying in a step's
 branch. The model also holds whether the Kinds sheet stands open and from where (`kindsDoor`). The open roadmap reads its
@@ -158,7 +160,8 @@ first (`kindChoices`); the kinds the Board's filter offers, the ones steps wear,
 (`onRemoveKind`). Of several steps: they cannot be deleted while they hold every step the roadmap starts from
 (`OpenRoadmap.takesEveryStart`, the web's `takesEveryRoot`), and their delete costs the steps outside them that follow
 one of them (`deletionCost`). And of the Board's query: a step the form made that the query hides is shown by clearing
-each part that alone hides it (`BoardReading.reveal`, the web's `BoardQuery.revealing`).
+each part that alone hides it (`BoardReading.reveal`, the web's `BoardQuery.revealing`), once the phone's copy holds the
+step, whether the Board then shows a list or nothing left.
 
 `RoadmapRoom.swift` is the room's one `NavigationStack` over the model's `path`: the room capsule and the account in the bar,
 the roadmap's name and progress, the switch row pinned under the bar, whose *Board | Graph* chooses the roadmap's view,
@@ -174,7 +177,7 @@ roadmap*. *Delete Roadmap* asks once under the title, naming the steps of other 
 the band holds *Undo* for the hold's nine seconds. The menu's other verbs wait for their screens and are left out:
 *Guide*, *Activity*, *Share…* and *Export*. While several steps are selected the title counts them, with no progress and
 no menu. Before iOS 26 the name and the progress stand in the bar's
-principal slot (`roomTitle`); the menu and the rename are not tried there.
+principal slot (`roomTitle`) with the same menu attached; no iOS 18 runtime has drawn that menu or tried its rename.
 
 `Roadmaps/RoadmapsList.swift` is All Roadmaps, pushed on the stack: every roadmap in the domain's order, the open one
 checked. That order is by when a server last received each, the most recent first, so on a phone never signed in it is
@@ -200,8 +203,10 @@ the list's first row with *Clear*, and a filter left with nothing says *No steps
 counts the whole roadmap whatever the Board shows. Select and Select Steps put the list in the system's edit mode
 (`BoardSelectionBar`): *Select All* or *Deselect All* and the checkmark in the bar, the switch waiting, and the bottom
 toolbar's *Recolor*, a menu of the six kinds, and *Delete N Steps*, which asks once on itself with what it costs and is
-dimmed while the steps chosen hold every starting step, which the band then says. Recolor is one gesture with six
-seconds of *Undo*, and the delete one gesture held nine seconds with *Undo*; either ends the selection, and a step the
+dimmed while the steps chosen hold every starting step, which the band then says, at once where the selection starts on
+them. *Select All* takes the steps whose rows the Board shows, so a folded group's are not taken, as the web's selection
+takes only the cards its columns show; the button's count and the delete's question follow. Recolor is one gesture with
+six seconds of *Undo*, and the delete one gesture held nine seconds with *Undo*; either ends the selection, and a step the
 Board stops showing is chosen no longer. `Board/BoardReading.swift` and `Board/BoardSelection.swift` are the Board's query
 and its selection, each the domain's read and acts. `Board/BoardFrames.swift` measures the time from the switch to the
 Board's first frame and the frames each scroll is given, on a launch that names a file for them, and reports nothing.
@@ -212,7 +217,8 @@ the step stands there, or on a Done step what Reset would return to Locked besid
 shared links, each opened where its address is `http`, `https` or `mailto`; and *Requires* and *Opens* with their counts,
 each row opening its step. An Up next step that opens no roadmap has *Complete* at its foot: the page stays, and the band says
 what opened. *Reset* asks nothing. *Edit* in the bar raises the step's form over the page. The … menu holds *Open in Graph*,
-*View Branch*, which returns to the Board staying in the step's branch, and *Delete Step*, which asks on the … button and,
+*View Branch* on a step that is not Locked, as the web offers it, which returns to the Board staying in the step's branch,
+and *Delete Step*, which asks on the … button and,
 answered, returns to the Board with the step held; the roadmap's one starting step's menu has no *Delete Step*. After
 *Opens* the page lists the person's workspace of the step, and its foot is away while *Add Subtask* has the keyboard. Left
 out until their screens are built: the menu's *Attach a Roadmap* and *Copy Link*, *History*, the Coach circle and
@@ -342,9 +348,10 @@ the sheet's foot, away while a field has the keyboard. Under the placement foote
 shares, each sliding left for *Delete*, over *Add Link*, which raises New Link over the form; a link there only stands,
 and opens on the step's page. Left out until their screens are built: the *Roadmap* row and Coach's composer.
 
-`Kinds/` is a roadmap's kinds. `Kinds/RoadmapLegend.swift` is the legend the open roadmap reads once and the Kinds sheet's
-acts, each one act of the domain through the door: Add Kind makes a kind at once, unnamed, on the first hue no entry has
-(`CreateKind`); a name and a description, each held to the domain's 24 and 80 characters, are written as their field
+`Kinds/` is a roadmap's kinds. `Kinds/RoadmapLegend.swift` is the legend the open roadmap reads once. `Kinds/KindActs.swift`
+is the Kinds sheet's acts, each one act of the domain through the door, on an entry by its subject as the legend holds it
+when the act is made, so a kind a step has come to wear is not removed: Add Kind ends the band standing over the sheet
+and makes a kind at once, unnamed, on the first hue no entry has (`CreateKind`); a name and a description, each held to the domain's 24 and 80 characters, are written as their field
 leaves them (`ChangeKind`), and a hue no kind names that is given one becomes a kind wearing it (`CreateKind`); a free hue
 chosen recolors the kind and every step that wears it (`RecolourKind`, the server's command, predicted on the phone), or
 moves the steps of a hue no kind names in one gesture (`ChangeStep`), with no band; and a kind no step wears is removed at
@@ -354,9 +361,11 @@ one with its own stack, which the room raises from the title menu's *Kinds* and 
 under the roadmap's name, each entry with its disc, name, description and how many steps wear it, pushing its page; *Add
 Kind* while a hue is free, which opens the kind's page with Name focused once the phone's copy holds it, and at six the
 footer saying why it is gone; and the system's edit mode and swipe, which remove only a kind no step wears, the footer
-then saying why the others cannot go. A kind's page is a settings-style form with no Save: Name, *What belongs here?*,
-and *Color*, the six hues as an inline picker, a hue another entry has dimmed with whose it is. The band stands at the
-sheet's foot.
+then saying why the others cannot go, and a removal refused leaving its row. A kind's page is a settings-style form with
+no Save: Name, *What belongs here?*, and *Color*, the six hues as an inline picker, a hue another entry has dimmed with
+whose it is. While the entry a name or a colour moved it to is still to be read, the page draws the entry it read last
+(`LastRead`, as a step's page does while it leaves), so its form and the keyboard stay. The band stands at the sheet's
+foot.
 
 A roadmap with no step says *Your first step* over *New Step*, which opens the form as the foot's + does, under the Graph
 as under the Board, and one with every step done says so over Done. A finished Board's *Share* is drawn disabled. Debug
