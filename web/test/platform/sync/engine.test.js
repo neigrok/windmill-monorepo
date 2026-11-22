@@ -15,6 +15,7 @@ import { ServerState } from '../../../../packages/api-contract/sync/reference/se
 import { environment, until, tick } from './fakes.js';
 import { OTHER, overlayScope, product, productScope, registry, row, serverState, st, treeScope } from './oracle-adapters/fixtures.js';
 import { Registry } from '../../../../packages/api-contract/sync/reference/core/registry.js';
+import { composeRegistry } from '../../../../packages/api-contract/sync/reference/core/composition.js';
 import { Device, Replica } from '../../../../packages/api-contract/sync/reference/client/replica.js';
 
 const card = (id = 'card0001') => [{ op: 'create', t: 'card', id, f: { title: 'secret' } }];
@@ -1151,6 +1152,43 @@ test('a bound replica pauses once the session owner finds the browser holds anot
     paused: env.events.filter(({ name }) => name === 'sync-auth-paused').map(({ props }) => props.outcome) },
   { authPaused: true, canSync: false, paused: ['paused'] });
   engine.close();
+});
+
+test('a gym Coach round sits beside runningTurn, and a build whose registry knows no runningRound still reads and clears runningTurn over it', async () => {
+  const directory = new URL('../../../../packages/api-contract/sync/', import.meta.url);
+  const read = (name) => JSON.parse(readFileSync(new URL(name, directory), 'utf8'));
+  const composition = read('composition.json');
+  const registries = Object.fromEntries(composition.registries.map((name) => [name, read(name)]));
+  const older = structuredClone(registries);
+  delete older['gym.registry.json'].products.gym.device.runningRound;
+  const round = { message: 'coach0000000001', callId: 'AAAAAAAAAAAAAAAAAAAAAA', bytesBefore: 17 };
+  const env = environment();
+  const reopen = async (parts) => {
+    env.options.registry = new Registry(composeRegistry(composition, parts));
+    const engine = await BrowserSyncEngine.open(env.options);
+    await engine.start();
+    await until(() => engine.leader);
+    return engine;
+  };
+
+  const current = await reopen(registries);
+  await current.commit('self/gym', [], { local: { runningTurn: 'coach0000000001', runningRound: round } });
+  const written = current.readDeviceRows('gym');
+  current.close();
+
+  const old = await reopen(older);
+  const carried = old.readDeviceRows('gym');
+  await assert.rejects(old.commit('self/gym', [], { local: { runningRound: null } }), /device row runningRound matches no row of gym/);
+  await old.commit('self/gym', [], { local: { runningTurn: null } });
+  old.close();
+
+  const again = await reopen(registries);
+  assert.deepEqual({ written, carried, after: again.readDeviceRows('gym') }, {
+    written: { runningTurn: 'coach0000000001', runningRound: round },
+    carried: { runningTurn: 'coach0000000001', runningRound: round },
+    after: { runningRound: round },
+  });
+  again.close();
 });
 
 test('a product drops one kind of its device rows from every replica in one write, and reads its rows, the anon replica\'s records and whether an account\'s replica stays only through the engine', async () => {

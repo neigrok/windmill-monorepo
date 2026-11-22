@@ -226,6 +226,10 @@ file(READ "${WM_API_CONTRACT_DIR}/sync/composition.json" WM_COMPOSITION)
 wm_validate_sync_composition("${WM_COMPOSITION}" "${WM_BOUND_REGISTRIES}")
 # The gym ability catalog (gym_coach.md §3.1) the tool declarations are pinned to, byte for byte (CatalogContractTest).
 wm_embed_registry(windmill_gym wm::gym catalogText "${WM_API_CONTRACT_DIR}/gym/catalog.json")
+# The words a Coach turn's model reads (gym/coach/README.md), the same files every app ships.
+wm_embed_registry(windmill_gym wm::gym::coach coachPromptText "${WM_API_CONTRACT_DIR}/gym/coach/prompt.md")
+wm_embed_registry(windmill_gym wm::gym::coach coachFirstContentText "${WM_API_CONTRACT_DIR}/gym/coach/first-content.json")
+wm_embed_registry(windmill_gym wm::gym::coach coachRefusalsText "${WM_API_CONTRACT_DIR}/gym/coach/refusals.json")
 
 add_library(windmill_product_sync platform/infra/SyncProducts.cpp)
 target_link_libraries(windmill_product_sync PUBLIC windmill_gym windmill_journal windmill_roadmap)
@@ -372,6 +376,7 @@ add_executable(windmill_domain_tests
   test/products/gym/domain/BodyweightTest.cpp
   test/products/gym/application/ThreadServiceTest.cpp
   test/products/gym/coach/AbilityCatalogTest.cpp
+  test/products/gym/coach/CoachWordsTest.cpp
   test/products/gym/coach/TurnGateTest.cpp
   test/products/gym/coach/TurnServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_probe windmill_product_sync)
@@ -548,6 +553,7 @@ target_sources(windmill_gym PRIVATE
   products/gym/application/AskService.cpp
   products/gym/coach/Turn.cpp
   products/gym/coach/AbilityCatalog.cpp
+  products/gym/coach/CoachWords.cpp
   products/gym/coach/TurnGate.cpp
   products/gym/coach/PhoneToolHost.cpp
   products/gym/coach/AnthropicCoachModel.cpp

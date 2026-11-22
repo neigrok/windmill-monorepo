@@ -1,7 +1,8 @@
 // The module loader a test registers so a real component can be imported under `node --test`:
 // a `.jsx` module is compiled through esbuild (the same compiler vite builds with) on the way in, an
 // extension-less relative import — the design system's `'../../../design-system'` — is resolved the
-// way vite resolves it, and a `.css` import is answered with nothing, since no test reads a style.
+// way vite resolves it, a `.css` import is answered with nothing, since no test reads a style, and a
+// `?raw` import is answered with the file's text, as vite answers it.
 // Not a test file: named `.mjs` so the runner leaves it alone. It sat under products/gym/ until a
 // second zone needed it (the shell's ghost test); nothing about compiling JSX is gym's, so it moved
 // up to test/ rather than being reached into sideways.
@@ -25,6 +26,10 @@ export async function resolve(specifier, context, next) {
 
 export async function load(url, context, next) {
   if (url.endsWith('.css')) return { format: 'module', source: 'export default {};', shortCircuit: true };
+  if (url.endsWith('?raw')) {
+    const text = fs.readFileSync(fileURLToPath(url.slice(0, -'?raw'.length)), 'utf8');
+    return { format: 'module', source: `export default ${JSON.stringify(text)};`, shortCircuit: true };
+  }
   if (!url.endsWith('.jsx')) return next(url, context);
   const source = fs.readFileSync(fileURLToPath(url), 'utf8');
   const { code } = transformSync(source, { loader: 'jsx', jsx: 'automatic', sourcefile: url, format: 'esm' });

@@ -3444,8 +3444,9 @@ subtree's record), `turn-final` (a write of a Coach message the writer has ended
 **Scope:** `self/gym`. **Device scope** `device/gym`, with rows keyed per session:
 `movementOrder:<session>` (the live movement order, exercise ids), `movement:<session>` (the chosen
 movement), `offer:<session>` (a pre-minted offer id) and `rack:<session>` (rack state); and the gym
-Coach's `runningTurn` (the id of the Coach message whose turn this device is running, gym Coach §4.5)
-and `picture:<id>` (a `localOnly` picture held on this phone, gym Coach §9.3).
+Coach's `runningTurn` (the id of the Coach message whose turn this device is running, gym Coach §4.5),
+`runningRound` (`{message, callId, bytesBefore}`: that turn's round in flight and the UTF-8 bytes of its
+text before the round, Coach engine D-6) and `picture:<id>` (a `localOnly` picture held on this phone, gym Coach §9.3).
 **Surfaces:** web, iOS, Android. A phone's Coach writes through its replica. MCP, the web's Coach and the
 import door write as the server (below).
 **Adoption:** production tables are adopted in place (Appendix C).

@@ -47,7 +47,7 @@ public:
   const std::map<std::string, int>& refusals() const { return refusals_; }
 
 private:
-  GateVerdict refuse(const char* code, std::string message);
+  GateVerdict refuse(const char* code, const std::string& ability, const std::string& sentence);
 
   const AbilityCatalog& catalog_;
   Seat seat_;

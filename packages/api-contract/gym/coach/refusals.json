@@ -1,0 +1,8 @@
+{
+  "not-offered": "not an ability Coach may run — use the tools declared for this conversation.",
+  "seat-required": "needs a signed-in account; tell the lifter to sign in for this.",
+  "one-proposal": "you already wrote a {target} proposal this turn; fold both into one document.",
+  "one-note": "one note per answer; this answer already saved one.",
+  "coach-turn-volume": "this answer has used its ability calls; answer the lifter with what you have.",
+  "stopped": "Coach was stopped before this action."
+}

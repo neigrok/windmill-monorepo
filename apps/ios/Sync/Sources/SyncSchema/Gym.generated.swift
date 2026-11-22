@@ -235,6 +235,18 @@ public enum Gym {
           ],
           "picture": ["keyPattern": "^picture:[A-Za-z0-9_-]{8,64}$", "localOnly": true, "value": ["type": "json"]],
           "rack": ["keyPattern": "^rack:[A-Za-z0-9_-]{8,64}$", "value": ["type": "json"]],
+          "runningRound": [
+            "keyPattern": "^runningRound$",
+            "value": [
+              "properties": [
+                "bytesBefore": ["integer": true, "max": 131072, "min": 0, "type": "number"],
+                "callId": ["pattern": "^[A-Za-z0-9_-]{22}$", "type": "string"],
+                "message": ["pattern": "^[A-Za-z0-9_-]{8,58}$", "type": "string"],
+              ],
+              "required": ["message", "callId", "bytesBefore"],
+              "type": "object",
+            ],
+          ],
           "runningTurn": [
             "keyPattern": "^runningTurn$",
             "value": ["pattern": "^[A-Za-z0-9_-]{8,58}$", "type": "string"],

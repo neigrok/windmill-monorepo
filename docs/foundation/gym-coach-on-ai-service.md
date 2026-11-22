@@ -6,7 +6,7 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified, and approved by the owner on 2026-11-15; nothing is built. Gym Coach runs on the server in two forms.
+**Status:** Specified, and approved by the owner on 2026-11-15. Of what it changes, the words of §3 and the `catalog/3` file are written; nothing else is built. Gym Coach runs on the server in two forms.
 [Phone-hosted Coach abilities](mobile/gym_coach.md) is what the iPhone and Android speak: the server
 runs the loop and the phone runs the abilities. The [Coach conversation contract](../gym-coach-contract.md)
 is what the web speaks: the server runs everything. Both are metered by the backend's ledger
@@ -41,7 +41,7 @@ reaches over MCP, which stay on the server.
 | A picture on the web | uploaded and stored by the server | kept in the browser, as a phone keeps one |
 | A picture on its way to the model | sent to the backend with the turn | uploaded once to the AI service, which holds it in memory for the turn |
 | The catalog | `catalog/2` | `catalog/3`, written to the provider's strict mode, on every door |
-| The words the model reads | texts in the backend's source | files every app ships |
+| The words the model reads | files in the contract, which the backend embeds and Android and the web carry | the same files, which every app ships |
 
 What does not move: what each ability does, the executors on the phones, proposals and their
 Apply, the records and their merge rules, installation identity, and every board the phones are
@@ -79,11 +79,16 @@ What gym gives the engine, for each seat. Its name is `gym.coach` and its versio
     run time;
   - the words of the first content: the sentence that leads each context read, the line that marks
     the earlier conversation, and the question that stands for a picture sent with none;
-  - the sentence the model reads beside each refusal code.
+  - the sentence the model reads beside each refusal code of the gate, but `invalid-input`, whose
+    sentence is the violation the check found.
 
-  Today all three are in the backend's source. A person can read them in the app; they hold no
-  secret. (R-8)
-- **The catalog** is `packages/api-contract/gym/catalog.json` at `catalog/3` (below). The model
+  The backend embeds the same files, so the server's Coach reads them too; Android and the web
+  carry them, and the iPhone does not yet. The three sentences of the server's turn wire that name
+  the phone stay in the server (§9). A person can read the words in the app; they hold no secret.
+  (R-8)
+- **The catalog** is `catalog/3`, `packages/api-contract/gym/catalog-3.json` (below), with its
+  corpora in `abilities-3/`. It stands beside `catalog/2`'s `catalog.json` and `abilities/` until
+  those are deleted (§9). The model
   reads each ability's `description` from the copy the app ships, so the iPhone's generated catalog
   carries it, which it does not today.
 - **The limits** are those of [phone-hosted Coach abilities](mobile/gym_coach.md) Appendix A:
@@ -98,22 +103,34 @@ What gym gives the engine, for each seat. Its name is `gym.coach` and its versio
 
 **The catalog and the provider's strict mode.** The AI service sends every tool to the provider in
 strict mode ([AI service §6.2](ai-service.md#62-the-wire)); the backend sends none so. `catalog/2`
-cannot be sent that way. Read on Anthropic's documentation on 2026-11-15: strict mode refuses the
-bounds the catalog states on numbers, strings and lists (`minimum`, `maximum`, `maxLength`,
-`maxItems`), allows 24 optional parameters across a request's strict tools, where the tools of a
-`bound` turn have 31, and allows 16 parameters that take more than one type.
+cannot be sent that way. Read on Anthropic's documentation (structured outputs, its JSON Schema
+limitations and schema complexity limits) on 2026-11-15 and again on 2026-11-22: strict mode refuses
+the bounds the catalog states on numbers, strings and lists (`minimum`, `maximum`, `multipleOf`,
+`minLength`, `maxLength`, `maxItems`, `uniqueItems`, and `minItems` other than 0 or 1) and an object
+whose `additionalProperties` is not `false`; it allows 20 strict tools in a request, 24 optional
+parameters across them, where the tools of a `bound` turn have 31 in `catalog/2`, and 16 parameters
+that take more than one type, a type list such as `["string", "null"]` included.
 
 The catalog is therefore rewritten as `catalog/3`, for every door: Coach on each surface, the apps'
 own executors and MCP. (R-11)
 
 - Every input schema of `catalog/3` is one strict mode accepts, and the tools a seat is offered fit
-  its limits together. A check in CI counts both from the file.
-- A bound strict mode cannot state moves into the ability's rule, which refuses a value outside it,
-  and into its description, which tells the model. What an ability does and returns is unchanged.
-- Fewer inputs may be left out. Which become required, and which take null, is fixed when the file
-  is written, ability by ability.
-- The corpora under `abilities/` are written again for `catalog/3`, and every executor claims them:
-  the server's, Swift's, Kotlin's and the web's.
+  its limits together. `packages/api-contract/gym/strict.py` counts both from the file in the Coach
+  contracts workflow, refuses a keyword or shape strict mode refuses in any ability's input, and
+  checks every corpus input against its schema.
+- A bound strict mode cannot state moves into the ability's rule, which refuses a value outside it
+  as `invalid-arguments` before any rule reads the store, and into the description of the
+  parameter it bounds, which tells the model. What an ability does and returns is unchanged.
+- Fewer inputs may be left out. A parameter whose usual value the model can state is required:
+  `limit`, `review`. One whose absence means something no value says (every routine, the first
+  page, keep the name, no summary, the equipment's step) is required and takes `null`. A field of a
+  routine's or a workout's line stays optional, and so do the fields `list_routines` returns that a
+  write ignores (a line's `position`; a new routine's `revision`, `lastTrainedAt` and
+  `pendingProposal`), so a day read back is a day sent.
+- The corpora are written again for `catalog/3` in `abilities-3/`, and every executor will claim
+  them: the server's, Swift's, Kotlin's and the web's. No executor claims them yet; their refusals
+  are the contract each executor is held to when it moves. The withheld abilities whose bounds moved
+  have a file of refusals there, for the server executor, the one that runs them.
 - An outside assistant sees the new schemas over MCP. A build released before the move goes on
   opening `catalog/2` turns, which the server serves beside `catalog/3` until the cutover (§8).
 
@@ -135,8 +152,8 @@ says, and writes the records of its step 2. Then:
   most `CONTEXT_PICTURES`. The device uploads each to the AI service once, and every round of the
   turn names it (Coach engine §4.2). (R-12)
 
-The first content is the one the server builds today, word for word, from the files of §3. Where
-those words name a phone, they are rewritten to name no device before the web ships.
+The first content is the one the server builds today, word for word, from the files of §3. Its
+words name no device.
 
 ### §4.2 Ability calls
 
@@ -164,10 +181,23 @@ host gives the model the one code. An `anon` turn is offered neither.
 - Text reaches the Coach message in coalesced writes at the pace each surface sets: every 250 ms
   on the iPhone; every 5 s on Android, whose room draws the answer so far from the engine; every
   second on the web.
-- The mark is the device row `runningTurn` with, beside it, a row of its own for the round in
-  flight and where its text begins (Coach engine D-6). The registry declares `runningTurn` as the
-  message's id alone, and a mark already on a device must still read, so the round takes a new row.
-  A device row never syncs, and declaring one moves no schema version.
+- The mark is two device rows: `runningTurn`, the Coach message's id, and beside it
+  `runningRound`, `{message, callId, bytesBefore}`, the round in flight and the UTF-8 bytes of the
+  message's text before it (Coach engine D-6). The registry declares `runningTurn` as the message's
+  id alone, and a mark already on a device must still read, so the round takes a row of its own. A
+  device row never syncs, and declaring one moves no schema version.
+- The engine's `Mark` is the pair read together: `turnId` is `runningTurn`, and `callId` and
+  `textBytesBeforeRound` are the round row's `callId` and `bytesBefore`.
+- A `runningRound` counts only when its `message` equals `runningTurn`. A missing row, or one naming
+  another message, means no round: D-6's null `callId`, with `bytesBefore` 0. A reader that finds
+  such a stale row clears it. A sign-in that moves the signed-out replica's rows keeps the
+  destination's row on a collision (engine §7.10), so it can leave a mismatched pair; this rule
+  covers it.
+- The engines check only a device row's key, never its value, so a reader checks the round row's
+  shape before recovering from it, and treats a malformed row as no round.
+- Every write that clears `runningTurn` clears `runningRound` in the same write: the end, the
+  forget of a turn whose message is gone, the withdraw, the delete of a conversation, and the end a
+  seat change writes.
 - The end is one local write: the state, the whole text, `truncated`, the receipt derived from the
   calls, and the mark cleared.
 - No server ends a turn. The server-origin door `interrupt` and the sweep that calls it retire, and
@@ -196,7 +226,7 @@ The web's Coach becomes the Coach the phones have. This is the largest part of t
 
 - The web's domain kit gains the catalog types, and `web/src/products/gym/domain/coach/` gains the
   replica executor: every ability the phones run, each over the reads and actions the web's gym
-  domain already has. It claims every case of `packages/api-contract/gym/abilities/` and
+  domain already has. It claims every case of `packages/api-contract/gym/abilities-3/` and
   `rules/collation.json`, by the SHA-256 of canonical bytes, as the Swift and Kotlin executors do.
 - The web's gym domain gains the `thread` and `message` entities and the actions of a turn's
   records, and claims `gym/domain/coach-conversation-actions.json`.
@@ -301,21 +331,24 @@ and compose still use them.
   server's writing of a proposal's `threadId`. The receipts of a saved note and of an edited
   movement stay: MCP writes them too.
 - **Anonymous onboarding:** `POST /v1/gym/coach/onboarding` and its read, and what it stores.
-- **The words** in the backend's source, and the adapters that give Coach a model.
+- **The words** embedded in the backend, the turn wire's own sentences that name the phone, and the
+  adapters that give Coach a model.
 - **The address limit on generations**, which becomes the pass door's.
 - **The corpus** `packages/api-contract/gym/turns/`, the stories of a wire that is gone. Their
   stories are told again in the engine's vectors.
 - **In each app:** the turn wire's client, and on the web `coach/stream.js`, the photo upload, the
   routine-draft review and the localStorage a request is kept in.
+- **`catalog/2`:** `packages/api-contract/gym/catalog.json` and `abilities/`, once no released
+  build opens a `catalog/2` turn.
 - **Documents:** [phone-hosted Coach abilities](mobile/gym_coach.md) is rewritten to describe what
   is then true, and the [Coach conversation contract](../gym-coach-contract.md) is deleted.
 
-What stays: the catalog at `catalog/3` with its `abilities/` and `rules/`, the server executor for MCP, the records, and
+What stays: the catalog at `catalog/3`, `catalog-3.json` with its `abilities-3/` and `rules/`, the server executor for MCP, the records, and
 every proposal door.
 
 ## §10 Testing
 
-- Each engine replays the engine's vectors; each executor claims `abilities/` and `rules/`, the
+- Each engine replays the engine's vectors; each executor claims `abilities-3/` and `rules/`, the
   web's included (§5).
 - Every tool of the profile is sent to the provider in a real round, once by hand with the AI
   service's own key, on each seat. The provider counts tokens without compiling a schema, so a
@@ -346,16 +379,16 @@ on 2026-11-15 found these gaps. Each is work of this build.
 
 - `catalog/2` breaks the provider's strict mode, which the AI service sends every tool in (§3).
 - The AI service has no door that holds a picture between calls (R-12).
-- The iPhone's generated catalog drops each ability's `description`, and no app holds the words the
-  model reads. The sentences beside refusal codes and around the first content exist only in the
-  server's loop.
+- The iPhone's generated catalog drops each ability's `description`, and the iPhone does not carry
+  the words the model reads (§3).
 - The iPhone keeps its turn in the app target; it has no engine module that names no product.
   Android's `:agent` is one, and holds the wire's driver, not a loop.
 - The web has no catalog types, no executor, no `thread` or `message` entity, no agent or AI layer
   and no lock a turn could hold. A turn there emits no event and files no report.
 - The web keeps a Coach draft and a photo in the browser under the account's name and removes
   neither at sign-out.
-- The mark has no place for a round, and the registry declares it as an id alone.
+- The registry declares `runningRound`, and no host writes or clears it yet: each surface's turn
+  host writes it at every round and clears it with `runningTurn` (m2–m4).
 - Both phones refuse an ability call, and stop writing text, once their running Coach message reads
   `interrupted`. A writer whose turn another device marked stale must go on (§4.2).
 - The server's gate applies rules G-4 to G-7 that no phone applies; each moves into the device.

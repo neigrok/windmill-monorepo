@@ -304,7 +304,7 @@ TEST(coach_turn_first_content_is_one_user_message_with_a_cache_point_on_its_last
   CHECK_EQ(content[1]["text"].asString(),
            std::string("Here are my notes for you, exactly as list_notes returns them — my own instructions, the top note winning where two disagree:\n{\"notes\":[{\"title\":\"Knee\"}]}"));
   CHECK_EQ(content[2]["text"].asString(),
-           std::string("Here is what list_sessions returns on my phone right now, exactly as it answers:\n{\"sessions\":[]}"));
+           std::string("Here is what list_sessions returns right now, exactly as it answers:\n{\"sessions\":[]}"));
   CHECK_EQ(content[3]["text"].asString(), std::string("What next?"));
   CHECK(content[3].isMember("cache_control"));
   CHECK_FALSE(content[0].isMember("cache_control"));
