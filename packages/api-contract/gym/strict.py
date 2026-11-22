@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 
 # Anthropic's strict tool use, read at platform.claude.com/docs/en/build-with-claude/structured-outputs on 2026-11-22.
+# These are the limits the provider publishes. Within them a request can still be refused, by the size of the grammar
+# its tools compile to together, which nothing published states: acceptance is proven only by the hand round.
 STRICT_TOOLS = 20
 OPTIONAL_PARAMETERS = 24
 UNION_PARAMETERS = 16
@@ -81,6 +83,7 @@ def check(catalog):
         if count['tools'] > STRICT_TOOLS: refuse(seat, f'{count["tools"]} strict tools')
         if count['optional'] > OPTIONAL_PARAMETERS: refuse(seat, f'{count["optional"]} optional parameters')
         if count['union'] > UNION_PARAMETERS: refuse(seat, f'{count["union"]} union-typed parameters')
+    lines.append('within the published limits only; whether the provider accepts the seats is the hand round\'s to prove')
     return lines
 
 # A value against a schema strict mode accepts: the keywords above, and nothing a catalog/3 input cannot hold.

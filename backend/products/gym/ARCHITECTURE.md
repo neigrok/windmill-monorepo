@@ -1105,11 +1105,14 @@ in-process).
   the same id replays rather than writing twice. **A replay is the same id carrying the SAME document**;
   the two document-carrying tools refuse a spent id carrying a different one.
 - **A read's own fields survive the write that takes them back.** Duplicating a day is reading one with
-  `list_routines` and sending it back under a fresh id, so `lastTrainedAt`, `revision` and
-  `pendingProposal` are declared on `create_routine` and ignored; `position` (0–2147483647, the
-  registry's bound on every door) is required
-  and stored. `additionalProperties: false` is
-  enforced by `CompositeToolHost`, so a document gym itself emitted must never be refused.
+  `list_routines` and sending it back under a fresh id. `catalog/3` does not declare the read's own
+  fields on its writes, where they would spend strict mode's room on nothing: `gymToolCatalog()` names them
+  as the tool's `readBack` (`create_routine`'s `revision`, `lastTrainedAt`, `pendingProposal` and
+  `entries[].position`; `propose_routine_change`'s `entries[].position`), and `CompositeToolHost` drops
+  exactly those from an MCP call's arguments, unread and unlogged, before it enforces
+  `additionalProperties: false`, so a document gym itself emitted is never refused. Coach's hosts drop
+  nothing: a model held to the declared schema cannot send them. A routine's own `position`
+  (0–2147483647, the registry's bound on every door) is required and stored.
 - **`delete` is never merged into `write`.** Two tools may merge where a parameter does the job
   (`list_routines`, `get_stats`) but never across levels, and no read is reachable through a
   write-classified name.

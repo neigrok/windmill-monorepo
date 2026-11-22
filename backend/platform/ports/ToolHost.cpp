@@ -1,5 +1,7 @@
 #include "platform/ports/ToolHost.h"
 
+#include <string_view>
+
 namespace wm {
 
 namespace {
@@ -45,10 +47,34 @@ std::optional<std::string> undeclaredKey(const Json::Value& schema, const Json::
   return std::nullopt;
 }
 
+// `path` is `name`, `object.rest` or `list[].rest`: the first step is taken in `value`, the rest in what it holds.
+void dropPath(Json::Value& value, std::string_view path) {
+  if (!value.isObject()) return;
+  const std::size_t dot = path.find('.');
+  std::string step{path.substr(0, dot)};
+  if (dot == std::string_view::npos) {
+    value.removeMember(step);
+    return;
+  }
+  const bool eachItem = step.ends_with("[]");
+  if (eachItem) step.resize(step.size() - 2);
+  if (!value.isMember(step)) return;
+  Json::Value& held = value[step];
+  const std::string_view rest = path.substr(dot + 1);
+  if (!eachItem) return dropPath(held, rest);
+  if (!held.isArray()) return;
+  for (Json::Value& item : held) dropPath(item, rest);
+}
+
 }  // namespace
 
 std::optional<std::string> undeclaredArgument(const ToolDeclaration& tool, const Json::Value& arguments) {
   return undeclaredKey(tool.descriptor["inputSchema"], arguments, "");
+}
+
+Json::Value withoutReadBack(const ToolDeclaration& tool, Json::Value arguments) {
+  for (const std::string& path : tool.readBack) dropPath(arguments, path);
+  return arguments;
 }
 
 }

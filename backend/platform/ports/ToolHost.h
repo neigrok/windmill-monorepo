@@ -63,6 +63,9 @@ struct ToolDeclaration {
   bool destructiveWrite = false;  // a `write` that removes what a person authored, wholesale, in one call
   bool idempotent = false;  // a write the same arguments leave unchanged the second time
   bool proposal = false;    // a `delete`-level tool that only PROPOSES the removal, for a human to apply
+  // Fields a read answers with that this tool takes back without declaring them, as `name` or `list[].name`: the MCP
+  // door drops them before it checks the arguments, so a document the product emitted is never refused.
+  std::vector<std::string> readBack;
 
   std::string name() const { return descriptor.get("name", "").asString(); }
 
@@ -121,6 +124,10 @@ struct ToolRetirement {
 // call runs this before the tool sees the arguments, so a misnamed argument is refused on the MCP
 // wire and inside a tend alike, never dropped in silence.
 std::optional<std::string> undeclaredArgument(const ToolDeclaration& tool, const Json::Value& arguments);
+
+// `arguments` without the fields `tool` names as read back, wherever the path reaches; every other key is left for
+// `undeclaredArgument` to judge.
+Json::Value withoutReadBack(const ToolDeclaration& tool, Json::Value arguments);
 
 // One call of a model round: the id the model gave it, the tool it named and the arguments it sent.
 struct ToolCall {

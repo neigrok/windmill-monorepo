@@ -1132,9 +1132,8 @@ TEST(gym_the_routine_entry_schema_publishes_the_bounds_the_domain_actually_keeps
   REQUIRE(entries.isObject());
   const Json::Value& fields = entries["items"]["properties"];
 
-  // An entry takes exactly these four, and the scheme is a list, never a count.
-  CHECK_EQ(fields.getMemberNames(),
-           (std::vector<std::string>{"exerciseId", "position", "restSeconds", "sets"}));
+  // An entry takes exactly these three, and the scheme is a list, never a count.
+  CHECK_EQ(fields.getMemberNames(), (std::vector<std::string>{"exerciseId", "restSeconds", "sets"}));
   CHECK_EQ(fields["sets"]["type"].asString(), std::string("array"));
   CHECK_EQ(fields["sets"]["minItems"].asInt(), 1);
   CHECK(fields["sets"]["description"].asString().find("1 to " + std::to_string(kMaxSetTargets)) != std::string::npos);
@@ -1230,16 +1229,25 @@ TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_propose_ro
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
   const Agent me{h.tools, h.user};
+  CompositeToolHost surface(std::vector<ToolModule>{{h.tools, gymInstructions()}});
   createPushA(h);
 
-  // Read it back exactly as an agent would, and change the one thing it came for.
+  // Read it back exactly as an agent would, and change the one thing it came for. Over MCP the lines' positions,
+  // which catalog/3 does not declare, are dropped before the arguments are checked.
   const ToolResult listed = me.call("list_routines", Json::Value(Json::objectValue));
   REQUIRE(!listed.isError);
   Json::Value document = body(listed)["routines"][0];
   CHECK_EQ(document["entries"][0]["position"].asInt(), 1);
   document["entries"][0]["sets"][4]["weightKg"] = 85.0;
+  Json::Value args(Json::objectValue);
+  args["id"] = "prop_00000001";
+  args["routineId"] = "rt_00000001";
+  args["entries"] = document["entries"];
+  args["name"] = Json::Value(Json::nullValue);
+  args["summary"] = Json::Value(Json::nullValue);
 
-  const ToolResult minted = me.propose("prop_00000001", "rt_00000001", document["entries"]);
+  const ToolResult minted =
+      surface.callTool("propose_routine_change", args, ToolCaller{h.user, ToolScope::everything()});
 
   REQUIRE(!minted.isError);
   const Json::Value& proposal = body(minted)["proposal"];
@@ -1469,7 +1477,8 @@ TEST(gym_a_proposal_id_resent_with_a_different_document_is_refused_rather_than_a
            std::optional<EntryTargets>(EntryTargets{straight(5, 3, 87.5), std::nullopt}));
 }
 
-// Every field list_routines puts on a routine survives a read-and-send-back.
+// Every field list_routines puts on a routine survives a read-and-send-back over MCP: catalog/3 does not declare the
+// read's own fields on its writes, and the door drops them before it checks the arguments.
 TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_create_routine) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
@@ -1481,6 +1490,8 @@ TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_create_rou
   Json::Value document = body(me.call("list_routines", Json::Value(Json::objectValue)))["routines"][0];
   REQUIRE_EQ(document["revision"].asInt(), 1);
   REQUIRE(document.isMember("pendingProposal"));
+  REQUIRE_EQ(document["entries"][0]["position"].asInt(), 1);
+  document["lastTrainedAt"] = Json::Value::UInt64(1'700'000'000'000);  // what a trained day reads back with
   document["id"] = "rt_00000002";
   document["name"] = "Push B";
 

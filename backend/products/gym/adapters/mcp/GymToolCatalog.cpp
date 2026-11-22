@@ -35,7 +35,17 @@ std::vector<ToolDeclaration> declarationsOf(std::string_view catalogText) {
   return tools;
 }
 
-std::vector<ToolDeclaration> gymToolCatalog() { return declarationsOf(catalog3Text()); }
+// Duplicating a day is reading it with list_routines and sending it back under a fresh id. What only the read answers
+// with is not declared on catalog/3's writes, where it would spend strict mode's room on nothing; MCP drops it unread.
+std::vector<ToolDeclaration> gymToolCatalog() {
+  std::vector<ToolDeclaration> tools = declarationsOf(catalog3Text());
+  for (ToolDeclaration& tool : tools) {
+    if (tool.name() == "create_routine")
+      tool.readBack = {"revision", "lastTrainedAt", "pendingProposal", "entries[].position"};
+    if (tool.name() == "propose_routine_change") tool.readBack = {"entries[].position"};
+  }
+  return tools;
+}
 
 std::string gymInstructions() {
   return "Gym: Coach in a friendly, informal voice. Before training decisions, including new routines, "

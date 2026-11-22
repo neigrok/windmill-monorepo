@@ -110,13 +110,17 @@ released build opens a `catalog/2` turn.
   and shapes strict mode accepts, each seat's tools (`agent` `runs` or `proposes`, declared,
   admitting the seat) stay within 20 strict tools, 24 optional parameters and 16 union-typed
   parameters, counted at every depth, and every `abilities-3/` input stands inside its schema.
+  These are the limits the provider publishes, and it checks those only: the provider can still
+  refuse a seat's tools together, which only a real round proves (the spec's §3 and §10).
   `python3 packages/api-contract/gym/strict.py` runs both and prints the counts; given a catalog
   path, it checks that catalog alone. `strict_test.py`, run in the same step, holds a schema for each
   rule it refuses and each way it counts.
 - `abilities-3/` has `abilities/`'s case format. Its 18 files hold `abilities/`'s cases with the
   inputs `catalog/3` asks for (a required `review` or `limit`, `null` where a parameter is left
-  empty) and the same `expect`, a case per routine-writing ability that sends what `list_routines`
-  reads, and a refusal for each value just outside every bound that moved out of a schema.
+  empty) and the same `expect`, and a refusal for each value just outside every bound that moved out
+  of a schema. The fields `list_routines` answers with that a write ignores are not in
+  `catalog/3`'s write schemas, so no case sends them; that a day read back over MCP is a day sent is
+  the server door's own test (`GymToolsTest.cpp`).
 - `start_session`, `log_set`, `log_sets`, `import_session`, `finish_session` and `update_exercise`
   are withheld from Coach; their files hold the refusals of their moved bounds alone, for the server
   executor, which runs them for MCP.

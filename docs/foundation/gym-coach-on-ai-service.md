@@ -115,18 +115,25 @@ The catalog is therefore rewritten as `catalog/3`, for every door: Coach on each
 own executors and MCP. (R-11)
 
 - Every input schema of `catalog/3` is one strict mode accepts, and the tools a seat is offered fit
-  its limits together. `packages/api-contract/gym/strict.py` counts both from the file in the Coach
-  contracts workflow, refuses a keyword or shape strict mode refuses in any ability's input, and
-  checks every corpus input against its schema.
+  its limits together. `packages/api-contract/gym/strict.py` counts the published limits from the
+  file in the Coach contracts workflow, refuses a keyword or shape strict mode refuses in any
+  ability's input, and checks every corpus input against its schema. Within the published limits a
+  request can still be refused whole: the provider refuses a set of tools whose schemas together
+  pass a complexity limit no published number states; by measurement, optional fields nested in the
+  line schemas spend it fastest. strict.py does not measure it, so a seat's acceptance is proven
+  only by the real round of §10.
 - A bound strict mode cannot state moves into the ability's rule, which refuses a value outside it
   as `invalid-arguments` before any rule reads the store, and into the description of the
   parameter it bounds, which tells the model. What an ability does and returns is unchanged.
 - Fewer inputs may be left out. A parameter whose usual value the model can state is required:
   `limit`, `review`. One whose absence means something no value says (every routine, the first
   page, keep the name, no summary, the equipment's step) is required and takes `null`. A field of a
-  routine's or a workout's line stays optional, and so do the fields `list_routines` returns that a
-  write ignores (a line's `position`; a new routine's `revision`, `lastTrainedAt` and
-  `pendingProposal`), so a day read back is a day sent.
+  routine's or a workout's line stays optional.
+- The fields `list_routines` returns that a write ignores (a line's `position`; a new routine's
+  `revision`, `lastTrainedAt` and `pendingProposal`) are not declared on `create_routine` and
+  `propose_routine_change`, where they would spend strict mode's room on nothing. MCP's door drops
+  exactly those from the two tools' arguments before it checks them, so a day an outside assistant
+  reads back is a day sent; a Coach turn's model, held to the declared schema, never sends them.
 - The corpora are written again for `catalog/3` in `abilities-3/`, and every executor will claim
   them: the server's, Swift's, Kotlin's and the web's. The server's claims them; their refusals are
   the contract each other executor is held to when it moves. The withheld abilities whose bounds moved
@@ -351,8 +358,9 @@ every proposal door.
 - Each engine replays the engine's vectors; each executor claims `abilities-3/` and `rules/`, the
   web's included (§5).
 - Every tool of the profile is sent to the provider in a real round, once by hand with the AI
-  service's own key, on each seat. The provider counts tokens without compiling a schema, so a
-  count proves nothing here.
+  service's own key, on each seat, whole: the seat's every tool in one request, since the provider
+  refuses on what the tools compile to together (§3). The provider counts tokens without compiling a
+  schema, so a count proves nothing here, and neither does strict.py.
 - Each surface drives a turn end to end against a local stack: the backend signing passes, the AI
   service, and a provider the test plays. The stories are a question answered, an ability that
   writes, a proposal applied, a share, a picture, Stop, an allowance used up, a connection lost
