@@ -1,10 +1,13 @@
 import Foundation
 import DomainKit
 import RoadmapDomain
+import SyncCore
 
 // Simulator boards. An account's roadmaps arriving by sync: roadmap-learn-to-sail (three steps done), roadmap-all-done
-// (all eight), roadmap-no-steps (*Night sailing*, with no step) and roadmap-several (*Learn to sail* over two more, the
-// most recent first). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no order a
+// (all eight), roadmap-no-steps (*Night sailing*, with no step), roadmap-several (*Learn to sail* over two more, the
+// most recent first), roadmap-workspace (*Learn to sail* with the workspace the boards draw on *Read the wind*) and
+// roadmap-two-phones (*Learn to sail*, where the account's other phone adds a subtask to the first step whose page is
+// opened). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no order a
 // server gave them; roadmap-handbook, the 5,000 steps the Graph's budget is measured at; and roadmap-empty, which
 // holds none. roadmap-unreadable cannot make its views. A launch with `-graph-measures <path>` appends what the Graph
 // measures of itself to that file.
@@ -48,6 +51,7 @@ enum RoadmapFixture {
     model.openRoom(.roadmap)
     // The steps of *Learn to sail* each board's account completed, the oldest first.
     let completed = ["roadmap-learn-to-sail": ["choose", "parts", "rig"], "roadmap-several": ["choose", "parts", "rig"],
+                     "roadmap-workspace": ["choose", "parts", "rig"], "roadmap-two-phones": ["choose", "parts", "rig"],
                      "roadmap-all-done": ["choose", "parts", "rig", "read", "tie", "leave", "tri", "solo"]][board]
     guard completed != nil || ["roadmap-no-steps", "roadmap-many", "roadmap-handbook"].contains(board) else { return true }
     do {
@@ -67,10 +71,14 @@ enum RoadmapFixture {
       guard let server = model.runtime?.auth.fake else { throw AppFailure(message: "no model server") }
       let identity = server.identity(email: "roadmap-fixture@example.com")
       let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-      defer { try? FileManager.default.removeItem(at: directory) }
       let remote = try AppRuntime(settings: AppSettings(arguments: ["fixture", "-model-server", "-board", board]),
                                   directory: directory, service: UUID().uuidString, syncTransport: server)
-      defer { try? remote.tokens.delete(for: identity.account) }
+      // The other phone goes once the board is planted; roadmap-two-phones keeps it until it has written.
+      let retire = {
+        try? remote.tokens.delete(for: identity.account)
+        try? FileManager.default.removeItem(at: directory)
+      }
+      defer { if board != "roadmap-two-phones" { retire() } }
       _ = try await remote.engine.signIn(account: identity.account, token: identity.token)
       // The board's clock stands still, so the server receives each sending a second after the one before: Done, newest
       // first, and the account's roadmaps, most recent first, have an order.
@@ -83,9 +91,15 @@ enum RoadmapFixture {
           await remote.engine.flushOnLeave()
         }
       }
+      var planted: CreateRoadmap.Result?
       if let completed {
         let sail = try plantLearnToSail(remote.roadmapRunner, done: [])
+        planted = sail
         try await sent()
+        if board == "roadmap-workspace" {
+          try plantWorkspace(of: sail, by: remote.roadmapRunner)
+          try await sent()
+        }
         for step in completed.dropLast() {
           try complete(step, of: sail, by: remote.roadmapRunner)
           try await sent()
@@ -109,6 +123,20 @@ enum RoadmapFixture {
       }
       server.state.withLock { $0.pushesReceivedLaterMs = 0 }
       try await model.signIn(identity)
+      if board == "roadmap-two-phones", let tree = planted?.tree {
+        Task { @MainActor in
+          let step = await openedStep(in: model)
+          if case .committed? = try? remote.roadmapRunner.runAct(AddSubtask(tree: tree, step: ID(RecordID(step)), item: Subtask.Changes(label: "Ask about the tide table"))) {
+            try? remote.engine.leave()
+            for _ in 0..<40 where (try? remote.store.read({ try $0.device().activeReplica.outbox.contains { $0.state != .acked } })) == true {
+              await remote.engine.flushOnLeave()
+            }
+          } else {
+            NSLog("Roadmap fixture: the other phone's subtask was not written.")
+          }
+          retire()
+        }
+      }
     } catch {
       NSLog("Roadmap fixture failed: %@", String(describing: error))
       model.error = "The roadmap fixture could not be prepared."
@@ -120,6 +148,31 @@ enum RoadmapFixture {
   }
 
   #if DEBUG && targetEnvironment(simulator)
+  // The step whose page the room first has open, once it has one: the stack is read again after each change to it.
+  static func openedStep(in model: AppModel) async -> String {
+    while true {
+      if let step = model.roadmap?.path.compactMap(\.step).first { return step }
+      await withCheckedContinuation { (changed: CheckedContinuation<Void, Never>) in
+        withObservationTracking { _ = model.roadmap?.path } onChange: { changed.resume() }
+      }
+    }
+  }
+
+  // The workspace the boards draw on *Read the wind* (03.2, 03.10, 03.11): two subtasks, the first checked, a note
+  // and one link, each the planting account's own.
+  static func plantWorkspace(of planted: CreateRoadmap.Result, by runner: ActionRunner) throws {
+    guard let wind = planted.steps.first(where: { $0.key == "read" })?.id else { throw AppFailure(message: "Learn to sail holds no Read the wind.") }
+    let items: [AnyActAction<RoadmapRefusal>] = [
+      AnyActAction(AddSubtask(tree: planted.tree, step: wind, item: Subtask.Changes(label: "Watch the telltales for ten minutes", done: true))),
+      AnyActAction(AddSubtask(tree: planted.tree, step: wind, item: Subtask.Changes(label: "Check the harbour flag"))),
+      AnyActAction(AddStepLink(tree: planted.tree, step: wind, item: WorkspaceLink.Changes(url: "https://rya.org.uk/telltales", title: "Telltale guide"))),
+    ]
+    guard case .committed = try runner.runComposed(items) else { throw AppFailure(message: "Read the wind's workspace was not planted.") }
+    var note = Draft(new: StepNote(id: ID(wind.record)), in: planted.tree.overlay)
+    note.current.text = "Gusts show as dark patches on the water. Look upwind before leaving the dock."
+    guard case .saved = runner.save(&note, SaveStepNote.self) else { throw AppFailure(message: "Read the wind's note was not planted.") }
+  }
+
   // The boards' *Learn to sail*, as `packages/api-contract/roadmap/layout/learn-to-sail.json` links it, with the link
   // *Read the wind* shares on its page and the steps it draws done completed in that order.
   @discardableResult
