@@ -51,14 +51,31 @@ jobs:
 
       - run: python3 -m unittest discover -s tools/tests -v
 
-      # Robolectric fetches its android-all jars from Maven Central while the tests run, into
-      # ~/.m2/repository, and a refused fetch fails a whole test class. Keeping them makes the
-      # suite fetch nothing once the cache holds this Robolectric version's jars.
-      - uses: actions/cache@v4
+      # Robolectric's android-all jars come through Gradle (the root robolectricAndroidAll<sdk> configurations),
+      # before any test runs, retrying Maven Central's 429s with backoff. They are kept right after they
+      # arrive, so a failing build still leaves the next run a warm cache; Gradle reuses a kept jar whose
+      # checksum matches.
+      - name: Restore Robolectric's Android jars
+        id: android-all
+        uses: actions/cache/restore@v4
         with:
-          path: ~/.m2/repository/org/robolectric
-          key: robolectric-${{ hashFiles('apps/android/gradle/libs.versions.toml') }}
-          restore-keys: robolectric-
+          path: ~/.gradle/caches/modules-2/files-2.1/org.robolectric/android-all-instrumented
+          key: robolectric-android-all-${{ hashFiles('apps/android/build.gradle.kts') }}
+          restore-keys: robolectric-android-all-
+
+      - name: Fetch Robolectric's Android jars
+        run: >-
+          ./gradlew robolectricDependencies
+          -Dorg.gradle.internal.network.retry.max.attempts=6
+          -Dorg.gradle.internal.network.retry.initial.backOff=2000
+        timeout-minutes: 20
+
+      - name: Keep Robolectric's Android jars
+        if: steps.android-all.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.gradle/caches/modules-2/files-2.1/org.robolectric/android-all-instrumented
+          key: robolectric-android-all-${{ hashFiles('apps/android/build.gradle.kts') }}
 
       # The ladder test finds packages/api-contract/gym-ladder.json by walking up from the project
       # directory, so the whole repo must be checked out.
