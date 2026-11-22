@@ -536,7 +536,7 @@ TEST(the_gym_registry_reads_as_declared) {
   const std::map<std::string, DeviceRowDef>& device = gym.products().at("gym").device;
   std::vector<std::string> deviceRows;
   for (const auto& [name, row] : device) deviceRows.push_back(name);
-  CHECK_EQ(deviceRows, (std::vector<std::string>{"movement", "movementOrder", "offer", "picture", "rack", "runningTurn"}));
+  CHECK_EQ(deviceRows, (std::vector<std::string>{"movement", "movementOrder", "offer", "picture", "rack", "runningRound", "runningTurn"}));
   CHECK_EQ(gym.version(), 13);
   CHECK_EQ(gym.minVersion(), 11);
   CHECK(gym.type("message")->fields.at("threadId").parent);
@@ -545,6 +545,9 @@ TEST(the_gym_registry_reads_as_declared) {
   CHECK(device.at("picture").localOnly);
   CHECK_FALSE(device.at("runningTurn").localOnly);
   CHECK(device.at("runningTurn").keyPattern.matches("runningTurn"));
+  CHECK_FALSE(device.at("runningRound").localOnly);
+  CHECK(device.at("runningRound").keyPattern.matches("runningRound"));
+  CHECK_FALSE(device.at("runningRound").keyPattern.matches("runningRound:coach0000001"));
   for (const char* row : {"movement", "movementOrder", "offer", "picture", "rack"}) CHECK(device.at(row).keyPattern.matches(std::string(row) + ":session0001"));
   for (const std::string& row : deviceRows) CHECK(gym.type(row) == nullptr);
   CHECK_EQ(gym.type("set")->fields.at("weightKg").domain->quantum->step(), 0.01);

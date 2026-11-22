@@ -1,7 +1,9 @@
+import Foundation
 import SyncAPI
 import SyncCore
 import SyncEngine
 import SyncModelServer
+import SyncStore
 import SyncTesting
 import Testing
 
@@ -31,6 +33,41 @@ struct CoachRecordsTests {
     ])
     #expect(rows.allSatisfy { $0.lattice.born == rows[0].lattice.born })
     #expect(try replica.read(Self.scope) { try $0.drawn("message", turn.coach) }?.values["state"] == "running")
+  }
+
+  // A turn's round sits in `runningRound` beside `runningTurn`. A build whose registry declares no `runningRound` opens the
+  // same store, reads and clears `runningTurn`, keeps the round's row untouched, and cannot write one.
+  @Test func aBuildThatKnowsNoRunningRoundStillReadsAndClearsTheRunningTurnOfAStoreHoldingOne() throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: "round-\(UUID().uuidString)", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let path = directory.appending(path: "store.sqlite").path
+    var source = try Corpus.registryFile("gym").asObject()
+    var products = try source.member("products").asObject()
+    var gym = try products.member("gym").asObject()
+    var device = try gym.member("device").asObject()
+    device["runningRound"] = nil
+    gym["device"] = .object(device)
+    products["gym"] = .object(gym)
+    source["products"] = .object(products)
+    let older = try Registry(json: .object(source))
+    let round: JSON = ["message": "coach0000000001", "callId": "AAAAAAAAAAAAAAAAAAAAAA", "bytesBefore": 17]
+    let rows = { (replica: any Replica) in try replica.read(Self.scope) { [try $0.device("runningTurn"), try $0.device("runningRound")] } }
+
+    let rig = try Rig(registry: Registry(json: Corpus.registryFile("gym")), path: path)
+    _ = try rig.engine.commit(Self.scope, Gesture(changes: [], local: [
+      DeviceWrite(key: "runningTurn", value: "coach0000000001"), DeviceWrite(key: "runningRound", value: round)]))
+    #expect(try rows(rig.engine) == ["coach0000000001", round])
+
+    let old = try Rig.engine(over: Store(path: path, registry: older), clock: rig.clock, random: rig.random, transport: rig.transport,
+      tokens: rig.tokens, forkGuard: rig.forkGuard, connectivity: rig.connectivity, slicing: rig.slicing, drivesLoops: false, bindings: [],
+      events: rig.events)
+    #expect(try rows(old) == ["coach0000000001", round])
+    #expect(throws: CommitFailure.malformed("runningRound is not a device row of gym")) {
+      try old.commit(Self.scope, Gesture(changes: [], local: [DeviceWrite(key: "runningRound", value: nil)]))
+    }
+    _ = try old.commit(Self.scope, Gesture(changes: [], local: [DeviceWrite(key: "runningTurn", value: nil)]))
+    #expect(try rows(rig.relaunch()) == [nil, round])
   }
 
   @Test func aWritersCompletedAtAnOlderStampBeatsAnotherDevicesInterrupted() async throws {

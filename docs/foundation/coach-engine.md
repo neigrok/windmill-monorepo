@@ -64,6 +64,9 @@ the pass door and no turn; its move is designed apart (AI service I-5).
 - **D-6 Mark.** A row the device keeps for itself, which does not sync. It names the turn the
   device is running, the `callId` of the round in flight, and how many bytes of the Coach message's
   text, as UTF-8, had arrived before that round began. Before the first round, `callId` is null.
+  A product may keep the mark as more than one device row: gym keeps the turn in `runningTurn` and
+  the round in `runningRound`, whose absence stands for the null `callId` before round 1
+  ([gym Coach on the AI service §4.4](gym-coach-on-ai-service.md#44-text-the-mark-and-the-end)).
 
 ## §3 Where things live
 

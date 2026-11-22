@@ -178,10 +178,23 @@ host gives the model the one code. An `anon` turn is offered neither.
 - Text reaches the Coach message in coalesced writes at the pace each surface sets: every 250 ms
   on the iPhone; every 5 s on Android, whose room draws the answer so far from the engine; every
   second on the web.
-- The mark is the device row `runningTurn` with, beside it, a row of its own for the round in
-  flight and where its text begins (Coach engine D-6). The registry declares `runningTurn` as the
-  message's id alone, and a mark already on a device must still read, so the round takes a new row.
-  A device row never syncs, and declaring one moves no schema version.
+- The mark is two device rows: `runningTurn`, the Coach message's id, and beside it
+  `runningRound`, `{message, callId, bytesBefore}`, the round in flight and the UTF-8 bytes of the
+  message's text before it (Coach engine D-6). The registry declares `runningTurn` as the message's
+  id alone, and a mark already on a device must still read, so the round takes a row of its own. A
+  device row never syncs, and declaring one moves no schema version.
+- The engine's `Mark` is the pair read together: `turnId` is `runningTurn`, and `callId` and
+  `textBytesBeforeRound` are the round row's `callId` and `bytesBefore`.
+- A `runningRound` counts only when its `message` equals `runningTurn`. A missing row, or one naming
+  another message, means no round: D-6's null `callId`, with `bytesBefore` 0. A reader that finds
+  such a stale row clears it. A sign-in that moves the signed-out replica's rows keeps the
+  destination's row on a collision (engine §7.10), so it can leave a mismatched pair; this rule
+  covers it.
+- The engines check only a device row's key, never its value, so a reader checks the round row's
+  shape before recovering from it, and treats a malformed row as no round.
+- Every write that clears `runningTurn` clears `runningRound` in the same write: the end, the
+  forget of a turn whose message is gone, the withdraw, the delete of a conversation, and the end a
+  seat change writes.
 - The end is one local write: the state, the whole text, `truncated`, the receipt derived from the
   calls, and the mark cleared.
 - No server ends a turn. The server-origin door `interrupt` and the sweep that calls it retire, and
@@ -371,7 +384,8 @@ on 2026-11-15 found these gaps. Each is work of this build.
   and no lock a turn could hold. A turn there emits no event and files no report.
 - The web keeps a Coach draft and a photo in the browser under the account's name and removes
   neither at sign-out.
-- The mark has no place for a round, and the registry declares it as an id alone.
+- The registry declares `runningRound`, and no host writes or clears it yet: each surface's turn
+  host writes it at every round and clears it with `runningTurn` (m2–m4).
 - Both phones refuse an ability call, and stop writing text, once their running Coach message reads
   `interrupted`. A writer whose turn another device marked stale must go on (§4.2).
 - The server's gate applies rules G-4 to G-7 that no phone applies; each moves into the device.
