@@ -51,6 +51,15 @@ jobs:
 
       - run: python3 -m unittest discover -s tools/tests -v
 
+      # Robolectric fetches its android-all jars from Maven Central while the tests run, into
+      # ~/.m2/repository, and a refused fetch fails a whole test class. Keeping them makes the
+      # suite fetch nothing once the cache holds this Robolectric version's jars.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('apps/android/gradle/libs.versions.toml') }}
+          restore-keys: robolectric-
+
       # The ladder test finds packages/api-contract/gym-ladder.json by walking up from the project
       # directory, so the whole repo must be checked out.
       - name: Build and test
