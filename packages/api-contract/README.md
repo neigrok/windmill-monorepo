@@ -93,6 +93,12 @@ WM_PG_TEST=1 WM_GENERATE_ABILITIES=1 DATABASE_URL="postgresql:///wm_rest_test?ho
   WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" ./backend/build/windmill_mcp_tests
 ```
 
+## `gym/coach/`
+
+The words the model reads in a gym Coach turn: the system prompt, the words of the first content and
+the sentence beside each refusal code. The backend embeds them and the apps ship them as they are.
+[gym/coach/README.md](gym/coach/README.md) has the files and how a turn puts them together.
+
 ## `genesis.js`
 
 A locally-born tree's first sync converges with the server's empty tree only while this seed is

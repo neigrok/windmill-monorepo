@@ -6,7 +6,7 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified, and approved by the owner on 2026-11-15; nothing is built. Gym Coach runs on the server in two forms.
+**Status:** Specified, and approved by the owner on 2026-11-15. Of what it changes, the words of §3 are built; nothing else is. Gym Coach runs on the server in two forms.
 [Phone-hosted Coach abilities](mobile/gym_coach.md) is what the iPhone and Android speak: the server
 runs the loop and the phone runs the abilities. The [Coach conversation contract](../gym-coach-contract.md)
 is what the web speaks: the server runs everything. Both are metered by the backend's ledger
@@ -41,7 +41,7 @@ reaches over MCP, which stay on the server.
 | A picture on the web | uploaded and stored by the server | kept in the browser, as a phone keeps one |
 | A picture on its way to the model | sent to the backend with the turn | uploaded once to the AI service, which holds it in memory for the turn |
 | The catalog | `catalog/2` | `catalog/3`, written to the provider's strict mode, on every door |
-| The words the model reads | texts in the backend's source | files every app ships |
+| The words the model reads | files in the contract, which the backend embeds and Android and the web carry | the same files, which every app ships |
 
 What does not move: what each ability does, the executors on the phones, proposals and their
 Apply, the records and their merge rules, installation identity, and every board the phones are
@@ -81,8 +81,9 @@ What gym gives the engine, for each seat. Its name is `gym.coach` and its versio
     the earlier conversation, and the question that stands for a picture sent with none;
   - the sentence the model reads beside each refusal code.
 
-  Today all three are in the backend's source. A person can read them in the app; they hold no
-  secret. (R-8)
+  The backend embeds the same files, so the server's Coach reads them too; Android and the web
+  carry them, and the iPhone does not yet. A person can read them in the app; they hold no secret.
+  (R-8)
 - **The catalog** is `packages/api-contract/gym/catalog.json` at `catalog/3` (below). The model
   reads each ability's `description` from the copy the app ships, so the iPhone's generated catalog
   carries it, which it does not today.
@@ -135,8 +136,8 @@ says, and writes the records of its step 2. Then:
   most `CONTEXT_PICTURES`. The device uploads each to the AI service once, and every round of the
   turn names it (Coach engine §4.2). (R-12)
 
-The first content is the one the server builds today, word for word, from the files of §3. Where
-those words name a phone, they are rewritten to name no device before the web ships.
+The first content is the one the server builds today, word for word, from the files of §3. Its
+words name no device.
 
 ### §4.2 Ability calls
 
@@ -301,7 +302,7 @@ and compose still use them.
   server's writing of a proposal's `threadId`. The receipts of a saved note and of an edited
   movement stay: MCP writes them too.
 - **Anonymous onboarding:** `POST /v1/gym/coach/onboarding` and its read, and what it stores.
-- **The words** in the backend's source, and the adapters that give Coach a model.
+- **The words** embedded in the backend, and the adapters that give Coach a model.
 - **The address limit on generations**, which becomes the pass door's.
 - **The corpus** `packages/api-contract/gym/turns/`, the stories of a wire that is gone. Their
   stories are told again in the engine's vectors.
@@ -346,9 +347,8 @@ on 2026-11-15 found these gaps. Each is work of this build.
 
 - `catalog/2` breaks the provider's strict mode, which the AI service sends every tool in (§3).
 - The AI service has no door that holds a picture between calls (R-12).
-- The iPhone's generated catalog drops each ability's `description`, and no app holds the words the
-  model reads. The sentences beside refusal codes and around the first content exist only in the
-  server's loop.
+- The iPhone's generated catalog drops each ability's `description`, and the iPhone does not carry
+  the words the model reads (§3).
 - The iPhone keeps its turn in the app target; it has no engine module that names no product.
   Android's `:agent` is one, and holds the wire's driver, not a loop.
 - The web has no catalog types, no executor, no `thread` or `message` entity, no agent or AI layer

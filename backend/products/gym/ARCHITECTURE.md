@@ -1309,7 +1309,8 @@ empty state invites a training question.
 Two documents are welded into the lifter's **first user turn**, in this order: their notes, exactly
 as `list_notes` returns them, then the newest page of the log, exactly as `list_sessions` returns it
 (`askOpeningMessages`). Both are ordinary declared tool calls made before the model is asked
-anything, and either failing is no run. **Never in `kSystemPrompt`**: the prompt and the tool
+anything, and either failing is no run. **Never in the system prompt** (`coachSystemPrompt`, read from
+`packages/api-contract/gym/coach/prompt.md`): the prompt and the tool
 catalog are one cached prefix, and one interpolated byte would move it on every request —
 `AnthropicAskTest` pins the prompt byte-stable across runs with different notes. The top-level
 `steps` list `list_notes` first, then the agent loop's own calls. The versioned receipt instead records actual AskTools

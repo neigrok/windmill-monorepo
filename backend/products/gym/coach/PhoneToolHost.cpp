@@ -1,5 +1,7 @@
 #include "products/gym/coach/PhoneToolHost.h"
 
+#include "products/gym/coach/CoachWords.h"
+
 #include <trantor/utils/Logger.h>
 
 #include <algorithm>
@@ -74,7 +76,7 @@ std::vector<ToolResult> PhoneToolHost::callTools(const std::vector<ToolCall>& ca
   int phoneRefused = 0;
   const std::optional<TurnBatch> batch = phone.empty() ? std::nullopt : turn_.sendBatch(std::move(phone));
   if (!phone.empty() && !batch) {
-    for (const std::size_t index : phoneIndex) answered[index] = refused(gate::stopped, "Coach was stopped before this action.");
+    for (const std::size_t index : phoneIndex) answered[index] = refused(gate::stopped, CoachWords::shipped().refusal(gate::stopped));
   }
   if (batch) {
     ++batches_;
