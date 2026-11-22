@@ -1085,8 +1085,8 @@ in-process).
 - **A bound strict mode cannot state is the rule's.** `catalog/3` states no `minimum`, `maximum`,
   `maxLength`, `maxItems`, `multipleOf` or `uniqueItems`; each bound is in the description of what it
   bounds, and the executor refuses a value outside it as `invalid-arguments` before any rule reads the
-  store, as `abilities-3/` pins: a `list_sessions` page's `before` and `limit`, a batch's 200 sets, a new
-  routine's `position` up to 10000, and every bound the domain's entities keep. A parameter `catalog/3`
+  store, as `abilities-3/` pins: a `list_sessions` page's `before` and `limit`, a batch's 200 sets, and
+  every bound the domain's entities keep, a routine's `position` among them at the registry's 0–2147483647. A parameter `catalog/3`
   requires as `null` reads as absent, and so does one an older caller leaves out.
 - **Retry semantics are explicit per tool.** Batch logging matches immutable normalized set input;
   import matches the original completed-session request, including ordered sets. A different payload
@@ -1106,7 +1106,8 @@ in-process).
   the two document-carrying tools refuse a spent id carrying a different one.
 - **A read's own fields survive the write that takes them back.** Duplicating a day is reading one with
   `list_routines` and sending it back under a fresh id, so `lastTrainedAt`, `revision` and
-  `pendingProposal` are declared on `create_routine` and ignored; `position` (0–10000) is required
+  `pendingProposal` are declared on `create_routine` and ignored; `position` (0–2147483647, the
+  registry's bound on every door) is required
   and stored. `additionalProperties: false` is
   enforced by `CompositeToolHost`, so a document gym itself emitted must never be refused.
 - **`delete` is never merged into `write`.** Two tools may merge where a parameter does the job

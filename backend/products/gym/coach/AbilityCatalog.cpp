@@ -3,7 +3,9 @@
 #include "platform/adapters/json/JsonText.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 
+#include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <regex>
 #include <set>
 #include <utility>
@@ -233,8 +235,28 @@ ServedCatalogs::ServedCatalogs(AbilityCatalog second, AbilityCatalog third)
 
 AbilityCatalog ServedCatalogs::at(int version) const { return version >= third_.version() ? third_ : second_.at(version); }
 
+namespace {
+
+// The order catalog/1 and catalog/2 turns have always offered their tools in, so a released build's model request
+// stays byte for byte what it was; catalog/3 follows its file.
+constexpr const char* kReleasedOrder[] = {
+    "list_exercises", "list_sessions", "get_session", "last_time", "list_routines", "get_stats", "list_notes",
+    "list_bodyweight", "get_sessions", "get_last_times", "save_note", "start_session", "log_set", "finish_session",
+    "create_routine", "propose_routine_change", "propose_workout_change", "create_exercise", "update_exercise",
+    "share_session", "log_sets", "import_session", "discard_session", "propose_routine_removal", "revoke_share"};
+
+std::vector<ToolDeclaration> inReleasedOrder(std::vector<ToolDeclaration> declarations) {
+  const auto rank = [](const ToolDeclaration& declaration) {
+    return std::ranges::find(kReleasedOrder, declaration.name()) - std::begin(kReleasedOrder);
+  };
+  std::ranges::stable_sort(declarations, {}, rank);
+  return declarations;
+}
+
+}  // namespace
+
 const ServedCatalogs& gymCatalogs() {
-  static const ServedCatalogs catalogs{AbilityCatalog::of(declarationsOf(catalog2Text()), 2),
+  static const ServedCatalogs catalogs{AbilityCatalog::of(inReleasedOrder(declarationsOf(catalog2Text())), 2),
                                        AbilityCatalog::of(gymToolCatalog(), 3)};
   return catalogs;
 }

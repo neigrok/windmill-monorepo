@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <set>
 #include <sstream>
@@ -926,6 +927,33 @@ TEST(coach_turn_offers_the_schemas_of_the_catalog_it_opened_with) {
       CHECK_EQ(sync::jcs(sent[tool.name()]), sync::jcs(tool.descriptor["inputSchema"]));
     CHECK_EQ(sent["list_sessions"]["required"].size(), version == 3 ? 3u : 0u);
     h.service->stop();
+  }
+}
+
+// A released build's turn sends the model the tools it always did, in their order, byte for byte: the file holds what
+// a catalog/1 and a catalog/2 turn of each seat sent before catalog/3.
+TEST(coach_turn_of_a_released_catalog_sends_the_model_its_recorded_tools) {
+  std::ifstream stream(WM_GYM_RELEASED_TURN_TOOLS, std::ios::binary);
+  const Json::Value recorded = sync::parseJson(std::string{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()});
+  REQUIRE_EQ(recorded.size(), 4u);
+  for (const int version : {1, 2}) {
+    for (const char* seat : {"anon", "bound"}) {
+      Harness h;
+      h.model->replies = parse(R"([{"stop_reason":"end_turn","content":[{"type":"text","text":"Hi."}]}])");
+      const std::string body = R"({"catalog":"catalog/)" + std::to_string(version) +
+                               R"(","turnId":"tn_released_tools","question":"Hi","history":[],"context":[],"pictures":[]})";
+      const TurnAdmission admission =
+          h.service->open(std::string(seat) == "anon" ? h.anon() : h.bound(), openOf(parse(body)));
+      REQUIRE(admission.turn);
+      auto recorder = std::make_shared<Recorder>();
+      admission.turn->attach(recorder, false);
+      h.model->start();
+      REQUIRE(recorder->waitFor(2));
+      REQUIRE_EQ(h.model->requests.size(), 1u);
+      const std::string key = "catalog/" + std::to_string(version) + "/" + seat;
+      CHECK_EQ(sync::jcs(h.model->requests[0]["tools"]), sync::jcs(recorded[key]));
+      h.service->stop();
+    }
   }
 }
 

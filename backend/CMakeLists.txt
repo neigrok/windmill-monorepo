@@ -388,6 +388,7 @@ target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_pr
 # message sizes (roadmap-socket.json) the same way.
 target_compile_definitions(windmill_domain_tests PRIVATE WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync"
   WM_GYM_TURNS_DIR="${WM_API_CONTRACT_DIR}/gym/turns" WM_GYM_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/gym/domain"
+  WM_GYM_RELEASED_TURN_TOOLS="${CMAKE_SOURCE_DIR}/test/products/gym/coach/released-turn-tools.json"
   WM_ROADMAP_ADDRESSES="${WM_API_CONTRACT_DIR}/roadmap-addresses.json"
   WM_ROADMAP_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/roadmap/domain"
   WM_ROADMAP_LINK_URLS="${WM_API_CONTRACT_DIR}/roadmap-link-urls.json"

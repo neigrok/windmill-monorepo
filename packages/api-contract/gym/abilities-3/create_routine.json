@@ -516,7 +516,7 @@
     }
   },
   {
-    "case": "a position past 10000 is refused",
+    "case": "a position past 2147483647 is refused",
     "seat": "bound",
     "now": 1790000000000,
     "zone": "UTC",
@@ -524,7 +524,7 @@
       "records": []
     },
     "call": {
-      "input": {"entries":[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Bench 🏋️‍♀️ Café q̇","position":10001},
+      "input": {"entries":[{"exerciseId":"bench-press","restSeconds":150,"sets":[{"reps":5,"weightKg":62.5},{"reps":3,"weightKg":70},{"reps":8}]},{"exerciseId":"lateral-raise","sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]},{"exerciseId":"plank"}],"id":"tn7Qm2Kx9Lp4Wz8R-1","name":"Bench 🏋️‍♀️ Café q̇","position":2147483648},
       "name": "create_routine"
     },
     "expect": {

@@ -13,8 +13,6 @@ constexpr std::size_t kBatchReadByteBudget = 256 * 1024;
 
 constexpr int kDefaultLogLimit = 20;
 constexpr int kMaxLogLimit = 200;
-// Where create_routine may place a new day; a routine the phone moved may sit further down.
-constexpr int kMaxRoutinePosition = 10000;
 
 // The prefix is the grant: any `propose_*` tool, at any access level, is reachable by Ask.
 inline bool mintsProposal(const std::string& toolName) {

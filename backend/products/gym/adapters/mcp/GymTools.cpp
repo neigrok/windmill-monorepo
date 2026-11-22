@@ -490,9 +490,6 @@ ToolResult createRoutine(ProgramRepository& program, GymWriteDoor& door, const U
                          const Json::Value& args, ProposalDoor source) {
   static_assert(classify(Subject::program, Standing::fresh) == Mutation::record);
   const RoutineWrite incoming = parseRoutineWrite(args);
-  // The ability's bound, not the stored routine's: a phone may have moved a day further down the program.
-  if (incoming.position > kMaxRoutinePosition)
-    throw InvalidTraining("a routine sits at a position from 0 to " + std::to_string(kMaxRoutinePosition));
   if (source == ProposalDoor::ask)
     if (const auto creation = program.routineCreation(caller, incoming.id))
       return ToolResult::json(toJson(*creation));
