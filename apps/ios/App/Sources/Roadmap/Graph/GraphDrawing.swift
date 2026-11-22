@@ -32,30 +32,31 @@ nonisolated struct GraphDrawing: Equatable {
   let selected: Int?
   // Each disc drawn as one square of its colour, in place of the kit's forms.
   let squared: Bool
+  // The canvas composited through the system's `drawingGroup`.
+  let layered: Bool
 
   // The frame `pinch` has the canvas draw at `camera`: the picture as it is at rest, unless a pinch is under way with
   // more than `crowd` steps in view. Then `held` draws the nearest of the pinch's stops, without captions, since the
-  // layout seats them for the camera a person moves; and `coarse` squares the discs.
+  // layout seats them for the camera a person moves; `coarse` squares the discs; and `layered` composites the canvas.
   init(picture: GraphPicture, camera: GraphCamera, captions: [Caption], selected: Int?, pinched: GraphCamera.Pinched? = nil,
        by pinch: GraphPinch = .live, crowd: Int = GraphPinch.crowd) {
     self.picture = picture
     self.selected = selected
-    guard let pinched, pinch == .held || pinch == .coarse, picture.steps(in: camera.holds()) > crowd else {
-      (self.camera, self.captions, squared) = (camera, captions, false)
-      return
-    }
-    guard pinch == .held else {
-      (self.camera, self.captions, squared) = (camera, captions, true)
+    let way: GraphPinch = pinched != nil && pinch != .live && picture.steps(in: camera.holds()) > crowd ? pinch : .live
+    (squared, layered) = (way == .coarse, way == .layered)
+    guard way == .held, let pinched else {
+      (self.camera, self.captions) = (camera, captions)
       return
     }
     var stop = pinched.from
     stop.zoom(by: pow(GraphPinch.reach, (log(camera.frame.zoom / pinched.from.frame.zoom) / log(GraphPinch.reach)).rounded()), about: pinched.about)
-    (self.camera, self.captions, squared) = (stop, [], false)
+    (self.camera, self.captions) = (stop, [])
   }
 
   // A picture is what its steps make it, and a caption what it says and where.
   static func == (one: GraphDrawing, other: GraphDrawing) -> Bool {
-    one.camera == other.camera && one.selected == other.selected && one.squared == other.squared && one.picture.steps == other.picture.steps
+    one.camera == other.camera && one.selected == other.selected && one.squared == other.squared && one.layered == other.layered
+      && one.picture.steps == other.picture.steps
       && one.captions.elementsEqual(other.captions) { (a: Caption, b: Caption) -> Bool in
         a.id == b.id && a.left == b.left && a.top == b.top && a.width == b.width && a.shown == b.shown && a.lines == b.lines
       }

@@ -59,6 +59,9 @@ nonisolated struct GraphCamera: Equatable {
   static let pinchCeiling = 2.5
 
   private(set) var frame = Frame(x: 0, y: 0, zoom: 1)
+  // Where the last move left the camera, which `frame` is held from: a camera over another canvas or other bars holds
+  // this place anew and keeps it, so bars that come and go leave the picture where it was.
+  private(set) var left = Frame(x: 0, y: 0, zoom: 1)
   // The canvas's size, the points the bars cover on each side of it, and the box around the roadmap's seats.
   let viewport: Viewport
   let insets: Insets
@@ -71,14 +74,15 @@ nonisolated struct GraphCamera: Equatable {
     self.insets = insets
     self.bounds = bounds
     frame = framing.fitFrame(bounds)
+    left = frame
   }
 
-  // The same place seen over another box of seats, canvas size or bars, held to their limits.
+  // The place `camera` was left at, seen over another box of seats, canvas size or bars and held to their limits.
   init(_ camera: GraphCamera, over bounds: Rect, in viewport: Viewport, under insets: Insets) {
     self.viewport = viewport
     self.insets = insets
     self.bounds = bounds
-    frame = camera.frame
+    (frame, left) = (camera.left, camera.left)
     hold()
   }
 
@@ -89,6 +93,7 @@ nonisolated struct GraphCamera: Equatable {
     camera.frame.zoom = max(frame.zoom, Theme.phoneWorkingZoom)
     camera.frame.x = seat.x + (insets.right - insets.left) / (2 * camera.frame.zoom)
     camera.frame.y = seat.y + (insets.bottom - insets.top) / (2 * camera.frame.zoom)
+    camera.left = camera.frame
     return camera
   }
 
@@ -102,6 +107,7 @@ nonisolated struct GraphCamera: Equatable {
     frame.x -= translation.width / frame.zoom
     frame.y -= translation.height / frame.zoom
     hold()
+    left = frame
   }
 
   // A pinch: the world point under `point` stays under it while the zoom changes.
@@ -111,6 +117,7 @@ nonisolated struct GraphCamera: Equatable {
     frame.x = pinned.x - (point.x - viewport.width / 2) / frame.zoom
     frame.y = pinned.y - (point.y - viewport.height / 2) / frame.zoom
     hold()
+    left = frame
   }
 
   // The zoom stays between the layout's floor and the pinch ceiling, and the world point at the centre of what the

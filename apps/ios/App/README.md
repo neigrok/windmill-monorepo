@@ -112,7 +112,8 @@ each roadmap (`lens`, set by `show(_:)` and kept on the phone under `RoadmapMode
 switched, as the web's `ViewPrefs` keeps it), the step selected on the Graph (`selected`, set by `select(_:)`, which goes
 once its step does or another roadmap opens), and the open roadmap's Graph (`graph`, a `RoadmapGraph`), which it has
 follow the roadmap as the phone's copy reads it while the Graph is the view. `pick(_:)` selects a step chosen from the
-Graph's *Next* and has the Graph bring it into view, and `fit()` and `unfit()` start and end the Graph's Fit.
+Graph's *Next*, while it stands, and has the Graph bring it into view, and `fit()` and `unfit()` start and end the
+Graph's Fit.
 
 The model's write door is `write(_:as:)`: one act of `RoadmapDomain` run on `AppRuntime.roadmapRunner`, several as one
 gesture (`ActionRunner.runComposed`), each reading what the ones before it wrote, or a draft's one save
@@ -228,7 +229,8 @@ wrapped under the canvas's 13 pt semibold. It is made off the main actor; the se
 picture decides neither. A picture made after another borrows its seats and captions where only a step's being done
 changed. `GraphCamera.swift` is the camera: the world point at the canvas's centre and the zoom, opened where the
 layout's `fitFrame` puts it and held between the layout's zoom floor and the web's pinch ceiling of 2.5, with the
-roadmap's box never out of what the bars leave. `centred(on:)` is the camera brought to a seat, the seat at the centre
+roadmap's box never out of what the bars leave. It keeps the place a move left it at, and over another canvas or other
+bars holds a copy of that place, so a band or a keyboard that comes and goes leaves the picture where it was. `centred(on:)` is the camera brought to a seat, the seat at the centre
 of what the bars leave and no farther out than the phone's working zoom, and `GraphCamera.Glide` the way there: 0.48,
 0.6 or 0.72 s by how far the centre travels, under the web's easing, as a pinch about the one point of the canvas at
 which both ends show the same place, or a pan between two ends at one zoom. `GraphDrawing.swift` draws one frame into a
@@ -247,11 +249,12 @@ pinch rests and at any camera that holds no crowd. The room's own
 is `GraphPinch.room`, which is `live`: no phone has measured the other three. `RoadmapGraph.swift` is the Graph's state,
 which the model owns: it lays the
 picture out off the main actor, one layout at a time and only the latest read next, keeps the camera where a person left
-it when the picture changes, asks the layout's `CaptionPlacer` for the captions at each camera and again when the next
+it when the picture, the canvas or its bars change, asks the layout's `CaptionPlacer` for the captions at each camera and again when the next
 caption is due, answers which step a tap takes (the nearest whose disc, or whose 44 pt target where the disc is
 smaller, holds the point), holds the pinch under way with the camera it began from and the point it zooms about, glides
-the camera to a step (`bring(_:)`) and to the whole roadmap (`fit()`), at once under Reduce Motion, and keeps the whole
-roadmap framed while Fit stands. It measures the Graph against the budget: the first frame after the tap that showed
+the camera to a step (`bring(_:)`) and to the whole roadmap (`fit()`), at once under Reduce Motion, stops a glide where
+it has got to (`halt()`) once Fit ends or a tap selects another step, and keeps the whole roadmap framed while Fit
+stands. The room reads `framed`, whether there is a camera, and never the camera, which changes every frame. It measures the Graph against the budget: the first frame after the tap that showed
 it, and the frames a display link sees while a gesture or a glide moves the camera (`GraphFrames`).
 `RoadmapGraphCanvas.swift` is the
 view: the surface under the room's bars, a `DragGesture` and a `MagnifyGesture` that move the camera, and a tap that
@@ -843,7 +846,9 @@ script's handler take about 2 ms each of those frames; the rest is the view's up
 mini is faster than the oldest phone the app supports, so a camera that misses here misses there. No phone has run
 `held`, `coarse` or `layered`.
 
-On an iPhone 17 simulator on an M3 Pro, the short form twice, six runs of each way at 5,000 steps:
+On an iPhone 17 simulator on an M3 Pro, the short form twice, six runs of each way at 5,000 steps, with `layered`
+composited at every camera, its pans and its pinch at zoom 0.011 among them, where the room composites only a pinch of
+more than 500 steps in view:
 
 | | `live` | `held` | `coarse` | `layered` |
 |---|---|---|---|---|

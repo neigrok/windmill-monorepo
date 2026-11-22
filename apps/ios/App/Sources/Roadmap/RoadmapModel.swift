@@ -479,20 +479,26 @@ final class RoadmapModel {
     telemetry.event("roadmap_view_switch", properties: ["view": lens.rawValue, "steps": RoadmapGraph.bucket(open.board.overall.total)])
   }
 
-  // A tap on the Graph: the step it took is the selected one, and a tap on empty canvas selects none.
+  // A tap on the Graph: the step it took is the selected one, and a tap on empty canvas selects none. A tap that selects
+  // another step ends a glide under way where it has got to, so the camera does not go on to the step left.
   func select(_ step: String?) {
     let row = step.flatMap { shown?.step($0) }
-    if let row, row.id != selected { telemetry.event("roadmap_graph_select", properties: ["column": row.card.column.rawValue]) }
+    if let row, row.id != selected {
+      telemetry.event("roadmap_graph_select", properties: ["column": row.card.column.rawValue])
+      graph.halt()
+    }
     selected = row?.id
   }
 
-  // Roadmap · iOS 04.3: *Next*'s menu opened over the Up next steps, and a step picked from it, which is selected and
-  // brought to the centre of the canvas. Each is told as the web's What's next is, with the steps Up next as a bucket.
+  // Roadmap · iOS 04.3: *Next*'s menu opened over the Up next steps, and a step picked from it while it stands, which
+  // is selected and brought to the centre of the canvas. Each is told as the web's What's next is, with the steps Up
+  // next as a bucket.
   func nextOpened() {
     telemetry.event("roadmap_whats_next", properties: ["step": "open", "count": Self.bucket(shown?.upNext.count ?? 0)])
   }
 
   func pick(_ row: Row) {
+    guard let row = shown?.step(row.id) else { return }
     telemetry.event("roadmap_whats_next", properties: ["step": "pick", "count": Self.bucket(shown?.upNext.count ?? 0)])
     selected = row.id
     graph.bring(row.id)

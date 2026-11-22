@@ -94,7 +94,8 @@ struct RoadmapRoom: View {
   }
 
   // The switch chooses the roadmap's view, and carries the view's one tool: the Board's Sort and filter, drawn like
-  // Find and doing nothing, and the Graph's Fit (04.5), which needs the Graph on screen with its camera.
+  // Find and doing nothing, and the Graph's Fit (04.5), which needs the Graph on screen with its camera. The room reads
+  // only whether the camera is there, never the camera, which a gesture or a glide changes every frame.
   func switchRow(graph: Bool) -> some View {
     HStack(spacing: RoomSpace.related) {
       Picker("View", selection: Binding(get: { roadmap.lens }, set: { roadmap.show($0) })) {
@@ -106,7 +107,7 @@ struct RoadmapRoom: View {
         Menu("Sort and filter", systemImage: "line.3.horizontal.decrease.circle") {}.modifier(GlassCircle()).disabled(true)
       } else {
         Button("Fit", systemImage: "arrow.up.left.and.arrow.down.right") { roadmap.fit() }.modifier(GlassCircle())
-          .disabled(!graph || roadmap.graph.camera == nil).accessibilityIdentifier("roadmap-fit")
+          .disabled(!graph || !roadmap.graph.framed).accessibilityIdentifier("roadmap-fit")
       }
     }.padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.related)
   }

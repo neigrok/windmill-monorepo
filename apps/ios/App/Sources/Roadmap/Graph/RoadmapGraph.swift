@@ -50,7 +50,12 @@ final class RoadmapGraph {
   private(set) var picture: GraphPicture?
   private(set) var unseated = false
   // None until both the picture and the canvas's size are known.
-  private(set) var camera: GraphCamera?
+  private(set) var camera: GraphCamera? {
+    didSet { if (camera == nil) != (oldValue == nil) { framed = camera != nil } }
+  }
+  // Whether there is a camera, which changes only as one comes or goes: what the room reads, where the camera itself
+  // changes every frame.
+  private(set) var framed = false
   private(set) var captions: [Caption] = []
   // The pinch under way, from its first report to the fingers' leaving or the first drag after it; and the pinch a
   // glide is, while it moves the camera.
@@ -170,7 +175,7 @@ final class RoadmapGraph {
     guard !reducesMotion(), place != camera else {
       self.camera = place
       name()
-      if glide != nil { rest() }
+      halt()
       return
     }
     let course = GraphCamera.Glide(from: camera, to: place)
@@ -204,6 +209,12 @@ final class RoadmapGraph {
   // Fit ends, and the camera stays where it left it.
   func unfit() {
     fitted = false
+    halt()
+  }
+
+  // A glide under way stops where it has got to, and its frames are measured as a gesture's are.
+  func halt() {
+    if glide != nil { rest() }
   }
 
   // The captions the layout names at the camera now, and again once the next of them is due to appear or to go.

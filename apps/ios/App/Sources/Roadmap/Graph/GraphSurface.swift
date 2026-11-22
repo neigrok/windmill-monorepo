@@ -28,7 +28,8 @@ nonisolated enum GraphPinch: String, CaseIterable, Sendable {
 
 // The Graph's picture on one Canvas, under a camera, with a pinch's frames kept the way `pinch` names (Roadmap · iOS
 // 04.1, 04.2, 04.4). The canvas draws again only when its drawing differs: under `held` a pinch between two stops moves
-// the camera and not the drawing, and the canvas is scaled to the camera in place of a draw.
+// the camera and not the drawing, and the canvas is scaled to the camera in place of a draw. Under `layered` the canvas
+// is composited while its drawing is.
 struct GraphSurface: View {
   let picture: GraphPicture?
   let camera: GraphCamera?
@@ -49,7 +50,8 @@ struct GraphSurface: View {
     switch pinch {
     case .live, .coarse: canvas
     case .held: canvas.transformEffect(drawing.flatMap { camera?.carries(from: $0.camera) } ?? .identity)
-    case .layered: canvas.drawingGroup()
+    case .layered:
+      if drawing?.layered ?? false { canvas.drawingGroup() } else { canvas }
     }
   }
 
