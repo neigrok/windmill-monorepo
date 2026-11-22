@@ -290,12 +290,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: gym-integration
+          - shard: integration-roadmap
             tests: >-
               -only-testing:WindmillUITests/GymIntegrationFlowTests
               -only-testing:WindmillUITests/GymRecoveryFlowTests
               -only-testing:WindmillUITests/JournalIntegrationFlowTests
               -only-testing:WindmillUITests/JournalEchoFlowTests
+              -only-testing:WindmillUITests/RoadmapFlowTests
           - shard: gym-journal
             tests: >-
               -only-testing:WindmillUITests/GymCoachFlowTests
@@ -306,7 +307,6 @@ jobs:
             tests: >-
               -only-testing:WindmillUITests/OfflineFlowTests
               -only-testing:WindmillUITests/OnboardingFlowTests
-              -only-testing:WindmillUITests/RoadmapFlowTests
               -only-testing:WindmillUITests/ShellFlowTests
               -only-testing:WindmillUITests/WorkoutActivityFlowTests
               -only-testing:WindmillUITests/WorkoutOutsideFlowTests
