@@ -24,6 +24,9 @@ import { GymEstimate, Prefill, ProgressRecords, Readout, RestTarget, TrainingLog
 import { GymUnits, WeightLadder } from '../../../../src/products/gym/domain/units.js';
 import { PlanChanges, PlanOperations, ReviseWorkoutPlan } from '../../../../src/products/gym/domain/workoutPlan.js';
 import { ApplyWorkoutProposal, DismissWorkoutProposal, ProposeWorkout, WorkoutProposal, WorkoutProposalState } from '../../../../src/products/gym/domain/workoutProposals.js';
+import { AbilityCall, CoachMessage, CoachThread, Picture, ReadServed } from '../../../../src/products/gym/domain/coach/conversation.js';
+import { EndTurn, OpenTurn } from '../../../../src/products/gym/domain/coach/turn.js';
+import { Instant } from '../../../../src/platform/domain-kit/time.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { RegistryCheck, RuleBookCheck, RuleBookParity } from '../../../platform/domain-kit/checks.js';
 import { Contract, momentOf, savedForm, withRecordsReversed } from '../../../platform/domain-kit/vectors.js';
@@ -46,7 +49,6 @@ const coachFiles = Contract.files('gym').filter((path) => ['gym/catalog.json', '
 const notApplicable = {
   'gym/domain/recovery-actions.json': 'the web holds no signed-out workout: its gym opens behind the account gate',
   'gym/domain/coach-onboarding-actions.json': 'the web carries no anonymous routine import door',
-  'gym/domain/coach-conversation-actions.json': 'a web Coach turn writes its conversation on the server (gym Coach §4.6); the web holds no thread or message entity',
   ...Object.fromEntries(coachFiles.map((path) => [path, 'the web runs no replica executor'])),
   ...Object.fromEntries(Contract.files('gym').filter((path) => path.startsWith('gym/coach/'))
     .map((path) => [path, 'the words Coach\'s model reads are no vectors: coach/words.test.js reads them'])),
@@ -485,6 +487,23 @@ const handlers = {
       return { id: value.id.json, fields: value.fields() };
     });
   },
+  'gym/domain/coach-conversation-actions.json': (vector) => {
+    const input = vector.input.input;
+    const f = Fields.object(input);
+    switch (vector.input.action) {
+      case 'OpenTurn': return corpus.decision(new OpenTurn({ thread: f.optionalRef('thread', CoachThread), question: f.string('question'),
+        pictures: f.optionalList('pictures', Picture.decode) ?? [] }), vector, (turn) => ({ thread: turn.thread.json, lifter: turn.lifter.json, coach: turn.coach.json }), refusalForm);
+      case 'EndTurn': return corpus.decision(new EndTurn(f.ref('message', CoachMessage), input.state, f.optionalString('text'), f.bool('truncated', false)),
+        vector, () => null, refusalForm);
+      case 'AbilityCall.recorded': {
+        const message = CoachMessage.decode(Fields.values('message', input.message.id, input.message.fields));
+        const recorded = message.recorded(AbilityCall.decode(Fields.object(input.call)));
+        return { recorded: recorded?.json ?? null, callsBytes: message.with({ calls: [...message.calls, ...(recorded ? [recorded] : [])] }).callsBytes };
+      }
+      case 'ReadServed.week': return { week: ReadServed.week(new Instant(f.int('at'))) };
+      default: throw new Error(`unclaimed coach conversation action ${vector.input.action}`);
+    }
+  },
   'gym/rules/bodyweight.json': (vector) => corpus.read(vector, WeighIn.scope, (read) => {
     assert.equal(vector.input.read, 'Bodyweight', 'unclaimed bodyweight read');
     return bodyweightForm(new Bodyweight(read), vector.input.input);
@@ -500,6 +519,7 @@ test('the gym corpus is closed: every file is claimed and nothing is pending', (
   assert.deepEqual(pending, [], 'the completed gym domain has no pending files');
   for (const path of [rulesFile, valuesFile, 'gym/domain/bodyweight-actions.json', 'gym/domain/preferences-actions.json', 'gym/rules/bodyweight.json']) assert.ok(claimed.includes(path), `W1 claim regressed: ${path}`);
   assert.ok(claimed.includes('gym/domain/notes-actions.json'), 'W2 notes claim regressed');
+  assert.ok(claimed.includes('gym/domain/coach-conversation-actions.json'), 'Coach records claim regressed');
   for (const path of ['gym/domain/catalogue-actions.json', 'gym/domain/routines-actions.json']) assert.ok(claimed.includes(path), `W3 claim regressed: ${path}`);
   for (const path of ['gym/domain/training-reads.json', 'gym/domain/units.json', ladderFile]) assert.ok(claimed.includes(path), `W5a claim regressed: ${path}`);
   assert.ok(claimed.includes('gym/domain/proposals-actions.json'), 'W4 proposals claim regressed');

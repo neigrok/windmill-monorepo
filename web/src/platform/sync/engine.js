@@ -478,6 +478,7 @@ export class BrowserSyncEngine {
       spent: replica.spentRows(scope),
       devices: structuredClone(replica.deviceRows(this.registry.productOfRef(scope))),
       firstPullComplete: firstPullComplete(replica, scope, this.scopes(replica)),
+      replica: replica.meta.replica,
       actor,
       isAnonymous: replica.meta.state === 'anon',
       commands: replica.entries(scope).filter((entry) => entry.intent.cmd !== undefined).map((entry) => ({

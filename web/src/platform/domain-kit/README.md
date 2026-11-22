@@ -9,8 +9,8 @@ layer a product's feature domains are declared on, beside the Swift `DomainKit` 
 
 A kit file imports the shared `packages/api-contract/sync/reference/core/<name>.js` by relative
 path, the web's `sync/core/encoding.js` and `content.js`, and kit files; a product domain
-(`src/products/<p>/domain/`) imports the same core modules, the kit, `platform/sync/schema.js` and
-itself. No clock, randomness, platform global, console, locale, rounding (the quantum's is
+(`src/products/<p>/domain/`, and its feature folders such as gym's `coach/`) imports the same core modules, the kit,
+`platform/sync/schema.js` and its own domain, never above it. No clock, randomness, platform global, console, locale, rounding (the quantum's is
 `core/values.js`) or concurrency; `runner.js`, the one impure file, alone awaits the engine. Every
 file opts into `tsc --checkJs` with `// @ts-check`. `npm run check:domain` first runs
 `test/domain-layering.test.js`, which parses every file with acorn and enforces these rules with a
@@ -51,7 +51,8 @@ runner in that synchronous execution context. Independent queued runs remain all
 web runner tests cover load, decide and refusal mapping: §15.2's pipeline vectors have no nested-call operation and use a
 loader that does nothing.
 
-`Reader.confirmed(type, id)` reads the confirmed record below pending predictions; the port hands the confirmed rows as
+`Reader.replica` names the replica a run's commit writes to (its `rp_` id, §7.1), which `EngineReplica` reads from the
+engine's `readMetadata` and the vectors name `rp_00000000000000000000000000000001`. `Reader.confirmed(type, id)` reads the confirmed record below pending predictions; the port hands the confirmed rows as
 a lookup (`get(key)`), so a read copies only the rows it asks for, each keeping its row's `seq`. `Repository.spentBorn(id)`
 answers the born of a record the device keeps only by its spent id (engine §7.5), which a revival takes (§9.2 step 5), and
 `spentSeq(id)` the `seq` of the dead row it came from (engine §2.5), null where it keeps none (§7.2). `EngineReplica.read` lets go of

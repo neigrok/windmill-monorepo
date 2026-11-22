@@ -47,6 +47,11 @@ is a `GymRefusal` (`errors.js`) carrying the engine's code, the sentence a scree
 and, for an overlap, the crossed session; `failureReason` finishes the sentence for any failure,
 naming this device when its store could not keep the write and the network only for a REST door.
 
+Coach's records as the engine holds them live in `domain/coach/`: `conversation.js` holds the `thread` and `message`
+entities, a call's record and the receipt the calls derive; `turn.js` the writes of a turn (open, text, round, end,
+withdraw, a conversation's delete), the `runningTurn` and `runningRound` mark and the `picture:<id>` rows, and
+`ForgetCoachAtSignOut`. The room still speaks the server's Coach; nothing in it runs these yet.
+
 `TrainingHistory` composes typed domain reads into screen documents. The global seed catalogue
 is outside sync and is checked against `schema.sql` in CI. Observation updates refresh local reads
 and preserve history depth and editor drafts. Hook reads reuse results while the observation and

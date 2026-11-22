@@ -3,7 +3,7 @@
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
 v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json`,
-`coach-onboarding-actions.json`, `coach-conversation-actions.json` and `../rules/collation.json` run in Swift and Kotlin and do
+`coach-onboarding-actions.json` and `../rules/collation.json` run in Swift and Kotlin and do
 not apply on the web (their rows say why); every other file runs in all three.
 `workout-plan-actions.json` and `workout-proposals-actions.json` hold the open workout's editable plan and its
 workout proposals. R118 metadata reads remain optional
@@ -26,7 +26,7 @@ executor (`apps/ios/Domain/Sources/GymDomain/Coach/`, `CoachAbilitiesTests`) and
 (`apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/coach/`, `CorpusTests`): each case runs through `RunAbility` over its
 given records as the case's seat at its moment, and the result's JCS bytes, its SHA-256 and the records the gesture writes
 are compared with the server's golden. The Coach `thread` and `message` entities keep a rule book of their own
-(`CoachRules.book`, in Swift and Kotlin) until every gym implementation carries them, so `rules.json` stays the book the three share.
+(`CoachRules.book` in Swift and Kotlin, `CoachBook.book` on the web), so `rules.json` stays the book the three share.
 
 ## Files
 
@@ -38,7 +38,7 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `bodyweight-actions.json` | Whole-day weigh-in saves, corrections and held deletes |
 | `routines-actions.json` | Guarded editor saves, atomic routine/catalogue plans, reorder, delete, ordered targets, frozen-plan decoding |
 | `coach-onboarding-actions.json` | One batch of preassigned routines and required custom movements with a transactional per-result replay receipt; Kotlin and Swift claim the cases, while web carries no anonymous import door |
-| `coach-conversation-actions.json` | A phone turn's records: `OpenTurn`, `EndTurn` with the receipt its calls derive, a call's record as the calls bound fills, and a read's week. Kotlin and Swift claim the cases; a web turn writes its conversation on the server, so the web holds no `thread` or `message` entity |
+| `coach-conversation-actions.json` | A phone turn's records: `OpenTurn`, `EndTurn` with the receipt its calls derive, a call's record as the calls bound fills, and a read's week. Kotlin, Swift and the web (`web/src/products/gym/domain/coach/`) claim the cases |
 | `catalogue-actions.json` | Create (a dumbbell movement's count included), rename, seed overrides, aliases, byte-sensitive search, decoding failures |
 | `preferences-actions.json` | Draft preference saves and rest defaults |
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |

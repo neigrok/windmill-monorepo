@@ -78,6 +78,8 @@ export const probeRegistry = new Registry(Contract.json('sync/probe.registry.jso
 
 // The README's defaults: 2027-01-15T08:00:00Z in UTC unless a vector gives `now` and `offsetSeconds`.
 export const DEFAULT_NOW = 1_800_000_000_000;
+// The replica every shared vector's commit writes to, as each runner names it.
+export const VECTOR_REPLICA = 'rp_00000000000000000000000000000001';
 
 /** @param {any} input */
 export function momentOf(input) {
