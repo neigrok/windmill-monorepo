@@ -150,8 +150,9 @@ final class StepDraft: Identifiable {
       !kind.label.isEmpty && legend.hues.contains { $0.owner.utf8.elementsEqual(kind.id.utf8) }
     }
     let unnamed = RoadmapRules.hues.filter { (hue: String) -> Bool in !named.contains { $0.hue.utf8.elementsEqual(hue.utf8) } }
-    return named.map { KindChoice(hue: $0.hue, name: $0.label, description: $0.description) }
-      + unnamed.compactMap { (hue: String) -> KindChoice? in RoadmapModel.Row.hue(hue).map { KindChoice(hue: hue, name: $0, description: "") } }
+    let kinds = named.map { (kind: Kind) -> KindChoice in KindChoice(hue: kind.hue, name: kind.label, description: kind.description) }
+    let hues = unnamed.compactMap { (hue: String) -> KindChoice? in RoadmapModel.Row.hue(hue).map { KindChoice(hue: hue, name: $0, description: "") } }
+    return kinds + hues
   }
 
   // The steps the draft requires that are not done, in the order chosen.
@@ -265,7 +266,8 @@ final class StepDraft: Identifiable {
     }
     if isNew {
       let made = RoadmapStep.Changes(label: label, color: fields.kind, description: fields.description)
-      return [AnyActAction(CreateStep(tree: tree, step: made, prerequisites: fields.requires, id: step))] + fields.opens.map(leads)
+      let create: [AnyActAction<RoadmapRefusal>] = [AnyActAction(CreateStep(tree: tree, step: made, prerequisites: fields.requires, id: step))]
+      return create + fields.opens.map(leads)
     }
     var acts: [AnyActAction<RoadmapRefusal>] = []
     let changes = RoadmapStep.Changes(label: label == base.name ? nil : label, color: fields.kind == base.kind ? nil : fields.kind,

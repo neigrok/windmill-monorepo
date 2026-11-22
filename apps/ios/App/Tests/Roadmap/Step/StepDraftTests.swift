@@ -503,8 +503,8 @@ import SyncTesting
   }
 
   // Roadmap · iOS 05.8 and 03.8: Delete Step in a step's form asks there with what the delete costs; answered, the
-  // step is held with Undo, the form is closed and the room stands on the Board. A form closes too once its roadmap is
-  // not the open one.
+  // step is held with Undo, the form is closed and the room stands on the Board. A form closes too once the step it
+  // edits is gone, or its roadmap is not the open one.
   @Test func deleteStepInTheFormAsksThereAndAFormLeavesWithItsStepOrItsRoadmap() async throws {
     let (engine, runner, memory, suite) = phone(account: nil)
     defer { memory.removePersistentDomain(forName: suite) }
@@ -538,6 +538,18 @@ import SyncTesting
     model.undo()
     await shows(model, board: atRest, on: engine)
 
+    guard case .open(let standing) = model.phase else { return }
+    let tie = try row("Tie a bowline", in: model)
+    model.edit(try #require(standing.page(of: tie.id)))
+    #expect(model.draft != nil)
+    guard case .committed = try runner.runAct(DeleteStep(tree: sail.tree, step: ID(RecordID(tie.id)))) else {
+      Issue.record("Tie a bowline was not deleted")
+      return
+    }
+    await shows(model, board: ["3 of 7", "upNext: Read the wind", "locked: Leave the dock, Sail a triangle, Sail solo",
+                               "done: Rig the boat, Name the boat parts, Choose a sailing course"], on: engine)
+    #expect(model.draft == nil)
+
     model.newStep(from: .foot)
     #expect(model.draft != nil)
     model.open(harbour.tree.description, from: .menu)
@@ -546,7 +558,7 @@ import SyncTesting
     #expect(told(telemetry) == [
       "roadmap_room_opened ", "roadmap_board_step_open column=upNext door=card surface=document", "roadmap_step_edit door=page step=open",
       "roadmap_board_delete step=confirm view=board", "roadmap_board_delete door=form step=held view=board", "roadmap_board_undo act=delete outcome=ok",
-      "roadmap_board_create door=foot step=open view=board", "roadmap_sheet door=menu step=switch",
+      "roadmap_step_edit door=page step=open", "roadmap_board_create door=foot step=open view=board", "roadmap_sheet door=menu step=switch",
     ])
   }
 }
