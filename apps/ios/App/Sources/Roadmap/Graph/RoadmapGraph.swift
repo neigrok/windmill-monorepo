@@ -197,7 +197,7 @@ final class RoadmapGraph {
   // disc is drawn smaller.
   func step(at point: CGPoint) -> String? {
     guard let picture, let camera else { return nil }
-    var nearest: (place: Int, distance: Double)?
+    var nearest: (place: Int, distance: CGFloat)?
     for (place, node) in picture.model.nodes.enumerated() {
       let seat = camera.screen(node.x, node.y)
       let distance = hypot(seat.x - point.x, seat.y - point.y)
