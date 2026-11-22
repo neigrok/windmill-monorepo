@@ -88,6 +88,17 @@ nonisolated enum RoadmapPalette {
   ]
   // A hue this build does not know is drawn in the dim ink.
   static func kind(_ hue: String) -> Color { kinds[hue] ?? inkDim }
+  // A Locked step's disc on the Graph, by the hue it wears: its kind's locked fill, ring and dot.
+  static let lockedKinds: [String: (fill: Color, ring: Color, glyph: Color)] = [
+    "terracotta": (Color("roadmap/locked-build-fill"), Color("roadmap/locked-build-ring"), Color("roadmap/locked-build-glyph")),
+    "olive": (Color("roadmap/locked-learn-fill"), Color("roadmap/locked-learn-ring"), Color("roadmap/locked-learn-glyph")),
+    "gold": (Color("roadmap/locked-milestone-fill"), Color("roadmap/locked-milestone-ring"), Color("roadmap/locked-milestone-glyph")),
+    "brick": (Color("roadmap/locked-brick-fill"), Color("roadmap/locked-brick-ring"), Color("roadmap/locked-brick-glyph")),
+    "sky": (Color("roadmap/locked-sky-fill"), Color("roadmap/locked-sky-ring"), Color("roadmap/locked-sky-glyph")),
+    "plum": (Color("roadmap/locked-plum-fill"), Color("roadmap/locked-plum-ring"), Color("roadmap/locked-plum-glyph")),
+  ]
+  // A hue this build does not know is locked in the room's own grounds and lines.
+  static func locked(_ hue: String) -> (fill: Color, ring: Color, glyph: Color) { lockedKinds[hue] ?? (raised, lineStrong, inkFaint) }
 }
 
 // What a shared control takes from the room that hosts it; the shell lends its brand as the accent, the journal its lamp.

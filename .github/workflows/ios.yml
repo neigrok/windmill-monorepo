@@ -86,7 +86,8 @@ jobs:
           xcodegen --version
 
       # Every UI class runs in exactly one shard, except the opt-in ones, which must keep their guard: the design
-      # captures, and the nightly classes, which iOS nightly runs instead.
+      # captures, the Graph's benchmark, which Tools/graph_bench.sh runs, and the nightly classes, which iOS nightly
+      # runs instead.
       - name: Check UI shard coverage
         run: |
           python3 - <<'PY'
@@ -102,6 +103,7 @@ jobs:
               "DesignCapture": ("DesignCapture/DesignCapture.swift", "WM_DESIGN_CAPTURE"),
               "NightlyFlowTests": ("NightlyFlowTests.swift", "WM_NIGHTLY_UI"),
               "GymNightlyFlowTests": ("GymNightlyFlowTests.swift", "WM_NIGHTLY_UI"),
+              "RoadmapGraphBenchmarks": ("RoadmapGraphBenchmarks.swift", "WM_GRAPH_BENCH"),
           }
           for name, (file, variable) in opt_in.items():
               guard = f'try XCTSkipUnless(ProcessInfo.processInfo.environment["{variable}"] == "1"'
@@ -303,6 +305,7 @@ jobs:
             tests: >-
               -only-testing:WindmillUITests/OfflineFlowTests
               -only-testing:WindmillUITests/OnboardingFlowTests
+              -only-testing:WindmillUITests/RoadmapFlowTests
               -only-testing:WindmillUITests/ShellFlowTests
               -only-testing:WindmillUITests/WorkoutActivityFlowTests
               -only-testing:WindmillUITests/WorkoutOutsideFlowTests

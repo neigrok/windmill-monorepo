@@ -94,8 +94,8 @@ import XCTest
     XCTAssertEqual(app.buttons["room-menu"].label, "Roadmap")
   }
 
-  // Roadmap · iOS 01.1 and 11.22a: the account's roadmap on its Board, Done folded, New step at the foot, and what waits
-  // for its own screen disabled.
+  // Roadmap · iOS 01.1 and 11.22a: the account's roadmap on its Board, Done folded, the switch live, New step at the
+  // foot, and what waits for its own screen disabled.
   func assertLearnToSailBoard(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
     let locked = app.buttons["roadmap-group-locked"]
     XCTAssertTrue(locked.waitForExistence(timeout: 30), file: file, line: line)
@@ -115,7 +115,8 @@ import XCTest
       "Learn, Sail a triangle, Needs Leave the dock · 2 to go, Practise reaching, tacking and returning to start.",
       "Milestone, Sail solo, Needs Sail a triangle +1 · 4 to go, Plan and sail a short route on your own.",
     ], file: file, line: line)
-    for control in [app.segmentedControls.firstMatch, app.buttons["Find"], app.buttons["Sort and filter"]] {
+    XCTAssertTrue(app.segmentedControls.firstMatch.isEnabled, file: file, line: line)
+    for control in [app.buttons["Find"], app.buttons["Sort and filter"]] {
       XCTAssertTrue(control.exists, file: file, line: line)
       XCTAssertFalse(control.isEnabled, file: file, line: line)
     }

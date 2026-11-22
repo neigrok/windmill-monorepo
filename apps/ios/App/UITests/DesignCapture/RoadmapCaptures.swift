@@ -325,6 +325,53 @@ final class RoadmapCaptures: DesignCapture {
     XCTAssertTrue(app.staticTexts["Delete Read the wind?"].waitForExistence(timeout: 5))
   }
 
+  // *Learn to sail* on its Graph, the picture drawn and its captions past their wait.
+  func graph(_ look: Look) -> (app: XCUIApplication, canvas: XCUIElement) {
+    let app = learnToSail(look)
+    app.segmentedControls.buttons["Graph"].tap()
+    let canvas = app.descendants(matching: .any)["roadmap-graph"]
+    XCTAssertTrue(canvas.waitForExistence(timeout: 10))
+    return (app, canvas)
+  }
+
+  // 04.1 and S.2: the canvas, as the layout frames the roadmap.
+  func testGraphCanvas() {
+    captureBoard("04.1-roadmap-graph-canvas", settle: 1.5) { look in graph(look).app }
+  }
+
+  // 04.2: a step selected, ringed on the canvas and standing in the band slot. *Read the wind* is seated 92 points
+  // right of and 62 under the centre of what the bars leave.
+  func testGraphStepSelected() {
+    captureBoard("04.2-roadmap-graph-step-selected", settle: 1.5) { look in
+      let (app, canvas) = graph(look)
+      canvas.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).withOffset(CGVector(dx: 92, dy: 62)).tap()
+      XCTAssertTrue(app.buttons["roadmap-graph-step"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // 04.4: pinched in to one and a half times the opening zoom, the discs grown. A pinch out is as far as XCTest is
+  // asked for and a pinch in is not, so the picture is pinched in to the ceiling, 2.94 times, and back out to 1.5.
+  func testGraphPinchedIn() {
+    captureBoard("04.4-roadmap-graph-pinched-in", settle: 1.5) { look in
+      let (app, canvas) = graph(look)
+      canvas.pinch(withScale: 6, velocity: 3)
+      canvas.pinch(withScale: 0.51, velocity: -1)
+      return app
+    }
+  }
+
+  // 04.7: a roadmap with no step, under the Graph.
+  func testGraphEmptyRoadmap() {
+    captureBoard("04.7-roadmap-graph-empty-roadmap") { look in
+      let app = launch("roadmap-no-steps", look)
+      XCTAssertTrue(app.staticTexts["Your first step"].waitForExistence(timeout: 30))
+      app.segmentedControls.buttons["Graph"].tap()
+      XCTAssertTrue(app.segmentedControls.buttons["Graph"].wait(for: \.isSelected, toEqual: true, timeout: 5))
+      return app
+    }
+  }
+
   // 01.2: the room capsule's menu, with Roadmap checked.
   func testRoomMenu() {
     for look in Look.both {

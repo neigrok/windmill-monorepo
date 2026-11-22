@@ -162,6 +162,31 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
             ["step": .label("held"), "door": .label("page"), "view": .label("board")])
   }
 
+  @Test func theGraphTellsItsSwitchItsSelectionAndItsReportsAndNothingOfAStep() {
+    let events = ["roadmap_view_switch", "roadmap_graph_select", "roadmap_board_step_open", "roadmap_board_create"]
+    #expect(events.filter(TelemetryPrivacy.events.contains) == events)
+    for view in ["board", "graph"] {
+      #expect(TelemetryPrivacy.properties(["view": view, "tree": "private-id", "title": "private-marker"]) == ["view": .label(view)])
+    }
+    for column in ["upNext", "locked", "done"] {
+      #expect(TelemetryPrivacy.properties(["column": column, "step": "private-id", "label": "Read the wind"]) == ["column": .label(column)])
+    }
+    #expect(TelemetryPrivacy.properties(["surface": "document", "door": "graph", "column": "upNext", "node": "private-id"]) ==
+            ["surface": .label("document"), "door": .label("graph"), "column": .label("upNext")])
+    #expect(TelemetryPrivacy.properties(["step": "open", "door": "foot", "view": "graph", "node": "private-id"]) ==
+            ["step": .label("open"), "door": .label("foot"), "view": .label("graph")])
+    // A report says which layout or budget, and the roadmap's size as a bucket: never its count of steps.
+    for kind in ["fallback", "unseated"] {
+      #expect(TelemetryPrivacy.properties(["operation": "roadmap_layout", "failure_kind": kind, "tree": "private-id", "steps": "4999"]) ==
+              ["operation": .label("roadmap_layout"), "failure_kind": .label(kind)])
+    }
+    for (budget, steps) in [("first_frame", "1-100"), ("frames", "101-1000"), ("frames", "1001-5000")] {
+      #expect(TelemetryPrivacy.properties(["operation": "roadmap_canvas", "failure_kind": "budget", "budget": budget, "steps": steps, "title": "private-marker"]) ==
+              ["operation": .label("roadmap_canvas"), "failure_kind": .label("budget"), "budget": .label(budget), "steps": .label(steps)])
+    }
+    #expect(TelemetryPrivacy.properties(["budget": "first_frame", "steps": "5000", "ms": "1200"]) == ["budget": .label("first_frame")])
+  }
+
   @Test func theRoomsRoadmapsTellTheirStepsByKindAndNothingOfARoadmap() {
     let events = ["roadmap_sheet", "birth", "roadmap_board_create", "roadmap_deletion"]
     #expect(events.filter(TelemetryPrivacy.events.contains) == events)

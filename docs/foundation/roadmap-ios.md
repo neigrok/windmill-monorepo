@@ -356,20 +356,28 @@ makes it false.
 ## §13 Gaps this build closes
 
 - The app's third room exists only behind a build switch that is off in Release (`WM_ROADMAP_ROOM_ENABLED`), where it
-  shows a roadmap's Board and a step's page from the phone's copy, writes five gestures on a step, Create and Edit
-  from the step form and Complete, Reset and Delete, each with its Undo, and makes, opens, renames and deletes a
-  roadmap from the title menu, All Roadmaps and New Roadmap. The step form sets a step's name, description and kind,
-  what it requires and what it opens, and has no *Roadmap* row, *Links*, *Edit Kinds* or Coach composer. A step's
-  page has no workspace, History or *Open Roadmap*, and its menu holds *Delete Step* alone; the title menu has no
-  *Guide*, *Kinds*, *Activity*, *Share…* or *Export*, New Roadmap starts a blank roadmap alone, from no quest, plan or
-  file, and All Roadmaps has no gallery; no Graph, link or Coach is built, and the Board has no Find, sort and filter,
-  branch, selection or pasted steps. The app has no associated domain, and its onboarding says roadmap is on the web.
+  shows a roadmap's Board, its Graph and a step's page from the phone's copy, writes five gestures on a step, Create
+  and Edit from the step form and Complete, Reset and Delete, each with its Undo, and makes, opens, renames and
+  deletes a roadmap from the title menu, All Roadmaps and New Roadmap. The step form sets a step's name, description
+  and kind, what it requires and what it opens, and has no *Roadmap* row, *Links*, *Edit Kinds* or Coach composer. A
+  step's page has no workspace, History or *Open Roadmap*, and its menu holds *Delete Step* alone; the title menu has
+  no *Guide*, *Kinds*, *Activity*, *Share…* or *Export*, New Roadmap starts a blank roadmap alone, from no quest, plan
+  or file, and All Roadmaps has no gallery. The Graph draws the picture, pans and zooms it, selects a step and opens
+  its page, and has no *Next*, *Fit* or Find, no mark on a step that opens a roadmap, and draws no proposal and no
+  reader's cover; no link or Coach is built, and the Board has no Find, sort and filter, branch, selection or pasted
+  steps. The app has no associated domain, and its onboarding says roadmap is on the web.
 - `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
   room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once: no Undo scene,
   plan grammar, quest or Coach executor.
 - Activity and History have no read (§3): no case states one, and neither the web's domain nor Swift's gives it.
-- `RoadmapLayout` draws the picture and nothing draws it on a screen; its time at 5,000 steps is not measured
-  against the budget of §5.
+- One SwiftUI `Canvas` in the room's Graph draws `RoadmapLayout`'s picture (`apps/ios/App/Sources/Roadmap/Graph/`).
+  The budget of §5 is measured at 5,000 steps on a Mac's simulator alone, by `apps/ios/App/Tools/graph_bench.sh` on a
+  Release-configuration build: the picture's time with its layout, the domain's read taken for it, the room's part of
+  a frame at five cameras, the time from the switch to the first frame, and the frames a scripted pan and pinch are
+  given with the main actor's work in each. On an M3 Pro the first frame takes about a fifth of its second, and a
+  frame of the whole roadmap about three fifths of its sixtieth on the main actor, which is no margin for an iPhone
+  XR: whether `Canvas` holds 60 frames a second there is not known. No iPhone has measured it, and a canvas that misses
+  the budget on a phone reports it (§11).
 - Roadmap's runner holds a removal for the engine's nine seconds (`AppRuntime.roadmapRunner`), and the room runs
   eight acts through it: `MarkStep` (Complete and Reset), `DeleteStep` and `DeleteRoadmap`, each with *Undo*;
   `CreateStep`, `ChangeStep` and `ChangePrerequisites`, composed into the step form's one save with one *Undo*; and

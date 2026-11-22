@@ -2,14 +2,11 @@ import SwiftUI
 import UIKit
 import RoadmapDomain
 
-// The Roadmap room (Roadmap · iOS S.1, 01.3, 01.5, 11.22a): one stack, the open roadmap under its name with the switch
-// row, its Board, and at the foot the one band over New step. All Roadmaps and a step's page are pushed on the stack, and
-// New Roadmap and the step form are its two sheets. What the band says is announced and felt once, whichever screen
-// stands over it.
+// The Roadmap room (Roadmap · iOS S.1, S.2, 01.3, 01.5, 04.7, 11.22a): one stack, the open roadmap under its name with
+// the switch row, its Board or its Graph, and at the foot the one band over New step. All Roadmaps and a step's page are
+// pushed on the stack, and New Roadmap and the step form are its two sheets. What the band says is announced and felt
+// once, whichever screen stands over it.
 struct RoadmapRoom: View {
-  // The room's two views of a roadmap.
-  enum Lens { case board, graph }
-
   @Bindable var roadmap: RoadmapModel
   let app: AppModel
 
@@ -50,7 +47,7 @@ struct RoadmapRoom: View {
   @ViewBuilder var content: some View {
     switch roadmap.phase {
     case .unread: Color.clear
-    case .open(let open): board(open)
+    case .open(let open): views(of: open)
     // 01.5: the room with no roadmap, where the band still holds the Undo of the last one's delete.
     case .empty:
       ContentUnavailableView {
@@ -70,10 +67,16 @@ struct RoadmapRoom: View {
     }
   }
 
-  func board(_ open: RoadmapModel.OpenRoadmap) -> some View {
-    pinnedUnderBar(RoadmapBoard(roadmap: roadmap, open: open))
-      .modifier(RoadmapTitle(roadmap: roadmap, open: open))
+  // The open roadmap in the view the room shows of it, the Board's first step for a roadmap with no step under either
+  // choice (04.7). On the Graph the band slot holds the selected step while no band stands there (04.2).
+  func views(of open: RoadmapModel.OpenRoadmap) -> some View {
+    let graph = roadmap.view(of: open) == .graph
+    return pinnedUnderBar(Group {
+      if graph { RoadmapGraphCanvas(roadmap: roadmap, progress: open.board.overall.progress) }
+      else { RoadmapBoard(roadmap: roadmap, open: open) }
+    }).modifier(RoadmapTitle(roadmap: roadmap, open: open))
       .roadmapFoot(roadmap) {
+        if graph, roadmap.band == nil, let selected = roadmap.selected.flatMap({ open.step($0) }) { GraphStepBar(row: selected) }
         HStack {
           Spacer()
           Button("New Step", systemImage: "plus") { roadmap.newStep(from: .foot) }.modifier(GlassCircle()).accessibilityIdentifier("roadmap-new-step")
@@ -81,16 +84,17 @@ struct RoadmapRoom: View {
       }
   }
 
-  // Graph, Find, and Sort and filter are drawn and do nothing: the row stands disabled.
+  // The switch chooses the roadmap's view. Find, and the Board's Sort and filter, are drawn and do nothing; the Graph's
+  // own tool, Fit, is not built.
   var switchRow: some View {
     HStack(spacing: RoomSpace.related) {
-      Picker("View", selection: .constant(Lens.board)) {
-        Text("Board").tag(Lens.board)
-        Text("Graph").tag(Lens.graph)
+      Picker("View", selection: Binding(get: { roadmap.lens }, set: { roadmap.show($0) })) {
+        Text("Board").tag(RoadmapModel.Lens.board)
+        Text("Graph").tag(RoadmapModel.Lens.graph)
       }.pickerStyle(.segmented)
-      Button("Find", systemImage: "magnifyingglass") {}.modifier(GlassCircle())
-      Menu("Sort and filter", systemImage: "line.3.horizontal.decrease.circle") {}.modifier(GlassCircle())
-    }.padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.related).disabled(true)
+      Button("Find", systemImage: "magnifyingglass") {}.modifier(GlassCircle()).disabled(true)
+      if roadmap.lens == .board { Menu("Sort and filter", systemImage: "line.3.horizontal.decrease.circle") {}.modifier(GlassCircle()).disabled(true) }
+    }.padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.related)
   }
 
   // The switch row stands in the bar's own safe area on iOS 26, and on the bar material over the list before it.

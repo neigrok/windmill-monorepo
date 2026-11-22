@@ -55,11 +55,16 @@ final class RoadmapModel {
     let relocks: Int
   }
 
-  // A screen on the room's stack over the Board: All Roadmaps, or a step's page with the row that opened it as its
-  // event names it, a Board row, the web's card, or a row of another step's page.
+  // The room's two views of the open roadmap.
+  enum Lens: String {
+    case board, graph
+  }
+
+  // A screen on the room's stack over the Board: All Roadmaps, or a step's page with what opened it as its event names
+  // it, a Board row, the web's card, a row of another step's page, or the Graph's bar of the selected step.
   enum Visit: Hashable {
     enum Door: String {
-      case card, step
+      case card, step, graph
     }
 
     case roadmaps
@@ -247,8 +252,9 @@ final class RoadmapModel {
   // The types the domain reads one roadmap from, in its tree scope and in its owner's overlay.
   static let treeTypes = [RoadmapMeta.type, RoadmapStep.type, RoadmapLink.type, RoadmapKind.type]
   static let overlayTypes = [StepMark.type, StepPointer.type]
-  // Where the phone keeps the id of the roadmap last open.
+  // Where the phone keeps the id of the roadmap last open, and the view each roadmap was last switched to.
   static let lastOpen = "roadmapLastOpen"
+  static let lastLens = "roadmapLastLens"
   static let bandLasts = Duration.seconds(6)
 
   let records: Records
@@ -258,12 +264,15 @@ final class RoadmapModel {
   let phone: UserDefaults
   let telemetry: any Telemetry
   let wait: Wait
+  // The Graph of the open roadmap: its picture, its camera and its captions.
+  let graph: RoadmapGraph
   // A step that goes while its page is open, deleted here or by another device, takes the stack back to the Board, and
   // so does the last roadmap going while All Roadmaps is open. The form closes once its roadmap is not the open one, or
-  // the step it edits is gone.
+  // the step it edits is gone, and a selected step that is gone is selected no longer.
   private(set) var phase = Phase.unread {
     didSet {
       if let draft, draft.open == nil { self.draft = nil }
+      if let selected, shown?.step(selected) == nil { self.selected = nil }
       guard !path.isEmpty else { return }
       if case .open(let open) = phase, path.allSatisfy({ (visit: Visit) -> Bool in
         guard case .step(let step, _) = visit else { return true }
@@ -289,6 +298,13 @@ final class RoadmapModel {
   private(set) var roadmaps: [ListedRoadmap] = []
   private(set) var band: Band?
   private(set) var question: Question?
+  // The view the switch row chose of the open roadmap: its own on this phone, the Board until it is switched (the
+  // web's `ViewPrefs`).
+  private(set) var lens = Lens.board
+  // The step selected on the Graph, which leads its captions.
+  private(set) var selected: String? {
+    didSet { graph.attend(to: selected) }
+  }
   // The New Roadmap sheet stands open.
   private(set) var naming = false
   // The draft the step form stands open on, New Step's or Edit's.
@@ -307,8 +323,21 @@ final class RoadmapModel {
   @ObservationIgnored var bandTime: Task<Void, Never>?
 
   init(records: @escaping Records, runner: ActionRunner, phone: UserDefaults, telemetry: any Telemetry = NoopTelemetry(),
-       wait: @escaping Wait = { try await Task.sleep(for: $0) }) {
+       wait: @escaping Wait = { try await Task.sleep(for: $0) }, graph: RoadmapGraph? = nil) {
     self.records = records; self.runner = runner; self.phone = phone; self.telemetry = telemetry; self.wait = wait
+    self.graph = graph ?? RoadmapGraph(telemetry: telemetry)
+  }
+
+  // The roadmap the room has open, where it has one.
+  var shown: OpenRoadmap? {
+    guard case .open(let open) = phase else { return nil }
+    return open
+  }
+
+  // What the room shows of a roadmap: the view the switch row chose, and of a roadmap with no step the Board, which
+  // asks for the first, under either choice.
+  func view(of open: OpenRoadmap) -> Lens {
+    open.board.overall.total == 0 ? .board : lens
   }
 
   // The room came to the front.
@@ -374,15 +403,38 @@ final class RoadmapModel {
       return
     }
     if !listed.id.utf8.elementsEqual(last.utf8) { phone.set(listed.id, forKey: Self.lastOpen) }
-    // Another roadmap opens with its Board at rest: Done folded, unless every step is done. On the one shown, Done opens
-    // by itself once every step is done, and rests folded again once one is not.
-    if case .open(let shown) = phase, shown.listed.id.utf8.elementsEqual(listed.id.utf8) {
+    // Another roadmap opens with its Board at rest, Done folded unless every step is done, in the view it was last
+    // switched to, and with no step selected. On the one shown, Done opens by itself once every step is done, and rests
+    // folded again once one is not.
+    if let shown, shown.listed.id.utf8.elementsEqual(listed.id.utf8) {
       if open.everyStepDone && !shown.everyStepDone { folded.remove(.done) }
       if !open.everyStepDone && shown.everyStepDone { folded.insert(.done) }
     } else {
       folded = open.everyStepDone ? [] : [.done]
+      lens = (phone.dictionary(forKey: Self.lastLens)?[listed.id] as? String).flatMap { Lens(rawValue: $0) } ?? .board
+      selected = nil
     }
     phase = .open(open)
+    if view(of: open) == .graph { graph.follow(open.graph, of: listed.id) }
+  }
+
+  // The switch row's choice: the open roadmap's view, kept for it on this phone. The Graph then follows the roadmap as
+  // the phone's copy reads it, and the time to its first frame runs from the tap.
+  func show(_ lens: Lens) {
+    guard let shown, lens != self.lens else { return }
+    self.lens = lens
+    phone.set((phone.dictionary(forKey: Self.lastLens) ?? [:]).merging([shown.listed.id: lens.rawValue]) { _, chosen in chosen }, forKey: Self.lastLens)
+    telemetry.event("roadmap_view_switch", properties: ["view": lens.rawValue])
+    guard view(of: shown) == .graph else { return }
+    graph.opened()
+    graph.follow(shown.graph, of: shown.listed.id)
+  }
+
+  // A tap on the Graph: the step it took is the selected one, and a tap on empty canvas selects none.
+  func select(_ step: String?) {
+    let row = step.flatMap { shown?.step($0) }
+    if let row, row.id != selected { telemetry.event("roadmap_graph_select", properties: ["column": row.card.column.rawValue]) }
+    selected = row?.id
   }
 
   // What the view of one type in one scope holds, nil until it has loaded.
@@ -505,7 +557,7 @@ final class RoadmapModel {
   func newStep(from door: StepDraft.Door) {
     guard case .open(let open) = phase else { return }
     draft = StepDraft(new: runner.mint(RoadmapStep.self, in: open.id.tree), of: open.id, by: door, in: self)
-    telemetry.event("roadmap_board_create", properties: ["step": "open", "door": door.rawValue, "view": "board"])
+    telemetry.event("roadmap_board_create", properties: ["step": "open", "door": door.rawValue, "view": view(of: open).rawValue])
   }
 
   // Edit, in a step page's bar, raises the form over the page on a draft of the step.
@@ -515,8 +567,9 @@ final class RoadmapModel {
     telemetry.event("roadmap_step_edit", properties: ["step": "open", "door": StepDraft.Door.page.rawValue])
   }
 
-  // A roadmap chosen in the title menu or in All Roadmaps is the open one, on its Board, and the one the phone
-  // remembers. Choosing the open one only returns to its Board.
+  // A roadmap chosen in the title menu or in All Roadmaps is the open one, in the view it was last switched to, and
+  // the one the phone remembers; the time to a Graph's first frame runs from the tap. Choosing the open one only
+  // returns to the view it shows.
   func open(_ roadmap: String, from place: Place) {
     path = []
     if case .open(let shown) = phase, shown.listed.id.utf8.elementsEqual(roadmap.utf8) { return }
@@ -525,6 +578,7 @@ final class RoadmapModel {
     phone.set(roadmap, forKey: Self.lastOpen)
     telemetry.event("roadmap_sheet", properties: ["step": "switch", "door": place.rawValue])
     observe()
+    if shown.map({ view(of: $0) == .graph }) ?? false { graph.opened() }
   }
 
   // The first search of All Roadmaps in one visit is told.

@@ -8,9 +8,12 @@ description and shared links, *Requires* and *Opens*, *Complete* and *Reset* in 
 menu's *Delete Step* with its question; the step form, New Step from the foot's + and from an empty roadmap, and *Edit*
 from a step's page: Name, Description, *Kind*, *Requires* and *Opens* pushed inside the sheet, their refusals as
 footers, *Discard draft?*, the created step shown on the Board and each save with its *Undo*, without its *Roadmap* row,
-its *Links*, *Edit Kinds* or Coach's composer; and the room's roadmaps: the title menu with the three most recent, *All
+its *Links*, *Edit Kinds* or Coach's composer; the room's roadmaps: the title menu with the three most recent, *All
 Roadmaps…*, *New Roadmap*, *Rename* and *Delete Roadmap*, All Roadmaps with its search and its swipe to Delete, New
-Roadmap for a blank roadmap, renaming in the bar, and a roadmap's delete asked once and held with *Undo*.
+Roadmap for a blank roadmap, renaming in the bar, and a roadmap's delete asked once and held with *Undo*; and the Graph:
+the switch row's *Board | Graph*, the canvas with its discs, connectors and captions, one finger's pan and a pinch, a
+step selected with its bar in the band slot and its page from there, and an empty roadmap, without *Next* and its menu,
+*Fit*, Find, a step that opens a roadmap's mark or Coach's composer.
 [Roadmap on iOS](../../foundation/roadmap-ios.md) §13 lists what is not built. The boards are on the Roadmap file's
 [Roadmap · iOS](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=648-2) page. Each board's
 caption names the SwiftUI element of every part, and each section ends with a NOTE of its stock parts, its
@@ -153,9 +156,27 @@ kind ramp. They bind to the Roadmap file's *iOS · Roadmap roles* collection in 
 | `roadmap/kind-plum` | `#B06FA6` | `#8D4F83` | the Plum hue |
 | `roadmap/connector` | `#2E2E32` | `#D3C2A0` | a Graph connector from an unfinished step |
 | `roadmap/connector-lit` | `#7E7C77` | `#9C6B44` | a Graph connector from a completed step |
+| `roadmap/locked-build-fill` | `#3F2A1D` | `#ECD7C6` | a Locked Build disc on the Graph: its fill |
+| `roadmap/locked-build-ring` | `#5F3B26` | `#DFBBA4` | a Locked Build disc on the Graph: its ring |
+| `roadmap/locked-build-glyph` | `#74462C` | `#D7AA8E` | a Locked Build disc on the Graph: its dot |
+| `roadmap/locked-learn-fill` | `#31311D` | `#DEDEC6` | a Locked Learn disc on the Graph: its fill |
+| `roadmap/locked-learn-ring` | `#454827` | `#C5C9A4` | a Locked Learn disc on the Graph: its ring |
+| `roadmap/locked-learn-glyph` | `#51572D` | `#B5BB8F` | a Locked Learn disc on the Graph: its dot |
+| `roadmap/locked-milestone-fill` | `#413318` | `#EDE0C2` | a Locked Milestone disc on the Graph: its fill |
+| `roadmap/locked-milestone-ring` | `#634D1E` | `#E3CE9C` | a Locked Milestone disc on the Graph: its ring |
+| `roadmap/locked-milestone-glyph` | `#785D22` | `#DCC184` | a Locked Milestone disc on the Graph: its dot |
+| `roadmap/locked-brick-fill` | `#3B231A` | `#E7D0C3` | a Locked Brick disc on the Graph: its fill |
+| `roadmap/locked-brick-ring` | `#572E21` | `#D7AF9F` | a Locked Brick disc on the Graph: its ring |
+| `roadmap/locked-brick-glyph` | `#693525` | `#CC9987` | a Locked Brick disc on the Graph: its dot |
+| `roadmap/locked-sky-fill` | `#2B2F2F` | `#D7DCD8` | a Locked Sky disc on the Graph: its fill |
+| `roadmap/locked-sky-ring` | `#384549` | `#B8C6C6` | a Locked Sky disc on the Graph: its ring |
+| `roadmap/locked-sky-glyph` | `#41535A` | `#A4B7BB` | a Locked Sky disc on the Graph: its dot |
+| `roadmap/locked-plum-fill` | `#35232B` | `#E1D0D4` | a Locked Plum disc on the Graph: its fill |
+| `roadmap/locked-plum-ring` | `#4B2F41` | `#CCAFBF` | a Locked Plum disc on the Graph: its ring |
+| `roadmap/locked-plum-glyph` | `#5A3650` | `#BE9AB2` | a Locked Plum disc on the Graph: its dot |
 
 A Locked step's disc on the Graph takes its kind's locked tier — `roadmap/locked-<kind>-fill`, `-ring` and
-`-glyph`, eighteen roles whose values are the web's `locked/<hue>-*`. Destructive labels are the system
+`-glyph`, the eighteen roles above, whose values are the web's `locked/<hue>-*`. Destructive labels are the system
 red (`#FF453A` dark, `#FF3B30` light), which the system supplies; brick is a kind, never a warning.
 
 As text, the light accent `#9D5330` measures 5.19:1 on `roadmap/canvas`, 5.65:1 on `roadmap/card` and

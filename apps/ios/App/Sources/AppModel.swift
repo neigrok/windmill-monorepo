@@ -154,7 +154,8 @@ final class AppModel {
     gym = GymModel(runner: runner, runtime: runtime, telemetry: telemetry, phone: preferences)
     roadmap = runtime.flatMap { (runtime: AppRuntime) -> RoadmapModel? in
       guard runtime.settings.roadmapRoom else { return nil }
-      return RoadmapModel(records: RoadmapFixture.records(runtime), runner: runtime.roadmapRunner, phone: preferences, telemetry: telemetry)
+      return RoadmapModel(records: RoadmapFixture.records(runtime), runner: runtime.roadmapRunner, phone: preferences, telemetry: telemetry,
+                          graph: RoadmapGraph(telemetry: telemetry, measured: RoadmapFixture.graphMeasures()))
     }
     let lastRoom = Room(rawValue: preferences.string(forKey: "lastRoom") ?? "") ?? .journal
     selectedRoom = lastRoom == .roadmap && roadmap == nil ? .journal : lastRoom
