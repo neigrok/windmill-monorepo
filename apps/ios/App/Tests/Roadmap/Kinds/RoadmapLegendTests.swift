@@ -180,7 +180,7 @@ import SyncTesting
     let (engine, runner, memory, suite) = phone()
     defer { memory.removePersistentDomain(forName: suite) }
     let model = try await learnToSail(engine, runner, memory)
-    let page = LastRead<RoadmapLegend.Entry>()
+    let page = RoadmapKindPage.LastRead()
     var subject = RoadmapLegend.Subject.hue("sky")
     #expect(page.read(model.shown?.legend.entry(subject))?.name == "Sky")
 
