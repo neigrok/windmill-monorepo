@@ -241,7 +241,8 @@ import XCTest
   }
 
   // Roadmap · iOS 01.1, 03.1 and 03.5: a Board row opens its step's page, read whole from the phone's copy, whose rows
-  // open their steps on the same stack. What waits for its own screen is not drawn.
+  // open their steps on the same stack, with the person's workspace under them. What waits for its own screen is not
+  // drawn.
   func testABoardRowOpensItsStepsPageAndItsRowsOpenTheirSteps() {
     let app = launch("roadmap-learn-to-sail")
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
@@ -256,7 +257,8 @@ import XCTest
     XCTAssertEqual(stepRows(app), ["Sky, Name the boat parts", "Build, Leave the dock, Locked · 1 to go"])
     XCTAssertTrue(app.buttons["roadmap-complete"].isEnabled && app.buttons["roadmap-step-more"].exists && app.buttons["roadmap-step-edit"].isEnabled)
     XCTAssertFalse(app.navigationBars.staticTexts["Read the wind"].exists, "The bar carries no title while the name is on the page")
-    for absent in [app.buttons["roadmap-new-step"], app.staticTexts["Subtasks"], app.staticTexts["History"], app.buttons["Open Roadmap"]] {
+    XCTAssertEqual(app.descendants(matching: .any)["roadmap-step-subtasks"].label, "Subtasks, Only you")
+    for absent in [app.buttons["roadmap-new-step"], app.staticTexts["History"], app.buttons["Open Roadmap"]] {
       XCTAssertFalse(absent.exists)
     }
     XCTAssertFalse(app.tabBars.firstMatch.exists)
@@ -475,7 +477,8 @@ import XCTest
     XCTAssertFalse(commit.isEnabled || refusal.exists)
     XCTAssertTrue(app.staticTexts["Lands in Up next"].exists)
     // The rows whose screens are not built are left out: the form's Roadmap row would read as Kind's does.
-    for unbuilt in ["Roadmap, None", "Links", "Add Link", "Edit Kinds", "Delete Step"] { XCTAssertFalse(app.staticTexts[unbuilt].exists || app.buttons[unbuilt].exists) }
+    XCTAssertTrue(app.staticTexts["Links"].exists && app.buttons["roadmap-form-add-link"].exists)
+    for unbuilt in ["Roadmap, None", "Edit Kinds", "Delete Step"] { XCTAssertFalse(app.staticTexts[unbuilt].exists || app.buttons[unbuilt].exists) }
     name.tap()
     name.typeText("Reef")
     XCTAssertTrue(commit.wait(for: \.isEnabled, toEqual: true, timeout: 5))

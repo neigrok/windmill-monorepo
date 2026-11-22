@@ -7,8 +7,8 @@ import SyncCore
 // The step form's draft (Roadmap · iOS 05.1 to 05.8): what a person sets of a step before Create or Save writes it, as
 // one gesture through the room's write door. A new step takes its id as the form opens; a draft of a step starts from
 // what its page shows. What the form offers is read from the open roadmap as it stands: the six kinds, the steps a list
-// may take and the ones that would close a loop, and the group the step would land in. What a name, a description and a
-// link may be is the domain's, and so is every refusal of the save.
+// may take and the ones that would close a loop, and the group the step would land in. What a name, a description, a
+// link between steps and a link the step shares may be is the domain's, and so is every refusal of the save.
 @Observable @MainActor
 final class StepDraft: Identifiable {
   // A step's id as the domain's acts take it. The draft is itself identified, as the sheet it stands in asks, so inside
@@ -32,6 +32,12 @@ final class StepDraft: Identifiable {
     case loop(StepID, Side)
   }
 
+  // A link the step shares with everyone who reads it: its address and the title it is given.
+  struct SharedLink: Equatable {
+    let url: String
+    let label: String
+  }
+
   // What the form sets of a step.
   struct Fields: Equatable {
     var name = ""
@@ -40,6 +46,8 @@ final class StepDraft: Identifiable {
     // In the order chosen: a new step is placed after the first step it requires.
     var requires: [StepID] = []
     var opens: [StepID] = []
+    // In the step's order: a link added joins at the end.
+    var links: [SharedLink] = []
   }
 
   // One of the six kinds a step may wear: its hue, the name the roadmap gives it, or the hue's own, and its description.
@@ -93,7 +101,8 @@ final class StepDraft: Identifiable {
     door = .page
     isNew = false
     base = Fields(name: RoadmapModel.name(typed: page.row.step.label), description: page.row.step.description, kind: page.row.step.color,
-                  requires: page.requires.map { StepID(RecordID($0.id)) }, opens: page.opens.map { StepID(RecordID($0.id)) })
+                  requires: page.requires.map { StepID(RecordID($0.id)) }, opens: page.opens.map { StepID(RecordID($0.id)) },
+                  links: page.row.step.links.map { SharedLink(url: $0.url, label: $0.label) })
     fields = base
   }
 
@@ -132,7 +141,25 @@ final class StepDraft: Identifiable {
   // Whether the draft holds anything a save would write.
   var isChanged: Bool {
     label != base.name || fields.description != base.description || fields.kind != base.kind
-      || Set(fields.requires) != Set(base.requires) || Set(fields.opens) != Set(base.opens)
+      || Set(fields.requires) != Set(base.requires) || Set(fields.opens) != Set(base.opens) || fields.links != base.links
+  }
+
+  // The links the step shares, as the draft holds them: every one, whatever its address, so a save drops none.
+  var links: [SharedLink] { fields.links }
+
+  // Add Link is offered while the step holds fewer links than the domain takes.
+  var takesLink: Bool { fields.links.count < RoadmapSpecs.links.max }
+
+  // Add, in the link form: the address with its title, without the blanks around it, joins the draft.
+  func add(link address: LinkAddress, titled typed: String) {
+    guard takesLink else { return }
+    fields.links.append(SharedLink(url: address.url.absoluteString, label: RoadmapModel.name(typed: typed)))
+  }
+
+  // A link's swipe in the form: it leaves the draft.
+  func removeLink(at place: Int) {
+    guard fields.links.indices.contains(place) else { return }
+    fields.links.remove(at: place)
   }
 
   // Create is offered once the step has a name, and Save once a named step is changed.
@@ -256,7 +283,8 @@ final class StepDraft: Identifiable {
 
   // The draft's one save, as the acts of the domain it is, each reading what the ones before it wrote. A new step is
   // created after the first step it requires, linked from each, and then leads to each step it opens. A step is changed
-  // in the fields that differ, as the web's edit is (`editGesture`); the steps it opens no more let go of it; it takes
+  // in the fields that differ, as the web's edit is (`editGesture`), its shared links written whole where one was added
+  // or removed; the steps it opens no more let go of it; it takes
   // and drops what it requires; and last it leads to the steps it newly opens, so the domain reads every loop over the
   // links as they will stand.
   var acts: [AnyActAction<RoadmapRefusal>] {
@@ -264,15 +292,17 @@ final class StepDraft: Identifiable {
     let leads = { (follower: StepID) -> AnyActAction<RoadmapRefusal> in
       AnyActAction(ChangePrerequisites(tree: tree, step: follower, add: [step]))
     }
+    let shared = fields.links.map { (link: SharedLink) -> RoadmapDomain.Step.Link in RoadmapDomain.Step.Link(url: link.url, label: link.label) }
     if isNew {
-      let made = RoadmapStep.Changes(label: label, color: fields.kind, description: fields.description)
+      let made = RoadmapStep.Changes(label: label, color: fields.kind, description: fields.description, links: shared.isEmpty ? nil : shared)
       let create: [AnyActAction<RoadmapRefusal>] = [AnyActAction(CreateStep(tree: tree, step: made, prerequisites: fields.requires, id: step))]
       return create + fields.opens.map(leads)
     }
     var acts: [AnyActAction<RoadmapRefusal>] = []
     let changes = RoadmapStep.Changes(label: label == base.name ? nil : label, color: fields.kind == base.kind ? nil : fields.kind,
-                                      description: fields.description == base.description ? nil : fields.description)
-    if changes.label != nil || changes.color != nil || changes.description != nil {
+                                      description: fields.description == base.description ? nil : fields.description,
+                                      links: fields.links == base.links ? nil : shared)
+    if changes.label != nil || changes.color != nil || changes.description != nil || changes.links != nil {
       acts.append(AnyActAction(ChangeStep(tree: tree, step: step, changes: changes)))
     }
     for follower in base.opens where !fields.opens.contains(follower) {
@@ -302,7 +332,7 @@ final class StepDraft: Identifiable {
         room.telemetry.event("roadmap_board_edit", properties: [
           "step": "saved", "name": String(label != base.name), "description": String(fields.description != base.description),
           "kind": String(fields.kind != base.kind), "prerequisites": String(Set(fields.requires) != Set(base.requires)),
-          "opens": String(Set(fields.opens) != Set(base.opens)),
+          "opens": String(Set(fields.opens) != Set(base.opens)), "links": String(fields.links != base.links),
         ])
         room.show(RoadmapModel.Band(.saved(step: label), of: receipt, act: .step("edit")))
       }

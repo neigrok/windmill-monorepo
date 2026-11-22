@@ -100,9 +100,89 @@ final class RoadmapCaptures: DesignCapture {
     }
   }
 
-  // 03.1: an Up next step's page, with Complete at its foot.
+  // 03.1: an Up next step's page, with its workspace under what it opens and Complete at its foot.
   func testStepUpNext() {
-    captureBoard("03.1-roadmap-step-up-next") { look in stepPage(["Read the wind"], look) }
+    captureBoard("03.1-roadmap-step-up-next") { look in stepPage(["Read the wind"], look, board: "roadmap-workspace") }
+  }
+
+  // 03.2: the same page scrolled to its end: Subtasks, Note and Your links, each the person's alone.
+  func testStepWorkspace() {
+    captureBoard("03.2-roadmap-step-workspace") { look in
+      let app = stepPage(["Read the wind"], look, board: "roadmap-workspace")
+      _ = reach(app.buttons["roadmap-add-link"], app)
+      return app
+    }
+  }
+
+  // 03.3: every subtask checked, which the list says under itself once the band that said so has left.
+  func testStepSubtasksDone() {
+    captureBoard("03.3-roadmap-step-subtasks-done") { look in
+      let app = stepPage(["Read the wind"], look, board: "roadmap-workspace")
+      app.switches["Check the harbour flag"].tap()
+      XCTAssertTrue(app.staticTexts["roadmap-subtasks-done"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.buttons["roadmap-undo"].waitForNonExistence(timeout: 15))
+      // The list is drawn up until what it says under itself stands clear of Complete.
+      let header = app.descendants(matching: .any)["roadmap-step-subtasks"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+      header.press(forDuration: 0.1, thenDragTo: header.withOffset(CGVector(dx: 0, dy: -130)))
+      return app
+    }
+  }
+
+  // 03.10: the note on its own screen with the keyboard up, a paragraph added and two words set bold from the Format
+  // menu of the system's edit menu, which is paged to it.
+  func testStepNote() {
+    captureBoard("03.10-roadmap-step-note") { look in
+      let app = stepPage(["Read the wind"], look, board: "roadmap-workspace")
+      // The page's end brings the note's row clear of Complete.
+      _ = reach(app.buttons["roadmap-add-link"], app)
+      app.buttons["roadmap-note"].tap()
+      let note = app.textViews["roadmap-note-field"]
+      XCTAssertTrue(note.waitForExistence(timeout: 10) && app.keyboards.firstMatch.waitForExistence(timeout: 10))
+      if app.buttons["Continue"].waitForExistence(timeout: 2) { app.buttons["Continue"].tap() }
+      note.typeText("\n\nAsk which way the harbour flag points when the sea breeze fills in.")
+      // *dark* and *patches* stand on the field's first line, under the bar.
+      for word in [150.0, 205.0] {
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: word, dy: app.navigationBars["Note"].frame.maxY + 22)).doubleTap()
+        XCTAssertTrue(app.menuItems["Copy"].waitForExistence(timeout: 5))
+        app.buttons["Forward"].tap()
+        XCTAssertTrue(app.buttons["Format"].waitForExistence(timeout: 5))
+        app.buttons["Format"].tap()
+        XCTAssertTrue(app.buttons["Bold"].waitForExistence(timeout: 5) && app.buttons["Italic"].exists && !app.buttons["Underline"].exists)
+        app.buttons["Bold"].tap()
+        XCTAssertTrue(app.buttons["Bold"].waitForNonExistence(timeout: 5))
+      }
+      // A tap under the words lets go of the selection.
+      note.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8)).tap()
+      return app
+    }
+  }
+
+  // 03.11: New Link over the page, filled as the board fills it.
+  func testStepNewLink() {
+    captureBoard("03.11-roadmap-step-new-link") { look in
+      let app = stepPage(["Read the wind"], look, board: "roadmap-workspace")
+      reach(app.buttons["roadmap-add-link"], app).tap()
+      let title = app.textFields["roadmap-link-title"], address = app.textFields["roadmap-link-url"]
+      XCTAssertTrue(title.waitForExistence(timeout: 10))
+      title.tap()
+      title.typeText("Telltale guide")
+      address.tap()
+      address.typeText("rya.org.uk/telltales")
+      XCTAssertTrue(app.buttons["roadmap-link-add"].wait(for: \.isEnabled, toEqual: true, timeout: 5))
+      return app
+    }
+  }
+
+  // 03.14: Add Subtask with the keyboard, the words typed in the row and the foot away.
+  func testStepAddingSubtask() {
+    captureBoard("03.14-roadmap-step-adding-subtask") { look in
+      let app = stepPage(["Read the wind"], look, board: "roadmap-workspace")
+      let field = app.textFields["roadmap-add-subtask"]
+      field.tap()
+      XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+      field.typeText("Ask about the tide table")
+      return app
+    }
   }
 
   // 03.4: the step completed in place, the page turned Done with Reset and the band saying what opened.
@@ -301,15 +381,15 @@ final class RoadmapCaptures: DesignCapture {
     return app
   }
 
-  func learnToSail(_ look: Look) -> XCUIApplication {
-    let app = launch("roadmap-learn-to-sail", look)
+  func learnToSail(_ look: Look, board: String = "roadmap-learn-to-sail") -> XCUIApplication {
+    let app = launch(board, look)
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
     return app
   }
 
   // The page of the last step named, reached from the Board through a row of each page before it.
-  func stepPage(_ steps: [String], _ look: Look) -> XCUIApplication {
-    let app = learnToSail(look)
+  func stepPage(_ steps: [String], _ look: Look, board: String = "roadmap-learn-to-sail") -> XCUIApplication {
+    let app = learnToSail(look, board: board)
     for step in steps {
       reach(app.roadmapStep(step), app).tap()
       XCTAssertTrue(app.roadmapStepPage(step))

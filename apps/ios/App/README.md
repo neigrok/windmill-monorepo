@@ -89,27 +89,34 @@ where the build setting `WM_ROADMAP_ROOM_ENABLED` is `YES`: `project.yml` sets i
 `AppSettings.roadmapRoom` reads it from the Info.plist. Without it the app has no `RoadmapModel`, no Roadmap row in the room
 menu, no Roadmap door, and an engine that subscribes no roadmap scope. `Sources/Roadmap/RoadmapModel.swift` observes the
 engine's views of every record of the person's roadmaps (`RoadmapModel.Records`, one view a type in each roadmap's tree scope
-and in their overlay of it) and reads them through `RoadmapDomain`: the list from `RoadmapAccount.list()`, each roadmap as
-`RoadmapTree(id:listed:tree:overlay:read:)`, and the open one as `RoadmapModel.OpenRoadmap`, which holds its `BoardRead` and
+and in their overlay of it, the marks, the pointers and the workspace's subtasks, links and notes) and reads them through
+`RoadmapDomain`: the list from `RoadmapAccount.list()`, each roadmap as
+`RoadmapTree(id:listed:tree:overlay:read:)`, and the open one as `RoadmapModel.OpenRoadmap`, which holds its `BoardRead`,
 every step's row by the step's id (`OpenRoadmap.step(_:)`; `Row`: the step, its card, the kind that owns its hue, and whether
-the room offers Complete, Reset and Delete on it). That one row is what a Board group, the step's own page and a row of
+the room offers Complete, Reset and Delete on it) and the person's workspace of each step (`OpenRoadmap.workspaces`, read by
+`StepWorkspace.read(_:)` from the open roadmap's overlay). That one row is what a Board group, the step's own page and a row of
 another step's page show. `OpenRoadmap.page(of:)` composes a step's page from it (`OpenStep`: the row, the rows of the steps
-the step requires and of the steps it opens, and how many of those Reset would lock again). The model opens the roadmap last
+the step requires and of the steps it opens, how many of those Reset would lock again, and the step's workspace). A roadmap's
+place in the list follows every record of its overlay, so a workspace changed on another device moves it up as a mark
+does, as the web's list reads it. The model opens the roadmap last
 open, else the most recent, and makes no request. `open(_:from:)` makes another roadmap the open one and remembers it
 (`RoadmapModel.lastOpen`), and a roadmap the room made, or brought back by Undo, is opened once the list holds it
 (`arriving`). The model keeps which groups stand folded, Done at rest and open by itself once every step is done, another
-roadmap opening with its Board at rest, and the screens on the room's stack (`path`, each a `Visit`: All Roadmaps, or a
-step's page with what opened it), which empties once a step whose page is open goes, deleted here or by another
-device, or once the last roadmap goes. It also holds the draft the step form stands open on (`draft`), which it lets go
-once the draft's roadmap is not the open one or the step it edits is gone. And it holds the view the switch row chose of
+roadmap opening with its Board at rest, and the screens on the room's stack (`path`, each a `Visit`: All Roadmaps, a
+step's page with what opened it, or a step's note over its page), which empties once a step whose page or note is open
+goes, deleted here or by another device, or once the last roadmap goes. It also holds the draft the step form stands
+open on (`draft`), which it lets go once the draft's roadmap is not the open one or the step it edits is gone, and the
+draft the note's screen stands open on (`note`, a `StepNoteDraft`), made as that screen is pushed and saved as it
+leaves the stack or the app leaves the front (`background()`). And it holds the view the switch row chose of
 each roadmap (`lens`, set by `show(_:)` and kept on the phone under `RoadmapModel.lastLens`, the Board until it is
 switched, as the web's `ViewPrefs` keeps it), the step selected on the Graph (`selected`, set by `select(_:)`, which goes
 once its step does or another roadmap opens), and the open roadmap's Graph (`graph`, a `RoadmapGraph`), which it has
 follow the roadmap as the phone's copy reads it while the Graph is the view. `pick(_:)` selects a step chosen from the
 Graph's *Next* and has the Graph bring it into view, and `fit()` and `unfit()` start and end the Graph's Fit.
 
-The model's write door is `write(_:as:)`: one act of `RoadmapDomain` run on `AppRuntime.roadmapRunner`, or several as one
-gesture (`ActionRunner.runComposed`), each reading what the ones before it wrote. It answers what the write came to
+The model's write door is `write(_:as:)`: one act of `RoadmapDomain` run on `AppRuntime.roadmapRunner`, several as one
+gesture (`ActionRunner.runComposed`), each reading what the ones before it wrote, or a draft's one save
+(`ActionRunner.save`, whose receipt the door answers as an act's). It answers what the write came to
 (`RoadmapModel.Written`: committed with its receipt, unchanged, the domain's refusal, or failed), and tells it in one place
 whoever asked (`told(as:_:)`): a refusal as an event, and in the band where it is a limit, and a failed commit as a report.
 `complete(_:by:)` and `reset(_:)` run `MarkStep`; a delete is asked first
@@ -169,9 +176,46 @@ shared links, each opened where its address is `http`, `https` or `mailto`; and 
 each row opening its step. An Up next step that opens no roadmap has *Complete* at its foot: the page stays, and the band says
 what opened. *Reset* asks nothing. *Edit* in the bar raises the step's form over the page. The … menu holds *Delete Step*,
 which asks on the … button and, answered, returns to the Board with the step held; the roadmap's one starting step has no
-menu. Left out until their screens are built: the menu's *Open in Graph*, *View Branch*, *Attach a Roadmap* and *Copy Link*,
-the workspace (*Subtasks*, *Note*, *Your links*), *History*, the Coach circle and composer, and a step that opens a
-roadmap's pill and *Open Roadmap*.
+menu. After *Opens* the page lists the person's workspace of the step, and its foot is away while *Add Subtask* has the
+keyboard. Left out until their screens are built: the menu's *Open in Graph*, *View Branch*, *Attach a Roadmap* and
+*Copy Link*, *History*, the Coach circle and composer, and a step that opens a roadmap's pill and *Open Roadmap*.
+
+`Step/StepWorkspace.swift` is a step's private workspace as its page reads it, and its acts. `StepWorkspace.read(_:)`
+composes every step's workspace from one overlay's records, as the web's room does (`HeldRoadmap.workspace`): the
+subtasks and the links in the order of their overlay's lists, a link only where its address is one a page opens, and
+the note the overlay draws. `LinkAddress` reads an address as the web's room does: a page opens http, https and mailto
+(`SAFE_URL`), and an address a person types takes https where it names no scheme and is a link once it is a web address
+with a host (`workspaceLink`); it is stored as Foundation spells it. The acts are the room's, each one act of the
+domain through the write door under the write name `workspace`: `addSubtask(_:to:)` (`AddSubtask`, the words without
+the blanks around them, nothing for blanks alone), `toggle(_:)` (`ChangeSubtask`), `remove(_:)` (`DeleteSubtask`,
+`DeleteStepLink`) and `addLink(_:titled:to:)` (`AddStepLink`). The band offers *Undo* where the web's page does and
+where the engine holds: a subtask checked says *… checked* with *Undo* for six seconds (the web's `checkedToast`),
+which leaves once the subtask is unchecked, and a subtask or a link removed is held nine seconds with *Undo*; an add,
+an uncheck and a note's save keep none, as the web's room keeps none (`ReplicaWorkspace`). Every record of the
+workspace is the overlay's: nothing of it is written to the roadmap's tree scope.
+`Step/StepWorkspaceSections.swift` is the workspace on the page: *Subtasks* with its count and *Only you*, each
+subtask a `Toggle` drawn as a ring that VoiceOver hears as a switch, *Add Subtask* a field in the list whose return key
+adds a subtask and keeps the field, and *All subtasks done* under the list once every one is checked, whatever group
+the step stands in, which completes nothing; *Note*, a row of the note as the page reads it that opens the note's
+screen, or *Add Note*; and *Your links*, each row opening its address, over *Add Link*. A subtask and a link slide left
+for *Delete*; a full swipe commits neither. The file also holds the link row every list of links draws (`StepLinkRow`)
+and New Link (`NewLink`), the two-field sheet both the page and the step form raise: *Add* waits for an address
+`LinkAddress(typed:)` reads, and each field stops at the domain's limit.
+`Step/StepNoteDraft.swift` is the note's draft, the kit's one `Draft<StepNote>` of the step's note, opened on what the
+overlay draws or new, saved once through the door under the write name `note`, and opened again on what another device
+wrote while it holds nothing unsaved; a draft that does keeps the person's words, which the engine merges at its save.
+The file also holds `NoteText`, the dialect the web's page writes and reads (`renderMarkdown`, `formatNote`): a line
+that starts with a dash is a list item, and within a line `**bold**`, `*italic*` and `[words](address)`, read a code
+point at a time as the web's patterns read them. `Step/RoadmapNoteEditor.swift` is the note's screen, pushed over the
+page with the keyboard up and *Done* in the bar. On iOS 26 its field is the system's formatted editor
+(`TextEditor` over an `AttributedString`): a selection's *Format* menu sets words bold or italic, the field shows them
+so, and each change is written back to the note's text between the web's marks; a link the phone opens shows as its
+words, and every other mark stands as it is written. The field takes a font and a link alone, so the menu offers
+*Bold*, *Italic* and *More…*, the system's panel of typeface, size and colour, and no Underline; the note's text keeps
+bold and italic alone. What the dialect cannot hold is written plain: bold and italic at once is written bold, and bold
+or italic words that hold an asterisk lose their marks. The system's menu offers no link and no list, so on the phone a
+list item is a line typed with its dash and a new link is typed with its marks. Before iOS 26 the field edits the
+note's text as it is written.
 `Components/RoadmapStepRow.swift` is the row every list of steps draws and the words a step is said in;
 `Components/RoadmapChrome.swift` is the foot every screen of the room stands on (`roadmapFoot`: the band over the screen's
 own control), the band's words, the delete question a step's Board row, its page and its form ask, and the one both the
@@ -221,12 +265,15 @@ their screens are built: Find on the Graph,
 the mark and progress of a step that opens a roadmap, a proposal's changes and a reader's cover.
 
 `Step/StepDraft.swift` is the step form's draft, which `newStep(from:)` and `edit(_:)` make and the model holds while the
-form is open: what a person sets of a step (its name, description and kind, the steps it requires and the steps it opens)
-beside what the step held as the form opened, so `isChanged` and `commits` say what *Create* or *Save* would write. A new
+form is open: what a person sets of a step (its name, description and kind, the steps it requires, the steps it opens and
+the links it shares) beside what the step held as the form opened, so `isChanged` and `commits` say what *Create* or
+*Save* would write. A new
 step's id is minted as the form opens. `save()` is the draft's one write, through the model's door as one gesture:
-`CreateStep` with what the step requires, then `ChangePrerequisites` on each step it opens; or, for a step, `ChangeStep`
-with the fields that differ and `ChangePrerequisites` for each link taken or dropped, the links dropped first, so the
-domain reads every loop over the links as they will stand. Written, the form closes and the band holds *Undo* for six
+`CreateStep` with what the step requires and the links it shares, then `ChangePrerequisites` on each step it opens; or,
+for a step, `ChangeStep` with the fields that differ, its shared links written whole where one was added or removed, and
+`ChangePrerequisites` for each link between steps taken or dropped, the ones dropped first, so the domain reads every
+loop over those links as they will stand. The draft lists every link the step shares, whatever its address, so a save
+drops none, and offers no more at the domain's 32. Written, the form closes and the band holds *Undo* for six
 seconds, which takes the whole gesture back; a new step's group opens on the Board, which scrolls to the step and washes
 it while the band stands. Refused or failed, the form stays open. What a name, a description and a link may be, and every
 refusal of the save, are the domain's. Seven facts the draft settles itself, as the web's editor does: a new draft starts
@@ -250,8 +297,10 @@ disabled, so a tap on one can be refused and named. Under the links one footer s
 for a new step and for a step only where the change would move it to another group. *Cancel* closes an unchanged draft
 and asks *Discard draft?* on a changed one, which a swipe down does not send away; *Create* needs a name and *Save* a
 change. A step that may go has *Delete Step* in the form, which asks there as its page does. The room's band stands at
-the sheet's foot, away while a field has the keyboard. Left out until their screens are built: the *Roadmap* row, *Links*
-and *Add Link*, *Edit Kinds* and Coach's composer.
+the sheet's foot, away while a field has the keyboard. Under the placement footer *Links* lists the links the step
+shares, each sliding left for *Delete*, over *Add Link*, which raises New Link over the form; a link there only stands,
+and opens on the step's page. Left out until their screens are built: the *Roadmap* row, *Edit Kinds* and Coach's
+composer.
 
 A roadmap with no step says *Your first step* over *New Step*, which opens the form as the foot's + does, under the Graph
 as under the Board, and one with every step done says so over Done. Find, the Board's Sort and filter and a finished
@@ -262,7 +311,10 @@ apart and *Read the wind* sharing one link, so it arrives by sync; `-board roadm
 done; `-board roadmap-no-steps` is *Night sailing*, with no step; `-board roadmap-several` is that account with two
 more roadmaps, each received a second after the one before so the list has an order: *Learn to sail* the most recent,
 then *Spanish B1* with the steps 01.11 draws, and *Become a day skipper*, whose step *Learn to sail* opens that roadmap
-by its pointer; `-board roadmap-many` is a phone never signed in that holds the nine roadmaps All Roadmaps draws,
+by its pointer; `-board roadmap-workspace` is *Learn to sail* with the workspace the boards draw on *Read the wind*, two
+subtasks, the first checked, a note and one link, planted by the account's other phone; `-board roadmap-two-phones` is
+*Learn to sail* whose account's other phone stays on the model server until the room has a step's page open, then adds
+the subtask *Ask about the tide table* to that step; `-board roadmap-many` is a phone never signed in that holds the nine roadmaps All Roadmaps draws,
 *Learn to sail* the one last open, listed in the order of their ids since no server has received them; `-board
 roadmap-handbook` is a phone never signed in that holds *Coastal navigation handbook*, the 5,000 steps, links and colours
 of the layout's shared fixture, read from the repository the build was made in and planted through the domain, so its

@@ -3,10 +3,10 @@ import UIKit
 import RoadmapDomain
 
 // The Roadmap room (Roadmap · iOS S.1, S.2, 01.3, 01.5, 04.5, 04.7, 11.22a): one stack, the open roadmap under its name
-// with the switch row, its Board or its Graph, and at the foot the one band over New step. All Roadmaps and a step's
-// page are pushed on the stack, and New Roadmap and the step form are its two sheets. What the band says is announced
-// and felt once, whichever screen stands over it. While the Graph's Fit stands, the bar, the switch row and the foot
-// are away.
+// with the switch row, its Board or its Graph, and at the foot the one band over New step. All Roadmaps, a step's page
+// and its note are pushed on the stack, and New Roadmap and the step form are its two sheets. What the band says is
+// announced and felt once, whichever screen stands over it. While the Graph's Fit stands, the bar, the switch row and
+// the foot are away.
 struct RoadmapRoom: View {
   @Bindable var roadmap: RoadmapModel
   let app: AppModel
@@ -26,6 +26,7 @@ struct RoadmapRoom: View {
           switch visit {
           case .roadmaps: RoadmapsList(roadmap: roadmap)
           case .step(let step, _): RoadmapStepPage(roadmap: roadmap, step: step)
+          case .note: RoadmapNoteEditor(roadmap: roadmap)
           }
         }
     }.onAppear { roadmap.roomOpened() }

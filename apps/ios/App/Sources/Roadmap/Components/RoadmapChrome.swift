@@ -51,14 +51,18 @@ extension RoadmapModel.Band.Says {
       return String(localized: "\(locked) steps locked again", locale: .copy,
                     comment: "The band after a step is reset: how many steps it returned to Locked")
     case .deleted(let step):
-      return String(localized: "\(RoadmapModel.Row.name(of: step)) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap")
+      return String(localized: "\(RoadmapModel.Row.name(of: step)) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title")
     case .created(let step, let group):
       return String(localized: "\(RoadmapModel.Row.name(of: step)) added · \(group.title)",
                     comment: "The band after a step is made: the step's name, and the group it landed in")
     case .saved(let step):
       return String(localized: "\(RoadmapModel.Row.name(of: step)) saved", comment: "The band after a step's changes are saved: the step's name")
     case .deletedRoadmap(let title):
-      return String(localized: "\(ListedRoadmap.name(of: title)) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap")
+      return String(localized: "\(ListedRoadmap.name(of: title)) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title")
+    case .checked(_, let label):
+      return String(localized: "\(label) checked", comment: "The band after a subtask is checked: the subtask's words")
+    case .deletedFromWorkspace(let name):
+      return String(localized: "\(name) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title")
     case .refused(.keepsStartingStep): return String(localized: "A roadmap keeps one starting step")
     case .refused(.full): return String(localized: "This roadmap is at its limit.")
     }
