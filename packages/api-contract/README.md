@@ -102,16 +102,21 @@ bound strict mode cannot state is in the description of the parameter it bounds.
 yet; `catalog.json` and `abilities/` are deleted when no released build opens a `catalog/2` turn.
 
 - `strict.py` checks it in the Coach contracts workflow: every ability's input holds only keywords
-  strict mode accepts, and each seat's tools (`agent` `runs` or `proposes`, declared, admitting the
-  seat) stay within 20 strict tools, 24 optional parameters and 16 union-typed parameters, counted at
-  every depth. It prints the counts; `python3 packages/api-contract/gym/strict.py [catalog]`.
+  and shapes strict mode accepts, each seat's tools (`agent` `runs` or `proposes`, declared,
+  admitting the seat) stay within 20 strict tools, 24 optional parameters and 16 union-typed
+  parameters, counted at every depth, and every `abilities-3/` input stands inside its schema.
+  `python3 packages/api-contract/gym/strict.py` runs both and prints the counts; given a catalog
+  path, it checks that catalog alone. `strict_test.py`, run in the same step, holds a schema for each
+  rule it refuses and each way it counts.
 - `abilities-3/` has `abilities/`'s case format. Its 18 files hold `abilities/`'s cases with the
   inputs `catalog/3` asks for (a required `review` or `limit`, `null` where a parameter is left
-  empty, no ignored `position`) and the same `expect`, and a refusal for each value just outside
-  every bound that moved out of a schema.
+  empty) and the same `expect`, a case per routine-writing ability that sends what `list_routines`
+  reads, and a refusal for each value just outside every bound that moved out of a schema.
 - `start_session`, `log_set`, `log_sets`, `import_session`, `finish_session` and `update_exercise`
-  are withheld from Coach; their files hold the refusals of their moved bounds alone, and the server
-  executor, which runs them for MCP, claims them.
+  are withheld from Coach; their files hold the refusals of their moved bounds alone, for the server
+  executor, which runs them for MCP.
+- No executor claims `abilities-3/` yet. Its refusals are hand-written, not the server's golden: they
+  are the contract each executor is held to when it moves onto `catalog/3`.
 - A value outside a moved bound is refused `invalid-arguments` before any rule reads the store, so a
   refusal case's records need not make the rest of the call succeed, though each case's do.
 

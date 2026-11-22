@@ -113,19 +113,21 @@ own executors and MCP. (R-11)
 
 - Every input schema of `catalog/3` is one strict mode accepts, and the tools a seat is offered fit
   its limits together. `packages/api-contract/gym/strict.py` counts both from the file in the Coach
-  contracts workflow, and refuses a keyword strict mode refuses in any ability's input.
+  contracts workflow, refuses a keyword or shape strict mode refuses in any ability's input, and
+  checks every corpus input against its schema.
 - A bound strict mode cannot state moves into the ability's rule, which refuses a value outside it
   as `invalid-arguments` before any rule reads the store, and into the description of the
   parameter it bounds, which tells the model. What an ability does and returns is unchanged.
 - Fewer inputs may be left out. A parameter whose usual value the model can state is required:
   `limit`, `review`. One whose absence means something no value says (every routine, the first
   page, keep the name, no summary, the equipment's step) is required and takes `null`. A field of a
-  routine's or a workout's line stays optional, so a line read back is a line sent. The inputs an
-  ability ignored are gone: a line's `position`, and a new routine's `revision`, `lastTrainedAt` and
-  `pendingProposal`.
-- The corpora are written again for `catalog/3` in `abilities-3/`, and every executor claims them:
-  the server's, Swift's, Kotlin's and the web's. The withheld abilities whose bounds moved have a
-  file of refusals there, which the server claims.
+  routine's or a workout's line stays optional, and so do the fields `list_routines` returns that a
+  write ignores (a line's `position`; a new routine's `revision`, `lastTrainedAt` and
+  `pendingProposal`), so a day read back is a day sent.
+- The corpora are written again for `catalog/3` in `abilities-3/`, and every executor will claim
+  them: the server's, Swift's, Kotlin's and the web's. No executor claims them yet; their refusals
+  are the contract each executor is held to when it moves. The withheld abilities whose bounds moved
+  have a file of refusals there, for the server executor, the one that runs them.
 - An outside assistant sees the new schemas over MCP. A build released before the move goes on
   opening `catalog/2` turns, which the server serves beside `catalog/3` until the cutover (§8).
 

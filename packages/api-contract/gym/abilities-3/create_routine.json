@@ -530,5 +530,106 @@
     "expect": {
       "refused": "invalid-arguments"
     }
+  },
+  {
+    "case": "a day read back from list_routines lands as a new day, its read-only fields ignored",
+    "seat": "bound",
+    "now": 1790000000000,
+    "zone": "UTC",
+    "given": {
+      "records": []
+    },
+    "call": {
+      "input": {"entries":[{"exerciseId":"bench-press","position":1,"restSeconds":180,"sets":[{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5},{"reps":5,"weightKg":62.5}]},{"exerciseId":"lateral-raise","position":2,"sets":[{"reps":12,"weightKg":20.25},{"reps":12,"weightKg":20.25}]}],"id":"tn7Qm2Kx9Lp4Wz8R-3","name":"Push","pendingProposal":{"changeCount":1,"id":"propAAAAAAAAAAA1","intent":"revise","routineId":"rtAAAAAAAAAAAAA1","source":{"door":"ask"},"state":"pending","summary":"Drop the bench to three sets of three."},"position":0,"revision":1},
+      "name": "create_routine"
+    },
+    "expect": {
+      "result": {
+        "entries": [
+          {
+            "exerciseId": "bench-press",
+            "position": 1,
+            "restSeconds": 180,
+            "sets": [
+              {
+                "reps": 5,
+                "weightKg": 62.5
+              },
+              {
+                "reps": 5,
+                "weightKg": 62.5
+              },
+              {
+                "reps": 5,
+                "weightKg": 62.5
+              }
+            ]
+          },
+          {
+            "exerciseId": "lateral-raise",
+            "position": 2,
+            "sets": [
+              {
+                "reps": 12,
+                "weightKg": 20.25
+              },
+              {
+                "reps": 12,
+                "weightKg": 20.25
+              }
+            ]
+          }
+        ],
+        "id": "tn7Qm2Kx9Lp4Wz8R-3",
+        "name": "Push",
+        "position": 0,
+        "revision": 1
+      },
+      "sha256": "4f3f9474705812badf2df4a56bea7340fc1c22757a2f1dfa290b855c94f0f8e3",
+      "writes": [
+        {
+          "f": {
+            "entries": [
+              {
+                "exerciseId": "bench-press",
+                "restSeconds": 180,
+                "sets": [
+                  {
+                    "reps": 5,
+                    "weightKg": 62.5
+                  },
+                  {
+                    "reps": 5,
+                    "weightKg": 62.5
+                  },
+                  {
+                    "reps": 5,
+                    "weightKg": 62.5
+                  }
+                ]
+              },
+              {
+                "exerciseId": "lateral-raise",
+                "sets": [
+                  {
+                    "reps": 12,
+                    "weightKg": 20.25
+                  },
+                  {
+                    "reps": 12,
+                    "weightKg": 20.25
+                  }
+                ]
+              }
+            ],
+            "name": "Push",
+            "position": 0
+          },
+          "id": "tn7Qm2Kx9Lp4Wz8R-3",
+          "life": "alive",
+          "t": "routine"
+        }
+      ]
+    }
   }
 ]

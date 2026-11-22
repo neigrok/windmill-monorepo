@@ -2164,6 +2164,10 @@
                   "description": "The movement's id — list_exercises answers with it.",
                   "type": "string"
                 },
+                "position": {
+                  "description": "Ignored — the order these arrive in IS the order.",
+                  "type": "integer"
+                },
                 "restSeconds": {
                   "description": "Rest between sets, 15–900. Omit to fall back to the global rest target they set in the app, and to no timer at all when they have set none.",
                   "type": "integer"
@@ -2201,12 +2205,89 @@
             "description": "The id YOU mint for this NEW routine (`rt_` + hex is the house shape).",
             "type": "string"
           },
+          "lastTrainedAt": {
+            "description": "Ignored — the log decides when a routine was last trained.",
+            "type": "integer"
+          },
           "name": {
             "description": "What this day of the program is called, at most 240 characters.",
             "type": "string"
           },
+          "pendingProposal": {
+            "description": "Ignored — a proposal belongs to the routine it was minted against and is never carried onto a new one.",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "routineId": {
+                "type": "string"
+              },
+              "intent": {
+                "type": "string",
+                "enum": [
+                  "revise",
+                  "remove"
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "applied",
+                  "dismissed",
+                  "superseded"
+                ]
+              },
+              "summary": {
+                "type": "string"
+              },
+              "changeCount": {
+                "type": "integer"
+              },
+              "source": {
+                "type": "object",
+                "properties": {
+                  "door": {
+                    "type": "string",
+                    "enum": [
+                      "ask",
+                      "mcp"
+                    ]
+                  },
+                  "connection": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
+                  "thread": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "door"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "id",
+              "routineId",
+              "intent",
+              "state",
+              "summary",
+              "changeCount",
+              "source"
+            ],
+            "additionalProperties": false
+          },
           "position": {
             "description": "Where it sits in the program, from 0 to 10000.",
+            "type": "integer"
+          },
+          "revision": {
+            "description": "Ignored — the store moves a routine's revision; a client reads it, never sends it.",
             "type": "integer"
           }
         },
@@ -2597,6 +2678,10 @@
                 "exerciseId": {
                   "description": "The movement's id — list_exercises answers with it.",
                   "type": "string"
+                },
+                "position": {
+                  "description": "Ignored — the order these arrive in IS the order.",
+                  "type": "integer"
                 },
                 "restSeconds": {
                   "description": "Rest between sets, 15–900. Omit to fall back to the global rest target they set in the app, and to no timer at all when they have set none.",

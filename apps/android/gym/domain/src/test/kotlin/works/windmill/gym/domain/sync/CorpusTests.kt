@@ -37,7 +37,8 @@ class CorpusTests {
         // The turn's exchanges replay as the phone, through :agent's driver and :gym's host on a real engine, not as vectors of this module.
         val replayedByTheTurnTests = files.filter { it.startsWith("gym/turns/") }
         val readByCatalogTests = "gym/catalog.json"
-        assertEquals((paths + abilities + readByCatalogTests + replayedByTheTurnTests).sorted(), files)
+        val claimedByNoExecutorYet = files.filter { it == "gym/catalog-3.json" || it.startsWith("gym/abilities-3/") }
+        assertEquals((paths + abilities + readByCatalogTests + replayedByTheTurnTests + claimedByNoExecutorYet).sorted(), files)
         val failures = mutableListOf<String>()
         try { RuleBookParity.check(book, paths[0]) } catch (error: Exception) {
             failures += "${paths[0]} · ${error.message}"
