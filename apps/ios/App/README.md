@@ -960,7 +960,11 @@ read, the domain's Board and legend, every step's row, the groups and what follo
 second; and the Board read again under each query a person asks of it (*Newest First*, one kind shown, Find's first key,
 a word, a branch), against a frame at 60 a second, since Find reads it at every key. It times *Recolor* and *Delete N
 Steps* too, each one act of a hundred parts and of a thousand on a phone never signed in, against the two seconds past
-which the App Hang report names the app frozen, since the room writes on the main actor; no run has measured them yet.
+which the App Hang report names the app frozen, since the room writes on the main actor. The benchmark has not run
+them. On the stepped engine's store in Debug, each part of such an act costs about 250 ms on a roadmap of 250 steps and
+2 to 3 s on one of 5,000, most of it the engine decoding a planted step's whole outbox entry at each read. So both are
+expected over budget until the engine stops doing that (the dogfood tree's
+`m1-read-a-planted-step-without-parsing-its-whole-entry`).
 `UITests/RoadmapBoardBenchmarks.swift` launches `-board roadmap-handbook`, switches to the Graph and back to the Board
 three times, and flings the list eight times down through Up next and Locked and eight times back. The app measures
 itself there (`BoardFrames`, written to the launch's `-board-measures` file): the time from the switch's tap to the

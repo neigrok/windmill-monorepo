@@ -30,10 +30,8 @@ public struct CommitPlanner: Sendable {
 
   // The rows a commit of `gesture` reads, for its Action to load first with the entries that touch them: the records its
   // changes, predictions, guards and retire name, an opted command's predictions in their own scopes; whole types where
-  // it derives an id from a label, places by an anchor, or may show one more record of a capped type, which the cap
-  // counts; and for each tree or overlay scope, the governing record the scope check reads. A delete, a put that
-  // removes, and an update of a type whose records show by their life show none, so a change of one record of a capped
-  // type reads that record alone, whatever the type holds. The ids minted creates draw are read by their keys once drawn
+  // it derives an id from a label, places by an anchor, or may grow a capped type; and for each tree or overlay scope,
+  // the governing record the scope check reads. The ids minted creates draw are read by their keys once drawn
   // (`UnreadDraws`).
   public func reads(of gesture: Gesture, in scope: ScopeRef) -> [ScopeRef: RowSelection] {
     var origin = rows(namedBy: gesture.changes + gesture.predict)
@@ -61,13 +59,7 @@ public struct CommitPlanner: Sendable {
         if let id = try? SeededID(seed: seed, ordinal: ordinal, for: type).id { selection.keys.insert(RecordKey(type.name, RecordID(id))) }
       default: if let id = change.id { selection.keys.insert(RecordKey(type.name, id)) }
       }
-      let shows: Bool = switch change.operation {
-      case .delete: false
-      case .put(_, let present): present != false
-      case .update: !type.life
-      case .create, .revive, .write, .move: true
-      }
-      if change.anchor != nil || (type.cap != nil && shows) { selection.types.insert(type.name) }
+      if change.anchor != nil || type.cap != nil { selection.types.insert(type.name) }
     }
     return selection
   }
@@ -347,8 +339,7 @@ public struct CommitPlanner: Sendable {
   }
 
   // Step 8: the capped type the deltas, applied to `stored`, grow past its cap by the growth rule; a held delete still
-  // occupies its slot. A type grows only where a delta shows one more of its records, and only such a type is counted,
-  // which `reads(of:)` reads whole.
+  // occupies its slot.
   func cappedType(_ deltas: [Delta], stored: ScopeView) throws -> String? {
     var after = stored
     for delta in deltas { try after.fold(delta) }
@@ -356,11 +347,6 @@ public struct CommitPlanner: Sendable {
     for delta in deltas where !types.contains(delta.key.type) { types.append(delta.key.type) }
     return types.first { type in
       guard let cap = registry.type(type)?.cap else { return false }
-      let shows = deltas.contains { (delta: Delta) -> Bool in
-        delta.key.type.utf8.elementsEqual(type.utf8) && after.record(delta.key).map(after.isVisible) == true
-          && stored.record(delta.key).map(stored.isVisible) != true
-      }
-      guard shows else { return false }
       let count = after.visibleCount(type)
       return count > cap && count > stored.visibleCount(type)
     }
