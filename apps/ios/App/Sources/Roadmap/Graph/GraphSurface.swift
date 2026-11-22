@@ -5,7 +5,7 @@ import RoadmapLayout
 // How the Graph keeps its frames while a pinch moves a crowd of steps, a finger's pinch or the one a glide is (Roadmap
 // on iOS §5): at 5,000 steps a phone gives a pinch of the whole roadmap fewer frames than its budget when every disc is
 // drawn anew at each of them. Each way draws what `live` draws once the pinch rests, and at every camera that holds no
-// crowd.
+// crowd; `layered` composites what it draws at every camera.
 nonisolated enum GraphPinch: String, CaseIterable, Sendable {
   // The picture drawn anew at every camera.
   case live
@@ -15,7 +15,8 @@ nonisolated enum GraphPinch: String, CaseIterable, Sendable {
   case held
   // The picture drawn anew at every camera, each disc one square of its colour, with no ring, dot or halo.
   case coarse
-  // As `live`, composited through the system's `drawingGroup`.
+  // As `live`, composited through the system's `drawingGroup` at every camera, so the canvas stays one view while a
+  // pinch begins and ends.
   case layered
 
   // The way the Roadmap room keeps them.
@@ -29,7 +30,8 @@ nonisolated enum GraphPinch: String, CaseIterable, Sendable {
 // The Graph's picture on one Canvas, under a camera, with a pinch's frames kept the way `pinch` names (Roadmap · iOS
 // 04.1, 04.2, 04.4). The canvas draws again only when its drawing differs: under `held` a pinch between two stops moves
 // the camera and not the drawing, and the canvas is scaled to the camera in place of a draw. Under `layered` the canvas
-// is composited while its drawing is.
+// is composited at every camera: one composited only while a pinch moves a crowd becomes another view as the pinch begins,
+// and the pinch flow's pinch then leaves no step under the finger.
 struct GraphSurface: View {
   let picture: GraphPicture?
   let camera: GraphCamera?
@@ -50,8 +52,7 @@ struct GraphSurface: View {
     switch pinch {
     case .live, .coarse: canvas
     case .held: canvas.transformEffect(drawing.flatMap { camera?.carries(from: $0.camera) } ?? .identity)
-    case .layered:
-      if drawing?.layered ?? false { canvas.drawingGroup() } else { canvas }
+    case .layered: canvas.drawingGroup()
     }
   }
 

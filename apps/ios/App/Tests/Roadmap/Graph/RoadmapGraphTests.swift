@@ -255,8 +255,8 @@ import SyncTesting
   // §5: however the Graph keeps a pinch's frames, the surface is given at rest what `live` is given at that camera, and
   // a tap then takes the step the camera holds under it. While the pinch moves a crowd, `held` gives the surface the
   // pinch's nearest stop without its captions, which the camera carries to where a person sees it, `coarse` the camera
-  // itself with its discs squared, and `layered` the camera composited. The pinch is under way from its first report to
-  // the fingers' leaving.
+  // itself with its discs squared, and `layered` the camera as `live` does, which its surface composites at every camera.
+  // The pinch is under way from its first report to the fingers' leaving.
   @Test func howeverAPinchsFramesAreKeptTheSurfaceIsGivenAtRestWhatLiveIsGiven() async throws {
     let (engine, runner, memory, suite) = phone()
     defer { memory.removePersistentDomain(forName: suite) }
@@ -288,7 +288,7 @@ import SyncTesting
       let astray: Bool = hypot(seen.x - seat.x, seen.y - seat.y) >= 1e-9
       let zooms: String = String(format: "%@: zoom %.2f of %.2f", way.rawValue, pinched.camera.frame.zoom / opening.frame.zoom,
                                  camera.frame.zoom / opening.frame.zoom)
-      moved.append([zooms, pinched.captions.isEmpty ? ", no caption" : "", pinched.squared ? ", squared" : "", pinched.layered ? ", layered" : "",
+      moved.append([zooms, pinched.captions.isEmpty ? ", no caption" : "", pinched.squared ? ", squared" : "",
                     astray ? ", astray" : ""].joined())
 
       graph.rest()
@@ -296,7 +296,7 @@ import SyncTesting
       #expect(graph.step(at: seat).flatMap { model.shown?.step($0)?.step.label } == "Read the wind")
     }
     #expect(moved == ["live: zoom 1.30 of 1.30", "held: zoom 1.50 of 1.30, no caption", "coarse: zoom 1.30 of 1.30, squared",
-                      "layered: zoom 1.30 of 1.30, layered"])
+                      "layered: zoom 1.30 of 1.30"])
   }
 
   // Roadmap · iOS 04.3: *Next* leads with the first Up next step in Roadmap Order and lists them all. A step picked is

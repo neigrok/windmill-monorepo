@@ -128,8 +128,8 @@ import RoadmapLayout
   // Roadmap on iOS §5: a way of keeping a pinch's frames acts on a crowd alone, more steps in view than its count, and
   // only while a pinch is under way. `held` then draws the pinch's nearest stop, the zooms half again apart counted
   // from where the pinch began, each about the pinch's point; `coarse` draws the camera itself with its discs squared;
-  // `layered` draws the camera as it is, composited; and `live` draws the camera as it is, as every way does a pinch of
-  // fewer steps and a crowd at rest.
+  // `layered`, which its surface composites at every camera, and `live` draw the camera as it is, as every way does a
+  // pinch of fewer steps and a crowd at rest.
   @Test func aPinchOfACrowdIsDrawnAtItsNearestStopOrSquaredOrLayeredAndOneOfFewerStepsAsItIs() async throws {
     let picture = try await learnToSail()
     let opening = GraphCamera(framing: picture.model.bounds, in: Viewport(width: 402, height: 874), under: Insets(top: 158, bottom: 140))
@@ -141,10 +141,10 @@ import RoadmapLayout
                                  pinched: pinched ? GraphCamera.Pinched(from: opening, about: fingers) : nil, by: way, crowd: crowd)
       let apart: Double = hypot(drawing.camera.world(fingers).x - opening.world(fingers).x, drawing.camera.world(fingers).y - opening.world(fingers).y)
       let zoom: String = String(format: "%.3f", drawing.camera.frame.zoom / opening.frame.zoom)
-      return [zoom, drawing.squared ? " squared" : "", drawing.layered ? " layered" : "", apart < 1e-9 ? "" : " moved"].joined()
+      return [zoom, drawing.squared ? " squared" : "", apart < 1e-9 ? "" : " moved"].joined()
     }
     #expect([1, 1.2, 1.25, 1.8, 1.85, 0.85, 0.8].map { drawn($0, .held, 0, true) } == ["1.000", "1.000", "1.500", "1.500", "2.250", "1.000", "0.667"])
-    #expect(GraphPinch.allCases.map { drawn(1.25, $0, 0, true) } == ["1.250", "1.500", "1.250 squared", "1.250 layered"])
+    #expect(GraphPinch.allCases.map { drawn(1.25, $0, 0, true) } == ["1.250", "1.500", "1.250 squared", "1.250"])
     #expect(GraphPinch.allCases.map { drawn(1.25, $0, 8, true) } == ["1.250", "1.250", "1.250", "1.250"])
     #expect(GraphPinch.allCases.map { drawn(1.25, $0, 0, false) } == ["1.250", "1.250", "1.250", "1.250"])
   }

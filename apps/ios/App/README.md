@@ -287,8 +287,9 @@ under a camera, which draws again only when its drawing differs. It holds `Graph
 keep its frames while a pinch, a finger's or a glide's, moves a crowd of more than 500 steps in view: `live` draws the
 picture anew at every camera; `held` draws it only at the pinch's stops, the zooms half again apart counted from where
 the pinch began, and scales that drawing to the camera between them, with no caption; `coarse` draws each disc as one
-square of its colour; `layered` composites the drawing through `drawingGroup`. Each draws what `live` draws once the
-pinch rests and at any camera that holds no crowd. The room's own
+square of its colour; `layered` draws as `live` and composites the canvas through `drawingGroup` at every camera, so
+the canvas stays one view as a pinch begins. Each draws what `live` draws once the pinch rests and at any camera that
+holds no crowd. The room's own
 is `GraphPinch.room`, which is `live`: no phone has measured the other three. `RoadmapGraph.swift` is the Graph's state,
 which the model owns: it lays the
 picture out off the main actor, one layout at a time and only the latest read next, keeps the camera where a person left
@@ -911,8 +912,7 @@ mini is faster than the oldest phone the app supports, so a camera that misses h
 `held`, `coarse` or `layered`.
 
 On an iPhone 17 simulator on an M3 Pro, the short form twice, six runs of each way at 5,000 steps, with `layered`
-composited at every camera, its pans and its pinch at zoom 0.011 among them, where the room composites only a pinch of
-more than 500 steps in view:
+composited at every camera, its pans and its pinch at zoom 0.011 among them, as `GraphSurface` composites it:
 
 | | `live` | `held` | `coarse` | `layered` |
 |---|---|---|---|---|

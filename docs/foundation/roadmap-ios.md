@@ -389,8 +389,8 @@ makes it false.
   whole roadmap in view, where about a seventh of the frames come late, more than the budget's tenth; the first
   frame takes about a sixth of its second. For that pinch the room holds three other ways to keep the frames while
   more than 500 steps are in view, each drawing at rest what the canvas draws now: the picture drawn at a few stops
-  of the pinch and scaled between them, each disc drawn as one square, and the drawing composited through
-  `drawingGroup`. The room uses none of them, and the benchmark takes each by name: the simulator holds the budget
+  of the pinch and scaled between them, each disc drawn as one square, and the canvas composited through
+  `drawingGroup` at every camera. The room uses none of them, and the benchmark takes each by name: the simulator holds the budget
   under all four and so cannot choose, and no phone has run the three. No older phone has measured the Graph, and a
   canvas that misses the budget on a phone reports it (§11).
 - Roadmap's runner holds a removal for the engine's nine seconds (`AppRuntime.roadmapRunner`), and the room runs
