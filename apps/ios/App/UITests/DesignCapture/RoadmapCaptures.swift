@@ -698,9 +698,12 @@ final class RoadmapCaptures: DesignCapture {
   // 02.14: the 5,000-step handbook with Up next and Locked folded from their headers and Done opened.
   func testFiveThousandSteps() {
     captureBoard("02.14-roadmap-five-thousand-steps", settle: 1.5) { look in
+      // The board plants the handbook's 5,000 steps before its Board stands; Up next's 170 rows keep Locked's header off
+      // the screen until Up next is folded.
       let app = launch("roadmap-handbook", look)
-      XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 120))
+      XCTAssertTrue(app.staticTexts["120 of 5000 done"].waitForExistence(timeout: 120))
       for group in ["upNext", "locked", "done"] {
+        XCTAssertTrue(app.buttons["roadmap-group-" + group].waitForHittable(timeout: 10))
         app.buttons["roadmap-group-" + group].tap()
         XCTAssertTrue(app.buttons["roadmap-group-" + group].waitForValue(group == "done" ? "Expanded" : "Collapsed", timeout: 5))
       }

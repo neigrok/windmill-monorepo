@@ -57,7 +57,7 @@ final class RoadmapModel {
   }
 
   // The room's two views of the open roadmap.
-  enum Lens: String {
+  enum Lens: String, CaseIterable {
     case board, graph
   }
 

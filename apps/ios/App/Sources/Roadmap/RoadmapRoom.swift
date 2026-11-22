@@ -108,9 +108,10 @@ struct RoadmapRoom: View {
   // changes every frame. While several steps are selected the switch waits.
   func switchRow(_ open: RoadmapModel.OpenRoadmap, graph: Bool) -> some View {
     HStack(spacing: RoomSpace.related) {
+      // Each segment takes its lens from the ForEach's id: a `tag` here leaves the room's type holding SwiftUI's
+      // client-emitted `tag`, which a Release test bundle cannot link against.
       Picker("View", selection: Binding(get: { roadmap.lens }, set: { roadmap.show($0) })) {
-        Text("Board").tag(RoadmapModel.Lens.board)
-        Text("Graph").tag(RoadmapModel.Lens.graph)
+        ForEach(RoadmapModel.Lens.allCases, id: \.self) { lens in lens == .board ? Text("Board") : Text("Graph") }
       }.pickerStyle(.segmented).disabled(roadmap.selection != nil)
       Button("Find", systemImage: "magnifyingglass") { roadmap.reading.finds = true }.modifier(GlassCircle())
         .disabled(graph || open.board.overall.total == 0).accessibilityIdentifier("roadmap-find")
