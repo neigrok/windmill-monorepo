@@ -4,7 +4,8 @@ import RoadmapDomain
 // A step's page (Roadmap · iOS 03.1, 03.4 to 03.8): one scroll headed by the step's name, which the bar takes once it has
 // scrolled away. The status row names the state, the kind and why the step stands there, and on a Done step what Reset
 // would do; then the description and the step's shared links, and what the step requires and opens, each row opening
-// its step. Complete stands at the foot of an Up next step, under the room's band, and the … menu holds Delete Step.
+// its step. Complete stands at the foot of an Up next step, under the room's band; Edit raises the step's form over
+// the page, and the … menu holds Delete Step.
 struct RoadmapStepPage: View {
   // What the page last read of its step, which it goes on showing while it leaves the stack once the step is gone.
   final class LastRead {
@@ -56,12 +57,16 @@ struct RoadmapStepPage: View {
       }
       .navigationTitle(row.name).navigationBarTitleDisplayMode(.inline).toolbar(removing: nameScrolledAway ? nil : .title)
       .toolbar {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("Edit") { roadmap.edit(page) }.fontWeight(.semibold).accessibilityIdentifier("roadmap-step-edit")
+        }
         // The menu lists what this build can do to the step: the kept step, which no Delete is offered on, has none.
+        if #available(iOS 26.0, *), row.deletes { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
         if row.deletes {
           ToolbarItem(placement: .topBarTrailing) {
             Menu("More", systemImage: "ellipsis") {
               Button("Delete Step", systemImage: "trash", role: .destructive) { roadmap.askDelete(row, by: .page) }
-            }.modifier(DeleteQuestion(roadmap: roadmap, step: row.id, onPage: true)).accessibilityIdentifier("roadmap-step-more")
+            }.modifier(DeleteQuestion(roadmap: roadmap, step: row.id, by: [.page])).accessibilityIdentifier("roadmap-step-more")
           }
         }
       }.roomBar(.roadmap)

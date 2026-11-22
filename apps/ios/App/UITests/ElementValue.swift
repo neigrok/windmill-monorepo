@@ -42,6 +42,24 @@ extension XCUIApplication {
                                                      "roadmap-step", name + ", ", ", " + name + ", ", ", " + name)).firstMatch
   }
 
+  // A step in the step form's Requires or Opens list, by its name.
+  func roadmapChoice(_ name: String) -> XCUIElement {
+    buttons.matching(NSPredicate(format: "identifier == %@ AND label == %@", "roadmap-choice", name)).firstMatch
+  }
+
+  // A kind in the step form's Kind list, by its name, which leads its label before its description.
+  func roadmapKind(_ name: String) -> XCUIElement {
+    buttons.matching(NSPredicate(format: "identifier == %@ AND (label == %@ OR label BEGINSWITH %@)", "roadmap-kind", name, name + ", ")).firstMatch
+  }
+
+  // The pushed list on screen in the step form goes back to the form.
+  func leaveRoadmapList(_ title: String) {
+    let back = navigationBars[title].buttons.element(boundBy: 0)
+    XCTAssertTrue(back.waitForExistence(timeout: 5))
+    back.tap()
+    XCTAssertTrue(buttons["roadmap-form-commit"].waitForExistence(timeout: 5))
+  }
+
   // A step's page in the Roadmap room, on screen once its name is the one page name there: a page going away keeps its
   // own for a moment.
   func roadmapStepPage(_ name: String, timeout: TimeInterval = 10) -> Bool {
@@ -89,7 +107,12 @@ extension XCUIApplication {
   func cancelConfirmation() {
     let cancel = buttons["Cancel"]
     if cancel.exists { cancel.tap(); return }
-    // Over a sheet at its medium detent each presentation keeps a dismiss region; the question's is the last, on top.
+    dismissPopover()
+  }
+
+  // A question raised as a popover closes unanswered by a tap outside it. Over a sheet each presentation keeps a dismiss
+  // region; the question's is the last, on top.
+  func dismissPopover() {
     let regions = otherElements.matching(identifier: "PopoverDismissRegion")
     XCTAssertTrue(regions.firstMatch.waitForExistence(timeout: 5))
     regions.element(boundBy: regions.count - 1).coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5)).tap()

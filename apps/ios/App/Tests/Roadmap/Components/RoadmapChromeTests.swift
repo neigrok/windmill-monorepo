@@ -2,8 +2,8 @@ import Testing
 @testable import Windmill
 
 @Suite @MainActor struct RoadmapChromeTests {
-  // Roadmap · iOS 02.2, 03.4, 03.6b, 03.9, 02.12 and 10.6a: the band's words over what the model tells of the act. A
-  // step completed on its own page says what opened, and its own name only where nothing did.
+  // Roadmap · iOS 02.2, 03.4, 03.6b, 03.9, 05.7, 02.12 and 10.6a: the band's words over what the model tells of the act.
+  // A step completed on its own page says what opened, and its own name only where nothing did.
   @Test func theBandSaysWhatTheActDidInTheBoardsWords() {
     let said: [RoadmapModel.Band.Says] = [
       .completed(step: "Read the wind", upNext: ["Leave the dock"], inPlace: false), .completed(step: "Tie a bowline", upNext: [], inPlace: false),
@@ -14,6 +14,7 @@ import Testing
       .reset(step: "Name the boat parts", locked: 2), .reset(step: "Read the wind", locked: 1), .reset(step: "Rig the boat", locked: 0),
       .reset(step: "", locked: 0),
       .deleted(step: "Read the wind"), .deletedRoadmap("Learn to sail"), .deletedRoadmap(""), .deletedRoadmap(nil),
+      .created(step: "Reefing basics", in: .locked), .created(step: "", in: .upNext), .saved(step: "Read the wind"), .saved(step: ""),
       .refused(.keepsStartingStep), .refused(.full),
     ]
     #expect(said.map(\.words) == [
@@ -22,6 +23,7 @@ import Testing
       "Leave the dock is up next", "Tie a bowline done", "2 steps up next", "Untitled step is up next",
       "2 steps locked again", "1 step locked again", "Rig the boat reset", "Untitled step reset",
       "Read the wind deleted", "Learn to sail deleted", "Untitled roadmap deleted", "Untitled roadmap deleted",
+      "Reefing basics added · Locked", "Untitled step added · Up next", "Read the wind saved", "Untitled step saved",
       "A roadmap keeps one starting step", "This roadmap is at its limit.",
     ])
   }

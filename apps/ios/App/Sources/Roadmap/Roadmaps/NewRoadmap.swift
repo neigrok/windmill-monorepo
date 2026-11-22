@@ -25,11 +25,7 @@ struct NewRoadmap: View {
               .disabled(RoadmapModel.name(typed: name).isEmpty).accessibilityIdentifier("roadmap-new-create")
           }
         }.roomBar(.roadmap)
-        .onChange(of: name) { _, typed in
-          var held = String(typed.prefix(RoadmapSpecs.title.max))
-          while RoadmapSpecs.title.measure(held) > RoadmapSpecs.title.max { held.removeLast() }
-          name = held
-        }
+        .onChange(of: name) { _, typed in name = RoadmapSpecs.title.holding(typed) }
     }.tint(RoadmapPalette.accent).presentationDetents([.large]).presentationDragIndicator(.visible)
   }
 }

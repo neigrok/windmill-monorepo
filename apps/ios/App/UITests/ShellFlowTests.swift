@@ -94,7 +94,8 @@ import XCTest
     XCTAssertEqual(app.buttons["room-menu"].label, "Roadmap")
   }
 
-  // Roadmap · iOS 01.1 and 11.22a: the account's roadmap on its Board, Done folded, and what waits for its own screen disabled.
+  // Roadmap · iOS 01.1 and 11.22a: the account's roadmap on its Board, Done folded, New step at the foot, and what waits
+  // for its own screen disabled.
   func assertLearnToSailBoard(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
     let locked = app.buttons["roadmap-group-locked"]
     XCTAssertTrue(locked.waitForExistence(timeout: 30), file: file, line: line)
@@ -114,10 +115,11 @@ import XCTest
       "Learn, Sail a triangle, Needs Leave the dock · 2 to go, Practise reaching, tacking and returning to start.",
       "Milestone, Sail solo, Needs Sail a triangle +1 · 4 to go, Plan and sail a short route on your own.",
     ], file: file, line: line)
-    for control in [app.segmentedControls.firstMatch, app.buttons["Find"], app.buttons["Sort and filter"], app.buttons["roadmap-new-step"]] {
+    for control in [app.segmentedControls.firstMatch, app.buttons["Find"], app.buttons["Sort and filter"]] {
       XCTAssertTrue(control.exists, file: file, line: line)
       XCTAssertFalse(control.isEnabled, file: file, line: line)
     }
+    XCTAssertTrue(app.buttons["roadmap-new-step"].isEnabled, file: file, line: line)
     XCTAssertFalse(app.tabBars.firstMatch.exists, file: file, line: line)
   }
 
@@ -251,9 +253,9 @@ import XCTest
     XCTAssertEqual(app.descendants(matching: .any)["roadmap-step-link"].label, "Beaufort wind scale, metoffice.gov.uk")
     XCTAssertEqual([requires.label, opens.label], ["Requires, 1 of 1 done", "Opens, 1 step"])
     XCTAssertEqual(stepRows(app), ["Sky, Name the boat parts", "Build, Leave the dock, Locked · 1 to go"])
-    XCTAssertTrue(app.buttons["roadmap-complete"].isEnabled && app.buttons["roadmap-step-more"].exists)
+    XCTAssertTrue(app.buttons["roadmap-complete"].isEnabled && app.buttons["roadmap-step-more"].exists && app.buttons["roadmap-step-edit"].isEnabled)
     XCTAssertFalse(app.navigationBars.staticTexts["Read the wind"].exists, "The bar carries no title while the name is on the page")
-    for absent in [app.buttons["Edit"], app.buttons["roadmap-new-step"], app.staticTexts["Subtasks"], app.staticTexts["History"], app.buttons["Open Roadmap"]] {
+    for absent in [app.buttons["roadmap-new-step"], app.staticTexts["Subtasks"], app.staticTexts["History"], app.buttons["Open Roadmap"]] {
       XCTAssertFalse(absent.exists)
     }
     XCTAssertFalse(app.tabBars.firstMatch.exists)
@@ -322,7 +324,7 @@ import XCTest
     XCTAssertEqual(more.label, "More")
     more.tap()
     XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-    for unbuilt in ["Open in Graph", "View Branch", "Attach a Roadmap", "Copy Link", "Edit"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
+    for unbuilt in ["Open in Graph", "View Branch", "Attach a Roadmap", "Copy Link"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
     confirm.tap()
     XCTAssertTrue(app.staticTexts["Delete Read the wind?"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Removes this step · 1 branch resplices"].exists)
@@ -367,6 +369,225 @@ import XCTest
     XCTAssertTrue(inBar.waitForExistence(timeout: 5))
     app.swipeDown()
     XCTAssertTrue(inBar.waitForNonExistence(timeout: 5))
+  }
+
+  // The step form, raised and on screen: its name field.
+  func stepForm(_ app: XCUIApplication, raisedBy button: String, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+    let name = app.textFields["roadmap-form-name"]
+    XCTAssertTrue(app.buttons[button].waitForHittable(timeout: 10), file: file, line: line)
+    app.buttons[button].tap()
+    XCTAssertTrue(name.waitForExistence(timeout: 10), file: file, line: line)
+    return name
+  }
+
+  // One step taken or dropped in the form's Requires or Opens list, and back on the form.
+  func choose(_ step: String, in list: String, of app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+    XCTAssertTrue(app.buttons["roadmap-form-" + list.lowercased()].waitForHittable(timeout: 5), file: file, line: line)
+    app.buttons["roadmap-form-" + list.lowercased()].tap()
+    XCTAssertTrue(app.roadmapChoice(step).waitForExistence(timeout: 5), file: file, line: line)
+    app.roadmapChoice(step).tap()
+    app.leaveRoadmapList(list)
+  }
+
+  // Roadmap · iOS 05.1, 05.3, 05.7, 05.8 and 02.2, on a phone never signed in and on its copy alone: a roadmap is made;
+  // New Step adds a step and then a second that requires the first, each shown on the Board under its receipt; Edit
+  // renames the second from its page; the first is completed; and a relaunch finds all of it.
+  func testStepsAreMadeLinkedEditedAndCompletedSignedOutAndFoundAfterARelaunch() {
+    let app = launch("roadmap-empty")
+    let roadmapName = app.textFields["roadmap-new-name"], commit = app.buttons["roadmap-form-commit"]
+    XCTAssertTrue(app.buttons["roadmap-new"].waitForExistence(timeout: 30))
+    app.buttons["roadmap-new"].tap()
+    XCTAssertTrue(roadmapName.waitForExistence(timeout: 10))
+    roadmapName.tap()
+    roadmapName.typeText("Learn to cook")
+    XCTAssertTrue(app.buttons["roadmap-new-create"].wait(for: \.isEnabled, toEqual: true, timeout: 5))
+    app.buttons["roadmap-new-create"].tap()
+    XCTAssertTrue(app.staticTexts["0 of 1 done"].waitForExistence(timeout: 10))
+
+    var name = stepForm(app, raisedBy: "roadmap-new-step")
+    XCTAssertTrue(app.navigationBars["New Step"].exists && !commit.isEnabled)
+    XCTAssertEqual(name.placeholderValue, "Name this step")
+    XCTAssertEqual(app.buttons["roadmap-form-kind"].label, "Kind, Sky")
+    name.tap()
+    name.typeText("Buy a knife")
+    XCTAssertTrue(commit.wait(for: \.isEnabled, toEqual: true, timeout: 5))
+    commit.tap()
+    XCTAssertTrue(app.staticTexts["Buy a knife added · Up next"].waitForExistence(timeout: 10))
+    XCTAssertTrue(name.waitForNonExistence(timeout: 5) && app.staticTexts["0 of 2 done"].waitForExistence(timeout: 5))
+
+    name = stepForm(app, raisedBy: "roadmap-new-step")
+    name.tap()
+    name.typeText("Chop an onion\n")
+    choose("Buy a knife", in: "Requires", of: app)
+    XCTAssertEqual(app.buttons["roadmap-form-requires"].label, "Requires, Buy a knife")
+    XCTAssertTrue(app.staticTexts["Lands in Locked · Buy a knife isn’t done"].exists)
+    commit.tap()
+    XCTAssertTrue(app.staticTexts["Chop an onion added · Locked"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["0 of 3 done"].waitForExistence(timeout: 5))
+    XCTAssertEqual([app.buttons["roadmap-group-upNext"].label, app.buttons["roadmap-group-locked"].label], ["Up next, 2", "Locked, 1"])
+    XCTAssertEqual(app.roadmapStep("Chop an onion").label, "Sky, Chop an onion, Needs Buy a knife · 1 to go")
+
+    app.roadmapStep("Chop an onion").tap()
+    XCTAssertTrue(app.roadmapStepPage("Chop an onion"))
+    name = stepForm(app, raisedBy: "roadmap-step-edit")
+    XCTAssertTrue(app.navigationBars["Edit Step"].exists && !commit.isEnabled)
+    XCTAssertTrue(name.waitForValue("Chop an onion"))
+    XCTAssertEqual(app.buttons["roadmap-form-requires"].label, "Requires, Buy a knife")
+    name.tap()
+    name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 8) + "two onions")
+    XCTAssertTrue(commit.wait(for: \.isEnabled, toEqual: true, timeout: 5))
+    commit.tap()
+    XCTAssertTrue(app.staticTexts["Chop two onions saved"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.roadmapStepPage("Chop two onions"))
+    app.navigationBars.buttons.element(boundBy: 0).tap()
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 5))
+
+    app.roadmapStep("Buy a knife").swipeRight()
+    XCTAssertTrue(app.buttons["Complete"].waitForExistence(timeout: 5))
+    app.buttons["Complete"].tap()
+    XCTAssertTrue(app.staticTexts["Buy a knife done · Chop two onions up next"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["1 of 3 done"].waitForExistence(timeout: 5))
+
+    app.terminate()
+    app.launchArguments.append("-restore-board")
+    app.launch()
+    XCTAssertTrue(app.navigationBars["Learn to cook"].waitForExistence(timeout: 30))
+    XCTAssertTrue(app.staticTexts["1 of 3 done"].exists)
+    XCTAssertEqual([app.buttons["roadmap-group-upNext"].label, app.buttons["roadmap-group-done"].label], ["Up next, 2", "Done, 1"])
+    app.roadmapStep("Chop two onions").tap()
+    XCTAssertTrue(app.roadmapStepPage("Chop two onions"))
+    XCTAssertEqual(app.descendants(matching: .any)["roadmap-step-requires"].label, "Requires, 1 of 1 done")
+    XCTAssertEqual(stepRows(app), ["Sky, Buy a knife"])
+  }
+
+  // Roadmap · iOS 05.1 to 05.7: the form opens on no refusal with Create disabled; a name typed and cleared is refused
+  // in its footer; Kind lists six kinds and returns with the one chosen; Requires and Opens take a step in place and, opened
+  // again, head with what was chosen; a tap on a dimmed step changes nothing and names it; Cancel on the changed draft
+  // asks once, a tap outside keeps editing and Discard writes nothing; and Create shows the step on the Board, where
+  // Undo takes it back.
+  func testTheStepFormRefusesWhereItStandsAsksBeforeDiscardingAndCreatesWithUndo() {
+    let app = launch("roadmap-learn-to-sail")
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    let commit = app.buttons["roadmap-form-commit"], cancel = app.buttons["roadmap-form-cancel"], undo = app.buttons["roadmap-undo"]
+    let refusal = app.staticTexts["roadmap-form-refusal"]
+    let name = stepForm(app, raisedBy: "roadmap-new-step")
+    XCTAssertFalse(commit.isEnabled || refusal.exists)
+    XCTAssertTrue(app.staticTexts["Lands in Up next"].exists)
+    // The rows whose screens are not built are left out: the form's Roadmap row would read as Kind's does.
+    for unbuilt in ["Roadmap, None", "Links", "Add Link", "Edit Kinds", "Delete Step"] { XCTAssertFalse(app.staticTexts[unbuilt].exists || app.buttons[unbuilt].exists) }
+    name.tap()
+    name.typeText("Reef")
+    XCTAssertTrue(commit.wait(for: \.isEnabled, toEqual: true, timeout: 5))
+    name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 4))
+    XCTAssertTrue(refusal.waitForExistence(timeout: 5))
+    XCTAssertEqual(refusal.label, "Enter a name for this step.")
+    XCTAssertFalse(commit.isEnabled)
+    name.typeText("Reefing basics\n")
+    XCTAssertTrue(refusal.waitForNonExistence(timeout: 5) && commit.isEnabled)
+
+    app.buttons["roadmap-form-kind"].tap()
+    XCTAssertTrue(app.roadmapKind("Learn").waitForExistence(timeout: 5))
+    let kinds = app.buttons.matching(identifier: "roadmap-kind")
+    XCTAssertEqual((0..<kinds.count).map { kinds.element(boundBy: $0).label },
+                   ["Build, Things you make", "Learn, Things you figure out", "Milestone, Moments that matter", "Brick", "Sky", "Plum"])
+    XCTAssertTrue(app.roadmapKind("Sky").isSelected && !app.roadmapKind("Learn").isSelected)
+    app.roadmapKind("Learn").tap()
+    XCTAssertTrue(app.buttons["roadmap-form-kind"].waitForLabel("Kind, Learn", timeout: 5))
+
+    choose("Read the wind", in: "Requires", of: app)
+    choose("Leave the dock", in: "Opens", of: app)
+    XCTAssertEqual([app.buttons["roadmap-form-requires"].label, app.buttons["roadmap-form-opens"].label], ["Requires, Read the wind", "Opens, Leave the dock"])
+    XCTAssertTrue(app.staticTexts["Lands in Locked · Read the wind isn’t done"].exists)
+
+    app.buttons["roadmap-form-requires"].tap()
+    XCTAssertTrue(app.staticTexts["Selected"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["All steps"].exists && app.staticTexts["Can’t be prerequisites"].exists && app.staticTexts["These come after this step."].exists)
+    XCTAssertTrue(app.searchFields["Find a step"].exists && app.roadmapChoice("Read the wind").isSelected)
+    app.roadmapChoice("Leave the dock").tap()
+    XCTAssertTrue(refusal.waitForExistence(timeout: 5))
+    XCTAssertEqual(refusal.label, "Leave the dock comes after this step.")
+    XCTAssertFalse(app.roadmapChoice("Leave the dock").isSelected || app.staticTexts["These come after this step."].exists)
+    app.leaveRoadmapList("Requires")
+    XCTAssertEqual(app.buttons["roadmap-form-requires"].label, "Requires, Read the wind")
+    XCTAssertTrue(refusal.waitForNonExistence(timeout: 5), "The list's refusal leaves with the list")
+
+    cancel.tap()
+    XCTAssertTrue(app.buttons["Discard"].waitForExistence(timeout: 5) && app.staticTexts["Discard draft?"].exists)
+    app.dismissPopover()
+    XCTAssertTrue(app.buttons["Discard"].waitForNonExistence(timeout: 5) && name.exists)
+    cancel.tap()
+    XCTAssertTrue(app.buttons["Discard"].waitForExistence(timeout: 5))
+    app.buttons["Discard"].tap()
+    XCTAssertTrue(name.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["3 of 8 done"].exists && !undo.exists)
+
+    // An unchanged draft closes at once.
+    _ = stepForm(app, raisedBy: "roadmap-new-step")
+    cancel.tap()
+    XCTAssertTrue(name.waitForNonExistence(timeout: 5))
+
+    let again = stepForm(app, raisedBy: "roadmap-new-step")
+    again.tap()
+    again.typeText("Reefing basics\n")
+    choose("Read the wind", in: "Requires", of: app)
+    commit.tap()
+    // The band keeps Undo for six seconds: the Board is read, and Undo taken, as soon as the step is seen.
+    XCTAssertTrue(app.roadmapStep("Reefing basics").waitForExistence(timeout: 10))
+    XCTAssertEqual(app.roadmapStep("Reefing basics").label, "Sky, Reefing basics, Needs Read the wind · 1 to go")
+    XCTAssertTrue(app.staticTexts["Reefing basics added · Locked"].exists && app.staticTexts["3 of 9 done"].exists)
+    undo.tap()
+    XCTAssertTrue(app.roadmapStep("Reefing basics").waitForNonExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["3 of 8 done"].waitForExistence(timeout: 5))
+  }
+
+  // Roadmap · iOS 05.8 and 03.8: Edit raises the form over the step's page on what the step holds, Save disabled until
+  // something changes; a change of kind is saved as one gesture, the page staying under its receipt, and Undo takes it
+  // back; Delete Step in the form asks there with what the delete costs and leaves the room on the Board; and the
+  // roadmap's one starting step has no Delete Step.
+  func testEditSavesAStepsChangeWithUndoAndDeleteStepAsksInTheForm() {
+    let app = launch("roadmap-learn-to-sail")
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    let commit = app.buttons["roadmap-form-commit"], undo = app.buttons["roadmap-undo"], delete = app.buttons["roadmap-form-delete"]
+    let status = app.descendants(matching: .any)["roadmap-step-status"]
+    app.roadmapStep("Tie a bowline").tap()
+    XCTAssertTrue(app.roadmapStepPage("Tie a bowline"))
+    XCTAssertEqual(status.label, "Up next, Learn")
+    var name = stepForm(app, raisedBy: "roadmap-step-edit")
+    XCTAssertTrue(app.navigationBars["Edit Step"].exists && !commit.isEnabled && delete.exists)
+    XCTAssertEqual(commit.label, "Save")
+    XCTAssertTrue(name.waitForValue("Tie a bowline"))
+    XCTAssertEqual([app.buttons["roadmap-form-kind"].label, app.buttons["roadmap-form-requires"].label, app.buttons["roadmap-form-opens"].label],
+                   ["Kind, Learn", "Requires, Name the boat parts", "Opens, Sail solo"])
+    XCTAssertFalse(app.staticTexts["roadmap-form-placement"].exists, "A step that stays in its group says nothing of where it lands")
+    app.buttons["roadmap-form-kind"].tap()
+    XCTAssertTrue(app.roadmapKind("Plum").waitForExistence(timeout: 5))
+    app.roadmapKind("Plum").tap()
+    XCTAssertTrue(commit.wait(for: \.isEnabled, toEqual: true, timeout: 5))
+    commit.tap()
+    XCTAssertTrue(app.staticTexts["Tie a bowline saved"].waitForExistence(timeout: 10))
+    XCTAssertTrue(status.waitForLabel("Up next, Plum", timeout: 5) && app.roadmapStepPage("Tie a bowline"))
+    undo.tap()
+    XCTAssertTrue(status.waitForLabel("Up next, Learn", timeout: 10))
+
+    name = stepForm(app, raisedBy: "roadmap-step-edit")
+    XCTAssertTrue(delete.waitForHittable(timeout: 5))
+    delete.tap()
+    XCTAssertTrue(app.staticTexts["Delete Tie a bowline?"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Removes this step · 1 branch resplices"].exists)
+    app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "Delete Step", "roadmap-form-delete")).firstMatch.tap()
+    XCTAssertTrue(app.staticTexts["Tie a bowline deleted"].waitForExistence(timeout: 10))
+    XCTAssertTrue(name.waitForNonExistence(timeout: 5) && app.buttons["roadmap-group-locked"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["3 of 7 done"].exists)
+    undo.tap()
+    XCTAssertTrue(app.roadmapStep("Tie a bowline").waitForExistence(timeout: 10))
+
+    for step in ["Tie a bowline", "Name the boat parts", "Choose a sailing course"] {
+      app.roadmapStep(step).tap()
+      XCTAssertTrue(app.roadmapStepPage(step))
+    }
+    _ = stepForm(app, raisedBy: "roadmap-step-edit")
+    XCTAssertTrue(app.navigationBars["Edit Step"].exists)
+    XCTAssertFalse(delete.exists, "The roadmap's one starting step offers no Delete")
   }
 
   // The title's menu, opened from the bar's title, whose label the open roadmap's name leads: the system reports the
@@ -565,10 +786,21 @@ import XCTest
     XCTAssertTrue(empty.staticTexts["Your first step"].waitForExistence(timeout: 30))
     XCTAssertTrue(empty.navigationBars["Night sailing"].exists && empty.staticTexts["No steps yet"].exists)
     XCTAssertTrue(empty.staticTexts["Give your roadmap a place to start."].exists)
-    for control in [empty.buttons["roadmap-first-step"], empty.buttons["roadmap-new-step"]] {
-      XCTAssertTrue(control.exists)
-      XCTAssertFalse(control.isEnabled)
-    }
+    XCTAssertTrue(empty.buttons["roadmap-new-step"].isEnabled)
+    // 02.15: New Step opens the form, where a roadmap with no step offers none to require or to open.
+    let name = empty.textFields["roadmap-form-name"], lists = [empty.buttons["roadmap-form-requires"], empty.buttons["roadmap-form-opens"]]
+    empty.buttons["roadmap-first-step"].tap()
+    XCTAssertTrue(name.waitForExistence(timeout: 10))
+    XCTAssertEqual(lists.map(\.label), ["Requires, None", "Opens, None"])
+    XCTAssertFalse(lists[0].isEnabled || lists[1].isEnabled)
+    XCTAssertTrue(empty.staticTexts["Lands in Up next"].exists)
+    name.tap()
+    name.typeText("Sail after dark")
+    XCTAssertTrue(empty.buttons["roadmap-form-commit"].wait(for: \.isEnabled, toEqual: true, timeout: 5))
+    empty.buttons["roadmap-form-commit"].tap()
+    XCTAssertTrue(empty.staticTexts["0 of 1 done"].waitForExistence(timeout: 10))
+    XCTAssertTrue(empty.staticTexts["Sail after dark added · Up next"].exists)
+    XCTAssertEqual(stepRows(empty), ["Sky, Sail after dark"])
     empty.terminate()
 
     let done = launch("roadmap-all-done")

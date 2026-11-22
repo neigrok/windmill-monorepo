@@ -147,10 +147,24 @@ final class RoadmapModel {
     case keepsStartingStep, full
   }
 
-  // The gesture a write to a step came by, as its event names it: a Board row's swipe or its long-press menu, or the
-  // step's page.
+  // The gesture a write to a step came by, as its event names it: a Board row's swipe or its long-press menu, the
+  // step's page, or the form that edits the step.
   enum Door: String {
-    case swipe, menu, page
+    case swipe, menu, page, form
+  }
+
+  // What the write door answers: what an act wrote with its receipt, nothing where it changed nothing, the domain's
+  // refusal, or a commit that failed.
+  enum Written<Result> {
+    case committed(Result, ActReceipt)
+    case unchanged
+    case refused(RoadmapRefusal)
+    case failed
+
+    var committed: (result: Result, receipt: ActReceipt)? {
+      guard case .committed(let result, let receipt) = self else { return nil }
+      return (result, receipt)
+    }
   }
 
   // Where a gesture on a roadmap is made, as its event names it: the title menu, All Roadmaps, or the room that holds
@@ -185,6 +199,10 @@ final class RoadmapModel {
       // A step reset, and how many steps it returned to Locked.
       case reset(step: String, locked: Int)
       case deleted(step: String)
+      // A step the form made, and the group it landed in.
+      case created(step: String, in: BoardRead.Column.Name)
+      // A step the form saved a change to.
+      case saved(step: String)
       // A roadmap deleted, by its title.
       case deletedRoadmap(String?)
       case refused(Limit)
@@ -206,7 +224,8 @@ final class RoadmapModel {
 
     let says: Says
     let undo: Undo?
-    // The steps the act brought into Up next, washed while the band stands.
+    // The steps the act brought to where they stand, washed while the band stands: those a completion brought up next,
+    // and a step the form made.
     let arrived: [String]
     let lasts: Duration
 
@@ -240,9 +259,11 @@ final class RoadmapModel {
   let telemetry: any Telemetry
   let wait: Wait
   // A step that goes while its page is open, deleted here or by another device, takes the stack back to the Board, and
-  // so does the last roadmap going while All Roadmaps is open.
+  // so does the last roadmap going while All Roadmaps is open. The form closes once its roadmap is not the open one, or
+  // the step it edits is gone.
   private(set) var phase = Phase.unread {
     didSet {
+      if let draft, draft.open == nil { self.draft = nil }
       guard !path.isEmpty else { return }
       if case .open(let open) = phase, path.allSatisfy({ (visit: Visit) -> Bool in
         guard case .step(let step, _) = visit else { return true }
@@ -270,6 +291,8 @@ final class RoadmapModel {
   private(set) var question: Question?
   // The New Roadmap sheet stands open.
   private(set) var naming = false
+  // The draft the step form stands open on, New Step's or Edit's.
+  var draft: StepDraft?
   // The Board's groups that stand folded: Done at rest, until every step is done.
   var folded: Set<BoardRead.Column.Name> = [.done]
   // Every roadmap the phone holds as the domain last read them together, which says what opens what.
@@ -379,22 +402,42 @@ final class RoadmapModel {
     telemetry.failure("roadmap_read", kind: kind)
   }
 
-  // The room's write door: one act of the domain, run on roadmap's runner, answering what it wrote. An act the domain
-  // refuses or that changes nothing answers nil; a refusal is told, and said in the band where it is a limit. A commit
-  // that failed is reported and shows nothing: the phone's copy stands as it was.
-  func write<A: ActAction>(_ act: A, as name: String) -> (result: A.Result, receipt: ActReceipt)? where A.Refusal == RoadmapRefusal {
-    do {
+  // The room's write door: one act of the domain, run on roadmap's runner, answering what it came to.
+  func write<A: ActAction>(_ act: A, as name: String) -> Written<A.Result> where A.Refusal == RoadmapRefusal {
+    told(as: name) {
       switch try runner.runAct(act) {
-      case .committed(let result, let receipt): return (result, receipt)
-      case .unchanged: return nil
-      case .refused(let refusal):
+      case .committed(let result, let receipt): .committed(result, receipt)
+      case .unchanged: .unchanged
+      case .refused(let refusal): .refused(refusal)
+      }
+    }
+  }
+
+  // The same door for a gesture that is several acts, each reading what the ones before it wrote: one write, one
+  // receipt and one Undo, or nothing written where the domain refuses any of them.
+  func write(_ acts: [AnyActAction<RoadmapRefusal>], as name: String) -> Written<Void> {
+    told(as: name) {
+      switch try runner.runComposed(acts) {
+      case .committed(_, let receipt): .committed((), receipt)
+      case .unchanged: .unchanged
+      case .refused(_, let refusal): .refused(refusal)
+      }
+    }
+  }
+
+  // What the door tells of a write, whoever asked for it: a refusal by its kind, said in the band where it is a limit,
+  // and a commit that failed, which is reported and shows nothing, since the phone's copy stands as it was.
+  func told<Result>(as name: String, _ run: () throws -> Written<Result>) -> Written<Result> {
+    do {
+      let written = try run()
+      if case .refused(let refusal) = written {
         telemetry.event("roadmap_write_refused", properties: ["write": name, "refusal": refusal.label])
         if case .full = refusal { show(Band(refused: .full)) }
-        return nil
       }
+      return written
     } catch {
       report(error, write: name)
-      return nil
+      return .failed
     }
   }
 
@@ -403,7 +446,7 @@ final class RoadmapModel {
   func complete(_ row: Row, by door: Door) {
     guard case .open(let open) = phase else { return }
     let mark = MarkStep.complete(tree: open.id, step: ID(RecordID(row.id)), opensStanding: row.opensStanding)
-    guard let written = write(mark, as: "mark") else { return }
+    guard let written = write(mark, as: "mark").committed else { return }
     if door == .page { telemetry.event("roadmap_board_step_action", properties: ["surface": "document", "action": "complete"]) }
     else { telemetry.event("roadmap_board_complete", properties: ["door": door.rawValue]) }
     let upNext = open.graph.unlocks(row.id)
@@ -414,7 +457,7 @@ final class RoadmapModel {
   // Reset, on a Done step's page: the mark comes off and nothing is asked. Its receipt counts the steps it locked again.
   func reset(_ step: OpenStep) {
     guard case .open(let open) = phase else { return }
-    guard let written = write(MarkStep.reset(tree: open.id, step: ID(RecordID(step.row.id))), as: "mark") else { return }
+    guard let written = write(MarkStep.reset(tree: open.id, step: ID(RecordID(step.row.id))), as: "mark").committed else { return }
     telemetry.event("roadmap_board_step_action", properties: ["surface": "document", "action": "reset"])
     show(Band(.reset(step: step.row.step.label, locked: step.relocks), of: written.receipt, act: .step("reset")))
   }
@@ -442,7 +485,7 @@ final class RoadmapModel {
   }
 
   // Delete: the step alone goes, held by the engine, and its receipt keeps Undo for the hold. The room stands on the
-  // Board once it is written.
+  // Board once it is written, the form that asked closed.
   func delete(_ row: Row, by door: Door) {
     guard case .open(let open) = phase else { return }
     if let kept = open.keptStep, kept.utf8.elementsEqual(row.id.utf8) {
@@ -450,10 +493,26 @@ final class RoadmapModel {
       show(Band(refused: .keepsStartingStep))
       return
     }
-    guard let written = write(DeleteStep(tree: open.id, step: ID(RecordID(row.id))), as: "DeleteNode") else { return }
+    guard let written = write(DeleteStep(tree: open.id, step: ID(RecordID(row.id))), as: "DeleteNode").committed else { return }
     path = []
+    draft = nil
     telemetry.event("roadmap_board_delete", properties: ["step": "held", "door": door.rawValue, "view": "board"])
     show(Band(.deleted(step: row.step.label), of: written.receipt, act: .step("delete")))
+  }
+
+  // New Step, at the Board's foot and on a roadmap with no step, raises the form on a new draft, whose step takes its
+  // id now.
+  func newStep(from door: StepDraft.Door) {
+    guard case .open(let open) = phase else { return }
+    draft = StepDraft(new: runner.mint(RoadmapStep.self, in: open.id.tree), of: open.id, by: door, in: self)
+    telemetry.event("roadmap_board_create", properties: ["step": "open", "door": door.rawValue, "view": "board"])
+  }
+
+  // Edit, in a step page's bar, raises the form over the page on a draft of the step.
+  func edit(_ step: OpenStep) {
+    guard case .open(let open) = phase else { return }
+    draft = StepDraft(editing: step, of: open.id, in: self)
+    telemetry.event("roadmap_step_edit", properties: ["step": "open", "door": StepDraft.Door.page.rawValue])
   }
 
   // A roadmap chosen in the title menu or in All Roadmaps is the open one, on its Board, and the one the phone
@@ -497,7 +556,7 @@ final class RoadmapModel {
   func create(named typed: String) {
     let title = Self.name(typed: typed)
     let start = ImportedStep(key: "start", RoadmapStep.Changes(label: title, icon: "sparkles", color: RoadmapRules.genesisKinds[0].hue))
-    guard let written = write(CreateRoadmap(title: title, steps: ImportedSteps(steps: [start])), as: "createRoadmap") else { return }
+    guard let written = write(CreateRoadmap(title: title, steps: ImportedSteps(steps: [start])), as: "createRoadmap").committed else { return }
     forget(written.receipt.gestureId)
     naming = false
     path = []
@@ -508,7 +567,7 @@ final class RoadmapModel {
   // Rename, committed in the bar's field: the open roadmap's name as the domain takes it. A name of blanks alone is
   // written as no name, and the roadmap then reads as one without a title. The room offers no Undo of a rename.
   func rename(to typed: String) {
-    guard case .open(let open) = phase, let written = write(WriteRoadmap(tree: open.id, title: Self.name(typed: typed)), as: "title") else { return }
+    guard case .open(let open) = phase, let written = write(WriteRoadmap(tree: open.id, title: Self.name(typed: typed)), as: "title").committed else { return }
     forget(written.receipt.gestureId)
     telemetry.event("roadmap_sheet", properties: ["step": "rename"])
   }
@@ -537,7 +596,7 @@ final class RoadmapModel {
   // Delete Roadmap: the roadmap's entry goes, held by the engine, and its receipt keeps Undo for the hold. Once the
   // list is read without it the room opens the most recent other roadmap, or holds none.
   func delete(_ roadmap: ListedRoadmap, from place: Place, taking openers: Openers?) {
-    guard let written = write(DeleteRoadmap(tree: ID(RecordID(roadmap.id))), as: "deleteRoadmap") else { return }
+    guard let written = write(DeleteRoadmap(tree: ID(RecordID(roadmap.id))), as: "deleteRoadmap").committed else { return }
     telemetry.event("roadmap_deletion", properties: ["step": "held", "door": place.rawValue, "openers": openers == nil ? "none" : "some"])
     var wasOpen = false
     if case .open(let shown) = phase { wasOpen = shown.listed.id.utf8.elementsEqual(roadmap.id.utf8) }
@@ -604,6 +663,15 @@ final class RoadmapModel {
   func report(_ error: any Error, write name: String) {
     guard Store.failureKind(error) == nil else { return }
     telemetry.failure("roadmap_write", kind: (error as? CommitFailure)?.kind == .storeFailure ? "storage" : "unexpected", properties: ["write": name])
+  }
+}
+
+extension TextSpec {
+  // As much of a typed text as the domain takes, so a field stops at its limit.
+  func holding(_ typed: String) -> String {
+    var held = String(typed.prefix(max))
+    while measure(held) > max { held.removeLast() }
+    return held
   }
 }
 
