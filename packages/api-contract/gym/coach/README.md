@@ -24,6 +24,16 @@ One user message, in this order:
 
 ## How a refusal reads
 
-The model reads a refused call as an error result `[<code>] <ability>: <sentence>`. In `one-proposal`,
-`{target}` is the kind of proposal already written: `routine` or `workout`. `invalid-input` has no
+`refusals.json` holds a sentence for each refusal code of the gate but one: `not-offered`,
+`seat-required`, `one-proposal`, `one-note`, `coach-turn-volume` and `stopped`. `invalid-input` has no
 sentence here: its sentence is the schema violation the check found.
+
+The model reads a refused call as an error result `[<code>] <ability>: <sentence>`. In `one-proposal`,
+`{target}` is the kind of proposal already written: `routine` or `workout`. On the server, a call
+stopped while its batch was on its way to the phone reads `[stopped] <sentence>`, with no ability.
+
+The server's turn wire gives the model three more sentences, which name the phone that runs its
+calls and stay in the server: `the phone refused this call.`, `the phone did not answer this call.`
+and `not available on this seat.`. They retire with the wire.
+
+A context read a turn carries is one `contextLeads` names: the server refuses any other.

@@ -79,10 +79,12 @@ What gym gives the engine, for each seat. Its name is `gym.coach` and its versio
     run time;
   - the words of the first content: the sentence that leads each context read, the line that marks
     the earlier conversation, and the question that stands for a picture sent with none;
-  - the sentence the model reads beside each refusal code.
+  - the sentence the model reads beside each refusal code of the gate, but `invalid-input`, whose
+    sentence is the violation the check found.
 
   The backend embeds the same files, so the server's Coach reads them too; Android and the web
-  carry them, and the iPhone does not yet. A person can read them in the app; they hold no secret.
+  carry them, and the iPhone does not yet. The three sentences of the server's turn wire that name
+  the phone stay in the server (§9). A person can read the words in the app; they hold no secret.
   (R-8)
 - **The catalog** is `packages/api-contract/gym/catalog.json` at `catalog/3` (below). The model
   reads each ability's `description` from the copy the app ships, so the iPhone's generated catalog
@@ -302,7 +304,8 @@ and compose still use them.
   server's writing of a proposal's `threadId`. The receipts of a saved note and of an edited
   movement stay: MCP writes them too.
 - **Anonymous onboarding:** `POST /v1/gym/coach/onboarding` and its read, and what it stores.
-- **The words** embedded in the backend, and the adapters that give Coach a model.
+- **The words** embedded in the backend, the turn wire's own sentences that name the phone, and the
+  adapters that give Coach a model.
 - **The address limit on generations**, which becomes the pass door's.
 - **The corpus** `packages/api-contract/gym/turns/`, the stories of a wire that is gone. Their
   stories are told again in the engine's vectors.

@@ -18,6 +18,8 @@ public:
   static const CoachWords& shipped();
 
   const std::string& prompt() const { return prompt_; }
+  // The context reads a turn may carry are the reads that have a lead.
+  bool isContextRead(const std::string& ability) const { return contextLeads_.contains(ability); }
   // Throws std::out_of_range for an ability that is not a context read.
   const std::string& contextLead(const std::string& ability) const { return contextLeads_.at(ability); }
   const std::string& earlierMarker() const { return earlierMarker_; }
