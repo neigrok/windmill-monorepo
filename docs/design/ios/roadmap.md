@@ -12,8 +12,8 @@ its *Links*, *Edit Kinds* or Coach's composer; the room's roadmaps: the title me
 Roadmaps…*, *New Roadmap*, *Rename* and *Delete Roadmap*, All Roadmaps with its search and its swipe to Delete, New
 Roadmap for a blank roadmap, renaming in the bar, and a roadmap's delete asked once and held with *Undo*; and the Graph:
 the switch row's *Board | Graph*, the canvas with its discs, connectors and captions, one finger's pan and a pinch, a
-step selected with its bar in the band slot and its page from there, and an empty roadmap, without *Next* and its menu,
-*Fit*, Find, a step that opens a roadmap's mark or Coach's composer.
+step selected with its bar in the band slot and its page from there, *Next* in that slot with its menu of the Up next
+steps, *Fit*, and an empty roadmap, without Find, a step that opens a roadmap's mark or Coach's composer.
 [Roadmap on iOS](../../foundation/roadmap-ios.md) §13 lists what is not built. The boards are on the Roadmap file's
 [Roadmap · iOS](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=648-2) page. Each board's
 caption names the SwiftUI element of every part, and each section ends with a NOTE of its stock parts, its

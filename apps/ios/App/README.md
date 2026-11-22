@@ -105,7 +105,8 @@ once the draft's roadmap is not the open one or the step it edits is gone. And i
 each roadmap (`lens`, set by `show(_:)` and kept on the phone under `RoadmapModel.lastLens`, the Board until it is
 switched, as the web's `ViewPrefs` keeps it), the step selected on the Graph (`selected`, set by `select(_:)`, which goes
 once its step does or another roadmap opens), and the open roadmap's Graph (`graph`, a `RoadmapGraph`), which it has
-follow the roadmap as the phone's copy reads it while the Graph is the view.
+follow the roadmap as the phone's copy reads it while the Graph is the view. `pick(_:)` selects a step chosen from the
+Graph's *Next* and has the Graph bring it into view, and `fit()` and `unfit()` start and end the Graph's Fit.
 
 The model's write door is `write(_:as:)`: one act of `RoadmapDomain` run on `AppRuntime.roadmapRunner`, or several as one
 gesture (`ActionRunner.runComposed`), each reading what the ones before it wrote. It answers what the write came to
@@ -133,8 +134,9 @@ blank roadmap starts with one step, named as the roadmap, in the first kind's co
 `NewTreeBirth.plant`).
 
 `RoadmapRoom.swift` is the room's one `NavigationStack` over the model's `path`: the room capsule and the account in the bar,
-the roadmap's name and progress, the switch row pinned under the bar, whose *Board | Graph* chooses the roadmap's view,
-and at the foot the band over New step, which raises the step form. It announces
+the roadmap's name and progress, the switch row pinned under the bar, whose *Board | Graph* chooses the roadmap's view
+and whose one tool on the Graph is *Fit*, and at the foot the band over New step, which raises the step form. While
+Fit stands the bar, the switch row and the foot are away and the status bar stays. It announces
 and plays the band's haptic once, whichever screen stands over it. The title's menu (`RoadmapTitle`, `.toolbarTitleMenu`)
 lists the three most recent roadmaps, each name over its progress and the open one checked, then *All Roadmaps…*, *New
 Roadmap*, *Rename* and *Delete Roadmap*. *Rename* is the system's (`RenameButton` over a title that is a binding): the bar
@@ -175,28 +177,47 @@ roadmap's pill and *Open Roadmap*.
 own control), the band's words, the delete question a step's Board row, its page and its form ask, and the one both the
 Board's title and a roadmap's row in All Roadmaps ask.
 
-`Graph/` is the Graph, the room's one custom part (boards 04.1, 04.2, 04.4; [Roadmap on iOS](../../../docs/foundation/roadmap-ios.md)
+`Graph/` is the Graph, the room's one custom part (boards 04.1 to 04.5; [Roadmap on iOS](../../../docs/foundation/roadmap-ios.md)
 §5). `GraphPicture.swift` is a roadmap's picture as `RoadmapLayout` draws it: the steps the domain reads, each with what
 it follows through any step that is gone and whether it is done, their seats, tiers and bows, and each step's caption
 wrapped under the canvas's 13 pt semibold. It is made off the main actor; the seats and tiers are the layout's and the
 picture decides neither. A picture made after another borrows its seats and captions where only a step's being done
 changed. `GraphCamera.swift` is the camera: the world point at the canvas's centre and the zoom, opened where the
 layout's `fitFrame` puts it and held between the layout's zoom floor and the web's pinch ceiling of 2.5, with the
-roadmap's box never out of what the bars leave. `GraphDrawing.swift` draws one frame into a `GraphicsContext`: the
+roadmap's box never out of what the bars leave. `centred(on:)` is the camera brought to a seat, the seat at the centre
+of what the bars leave and no farther out than the phone's working zoom, and `GraphCamera.Glide` the way there: 0.48,
+0.6 or 0.72 s by how far the centre travels, under the web's easing, as a pinch about the one point of the canvas at
+which both ends show the same place, or a pan between two ends at one zoom. `GraphDrawing.swift` draws one frame into a
+`GraphicsContext`: the
 connectors, 2 pt at the phone's working zoom and lit where they leave a done step; the discs in the kit's forms, each a
 share of the body the layout gives a step, a crowned root 1.55 times wider; the selection ring; and each caption in the
 box the layout gave it, once it is past its wait. It draws only what the camera holds: a connector whose curve's box
 misses the canvas and a disc whose reach misses it are left out, connectors thinner than a fifth of a point are not
-drawn, and each form is one path a colour. `RoadmapGraph.swift` is the Graph's state, which the model owns: it lays the
+drawn, and each form is one path a colour. `GraphSurface.swift` is the view that draws it: the picture on one `Canvas`
+under a camera, which draws again only when its drawing differs. It holds `GraphPinch`, the four ways the Graph can
+keep its frames while a pinch, a finger's or a glide's, moves a crowd of more than 500 steps in view: `live` draws the
+picture anew at every camera; `held` draws it only at the pinch's stops, the zooms half again apart counted from where
+the pinch began, and scales that drawing to the camera between them, with no caption; `coarse` draws each disc as one
+square of its colour; `layered` composites the drawing through `drawingGroup`. Each draws what `live` draws once the
+pinch rests and at any camera that holds no crowd. The room's own
+is `GraphPinch.room`, which is `live`: no phone has measured the other three. `RoadmapGraph.swift` is the Graph's state,
+which the model owns: it lays the
 picture out off the main actor, one layout at a time and only the latest read next, keeps the camera where a person left
 it when the picture changes, asks the layout's `CaptionPlacer` for the captions at each camera and again when the next
 caption is due, answers which step a tap takes (the nearest whose disc, or whose 44 pt target where the disc is
-smaller, holds the point), and measures the Graph against the budget: the first frame after the tap that showed it,
-and the frames a display link sees while a gesture moves the camera (`GraphFrames`). `RoadmapGraphCanvas.swift` is the
-view: one `Canvas` under the room's bars, a `DragGesture` and a `MagnifyGesture` that move the camera, a tap that
-selects, and `GraphStepBar`, the selected step in the foot's band slot, which pushes the step's page. VoiceOver hears the
-canvas as one element, *Graph*, with the roadmap's progress and the hint that the Board lists every step. Left out until
-their screens are built: *Next* and its menu, so the band slot is empty with nothing selected, *Fit*, Find on the Graph,
+smaller, holds the point), holds the pinch under way with the camera it began from and the point it zooms about, glides
+the camera to a step (`bring(_:)`) and to the whole roadmap (`fit()`), at once under Reduce Motion, and keeps the whole
+roadmap framed while Fit stands. It measures the Graph against the budget: the first frame after the tap that showed
+it, and the frames a display link sees while a gesture or a glide moves the camera (`GraphFrames`).
+`RoadmapGraphCanvas.swift` is the
+view: the surface under the room's bars, a `DragGesture` and a `MagnifyGesture` that move the camera, and a tap that
+selects, or under Fit brings the bars back. Beside it are the two bars of the foot's band slot: `GraphNextBar`, *Next*
+over the first Up next step with a menu of every Up next step in Roadmap Order, shown while no step is selected and
+one is Up next, whose pick selects a step and brings it to the centre of the canvas; and `GraphStepBar`, the selected
+step, which pushes the step's page. VoiceOver hears the
+canvas as one element, *Graph*, with the roadmap's progress and the hint that the Board lists every step, or under Fit
+that a tap brings the bars back. Left out until
+their screens are built: Find on the Graph,
 the mark and progress of a step that opens a roadmap, a proposal's changes and a reader's cover.
 
 `Step/StepDraft.swift` is the step form's draft, which `newStep(from:)` and `edit(_:)` make and the model holds while the
@@ -248,7 +269,9 @@ of the layout's shared fixture, read from the repository the build was made in a
 steps' ids are the phone's, with the first 120 of the fixture's 1,800 done steps marked, since signed out each mark's
 commit reads everything the phone has still to send; and `-board roadmap-unreadable` opens the room over views it cannot
 make. A simulator launch
-with `-graph-measures <path>` appends what the Graph measures of itself to that file, one JSON line a measure. The roadmaps under *Learn to sail* hold a few steps
+with `-graph-measures <path>` appends what the Graph measures of itself to that file, one JSON line a measure; with
+`-graph-pinch <way>` it keeps a pinch's frames that way, and with `-graph-crowd <count>` it does so from that many
+steps in view, so a way can act on a board of eight steps. The roadmaps under *Learn to sail* hold a few steps
 each, not the counts the boards draw, and the account's board holds three roadmaps, not nine: it is planted by a
 second engine on the model server, which takes about half a second longer for every roadmap the account already
 holds. A board's clock stands still, so the engine's release timer never ends a hold there: a held delete is sent once
@@ -741,46 +764,57 @@ that draws the picture, with the layout's share of it, and for each gesture the 
 on the main actor sees and how long the main actor worked in each, its commit to the screen included (`GraphFrames`).
 
 `apps/ios/GraphBench` puts the same Graph on a device's own screen, in an app of its own that compiles `GraphPicture`,
-`GraphCamera` and `GraphDrawing` from here and draws the handbook as `RoadmapGraphCanvas` does, alone on the screen
-([its README](../GraphBench/README.md)). One command builds it, runs it on a phone or on a simulator and removes it:
-a script pans and pinches at five cameras, at 5,000 steps and at the first 1,000, with the canvas presenting as the
-room's does and with `rendersAsynchronously`.
+`GraphCamera`, `GraphDrawing` and `GraphSurface` from here and draws the handbook on the room's own surface, alone on
+the screen ([its README](../GraphBench/README.md)). One command builds it, runs it on a phone or on a simulator and
+removes it: a script pans and pinches at five cameras, at 5,000 steps and at the first 1,000, under each of the four
+ways the surface can keep a pinch's frames (`GraphPinch`). `SHORT=1` runs the 5,000 steps at the whole roadmap and at
+zoom 0.011 alone, every way three times. It judges a pan or a pinch over its budget when more than a tenth of its
+frames are later than a frame and a half, or when it is given fewer than nine tenths of the 180 frames its three
+seconds owe.
 
-On an iPhone 13 mini (iOS 27.2, a 60 Hz screen, thermal state nominal, Low Power Mode off), three runs of each
-combination:
+On an iPhone 13 mini (iOS 27.2, a 60 Hz screen, thermal state nominal, Low Power Mode off), drawn as the room draws
+now, `live`, three runs at each size:
 
-| | 5,000 steps | 5,000, asynchronously | 1,000 steps | 1,000, asynchronously |
+| | 5,000 steps | 1,000 steps |
+|---|---|---|
+| The first frame, with the picture's making | 164 to 169 ms | 50 ms |
+| The whole roadmap, a pan: frames later than a frame and a half | 2 to 3 of 177 | none of 181 |
+| The whole roadmap, a pinch: the same | 21 to 23 of 150 | none of 181 |
+| The whole roadmap, a pinch: the main actor's work in a frame, median and nineteenth of twenty | 8 to 9 ms, 34 ms | 7.5 ms, 9 ms |
+| The four closer cameras: frames later than a frame and a half | one, in one pan of twenty-four | none |
+| The four closer cameras: the main actor's work in a frame, median | 5.6 to 8.4 ms | 5.2 to 7.5 ms |
+
+On that phone one `Canvas` drawn live holds the budget at 1,000 steps at every camera, and at 5,000 steps at every
+camera but one: a pinch with the whole roadmap in view, where about a seventh of the frames come late in every run,
+more than the tenth the budget allows, and the gesture is given 150 frames of its 180. The draw closure and the
+script's handler take about 2 ms each of those frames; the rest is the view's update and its commit. An iPhone 13
+mini is faster than the oldest phone the app supports, so a camera that misses here misses there. No phone has run
+`held`, `coarse` or `layered`.
+
+On an iPhone 17 simulator on an M3 Pro, the short form twice, six runs of each way at 5,000 steps:
+
+| | `live` | `held` | `coarse` | `layered` |
 |---|---|---|---|---|
-| The first frame, with the picture's making | 164 to 169 ms | 160 to 165 ms | 50 ms | 50 to 52 ms |
-| The whole roadmap, a pan: frames later than a frame and a half | 2 to 3 of 177 | 1 to 4 of 178 | none of 181 | none of 181 |
-| The whole roadmap, a pinch: the same | 21 to 23 of 150 | 23 to 24 of 152 | none of 181 | none of 181 |
-| The whole roadmap, a pinch: the main actor's work in a frame, median and nineteenth of twenty | 8 to 9 ms, 34 ms | 9 to 11 ms, 34 to 42 ms | 7.5 ms, 9 ms | 4.6 ms, 8.6 ms |
-| The four closer cameras: frames later than a frame and a half | one, in one pan of twenty-four | none | none | none |
-| The four closer cameras: the main actor's work in a frame, median | 5.6 to 8.4 ms | 1.5 to 5.5 ms | 5.2 to 7.5 ms | 1.3 to 5.0 ms |
+| The whole roadmap, a pinch: frames given of 180, and late | 178 to 180, 2 at most | 175 to 180, 5 at most | 167 to 180, 1 at most | 178 to 180, 2 at most |
+| The same: the main actor's work in a frame, median and nineteenth of twenty | 7.2 to 9.5 ms, 9 to 12 ms | 3.0 to 3.5 ms, 7 to 11 ms | 7.3 to 8.7 ms, 10 to 11 ms | 6.1 to 8.9 ms, 8 to 12 ms |
+| The same: draws of the canvas | 179 to 180 | 9 | 168 to 181 | 178 to 180 |
+| The whole roadmap, a pan: frames given, and late | 178 to 180, 2 at most | 178 to 180, 2 at most | 179 to 180, 1 at most | 180, none |
+| The same: the main actor's work, median and nineteenth of twenty | 6.6 to 9.1 ms, 10 to 13 ms | 7.9 to 9.5 ms, 11 to 14 ms | 7.7 to 9.2 ms, 11 to 13 ms | 6.0 to 7.7 ms, 8 to 12 ms |
+| Zoom 0.011, a pinch: frames given, and late | 180, none | 180, none | 180, none | 180, none |
+| The same: the main actor's work, median and nineteenth of twenty | 5.1 to 6.8 ms, 7 to 10 ms | 4.7 to 6.9 ms, 7 to 10 ms | 5.4 to 6.8 ms, 7 to 9 ms | 2.2 to 4.2 ms, 6 to 10 ms |
+| Zoom 0.011, a pan: frames given, and late | 180, none | 180, none | 180, none | 180, none |
+| The same: the main actor's work, median and nineteenth of twenty | 3.3 to 5.7 ms, 6 to 11 ms | 3.5 to 5.7 ms, 6 to 10 ms | 3.3 to 5.2 ms, 6 to 9 ms | 2.3 to 4.2 ms, 6 to 10 ms |
 
-On that phone one `Canvas` holds the budget at 1,000 steps at every camera, and at 5,000 steps at every camera but
-one: a pinch with the whole roadmap in view, where about a seventh of the frames come late in every run, more than
-the tenth the budget allows, and the gesture is given 150 frames of its 180. `rendersAsynchronously` does not change
-that, and its draw closure ran on the main thread every time. The draw closure and the script's handler take about
-2 ms each of those frames; the rest is the view's update and its commit. An iPhone 13 mini is faster than the oldest
-phone the app supports, so a camera that misses here misses there.
+Every pan and pinch holds the budget there under every way, `live` included: the simulator does not show the late
+frames the phone gives a pinch of the whole roadmap, so it cannot choose among them. What it does show: under `held`
+the canvas draws 9 times in a pinch's 180 frames and the main actor's work in a frame falls by three fifths, and in
+one session of the two a redraw at a stop cost a late frame, three to five in a pinch; `coarse` and `layered` move
+the work by less than one run differs from the next; at zoom 0.011, where some 280 steps are in view, `held` and
+`coarse` draw every frame as `live` does; and one pinch under `coarse` lost 13 frames to a single stall of a quarter
+of a second, as a frame or two stall now and then under any way.
 
-On an iPhone 17 simulator on an M3 Pro, one run of each combination:
-
-| | 5,000 steps | 5,000, asynchronously | 1,000 steps | 1,000, asynchronously |
-|---|---|---|---|---|
-| The first frame, with the picture's making | 127 ms | 128 ms | 37 ms | 65 ms |
-| The whole roadmap: the main actor's work in a frame, median | 6.8 to 7.1 ms | 3.5 to 4.7 ms | 6.1 to 6.4 ms | 2.1 to 2.5 ms |
-| The four closer cameras: the same | 3.9 to 5.5 ms | 1.1 to 2.1 ms | 2.2 to 5.3 ms | 0.8 to 2.3 ms |
-| Frames later than a frame and a half, of the 180 or so in a pan or a pinch | 1 at most | 1 at most | 2 at most | 1 at most |
-
-There the main actor's work in a frame follows neither the steps in the roadmap nor the steps in view: the first
-1,000 steps cost nine tenths of what 5,000 do, and a camera that holds five steps three quarters of what the whole
-roadmap does. The draw closure takes a millisecond of it and the script's handler another; the rest is the view's
-update and its commit to the screen, most of which `rendersAsynchronously` takes off the main actor.
-
-Each measure prints one `bench` line beside its budget with the share of the budget it used, and a measure over its
-budget fails the run. The budgets are §5's own: a second for the first frame and for each part of it, a frame at 60 a
+In `graph_bench.sh` each measure prints one `bench` line beside its budget with the share of the budget it used, and a
+measure over its budget fails the run. The budgets are §5's own: a second for the first frame and for each part of it, a frame at 60 a
 second for the room's part of a frame and for the median of the main actor's work in a gesture's frames, and no more
 than a tenth of a gesture's frames later than a frame and a half. Now and then a frame or two of a gesture stall, at
 the closest zoom too, where the canvas draws a step or two; their cause is not found, and the nineteenth of twenty is

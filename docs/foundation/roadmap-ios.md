@@ -363,7 +363,8 @@ makes it false.
   step's page has no workspace, History or *Open Roadmap*, and its menu holds *Delete Step* alone; the title menu has
   no *Guide*, *Kinds*, *Activity*, *Share…* or *Export*, New Roadmap starts a blank roadmap alone, from no quest, plan
   or file, and All Roadmaps has no gallery. The Graph draws the picture, pans and zooms it, selects a step and opens
-  its page, and has no *Next*, *Fit* or Find, no mark on a step that opens a roadmap, and draws no proposal and no
+  its page, lists the Up next steps under *Next* and brings the one chosen into view, and shows the whole roadmap
+  alone under *Fit*; it has no Find, no mark on a step that opens a roadmap, and draws no proposal and no
   reader's cover; no link or Coach is built, and the Board has no Find, sort and filter, branch, selection or pasted
   steps. The app has no associated domain, and its onboarding says roadmap is on the web.
 - `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
@@ -380,8 +381,12 @@ makes it false.
   frames of a scripted pan and pinch at five cameras. On an iPhone 13 mini, the one phone that has run it, `Canvas`
   holds 60 frames a second at 1,000 steps at every camera and at 5,000 steps at every camera but a pinch with the
   whole roadmap in view, where about a seventh of the frames come late, more than the budget's tenth; the first
-  frame takes about a sixth of its second. No older phone has measured it, and a canvas that misses the budget on a
-  phone reports it (§11).
+  frame takes about a sixth of its second. For that pinch the room holds three other ways to keep the frames while
+  more than 500 steps are in view, each drawing at rest what the canvas draws now: the picture drawn at a few stops
+  of the pinch and scaled between them, each disc drawn as one square, and the drawing composited through
+  `drawingGroup`. The room uses none of them, and the benchmark takes each by name: the simulator holds the budget
+  under all four and so cannot choose, and no phone has run the three. No older phone has measured the Graph, and a
+  canvas that misses the budget on a phone reports it (§11).
 - Roadmap's runner holds a removal for the engine's nine seconds (`AppRuntime.roadmapRunner`), and the room runs
   eight acts through it: `MarkStep` (Complete and Reset), `DeleteStep` and `DeleteRoadmap`, each with *Undo*;
   `CreateStep`, `ChangeStep` and `ChangePrerequisites`, composed into the step form's one save with one *Undo*; and

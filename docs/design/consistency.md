@@ -729,8 +729,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   a pushed list goes back, where 05.1 draws the form at rest; the name and description fields stop at the domain's 200
   and 16,000 characters with no counter, as the NOTE rules; and the band's six seconds for *Undo* of a created step
   run under VoiceOver too, as every receipt's do.
-- **Roadmap · iOS · what the Graph leaves for the boards.** The switch, the canvas, a selected step with its bar and
-  an empty roadmap are built in Debug builds from 04.1, 04.2, 04.4, 04.7 and S.2. To draw or rule: the boards draw
+- **Roadmap · iOS · what the Graph leaves for the boards.** The switch, the canvas, a selected step with its bar,
+  *Next* with its menu, *Fit* and an empty roadmap are built in Debug builds from 04.1 to 04.5, 04.7 and S.2. To draw
+  or rule: the boards draw
   *Learn to sail* from the top down by hand, and the canvas seats it where the web's layout does, the first step at
   the left and the rest fanned to its right, as [Roadmap on iOS](../foundation/roadmap-ios.md) P-4 holds it; 04.4 grows
   the captions with the discs, and the layout's captions are the web's, one size at every zoom, 13 pt in a 20 pt line,
@@ -748,10 +749,18 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   steps, and the layout leaves a step unnamed where no seat is free of discs and connectors, *Name the boat parts* at
   the opening frame on an iPhone 17; a caption appears a fifth of a second after its seat is found, with no fade; the
   NOTE has the system fade the canvas at a bar's edge, which it does for what scrolls and not for a `Canvas`, so the
-  picture runs under the bars unfaded; with *Fit* not built the switch row holds the picker and Find alone, and with
-  *Next* not built the band slot is empty until a step is selected; a receipt's band takes the slot from the selected
-  step while it stands; the selected step's bar is the system's glass capsule at its own height, not the kit's raised
-  ground and stroke; no board says how far a pinch goes, and it is held between the layout's floor, half the zoom
+  picture runs under the bars unfaded; a receipt's band takes the slot from *Next* and from the selected step while it stands; *Next*'s
+  bar and the selected step's are the system's glass capsule at its own height, not the kit's raised ground and
+  stroke; the system places *Next*'s menu centred over its bar and covers it, where 04.3 draws the menu to the right
+  with the bar's start showing; the menu lists every Up next step, 170 on the 5,000-step handbook's board, and no
+  board draws it past two; 04.3 has a picked step centred, and the camera puts it at the centre of what the bars
+  leave, comes no farther out than the working zoom, keeps a nearer zoom it already has, and glides there in the
+  web's 0.48 to 0.72 s under its easing, at once under Reduce Motion, as one pinch about a point of the canvas where
+  the web eases the centre and the zoom apart; 04.5 draws the picture a tenth larger with the bars gone, and the
+  layout's fit stops at the phone's working zoom, so under Fit *Learn to sail* keeps its size and stands in the
+  middle of what the status bar and the home indicator leave; no board says whether the picture can be moved while
+  Fit stands, and one finger and a pinch still move it, a tap alone ending Fit; that tap selects nothing, the step
+  under it included; under Fit VoiceOver's one element has the hint *Brings the bars back.*, which no board words; no board says how far a pinch goes, and it is held between the layout's floor, half the zoom
   that shows the whole roadmap, and the web's pinch ceiling, 2.5; a drag ends where the finger leaves it, with no
   glide, and no board asks for one; a tap among steps closer than their 44 pt targets takes the nearest, where the
   web zooms in on a crowd instead; the selection stays through the Board and a step's page and goes with its step or
@@ -762,8 +771,20 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   seats, and the Graph then says *Couldn’t load this roadmap* with no button, which no board draws; a hue no kind of
   this build knows is drawn in the dim ink, and locked in the raised ground, the strong line and the faint ink; and
   the 5,000-step handbook opens with every disc at the layout's 6 pt floor and no connector wide enough to draw, 650
-  times farther out than the working zoom, so until *Next* and Find are built a person reaches a step there by
-  pinching.
+  times farther out than the working zoom, so until Find is built a person reaches a step there by pinching or from
+  *Next*.
+- **Roadmap · iOS · what a pinch of a crowd shows while it moves.** On an iPhone 13 mini a pinch with the whole
+  5,000-step handbook in view is given five sixths of its frames
+  ([Roadmap on iOS](../foundation/roadmap-ios.md) §13). The room holds three ways to keep them (`GraphPinch`), each
+  changing the picture while a pinch, or the camera's glide to a step or to *Fit*, moves more than 500 steps in view,
+  and none once it rests; it uses none until a phone has measured them. To rule with the phone's numbers, since no
+  board draws a pinch in motion: *held* shows the picture as it was last drawn, scaled with the fingers between stops
+  half again apart in zoom, so discs, rings and the selection ring run between about four fifths and six fifths of
+  their size, soft when grown, and return to their size at each stop; it shows no caption until the pinch rests; and
+  a pinch out from a view that holds part of the roadmap leaves up to a fifth of the canvas empty at its edges until
+  the next stop. *coarse* keeps every step in its place, sharp and with the captions, as one square of its colour: a
+  Done step loses its dot, an Up next step its halo and dot, a Locked step its ring and dot. *layered* shows what the
+  room shows now.
 - **Roadmap file · three locked roles a step off the web's.** In *iOS · Roadmap roles*, `roadmap/locked-brick-glyph`
   (Light `#CD9987`), `roadmap/locked-plum-fill` (Light `#E1D1D4`) and `roadmap/locked-plum-ring` (Dark `#4B2E42`) each
   differ by one step in one channel from the web's `locked/brick-glyph` (`#CC9987`), `locked/plum-fill` (`#E1D0D4`)
