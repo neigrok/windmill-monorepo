@@ -4,7 +4,8 @@ import RoadmapDomain
 
 // The Roadmap room (Roadmap · iOS S.1, 01.3, 01.5, 11.22a): one stack, the open roadmap under its name with the switch
 // row, its Board, and at the foot the one band over New step. All Roadmaps and a step's page are pushed on the stack, and
-// New Roadmap is the room's one sheet. What the band says is announced and felt once, whichever screen stands over it.
+// New Roadmap and the step form are its two sheets. What the band says is announced and felt once, whichever screen
+// stands over it.
 struct RoadmapRoom: View {
   // The room's two views of a roadmap.
   enum Lens { case board, graph }
@@ -31,9 +32,12 @@ struct RoadmapRoom: View {
         }
     }.onAppear { roadmap.roomOpened() }
       .sheet(isPresented: Binding(get: { roadmap.naming }, set: { if !$0 { roadmap.cancelNaming() } })) { NewRoadmap(roadmap: roadmap) }
+      .sheet(item: Binding(get: { roadmap.draft }, set: { if $0 == nil { roadmap.draft?.cancel() } })) { draft in
+        RoadmapStepForm(roadmap: roadmap, draft: draft)
+      }
       .sensoryFeedback(trigger: roadmap.band) { _, band in
         switch band?.says {
-        case .completed: .success
+        case .completed, .created: .success
         case .reset: .impact
         default: nil
         }
@@ -72,7 +76,7 @@ struct RoadmapRoom: View {
       .roadmapFoot(roadmap) {
         HStack {
           Spacer()
-          Button("New Step", systemImage: "plus") {}.modifier(GlassCircle()).disabled(true).accessibilityIdentifier("roadmap-new-step")
+          Button("New Step", systemImage: "plus") { roadmap.newStep(from: .foot) }.modifier(GlassCircle()).accessibilityIdentifier("roadmap-new-step")
         }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
       }
   }

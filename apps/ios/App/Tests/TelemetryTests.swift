@@ -185,6 +185,34 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
   }
 
+  @Test func theStepFormTellsItsStepsByKindAndNothingOfTheStep() {
+    let events = ["roadmap_board_create", "roadmap_step_edit", "roadmap_board_edit", "roadmap_board_undo", "roadmap_write_refused", "roadmap_board_delete"]
+    #expect(events.filter(TelemetryPrivacy.events.contains) == events)
+    for (step, door) in [("open", "foot"), ("open", "empty"), ("open", "page"), ("cancel", "foot"), ("cancel", "page"), ("discard", "empty"), ("discard", "page")] {
+      #expect(TelemetryPrivacy.properties(["step": step, "door": door, "view": "board", "node": "private-id", "label": "Reefing basics"]) ==
+              ["step": .label(step), "door": .label(door), "view": .label("board")])
+    }
+    for column in ["locked", "upNext"] {
+      #expect(TelemetryPrivacy.properties(["step": "saved", "column": column, "label": "Reefing basics", "requires": "2"]) ==
+              ["step": .label("saved"), "column": .label(column)])
+    }
+    #expect(TelemetryPrivacy.properties(["step": "saved", "name": "true", "description": "false", "kind": "true", "prerequisites": "false", "opens": "true",
+                                         "label": "Reefing basics", "color": "olive"]) ==
+            ["step": .label("saved"), "name": .label("true"), "description": .label("false"), "kind": .label("true"), "prerequisites": .label("false"),
+             "opens": .label("true")])
+    #expect(TelemetryPrivacy.properties(["name": "Reefing basics", "description": "How to reduce sail area.", "kind": "olive", "opens": "3"]).isEmpty)
+    for (write, refusal) in [("CreateNode", "noName"), ("CreateNode", "loop"), ("EditNode", "loop"), ("EditNode", "invalid"), ("CreateNode", "full")] {
+      #expect(TelemetryPrivacy.properties(["write": write, "refusal": refusal, "step": "Leave the dock"]) == ["write": .label(write), "refusal": .label(refusal)])
+    }
+    for act in ["create", "edit"] {
+      #expect(TelemetryPrivacy.properties(["act": act, "outcome": "ok", "node": "private-id"]) == ["act": .label(act), "outcome": .label("ok")])
+    }
+    #expect(TelemetryPrivacy.properties(["step": "held", "door": "form", "view": "board", "tree": "private-id"]) ==
+            ["step": .label("held"), "door": .label("form"), "view": .label("board")])
+    #expect(TelemetryPrivacy.properties(["operation": "roadmap_write", "failure_kind": "storage", "write": "EditNode", "error": "private-marker"]) ==
+            ["operation": .label("roadmap_write"), "failure_kind": .label("storage"), "write": .label("EditNode")])
+  }
+
   @Test func workoutPickerStepsExcludeMovementAndRackContent() {
     #expect(TelemetryPrivacy.events.contains("gym_workout_picker"))
     for action in ["open", "select", "cancel"] {

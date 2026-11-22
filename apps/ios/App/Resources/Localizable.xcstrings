@@ -55,6 +55,17 @@
         }
       }
     },
+    "%@ added · %@" : {
+      "comment" : "The band after a step is made: the step's name, and the group it landed in",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ added · %2$@"
+          }
+        }
+      }
+    },
     "%@ and %@" : {
       "comment" : "Joins a list's last item: 2 workouts and 1 routine",
       "localizations" : {
@@ -77,6 +88,12 @@
     },
     "%@ changed since you started." : {
 
+    },
+    "%@ comes after this step." : {
+      "comment" : "A step's form: a step that cannot be required, by its name"
+    },
+    "%@ comes before this step." : {
+      "comment" : "A step's form: a step that cannot be opened, by its name"
     },
     "%@ deleted" : {
       "comment" : "The band while a delete is held: the name of the step or of the roadmap"
@@ -189,6 +206,9 @@
     },
     "%@ reset" : {
       "comment" : "The band after a step is reset: the step's name"
+    },
+    "%@ saved" : {
+      "comment" : "The band after a step's changes are saved: the step's name"
     },
     "%@ suggested this. Your past %@ workouts stay in the log." : {
       "localizations" : {
@@ -1215,6 +1235,9 @@
     "All movements" : {
 
     },
+    "All steps" : {
+
+    },
     "Already added" : {
 
     },
@@ -1460,6 +1483,12 @@
 
     },
     "Cancel sign-in" : {
+
+    },
+    "Can’t be opened" : {
+
+    },
+    "Can’t be prerequisites" : {
 
     },
     "Capsize drill" : {
@@ -1824,6 +1853,9 @@
     "Discard all of it?" : {
 
     },
+    "Discard draft?" : {
+
+    },
     "Discard movement changes?" : {
 
     },
@@ -1878,6 +1910,9 @@
     "Edit" : {
 
     },
+    "Edit Step" : {
+
+    },
     "Edit movement" : {
 
     },
@@ -1912,6 +1947,9 @@
 
     },
     "Enter 0 or more, or cancel to keep %@" : {
+
+    },
+    "Enter a name for this step." : {
 
     },
     "Enter the added weight, or a negative number for help from a band. 0 means bodyweight only. Volume counts only the added weight." : {
@@ -1969,6 +2007,9 @@
 
     },
     "Find a roadmap" : {
+
+    },
+    "Find a step" : {
 
     },
     "Finish" : {
@@ -2175,7 +2216,38 @@
     "Kettlebell" : {
 
     },
+    "Kind" : {
+
+    },
     "Knots & lines" : {
+
+    },
+    "Lands in Locked · %@ and %@ aren’t done" : {
+      "comment" : "A step's form: the two steps it requires that are not done",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Lands in Locked · %1$@ and %2$@ aren’t done"
+          }
+        }
+      }
+    },
+    "Lands in Locked · %@ and %lld more aren’t done" : {
+      "comment" : "A step's form: the first step it requires that is not done, and how many more are not",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Lands in Locked · %1$@ and %2$lld more aren’t done"
+          }
+        }
+      }
+    },
+    "Lands in Locked · %@ isn’t done" : {
+      "comment" : "A step's form: the one step it requires that is not done"
+    },
+    "Lands in Up next" : {
 
     },
     "Last done" : {
@@ -2417,6 +2489,9 @@
     "Name it to save it." : {
 
     },
+    "Name this step" : {
+
+    },
     "Name your roadmap" : {
 
     },
@@ -2547,6 +2622,9 @@
     },
     "No workouts yet" : {
 
+    },
+    "None" : {
+      "comment" : "A step's form: no step is chosen in Requires or in Opens"
     },
     "Not applied" : {
 
@@ -3387,6 +3465,12 @@
     "There is room for %lld. Remove one before adding another." : {
 
     },
+    "These come after this step." : {
+
+    },
+    "These come before this step." : {
+
+    },
     "These routines couldn’t be saved. Your response is kept; try again." : {
 
     },
@@ -3736,6 +3820,9 @@
 
     },
     "What I am training for" : {
+
+    },
+    "What does this step cover?" : {
 
     },
     "Where to start?" : {

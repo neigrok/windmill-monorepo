@@ -43,7 +43,8 @@ nonisolated enum TelemetryPrivacy {
     "gym_moment_opened", "gym_hidden_workout", "client_update_required", "appearance_chosen",
     "gym_intent_opened", "quick_action", "sign_in_restore", "account_delete", "roadmap_room_opened",
     "roadmap_board_complete", "roadmap_board_delete", "roadmap_board_undo", "roadmap_write_refused",
-    "roadmap_board_step_open", "roadmap_board_step_action", "roadmap_sheet", "birth", "roadmap_board_create", "roadmap_deletion"
+    "roadmap_board_step_open", "roadmap_board_step_action", "roadmap_sheet", "birth", "roadmap_board_create", "roadmap_deletion",
+    "roadmap_step_edit", "roadmap_board_edit"
   ]
   static let labels: [String: Set<String>] = [
     "room": ["journal", "gym", "roadmap"],
@@ -58,25 +59,30 @@ nonisolated enum TelemetryPrivacy {
     "state": ["shown", "opened", "completed", "declined", "failed", "stopped", "interrupted"],
     "seat": ["anon", "bound"],
     "target": ["workout", "routine"],
-    "name": ["list_routines", "list_exercises", "list_sessions", "get_session", "get_sessions", "last_time", "get_last_times", "get_stats", "get_record", "list_notes", "list_bodyweight", "get_preferences", "create_routine", "create_exercise", "save_note", "share_session", "share_log", "propose_routine_change", "propose_routine_removal", "propose_workout_change", "revoke_share"],
+    "name": ["list_routines", "list_exercises", "list_sessions", "get_session", "get_sessions", "last_time", "get_last_times", "get_stats", "get_record", "list_notes", "list_bodyweight", "get_preferences", "create_routine", "create_exercise", "save_note", "share_session", "share_log", "propose_routine_change", "propose_routine_removal", "propose_workout_change", "revoke_share", "true", "false"],
     "code": ["subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted", "debt_outstanding", "device_bound", "invalid_installation", "coach-bad-request", "coach-update-required", "coach-turn-conflict", "coach-turn-unknown", "coach-turn-order", "coach-turn-volume", "coach-rate-limited", "coach-busy", "coach-vendor-error", "coach-stream-replaced", "coach-replica-syncing", "transport", "decode", "storage", "refusal", "other", "unauthenticated", "invalid_network"],
     "surface": ["activity", "control", "shortcut", "document"],
     "intent": ["start_workout", "open_workout"],
     "item": ["write", "start", "open_workout", "weigh_in", "bodyweight", "date", "movement", "targets", "routine"],
     "stage": ["started", "room_opened", "complete"],
     "trigger": ["sync", "sign_in"],
-    "door": ["accessory", "row", "tab", "history", "handoff", "new_chat", "workout", "swipe", "menu", "page", "card", "step", "list", "empty", "blank"],
+    "door": ["accessory", "row", "tab", "history", "handoff", "new_chat", "workout", "swipe", "menu", "page", "card", "step", "list", "empty", "blank", "foot", "form"],
     // The Roadmap room, in the web's vocabulary: the act a Board event tells of, the step of a delete, of the roadmaps'
-    // switcher or of a new roadmap, the view a step's delete was made on, the group a step stands in when its page opens,
-    // whether a step of another roadmap opens the one deleted, the write a refusal or a failure names, and the refusal's
-    // kind. A step's page is the web's document, and its acts are the three actions above.
-    "act": ["complete", "reset", "delete"],
-    "step": ["confirm", "cancel", "held", "ask", "undo", "open", "switch", "search", "new", "rename"],
+    // switcher, of a new roadmap or of the step form, the view a step's delete was made on, the group a step stands in
+    // when its page opens or its form makes it, whether a step of another roadmap opens the one deleted, the write a
+    // refusal or a failure names, and the refusal's kind. A step's page is the web's document, and its acts are the three
+    // actions above. A saved edit says of each part of the step whether it changed: `name` above, and the four below.
+    "act": ["complete", "reset", "delete", "create", "edit"],
+    "step": ["confirm", "cancel", "held", "ask", "undo", "open", "switch", "search", "new", "rename", "saved", "discard"],
     "view": ["board"],
     "column": ["locked", "upNext", "done"],
     "openers": ["none", "some"],
-    "write": ["mark", "DeleteNode", "undo", "release", "createRoadmap", "title", "deleteRoadmap"],
-    "refusal": ["invalid", "gone", "taken", "tooLarge", "full", "roadmapGone", "unreachable", "notARoot", "stepOpensARoadmap", "depthLimit", "other", "startingStep"],
+    "description": ["true", "false"],
+    "kind": ["true", "false"],
+    "prerequisites": ["true", "false"],
+    "opens": ["true", "false"],
+    "write": ["mark", "DeleteNode", "undo", "release", "createRoadmap", "title", "deleteRoadmap", "CreateNode", "EditNode"],
+    "refusal": ["invalid", "gone", "taken", "tooLarge", "full", "roadmapGone", "unreachable", "notARoot", "stepOpensARoadmap", "depthLimit", "other", "startingStep", "noName", "loop"],
     "appearance": ["light", "dark", "system"],
     "method": ["GET", "POST", "PUT", "DELETE", "email", "apple"],
     "day_kind": ["today"],

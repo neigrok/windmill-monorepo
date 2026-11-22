@@ -1,22 +1,24 @@
 import SwiftUI
 import RoadmapDomain
 
-// The room's foot (Roadmap · iOS 01.11, 02.2, 03.4, 03.6b, 03.9): the one band, a receipt with its Undo or a limit that
-// refused a gesture, over the control the screen keeps there. Every screen of the room stands on the same band.
+// The room's foot (Roadmap · iOS 01.11, 02.2, 03.4, 03.6b, 03.9, 05.7, 05.10): the one band, a receipt with its Undo or a
+// limit that refused a gesture, over the control the screen keeps there. Every screen of the room stands on the same
+// band, the step form too, whose foot is away while one of its fields has the keyboard.
 struct RoadmapFoot<Control: View>: ViewModifier {
   let roadmap: RoadmapModel
+  let away: Bool
   let control: Control
 
   func body(content: Content) -> some View {
     content.reachBand {
       VStack(spacing: 0) {
-        if let band = roadmap.band {
+        if !away, let band = roadmap.band {
           RoomTransient(message: band.says.words, room: .roadmap, actionTitle: String(localized: "Undo"), actionIdentifier: "roadmap-undo",
                         action: band.undo == nil ? nil : { roadmap.undo() }, dismiss: { roadmap.endBand() },
                         type: .subheadline, actionWeight: .semibold)
             .accessibilityIdentifier("roadmap-band")
         }
-        control
+        if !away { control }
       }.roomMotion(roadmap.band)
     }
   }
@@ -50,6 +52,11 @@ extension RoadmapModel.Band.Says {
                     comment: "The band after a step is reset: how many steps it returned to Locked")
     case .deleted(let step):
       return String(localized: "\(RoadmapModel.Row.name(of: step)) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap")
+    case .created(let step, let group):
+      return String(localized: "\(RoadmapModel.Row.name(of: step)) added · \(group.title)",
+                    comment: "The band after a step is made: the step's name, and the group it landed in")
+    case .saved(let step):
+      return String(localized: "\(RoadmapModel.Row.name(of: step)) saved", comment: "The band after a step's changes are saved: the step's name")
     case .deletedRoadmap(let title):
       return String(localized: "\(ListedRoadmap.name(of: title)) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap")
     case .refused(.keepsStartingStep): return String(localized: "A roadmap keeps one starting step")
@@ -59,17 +66,17 @@ extension RoadmapModel.Band.Says {
 }
 
 // A step's delete question (Roadmap · iOS 03.8), on the view that stays on screen once the swipe or the menu that asked
-// has closed, a step's Board row or its page's … button: the step's name, what the delete costs, and Delete Step. Closed
-// any other way, it deletes nothing.
+// has closed, a step's Board row, its page's … button or its form's Delete Step: the step's name, what the delete costs,
+// and Delete Step. Closed any other way, it deletes nothing.
 struct DeleteQuestion: ViewModifier {
   let roadmap: RoadmapModel
   let asked: (name: String, followers: Int)?
 
   // The question is read as the screen draws, so the screen draws again once it is asked: a Board row the system slid
-  // away with its destructive action is back under the question.
-  init(roadmap: RoadmapModel, step: String, onPage: Bool) {
+  // away with its destructive action is back under the question. `doors` are the gestures this view asks by.
+  init(roadmap: RoadmapModel, step: String, by doors: [RoadmapModel.Door]) {
     self.roadmap = roadmap
-    guard case .step(let row, let door, let followers) = roadmap.question, row.id == step, (door == .page) == onPage else {
+    guard case .step(let row, let door, let followers) = roadmap.question, row.id == step, doors.contains(door) else {
       asked = nil
       return
     }
@@ -140,7 +147,7 @@ struct DeleteRoadmapQuestion: ViewModifier {
 }
 
 extension View {
-  func roadmapFoot(_ roadmap: RoadmapModel, @ViewBuilder _ control: () -> some View) -> some View {
-    modifier(RoadmapFoot(roadmap: roadmap, control: control()))
+  func roadmapFoot(_ roadmap: RoadmapModel, away: Bool = false, @ViewBuilder _ control: () -> some View) -> some View {
+    modifier(RoadmapFoot(roadmap: roadmap, away: away, control: control()))
   }
 }
