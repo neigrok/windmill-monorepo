@@ -21,6 +21,8 @@ targets:
         group: Room
       - path: ../App/Sources/Roadmap/Graph/GraphDrawing.swift
         group: Room
+      - path: ../App/Sources/Roadmap/Graph/GraphSurface.swift
+        group: Room
       - path: ../App/Sources/Theme/Palettes.swift
         group: Room
       - path: ../App/Sources/Theme/Theme.xcassets

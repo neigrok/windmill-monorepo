@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # The Graph's budget (Roadmap on iOS §5) on a device's own screen: builds GraphBench in Release, installs it, runs it in
-# each of its four combinations (the handbook's 5,000 steps and the first 1,000 of them; the canvas presenting as the
-# room's does, and asynchronously), prints every `bench` line, and removes the app again.
+# each of its combinations (the handbook's 5,000 steps and the first 1,000 of them, under each way of keeping a pinch's
+# frames), prints every `bench` line, and removes the app again.
 # Run:  bash apps/ios/GraphBench/bench.sh <device>   # a phone, by its identifier in `xcrun devicectl list devices`
 #       bash apps/ios/GraphBench/bench.sh            # a simulator the run makes and deletes
-# Env:  RUNS=<count> runs each combination that many times (3).
+# Env:  SHORT=1 runs the 5,000 steps alone, at the first two cameras: every way three times in about five minutes.
+#       PINCHES="<way> …" runs those ways alone (live held coarse layered).
+#       RUNS=<count> runs each combination that many times (3).
 #       SIM=<udid> uses a booted simulator.
 #       DERIVED_DATA=<path> builds there and leaves the build; otherwise a folder of the run's own.
 #       MEASURES=<folder> keeps each run's lines in a file of its own.
@@ -75,18 +77,19 @@ fi
 
 # A run takes under a minute and has five: one that does not say it is done ends the whole.
 [ -n "${MEASURES:-}" ] && mkdir -p "$MEASURES"
-for steps in 5000 1000; do
-  for asynchronously in NO YES; do
+if [ -n "${SHORT:-}" ]; then counts="5000"; short=YES; else counts="5000 1000"; short=NO; fi
+for steps in $counts; do
+  for pinch in ${PINCHES:-live held coarse layered}; do
     for run in $(seq "${RUNS:-3}"); do
-      asked=(-steps "$steps" -renders-asynchronously "$asynchronously" -quits YES)
+      asked=(-steps "$steps" -pinch "$pinch" -short "$short" -quits YES)
       if [ -n "$device" ]; then
         said="$(bounded 300 xcrun devicectl device process launch --console --terminate-existing --device "$device" -- "$BUNDLE" "${asked[@]}" 2>&1)"
       else
         said="$(bounded 300 xcrun simctl launch --console --terminate-running-process "$sim" "$BUNDLE" "${asked[@]}" 2>&1)"
       fi
-      echo "$said" | grep '^bench ' | tee ${MEASURES:+"$MEASURES/steps-$steps-asynchronously-$asynchronously-run-$run.txt"}
+      echo "$said" | grep '^bench ' | tee ${MEASURES:+"$MEASURES/steps-$steps-pinch-$pinch-run-$run.txt"}
       if ! echo "$said" | grep -q '^bench .* done: '; then
-        echo "the run of $steps steps, asynchronously $asynchronously, did not say it was done:" >&2
+        echo "the run of $steps steps, pinch $pinch, did not say it was done:" >&2
         echo "$said" | grep -v '^bench ' | tail -8 >&2
         exit 1
       fi

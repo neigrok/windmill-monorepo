@@ -1,6 +1,5 @@
 import Foundation
 import QuartzCore
-import Synchronization
 
 // The frames one stretch of the script was given, as the display's own link saw them: the room's `GraphFrames`
 // (`RoadmapGraph.swift`) with the script's hand on each tick where the room has a finger's. Of each frame it keeps the
@@ -15,21 +14,22 @@ final class BenchFrames: NSObject {
     let tickMs: [Double]
     let drawMs: [Double]
     let workMs: [Double]
-    // How many times the canvas drew, and how many of those off the main thread.
+    // How many times the canvas drew.
     let draws: Int
-    let drawsOffMain: Int
     // The rate the link was ticking at when the stretch ended.
     let linkHz: Double
   }
 
-  let drawn = Drawn()
+  // What the canvas's draw closure took since the last tick and how often it ran, and the moment it first drew.
+  var drawn = (ms: 0.0, draws: 0)
+  var first: CFTimeInterval?
   var link: CADisplayLink?
   var watching: [CFRunLoopObserver] = []
   var move: ((TimeInterval) -> Bool)?
   var ended: CheckedContinuation<Stretch, Never>?
   var stamps: [CFTimeInterval] = []
   var ticks: [Double] = []
-  var drew: [Drawn.Since] = []
+  var drawnEach: [(ms: Double, draws: Int)] = []
   var work: [Double] = []
   var woke: CFTimeInterval?
   var worked = 0.0
@@ -39,7 +39,7 @@ final class BenchFrames: NSObject {
   func drive(_ move: @escaping (TimeInterval) -> Bool) async -> Stretch {
     await withCheckedContinuation { (ended: CheckedContinuation<Stretch, Never>) in
       (self.move, self.ended) = (move, ended)
-      (stamps, ticks, drew, work, worked, woke) = ([], [], [], [], 0, CACurrentMediaTime())
+      (stamps, ticks, drawnEach, work, worked, woke) = ([], [], [], [], 0, CACurrentMediaTime())
       link = CADisplayLink(target: self, selector: #selector(tick))
       link?.add(to: .main, forMode: .common)
       // The run loop is seen waking before anything else is, and resting after everything else has, the commit too.
@@ -62,7 +62,8 @@ final class BenchFrames: NSObject {
     stamps.append(link.timestamp)
     work.append(worked)
     worked = 0
-    drew.append(drawn.take())
+    drawnEach.append(drawn)
+    drawn = (0, 0)
     let moving = move?(link.timestamp - stamps[0]) ?? false
     ticks.append((CACurrentMediaTime() - began) * 1_000)
     guard !moving else { return }
@@ -72,48 +73,17 @@ final class BenchFrames: NSObject {
     watching = []
     // A frame's draw and its work are read at the tick after it, and its gap is the wait for that tick. The last tick
     // moved nothing and is no frame of the stretch.
-    let later = drew.dropFirst()
+    let later = drawnEach.dropFirst()
     ended?.resume(returning: Stretch(
       gapsMs: zip(stamps.dropFirst(), stamps).map { ($0 - $1) * 1_000 }, tickMs: Array(ticks.dropLast()), drawMs: later.map(\.ms),
-      workMs: Array(work.dropFirst()), draws: later.reduce(0) { $0 + $1.draws }, drawsOffMain: later.reduce(0) { $0 + $1.offMain },
-      linkHz: 1 / (link.targetTimestamp - link.timestamp)))
+      workMs: Array(work.dropFirst()), draws: later.reduce(0) { $0 + $1.draws }, linkHz: 1 / (link.targetTimestamp - link.timestamp)))
     (move, ended) = (nil, nil)
   }
-}
-
-// What the canvas's draw closure took since the last tick, and the moment it first drew. The canvas writes it from the
-// thread it draws on, which is not the main one where it renders asynchronously.
-nonisolated final class Drawn: Sendable {
-  struct Since: Sendable {
-    var ms = 0.0
-    var draws = 0
-    var offMain = 0
-  }
-
-  struct Kept: Sendable {
-    var since = Since()
-    var first: CFTimeInterval?
-  }
-
-  let kept = Mutex(Kept())
-
-  var first: CFTimeInterval? { kept.withLock { $0.first } }
 
   // One draw of the picture, which began at `began` and has just ended.
   func drew(since began: CFTimeInterval) {
     let ended = CACurrentMediaTime()
-    let offMain = Thread.isMainThread ? 0 : 1
-    kept.withLock { kept in
-      kept.since = Since(ms: kept.since.ms + (ended - began) * 1_000, draws: kept.since.draws + 1, offMain: kept.since.offMain + offMain)
-      kept.first = kept.first ?? ended
-    }
-  }
-
-  func take() -> Since {
-    kept.withLock { kept in
-      let since = kept.since
-      kept.since = Since()
-      return since
-    }
+    drawn = (drawn.ms + (ended - began) * 1_000, drawn.draws + 1)
+    first = first ?? ended
   }
 }

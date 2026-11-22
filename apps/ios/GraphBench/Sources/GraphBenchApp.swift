@@ -1,4 +1,3 @@
-import QuartzCore
 import SwiftUI
 import RoadmapLayout
 
@@ -11,25 +10,18 @@ struct GraphBenchApp: App {
   }
 }
 
-// The picture on one Canvas over the room's ground, as the room's `RoadmapGraphCanvas` wires it: the canvas runs under
-// the screen's edges, takes its size and what covers it from the space around it, and draws again only when the
-// picture, the camera or the captions change. It stands alone on the screen, the script moving the camera where the
-// room has gestures, and the run's lines stand over it once the run is done. Its draw closure is the room's but for
-// what it tells: it times itself, and it holds nothing of the main actor, so a canvas that renders asynchronously can
-// call it from another thread.
+// The room's own `GraphSurface` over the room's ground, sized as the room's `RoadmapGraphCanvas` sizes it: it runs under
+// the screen's edges and takes its size and what covers it from the space around it. It stands alone on the screen,
+// the script moving the camera where the room has gestures, and the run's lines stand over it once the run is done.
 struct GraphBenchScreen: View {
   let bench: GraphBench
 
   var body: some View {
-    let (picture, camera, captions, drawn) = (bench.picture, bench.camera, bench.captions, bench.frames.drawn)
     GeometryReader { space in
       let bars = space.safeAreaInsets
-      Canvas(rendersAsynchronously: bench.rendersAsynchronously) { @Sendable context, _ in
-        guard let picture, let camera else { return }
-        let began = CACurrentMediaTime()
-        GraphDrawing(picture: picture, camera: camera, captions: captions, selected: nil).draw(in: &context)
-        drawn.drew(since: began)
-      }.ignoresSafeArea()
+      GraphSurface(picture: bench.picture, camera: bench.camera, captions: bench.captions, selected: nil, pinched: bench.pinched,
+                   pinch: bench.pinch ?? .room, crowd: GraphPinch.crowd) { began in bench.frames.drew(since: began) }
+        .ignoresSafeArea()
         .onChange(of: [space.size.width, space.size.height, bars.top, bars.trailing, bars.bottom, bars.leading], initial: true) {
           bench.resize(Viewport(width: space.size.width + bars.leading + bars.trailing, height: space.size.height + bars.top + bars.bottom),
                        under: Insets(top: bars.top, right: bars.trailing, bottom: bars.bottom, left: bars.leading))
