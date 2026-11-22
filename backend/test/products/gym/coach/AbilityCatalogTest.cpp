@@ -31,7 +31,7 @@ TEST(gym_ability_catalog_offers_appendix_c_minus_withheld_and_seats_each_ability
   CHECK_EQ(gymAbilityCatalog().version(), 3);
   CHECK_EQ(gymAbilityCatalog().abilities().size(), gymToolCatalog().size());
   for (const int version : {2, 3}) {
-    const AbilityCatalog catalog = gymCatalogs().at(version);
+    const AbilityCatalog& catalog = gymCatalogs().at(version);
     CHECK_EQ(catalog.version(), version);
     const std::set<std::string> anon = names(catalog.offered(Seat::anon));
     CHECK_EQ(anon, (std::set<std::string>{"list_exercises", "list_sessions", "get_session", "get_sessions", "last_time",
@@ -59,8 +59,8 @@ TEST(gym_ability_catalog_offers_appendix_c_minus_withheld_and_seats_each_ability
   }
 
   // A catalog/1 turn is offered and gated by catalog/1: catalog.json's abilities but what catalog/2 added.
-  const AbilityCatalog second = gymCatalogs().at(2);
-  const AbilityCatalog first = gymCatalogs().at(1);
+  const AbilityCatalog& second = gymCatalogs().at(2);
+  const AbilityCatalog& first = gymCatalogs().at(1);
   CHECK_EQ(first.version(), 1);
   CHECK_EQ(first.abilities().size(), second.abilities().size() - 1);
   CHECK_FALSE(first.find("propose_workout_change"));
@@ -142,7 +142,7 @@ TEST(gym_ability_schema_check_names_the_first_break_at_every_depth) {
 }
 
 TEST(gym_ability_schema_check_validates_the_real_catalog_inputs) {
-  const AbilityCatalog catalog = gymCatalogs().at(2);
+  const AbilityCatalog& catalog = gymCatalogs().at(2);
   const Json::Value& routine = catalog.find("create_routine")->declaration.descriptor["inputSchema"];
   CHECK_EQ(schemaViolation(routine, parse(R"({"id":"rt_00000001","name":"Push A","position":0,"entries":[{"exerciseId":"bench-press","sets":[{"reps":5,"weightKg":80}],"restSeconds":120}]})")).value_or(""), std::string(""));
   CHECK_EQ(schemaViolation(routine, parse(R"({"id":"rt_00000001","name":"Push A","position":0,"entries":[{"exerciseId":"bench-press","sets":[]}]})")).value_or(""), std::string("entries[0].sets holds fewer than 1 items"));

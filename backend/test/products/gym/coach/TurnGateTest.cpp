@@ -23,8 +23,7 @@ Json::Value routine(const char* id, int position) {
 }  // namespace
 
 TEST(gym_turn_gate_mints_every_new_record_id_from_the_turn_in_call_order) {
-  const AbilityCatalog gateCatalog = gymCatalogs().at(2);
-  TurnGate gate(gateCatalog, Seat::bound, "tn_gate_0000001");
+  TurnGate gate(gymCatalogs().at(2), Seat::bound, "tn_gate_0000001");
   const GateVerdict first = gate.admit("create_routine", routine("rt_model_a", 0), false);
   const GateVerdict read = gate.admit("list_routines", Json::Value(Json::objectValue), false);
   const GateVerdict second = gate.admit("create_exercise", parse(R"({"id":"ex_model","name":"Pause bench","pattern":"press","equipment":"barbell"})"), false);
@@ -42,8 +41,7 @@ TEST(gym_turn_gate_mints_every_new_record_id_from_the_turn_in_call_order) {
 }
 
 TEST(gym_turn_gate_refuses_in_rule_order_and_counts_each_refusal_by_code) {
-  const AbilityCatalog gateCatalog = gymCatalogs().at(2);
-  TurnGate gate(gateCatalog, Seat::anon, "tn_gate_0000002");
+  TurnGate gate(gymCatalogs().at(2), Seat::anon, "tn_gate_0000002");
   CHECK_EQ(gate.admit("log_set", parse(R"({"sessionId":"ses_00000001","exerciseId":"bench-press","weightKg":80,"reps":5})"), false).code, std::string("not-offered"));
   CHECK_EQ(gate.admit("no_such_tool", Json::Value(Json::objectValue), false).code, std::string("not-offered"));
   CHECK_EQ(gate.admit("save_note", parse(R"({"id":"note_a","title":"T","body":"B"})"), false).code, std::string("seat-required"));
@@ -57,8 +55,7 @@ TEST(gym_turn_gate_refuses_in_rule_order_and_counts_each_refusal_by_code) {
 }
 
 TEST(gym_turn_gate_holds_one_proposal_and_one_note_until_a_failed_result_frees_the_slot) {
-  const AbilityCatalog gateCatalog = gymCatalogs().at(2);
-  TurnGate gate(gateCatalog, Seat::bound, "tn_gate_0000003");
+  TurnGate gate(gymCatalogs().at(2), Seat::bound, "tn_gate_0000003");
   const Json::Value change = parse(R"({"id":"prop_a","routineId":"rt_00000001","entries":[{"exerciseId":"bench-press"}]})");
   const GateVerdict first = gate.admit("propose_routine_change", change, false);
   REQUIRE(first.admitted);
@@ -80,8 +77,7 @@ TEST(gym_turn_gate_holds_one_proposal_and_one_note_until_a_failed_result_frees_t
 // catalog/1 turn has no workout proposal to offer.
 TEST(gym_turn_gate_holds_one_proposal_per_target_kind) {
   const Json::Value workout = parse(R"({"id":"prop_w","sessionId":"ses_00000001","entries":[{"exerciseId":"bench-press"}]})");
-  const AbilityCatalog gateCatalog = gymCatalogs().at(2);
-  TurnGate gate(gateCatalog, Seat::anon, "tn_gate_0000005");
+  TurnGate gate(gymCatalogs().at(2), Seat::anon, "tn_gate_0000005");
   const GateVerdict routine = gate.admit("propose_routine_removal", parse(R"({"id":"prop_r","routineId":"rt_00000001"})"), false);
   const GateVerdict change = gate.admit("propose_workout_change", workout, false);
   REQUIRE(routine.admitted);
@@ -95,22 +91,19 @@ TEST(gym_turn_gate_holds_one_proposal_per_target_kind) {
   gate.settle(*change.ability, false);
   CHECK(gate.admit("propose_workout_change", workout, false).admitted);
 
-  const AbilityCatalog first = gymCatalogs().at(1);
-  TurnGate older(first, Seat::anon, "tn_gate_0000006");
+  TurnGate older(gymCatalogs().at(1), Seat::anon, "tn_gate_0000006");
   CHECK_EQ(older.admit("propose_workout_change", workout, false).code, std::string("not-offered"));
 }
 
 TEST(gym_turn_gate_bounds_adds_at_six_and_calls_at_twelve) {
-  const AbilityCatalog addsCatalog = gymCatalogs().at(2);
-  TurnGate adds(addsCatalog, Seat::bound, "tn_gate_0000004");
+  TurnGate adds(gymCatalogs().at(2), Seat::bound, "tn_gate_0000004");
   for (int number = 0; number < 6; ++number) CHECK(adds.admit("create_routine", routine("rt", number), false).admitted);
   CHECK_EQ(adds.admit("create_routine", routine("rt", 6), false).code, std::string("coach-turn-volume"));
   CHECK_EQ(adds.admit("create_exercise", parse(R"({"id":"ex_a","name":"Pause bench","pattern":"press","equipment":"barbell"})"), false).code,
            std::string("coach-turn-volume"));
   CHECK(adds.admit("list_routines", Json::Value(Json::objectValue), false).admitted);
 
-  const AbilityCatalog callsCatalog = gymCatalogs().at(2);
-  TurnGate calls(callsCatalog, Seat::bound, "tn_gate_0000005");
+  TurnGate calls(gymCatalogs().at(2), Seat::bound, "tn_gate_0000005");
   for (int number = 0; number < 12; ++number) CHECK(calls.admit("list_routines", Json::Value(Json::objectValue), false).admitted);
   CHECK_EQ(calls.admit("list_routines", Json::Value(Json::objectValue), false).code, std::string("coach-turn-volume"));
   CHECK_EQ(calls.admit("create_routine", routine("rt", 0), false).code, std::string("coach-turn-volume"));

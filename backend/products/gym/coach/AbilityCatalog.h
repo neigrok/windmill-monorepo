@@ -67,9 +67,11 @@ private:
 class ServedCatalogs {
 public:
   ServedCatalogs(AbilityCatalog second, AbilityCatalog third);
-  AbilityCatalog at(int version) const;
+  // Each served version is built once and lives as long as this, so a caller may hold what it answers.
+  const AbilityCatalog& at(int version) const;
 
 private:
+  AbilityCatalog first_;
   AbilityCatalog second_;
   AbilityCatalog third_;
 };

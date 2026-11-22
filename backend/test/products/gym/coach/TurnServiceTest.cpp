@@ -919,7 +919,7 @@ TEST(coach_turn_offers_the_schemas_of_the_catalog_it_opened_with) {
     h.model->start();
     REQUIRE(recorder->waitFor(2));
     REQUIRE_EQ(h.model->requests.size(), 1u);
-    const AbilityCatalog catalog = gymCatalogs().at(version);
+    const AbilityCatalog& catalog = gymCatalogs().at(version);
     std::map<std::string, Json::Value> sent;
     for (const Json::Value& tool : h.model->requests[0]["tools"]) sent.emplace(tool["name"].asString(), tool["input_schema"]);
     REQUIRE_EQ(sent.size(), catalog.offered(Seat::bound).size());

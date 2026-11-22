@@ -231,9 +231,13 @@ std::vector<ToolDeclaration> AbilityCatalog::offered(Seat seat) const {
 }
 
 ServedCatalogs::ServedCatalogs(AbilityCatalog second, AbilityCatalog third)
-    : second_(std::move(second)), third_(std::move(third)) {}
+    : first_(second.at(1)), second_(std::move(second)), third_(std::move(third)) {}
 
-AbilityCatalog ServedCatalogs::at(int version) const { return version >= third_.version() ? third_ : second_.at(version); }
+const AbilityCatalog& ServedCatalogs::at(int version) const {
+  if (version <= first_.version()) return first_;
+  if (version == second_.version()) return second_;
+  return third_;
+}
 
 namespace {
 
@@ -261,10 +265,7 @@ const ServedCatalogs& gymCatalogs() {
   return catalogs;
 }
 
-const AbilityCatalog& gymAbilityCatalog() {
-  static const AbilityCatalog catalog = gymCatalogs().at(kNewestCatalog);
-  return catalog;
-}
+const AbilityCatalog& gymAbilityCatalog() { return gymCatalogs().at(kNewestCatalog); }
 
 std::optional<std::string> schemaViolation(const Json::Value& schema, const Json::Value& value) {
   return violation(schema, value, "");
