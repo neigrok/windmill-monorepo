@@ -6,6 +6,7 @@
 #include <cmath>
 #include <regex>
 #include <set>
+#include <utility>
 
 namespace wm::gym::coach {
 
@@ -185,8 +186,9 @@ bool Ability::mintsId() const {
   return declaration.descriptor["inputSchema"]["properties"].isMember("id");
 }
 
-AbilityCatalog AbilityCatalog::of(const std::vector<ToolDeclaration>& declarations) {
+AbilityCatalog AbilityCatalog::of(const std::vector<ToolDeclaration>& declarations, int version) {
   AbilityCatalog catalog;
+  catalog.version_ = version;
   for (const ToolDeclaration& declaration : declarations) {
     Ability ability{declaration};
     if (const AppendixRow* row = appendixRow(declaration.name())) {
@@ -226,8 +228,19 @@ std::vector<ToolDeclaration> AbilityCatalog::offered(Seat seat) const {
   return out;
 }
 
+ServedCatalogs::ServedCatalogs(AbilityCatalog second, AbilityCatalog third)
+    : second_(std::move(second)), third_(std::move(third)) {}
+
+AbilityCatalog ServedCatalogs::at(int version) const { return version >= third_.version() ? third_ : second_.at(version); }
+
+const ServedCatalogs& gymCatalogs() {
+  static const ServedCatalogs catalogs{AbilityCatalog::of(declarationsOf(catalog2Text()), 2),
+                                       AbilityCatalog::of(gymToolCatalog(), 3)};
+  return catalogs;
+}
+
 const AbilityCatalog& gymAbilityCatalog() {
-  static const AbilityCatalog catalog = AbilityCatalog::of(gymToolCatalog());
+  static const AbilityCatalog catalog = gymCatalogs().at(kNewestCatalog);
   return catalog;
 }
 

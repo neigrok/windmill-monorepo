@@ -8,6 +8,8 @@
 #include <map>
 #include <set>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 using namespace wm;
@@ -24,67 +26,76 @@ std::set<std::string> names(const std::vector<ToolDeclaration>& declarations) {
 
 }  // namespace
 
+// catalog/2 and catalog/3 offer one set of abilities, each over its own file's declarations.
 TEST(gym_ability_catalog_offers_appendix_c_minus_withheld_and_seats_each_ability) {
-  const AbilityCatalog& catalog = gymAbilityCatalog();
-  CHECK_EQ(catalog.version(), 2);
-  CHECK_EQ(catalog.abilities().size(), gymToolCatalog().size());
+  CHECK_EQ(gymAbilityCatalog().version(), 3);
+  CHECK_EQ(gymAbilityCatalog().abilities().size(), gymToolCatalog().size());
+  for (const int version : {2, 3}) {
+    const AbilityCatalog catalog = gymCatalogs().at(version);
+    CHECK_EQ(catalog.version(), version);
+    const std::set<std::string> anon = names(catalog.offered(Seat::anon));
+    CHECK_EQ(anon, (std::set<std::string>{"list_exercises", "list_sessions", "get_session", "get_sessions", "last_time",
+                                          "get_last_times", "list_routines", "get_stats", "list_notes", "list_bodyweight",
+                                          "create_routine", "create_exercise", "propose_routine_change",
+                                          "propose_routine_removal", "propose_workout_change"}));
+    std::set<std::string> bound = anon;
+    bound.insert({"save_note", "share_session", "revoke_share"});
+    CHECK_EQ(names(catalog.offered(Seat::bound)), bound);
 
-  const std::set<std::string> anon = names(catalog.offered(Seat::anon));
-  CHECK_EQ(anon, (std::set<std::string>{"list_exercises", "list_sessions", "get_session", "get_sessions", "last_time",
-                                        "get_last_times", "list_routines", "get_stats", "list_notes", "list_bodyweight",
-                                        "create_routine", "create_exercise", "propose_routine_change",
-                                        "propose_routine_removal", "propose_workout_change"}));
-  std::set<std::string> bound = anon;
-  bound.insert({"save_note", "share_session", "revoke_share"});
-  CHECK_EQ(names(catalog.offered(Seat::bound)), bound);
+    // Every declared name the appendix withholds, or does not list, is offered on no seat.
+    for (const char* withheld : {"start_session", "log_set", "log_sets", "import_session", "finish_session",
+                                 "discard_session", "update_exercise"}) {
+      REQUIRE(catalog.find(withheld));
+      CHECK(catalog.find(withheld)->agent == AgentRule::withheld);
+    }
+    CHECK(catalog.find("propose_workout_change")->target == ProposalTarget::workout);
+    CHECK(catalog.find("propose_routine_removal")->target == ProposalTarget::routine);
+    CHECK(catalog.find("share_session")->host == AbilityHost::server);
+    CHECK(catalog.find("revoke_share")->host == AbilityHost::server);
+    CHECK(catalog.find("save_note")->seats == AbilitySeats::bound);
+    CHECK(catalog.find("propose_routine_removal")->cls == AbilityClass::remove);
+    CHECK(catalog.find("propose_routine_removal")->agent == AgentRule::proposes);
+    CHECK_FALSE(catalog.find("get_record"));
+  }
 
-  // A catalog/1 turn is offered and gated by catalog/1: everything but what catalog/2 added.
-  const AbilityCatalog first = catalog.at(1);
+  // A catalog/1 turn is offered and gated by catalog/1: catalog.json's abilities but what catalog/2 added.
+  const AbilityCatalog second = gymCatalogs().at(2);
+  const AbilityCatalog first = gymCatalogs().at(1);
   CHECK_EQ(first.version(), 1);
-  CHECK_EQ(first.abilities().size(), catalog.abilities().size() - 1);
+  CHECK_EQ(first.abilities().size(), second.abilities().size() - 1);
   CHECK_FALSE(first.find("propose_workout_change"));
-  std::set<std::string> older = bound;
+  std::set<std::string> older = names(second.offered(Seat::bound));
   older.erase("propose_workout_change");
   CHECK_EQ(names(first.offered(Seat::bound)), older);
-  CHECK(catalog.find("propose_workout_change")->target == ProposalTarget::workout);
-  CHECK(catalog.find("propose_routine_removal")->target == ProposalTarget::routine);
-
-  // Every declared name the appendix withholds, or does not list, is offered on no seat.
-  for (const char* withheld : {"start_session", "log_set", "log_sets", "import_session", "finish_session",
-                               "discard_session", "update_exercise"}) {
-    REQUIRE(catalog.find(withheld));
-    CHECK(catalog.find(withheld)->agent == AgentRule::withheld);
-  }
-  CHECK(catalog.find("share_session")->host == AbilityHost::server);
-  CHECK(catalog.find("revoke_share")->host == AbilityHost::server);
-  CHECK(catalog.find("save_note")->seats == AbilitySeats::bound);
-  CHECK(catalog.find("propose_routine_removal")->cls == AbilityClass::remove);
-  CHECK(catalog.find("propose_routine_removal")->agent == AgentRule::proposes);
-  CHECK_FALSE(catalog.find("get_record"));
+  CHECK_EQ(sync::jcs(first.find("list_sessions")->declaration.descriptor),
+           sync::jcs(second.find("list_sessions")->declaration.descriptor));
 }
 
-// catalog.json is the catalog of record: every ability the C++ table holds carries its class, agent and seats.
-TEST(gym_ability_catalog_class_agent_and_seats_are_catalog_json_s) {
-  const Json::Value catalog = sync::parseJson(catalogText());
-  std::map<std::string, Json::Value> pinned;
-  for (const Json::Value& ability : catalog["abilities"]) pinned.emplace(ability["name"].asString(), ability);
-  for (const Ability& ability : gymAbilityCatalog().abilities()) {
-    const auto found = pinned.find(ability.name());
-    if (found == pinned.end()) {
-      ::testing::fail(("catalog.json holds no " + ability.name()).c_str(), __FILE__, __LINE__);
-      continue;
+// Each catalog file is a catalog of record: every ability the C++ table holds carries its class, agent and seats.
+TEST(gym_ability_catalog_class_agent_and_seats_are_each_catalog_file_s) {
+  for (const auto& [version, text] : std::vector<std::pair<int, std::string_view>>{{2, catalog2Text()}, {3, catalog3Text()}}) {
+    const Json::Value catalog = sync::parseJson(text);
+    std::map<std::string, Json::Value> pinned;
+    for (const Json::Value& ability : catalog["abilities"]) pinned.emplace(ability["name"].asString(), ability);
+    for (const Ability& ability : gymCatalogs().at(version).abilities()) {
+      const auto found = pinned.find(ability.name());
+      if (found == pinned.end()) {
+        ::testing::fail((catalog["catalog"].asString() + " holds no " + ability.name()).c_str(), __FILE__, __LINE__);
+        continue;
+      }
+      Json::Value table(Json::objectValue);
+      table["class"] = std::string(nameOf(ability.cls));
+      table["agent"] = std::string(nameOf(ability.agent));
+      table["seats"] = ability.seats == AbilitySeats::bound ? "bound" : "any";
+      if (ability.since != 1) table["since"] = "catalog/" + std::to_string(ability.since);
+      Json::Value json(Json::objectValue);
+      for (const char* field : {"class", "agent", "seats", "since"})
+        if (found->second.isMember(field)) json[field] = found->second[field];
+      if (table != json)
+        ::testing::fail((ability.name() + " drifts from " + catalog["catalog"].asString() + ": the table says " + dump(table) +
+                         ", the file " + dump(json)).c_str(),
+                        __FILE__, __LINE__);
     }
-    Json::Value table(Json::objectValue);
-    table["class"] = std::string(nameOf(ability.cls));
-    table["agent"] = std::string(nameOf(ability.agent));
-    table["seats"] = ability.seats == AbilitySeats::bound ? "bound" : "any";
-    if (ability.since != 1) table["since"] = "catalog/" + std::to_string(ability.since);
-    Json::Value json(Json::objectValue);
-    for (const char* field : {"class", "agent", "seats", "since"})
-      if (found->second.isMember(field)) json[field] = found->second[field];
-    if (table != json)
-      ::testing::fail((ability.name() + " drifts from catalog.json: the table says " + dump(table) + ", catalog.json " + dump(json)).c_str(),
-                      __FILE__, __LINE__);
   }
 }
 
@@ -131,7 +142,7 @@ TEST(gym_ability_schema_check_names_the_first_break_at_every_depth) {
 }
 
 TEST(gym_ability_schema_check_validates_the_real_catalog_inputs) {
-  const AbilityCatalog& catalog = gymAbilityCatalog();
+  const AbilityCatalog catalog = gymCatalogs().at(2);
   const Json::Value& routine = catalog.find("create_routine")->declaration.descriptor["inputSchema"];
   CHECK_EQ(schemaViolation(routine, parse(R"({"id":"rt_00000001","name":"Push A","position":0,"entries":[{"exerciseId":"bench-press","sets":[{"reps":5,"weightKg":80}],"restSeconds":120}]})")).value_or(""), std::string(""));
   CHECK_EQ(schemaViolation(routine, parse(R"({"id":"rt_00000001","name":"Push A","position":0,"entries":[{"exerciseId":"bench-press","sets":[]}]})")).value_or(""), std::string("entries[0].sets holds fewer than 1 items"));

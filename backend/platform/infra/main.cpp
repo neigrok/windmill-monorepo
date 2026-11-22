@@ -841,7 +841,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   const std::string coachBaseUrl = std::getenv("COACH_ANTHROPIC_BASE_URL") ? std::getenv("COACH_ANTHROPIC_BASE_URL") : kAnthropicBaseUrl;
   auto gymCoachModel = std::make_shared<gym::coach::AnthropicCoachModel>(anthropicKey ? anthropicKey : "", coachBaseUrl,
                                                                          sentry, aiFuse, aiSpendSink, aiCallBudget);
-  auto gymTurns = std::make_shared<gym::coach::TurnService>(gymCoachModel, gym::coach::gymAbilityCatalog(), *gymTools, *gymDoor,
+  auto gymTurns = std::make_shared<gym::coach::TurnService>(gymCoachModel, gym::coach::gymCatalogs(), *gymTools, *gymDoor,
                                                             *entitlements, aiInstallations, *systemClock,
                                                             gym::coachMaxOutputTokens(std::getenv("COACH_MAX_OUTPUT_TOKENS")), sentry);
   gymTurns->start();

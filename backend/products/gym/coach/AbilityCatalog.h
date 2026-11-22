@@ -10,9 +10,8 @@
 #include <string_view>
 #include <vector>
 
-// The ability catalog a Coach turn gates on (gym_coach.md §3): each declared tool, with the class,
-// agent rule and seats Appendix C gives it. The declarations are `gymToolCatalog()`'s, pinned to
-// catalog.json by CatalogContractTest; AbilityCatalogTest pins the class, agent and seats.
+// The ability catalog a Coach turn gates on (gym_coach.md §3): each tool a catalog file declares, with the class,
+// agent rule and seats Appendix C gives it. AbilityCatalogTest pins the class, agent and seats to both files.
 
 namespace wm::gym::coach {
 
@@ -44,10 +43,10 @@ struct Ability {
 
 class AbilityCatalog {
 public:
-  // Appendix C over the declarations; a declared name the appendix does not list is withheld.
-  static AbilityCatalog of(const std::vector<ToolDeclaration>& declarations);
-  // D-3: catalog/N, every ability whose `since` is at most N, which a turn opened with that version is
-  // offered and gated by.
+  // Appendix C over one catalog file's declarations, as catalog/`version`; a declared name the appendix does not
+  // list is withheld.
+  static AbilityCatalog of(const std::vector<ToolDeclaration>& declarations, int version);
+  // D-3: an older version this file still speaks for, every ability whose `since` is at most `version`.
   AbilityCatalog at(int version) const;
 
   int version() const { return version_; }
@@ -62,7 +61,22 @@ private:
   std::vector<Ability> abilities_;
 };
 
-// Appendix C over gymToolCatalog(), held to catalog.json, the catalog of record.
+// D-3: the catalogs the server serves side by side, by the version a turn opens with: catalog/1 and catalog/2 are
+// catalog.json's, which builds released before catalog/3 open turns with until the cutover; catalog/3 is
+// catalog-3.json's, every door's.
+class ServedCatalogs {
+public:
+  ServedCatalogs(AbilityCatalog second, AbilityCatalog third);
+  AbilityCatalog at(int version) const;
+
+private:
+  AbilityCatalog second_;
+  AbilityCatalog third_;
+};
+
+// Appendix C over the embedded catalog files.
+const ServedCatalogs& gymCatalogs();
+// catalog/3, the newest: what MCP declares and a catalog/3 turn is gated by.
 const AbilityCatalog& gymAbilityCatalog();
 
 // G-3: the first way `value` breaks `schema` — type, required, additionalProperties, enum, bounds,
