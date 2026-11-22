@@ -789,14 +789,18 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   layout's fit stops at the phone's working zoom, so under Fit *Learn to sail* keeps its size and stands in the
   middle of what the status bar and the home indicator leave; no board says whether the picture can be moved while
   Fit stands, and one finger and a pinch still move it, a tap alone ending Fit; that tap selects nothing, the step
-  under it included; under Fit VoiceOver's one element has the hint *Brings the bars back.*, which no board words; no board says how far a pinch goes, and it is held between the layout's floor, half the zoom
+  under it included; Fit takes the foot's band away with the bars, so a receipt standing as Fit is pressed runs out
+  unseen with its *Undo*, a held delete's too, whose hold is then released, and no board says whether the band stays
+  under Fit; under Fit VoiceOver's one element has the hint *Brings the bars back.*, which no board words; no board says how far a pinch goes, and it is held between the layout's floor, half the zoom
   that shows the whole roadmap, and the web's pinch ceiling, 2.5; a drag ends where the finger leaves it, with no
   glide, and no board asks for one; a tap among steps closer than their 44 pt targets takes the nearest, where the
   web zooms in on a crowd instead; the selection stays through the Board and a step's page and goes with its step or
   its roadmap, which no board says; each roadmap opens in the view it was last switched to on this phone, the Board
   until then, as the web keeps it; VoiceOver hears the canvas as one element, *Graph*, with the roadmap's progress
   and *The Board lists every step.*, and no step of the picture is an element, so the question stands whether the
-  Graph should give its steps to VoiceOver in the roadmap's order; steps that follow each other in a loop have no
+  Graph should give its steps to VoiceOver in the roadmap's order; a double-tap on that element outside Fit is thought
+  to select whatever step stands at the canvas's centre, which its hint does not say, and no one has tried it with
+  VoiceOver; steps that follow each other in a loop have no
   seats, and the Graph then says *Couldn’t load this roadmap* with no button, which no board draws; a hue no kind of
   this build knows is drawn in the dim ink, and locked in the raised ground, the strong line and the faint ink; and
   the 5,000-step handbook opens with every disc at the layout's 6 pt floor and no connector wide enough to draw, 650
