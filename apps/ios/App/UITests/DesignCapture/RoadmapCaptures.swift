@@ -1,7 +1,7 @@
 import XCTest
 
-// The Roadmap room's boards (Roadmap · iOS): its Board, a step's page, its roadmaps, and its door on Where to start?
-// (Shell 02a).
+// The Roadmap room's boards (Roadmap · iOS): its Board, a step's page, the step form, its roadmaps, and its door on
+// Where to start? (Shell 02a).
 final class RoadmapCaptures: DesignCapture {
   // 01.1: *Learn to sail* on its Board, as it arrives from its account.
   func testBoardAtRest() {
@@ -166,6 +166,139 @@ final class RoadmapCaptures: DesignCapture {
       XCTAssertTrue(app.staticTexts["3 of 7 done"].waitForExistence(timeout: 5))
       return app
     }
+  }
+
+  // 05.1: New Step filled: Reefing basics, a Learn step that requires Read the wind and opens Leave the dock.
+  func testNewStep() {
+    captureBoard("05.1-roadmap-new-step") { look in reefingBasics(look) }
+  }
+
+  // 05.2: Kind, pushed inside the sheet, on a new draft's Sky.
+  func testKind() {
+    captureBoard("05.2-roadmap-kind") { look in
+      let app = newStep(look)
+      app.buttons["roadmap-form-kind"].tap()
+      XCTAssertTrue(app.roadmapKind("Learn").waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // 05.3: Requires opened again, what was chosen under Selected and the steps that come after the draft's dimmed.
+  func testRequires() {
+    captureBoard("05.3-roadmap-requires") { look in
+      let app = reefingBasics(look)
+      app.buttons["roadmap-form-requires"].tap()
+      XCTAssertTrue(app.staticTexts["Selected"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // 05.4: Opens, the same list for the steps the draft unlocks.
+  func testOpens() {
+    captureBoard("05.4-roadmap-opens") { look in
+      let app = reefingBasics(look)
+      app.buttons["roadmap-form-opens"].tap()
+      XCTAssertTrue(app.staticTexts["Selected"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // 05.5: Cancel on the changed draft asks once, over Cancel.
+  func testDiscardDraft() {
+    captureBoard("05.5-roadmap-discard-draft") { look in
+      let app = reefingBasics(look)
+      app.buttons["roadmap-form-cancel"].tap()
+      XCTAssertTrue(app.buttons["Discard"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // 05.6a: the name typed and cleared, refused in its section's footer.
+  func testRefusalNoName() {
+    captureBoard("05.6a-roadmap-refusal-no-name") { look in
+      let app = reefingBasics(look)
+      let name = app.textFields["roadmap-form-name"]
+      name.tap()
+      name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 14) + "\n")
+      XCTAssertTrue(app.staticTexts["Enter a name for this step."].waitForExistence(timeout: 5))
+      XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // 05.6b: a tap on the dimmed Leave the dock, named in its group's footer.
+  func testRefusalLoop() {
+    captureBoard("05.6b-roadmap-refusal-loop") { look in
+      let app = reefingBasics(look)
+      app.buttons["roadmap-form-requires"].tap()
+      XCTAssertTrue(app.roadmapChoice("Leave the dock").waitForExistence(timeout: 5))
+      app.roadmapChoice("Leave the dock").tap()
+      XCTAssertTrue(app.staticTexts["Leave the dock comes after this step."].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // 05.7: the step created, shown washed in Locked on the Board, the band holding Undo.
+  func testCreated() {
+    captureBoard("05.7-roadmap-created") { look in
+      let app = reefingBasics(look)
+      app.buttons["roadmap-form-commit"].tap()
+      XCTAssertTrue(app.buttons["roadmap-undo"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.roadmapStep("Reefing basics").waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // 05.8: Edit raised over Read the wind's page.
+  func testEditStep() {
+    captureBoard("05.8-roadmap-edit-step") { look in
+      let app = stepPage(["Read the wind"], look)
+      app.buttons["roadmap-step-edit"].tap()
+      XCTAssertTrue(app.navigationBars["Edit Step"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 05.10: Description has the keyboard, which the form keeps it above.
+  func testKeyboardUp() {
+    captureBoard("05.10-roadmap-keyboard-up") { look in
+      let app = reefingBasics(look)
+      app.descendants(matching: .any)["roadmap-form-description"].tap()
+      XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // New Step raised by the foot's + over *Learn to sail*.
+  func newStep(_ look: Look) -> XCUIApplication {
+    let app = learnToSail(look)
+    app.buttons["roadmap-new-step"].tap()
+    XCTAssertTrue(app.textFields["roadmap-form-name"].waitForExistence(timeout: 10))
+    return app
+  }
+
+  // 05.1's draft, back on the form with the keyboard away.
+  func reefingBasics(_ look: Look) -> XCUIApplication {
+    let app = newStep(look)
+    let name = app.textFields["roadmap-form-name"], description = app.descendants(matching: .any)["roadmap-form-description"]
+    description.tap()
+    description.typeText("How to reduce sail area safely in stronger wind.")
+    // The name's return key lets go of the keyboard.
+    name.tap()
+    name.typeText("Reefing basics\n")
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5))
+    app.buttons["roadmap-form-kind"].tap()
+    XCTAssertTrue(app.roadmapKind("Learn").waitForExistence(timeout: 5))
+    app.roadmapKind("Learn").tap()
+    for (list, title, step) in [("roadmap-form-requires", "Requires", "Read the wind"), ("roadmap-form-opens", "Opens", "Leave the dock")] {
+      XCTAssertTrue(app.buttons[list].waitForHittable(timeout: 5))
+      app.buttons[list].tap()
+      XCTAssertTrue(app.roadmapChoice(step).waitForExistence(timeout: 5))
+      app.roadmapChoice(step).tap()
+      app.leaveRoadmapList(title)
+    }
+    XCTAssertTrue(app.staticTexts["Lands in Locked · Read the wind isn’t done"].waitForExistence(timeout: 5))
+    return app
   }
 
   func learnToSail(_ look: Look) -> XCUIApplication {
