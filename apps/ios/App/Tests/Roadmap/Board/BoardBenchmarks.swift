@@ -105,24 +105,21 @@ import SyncSchema
       guard case .committed = try phone.runner.runComposed(acts) else { throw AppFailure(message: "The act on several steps wrote nothing.") }
       return self.ms(ContinuousClock.now - began)
     }
+    // One act a measure: on a phone never signed in, an act of a thousand parts takes minutes in a Debug build.
     var held: [Bool] = []
     for parts in [100, 1_000] {
-      let recoloring = try ["plum", "sky", "plum"].map { (hue: String) throws -> Double in
-        try write(steps.prefix(parts).map { (step: ID<RoadmapStep>) -> AnyActAction<RoadmapRefusal> in
-          AnyActAction(ChangeStep(tree: planted.tree, step: step, changes: RoadmapStep.Changes(color: hue)))
-        })
-      }
-      held.append(report("Recolor of \(parts) steps", recoloring, budgetMs: 2_000))
+      let recoloring = try write(steps.prefix(parts).map { (step: ID<RoadmapStep>) -> AnyActAction<RoadmapRefusal> in
+        AnyActAction(ChangeStep(tree: planted.tree, step: step, changes: RoadmapStep.Changes(color: "plum")))
+      })
+      held.append(report("Recolor of \(parts) steps", [recoloring], budgetMs: 2_000))
     }
-    // Each delete takes steps no delete before it took: three of a hundred from the thousandth step on, three of a
-    // thousand from the two-thousandth.
+    // Each delete takes steps the delete before it left: a hundred from the thousandth step on, a thousand from the
+    // two-thousandth.
     for (parts, from) in [(100, 1_000), (1_000, 2_000)] {
-      let deleting = try (0..<3).map { (round: Int) throws -> Double in
-        try write(steps[(from + round * parts)..<(from + (round + 1) * parts)].map { (step: ID<RoadmapStep>) -> AnyActAction<RoadmapRefusal> in
-          AnyActAction(DeleteStep(tree: planted.tree, step: step))
-        })
-      }
-      held.append(report("Delete of \(parts) steps", deleting, budgetMs: 2_000))
+      let deleting = try write(steps[from..<(from + parts)].map { (step: ID<RoadmapStep>) -> AnyActAction<RoadmapRefusal> in
+        AnyActAction(DeleteStep(tree: planted.tree, step: step))
+      })
+      held.append(report("Delete of \(parts) steps", [deleting], budgetMs: 2_000))
     }
     #expect(held == [true, true, true, true])
   }

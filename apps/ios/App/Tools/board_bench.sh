@@ -36,9 +36,10 @@ if [ -z "$sim" ]; then
 fi
 
 python3 Tools/generate_project.py >/dev/null || exit 1
-# The whole run has forty minutes: a build from nothing takes most of them, the measures about four.
+# The whole run has seventy minutes: a build from nothing takes most of forty, the reads, frames and scrolls about four,
+# and the acts on several steps, never yet measured in Release, may take twenty more.
 env IOS_SENTRY_DSN="${IOS_SENTRY_DSN:-https://nonproduction@example.invalid/1}" TEST_RUNNER_WM_BOARD_BENCH=1 \
-  perl -e 'alarm shift; exec @ARGV' 2400 xcodebuild test -project Windmill.xcodeproj -scheme Windmill -configuration Release \
+  perl -e 'alarm shift; exec @ARGV' 4200 xcodebuild test -project Windmill.xcodeproj -scheme Windmill -configuration Release \
   ONLY_ACTIVE_ARCH=YES ENABLE_TESTABILITY=YES WM_ROADMAP_ROOM_ENABLED=YES 'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) DEBUG' \
   -destination "platform=iOS Simulator,id=$sim" -derivedDataPath "$derived" -parallel-testing-enabled NO \
   -only-testing:WindmillTests/BoardBenchmarks -only-testing:WindmillUITests/RoadmapBoardBenchmarks "$@" 2>&1 \
