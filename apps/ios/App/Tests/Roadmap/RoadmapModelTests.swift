@@ -83,6 +83,21 @@ import SyncTesting
     return try #require(open.groups.flatMap(\.rows).first { $0.step.label == label })
   }
 
+  // A step's page as its parts tell it: its row with what the room offers on it, the steps it requires and the steps it
+  // opens with the group each stands in and what a Locked one owes, and how many steps Reset would lock again.
+  func page(_ label: String, in model: RoadmapModel) throws -> [String] {
+    guard case .open(let open) = model.phase else { throw AppFailure(message: "no roadmap is open") }
+    let step = try row(label, in: model).id
+    let page = try #require(open.page(of: step))
+    let told = { (row: RoadmapModel.Row) -> String in
+      "\(row.step.label) \(row.card.column.rawValue)\(row.card.needs.map { " \($0.toGo) to go" } ?? "")"
+    }
+    let offers = "\(page.row.completes ? " completes" : "")\(page.row.resets ? " resets" : "")\(page.row.deletes ? " deletes" : "")"
+    return ["\(told(page.row)) [\(page.row.kind?.label ?? page.row.step.color)]\(offers)",
+            "requires: " + page.requires.map(told).joined(separator: ", "), "opens: " + page.opens.map(told).joined(separator: ", "),
+            "relocks \(page.relocks)"]
+  }
+
   func told(_ telemetry: TelemetryRecorder) -> [String] {
     telemetry.entries.withLock { $0.map { "\($0.name) \($0.properties.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " "))" } }
   }
@@ -134,7 +149,8 @@ import SyncTesting
       group.rows.map { (row: RoadmapModel.Row) -> String in
         let needs = row.card.needs.map { " needs \(label($0.first)) and \($0.extra) more with \($0.toGo) to go" } ?? ""
         let unlocks = row.card.unlocks.map { " unlocks \(label($0.first)) and \($0.extra) more" } ?? ""
-        return "\(group.id.rawValue): \(row.step.label) [\(row.kind?.label ?? row.step.color)]\(needs)\(unlocks)\(row.completes ? " completes" : "")\(row.deletes ? " deletes" : "")"
+        let offers = "\(row.completes ? " completes" : "")\(row.resets ? " resets" : "")\(row.deletes ? " deletes" : "")"
+        return "\(group.id.rawValue): \(row.step.label) [\(row.kind?.label ?? row.step.color)]\(needs)\(unlocks)\(offers)"
       }
     }
     #expect(rows == [
@@ -143,9 +159,9 @@ import SyncTesting
       "locked: Leave the dock [Build] needs Read the wind and 0 more with 1 to go deletes",
       "locked: Sail a triangle [Learn] needs Leave the dock and 0 more with 2 to go deletes",
       "locked: Sail solo [Milestone] needs Sail a triangle and 1 more with 4 to go deletes",
-      "done: Rig the boat [Build] deletes",
-      "done: Name the boat parts [sky] deletes",
-      "done: Choose a sailing course [Build]",
+      "done: Rig the boat [Build] resets deletes",
+      "done: Name the boat parts [sky] resets deletes",
+      "done: Choose a sailing course [Build] resets",
     ])
     #expect(open.keptStep == open.tree.nodes.first { $0.label == "Choose a sailing course" }?.id)
     let followers = ["Name the boat parts", "Read the wind", "Sail solo"].map { (step: String) -> Int in
@@ -209,7 +225,7 @@ import SyncTesting
     let leave = try row("Leave the dock", in: model).id
     model.complete(try row("Read the wind", in: model), by: .swipe)
     let band = try #require(model.band)
-    #expect(band.says == .completed(step: "Read the wind", upNext: ["Leave the dock"]))
+    #expect(band.says == .completed(step: "Read the wind", upNext: ["Leave the dock"], inPlace: false))
     #expect(band.arrived == [leave] && band.lasts == .seconds(6) && band.undo?.held == false && band.undo?.act == "complete")
     let completed = ["4 of 8", "upNext: Leave the dock, Tie a bowline", "locked: Sail a triangle, Sail solo",
                      "done: Read the wind, Rig the boat, Name the boat parts, Choose a sailing course"]
@@ -254,7 +270,7 @@ import SyncTesting
     await shows(model, board: atRest, on: engine)
 
     model.complete(try row("Tie a bowline", in: model), by: .menu)
-    #expect(model.band?.says == .completed(step: "Tie a bowline", upNext: []))
+    #expect(model.band?.says == .completed(step: "Tie a bowline", upNext: [], inPlace: false))
     await shows(model, board: ["4 of 8", "upNext: Read the wind", "locked: Leave the dock, Sail a triangle, Sail solo",
                                "done: Tie a bowline, Rig the boat, Name the boat parts, Choose a sailing course"], on: engine)
     model.undo()
@@ -368,7 +384,7 @@ import SyncTesting
     let atRest = board(model)
 
     let opens = try row("Tie a bowline", in: model)
-    #expect(opens.opensStanding && !opens.completes && opens.deletes)
+    #expect(opens.opensStanding && !opens.completes && !opens.resets && opens.deletes)
     model.complete(opens, by: .menu)
     #expect(model.band == nil)
 
@@ -388,6 +404,219 @@ import SyncTesting
     #expect(told(telemetry) == [
       "roadmap_room_opened ", "roadmap_write_refused refusal=invalid write=mark", "client_error failure_kind=storage operation=roadmap_write",
       "roadmap_write_refused refusal=gone write=mark",
+    ])
+  }
+
+  // Roadmap · iOS 03.1, 03.5 and 03.6: a step's page is the row its Board group shows, found by the step's id, with the
+  // steps it requires and the steps it opens in the roadmap's order, and what Reset would return to Locked.
+  @Test func aStepsPageIsItsBoardRowWithTheStepsItRequiresAndOpens() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    _ = try learnToSail(on: engine, runner)
+    let model = room(engine, runner, memory)
+    model.roomOpened()
+    await shows(model, "open Learn to sail", on: engine)
+    guard case .open(let open) = model.phase else { return }
+
+    #expect(try page("Read the wind", in: model) == [
+      "Read the wind upNext [sky] completes deletes", "requires: Name the boat parts done", "opens: Leave the dock locked 1 to go", "relocks 0",
+    ])
+    #expect(try page("Sail solo", in: model) == [
+      "Sail solo locked 4 to go [Milestone] deletes", "requires: Sail a triangle locked 2 to go, Tie a bowline upNext", "opens: ", "relocks 0",
+    ])
+    #expect(try page("Name the boat parts", in: model) == [
+      "Name the boat parts done [sky] resets deletes", "requires: Choose a sailing course done",
+      "opens: Rig the boat done, Read the wind upNext, Tie a bowline upNext", "relocks 2",
+    ])
+    #expect(try page("Choose a sailing course", in: model) == [
+      "Choose a sailing course done [Build] resets", "requires: ", "opens: Name the boat parts done", "relocks 0",
+    ])
+    let listed = open.groups.flatMap(\.rows)
+    #expect(listed.map { (row: RoadmapModel.Row) -> String in open.step(row.id)?.step.label ?? "" } == listed.map(\.step.label))
+    #expect(open.step("s_missing") == nil && open.page(of: "s_missing") == nil)
+  }
+
+  // A page pushed on the room's stack is told once, by the row that opened it and the group its step stands in, and
+  // going back tells nothing. A step another phone deletes while its page is open takes the stack back to the Board.
+  @Test func aPagePushedIsToldOnceAndAStepThatGoesTakesTheStackBackToTheBoard() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let planted = try learnToSail(on: engine, runner)
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    model.roomOpened()
+    await shows(model, "open Learn to sail", on: engine)
+    let read = RoadmapModel.Visit(step: try row("Read the wind", in: model).id, door: .card)
+    let leave = RoadmapModel.Visit(step: try row("Leave the dock", in: model).id, door: .step)
+
+    model.path.append(read)
+    model.path.append(leave)
+    model.path.removeLast()
+    #expect(model.path == [read])
+    #expect(told(telemetry) == [
+      "roadmap_room_opened ", "roadmap_board_step_open column=upNext door=card surface=document",
+      "roadmap_board_step_open column=locked door=step surface=document",
+    ])
+
+    // A change that leaves every open page's step standing leaves the stack as it is.
+    model.complete(try row("Tie a bowline", in: model), by: .swipe)
+    await shows(model, board: ["4 of 8", "upNext: Read the wind", "locked: Leave the dock, Sail a triangle, Sail solo",
+                               "done: Tie a bowline, Rig the boat, Name the boat parts, Choose a sailing course"], on: engine)
+    #expect(model.path == [read])
+
+    model.path.append(leave)
+    let other = engine.device()
+    engine.sync()
+    let elsewhere = ActionRunner(replica: other.replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0), holdRemovals: false)
+    guard let wind = planted.steps.first(where: { $0.key == "read" })?.id,
+          case .committed = try elsewhere.runAct(DeleteStep(tree: planted.tree, step: wind)) else {
+      Issue.record("the other phone did not delete Read the wind")
+      return
+    }
+    engine.sync()
+    await shows(model, board: ["4 of 7", "upNext: Leave the dock", "locked: Sail a triangle, Sail solo",
+                               "done: Tie a bowline, Rig the boat, Name the boat parts, Choose a sailing course"], on: engine)
+    #expect(model.path.isEmpty)
+  }
+
+  // Roadmap · iOS 03.1 and 03.4: Complete on a step's page keeps the page, which then reads Done with Reset, and the
+  // band says in place what opened, with the Undo of any completion.
+  @Test func completingAStepOnItsPageKeepsThePageAndUndoTakesItBack() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    _ = try learnToSail(on: engine, runner)
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    model.roomOpened()
+    let atRest = ["3 of 8", "upNext: Read the wind, Tie a bowline", "locked: Leave the dock, Sail a triangle, Sail solo",
+                  "done: Rig the boat, Name the boat parts, Choose a sailing course"]
+    await shows(model, board: atRest, on: engine)
+    let visit = RoadmapModel.Visit(step: try row("Read the wind", in: model).id, door: .card)
+    model.path = [visit]
+
+    model.complete(try row("Read the wind", in: model), by: .page)
+    let band = try #require(model.band)
+    #expect(band.says == .completed(step: "Read the wind", upNext: ["Leave the dock"], inPlace: true))
+    #expect(band.lasts == .seconds(6) && band.undo?.held == false && band.undo?.act == "complete")
+    await shows(model, board: ["4 of 8", "upNext: Leave the dock, Tie a bowline", "locked: Sail a triangle, Sail solo",
+                               "done: Read the wind, Rig the boat, Name the boat parts, Choose a sailing course"], on: engine)
+    #expect(try page("Read the wind", in: model) == [
+      "Read the wind done [sky] resets deletes", "requires: Name the boat parts done", "opens: Leave the dock upNext", "relocks 1",
+    ])
+    #expect(model.path == [visit])
+
+    model.undo()
+    await shows(model, board: atRest, on: engine)
+    #expect(try page("Read the wind", in: model) == [
+      "Read the wind upNext [sky] completes deletes", "requires: Name the boat parts done", "opens: Leave the dock locked 1 to go", "relocks 0",
+    ])
+    #expect(model.path == [visit] && model.band == nil)
+    #expect(told(telemetry) == [
+      "roadmap_room_opened ", "roadmap_board_step_open column=upNext door=card surface=document",
+      "roadmap_board_step_action action=complete surface=document", "roadmap_board_undo act=complete outcome=ok",
+    ])
+  }
+
+  // Roadmap · iOS 03.6 and 03.6b: Reset asks nothing. The step is Up next again, the steps it had opened that stood Up
+  // next are Locked, the one already done stays Done, and the band counts what locked, with Undo for six seconds. The
+  // account's other phone follows both ways.
+  @Test func resettingADoneStepLocksWhatItOpenedAndUndoBringsItBack() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    _ = try learnToSail(on: engine, runner)
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    model.roomOpened()
+    let atRest = ["3 of 8", "upNext: Read the wind, Tie a bowline", "locked: Leave the dock, Sail a triangle, Sail solo",
+                  "done: Rig the boat, Name the boat parts, Choose a sailing course"]
+    await shows(model, board: atRest, on: engine)
+    guard case .open(let open) = model.phase else { return }
+    let named = try row("Name the boat parts", in: model).id
+    let parts = try #require(open.page(of: named))
+    let visit = RoadmapModel.Visit(step: parts.row.id, door: .card)
+    model.path = [visit]
+
+    model.reset(parts)
+    let band = try #require(model.band)
+    #expect(band.says == .reset(step: "Name the boat parts", locked: 2) && band.arrived.isEmpty)
+    #expect(band.lasts == .seconds(6) && band.undo?.held == false && band.undo?.act == "reset")
+    let reset = ["2 of 8", "upNext: Name the boat parts", "locked: Read the wind, Tie a bowline, Leave the dock, Sail a triangle, Sail solo",
+                 "done: Rig the boat, Choose a sailing course"]
+    await shows(model, board: reset, on: engine)
+    #expect(try page("Name the boat parts", in: model) == [
+      "Name the boat parts upNext [sky] completes deletes", "requires: Choose a sailing course done",
+      "opens: Rig the boat done, Read the wind locked 1 to go, Tie a bowline locked 1 to go", "relocks 0",
+    ])
+    #expect(model.path == [visit])
+
+    let other = engine.device()
+    let elsewhere = room(other, ActionRunner(replica: other.replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0)), memory)
+    engine.sync()
+    elsewhere.roomOpened()
+    await shows(elsewhere, board: reset, on: other)
+
+    // The Undo marks the step done anew, so it leads Done, the newest completed first.
+    model.undo()
+    #expect(model.band == nil)
+    let restored = ["3 of 8", "upNext: Read the wind, Tie a bowline", "locked: Leave the dock, Sail a triangle, Sail solo",
+                    "done: Name the boat parts, Rig the boat, Choose a sailing course"]
+    await shows(model, board: restored, on: engine)
+    engine.sync()
+    await shows(model, board: restored, on: engine)
+    await shows(elsewhere, board: restored, on: other)
+
+    // A Done step that opened nothing now Up next locks nothing, and its band says so by the step's name.
+    guard case .open(let again) = model.phase else { return }
+    let rigged = try row("Rig the boat", in: model).id
+    let rig = try #require(again.page(of: rigged))
+    model.reset(rig)
+    #expect(model.band?.says == .reset(step: "Rig the boat", locked: 0))
+    #expect(told(telemetry) == [
+      "roadmap_room_opened ", "roadmap_board_step_open column=done door=card surface=document",
+      "roadmap_board_step_action action=reset surface=document", "roadmap_board_undo act=reset outcome=ok",
+      "roadmap_board_step_action action=reset surface=document",
+    ])
+  }
+
+  // Roadmap · iOS 03.7 to 03.9: Delete Step on a step's page asks there with what the delete costs; answered, the step
+  // is held with Undo and the room stands on the Board; and the roadmap's one starting step offers no Delete.
+  @Test func deletingAStepFromItsPageAsksThereAndReturnsToTheBoard() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    _ = try learnToSail(on: engine, runner)
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    model.roomOpened()
+    let atRest = ["3 of 8", "upNext: Read the wind, Tie a bowline", "locked: Leave the dock, Sail a triangle, Sail solo",
+                  "done: Rig the boat, Name the boat parts, Choose a sailing course"]
+    await shows(model, board: atRest, on: engine)
+    #expect(try row("Choose a sailing course", in: model).deletes == false)
+    let read = try row("Read the wind", in: model)
+    let visit = RoadmapModel.Visit(step: read.id, door: .card)
+    model.path = [visit]
+
+    model.askDelete(read, by: .page)
+    #expect(model.question?.door == .page && model.question?.row.id == read.id && model.question?.followers == 1)
+    model.answer(delete: false)
+    #expect(model.question == nil && model.band == nil && model.path == [visit] && engine.undoOffers().isEmpty)
+
+    model.askDelete(read, by: .page)
+    model.answer(delete: true)
+    let held = try #require(model.band)
+    #expect(held.says == .deleted(step: "Read the wind") && held.lasts == .milliseconds(9_000) && held.undo?.held == true)
+    #expect(model.path.isEmpty)
+    let deleted = ["3 of 7", "upNext: Leave the dock, Tie a bowline", "locked: Sail a triangle, Sail solo",
+                   "done: Rig the boat, Name the boat parts, Choose a sailing course"]
+    await shows(model, board: deleted, on: engine)
+
+    model.undo()
+    await shows(model, board: atRest, on: engine)
+    #expect(model.path.isEmpty)
+    #expect(told(telemetry) == [
+      "roadmap_room_opened ", "roadmap_board_step_open column=upNext door=card surface=document",
+      "roadmap_board_step_action action=delete surface=document", "roadmap_board_delete step=cancel view=board",
+      "roadmap_board_step_action action=delete surface=document", "roadmap_board_delete step=confirm view=board",
+      "roadmap_board_delete door=page step=held view=board", "roadmap_board_undo act=delete outcome=ok",
     ])
   }
 
@@ -436,7 +665,7 @@ import SyncTesting
     model.complete(try row("Read the wind", in: model), by: .swipe)
     let first = try #require(model.band?.undo?.gesture)
     model.complete(try row("Tie a bowline", in: model), by: .swipe)
-    #expect(model.band?.says == .completed(step: "Tie a bowline", upNext: []))
+    #expect(model.band?.says == .completed(step: "Tie a bowline", upNext: [], inPlace: false))
     #expect(try runner.undo(first) == .unavailable(requestId: nil, reason: "not-reversible"))
 
     for _ in 0..<1_000 where time.withLock({ $0.count }) < 2 { await Task.yield() }

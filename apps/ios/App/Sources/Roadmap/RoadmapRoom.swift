@@ -3,16 +3,17 @@ import UIKit
 import RoadmapDomain
 
 // The Roadmap room (Roadmap · iOS S.1, 11.22a): one stack, the open roadmap under its name with the switch row, its Board,
-// and at the foot the one band over New step.
+// and at the foot the one band over New step. A step's page is pushed on the stack. What the band says is announced and
+// felt once, whichever screen stands over it.
 struct RoadmapRoom: View {
   // The room's two views of a roadmap.
   enum Lens { case board, graph }
 
-  let roadmap: RoadmapModel
+  @Bindable var roadmap: RoadmapModel
   let app: AppModel
 
   var body: some View {
-    NavigationStack {
+    NavigationStack(path: $roadmap.path) {
       content
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background { RoadmapPalette.canvas.ignoresSafeArea() }
@@ -22,7 +23,18 @@ struct RoadmapRoom: View {
           ToolbarItem(placement: .topBarLeading) { RoomMenu(app: app) }
           ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: app.openYou).disabled(app.editorReadOnly) }
         }.roomBar(.roadmap)
+        .navigationDestination(for: RoadmapModel.Visit.self) { visit in RoadmapStepPage(roadmap: roadmap, step: visit.step) }
     }.onAppear { roadmap.roomOpened() }
+      .sensoryFeedback(trigger: roadmap.band) { _, band in
+        switch band?.says {
+        case .completed: .success
+        case .reset: .impact
+        default: nil
+        }
+      }
+      .onChange(of: roadmap.band) { _, band in
+        if let band { UIAccessibility.post(notification: .announcement, argument: band.says.words) }
+      }
   }
 
   @ViewBuilder var content: some View {
@@ -51,45 +63,15 @@ struct RoadmapRoom: View {
   func board(_ open: RoadmapModel.OpenRoadmap) -> some View {
     let counts = open.board.overall
     let progress = counts.total == 0 ? String(localized: "No steps yet")
-      : String(localized: "\(counts.done) of \(counts.total) done", locale: .copy, comment: "A roadmap's progress under its name: 3 of 8 done")
+      : String(localized: "\(counts.done) of \(counts.total) done", locale: .copy, comment: "How many are done, of how many: a roadmap's steps under its name, and the steps a step requires")
     return pinnedUnderBar(RoadmapBoard(roadmap: roadmap, open: open))
       .roomTitle(open.listed.title?.nilIfEmpty ?? String(localized: "Untitled roadmap"), subtitle: progress)
-      .reachBand {
-        VStack(spacing: 0) {
-          if let band = roadmap.band {
-            RoomTransient(message: Self.words(band.says), room: .roadmap, actionTitle: String(localized: "Undo"), actionIdentifier: "roadmap-undo",
-                          action: band.undo == nil ? nil : { roadmap.undo() }, dismiss: { roadmap.endBand() },
-                          type: .subheadline, actionWeight: .semibold)
-              .accessibilityIdentifier("roadmap-band")
-          }
-          HStack {
-            Spacer()
-            Button("New Step", systemImage: "plus") {}.modifier(GlassCircle()).disabled(true).accessibilityIdentifier("roadmap-new-step")
-          }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
-        }.roomMotion(roadmap.band)
+      .roadmapFoot(roadmap) {
+        HStack {
+          Spacer()
+          Button("New Step", systemImage: "plus") {}.modifier(GlassCircle()).disabled(true).accessibilityIdentifier("roadmap-new-step")
+        }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
       }
-      .onChange(of: roadmap.band) { _, band in
-        if let band { UIAccessibility.post(notification: .announcement, argument: Self.words(band.says)) }
-      }
-  }
-
-  // What the band says, in the boards' words over what the model tells of the act.
-  static func words(_ says: RoadmapModel.Band.Says) -> String {
-    switch says {
-    case .completed(let step, let upNext):
-      let done = RoadmapBoard.name(of: step)
-      if upNext.isEmpty { return String(localized: "\(done) done", comment: "The band after a step is completed: the step's name") }
-      if upNext.count == 1 {
-        return String(localized: "\(done) done · \(RoadmapBoard.name(of: upNext[0])) up next", locale: .copy,
-                      comment: "The band after a step is completed: the step's name, and the one step it brought up next")
-      }
-      return String(localized: "\(done) done · \(upNext.count) up next", locale: .copy,
-                    comment: "The band after a step is completed: the step's name, and how many steps it brought up next")
-    case .deleted(let step):
-      return String(localized: "\(RoadmapBoard.name(of: step)) deleted", comment: "The band while a step's delete is held: the step's name")
-    case .refused(.keepsStartingStep): return String(localized: "A roadmap keeps one starting step")
-    case .refused(.full): return String(localized: "This roadmap is at its limit.")
-    }
   }
 
   // Graph, Find, and Sort and filter are drawn and do nothing: the row stands disabled.

@@ -21,7 +21,8 @@ final class RoadmapModel {
     let type: String
   }
 
-  // A step as the Board draws it: the domain's step and card, the kind that names its colour, and what the room offers on it.
+  // A step as the room shows it wherever it stands, on its Board row, on its own page and on a row of another step's
+  // page: the domain's step and card, the kind that names its colour, and what the room offers on it.
   struct Row: Identifiable {
     let step: RoadmapDomain.Step
     let card: BoardRead.Card
@@ -29,8 +30,9 @@ final class RoadmapModel {
     let kind: Kind?
     // The step's pointer opens a roadmap that stands, which the domain asks of whoever completes the step.
     let opensStanding: Bool
-    // Complete is offered on an Up next step that opens no roadmap.
+    // Complete is offered on an Up next step that opens no roadmap, and Reset on a Done one.
     let completes: Bool
+    let resets: Bool
     // Delete is offered on every step but the one the roadmap keeps.
     let deletes: Bool
 
@@ -43,6 +45,27 @@ final class RoadmapModel {
     let rows: [Row]
   }
 
+  // A step on its own page: its row, and the rows of the steps it requires and of the steps it opens, each in the
+  // roadmap's order.
+  struct OpenStep {
+    let row: Row
+    let requires: [Row]
+    let opens: [Row]
+    // The steps it opened that stand Up next: Reset returns each to Locked, and the ones already done stay Done.
+    let relocks: Int
+  }
+
+  // A step's page on the room's stack, and the row that opened it as its event names it: a Board row, the web's card,
+  // or a row of another step's page.
+  struct Visit: Hashable {
+    enum Door: String {
+      case card, step
+    }
+
+    let step: String
+    let door: Door
+  }
+
   // The roadmap the room has open: its row in the person's list, its records as the domain reads them, and its Board.
   struct OpenRoadmap {
     let id: ID<RoadmapEntry>
@@ -50,8 +73,12 @@ final class RoadmapModel {
     let tree: RoadmapTree
     let graph: FollowGraph
     let board: BoardRead
+    // Every step by its id: the one row its Board group, its own page and a row of another step's page all show.
+    let rows: [[UInt8]: Row]
     // Up next first; a group with no step is left out.
     let groups: [Group]
+    // The steps that follow each step, read through any step that is gone, in the roadmap's order.
+    let followers: [[UInt8]: [String]]
     // A roadmap keeps one starting step: its one present step that follows nothing, where it has only one.
     let keptStep: String?
 
@@ -59,39 +86,54 @@ final class RoadmapModel {
     init?(_ listed: ListedRoadmap, in account: RoadmapAccount) {
       guard let graph = account.graph(listed.id) else { return nil }
       let (tree, board, legend) = (graph.tree, BoardRead(graph), LegendRead(graph.tree))
-      let cards = Dictionary(board.cards.map { (Array($0.id.utf8), $0) }) { first, _ in first }
       let openings = Dictionary(account.openings(of: listed.id).map { (Array($0.opening.node.utf8), $0.opening) }) { first, _ in first }
       let owners = Dictionary(legend.hues.compactMap { (hue: LegendRead.Hue) -> ([UInt8], Kind)? in
         legend.kinds.first { $0.id.utf8.elementsEqual(hue.owner.utf8) }.map { (Array(hue.name.utf8), $0) }
       }) { first, _ in first }
-      let starting = graph.ids.filter { graph.followed($0).isEmpty }
+      var followers: [[UInt8]: [String]] = [:]
+      var starting: [String] = []
+      for step in graph.ids {
+        let followed = graph.followed(step)
+        if followed.isEmpty { starting.append(step) }
+        for prerequisite in followed { followers[Array(prerequisite.id.utf8), default: []].append(step) }
+      }
       let kept = starting.count == 1 ? starting[0] : nil
+      let rows = Dictionary(board.cards.compactMap { (card: BoardRead.Card) -> ([UInt8], Row)? in
+        guard let held = tree.step(card.id) else { return nil }
+        let opening = openings[Array(card.id.utf8)]
+        return (Array(card.id.utf8), Row(
+          step: held, card: card, kind: owners[Array(held.color.utf8)],
+          opensStanding: opening.map { $0.kind == .pointer && account.location(of: $0.tree).standing == .standing } ?? false,
+          completes: card.column == .upNext && opening == nil, resets: card.column == .done && opening == nil,
+          deletes: kept.map { !$0.utf8.elementsEqual(card.id.utf8) } ?? true))
+      }) { first, _ in first }
       id = ID(RecordID(listed.id))
       self.listed = listed
       self.tree = tree
       self.graph = graph
       self.board = board
+      self.rows = rows
+      self.followers = followers
       keptStep = kept
       groups = [BoardRead.Column.Name.upNext, .locked, .done].compactMap { (name: BoardRead.Column.Name) -> Group? in
-        let rows = (board.columns.first { $0.name == name }?.ids ?? []).compactMap { (step: String) -> Row? in
-          guard let card = cards[Array(step.utf8)], let held = tree.step(step) else { return nil }
-          let opening = openings[Array(step.utf8)]
-          return Row(step: held, card: card, kind: owners[Array(held.color.utf8)],
-                     opensStanding: opening.map { $0.kind == .pointer && account.location(of: $0.tree).standing == .standing } ?? false,
-                     completes: card.column == .upNext && opening == nil,
-                     deletes: kept.map { !$0.utf8.elementsEqual(step.utf8) } ?? true)
-        }
-        return rows.isEmpty ? nil : Group(id: name, rows: rows)
+        let held = (board.columns.first { $0.name == name }?.ids ?? []).compactMap { (step: String) -> Row? in rows[Array(step.utf8)] }
+        return held.isEmpty ? nil : Group(id: name, rows: held)
       }
     }
 
     var everyStepDone: Bool { board.overall.total > 0 && board.overall.done == board.overall.total }
 
-    // The steps that follow a step, each read through it once it is gone: what the delete question says the delete costs.
-    func followers(of step: String) -> Int {
-      graph.ids.count { (other: String) -> Bool in
-        !other.utf8.elementsEqual(step.utf8) && graph.followed(other).contains { $0.id.utf8.elementsEqual(step.utf8) }
-      }
+    func step(_ id: String) -> Row? { rows[Array(id.utf8)] }
+
+    // How many steps follow a step, each read through it once it is gone: what the delete question says the delete costs.
+    func followers(of step: String) -> Int { followers[Array(step.utf8)]?.count ?? 0 }
+
+    // A step's page; none for a step the roadmap does not hold.
+    func page(of step: String) -> OpenStep? {
+      guard let row = self.step(step) else { return nil }
+      let opens = (followers[Array(step.utf8)] ?? []).compactMap { (follower: String) -> Row? in self.step(follower) }
+      return OpenStep(row: row, requires: graph.followed(step).compactMap { (followed: Followed) -> Row? in self.step(followed.id) },
+                      opens: opens, relocks: row.resets ? opens.count { $0.card.column == .upNext } : 0)
     }
   }
 
@@ -105,13 +147,13 @@ final class RoadmapModel {
     case keepsStartingStep, full
   }
 
-  // The gesture a write came by, as its event names it.
+  // The gesture a write came by, as its event names it: a Board row's swipe or its long-press menu, or the step's page.
   enum Door: String {
-    case swipe, menu
+    case swipe, menu, page
   }
 
   // The question a delete asks before anything is written: the step, the gesture that asked, and how many steps follow
-  // the step, which is what the delete costs.
+  // the step, which is what the delete costs. It stands where it was asked: on the step's Board row, or on its page.
   struct Question {
     let row: Row
     let door: Door
@@ -121,8 +163,11 @@ final class RoadmapModel {
   // The one band at the room's foot: a receipt with its Undo, or a limit that refused a gesture.
   struct Band: Equatable {
     enum Says: Equatable {
-      // A step completed, and the labels of the steps it brought up next.
-      case completed(step: String, upNext: [String])
+      // A step completed, the labels of the steps it brought up next, and whether it was completed in place, on its
+      // own page, which names it already.
+      case completed(step: String, upNext: [String], inPlace: Bool)
+      // A step reset, and how many steps it returned to Locked.
+      case reset(step: String, locked: Int)
       case deleted(step: String)
       case refused(Limit)
     }
@@ -169,7 +214,22 @@ final class RoadmapModel {
   let phone: UserDefaults
   let telemetry: any Telemetry
   let wait: Wait
-  private(set) var phase = Phase.unread
+  // A step that goes while its page is open, deleted here or by another device, takes the stack back to the Board.
+  private(set) var phase = Phase.unread {
+    didSet {
+      guard !path.isEmpty else { return }
+      if case .open(let open) = phase, path.allSatisfy({ open.step($0.step) != nil }) { return }
+      path = []
+    }
+  }
+  // The step pages open over the Board, the one on screen last. A page pushed is told once, with the group its step
+  // stands in.
+  var path: [Visit] = [] {
+    didSet {
+      guard path.count > oldValue.count, let pushed = path.last, case .open(let open) = phase, let row = open.step(pushed.step) else { return }
+      telemetry.event("roadmap_board_step_open", properties: ["surface": "document", "column": row.card.column.rawValue, "door": pushed.door.rawValue])
+    }
+  }
   // The person's own roadmaps, the most recent first.
   private(set) var roadmaps: [ListedRoadmap] = []
   private(set) var band: Band?
@@ -291,20 +351,31 @@ final class RoadmapModel {
     }
   }
 
-  // Complete: the step's mark in the person's overlay. Its receipt names the steps it brought up next.
+  // Complete: the step's mark in the person's overlay. Its receipt names the steps it brought up next. The step's
+  // page tells its acts as the web's step page does.
   func complete(_ row: Row, by door: Door) {
     guard case .open(let open) = phase else { return }
     let mark = MarkStep.complete(tree: open.id, step: ID(RecordID(row.id)), opensStanding: row.opensStanding)
     guard let written = write(mark, as: "mark") else { return }
-    telemetry.event("roadmap_board_complete", properties: ["door": door.rawValue])
+    if door == .page { telemetry.event("roadmap_board_step_action", properties: ["surface": "document", "action": "complete"]) }
+    else { telemetry.event("roadmap_board_complete", properties: ["door": door.rawValue]) }
     let upNext = open.graph.unlocks(row.id)
-    show(Band(.completed(step: row.step.label, upNext: upNext.compactMap { open.tree.step($0)?.label }), of: written.receipt,
-              act: "complete", arrived: upNext))
+    show(Band(.completed(step: row.step.label, upNext: upNext.compactMap { open.tree.step($0)?.label }, inPlace: door == .page),
+              of: written.receipt, act: "complete", arrived: upNext))
+  }
+
+  // Reset, on a Done step's page: the mark comes off and nothing is asked. Its receipt counts the steps it locked again.
+  func reset(_ step: OpenStep) {
+    guard case .open(let open) = phase else { return }
+    guard let written = write(MarkStep.reset(tree: open.id, step: ID(RecordID(step.row.id))), as: "mark") else { return }
+    telemetry.event("roadmap_board_step_action", properties: ["surface": "document", "action": "reset"])
+    show(Band(.reset(step: step.row.step.label, locked: step.relocks), of: written.receipt, act: "reset"))
   }
 
   // Delete asks once, on the step.
   func askDelete(_ row: Row, by door: Door) {
     guard case .open(let open) = phase else { return }
+    if door == .page { telemetry.event("roadmap_board_step_action", properties: ["surface": "document", "action": "delete"]) }
     question = Question(row: row, door: door, followers: open.followers(of: row.id))
   }
 
@@ -316,7 +387,8 @@ final class RoadmapModel {
     if confirmed { delete(asked.row, by: asked.door) }
   }
 
-  // Delete: the step alone goes, held by the engine, and its receipt keeps Undo for the hold.
+  // Delete: the step alone goes, held by the engine, and its receipt keeps Undo for the hold. The room stands on the
+  // Board once it is written.
   func delete(_ row: Row, by door: Door) {
     guard case .open(let open) = phase else { return }
     if let kept = open.keptStep, kept.utf8.elementsEqual(row.id.utf8) {
@@ -325,6 +397,7 @@ final class RoadmapModel {
       return
     }
     guard let written = write(DeleteStep(tree: open.id, step: ID(RecordID(row.id))), as: "DeleteNode") else { return }
+    path = []
     telemetry.event("roadmap_board_delete", properties: ["step": "held", "door": door.rawValue, "view": "board"])
     show(Band(.deleted(step: row.step.label), of: written.receipt, act: "delete"))
   }

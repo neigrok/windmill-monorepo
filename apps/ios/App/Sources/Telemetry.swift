@@ -42,7 +42,8 @@ nonisolated enum TelemetryPrivacy {
     "gym_workout_picker", "gym_rest_target_reached", "gym_workout_plan_changed", "gym_receipt_plan_saved", "gym_workout_load_typed",
     "gym_moment_opened", "gym_hidden_workout", "client_update_required", "appearance_chosen",
     "gym_intent_opened", "quick_action", "sign_in_restore", "account_delete", "roadmap_room_opened",
-    "roadmap_board_complete", "roadmap_board_delete", "roadmap_board_undo", "roadmap_write_refused"
+    "roadmap_board_complete", "roadmap_board_delete", "roadmap_board_undo", "roadmap_write_refused",
+    "roadmap_board_step_open", "roadmap_board_step_action"
   ]
   static let labels: [String: Set<String>] = [
     "room": ["journal", "gym", "roadmap"],
@@ -50,7 +51,7 @@ nonisolated enum TelemetryPrivacy {
     "presentation": ["first_launch", "replay"],
     "screen": ["routine", "routine_editor", "edit_sets", "routine_movement_editor", "receipt", "routine_targets", "routine_movement", "movement", "session", "fix_set", "record", "bodyweight", "weigh_in", "session_share", "history", "notes", "note", "review", "connected_log", "connected_log_guide", "sources", "gym", "routines", "log", "on_this_phone", "coach", "workout", "welcome", "journal", "ink_notes", "keep", "address", "code", "you", "adoption", "discard_adoption", "23a", "23b", "23c", "24c", "24d", "apple_no_account", "apple_expired", "auth_pending"],
     "field": ["weight", "reps"],
-    "action": ["rename", "equipment", "drafts_rejected", "save_routines", "sign_in", "shown", "screenshot", "describe", "goal", "just_log", "build_manually", "open_routine", "routines_saved", "keep_routines", "photo_selected", "photo_removed", "create", "update", "share", "apply", "reject", "open_gym", "open_journal", "open_roadmap", "dismiss_ink", "write", "done_writing", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "use_account", "create_account", "remove_apple", "retry", "inspect", "fix", "open", "connect", "manage", "hide", "select", "menu", "stage", "new_chat", "view_answer", "open_conversation", "delete_conversation", "retarget", "add_set", "remove_set", "swap", "add_movement", "remove_movement", "rest", "land"],
+    "action": ["rename", "equipment", "drafts_rejected", "save_routines", "sign_in", "shown", "screenshot", "describe", "goal", "just_log", "build_manually", "open_routine", "routines_saved", "keep_routines", "photo_selected", "photo_removed", "create", "update", "share", "apply", "reject", "open_gym", "open_journal", "open_roadmap", "dismiss_ink", "write", "done_writing", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "use_account", "create_account", "remove_apple", "retry", "inspect", "fix", "open", "connect", "manage", "hide", "select", "menu", "stage", "new_chat", "view_answer", "open_conversation", "delete_conversation", "retarget", "add_set", "remove_set", "swap", "add_movement", "remove_movement", "rest", "land", "complete", "reset", "delete"],
     "outcome": ["answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked", "started", "saved", "not-offered", "seat-required", "invalid-input", "invalid-arguments", "load-floor", "result-too-large", "coach-turn-volume", "pending", "unavailable", "settled"],
     "reason": ["invalid", "too_large", "claim_conflict", "session-open", "session-overlap", "id-taken", "bad-instant", "too-many-sets", "invalid-set", "unknown-exercise", "session-finished", "unsent", "other"],
     "cap": ["daily", "ceiling", "allowance"],
@@ -59,17 +60,19 @@ nonisolated enum TelemetryPrivacy {
     "target": ["workout", "routine"],
     "name": ["list_routines", "list_exercises", "list_sessions", "get_session", "get_sessions", "last_time", "get_last_times", "get_stats", "get_record", "list_notes", "list_bodyweight", "get_preferences", "create_routine", "create_exercise", "save_note", "share_session", "share_log", "propose_routine_change", "propose_routine_removal", "propose_workout_change", "revoke_share"],
     "code": ["subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted", "debt_outstanding", "device_bound", "invalid_installation", "coach-bad-request", "coach-update-required", "coach-turn-conflict", "coach-turn-unknown", "coach-turn-order", "coach-turn-volume", "coach-rate-limited", "coach-busy", "coach-vendor-error", "coach-stream-replaced", "coach-replica-syncing", "transport", "decode", "storage", "refusal", "other", "unauthenticated", "invalid_network"],
-    "surface": ["activity", "control", "shortcut"],
+    "surface": ["activity", "control", "shortcut", "document"],
     "intent": ["start_workout", "open_workout"],
     "item": ["write", "start", "open_workout", "weigh_in", "bodyweight", "date", "movement", "targets", "routine"],
     "stage": ["started", "room_opened", "complete"],
     "trigger": ["sync", "sign_in"],
-    "door": ["accessory", "row", "tab", "history", "handoff", "new_chat", "workout", "swipe", "menu"],
-    // The Roadmap room's writes, in the web's vocabulary: the act a Board event tells of, a delete's step, the view it was
-    // made on, the write a refusal or a failure names, and the refusal's kind.
-    "act": ["complete", "delete"],
+    "door": ["accessory", "row", "tab", "history", "handoff", "new_chat", "workout", "swipe", "menu", "page", "card", "step"],
+    // The Roadmap room, in the web's vocabulary: the act a Board event tells of, a delete's step, the view it was made
+    // on, the group a step stands in when its page opens, the write a refusal or a failure names, and the refusal's kind.
+    // A step's page is the web's document, and its acts are the three actions above.
+    "act": ["complete", "reset", "delete"],
     "step": ["confirm", "cancel", "held"],
     "view": ["board"],
+    "column": ["locked", "upNext", "done"],
     "write": ["mark", "DeleteNode", "undo", "release"],
     "refusal": ["invalid", "gone", "taken", "tooLarge", "full", "roadmapGone", "unreachable", "notARoot", "stepOpensARoadmap", "depthLimit", "other", "startingStep"],
     "appearance": ["light", "dark", "system"],

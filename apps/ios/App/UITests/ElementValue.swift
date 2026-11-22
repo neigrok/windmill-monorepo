@@ -34,11 +34,20 @@ extension XCUIApplication {
                                  "room-" + room.lowercased(), room, "room-menu")).firstMatch
   }
 
-  // A step's row on the Roadmap room's Board, by the step's name: its label leads with the name, or with its colour and
-  // then the name, and another row's reason may hold the name too.
+  // A step's row in the Roadmap room, on the Board or on a step's page, by the step's name: its label leads with the
+  // name, or with its colour and then the name, which ends the label of a Done step's row on a page; another row's
+  // reason may hold the name too.
   func roadmapStep(_ name: String) -> XCUIElement {
-    descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND (label BEGINSWITH %@ OR label CONTAINS %@)",
-                                                     "roadmap-step", name + ", ", ", " + name + ", ")).firstMatch
+    descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND (label BEGINSWITH %@ OR label CONTAINS %@ OR label ENDSWITH %@)",
+                                                     "roadmap-step", name + ", ", ", " + name + ", ", ", " + name)).firstMatch
+  }
+
+  // A step's page in the Roadmap room, on screen once its name is the one page name there: a page going away keeps its
+  // own for a moment.
+  func roadmapStepPage(_ name: String, timeout: TimeInterval = 10) -> Bool {
+    let names = staticTexts.matching(identifier: "roadmap-step-name")
+    let alone = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in names.count == 1 && names.firstMatch.label == name }, object: nil)
+    return XCTWaiter.wait(for: [alone], timeout: timeout) == .completed
   }
 
   // The ledger's logged row for a set number, its label *Set N, logged, …*.

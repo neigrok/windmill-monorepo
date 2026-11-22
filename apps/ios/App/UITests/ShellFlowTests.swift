@@ -149,8 +149,11 @@ import XCTest
     let undo = app.buttons["roadmap-undo"]
     let rows = app.descendants(matching: .any).matching(identifier: "roadmap-step")
     let atRest = "Sky, Read the wind, Unlocks Leave the dock, Learn to spot shifts in wind direction from the water, the telltales and the flag."
+    // A Locked row has no leading action; where the system takes its slide for a tap, the step's page opens.
     app.roadmapStep("Leave the dock").swipeRight()
     XCTAssertFalse(complete.waitForExistence(timeout: 2), "A Locked step has no leading action")
+    if app.staticTexts["roadmap-step-name"].exists { app.navigationBars.buttons.element(boundBy: 0).tap() }
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 5))
     app.roadmapStep("Read the wind").swipeRight()
     XCTAssertTrue(complete.waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["3 of 8 done"].exists, "A full swipe stops at the button and completes nothing")
@@ -227,6 +230,144 @@ import XCTest
     app.launch()
     XCTAssertTrue(app.staticTexts["3 of 7 done"].waitForExistence(timeout: 30))
     XCTAssertFalse(app.roadmapStep("Tie a bowline").exists)
+  }
+
+  // The labels of the step rows on screen, in order.
+  func stepRows(_ app: XCUIApplication) -> [String] {
+    let rows = app.descendants(matching: .any).matching(identifier: "roadmap-step")
+    return (0..<rows.count).map { rows.element(boundBy: $0).label }
+  }
+
+  // Roadmap · iOS 01.1, 03.1 and 03.5: a Board row opens its step's page, read whole from the phone's copy, whose rows
+  // open their steps on the same stack. What waits for its own screen is not drawn.
+  func testABoardRowOpensItsStepsPageAndItsRowsOpenTheirSteps() {
+    let app = launch("roadmap-learn-to-sail")
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    let status = app.descendants(matching: .any)["roadmap-step-status"]
+    let requires = app.descendants(matching: .any)["roadmap-step-requires"], opens = app.descendants(matching: .any)["roadmap-step-opens"]
+    app.roadmapStep("Read the wind").tap()
+    XCTAssertTrue(app.roadmapStepPage("Read the wind"))
+    XCTAssertEqual(status.label, "Up next, Sky · Unlocks Leave the dock")
+    XCTAssertTrue(app.staticTexts["Learn to spot shifts in wind direction from the water, the telltales and the flag."].exists)
+    XCTAssertEqual(app.descendants(matching: .any)["roadmap-step-link"].label, "Beaufort wind scale, metoffice.gov.uk")
+    XCTAssertEqual([requires.label, opens.label], ["Requires, 1 of 1 done", "Opens, 1 step"])
+    XCTAssertEqual(stepRows(app), ["Sky, Name the boat parts", "Build, Leave the dock, Locked · 1 to go"])
+    XCTAssertTrue(app.buttons["roadmap-complete"].isEnabled && app.buttons["roadmap-step-more"].exists)
+    XCTAssertFalse(app.navigationBars.staticTexts["Read the wind"].exists, "The bar carries no title while the name is on the page")
+    for absent in [app.buttons["Edit"], app.buttons["roadmap-new-step"], app.staticTexts["Subtasks"], app.staticTexts["History"], app.buttons["Open Roadmap"]] {
+      XCTAssertFalse(absent.exists)
+    }
+    XCTAssertFalse(app.tabBars.firstMatch.exists)
+
+    app.roadmapStep("Leave the dock").tap()
+    XCTAssertTrue(app.roadmapStepPage("Leave the dock"))
+    XCTAssertEqual(status.label, "Locked, Build · Needs Read the wind · 1 to go")
+    XCTAssertEqual([requires.label, opens.label], ["Requires, 1 of 2 done", "Opens, 1 step"])
+    XCTAssertEqual(stepRows(app), ["Build, Rig the boat", "Sky, Read the wind, Up next", "Learn, Sail a triangle, Locked · 2 to go"])
+    XCTAssertFalse(app.buttons["roadmap-complete"].exists || app.buttons["roadmap-reset"].exists, "A Locked step has no Complete and no Reset")
+
+    app.navigationBars.buttons.element(boundBy: 0).tap()
+    XCTAssertTrue(app.roadmapStepPage("Read the wind"))
+    app.navigationBars.buttons.element(boundBy: 0).tap()
+    assertLearnToSailBoard(app)
+  }
+
+  // Roadmap · iOS 03.4, 03.6 and 03.6b: Complete on a step's page keeps the page and says what opened; a Done step
+  // says what Reset would lock before it is pressed, and Reset asks nothing; the band's Undo takes each back.
+  func testCompletingAndResettingAStepOnItsPageKeepThePageAndUndoTakesEachBack() {
+    let app = launch("roadmap-learn-to-sail")
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    let status = app.descendants(matching: .any)["roadmap-step-status"]
+    let complete = app.buttons["roadmap-complete"], reset = app.buttons["roadmap-reset"], undo = app.buttons["roadmap-undo"]
+    app.roadmapStep("Read the wind").tap()
+    XCTAssertTrue(app.roadmapStepPage("Read the wind"))
+    XCTAssertFalse(reset.exists)
+    // The band keeps Undo six seconds: it is taken once the page has turned.
+    complete.tap()
+    XCTAssertTrue(undo.waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["Leave the dock is up next"].exists)
+    XCTAssertTrue(status.waitForLabel("Done, Sky · Reset returns 1 step to Locked", timeout: 10))
+    XCTAssertEqual(stepRows(app), ["Sky, Name the boat parts", "Build, Leave the dock, Up next"])
+    XCTAssertTrue(reset.exists && !complete.exists && app.roadmapStepPage("Read the wind"))
+    undo.tap()
+    XCTAssertTrue(status.waitForLabel("Up next, Sky · Unlocks Leave the dock", timeout: 10))
+    XCTAssertTrue(undo.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(complete.exists && !reset.exists)
+
+    app.roadmapStep("Name the boat parts").tap()
+    XCTAssertTrue(app.roadmapStepPage("Name the boat parts"))
+    XCTAssertEqual(status.label, "Done, Sky · Reset returns 2 steps to Locked")
+    XCTAssertEqual(stepRows(app), ["Build, Choose a sailing course", "Build, Rig the boat", "Sky, Read the wind, Up next", "Learn, Tie a bowline, Up next"])
+    XCTAssertFalse(complete.exists)
+    reset.tap()
+    XCTAssertTrue(undo.waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["2 steps locked again"].exists)
+    XCTAssertTrue(status.waitForLabel("Up next, Sky · Unlocks Read the wind +1", timeout: 10))
+    XCTAssertEqual(stepRows(app), ["Build, Choose a sailing course", "Build, Rig the boat", "Sky, Read the wind, Locked · 1 to go",
+                                   "Learn, Tie a bowline, Locked · 1 to go"])
+    XCTAssertTrue(complete.exists && !reset.exists)
+    undo.tap()
+    XCTAssertTrue(status.waitForLabel("Done, Sky · Reset returns 2 steps to Locked", timeout: 10))
+    XCTAssertTrue(reset.exists && !complete.exists)
+  }
+
+  // Roadmap · iOS 03.7 to 03.9: the … menu holds Delete Step alone, which asks on the … button with what the delete
+  // costs; answered, the room stands on the Board without the step, and the band's Undo brings it back. The roadmap's
+  // one starting step has no menu.
+  func testDeletingAStepFromItsPageAsksThereAndReturnsToTheBoard() {
+    let app = launch("roadmap-learn-to-sail")
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    let more = app.buttons["roadmap-step-more"], confirm = app.buttons["Delete Step"], undo = app.buttons["roadmap-undo"]
+    app.roadmapStep("Read the wind").tap()
+    XCTAssertTrue(app.roadmapStepPage("Read the wind"))
+    XCTAssertEqual(more.label, "More")
+    more.tap()
+    XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+    for unbuilt in ["Open in Graph", "View Branch", "Attach a Roadmap", "Copy Link", "Edit"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
+    confirm.tap()
+    XCTAssertTrue(app.staticTexts["Delete Read the wind?"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Removes this step · 1 branch resplices"].exists)
+    // The question closed unanswered deletes nothing and leaves the page.
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)).tap()
+    XCTAssertTrue(confirm.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.roadmapStepPage("Read the wind"))
+
+    more.tap()
+    XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+    confirm.tap()
+    XCTAssertTrue(app.staticTexts["Delete Read the wind?"].waitForExistence(timeout: 5))
+    // The band keeps Undo for the hold's nine seconds: it is taken as soon as the Board is seen without the step.
+    confirm.tap()
+    XCTAssertTrue(app.staticTexts["3 of 7 done"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["Read the wind deleted"].exists)
+    XCTAssertFalse(app.roadmapStep("Read the wind").exists)
+    undo.tap()
+    XCTAssertTrue(app.staticTexts["3 of 8 done"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.roadmapStep("Read the wind").waitForExistence(timeout: 5))
+
+    for step in ["Read the wind", "Name the boat parts", "Choose a sailing course"] {
+      app.roadmapStep(step).tap()
+      XCTAssertTrue(app.roadmapStepPage(step))
+    }
+    XCTAssertFalse(more.exists, "The roadmap's one starting step offers no Delete, so its page has no menu")
+    XCTAssertTrue(app.buttons["roadmap-reset"].exists)
+  }
+
+  // Roadmap · iOS 03.1, at the largest text, where the page is longer than the screen: the bar takes the step's name
+  // once the name has scrolled away, and gives it back.
+  func testAStepsNameTakesTheBarOnceItHasScrolledAway() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "roadmap-learn-to-sail", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"]
+    app.launch()
+    XCTAssertTrue(app.buttons["roadmap-group-upNext"].waitForExistence(timeout: 30))
+    app.roadmapStep("Read the wind").tap()
+    XCTAssertTrue(app.roadmapStepPage("Read the wind"))
+    let inBar = app.navigationBars.staticTexts["Read the wind"]
+    XCTAssertFalse(inBar.exists)
+    app.swipeUp()
+    XCTAssertTrue(inBar.waitForExistence(timeout: 5))
+    app.swipeDown()
+    XCTAssertTrue(inBar.waitForNonExistence(timeout: 5))
   }
 
   // Roadmap · iOS 02.15 and 01.12: a roadmap with no step asks for the first, and one with every step done opens Done.

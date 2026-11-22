@@ -356,9 +356,11 @@ makes it false.
 ## §13 Gaps this build closes
 
 - The app's third room exists only behind a build switch that is off in Release (`WM_ROADMAP_ROOM_ENABLED`), where it
-  shows a roadmap's Board from the phone's copy and writes two of its gestures, Complete and Delete, each with its
-  Undo: no step page, form, title menu, Graph, link or Coach is built, and the Board has no Find, sort and filter,
-  branch, selection or pasted steps. The app has no associated domain, and its onboarding says roadmap is on the web.
+  shows a roadmap's Board and a step's page from the phone's copy and writes three of its gestures, Complete, Reset
+  and Delete, each with its Undo. A step's page has no workspace, History, *Edit* or *Open Roadmap*, and its menu
+  holds *Delete Step* alone; no form, title menu, Graph, link or Coach is built, and the Board has no Find, sort and
+  filter, branch, selection or pasted steps. The app has no associated domain, and its onboarding says roadmap is on
+  the web.
 - `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
   room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once: no Undo scene,
   plan grammar, quest or Coach executor.
@@ -366,8 +368,8 @@ makes it false.
 - `RoadmapLayout` draws the picture and nothing draws it on a screen; its time at 5,000 steps is not measured
   against the budget of §5.
 - Roadmap's runner holds a removal for the engine's nine seconds (`AppRuntime.roadmapRunner`), and the room runs two
-  acts through it, `MarkStep` and `DeleteStep`, with *Undo*: every other action of the domain, a roadmap's own delete
-  among them, has no door in the room.
+  acts through it, `MarkStep` (Complete and Reset) and `DeleteStep`, with *Undo*: every other action of the domain, a
+  roadmap's own delete among them, has no door in the room.
 - The plan grammar has no Swift port: the web's (`web/src/products/roadmap/paste/`) is its one
   implementation, and the web alone runs its cases (`packages/api-contract/roadmap/plan/`).
 - The grammar's writer does not write every roadmap so that it reads back the same, as §7.3 needs.

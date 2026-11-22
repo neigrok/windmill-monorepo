@@ -66,8 +66,8 @@ enum RoadmapFixture {
   }
 
   #if DEBUG && targetEnvironment(simulator)
-  // The boards' *Learn to sail*, as `packages/api-contract/roadmap/layout/learn-to-sail.json` links it, with the steps
-  // it draws done completed in that order.
+  // The boards' *Learn to sail*, as `packages/api-contract/roadmap/layout/learn-to-sail.json` links it, with the link
+  // *Read the wind* shares on its page and the steps it draws done completed in that order.
   @discardableResult
   static func plantLearnToSail(_ runner: ActionRunner, done: [String] = ["choose", "parts", "rig"]) throws -> CreateRoadmap.Result {
     let steps: [(key: String, label: String, color: String, description: String, follows: [String])] = [
@@ -80,8 +80,11 @@ enum RoadmapFixture {
       ("tri", "Sail a triangle", "olive", "Practise reaching, tacking and returning to start.", ["leave"]),
       ("solo", "Sail solo", "gold", "Plan and sail a short route on your own.", ["tri", "tie"]),
     ]
+    let shared = ["read": [RoadmapDomain.Step.Link(url: "https://metoffice.gov.uk/weather/guides/coast-and-sea/beaufort-scale", label: "Beaufort wind scale")]]
     let planted = ImportedSteps(
-      steps: steps.map { ImportedStep(key: $0.key, RoadmapStep.Changes(label: $0.label, color: $0.color, description: $0.description)) },
+      steps: steps.map {
+        ImportedStep(key: $0.key, RoadmapStep.Changes(label: $0.label, color: $0.color, description: $0.description, links: shared[$0.key]))
+      },
       links: steps.flatMap { step in step.follows.map { (from: $0, to: step.key) } })
     guard case .committed(let created, _) = try runner.runAct(CreateRoadmap(title: "Learn to sail", steps: planted)) else {
       throw AppFailure(message: "Learn to sail was not planted.")
