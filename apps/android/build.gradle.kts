@@ -45,6 +45,41 @@ gradle.projectsEvaluated {
     layeringModel.configure { rows.set(model) }
 }
 
+// The android-all jars Robolectric 4.15.1 runs each SDK on, from minSdk 26 up. Gradle fetches them, with its
+// retries and its cache, and the unit tests of every Android module read them from robolectric-deps.properties,
+// so a test JVM never downloads one itself. One configuration per SDK, since one would keep only the newest
+// version of the module. A Robolectric bump renames these jars.
+val robolectricAndroidAll = mapOf(
+    26 to "8.0.0_r4-robolectric-r1-i7",
+    27 to "8.1.0-robolectric-4611349-i7",
+    28 to "9-robolectric-4913185-2-i7",
+    29 to "10-robolectric-5803371-i7",
+    30 to "11-robolectric-6757853-i7",
+    31 to "12-robolectric-7732740-i7",
+    32 to "12.1-robolectric-8229987-i7",
+    33 to "13-robolectric-9030017-i7",
+    34 to "14-robolectric-10818077-i7",
+    35 to "15-robolectric-12650502-i7",
+).map { (sdk, version) ->
+    val coordinate = "org.robolectric:android-all-instrumented:$version"
+    coordinate to configurations.create("robolectricAndroidAll$sdk") {
+        isTransitive = false
+        dependencies.add(project.dependencies.create(coordinate))
+    }
+}
+
+val robolectricDependencies by tasks.registering(WriteProperties::class) {
+    destinationFile.set(layout.buildDirectory.file("robolectric/robolectric-deps.properties"))
+    for ((coordinate, jar) in robolectricAndroidAll) property(coordinate, jar.elements.map { it.single().asFile.absolutePath })
+}
+
 subprojects {
     if (path != ":sync-engine") tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(":sync-testing:layering") }
+    plugins.withId("com.android.base") {
+        tasks.withType<Test>().configureEach {
+            val properties = robolectricDependencies.flatMap { it.destinationFile }
+            inputs.file(properties).withPathSensitivity(PathSensitivity.NONE)
+            systemProperty("robolectric-deps.properties", properties.get().asFile.absolutePath)
+        }
+    }
 }

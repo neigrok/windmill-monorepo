@@ -48,7 +48,8 @@ ANDROID_SENTRY_DSN=https://local-check@telemetry.invalid/1 ./gradlew build --max
 - `local.properties` supplies `sdk.dir`; Android Studio writes it on first open.
 - Modules use `compileSdk 36`, `minSdk 26` and Java/JVM target 17.
 - Keep the full monorepo: the ladder suite reads `packages/api-contract/gym-ladder.json` directly.
-- Compose UI tests use Robolectric; its first run downloads `android-all` from Maven Central.
+- Compose UI tests use Robolectric. Gradle fetches its `android-all` jars (the root build's `robolectricAndroidAll`
+  list) and the tests read them through `robolectric-deps.properties`; a Robolectric bump updates that list.
 - On Robolectric `waitUntil` only sleeps on the main thread, so its condition goes through `runOnIdle` or the semantics tree,
   which idle the main looper. `WaitsRunTheLooperTests` holds the rule.
 - Release builds use R8 and resource shrinking; debug stays unminified. `:app:verifyReleaseMapping`
