@@ -744,8 +744,28 @@ on the main actor sees and how long the main actor worked in each, its commit to
 `GraphCamera` and `GraphDrawing` from here and draws the handbook as `RoadmapGraphCanvas` does, alone on the screen
 ([its README](../GraphBench/README.md)). One command builds it, runs it on a phone or on a simulator and removes it:
 a script pans and pinches at five cameras, at 5,000 steps and at the first 1,000, with the canvas presenting as the
-room's does and with `rendersAsynchronously`. No phone has run it. On an iPhone 17 simulator on an M3 Pro, one run of
-each combination:
+room's does and with `rendersAsynchronously`.
+
+On an iPhone 13 mini (iOS 27.2, a 60 Hz screen, thermal state nominal, Low Power Mode off), three runs of each
+combination:
+
+| | 5,000 steps | 5,000, asynchronously | 1,000 steps | 1,000, asynchronously |
+|---|---|---|---|---|
+| The first frame, with the picture's making | 164 to 169 ms | 160 to 165 ms | 50 ms | 50 to 52 ms |
+| The whole roadmap, a pan: frames later than a frame and a half | 2 to 3 of 177 | 1 to 4 of 178 | none of 181 | none of 181 |
+| The whole roadmap, a pinch: the same | 21 to 23 of 150 | 23 to 24 of 152 | none of 181 | none of 181 |
+| The whole roadmap, a pinch: the main actor's work in a frame, median and nineteenth of twenty | 8 to 9 ms, 34 ms | 9 to 11 ms, 34 to 42 ms | 7.5 ms, 9 ms | 4.6 ms, 8.6 ms |
+| The four closer cameras: frames later than a frame and a half | one, in one pan of twenty-four | none | none | none |
+| The four closer cameras: the main actor's work in a frame, median | 5.6 to 8.4 ms | 1.5 to 5.5 ms | 5.2 to 7.5 ms | 1.3 to 5.0 ms |
+
+On that phone one `Canvas` holds the budget at 1,000 steps at every camera, and at 5,000 steps at every camera but
+one: a pinch with the whole roadmap in view, where about a seventh of the frames come late in every run, more than
+the tenth the budget allows, and the gesture is given 150 frames of its 180. `rendersAsynchronously` does not change
+that, and its draw closure ran on the main thread every time. The draw closure and the script's handler take about
+2 ms each of those frames; the rest is the view's update and its commit. An iPhone 13 mini is faster than the oldest
+phone the app supports, so a camera that misses here misses there.
+
+On an iPhone 17 simulator on an M3 Pro, one run of each combination:
 
 | | 5,000 steps | 5,000, asynchronously | 1,000 steps | 1,000, asynchronously |
 |---|---|---|---|---|
@@ -765,8 +785,8 @@ second for the room's part of a frame and for the median of the main actor's wor
 than a tenth of a gesture's frames later than a frame and a half. Now and then a frame or two of a gesture stall, at
 the closest zoom too, where the canvas draws a step or two; their cause is not found, and the nineteenth of twenty is
 printed and not judged. The budgets are held on the Mac that runs the simulator, which is faster than any iPhone
-the app supports: a run under budget does not say a phone holds it, the share says how wide the margin is, and no phone
-has measured it. A display link sees the main actor's frames, not what the screen composited after them. Both classes
+the app supports: a run under budget does not say a phone holds it, and the share says how wide the margin is. A
+display link sees the main actor's frames, not what the screen composited after them. Both classes
 run only under `WM_GRAPH_BENCH=1`, which the script sets, so the unit scheme and the UI shards skip them.
 
 ## Design captures

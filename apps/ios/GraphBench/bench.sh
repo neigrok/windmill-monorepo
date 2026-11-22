@@ -8,9 +8,13 @@
 #       SIM=<udid> uses a booted simulator.
 #       DERIVED_DATA=<path> builds there and leaves the build; otherwise a folder of the run's own.
 #       MEASURES=<folder> keeps each run's lines in a file of its own.
+#       REGISTER_DEVICE=1 lets Xcode add the phone to the team's devices where it is not among them.
+#       KEEP=1 leaves the app installed when the run ends, and SKIP_BUILD=1 runs the app a run before left: a phone
+#       asks its owner to trust a personal team's developer in Settings before its first launch, which they can
+#       only do while the app is installed.
 # A phone is paired, unlocked, awake and out of Low Power Mode. Its build is signed by the keychain's one Apple
 # Development identity with automatic provisioning, which makes the benchmark's own App ID and development profile on
-# that team and registers no device. Neither the team nor the identity is printed.
+# that team, and registers no device unless REGISTER_DEVICE is set. Neither the team nor the identity is printed.
 set -uo pipefail
 
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
@@ -24,7 +28,8 @@ MADE=""
 INSTALLED=""
 bounded(){ perl -e 'alarm shift; exec @ARGV' "$@"; }
 cleanup(){
-  if [ -n "$INSTALLED" ] && [ -n "$device" ]; then
+  if [ -n "${KEEP:-}" ]; then echo "left $BUNDLE where it was installed"
+  elif [ -n "$INSTALLED" ] && [ -n "$device" ]; then
     if bounded 120 xcrun devicectl device uninstall app --device "$device" "$BUNDLE" >/dev/null 2>&1; then echo "removed $BUNDLE from $device"
     else echo "COULD NOT remove $BUNDLE from $device: xcrun devicectl device uninstall app --device $device $BUNDLE" >&2; fi
   elif [ -n "$INSTALLED" ]; then
@@ -41,12 +46,15 @@ if [ -z "$derived" ]; then
   derived="$WORK/derived"
 fi
 xcodegen generate --quiet || exit 1
-if [ -n "$device" ]; then
+if [ -n "${SKIP_BUILD:-}" ]; then
+  INSTALLED=1
+elif [ -n "$device" ]; then
   team="$(security find-certificate -c "Apple Development" -p 2>/dev/null | openssl x509 -noout -subject -nameopt multiline 2>/dev/null \
     | awk -F'= ' '/organizationalUnitName/ {print $2; exit}')"
   [ -n "$team" ] || { echo "the keychain holds no Apple Development identity" >&2; exit 1; }
   bounded 1800 xcodebuild build -quiet -project GraphBench.xcodeproj -scheme GraphBench -configuration Release \
     -destination "platform=iOS,id=$device" -derivedDataPath "$derived" -allowProvisioningUpdates \
+    ${REGISTER_DEVICE:+-allowProvisioningDeviceRegistration} \
     DEVELOPMENT_TEAM="$team" CODE_SIGN_STYLE=Automatic "CODE_SIGN_IDENTITY=Apple Development" 2>&1 \
     | sed -e "s/$team/<team>/g" -e 's/Apple Development: [^"]*/Apple Development: <identity>/g'
   [ "${PIPESTATUS[0]}" = 0 ] || exit 1
@@ -72,7 +80,7 @@ for steps in 5000 1000; do
     for run in $(seq "${RUNS:-3}"); do
       asked=(-steps "$steps" -renders-asynchronously "$asynchronously" -quits YES)
       if [ -n "$device" ]; then
-        said="$(bounded 300 xcrun devicectl device process launch --console --terminate-existing --device "$device" "$BUNDLE" "${asked[@]}" 2>&1)"
+        said="$(bounded 300 xcrun devicectl device process launch --console --terminate-existing --device "$device" -- "$BUNDLE" "${asked[@]}" 2>&1)"
       else
         said="$(bounded 300 xcrun simctl launch --console --terminate-running-process "$sim" "$BUNDLE" "${asked[@]}" 2>&1)"
       fi

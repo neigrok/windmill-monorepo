@@ -72,8 +72,15 @@ is the only sign of it these lines carry.
 The app's bundle id is `works.windmill.graphbench`; it has no entitlements and no extension. `bench.sh` signs it with
 the keychain's one `Apple Development` identity and automatic provisioning, reading the team from the certificate and
 printing neither. That needs Xcode signed in to that team's Apple Account (Settings → Accounts), which makes the
-benchmark's App ID and development profile on the team, and the phone among the team's devices, since the script
-registers none. The phone is paired with the Mac, in Developer Mode, unlocked, awake and out of Low Power Mode; each
-run's first and last lines say what Low Power Mode and the thermal state were. No phone has run it: the phone's build
-has gone as far as signing, on a Mac whose Xcode had no account, so its install, its launch on the console and its
-removal are as written and not as observed.
+benchmark's App ID and development profile on the team, and the phone among the team's devices: `REGISTER_DEVICE=1`
+lets Xcode add it. The phone is paired with the Mac, in Developer Mode, unlocked, awake and out of Low Power Mode;
+each run's first and last lines say what Low Power Mode and the thermal state were.
+
+A phone refuses the first launch of a personal team's app until its owner trusts the developer (Settings → General →
+VPN & Device Management), which they can do only while the app is installed. So the first time: `KEEP=1 RUNS=1` builds
+and installs the app, fails at that launch and leaves the app; the owner trusts the developer; `SKIP_BUILD=1` then
+runs the app that is there and removes it. The trust goes with the developer's last app, so the next first run asks
+again.
+
+An iPhone 13 mini has run it, three runs of each combination; its numbers are in
+[the app's README](../App/README.md), under The Graph's benchmark.
