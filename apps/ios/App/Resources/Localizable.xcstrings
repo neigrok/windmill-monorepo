@@ -125,6 +125,9 @@
     "%@ is no longer in your program. Not applied." : {
 
     },
+    "%@ is up next" : {
+      "comment" : "The band after a step is completed on its page: the one step it brought up next"
+    },
     "%@ kg" : {
 
     },
@@ -183,6 +186,9 @@
           }
         }
       }
+    },
+    "%@ reset" : {
+      "comment" : "The band after a step is reset: the step's name"
     },
     "%@ suggested this. Your past %@ workouts stay in the log." : {
       "localizations" : {
@@ -591,7 +597,7 @@
       }
     },
     "%lld of %lld done" : {
-      "comment" : "A roadmap's progress under its name: 3 of 8 done",
+      "comment" : "How many are done, of how many: a roadmap's steps under its name, and the steps a step requires",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -873,6 +879,75 @@
     },
     "%lld short" : {
       "comment" : "A set that many reps short of its plan"
+    },
+    "%lld steps" : {
+      "comment" : "How many steps a step opens, beside Opens",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld step"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld steps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld steps locked again" : {
+      "comment" : "The band after a step is reset: how many steps it returned to Locked",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld step locked again"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld steps locked again"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld steps up next" : {
+      "comment" : "The band after a step is completed on its page: how many steps it brought up next",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld step up next"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld steps up next"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "%lld suggested changes" : {
       "localizations" : {
@@ -2008,6 +2083,9 @@
     "Locked" : {
       "comment" : "The Board's group of steps that still need another step"
     },
+    "Locked · %lld to go" : {
+      "comment" : "A Locked step on another step's page: how many steps stand before it"
+    },
     "Log %@" : {
       "comment" : "The workout control's action, spoken: Log 100 × 5"
     },
@@ -2450,6 +2528,9 @@
     "Opening %@ as soon as it’s ready." : {
       "comment" : "Bringing it back: Opening Journal as soon as it’s ready."
     },
+    "Opens" : {
+
+    },
     "Opens Coach to review this workout" : {
 
     },
@@ -2663,11 +2744,40 @@
     "Reps: %@" : {
 
     },
+    "Requires" : {
+
+    },
     "Resend code" : {
 
     },
     "Resend code in 0:%@" : {
 
+    },
+    "Reset" : {
+
+    },
+    "Reset returns %lld steps to Locked" : {
+      "comment" : "A Done step's status line: how many steps Reset would lock again",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Reset returns %lld step to Locked"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Reset returns %lld steps to Locked"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "Rest" : {
       "comment" : "The rest between sets"

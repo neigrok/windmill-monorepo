@@ -8,9 +8,10 @@ import SyncModelServer
 import SyncSchema
 @testable import Windmill
 
-@Suite @MainActor struct RoadmapBoardTests {
-  // Roadmap · iOS 01.1: the Board's own words over the domain's read of *Learn to sail*; a Done step says nothing.
-  @Test func theBoardNamesItsGroupsAndSaysWhyEachStepStandsWhereItDoes() throws {
+@Suite @MainActor struct RoadmapStepRowTests {
+  // Roadmap · iOS 01.1: the room's words over the domain's read of *Learn to sail*: each group's name and symbol, and
+  // each step's name, colour and why it stands in its group; a Done step says nothing.
+  @Test func theRoomNamesItsGroupsAndSaysWhyEachStepStandsWhereItDoes() throws {
     let phone = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_790_424_000_000), account: nil,
                         rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     let id = try RoadmapFixture.plantLearnToSail(phone.runner).tree
@@ -20,16 +21,12 @@ import SyncSchema
     let account = RoadmapAccount([tree])
     let listed = try #require(account.list().first)
     let open = try #require(RoadmapModel.OpenRoadmap(listed, in: account))
-    let suite = "roadmap-board-\(UUID().uuidString)", memory = UserDefaults(suiteName: suite)!
-    defer { memory.removePersistentDomain(forName: suite) }
-    let board = RoadmapBoard(roadmap: RoadmapModel(records: { _, _ in throw AppFailure(message: "the Board's words read no view") },
-                                                   runner: phone.runner, phone: memory), open: open)
 
     let groups = open.groups.map { (group: RoadmapModel.Group) -> String in
       let rows = group.rows.map { (row: RoadmapModel.Row) -> String in
-        [board.name(row.step), row.kind?.label ?? RoadmapBoard.hue(row.step.color), board.reason(row.card)].compactMap { $0 }.joined(separator: " | ")
+        [row.name, row.colour, open.reason(row.card)].compactMap { $0 }.joined(separator: " | ")
       }
-      return (["\(RoadmapBoard.title(group.id)) \(rows.count) \(RoadmapBoard.symbol(group.id))"] + rows).joined(separator: "\n")
+      return (["\(group.id.title) \(rows.count) \(group.id.symbol)"] + rows).joined(separator: "\n")
     }
     #expect(groups == [
       """
@@ -50,16 +47,16 @@ import SyncSchema
       Choose a sailing course | Build
       """,
     ])
-    #expect(board.name(nil) == "Untitled step")
   }
 
-  // Roadmap · iOS 03.8: the delete question's cost line, by how many steps follow the step.
-  @Test func theDeleteQuestionSaysWhatTheDeleteCosts() {
-    #expect([0, 1, 2].map(RoadmapBoard.cost) == ["Removes this step", "Removes this step · 1 branch resplices", "Removes this step · 2 branches resplice"])
+  // A step is named by its label, and one without a label by the room's words for it.
+  @Test func aStepWithoutALabelIsNamedByTheRoom() {
+    #expect(["Read the wind", ""].map(RoadmapModel.Row.name(of:)) == ["Read the wind", "Untitled step"])
   }
 
   // A step's colour is said by its hue's own name where no kind names it, and not at all for a hue this build does not know.
   @Test func aHueIsSaidByItsOwnName() {
-    #expect(["terracotta", "olive", "gold", "brick", "sky", "plum", "teal"].map { RoadmapBoard.hue($0) ?? "" } == ["Terracotta", "Olive", "Gold", "Brick", "Sky", "Plum", ""])
+    let hues = ["terracotta", "olive", "gold", "brick", "sky", "plum", "teal"].map { RoadmapModel.Row.hue($0) ?? "" }
+    #expect(hues == ["Terracotta", "Olive", "Gold", "Brick", "Sky", "Plum", ""])
   }
 }
