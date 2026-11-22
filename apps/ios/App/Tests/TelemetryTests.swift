@@ -238,6 +238,28 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
             ["operation": .label("roadmap_write"), "failure_kind": .label("storage"), "write": .label("EditNode")])
   }
 
+  @Test func aStepsWorkspaceTellsItsActsByKindAndNothingThePersonWrote() {
+    let events = ["roadmap_board_workspace", "roadmap_board_step_action", "roadmap_board_edit", "roadmap_write_refused"]
+    #expect(events.filter(TelemetryPrivacy.events.contains) == events)
+    for action in ["subtaskAdd", "subtaskToggle", "subtaskDelete", "linkOpen", "linkCancel", "linkAdd", "linkDelete", "noteSave"] {
+      #expect(TelemetryPrivacy.properties(["action": action, "label": "Check the harbour flag", "text": "private-marker", "title": "Telltale guide",
+                                           "url": "https://rya.org.uk/telltales", "node": "private-id", "count": "2"]) == ["action": .label(action)])
+    }
+    for act in ["subtaskToggle", "subtaskDelete", "linkDelete"] {
+      #expect(TelemetryPrivacy.properties(["action": "undo", "act": act, "outcome": "ok", "label": "Check the harbour flag"]) ==
+              ["action": .label("undo"), "act": .label(act), "outcome": .label("ok")])
+    }
+    #expect(TelemetryPrivacy.properties(["surface": "document", "action": "editNote", "text": "private-marker"]) ==
+            ["surface": .label("document"), "action": .label("editNote")])
+    #expect(TelemetryPrivacy.properties(["step": "saved", "links": "true", "url": "https://rya.org.uk/telltales"]) == ["step": .label("saved"), "links": .label("true")])
+    #expect(TelemetryPrivacy.properties(["links": "https://rya.org.uk/telltales", "action": "Check the harbour flag", "act": "Telltale guide"]).isEmpty)
+    for write in ["workspace", "note"] {
+      #expect(TelemetryPrivacy.properties(["write": write, "refusal": "gone", "label": "Check the harbour flag"]) == ["write": .label(write), "refusal": .label("gone")])
+      #expect(TelemetryPrivacy.properties(["operation": "roadmap_write", "failure_kind": "storage", "write": write, "error": "private-marker"]) ==
+              ["operation": .label("roadmap_write"), "failure_kind": .label("storage"), "write": .label(write)])
+    }
+  }
+
   @Test func workoutPickerStepsExcludeMovementAndRackContent() {
     #expect(TelemetryPrivacy.events.contains("gym_workout_picker"))
     for action in ["open", "select", "cancel"] {

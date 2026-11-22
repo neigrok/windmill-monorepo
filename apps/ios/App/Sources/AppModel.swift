@@ -368,8 +368,9 @@ final class AppModel {
     }
   }
 
-  // Leaving releases every delete the engine holds, so the Roadmap room's band goes with its Undo.
-  func background() { journal.background(); gym.background(); roadmap?.endBand() }
+  // Leaving releases every delete the engine holds, so the Roadmap room's band goes with its Undo, and a note open on its
+  // screen is saved.
+  func background() { journal.background(); gym.background(); roadmap?.background() }
 
   @discardableResult func flushRooms() -> Bool {
     if journal.dirty && !journal.save() { error = journal.error; return false }

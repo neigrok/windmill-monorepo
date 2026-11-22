@@ -4,8 +4,8 @@ import RoadmapDomain
 import SyncCore
 
 // The step form (Roadmap · iOS 05.1, 05.5, 05.6a, 05.8, 05.10): a large sheet with its own stack over one draft. Name
-// and Description, then Kind, Requires and Opens, each pushed inside the sheet and bound to the draft, and Delete Step
-// on a step that may go. Cancel and Create or Save stand in the bar and are the form's only ways out: Cancel asks once
+// and Description, then Kind, Requires and Opens, each pushed inside the sheet and bound to the draft, the links the
+// step shares, each sliding left for Delete, with Add Link raising the link form, and Delete Step on a step that may go. Cancel and Create or Save stand in the bar and are the form's only ways out: Cancel asks once
 // on a changed draft, which a swipe down does not send away. A refusal is its section's footer in ink, announced as it
 // comes. The room's band stands at the sheet's foot, away while a field has the keyboard.
 struct RoadmapStepForm: View {
@@ -19,6 +19,7 @@ struct RoadmapStepForm: View {
   // so it stops at the domain's limit.
   @State private var name: String
   @State private var description: String
+  @State private var addingLink = false
   @FocusState private var focused: Field?
 
   init(roadmap: RoadmapModel, draft: StepDraft) {
@@ -48,6 +49,20 @@ struct RoadmapStepForm: View {
           if case .loop = draft.refusal { refusal }
           else if draft.moves { Text(draft.placement).foregroundStyle(RoadmapPalette.inkDim).accessibilityIdentifier("roadmap-form-placement") }
         }.listRowBackground(RoadmapPalette.card)
+        Section {
+          ForEach(Array(draft.links.enumerated()), id: \.offset) { link in
+            let address = LinkAddress(link.element.url)
+            StepLinkRow(title: link.element.label.nilIfEmpty ?? link.element.url, host: address?.url.host())
+              .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button("Delete", systemImage: "trash", role: .destructive) { draft.removeLink(at: link.offset) }.tint(nil)
+              }.accessibilityIdentifier("roadmap-form-link")
+          }
+          if draft.takesLink {
+            Button("Add Link") { addingLink = true }.tint(RoadmapPalette.accent).accessibilityIdentifier("roadmap-form-add-link")
+          }
+        } header: {
+          Text("Links").font(.footnote.weight(.semibold)).foregroundStyle(RoadmapPalette.inkDim).textCase(nil)
+        }.listRowBackground(RoadmapPalette.card)
         if !draft.isNew, let step = draft.open?.step(draft.step.description), step.deletes {
           Section {
             Button("Delete Step", role: .destructive) { roadmap.askDelete(step, by: .form) }
@@ -75,6 +90,12 @@ struct RoadmapStepForm: View {
           }
         }.roomBar(.roadmap)
         .roadmapFoot(roadmap, away: focused != nil) {}
+        .sheet(isPresented: $addingLink) {
+          NewLink(title: RoadmapSpecs.linkLabel, address: RoadmapSpecs.linkUrl) { address, title in
+            draft.add(link: address, titled: title)
+            addingLink = false
+          }
+        }
     }.tint(RoadmapPalette.accent).presentationDetents([.large]).presentationDragIndicator(.visible)
       .interactiveDismissDisabled(draft.isChanged)
       .onChange(of: name) { _, typed in

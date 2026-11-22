@@ -89,6 +89,9 @@
     "%@ changed since you started." : {
 
     },
+    "%@ checked" : {
+      "comment" : "The band after a subtask is checked: the subtask's words"
+    },
     "%@ comes after this step." : {
       "comment" : "A step's form: a step that cannot be required, by its name"
     },
@@ -96,7 +99,7 @@
       "comment" : "A step's form: a step that cannot be opened, by its name"
     },
     "%@ deleted" : {
-      "comment" : "The band while a delete is held: the name of the step or of the roadmap"
+      "comment" : "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title"
     },
     "%@ doesn't open a Windmill account. Try the address you signed up with, or create one with Apple." : {
 
@@ -607,7 +610,7 @@
       }
     },
     "%lld of %lld" : {
-      "comment" : "How many of a roadmap's steps are done, of how many, under its name in the title menu",
+      "comment" : "How many of a roadmap's steps are done, of how many, under its name in the title menu\nHow many of a step's subtasks are checked, of how many, beside Subtasks",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1155,6 +1158,15 @@
     "Add" : {
 
     },
+    "Add Link" : {
+
+    },
+    "Add Note" : {
+
+    },
+    "Add Subtask" : {
+
+    },
     "Add a note" : {
 
     },
@@ -1236,6 +1248,9 @@
 
     },
     "All steps" : {
+
+    },
+    "All subtasks done" : {
 
     },
     "Already added" : {
@@ -2271,6 +2286,9 @@
     "Linked to %@" : {
 
     },
+    "Links" : {
+
+    },
     "Load" : {
       "comment" : "The weight a set lifts"
     },
@@ -2520,6 +2538,9 @@
     "Needs you" : {
 
     },
+    "New Link" : {
+
+    },
     "New Roadmap" : {
 
     },
@@ -2714,6 +2735,9 @@
 
     },
     "Only on this phone · Keep it" : {
+
+    },
+    "Only you" : {
 
     },
     "Only you. No prompts, no fields, nothing to fill in — write a line or a page." : {
@@ -3330,6 +3354,9 @@
     "Stopped." : {
 
     },
+    "Subtasks" : {
+
+    },
     "Swap %@" : {
 
     },
@@ -3638,6 +3665,9 @@
     "Times" : {
       "comment" : "When a workout started and finished"
     },
+    "Title" : {
+
+    },
     "To keep a copy, export it first at windmill.works." : {
 
     },
@@ -3688,6 +3718,9 @@
 
     },
     "Type your email to confirm" : {
+
+    },
+    "URL" : {
 
     },
     "Undo" : {
@@ -4031,6 +4064,9 @@
 
     },
     "Your journal and training, no account needed." : {
+
+    },
+    "Your links" : {
 
     },
     "Your log is still arriving on this phone. Ask again in a moment." : {
