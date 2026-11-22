@@ -99,9 +99,13 @@ open, else the most recent, and makes no request. `open(_:from:)` makes another 
 (`RoadmapModel.lastOpen`), and a roadmap the room made, or brought back by Undo, is opened once the list holds it
 (`arriving`). The model keeps which groups stand folded, Done at rest and open by itself once every step is done, another
 roadmap opening with its Board at rest, and the screens on the room's stack (`path`, each a `Visit`: All Roadmaps, or a
-step's page with the row that opened it), which empties once a step whose page is open goes, deleted here or by another
+step's page with what opened it), which empties once a step whose page is open goes, deleted here or by another
 device, or once the last roadmap goes. It also holds the draft the step form stands open on (`draft`), which it lets go
-once the draft's roadmap is not the open one or the step it edits is gone.
+once the draft's roadmap is not the open one or the step it edits is gone. And it holds the view the switch row chose of
+each roadmap (`lens`, set by `show(_:)` and kept on the phone under `RoadmapModel.lastLens`, the Board until it is
+switched, as the web's `ViewPrefs` keeps it), the step selected on the Graph (`selected`, set by `select(_:)`, which goes
+once its step does or another roadmap opens), and the open roadmap's Graph (`graph`, a `RoadmapGraph`), which it has
+follow the roadmap as the phone's copy reads it while the Graph is the view.
 
 The model's write door is `write(_:as:)`: one act of `RoadmapDomain` run on `AppRuntime.roadmapRunner`, or several as one
 gesture (`ActionRunner.runComposed`), each reading what the ones before it wrote. It answers what the write came to
@@ -129,8 +133,8 @@ blank roadmap starts with one step, named as the roadmap, in the first kind's co
 `NewTreeBirth.plant`).
 
 `RoadmapRoom.swift` is the room's one `NavigationStack` over the model's `path`: the room capsule and the account in the bar,
-the roadmap's name and progress, the switch row pinned under the bar, and at the foot the band over New step, which
-raises the step form. It announces
+the roadmap's name and progress, the switch row pinned under the bar, whose *Board | Graph* chooses the roadmap's view,
+and at the foot the band over New step, which raises the step form. It announces
 and plays the band's haptic once, whichever screen stands over it. The title's menu (`RoadmapTitle`, `.toolbarTitleMenu`)
 lists the three most recent roadmaps, each name over its progress and the open one checked, then *All Roadmaps…*, *New
 Roadmap*, *Rename* and *Delete Roadmap*. *Rename* is the system's (`RenameButton` over a title that is a binding): the bar
@@ -171,6 +175,30 @@ roadmap's pill and *Open Roadmap*.
 own control), the band's words, the delete question a step's Board row, its page and its form ask, and the one both the
 Board's title and a roadmap's row in All Roadmaps ask.
 
+`Graph/` is the Graph, the room's one custom part (boards 04.1, 04.2, 04.4; [Roadmap on iOS](../../../docs/foundation/roadmap-ios.md)
+§5). `GraphPicture.swift` is a roadmap's picture as `RoadmapLayout` draws it: the steps the domain reads, each with what
+it follows through any step that is gone and whether it is done, their seats, tiers and bows, and each step's caption
+wrapped under the canvas's 13 pt semibold. It is made off the main actor; the seats and tiers are the layout's and the
+picture decides neither. A picture made after another borrows its seats and captions where only a step's being done
+changed. `GraphCamera.swift` is the camera: the world point at the canvas's centre and the zoom, opened where the
+layout's `fitFrame` puts it and held between the layout's zoom floor and the web's pinch ceiling of 2.5, with the
+roadmap's box never out of what the bars leave. `GraphDrawing.swift` draws one frame into a `GraphicsContext`: the
+connectors, 2 pt at the phone's working zoom and lit where they leave a done step; the discs in the kit's forms, each a
+share of the body the layout gives a step, a crowned root 1.55 times wider; the selection ring; and each caption in the
+box the layout gave it, once it is past its wait. It draws only what the camera holds: a connector whose curve's box
+misses the canvas and a disc whose reach misses it are left out, connectors thinner than a fifth of a point are not
+drawn, and each form is one path a colour. `RoadmapGraph.swift` is the Graph's state, which the model owns: it lays the
+picture out off the main actor, one layout at a time and only the latest read next, keeps the camera where a person left
+it when the picture changes, asks the layout's `CaptionPlacer` for the captions at each camera and again when the next
+caption is due, answers which step a tap takes (the nearest whose disc, or whose 44 pt target where the disc is
+smaller, holds the point), and measures the Graph against the budget: the first frame after the tap that showed it,
+and the frames a display link sees while a gesture moves the camera (`GraphFrames`). `RoadmapGraphCanvas.swift` is the
+view: one `Canvas` under the room's bars, a `DragGesture` and a `MagnifyGesture` that move the camera, a tap that
+selects, and `GraphStepBar`, the selected step in the foot's band slot, which pushes the step's page. VoiceOver hears the
+canvas as one element, *Graph*, with the roadmap's progress and the hint that the Board lists every step. Left out until
+their screens are built: *Next* and its menu, so the band slot is empty with nothing selected, *Fit*, Find on the Graph,
+the mark and progress of a step that opens a roadmap, a proposal's changes and a reader's cover.
+
 `Step/StepDraft.swift` is the step form's draft, which `newStep(from:)` and `edit(_:)` make and the model holds while the
 form is open: what a person sets of a step (its name, description and kind, the steps it requires and the steps it opens)
 beside what the step held as the form opened, so `isChanged` and `commits` say what *Create* or *Save* would write. A new
@@ -204,8 +232,9 @@ change. A step that may go has *Delete Step* in the form, which asks there as it
 the sheet's foot, away while a field has the keyboard. Left out until their screens are built: the *Roadmap* row, *Links*
 and *Add Link*, *Edit Kinds* and Coach's composer.
 
-A roadmap with no step says *Your first step* over *New Step*, which opens the form as the foot's + does, and one with every
-step done says so over Done. Graph, Find, Sort and filter and a finished Board's *Share* are drawn disabled. Debug simulator boards
+A roadmap with no step says *Your first step* over *New Step*, which opens the form as the foot's + does, under the Graph
+as under the Board, and one with every step done says so over Done. Find, the Board's Sort and filter and a finished
+Board's *Share* are drawn disabled. Debug simulator boards
 (`RoadmapFixture`): `-board roadmap-empty` opens the room on a phone that holds no roadmap; `-board roadmap-learn-to-sail`
 signs the phone in to an account whose eight-step roadmap another phone planted on the model server, three steps done a second
 apart and *Read the wind* sharing one link, so it arrives by sync; `-board roadmap-all-done` is that roadmap with every step
@@ -213,8 +242,13 @@ done; `-board roadmap-no-steps` is *Night sailing*, with no step; `-board roadma
 more roadmaps, each received a second after the one before so the list has an order: *Learn to sail* the most recent,
 then *Spanish B1* with the steps 01.11 draws, and *Become a day skipper*, whose step *Learn to sail* opens that roadmap
 by its pointer; `-board roadmap-many` is a phone never signed in that holds the nine roadmaps All Roadmaps draws,
-*Learn to sail* the one last open, listed in the order of their ids since no server has received them; and `-board
-roadmap-unreadable` opens the room over views it cannot make. The roadmaps under *Learn to sail* hold a few steps
+*Learn to sail* the one last open, listed in the order of their ids since no server has received them; `-board
+roadmap-handbook` is a phone never signed in that holds *Coastal navigation handbook*, the 5,000 steps, links and colours
+of the layout's shared fixture, read from the repository the build was made in and planted through the domain, so its
+steps' ids are the phone's, with the first 120 of the fixture's 1,800 done steps marked, since signed out each mark's
+commit reads everything the phone has still to send; and `-board roadmap-unreadable` opens the room over views it cannot
+make. A simulator launch
+with `-graph-measures <path>` appends what the Graph measures of itself to that file, one JSON line a measure. The roadmaps under *Learn to sail* hold a few steps
 each, not the counts the boards draw, and the account's board holds three roadmaps, not nine: it is planted by a
 second engine on the model server, which takes about half a second longer for every roadmap the account already
 holds. A board's clock stands still, so the engine's release timer never ends a hold there: a held delete is sent once
@@ -682,6 +716,39 @@ when a `%@` twin of that shape exists, outside `Locale.copy`. Its allowlist name
 why, the check prints every allowed literal with its reason, and an entry that no longer matches fails the check. Both
 targets run it before they build, except the build `string_catalogs.py` makes, so a new string can reach its catalog;
 `python3 -m unittest discover -s Tools/tests -v` includes its cases and runs it over the shipped sources.
+
+## The Graph's benchmark
+
+`Tools/graph_bench.sh` measures the Graph against its budget ([Roadmap on iOS](../../../docs/foundation/roadmap-ios.md) §5:
+a first frame under a second and 60 frames a second, at 5,000 steps) inside an iOS simulator, on a Release-configuration
+build that compiles the Roadmap room and its simulator boards in, which no release carries:
+
+```sh
+bash apps/ios/App/Tools/graph_bench.sh    # SIM=<udid> uses a booted simulator, DERIVED_DATA=<path> a build folder
+```
+
+`Tests/Roadmap/Graph/GraphBenchmarks.swift`, hosted in the app, times the picture of the layout's 5,000-step handbook
+fixture, with its seats, its model and every caption wrapped; the picture after one step is marked done; the domain's
+read of the same roadmap, planted through the domain, taken as the layout's steps; and at five cameras the room's own
+part of a frame: the zoom floor, the opening frame, the zoom at which connectors are first drawn, the working zoom and
+the pinch ceiling. That part is the captions placed and the canvas's drawing issued; the offscreen render printed
+beside them draws into a bitmap, which takes hundreds of times the main actor's work in a frame of the same picture on
+a screen, and carries no budget.
+`UITests/RoadmapGraphBenchmarks.swift` launches `-board roadmap-handbook`, switches to the Graph, and drives four pans of
+the whole roadmap, five pinches in with a pan after each, and five pinches out. The app measures itself there
+(`RoadmapGraph.Measure`, written to the launch's `-graph-measures` file): the time from the switch to the first frame
+that draws the picture, with the layout's share of it, and for each gesture the gaps between the frames a display link
+on the main actor sees and how long the main actor worked in each, its commit to the screen included (`GraphFrames`).
+
+Each measure prints one `bench` line beside its budget with the share of the budget it used, and a measure over its
+budget fails the run. The budgets are §5's own: a second for the first frame and for each part of it, a frame at 60 a
+second for the room's part of a frame and for the median of the main actor's work in a gesture's frames, and no more
+than a tenth of a gesture's frames later than a frame and a half. Now and then a frame or two of a gesture stall, at
+the closest zoom too, where the canvas draws a step or two; their cause is not found, and the nineteenth of twenty is
+printed and not judged. The budgets are held on the Mac that runs the simulator, which is faster than any iPhone
+the app supports: a run under budget does not say a phone holds it, the share says how wide the margin is, and no phone
+has measured it. A display link sees the main actor's frames, not what the screen composited after them. Both classes
+run only under `WM_GRAPH_BENCH=1`, which the script sets, so the unit scheme and the UI shards skip them.
 
 ## Design captures
 

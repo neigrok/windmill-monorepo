@@ -729,6 +729,46 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   a pushed list goes back, where 05.1 draws the form at rest; the name and description fields stop at the domain's 200
   and 16,000 characters with no counter, as the NOTE rules; and the band's six seconds for *Undo* of a created step
   run under VoiceOver too, as every receipt's do.
+- **Roadmap · iOS · what the Graph leaves for the boards.** The switch, the canvas, a selected step with its bar and
+  an empty roadmap are built in Debug builds from 04.1, 04.2, 04.4, 04.7 and S.2. To draw or rule: the boards draw
+  *Learn to sail* from the top down by hand, and the canvas seats it where the web's layout does, the first step at
+  the left and the rest fanned to its right, as [Roadmap on iOS](../foundation/roadmap-ios.md) P-4 holds it; 04.4 grows
+  the captions with the discs, and the layout's captions are the web's, one size at every zoom, 13 pt in a 20 pt line,
+  seated anew as the picture grows, so the discs, halos, rings and connectors grow and a caption does not; the NOTE has
+  captions follow the text size, and they do not, since the layout seats them in boxes of that one size; every disc on
+  the boards is one size, and the layout's first step, which follows nothing, is 1.55 times wider with its caption
+  clear of that rim, and it is built so; the kit's node is 42 pt across where the layout's body is 40 at the phone's
+  working zoom, so each form is built as its share of the layout's body; the kit's selected node keeps its disc's size
+  and loses its halo for the ring, and it is built so, where the web grows the selected disc and the layout seats its
+  caption for the grown one; no board draws a selected step from far out, where the ring is held to 1.5 pt wide and
+  3 pt off its disc; connectors are the kit's 2 pt at the working zoom, grow and shrink with the picture, are not drawn
+  under a fifth of a point, and run from seat to seat under the discs in one width, where the web's ribbons stop at
+  the rim and are wider on the link a step is seated by; an Up next halo reaches a seventh of the body past the rim
+  the layout seats a caption from, so a caption beside one touches it when pinched in; the boards name all eight
+  steps, and the layout leaves a step unnamed where no seat is free of discs and connectors, *Name the boat parts* at
+  the opening frame on an iPhone 17; a caption appears a fifth of a second after its seat is found, with no fade; the
+  NOTE has the system fade the canvas at a bar's edge, which it does for what scrolls and not for a `Canvas`, so the
+  picture runs under the bars unfaded; with *Fit* not built the switch row holds the picker and Find alone, and with
+  *Next* not built the band slot is empty until a step is selected; a receipt's band takes the slot from the selected
+  step while it stands; the selected step's bar is the system's glass capsule at its own height, not the kit's raised
+  ground and stroke; no board says how far a pinch goes, and it is held between the layout's floor, half the zoom
+  that shows the whole roadmap, and the web's pinch ceiling, 2.5; a drag ends where the finger leaves it, with no
+  glide, and no board asks for one; a tap among steps closer than their 44 pt targets takes the nearest, where the
+  web zooms in on a crowd instead; the selection stays through the Board and a step's page and goes with its step or
+  its roadmap, which no board says; each roadmap opens in the view it was last switched to on this phone, the Board
+  until then, as the web keeps it; VoiceOver hears the canvas as one element, *Graph*, with the roadmap's progress
+  and *The Board lists every step.*, and no step of the picture is an element, so the question stands whether the
+  Graph should give its steps to VoiceOver in the roadmap's order; steps that follow each other in a loop have no
+  seats, and the Graph then says *Couldn’t load this roadmap* with no button, which no board draws; a hue no kind of
+  this build knows is drawn in the dim ink, and locked in the raised ground, the strong line and the faint ink; and
+  the 5,000-step handbook opens with every disc at the layout's 6 pt floor and no connector wide enough to draw, 650
+  times farther out than the working zoom, so until *Next* and Find are built a person reaches a step there by
+  pinching.
+- **Roadmap file · three locked roles a step off the web's.** In *iOS · Roadmap roles*, `roadmap/locked-brick-glyph`
+  (Light `#CD9987`), `roadmap/locked-plum-fill` (Light `#E1D1D4`) and `roadmap/locked-plum-ring` (Dark `#4B2E42`) each
+  differ by one step in one channel from the web's `locked/brick-glyph` (`#CC9987`), `locked/plum-fill` (`#E1D0D4`)
+  and `locked/plum-ring` (`#4B2F41`), which the kit's Graph node binds and [Roadmap · iOS](ios/roadmap.md) names as
+  their values. The app holds the web's. To fix in the file: the three variables.
 - **Roadmap · iOS · the Design System owes the room its door.** *Where to start?* with a third door, Roadmap, is
   ✅ Ready for dev in the Shell file
   ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)). The Design System has no
