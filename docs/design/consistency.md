@@ -670,7 +670,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   draws it, so the page is built to the NOTE and 03.4's row reads *Sky · Reset returns 1 step to Locked*; no board
   words the band after a step completed on its page opens nothing, or after a Reset that locks nothing, and they are
   built as *Read the wind done*, the Board's sentence, and *Read the wind reset*; every board of the page draws
-  *Edit*, the Coach circle or composer, the workspace and History, and the page is built without them until their
+  the Coach circle or composer, the workspace and History, and the page is built without them until their
   screens are, so a Locked or a Done step's foot holds the band alone and the … menu holds *Delete Step* alone; the
   roadmap's one starting step, which keeps no *Delete Step*, has no … button while that is the menu's one item, and
   no board draws that step's menu; a link row shows the address's host as it is written, so *www.* stays where the
@@ -691,7 +691,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   until the account has the delete, the step stays and opens nothing, where the sentence says *removes*; 01.9 keeps an
   emptied name as *Untitled roadmap*, and the system's title field commits no empty name, so the old name stays, as on
   the web, while a name of blanks alone is written empty and reads *Untitled roadmap*; while that field has the
-  keyboard the foot rides above it, the band and the disabled New Step with it, where 01.9 draws nothing there, and
+  keyboard the foot rides above it, the band and New Step with it, where 01.9 draws nothing there, and
   the system tells the room nothing of its rename; the system's Rename has no pencil in the menu (01.3), and a long
   name there wraps onto a second line where the board truncates it; the menu
   lists the three most recent, so an open roadmap that is not among them has no checkmark there; with *Start from*
@@ -705,6 +705,30 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   draws it for a blank one; 01.3 and 01.4 group a count's digits (*3,200 of 5,000*) and the app writes every count as
   Swift does, *3200 of 5000*; and the domain orders a person's roadmaps by when a server last received each, so on a
   phone never signed in the title menu's three and All Roadmaps stand in the order of their ids, which no board says.
+- **Roadmap · iOS · what the step form leaves for the boards.** New Step, from the foot's + and from an empty roadmap,
+  and *Edit* from a step's page are built in Debug builds from 05.1 to 05.8, 05.10 and 02.15. To draw or rule: every
+  board of the form draws the *Roadmap* row, *Links* with *Add Link* and Coach's composer, and 05.2 draws *Edit Kinds*,
+  and the form is built without them until their screens are, so a step's shared links are neither shown nor changed
+  in its form; 05.2 draws the hues no kind names as Sky, Brick, Plum, where its NOTE keeps the web's list, whose order
+  and the rule book's is Brick, Sky, Plum, and it is built so; 05.3's caption makes a step that would close a loop
+  `.disabled`, and 05.6b has a tap on one name it in the footer: a disabled row takes no tap, so those rows are drawn
+  dimmed and stay buttons, each with its group's reason as its hint; no board words the band after *Save*, and it is
+  built as *Read the wind saved*; no board says whether *Kind* returns on a tap, and it does, as the system's
+  single-choice list; no board draws a save the domain refuses, since the form draws no save failure: the form stays
+  open, a loop the domain finds over links made elsewhere since the lists were read is named under the links in 05.6b's
+  words, a roadmap at its limit says *This roadmap is at its limit.* in the band at the sheet's foot, and any other
+  refusal, a step deleted elsewhere among them, shows nothing; 10.6a refuses New Step on a full roadmap before the form
+  opens, and no read of the domain gives the room that limit, so the + opens the form there and *Create* is refused;
+  the web drops a chosen step that comes to follow the draft's and says *… now comes after this step, so it left your
+  selection*, and no board draws that, so the form drops nothing and the save is refused as above; a form whose step
+  is deleted elsewhere, or whose roadmap is no longer the open one, closes and says nothing; within a state a list
+  stands in the roadmap's order as the domain reads it, by place, then birth, then id, so steps planted in one moment,
+  a new roadmap's own and the boards' *Learn to sail*, stand in the order of their ids, where 05.3 and 05.4 draw the
+  plan's order; the form's rows and the lists' are the system's 52 pt where the boards draw 44 and 47, and a list's
+  state symbols are the Board's size, larger than 05.3 draws them; the keyboard returns to the field that had it when
+  a pushed list goes back, where 05.1 draws the form at rest; the name and description fields stop at the domain's 200
+  and 16,000 characters with no counter, as the NOTE rules; and the band's six seconds for *Undo* of a created step
+  run under VoiceOver too, as every receipt's do.
 - **Roadmap · iOS · the Design System owes the room its door.** *Where to start?* with a third door, Roadmap, is
   ✅ Ready for dev in the Shell file
   ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)). The Design System has no

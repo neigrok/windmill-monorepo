@@ -100,12 +100,16 @@ open, else the most recent, and makes no request. `open(_:from:)` makes another 
 (`arriving`). The model keeps which groups stand folded, Done at rest and open by itself once every step is done, another
 roadmap opening with its Board at rest, and the screens on the room's stack (`path`, each a `Visit`: All Roadmaps, or a
 step's page with the row that opened it), which empties once a step whose page is open goes, deleted here or by another
-device, or once the last roadmap goes.
+device, or once the last roadmap goes. It also holds the draft the step form stands open on (`draft`), which it lets go
+once the draft's roadmap is not the open one or the step it edits is gone.
 
-The model's write door is `write(_:as:)`: one act of `RoadmapDomain` run on `AppRuntime.roadmapRunner`, a refusal told as an
-event and a failed commit reported. `complete(_:by:)` and `reset(_:)` run `MarkStep`; a delete is asked first
+The model's write door is `write(_:as:)`: one act of `RoadmapDomain` run on `AppRuntime.roadmapRunner`, or several as one
+gesture (`ActionRunner.runComposed`), each reading what the ones before it wrote. It answers what the write came to
+(`RoadmapModel.Written`: committed with its receipt, unchanged, the domain's refusal, or failed), and tells it in one place
+whoever asked (`told(as:_:)`): a refusal as an event, and in the band where it is a limit, and a failed commit as a report.
+`complete(_:by:)` and `reset(_:)` run `MarkStep`; a delete is asked first
 (`askDelete(_:by:)`, the question the model holds with what the delete costs and where it was asked) and, answered *Delete
-Step*, `delete(_:by:)` runs `DeleteStep` and leaves the room on the Board. `create(named:)` runs `CreateRoadmap` and
+Step*, `delete(_:by:)` runs `DeleteStep` and leaves the room on the Board, the form that asked closed. `create(named:)` runs `CreateRoadmap` and
 `rename(to:)` runs `WriteRoadmap`, and the engine keeps no Undo of either. A roadmap's delete is asked first too
 (`askDelete(_:from:)`, with what else goes) and, answered *Delete Roadmap*, `delete(_:from:taking:)` runs `DeleteRoadmap`:
 the room then opens the most recent other roadmap, or holds none. Each receipt is the room's one band
@@ -125,7 +129,8 @@ blank roadmap starts with one step, named as the roadmap, in the first kind's co
 `NewTreeBirth.plant`).
 
 `RoadmapRoom.swift` is the room's one `NavigationStack` over the model's `path`: the room capsule and the account in the bar,
-the roadmap's name and progress, the switch row pinned under the bar, and at the foot the band over New step. It announces
+the roadmap's name and progress, the switch row pinned under the bar, and at the foot the band over New step, which
+raises the step form. It announces
 and plays the band's haptic once, whichever screen stands over it. The title's menu (`RoadmapTitle`, `.toolbarTitleMenu`)
 lists the three most recent roadmaps, each name over its progress and the open one checked, then *All Roadmaps…*, *New
 Roadmap*, *Rename* and *Delete Roadmap*. *Rename* is the system's (`RenameButton` over a title that is a binding): the bar
@@ -141,7 +146,7 @@ checked. That order is by when a server last received each, the most recent firs
 the order of their ids. A row opens its roadmap on its Board and slides left for *Delete*, which asks on the row, never
 commits by a full swipe, and leaves the list on screen under the band; past eight roadmaps the bar's drawer finds them
 by name; and + names a new one. Its last row on the board, the gallery, is left out. `Roadmaps/NewRoadmap.swift` is the
-room's one sheet, which the title menu, All Roadmaps and *No roadmaps yet* all open: a name, held to the length the
+sheet the title menu, All Roadmaps and *No roadmaps yet* all open: a name, held to the length the
 domain takes, *Cancel* and *Create*, which plants a blank roadmap with its one starting step and opens it. Its *Start
 from* section (a quest, a copied plan, a file) is left out. All of it works on the phone's copy, signed in or out.
 
@@ -156,17 +161,51 @@ takes once it has scrolled away; the status row, with the state, the kind's name
 the step stands there, or on a Done step what Reset would return to Locked beside *Reset*; the description and the step's
 shared links, each opened where its address is `http`, `https` or `mailto`; and *Requires* and *Opens* with their counts,
 each row opening its step. An Up next step that opens no roadmap has *Complete* at its foot: the page stays, and the band says
-what opened. *Reset* asks nothing. The … menu holds *Delete Step*, which asks on the … button and, answered, returns to the
-Board with the step held; the roadmap's one starting step has no menu. Left out until their screens are built: the menu's
-*Open in Graph*, *View Branch*, *Attach a Roadmap* and *Copy Link*, the bar's *Edit*, the workspace (*Subtasks*, *Note*, *Your
-links*), *History*, the Coach circle and composer, and a step that opens a roadmap's pill and *Open Roadmap*.
+what opened. *Reset* asks nothing. *Edit* in the bar raises the step's form over the page. The … menu holds *Delete Step*,
+which asks on the … button and, answered, returns to the Board with the step held; the roadmap's one starting step has no
+menu. Left out until their screens are built: the menu's *Open in Graph*, *View Branch*, *Attach a Roadmap* and *Copy Link*,
+the workspace (*Subtasks*, *Note*, *Your links*), *History*, the Coach circle and composer, and a step that opens a
+roadmap's pill and *Open Roadmap*.
 `Components/RoadmapStepRow.swift` is the row every list of steps draws and the words a step is said in;
 `Components/RoadmapChrome.swift` is the foot every screen of the room stands on (`roadmapFoot`: the band over the screen's
-own control), the band's words, the delete question both a step's Board row and its page ask, and the one both the Board's
-title and a roadmap's row in All Roadmaps ask.
+own control), the band's words, the delete question a step's Board row, its page and its form ask, and the one both the
+Board's title and a roadmap's row in All Roadmaps ask.
 
-A roadmap with no step says *Your first step*, and one with every step done says so over Done. Graph, Find, Sort and filter,
-New step and a finished Board's *Share* are drawn disabled. Debug simulator boards
+`Step/StepDraft.swift` is the step form's draft, which `newStep(from:)` and `edit(_:)` make and the model holds while the
+form is open: what a person sets of a step (its name, description and kind, the steps it requires and the steps it opens)
+beside what the step held as the form opened, so `isChanged` and `commits` say what *Create* or *Save* would write. A new
+step's id is minted as the form opens. `save()` is the draft's one write, through the model's door as one gesture:
+`CreateStep` with what the step requires, then `ChangePrerequisites` on each step it opens; or, for a step, `ChangeStep`
+with the fields that differ and `ChangePrerequisites` for each link taken or dropped, the links dropped first, so the
+domain reads every loop over the links as they will stand. Written, the form closes and the band holds *Undo* for six
+seconds, which takes the whole gesture back; a new step's group opens on the Board, which scrolls to the step and washes
+it while the band stands. Refused or failed, the form stays open. What a name, a description and a link may be, and every
+refusal of the save, are the domain's. Seven facts the draft settles itself, as the web's editor does: a new draft starts
+on Sky (`DEFAULT_DRAFT_COLOR`); a step needs a name, written without the blanks around it (`StepDraft.validate`,
+`CreateStepRequest`, `SaveFieldRequest`); a field stops at the domain's limit, 200 characters of a name and 16,000 of a
+description; the group the step would land in and the steps not done that keep it Locked (`StepDraft.placement`); the six
+kinds, the roadmap's named ones first (`kindChoices`); a list's order, done, up next, then locked, each in the roadmap's
+order, and its search by name (`PrerequisiteChoices`); and the steps that would close a loop (`blocked(_:)`, the web's
+`blockedPrerequisites`), read over the links the draft holds, so a step cannot require what comes after the steps it
+opens, nor open what comes before the steps it requires. The web's form has no *Opens*, and that half is the room's own.
+The draft's two refusals of its own stand in a footer and are told as a refused write is: a name typed and then cleared,
+and a tap on a step that would close a loop. A loop the domain refuses at the save is named by the first step chosen that
+closes one.
+
+`Step/RoadmapStepForm.swift` is the form: a large sheet with its own stack, which `RoadmapRoom` presents over the Board or
+over a step's page while the model holds a draft. Name and Description, then *Kind*, *Requires* and *Opens*, each a list
+pushed inside the sheet and bound to the draft, with no Apply: *Kind* returns with the kind chosen, and a tap in
+*Requires* or *Opens* takes or drops a step in place, the steps chosen as the list opened heading it under *Selected*.
+The steps that would close a loop stand dimmed in their own group, whose footer says why; they are drawn dimmed and not
+disabled, so a tap on one can be refused and named. Under the links one footer says where the step will land, always
+for a new step and for a step only where the change would move it to another group. *Cancel* closes an unchanged draft
+and asks *Discard draft?* on a changed one, which a swipe down does not send away; *Create* needs a name and *Save* a
+change. A step that may go has *Delete Step* in the form, which asks there as its page does. The room's band stands at
+the sheet's foot, away while a field has the keyboard. Left out until their screens are built: the *Roadmap* row, *Links*
+and *Add Link*, *Edit Kinds* and Coach's composer.
+
+A roadmap with no step says *Your first step* over *New Step*, which opens the form as the foot's + does, and one with every
+step done says so over Done. Graph, Find, Sort and filter and a finished Board's *Share* are drawn disabled. Debug simulator boards
 (`RoadmapFixture`): `-board roadmap-empty` opens the room on a phone that holds no roadmap; `-board roadmap-learn-to-sail`
 signs the phone in to an account whose eight-step roadmap another phone planted on the model server, three steps done a second
 apart and *Read the wind* sharing one link, so it arrives by sync; `-board roadmap-all-done` is that roadmap with every step

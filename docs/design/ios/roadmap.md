@@ -5,7 +5,10 @@ row in the room menu, its door on *Where to start?*, the Board with its swipes t
 *Undo* in the band and the long-press menu's *Complete* and *Delete Step*, an empty roadmap, every step done,
 *No roadmaps yet* and the room's failed read; a step's page, opened by a Board row: its status row,
 description and shared links, *Requires* and *Opens*, *Complete* and *Reset* in place with their *Undo*, and the …
-menu's *Delete Step* with its question; and the room's roadmaps: the title menu with the three most recent, *All
+menu's *Delete Step* with its question; the step form, New Step from the foot's + and from an empty roadmap, and *Edit*
+from a step's page: Name, Description, *Kind*, *Requires* and *Opens* pushed inside the sheet, their refusals as
+footers, *Discard draft?*, the created step shown on the Board and each save with its *Undo*, without its *Roadmap* row,
+its *Links*, *Edit Kinds* or Coach's composer; and the room's roadmaps: the title menu with the three most recent, *All
 Roadmaps…*, *New Roadmap*, *Rename* and *Delete Roadmap*, All Roadmaps with its search and its swipe to Delete, New
 Roadmap for a blank roadmap, renaming in the bar, and a roadmap's delete asked once and held with *Undo*.
 [Roadmap on iOS](../../foundation/roadmap-ios.md) §13 lists what is not built. The boards are on the Roadmap file's
