@@ -10,10 +10,20 @@ import RoadmapDomain
 struct RoadmapStepPage: View {
   typealias Read = (step: RoadmapModel.OpenStep, open: RoadmapModel.OpenRoadmap)
 
+  // What the page last read of its step, which it goes on showing while it leaves the stack once the step is gone. A
+  // generic class here crashes the Release optimizer of Swift 6.2, the compiler CI builds with.
+  final class LastRead {
+    private(set) var page: Read?
+
+    func read(_ now: Read?) -> Read? {
+      if let now { page = now }
+      return page
+    }
+  }
+
   let roadmap: RoadmapModel
   let step: String
-  // The page as it last read its step, which it goes on showing while it leaves the stack once the step is gone.
-  @State private var last = LastRead<Read>()
+  @State private var last = LastRead()
   @State private var nameHeight = 0.0
   @State private var nameScrolledAway = false
   @State private var addingLink = false

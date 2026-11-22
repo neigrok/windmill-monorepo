@@ -112,10 +112,21 @@ struct RoadmapKindPage: View {
     case name, description
   }
 
+  // The entry the page last read, which it goes on drawing while the entry its name or its colour moved to is still to
+  // be read, so the page keeps its form, its focus and the keyboard.
+  final class LastRead {
+    private(set) var entry: RoadmapLegend.Entry?
+
+    func read(_ now: RoadmapLegend.Entry?) -> RoadmapLegend.Entry? {
+      if let now { entry = now }
+      return entry
+    }
+  }
+
   let roadmap: RoadmapModel
   // The entry the page stands on, which a name, or a colour of a hue no kind names, moves.
   @State private var subject: RoadmapLegend.Subject
-  @State private var last = LastRead<RoadmapLegend.Entry>()
+  @State private var last = LastRead()
   @State private var name: String
   @State private var description: String
   @State private var focusesName: Bool
