@@ -24,7 +24,7 @@ namespace wm::gym::coach {
 
 // D-3: the catalog versions a turn may open with, served side by side; `catalog/N` names version N.
 constexpr int kOldestCatalog = 1;
-constexpr int kNewestCatalog = 2;
+constexpr int kNewestCatalog = 3;
 
 // Appendix A.
 constexpr int kMaxModelCalls = 8;

@@ -44,31 +44,31 @@ const std::vector<Row> kRoadmap = {
 };
 
 const std::vector<Row> kGym = {
+    {"list_routines", "Gym · List routines", true, false, true},
     {"list_exercises", "Gym · List exercises", true, false, true},
     {"list_sessions", "Gym · List sessions", true, false, true},
     {"get_session", "Gym · Get session", true, false, true},
+    {"get_sessions", "Gym · Get sessions", true, false, true},
     {"last_time", "Gym · Last time", true, false, true},
-    {"list_routines", "Gym · List routines", true, false, true},
+    {"get_last_times", "Gym · Get last times", true, false, true},
     {"get_stats", "Gym · Get stats", true, false, true},
     {"list_notes", "Gym · List notes", true, false, true},
     {"list_bodyweight", "Gym · List bodyweight", true, false, true},
-    {"get_sessions", "Gym · Get sessions", true, false, true},
-    {"get_last_times", "Gym · Get last times", true, false, true},
-    {"save_note", "Gym · Save note", false, false, true},
-    {"start_session", "Gym · Start session", false, false, true},
-    {"log_set", "Gym · Log set", false, false, true},
-    {"finish_session", "Gym · Finish session", false, false, true},
     {"create_routine", "Gym · Create routine", false, false, true},
+    {"create_exercise", "Gym · Create exercise", false, false, true},
+    {"save_note", "Gym · Save note", false, false, true},
+    {"share_session", "Gym · Share session", false, false, true},
     {"propose_routine_change", "Gym · Propose routine change", false, false, true},
     {"propose_workout_change", "Gym · Propose workout change", false, false, true},
-    {"create_exercise", "Gym · Create exercise", false, false, true},
-    {"update_exercise", "Gym · Update exercise", false, false, true},
-    {"share_session", "Gym · Share session", false, false, true},
+    {"start_session", "Gym · Start session", false, false, true},
+    {"log_set", "Gym · Log set", false, false, true},
     {"log_sets", "Gym · Log sets", false, false, true},
     {"import_session", "Gym · Import session", false, false, true},
-    {"discard_session", "Gym · Discard session", false, true, true},
+    {"finish_session", "Gym · Finish session", false, false, true},
+    {"update_exercise", "Gym · Update exercise", false, false, true},
     {"propose_routine_removal", "Gym · Propose routine removal", false, false, true},  // a proposal removes nothing
     {"revoke_share", "Gym · Revoke share", false, true, true},
+    {"discard_session", "Gym · Discard session", false, true, true},
 };
 
 Json::Value expectedAnnotations(const Row& row) {
