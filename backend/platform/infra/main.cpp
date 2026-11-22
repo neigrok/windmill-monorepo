@@ -11,6 +11,7 @@
 #include "products/gym/onboarding/PgOnboardingRepository.h"
 #include "products/gym/onboarding/OnboardingService.h"
 #include "products/gym/coach/AnthropicCoachModel.h"
+#include "products/gym/coach/CoachWords.h"
 #include "products/gym/coach/TurnService.h"
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/email/ResendClient.h"
@@ -828,6 +829,12 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                                                *gymTools, *entitlements, sentry);
   lifetime.watch(gymAsk, gymTrainingService, gymThreads, systemClock, gymAskAgent, gymTools, entitlements,
                  entitlementCopy, aiUsageRepo, gymLog, gymProgram, gymCatalog, gymNotes, gymBodyweight, tokens, gymDoor, gymPreferences);
+
+  // The words Coach's model reads parse here, and Ask's prompts with them, so a malformed contract
+  // file stops the start rather than a turn.
+  gym::coach::CoachWords::shipped();
+  gym::coachSystemPrompt(gym::CoachRoutineRule::drafts);
+  gym::coachSystemPrompt(gym::CoachRoutineRule::unavailable);
 
   // The phone Coach's turn wire shares Ask's key, endpoint, fuse, sink and budget; its routes are
   // mounted under the same condition as Ask's.

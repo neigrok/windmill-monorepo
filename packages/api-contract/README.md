@@ -120,6 +120,12 @@ yet; `catalog.json` and `abilities/` are deleted when no released build opens a 
 - A value outside a moved bound is refused `invalid-arguments` before any rule reads the store, so a
   refusal case's records need not make the rest of the call succeed, though each case's do.
 
+## `gym/coach/`
+
+The words the model reads in a gym Coach turn: the system prompt, the words of the first content and
+the sentence beside each refusal code. The backend embeds them and the apps ship them as they are.
+[gym/coach/README.md](gym/coach/README.md) has the files and how a turn puts them together.
+
 ## `genesis.js`
 
 A locally-born tree's first sync converges with the server's empty tree only while this seed is

@@ -48,6 +48,8 @@ const notApplicable = {
   'gym/domain/coach-onboarding-actions.json': 'the web carries no anonymous routine import door',
   'gym/domain/coach-conversation-actions.json': 'a web Coach turn writes its conversation on the server (gym Coach §4.6); the web holds no thread or message entity',
   ...Object.fromEntries(coachFiles.map((path) => [path, 'the web runs no replica executor'])),
+  ...Object.fromEntries(Contract.files('gym').filter((path) => path.startsWith('gym/coach/'))
+    .map((path) => [path, 'the words Coach\'s model reads are no vectors: coach/words.test.js reads them'])),
 };
 
 /** @param {{ day: LocalDay, kg: number }} value */

@@ -38,7 +38,9 @@ class CorpusTests {
         val replayedByTheTurnTests = files.filter { it.startsWith("gym/turns/") }
         val readByCatalogTests = "gym/catalog.json"
         val claimedByNoExecutorYet = files.filter { it == "gym/catalog-3.json" || it.startsWith("gym/abilities-3/") }
-        assertEquals((paths + abilities + readByCatalogTests + replayedByTheTurnTests + claimedByNoExecutorYet).sorted(), files)
+        // The words Coach's model reads are no vectors: :gym's CoachWordsAssetsTests reads them from its assets.
+        val coachWords = files.filter { it.startsWith("gym/coach/") }
+        assertEquals((paths + abilities + readByCatalogTests + replayedByTheTurnTests + claimedByNoExecutorYet + coachWords).sorted(), files)
         val failures = mutableListOf<String>()
         try { RuleBookParity.check(book, paths[0]) } catch (error: Exception) {
             failures += "${paths[0]} · ${error.message}"

@@ -1,15 +1,24 @@
-// The ability catalog is the contract's own file, placed in this module's assets as it is: nothing generated to drift, nothing checked in twice.
-abstract class CopyAbilityCatalog : DefaultTask() {
+// The contract's own files, placed in this module's assets as they are: the ability catalog, and the words
+// Coach's model reads (packages/api-contract/gym/coach) under gym-coach/. Nothing generated to drift,
+// nothing checked in twice.
+abstract class CopyCoachContract : DefaultTask() {
     @get:InputFile
     @get:PathSensitive(PathSensitivity.NONE)
     abstract val catalog: RegularFileProperty
+
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val words: DirectoryProperty
 
     @get:OutputDirectory
     abstract val outputDirectory: DirectoryProperty
 
     @TaskAction
     fun copy() {
-        catalog.get().asFile.copyTo(outputDirectory.get().asFile.resolve("gym-catalog.json"), overwrite = true)
+        val assets = outputDirectory.get().asFile
+        catalog.get().asFile.copyTo(assets.resolve("gym-catalog.json"), overwrite = true)
+        assets.resolve("gym-coach").deleteRecursively()
+        words.get().asFile.copyRecursively(assets.resolve("gym-coach"), overwrite = true)
     }
 }
 
@@ -46,11 +55,12 @@ android {
 
 androidComponents.onVariants { variant ->
     val capitalized = variant.name.replaceFirstChar { it.uppercase() }
-    val copy = tasks.register<CopyAbilityCatalog>("copy${capitalized}AbilityCatalog") {
+    val copy = tasks.register<CopyCoachContract>("copy${capitalized}CoachContract") {
         catalog.set(rootProject.file("../../packages/api-contract/gym/catalog.json"))
-        outputDirectory.set(layout.buildDirectory.dir("generated/abilityCatalog/${variant.name}/assets"))
+        words.set(rootProject.file("../../packages/api-contract/gym/coach"))
+        outputDirectory.set(layout.buildDirectory.dir("generated/coachContract/${variant.name}/assets"))
     }
-    variant.sources.assets?.addGeneratedSourceDirectory(copy, CopyAbilityCatalog::outputDirectory)
+    variant.sources.assets?.addGeneratedSourceDirectory(copy, CopyCoachContract::outputDirectory)
 }
 
 kotlin {

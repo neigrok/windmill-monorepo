@@ -360,7 +360,7 @@ class Fixture:
 
 # A signed-out phone's workout never reaches the log, so its id is read from the get_session its own request carries.
 def phone_session(body):
-    lead = "Here is what get_session returns on my phone right now, exactly as it answers:\n"
+    lead = json.loads((ROOT / "packages/api-contract/gym/coach/first-content.json").read_text())["contextLeads"]["get_session"] + "\n"
     for message in body["messages"]:
         for block in message["content"] if isinstance(message["content"], list) else []:
             if block.get("type") == "text" and block["text"].startswith(lead):
