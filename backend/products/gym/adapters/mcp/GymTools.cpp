@@ -96,7 +96,7 @@ ToolResult batchLog(GymWriteDoor& door, const UserId& caller, const Json::Value&
     outcome = door.importSession(caller, incoming);
   } else {
     if (!args["sets"].isArray() || args["sets"].empty() || args["sets"].size() > kMaxSetBatch)
-      return ToolResult::failure("sets must contain 1 to 200 rows");
+      throw InvalidTraining("sets must contain 1 to 200 rows");
     for (Json::ArrayIndex i = 0; i < args["sets"].size(); ++i) {
       try { sets.push_back(parseSetWrite(args["sets"][i])); }
       catch (const InvalidTraining& error) { throw InvalidTraining("sets[" + std::to_string(i) + "]: " + error.what()); }
@@ -212,13 +212,13 @@ ToolResult listExercises(CatalogRepository& catalog, const UserId& caller) {
 ToolResult listSessions(TrainingService& training, const UserId& caller, const Json::Value& args,
                         ReadReceipt& served) {
   // The cursor is the previous page's LAST ROW, both halves, because only the pair is unique. No
-  // cursor at all means "from now".
+  // cursor at all means "from now". A bound is refused before the log is read.
   LogCursor cursor{kMaxInstantMs, std::nullopt, kDefaultLogLimit};
   if (!args["before"].isNull()) {
     if (!args["before"].isUInt64() || args["before"].asUInt64() == 0 ||
         args["before"].asUInt64() > kMaxInstantMs)
-      return ToolResult::failure("\"before\" must be the previous page's last workout `startedAt`, "
-                                 "as epoch milliseconds.");
+      throw InvalidTraining("\"before\" must be the previous page's last workout `startedAt`, "
+                            "as epoch milliseconds.");
     cursor.beforeMs = args["before"].asUInt64();
   }
   if (!args["beforeId"].isNull()) {
@@ -232,10 +232,9 @@ ToolResult listSessions(TrainingService& training, const UserId& caller, const J
     cursor.beforeId = SessionId{beforeId};
   }
   if (!args["limit"].isNull()) {
-    if (!args["limit"].isInt() || args["limit"].asInt() < 1)
-      return ToolResult::failure("\"limit\" must be a whole number of workouts, 1 to " +
-                                 std::to_string(kMaxLogLimit) + ".");
-    cursor.limit = std::min(args["limit"].asInt(), kMaxLogLimit);
+    if (!args["limit"].isInt() || args["limit"].asInt() < 1 || args["limit"].asInt() > kMaxLogLimit)
+      throw InvalidTraining("\"limit\" must be a whole number of workouts, 1 to " + std::to_string(kMaxLogLimit) + ".");
+    cursor.limit = args["limit"].asInt();
   }
 
   Json::Value sessions(Json::arrayValue);
@@ -810,7 +809,7 @@ ToolResult GymTools::callTool(const std::string& name, const Json::Value& argume
     // A refusal served nothing, so it counts nothing; the throw paths below skip the merge too.
     if (outcome.isError) return ToolResult::failure(name + ": " + outcome.content[0]["text"].asString(), toolWriteOutcome(outcome));
     const bool batchRead = name == "get_sessions" || name == "get_last_times";
-    const bool structured = batchRead || name == "log_sets" || name == "import_session";
+    const bool structured = answersStructured(name);
     if (served.tally().anything() && outcome.payload.isObject()) {
       Json::Value answer = outcome.payload;
       answer["read"] = toJson(served.tally());

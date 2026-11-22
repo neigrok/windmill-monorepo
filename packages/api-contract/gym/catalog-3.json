@@ -2283,7 +2283,7 @@
             "additionalProperties": false
           },
           "position": {
-            "description": "Where it sits in the program, from 0 to 10000.",
+            "description": "Where it sits in the program, from 0 to 2147483647.",
             "type": "integer"
           },
           "revision": {

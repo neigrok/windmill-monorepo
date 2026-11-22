@@ -2,6 +2,7 @@
 
 #include "platform/adapters/llm/AgentLoop.h"
 #include "platform/adapters/llm/AiCallBudget.h"
+#include "platform/domain/sync/Jcs.h"
 #include "products/gym/adapters/llm/AnthropicAsk.h"
 
 #include <trantor/utils/Logger.h>
@@ -10,6 +11,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <set>
 #include <sstream>
@@ -658,17 +660,21 @@ TEST(coach_turn_open_refuses_an_anonymous_seat_without_installations_and_a_retir
   CHECK_EQ(retired.code, std::string("coach-update-required"));
   const TurnOpenRead unknown = readTurnOpen(parse(R"({"catalog":"v1","turnId":"tn_retired_000001","question":"Hi"})"));
   CHECK_EQ(unknown.code, std::string("coach-bad-request"));
-  CHECK_EQ(readTurnOpen(parse(R"({"catalog":"catalog/3","turnId":"tn_retired_000001","question":"Hi"})")).code,
+  CHECK_EQ(readTurnOpen(parse(R"({"catalog":"catalog/4","turnId":"tn_retired_000001","question":"Hi"})")).code,
            std::string("coach-update-required"));
-  // Both served versions open, each naming itself; only catalog/2 reads the open workout into its context.
+  // Every served version opens, each naming itself; from catalog/2 the open workout is read into the context.
   const char* workout = R"({"name":"get_session","input":{"sessionId":"ses_00000001"},"result":{}})";
   const TurnOpenRead first = readTurnOpen(parse(R"({"catalog":"catalog/1","turnId":"tn_ok_0000001","question":"Hi"})"));
   const TurnOpenRead second = readTurnOpen(parse(std::string(R"({"catalog":"catalog/2","turnId":"tn_ok_0000001","question":"Hi","context":[)") + workout + "]}"));
+  const TurnOpenRead third = readTurnOpen(parse(std::string(R"({"catalog":"catalog/3","turnId":"tn_ok_0000001","question":"Hi","context":[)") + workout + "]}"));
   REQUIRE(first.open);
   REQUIRE(second.open);
+  REQUIRE(third.open);
   CHECK_EQ(first.open->catalog, 1);
   CHECK_EQ(second.open->catalog, 2);
+  CHECK_EQ(third.open->catalog, 3);
   CHECK_EQ(second.open->context.size(), std::size_t(1));
+  CHECK_EQ(third.open->context.size(), std::size_t(1));
   CHECK_EQ(readTurnOpen(parse(std::string(R"({"catalog":"catalog/1","turnId":"tn_ok_0000001","question":"Hi","context":[)") + workout + "]}")).code,
            std::string("coach-bad-request"));
   for (const char* body : {R"({"catalog":"catalog/1","turnId":"short","question":"Hi"})",
@@ -682,13 +688,13 @@ TEST(coach_turn_open_refuses_an_anonymous_seat_without_installations_and_a_retir
     CHECK_FALSE(read.open);
     CHECK_EQ(read.code, std::string("coach-bad-request"));
   }
-  TurnService lonely(h.model, gymAbilityCatalog(), h.server, h.door, h.entitlements, nullptr, h.clock, 2000, h.failures);
+  TurnService lonely(h.model, gymCatalogs(), h.server, h.door, h.entitlements, nullptr, h.clock, 2000, h.failures);
   const TurnAdmission anon = lonely.open(h.anon(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_anon_000001","question":"Hi"})")));
   CHECK_FALSE(anon.turn);
   CHECK_EQ(anon.code, std::string("anonymous_ai_unavailable"));
   // Installations exist but signed-out Coach is switched off: the same code, from the installation's admission.
   const auto off = std::make_shared<AiInstallations>(h.installationRepository, h.budgets, h.tokens, h.clock);
-  TurnService dark(h.model, gymAbilityCatalog(), h.server, h.door, h.entitlements, off, h.clock, 2000, h.failures);
+  TurnService dark(h.model, gymCatalogs(), h.server, h.door, h.entitlements, off, h.clock, 2000, h.failures);
   const TurnAdmission unplugged = dark.open(h.anon(), openOf(parse(R"({"catalog":"catalog/1","turnId":"tn_anon_000002","question":"Hi"})")));
   CHECK_FALSE(unplugged.turn);
   CHECK_EQ(unplugged.code, std::string("anonymous_ai_unavailable"));
@@ -862,7 +868,7 @@ TEST(coach_turn_anonymous_seat_runs_on_sonnet_and_its_round_fits_the_default_lif
   CHECK_EQ(request["model"].asString(), std::string("claude-sonnet-5"));
   CHECK_EQ(request["output_config"]["effort"].asString(), std::string("low"));
   CHECK_EQ(request["max_tokens"].asInt(), 2000);
-  CHECK_EQ(request["tools"].size(), gymAbilityCatalog().offered(Seat::anon).size());
+  CHECK_EQ(request["tools"].size(), gymCatalogs().at(2).offered(Seat::anon).size());
 
   wm::fake::FakeAuthRepository accounts;
   AiCallBudget budget(h.budgets, h.entitlements, accounts, *h.failures);
@@ -894,8 +900,61 @@ TEST(coach_turn_bound_seat_runs_on_the_coach_model_under_the_configured_ceiling)
   CHECK_EQ(h.model->requests[0]["model"].asString(), std::string("claude-opus-5"));
   CHECK_EQ(h.model->requests[0]["output_config"]["effort"].asString(), std::string("medium"));
   CHECK_EQ(h.model->requests[0]["max_tokens"].asInt(), 2000);
-  CHECK_EQ(h.model->requests[0]["tools"].size(), gymAbilityCatalog().at(1).offered(Seat::bound).size());
+  CHECK_EQ(h.model->requests[0]["tools"].size(), gymCatalogs().at(1).offered(Seat::bound).size());
   h.service->stop();
+}
+
+// A turn is offered the input schemas of the catalog it opened with: a released build's catalog/2 turn catalog.json's,
+// a catalog/3 turn catalog-3.json's, which ask for a page's limit and take null for its cursor.
+TEST(coach_turn_offers_the_schemas_of_the_catalog_it_opened_with) {
+  for (const int version : {2, 3}) {
+    Harness h;
+    h.model->replies = parse(R"([{"stop_reason":"end_turn","content":[{"type":"text","text":"Hi."}]}])");
+    const std::string body = R"({"catalog":"catalog/)" + std::to_string(version) +
+                             R"(","turnId":"tn_catalog_vers_0","question":"Hi","history":[],"context":[],"pictures":[]})";
+    const TurnAdmission admission = h.service->open(h.bound(), openOf(parse(body)));
+    REQUIRE(admission.turn);
+    auto recorder = std::make_shared<Recorder>();
+    admission.turn->attach(recorder, false);
+    h.model->start();
+    REQUIRE(recorder->waitFor(2));
+    REQUIRE_EQ(h.model->requests.size(), 1u);
+    const AbilityCatalog& catalog = gymCatalogs().at(version);
+    std::map<std::string, Json::Value> sent;
+    for (const Json::Value& tool : h.model->requests[0]["tools"]) sent.emplace(tool["name"].asString(), tool["input_schema"]);
+    REQUIRE_EQ(sent.size(), catalog.offered(Seat::bound).size());
+    for (const ToolDeclaration& tool : catalog.offered(Seat::bound))
+      CHECK_EQ(sync::jcs(sent[tool.name()]), sync::jcs(tool.descriptor["inputSchema"]));
+    CHECK_EQ(sent["list_sessions"]["required"].size(), version == 3 ? 3u : 0u);
+    h.service->stop();
+  }
+}
+
+// A released build's turn sends the model the tools it always did, in their order, byte for byte: the file holds what
+// a catalog/1 and a catalog/2 turn of each seat sent before catalog/3.
+TEST(coach_turn_of_a_released_catalog_sends_the_model_its_recorded_tools) {
+  std::ifstream stream(WM_GYM_RELEASED_TURN_TOOLS, std::ios::binary);
+  const Json::Value recorded = sync::parseJson(std::string{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()});
+  REQUIRE_EQ(recorded.size(), 4u);
+  for (const int version : {1, 2}) {
+    for (const char* seat : {"anon", "bound"}) {
+      Harness h;
+      h.model->replies = parse(R"([{"stop_reason":"end_turn","content":[{"type":"text","text":"Hi."}]}])");
+      const std::string body = R"({"catalog":"catalog/)" + std::to_string(version) +
+                               R"(","turnId":"tn_released_tools","question":"Hi","history":[],"context":[],"pictures":[]})";
+      const TurnAdmission admission =
+          h.service->open(std::string(seat) == "anon" ? h.anon() : h.bound(), openOf(parse(body)));
+      REQUIRE(admission.turn);
+      auto recorder = std::make_shared<Recorder>();
+      admission.turn->attach(recorder, false);
+      h.model->start();
+      REQUIRE(recorder->waitFor(2));
+      REQUIRE_EQ(h.model->requests.size(), 1u);
+      const std::string key = "catalog/" + std::to_string(version) + "/" + seat;
+      CHECK_EQ(sync::jcs(h.model->requests[0]["tools"]), sync::jcs(recorded[key]));
+      h.service->stop();
+    }
+  }
 }
 
 // F6: a call the phone answered `ok: false` is counted as the phone's refusal, by code, on both

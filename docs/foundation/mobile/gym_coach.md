@@ -61,10 +61,11 @@ read last time. An ability has a name, an input schema, a result schema, a rule,
 agent rule.
 
 **D-2 Catalog.** The set of abilities, declared once in `packages/api-contract/gym/catalog.json`.
-The server's tool declarations (`gymToolCatalog()`), which give the model tool list and the MCP tool
-list (every tool but the phone Coach's `propose_workout_change`), are written in C++ and pinned to it by test: each tool's name, description and input schema
-byte-equal as JCS, and its class and agent rule against the tool's access level
-(`CatalogContractTest.cpp`). An ability the server declares no tool for is marked
+The server reads its tool declarations from the file it embeds: each tool's name, description and input
+schema are the file's, and its access level its class's. A `catalog/1` or `catalog/2` turn is offered this
+file's; MCP (every tool but the phone Coach's `propose_workout_change`) and a `catalog/3` turn are offered
+`catalog-3.json`'s ([Gym Coach on the AI service](../gym-coach-on-ai-service.md) §3), and
+`CatalogContractTest.cpp` pins what MCP lists to it. An ability the server declares no tool for is marked
 `"declared": false`. The Swift catalog, phrases included, is generated from it (`GymCatalogGen`)
 and pinned to the checked-in file by test (`GymCatalogGenTests`). Android holds no generated copy: a Gradle
 task copies the file into `:gym`'s assets, and the kit's `Catalog` parses it at the first send. Appendix C

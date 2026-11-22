@@ -26,9 +26,9 @@ carries `since` (`propose_workout_change`: `"catalog/2"`), so the file also decl
 version: catalog/1 is the abilities with no `since` (gym_coach.md D-3), which the server serves side
 by side with catalog/2.
 
-- `name`, `description` and `input` are byte-equal under JCS to the `name`, `description` and
-  `inputSchema` that `gymToolCatalog()` declares for the tool of that name, so MCP and Coach publish
-  this file's words. Appendix C's `rename_exercise` is the server's `update_exercise`.
+- The server reads this file's declarations for `catalog/1` and `catalog/2` turns, the turns released
+  builds open (`declarationsOf(catalog2Text())`); MCP and the server Coach list `catalog-3.json`'s.
+  Appendix C's `rename_exercise` is the server's `update_exercise`.
 - An entry marked `"declared": false` names an ability the server declares no tool for (`get_record`,
   `get_preferences`, `share_log`, and the withheld log, note, bodyweight and settings edits). Its `input`
   and `result` are drawn from the domain; the pin skips it.
@@ -36,8 +36,8 @@ by side with catalog/2.
   included. Every object in every `result` and every `input` sets `additionalProperties: false` and
   lists `required`, except three `input` objects the test pins as open: `create_routine`'s
   `pendingProposal` and the set items of `create_routine` and `propose_routine_change`. Four tools
-  (`log_sets`, `import_session`, `get_sessions`, `get_last_times`) also publish an MCP `outputSchema`
-  of their own.
+  (`log_sets`, `import_session`, `get_sessions`, `get_last_times`) publish their `result` as an MCP
+  `outputSchema`.
 - `class`, `agent` and `seats` follow Appendix C, with `save_note` at `seats: "bound"`. A `read` is a
   `read`-level tool, a `remove` a `delete`-level one, and only a `propose_*` tool `proposes`.
   `propose_workout_change`'s set items list an empty `required`, so they are not among the open
@@ -45,9 +45,11 @@ by side with catalog/2.
 - `phrase` is the step-line text a Coach client prints for a call. Both phones take it from this file, and the
   web's `TOOL_PHRASE` holds the same words for the abilities it lists.
 
-Read as a test by `backend/test/products/gym/adapters/mcp/CatalogContractTest.cpp`, which embeds the
-file into `windmill_gym` at configure time (`catalogText()`). A change to this file or to a tool
-declaration that breaks the pin fails `ctest -R mcp`.
+`windmill_gym` embeds this file and `catalog-3.json` at configure time (`catalog2Text()`,
+`catalog3Text()`), and declares its tools from them: each tool's name, description and input schema
+are the file's, and its grant level is its `class`'s. `CatalogContractTest.cpp` holds both files to
+this shape, pins what MCP lists to `catalog-3.json` byte for byte, and checks that the two differ
+only in their inputs; a change that breaks either fails `ctest -R mcp`.
 
 ## `gym/abilities/`
 
@@ -84,7 +86,8 @@ Coach is offered (`agent` other than `withheld`), each an array of
 
 Read as a test by `backend/test/products/gym/adapters/mcp/AbilitiesCorpusTest.cpp` under
 `WM_PG_TEST` (`backend/RUNNING.md` §7): each case seeds its records into the account's gym scope on
-`WM_SYNC_DATABASE_URL`, calls `GymTools`, and compares the answer's JCS bytes and SHA-256. The server
+`WM_SYNC_DATABASE_URL`, calls `GymTools`, compares the answer's JCS bytes and SHA-256, and holds a
+result to the ability's `result` in `catalog.json`. The server
 is the golden source: with `WM_GENERATE_ABILITIES=1` the same run writes each `expect` from the
 server's answer instead of comparing it.
 
@@ -98,8 +101,11 @@ WM_PG_TEST=1 WM_GENERATE_ABILITIES=1 DATABASE_URL="postgresql:///wm_rest_test?ho
 `catalog/3` ([Gym Coach on the AI service](../../docs/foundation/gym-coach-on-ai-service.md) §3), the
 catalog written to the provider's strict mode. It has `catalog.json`'s shape and abilities, and
 differs only in its inputs: no keyword strict mode refuses, every object lists `required`, and a
-bound strict mode cannot state is in the description of the parameter it bounds. The web's replica
-executor reads it (`web/src/products/gym/domain/coach/`); `catalog.json` and `abilities/` are deleted when no released build opens a `catalog/2` turn.
+bound strict mode cannot state is in the description of the parameter it bounds. The server reads it:
+`gymToolCatalog()` declares its tools, so MCP lists its schemas, the server Coach offers them, and a
+`catalog/3` turn is offered and gated by them. The web's replica executor reads it too
+(`web/src/products/gym/domain/coach/`). `catalog.json` and `abilities/` are deleted when no
+released build opens a `catalog/2` turn.
 
 - `strict.py` checks it in the Coach contracts workflow: every ability's input holds only keywords
   and shapes strict mode accepts, each seat's tools (`agent` `runs` or `proposes`, declared,
@@ -115,10 +121,13 @@ executor reads it (`web/src/products/gym/domain/coach/`); `catalog.json` and `ab
 - `start_session`, `log_set`, `log_sets`, `import_session`, `finish_session` and `update_exercise`
   are withheld from Coach; their files hold the refusals of their moved bounds alone, for the server
   executor, which runs them for MCP.
-- The web's executor claims every case: a withheld ability's and a share's as `not-offered`, which
-  the executor answers for each, and every other case byte for byte (`web/test/products/gym/domain/corpus.test.js`).
-  No other executor claims `abilities-3/` yet. Its refusals are hand-written, not the server's golden: they
-  are the contract each executor is held to when it moves onto `catalog/3`.
+- The server executor claims every case, by SHA-256 of canonical bytes, in
+  `backend/test/products/gym/adapters/mcp/AbilitiesCorpusTest.cpp`, and holds each answer to the
+  ability's `result`. The web's claims them in `web/test/products/gym/domain/corpus.test.js`: a
+  withheld ability's and a share's as `not-offered`, which it answers for each, and every other case
+  byte for byte, but for one `create_exercise` case whose id no turn seeds. Swift's and Kotlin's do
+  not yet. Its refusals are hand-written, not the server's golden, so `WM_GENERATE_ABILITIES` never
+  rewrites them: they are the contract each executor is held to when it moves onto `catalog/3`.
 - A value outside a moved bound is refused `invalid-arguments` before any rule reads the store, so a
   refusal case's records need not make the rest of the call succeed, though each case's do.
 

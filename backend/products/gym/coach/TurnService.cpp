@@ -89,11 +89,11 @@ bool lingerPassed(const Turn& turn, std::uint64_t nowMs) {
 
 }  // namespace
 
-TurnService::TurnService(std::shared_ptr<CoachModel> model, const AbilityCatalog& catalog, ToolHost& server, GymWriteDoor& door,
+TurnService::TurnService(std::shared_ptr<CoachModel> model, const ServedCatalogs& catalogs, ToolHost& server, GymWriteDoor& door,
                          Entitlements& entitlements, std::shared_ptr<AiInstallations> installations, Clock& clock,
                          int maxOutputTokens, std::shared_ptr<FailureReporter> failures,
                          std::chrono::milliseconds resultTimeout)
-    : model_(std::move(model)), catalog_(catalog), server_(server), door_(door), entitlements_(entitlements),
+    : model_(std::move(model)), catalogs_(catalogs), server_(server), door_(door), entitlements_(entitlements),
       installations_(std::move(installations)), clock_(clock), maxOutputTokens_(maxOutputTokens),
       failures_(std::move(failures)), resultTimeout_(resultTimeout) {}
 
@@ -285,7 +285,7 @@ std::shared_ptr<Turn> TurnService::stop(const TurnPrincipal& principal, const st
 void TurnService::run(const std::shared_ptr<Turn>& turn) {
   const auto started = std::chrono::steady_clock::now();
   const TurnPrincipal& principal = turn->principal();
-  const AbilityCatalog catalog = catalog_.at(turn->open().catalog);
+  const AbilityCatalog& catalog = catalogs_.at(turn->open().catalog);
   PhoneToolHost host(catalog, *turn, principal.seat == Seat::bound ? &server_ : nullptr, resultTimeout_);
   TurnState state = TurnState::failed;
   bool truncated = false;

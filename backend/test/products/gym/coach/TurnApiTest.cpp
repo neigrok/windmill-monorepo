@@ -48,7 +48,7 @@ struct ApiHarness {
   explicit ApiHarness(bool durableAllowances = false, bool anonymousCoach = true)
       : h(durableAllowances),
         turns(anonymousCoach ? h.service
-                             : std::make_shared<TurnService>(h.model, gymAbilityCatalog(), h.server, h.door, h.entitlements, nullptr,
+                             : std::make_shared<TurnService>(h.model, gymCatalogs(), h.server, h.door, h.entitlements, nullptr,
                                                              h.clock, 2000, h.failures)) {
     const User user{account, Email{"lifter@example.test"}, "Lifter", {}};
     accounts.usersById[account.str()] = user;

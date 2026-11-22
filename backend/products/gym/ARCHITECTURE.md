@@ -53,8 +53,8 @@ sync/         GymRules · GymProduct (registry + binding) · GymState · PgGym �
 onboarding/   Onboarding (pure bounds + repository port) · PgOnboardingRepository ·
               OnboardingService · AnthropicOnboarding · OnboardingApi
 coach/        the phone Coach's turn wire (docs/foundation/mobile/gym_coach.md): Turn (the open
-              body, the in-memory record) · AbilityCatalog (Appendix C over the declarations, the
-              schema check) · TurnGate (G-1..G-8) · PhoneToolHost (one batch per round over the
+              body, the in-memory record) · AbilityCatalog (Appendix C over each catalog file's
+              declarations, the catalogs served side by side, the schema check) · TurnGate (G-1..G-8) · PhoneToolHost (one batch per round over the
               stream; a bound turn's shares on GymTools) · CoachModel + AnthropicCoachModel (the
               metered round) · TurnService (admission, the loop, Stop, linger, and the sweep that
               ends a dropped turn's running message) · TurnApi (the SSE routes)
@@ -1025,7 +1025,11 @@ the conversation.
 
 ## 9. MCP tools
 
-`adapters/mcp/GymToolCatalog` declares twenty-five tools; `adapters/mcp/GymTools` declares and dispatches
+`adapters/mcp/GymToolCatalog` declares twenty-five tools, read from `catalog/3`
+(`packages/api-contract/gym/catalog-3.json`, embedded at configure time): each tool's name, description and
+input schema are the file's, its level its `class`'s, and the four structured answers' `outputSchema` their
+`result`. The same reading of `catalog.json` gives the `catalog/1` and `catalog/2` turns released builds open
+(`coach::gymCatalogs()`). `adapters/mcp/GymTools` declares and dispatches
 twenty-four of them to MCP and the server Coach. `propose_workout_change` is the phone Coach's alone
 (`phoneCoachOnly`): no surface draws a card for a connected agent's workout proposal, so MCP neither lists it
 nor runs it, and GymTools runs it only for the ability corpus, which records the answers the phone reproduces.
@@ -1036,7 +1040,7 @@ gate reads, so a tool cannot be described as one thing and gated as another.
 | `gym:read` | `gym:write` | `gym:delete` |
 |---|---|---|
 | `list_exercises` | `start_session` | `discard_session` |
-| `list_sessions` — the log, paged | `log_set` — one set into an open workout | `propose_routine_removal` — **deletes nothing** |
+| `list_sessions` — the log, paged, 1–200 a page | `log_set` — one set into an open workout | `propose_routine_removal` — **deletes nothing** |
 | `get_session` — one workout + its sets (`review: true` adds the finish readout) | `finish_session` | `revoke_share` |
 | `last_time` — the prefill | `create_routine` — external MCP creates immediately; Coach prepares a draft for Save | |
 | `list_routines` — all, or one by `routineId`; carries `pendingProposal` | `propose_routine_change` — **changes nothing** | |
@@ -1078,14 +1082,20 @@ in-process).
   answers the question it should ask next. The domain's `InvalidTraining` sentence is forwarded
   **verbatim** behind the tool's name, as an `invalid-arguments` failure; a `GymUnavailable` names its
   code.
+- **A bound strict mode cannot state is the rule's.** `catalog/3` states no `minimum`, `maximum`,
+  `maxLength`, `maxItems`, `multipleOf` or `uniqueItems`; each bound is in the description of what it
+  bounds, and the executor refuses a value outside it as `invalid-arguments` before any rule reads the
+  store, as `abilities-3/` pins: a `list_sessions` page's `before` and `limit`, a batch's 200 sets, and
+  every bound the domain's entities keep, a routine's `position` among them at the registry's 0–2147483647. A parameter `catalog/3`
+  requires as `null` reads as absent, and so does one an older caller leaves out.
 - **Retry semantics are explicit per tool.** Batch logging matches immutable normalized set input;
   import matches the original completed-session request, including ordered sets. A different payload
   under an accepted id is a conflict. Exact retries return the current standing rows or explicit
   deleted status, preserving user corrections and deletions. `log_set` replays the row stored under
   its id, and every set it creates takes the same `gym_write_receipts` reservation.
-- **`entryArray()` speaks the scheme and nothing else.** A line is `{exerciseId, sets?, restSeconds?}`
+- **A routine line speaks the scheme and nothing else.** A line is `{exerciseId, sets?, restSeconds?}`
   with `sets` an array of `{reps?, weightKg?}` (1–20 items, `reps` 1–100, `additionalProperties:
-  false`), and every bound in the schema is the domain's own, pinned by `GymToolsTest`. The
+  false`), and every bound its descriptions state is the domain's own, pinned by `GymToolsTest`. The
   descriptions of `create_routine`, `propose_routine_change`, `list_routines`, `get_session` and
   `last_time` each carry the same ramp example beside the straight one, because an agent shown only
   `5 × 5` writes only straight schemes; the Coach system prompt carries it too. To move one set of a
@@ -1096,7 +1106,8 @@ in-process).
   the two document-carrying tools refuse a spent id carrying a different one.
 - **A read's own fields survive the write that takes them back.** Duplicating a day is reading one with
   `list_routines` and sending it back under a fresh id, so `lastTrainedAt`, `revision` and
-  `pendingProposal` are declared on `create_routine` and ignored; `position` (0–10000) is required
+  `pendingProposal` are declared on `create_routine` and ignored; `position` (0–2147483647, the
+  registry's bound on every door) is required
   and stored. `additionalProperties: false` is
   enforced by `CompositeToolHost`, so a document gym itself emitted must never be refused.
 - **`delete` is never merged into `write`.** Two tools may merge where a parameter does the job

@@ -224,8 +224,10 @@ wm_register_sync_product(windmill_journal wm::journal::engine journal.registry.j
 wm_register_sync_product(windmill_roadmap wm::roadmap::engine roadmap.registry.json)
 file(READ "${WM_API_CONTRACT_DIR}/sync/composition.json" WM_COMPOSITION)
 wm_validate_sync_composition("${WM_COMPOSITION}" "${WM_BOUND_REGISTRIES}")
-# The gym ability catalog (gym_coach.md §3.1) the tool declarations are pinned to, byte for byte (CatalogContractTest).
-wm_embed_registry(windmill_gym wm::gym catalogText "${WM_API_CONTRACT_DIR}/gym/catalog.json")
+# The gym ability catalogs the tool declarations are read from: catalog/3, every door's, and catalog/2, which the turns
+# of builds released before it open until the cutover (gym-coach-on-ai-service.md §3, §8).
+wm_embed_registry(windmill_gym wm::gym catalog3Text "${WM_API_CONTRACT_DIR}/gym/catalog-3.json")
+wm_embed_registry(windmill_gym wm::gym catalog2Text "${WM_API_CONTRACT_DIR}/gym/catalog.json")
 # The words a Coach turn's model reads (gym/coach/README.md), the same files every app ships.
 wm_embed_registry(windmill_gym wm::gym::coach coachPromptText "${WM_API_CONTRACT_DIR}/gym/coach/prompt.md")
 wm_embed_registry(windmill_gym wm::gym::coach coachFirstContentText "${WM_API_CONTRACT_DIR}/gym/coach/first-content.json")
@@ -386,6 +388,7 @@ target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_pr
 # message sizes (roadmap-socket.json) the same way.
 target_compile_definitions(windmill_domain_tests PRIVATE WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync"
   WM_GYM_TURNS_DIR="${WM_API_CONTRACT_DIR}/gym/turns" WM_GYM_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/gym/domain"
+  WM_GYM_RELEASED_TURN_TOOLS="${CMAKE_SOURCE_DIR}/test/products/gym/coach/released-turn-tools.json"
   WM_ROADMAP_ADDRESSES="${WM_API_CONTRACT_DIR}/roadmap-addresses.json"
   WM_ROADMAP_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/roadmap/domain"
   WM_ROADMAP_LINK_URLS="${WM_API_CONTRACT_DIR}/roadmap-link-urls.json"
@@ -664,7 +667,8 @@ target_compile_definitions(windmill_mcp_tests PRIVATE
   WM_WIRE_CORPUS_PATH="${CMAKE_SOURCE_DIR}/products/roadmap/adapters/mcp/golden/wire_corpus.json"
   WM_DOOR_WIRE_CORPUS_PATH="${CMAKE_SOURCE_DIR}/products/roadmap/adapters/mcp/golden/wire_corpus_door.json"
   WM_SCHEMA_SQL="${CMAKE_SOURCE_DIR}/db/schema.sql"
-  WM_GYM_ABILITIES_DIR="${WM_API_CONTRACT_DIR}/gym/abilities")
+  WM_GYM_ABILITIES_DIR="${WM_API_CONTRACT_DIR}/gym/abilities"
+  WM_GYM_ABILITIES_3_DIR="${WM_API_CONTRACT_DIR}/gym/abilities-3")
 add_test(NAME mcp COMMAND windmill_mcp_tests)
 
 # The probe's Postgres adapter and the dev stack's endpoints, on the probe library (never linked into windmill_server).
