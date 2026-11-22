@@ -376,8 +376,10 @@ makes it false.
   a frame at five cameras, the time from the switch to the first frame, and the frames a scripted pan and pinch are
   given with the main actor's work in each. On an M3 Pro the first frame takes about a fifth of its second, and a
   frame of the whole roadmap about three fifths of its sixtieth on the main actor, which is no margin for an iPhone
-  XR: whether `Canvas` holds 60 frames a second there is not known. No iPhone has measured it, and a canvas that misses
-  the budget on a phone reports it (§11).
+  XR: whether `Canvas` holds 60 frames a second there is not known. `apps/ios/GraphBench` draws the same picture on a
+  device's own screen and measures the first frame and the frames of a scripted pan and pinch at five cameras; it has
+  run on that simulator alone. No iPhone has measured it, and a canvas that misses the budget on a phone reports it
+  (§11).
 - Roadmap's runner holds a removal for the engine's nine seconds (`AppRuntime.roadmapRunner`), and the room runs
   eight acts through it: `MarkStep` (Complete and Reset), `DeleteStep` and `DeleteRoadmap`, each with *Undo*;
   `CreateStep`, `ChangeStep` and `ChangePrerequisites`, composed into the step form's one save with one *Undo*; and

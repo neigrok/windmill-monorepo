@@ -740,6 +740,25 @@ the whole roadmap, five pinches in with a pan after each, and five pinches out. 
 that draws the picture, with the layout's share of it, and for each gesture the gaps between the frames a display link
 on the main actor sees and how long the main actor worked in each, its commit to the screen included (`GraphFrames`).
 
+`apps/ios/GraphBench` puts the same Graph on a device's own screen, in an app of its own that compiles `GraphPicture`,
+`GraphCamera` and `GraphDrawing` from here and draws the handbook as `RoadmapGraphCanvas` does, alone on the screen
+([its README](../GraphBench/README.md)). One command builds it, runs it on a phone or on a simulator and removes it:
+a script pans and pinches at five cameras, at 5,000 steps and at the first 1,000, with the canvas presenting as the
+room's does and with `rendersAsynchronously`. No phone has run it. On an iPhone 17 simulator on an M3 Pro, one run of
+each combination:
+
+| | 5,000 steps | 5,000, asynchronously | 1,000 steps | 1,000, asynchronously |
+|---|---|---|---|---|
+| The first frame, with the picture's making | 127 ms | 128 ms | 37 ms | 65 ms |
+| The whole roadmap: the main actor's work in a frame, median | 6.8 to 7.1 ms | 3.5 to 4.7 ms | 6.1 to 6.4 ms | 2.1 to 2.5 ms |
+| The four closer cameras: the same | 3.9 to 5.5 ms | 1.1 to 2.1 ms | 2.2 to 5.3 ms | 0.8 to 2.3 ms |
+| Frames later than a frame and a half, of the 180 or so in a pan or a pinch | 1 at most | 1 at most | 2 at most | 1 at most |
+
+There the main actor's work in a frame follows neither the steps in the roadmap nor the steps in view: the first
+1,000 steps cost nine tenths of what 5,000 do, and a camera that holds five steps three quarters of what the whole
+roadmap does. The draw closure takes a millisecond of it and the script's handler another; the rest is the view's
+update and its commit to the screen, most of which `rendersAsynchronously` takes off the main actor.
+
 Each measure prints one `bench` line beside its budget with the share of the budget it used, and a measure over its
 budget fails the run. The budgets are §5's own: a second for the first frame and for each part of it, a frame at 60 a
 second for the room's part of a frame and for the median of the main actor's work in a gesture's frames, and no more
