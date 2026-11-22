@@ -2,11 +2,11 @@ import SwiftUI
 import UIKit
 import RoadmapDomain
 
-// The Roadmap room (Roadmap · iOS S.1, S.2, 01.3, 01.5, 04.5, 04.7, 11.22a): one stack, the open roadmap under its name
-// with the switch row, its Board or its Graph, and at the foot the one band over New step. All Roadmaps, a step's page
-// and its note are pushed on the stack, and New Roadmap and the step form are its two sheets. What the band says is
-// announced and felt once, whichever screen stands over it. While the Graph's Fit stands, the bar, the switch row and
-// the foot are away.
+// The Roadmap room (Roadmap · iOS S.1, S.2, 01.3, 01.5, 02.10, 04.5, 04.7, 11.22a): one stack, the open roadmap under its
+// name with the switch row, its Board or its Graph, and at the foot the one band over New step. All Roadmaps, a step's
+// page and its note are pushed on the stack, and New Roadmap, the step form and Kinds are its sheets. What the band says
+// is announced and felt once, whichever screen stands over it. While the Graph's Fit stands, the bar, the switch row and
+// the foot are away; while several steps are selected the bar and the bottom toolbar are the selection's.
 struct RoadmapRoom: View {
   @Bindable var roadmap: RoadmapModel
   let app: AppModel
@@ -19,8 +19,12 @@ struct RoadmapRoom: View {
         .tint(RoadmapPalette.accent)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-          ToolbarItem(placement: .topBarLeading) { RoomMenu(app: app) }
-          ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: app.openYou).disabled(app.editorReadOnly) }
+          if let selection = roadmap.selection, let open = roadmap.shown {
+            BoardSelectionBar(roadmap: roadmap, selection: selection, open: open)
+          } else {
+            ToolbarItem(placement: .topBarLeading) { RoomMenu(app: app) }
+            ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: app.openYou).disabled(app.editorReadOnly) }
+          }
         }.roomBar(.roadmap)
         .navigationDestination(for: RoadmapModel.Visit.self) { visit in
           switch visit {
@@ -34,6 +38,7 @@ struct RoadmapRoom: View {
       .sheet(item: Binding(get: { roadmap.draft }, set: { if $0 == nil { roadmap.draft?.cancel() } })) { draft in
         RoadmapStepForm(roadmap: roadmap, draft: draft)
       }
+      .sheet(isPresented: Binding(get: { roadmap.kindsDoor == .menu }, set: { if !$0 { roadmap.closeKinds() } })) { RoadmapKinds(roadmap: roadmap) }
       .sensoryFeedback(trigger: roadmap.band) { _, band in
         switch band?.says {
         case .completed, .created: .success
@@ -72,39 +77,45 @@ struct RoadmapRoom: View {
   // The open roadmap in the view the room shows of it, the Board's first step for a roadmap with no step under either
   // choice (04.7). On the Graph the band slot holds the selected step while no band stands there (04.2), and with none
   // selected *Next* over the Up next steps, where there is one (04.1, 04.3). Fit leaves the Graph alone under the
-  // status bar (04.5).
+  // status bar (04.5). New step leaves the foot to Find's field while Find is up (02.5) and to the bottom toolbar while
+  // several steps are selected (02.10).
   func views(of open: RoadmapModel.OpenRoadmap) -> some View {
     let graph = roadmap.view(of: open) == .graph
     let fitted = graph && roadmap.graph.fitted
+    let footed = !roadmap.reading.finds && roadmap.selection == nil
     return pinnedUnderBar(Group {
       if graph { RoadmapGraphCanvas(roadmap: roadmap, progress: open.board.overall.progress) }
       else { RoadmapBoard(roadmap: roadmap, open: open) }
-    }, graph: graph, away: fitted).modifier(RoadmapTitle(roadmap: roadmap, open: open))
+    }, of: open, graph: graph, away: fitted).modifier(RoadmapTitle(roadmap: roadmap, open: open))
       .toolbarVisibility(fitted ? .hidden : .automatic, for: .navigationBar)
       .roadmapFoot(roadmap, away: fitted) {
         if graph, roadmap.band == nil {
           if let selected = roadmap.selected.flatMap({ open.step($0) }) { GraphStepBar(row: selected) }
           else if !open.upNext.isEmpty { GraphNextBar(roadmap: roadmap, rows: open.upNext) }
         }
-        HStack {
-          Spacer()
-          Button("New Step", systemImage: "plus") { roadmap.newStep(from: .foot) }.modifier(GlassCircle()).accessibilityIdentifier("roadmap-new-step")
-        }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
+        if footed {
+          HStack {
+            Spacer()
+            Button("New Step", systemImage: "plus") { roadmap.newStep(from: .foot) }.modifier(GlassCircle()).accessibilityIdentifier("roadmap-new-step")
+          }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
+        }
       }
   }
 
-  // The switch chooses the roadmap's view, and carries the view's one tool: the Board's Sort and filter, drawn like
-  // Find and doing nothing, and the Graph's Fit (04.5), which needs the Graph on screen with its camera. The room reads
-  // only whether the camera is there, never the camera, which a gesture or a glide changes every frame.
-  func switchRow(graph: Bool) -> some View {
+  // The switch chooses the roadmap's view, and carries Find and the view's one tool: the Board's Sort and filter (02.5,
+  // 02.7), and the Graph's Fit (04.5), which needs the Graph on screen with its camera. Find is the Board's: the Graph's
+  // waits for its screen. The room reads only whether the camera is there, never the camera, which a gesture or a glide
+  // changes every frame. While several steps are selected the switch waits.
+  func switchRow(_ open: RoadmapModel.OpenRoadmap, graph: Bool) -> some View {
     HStack(spacing: RoomSpace.related) {
       Picker("View", selection: Binding(get: { roadmap.lens }, set: { roadmap.show($0) })) {
         Text("Board").tag(RoadmapModel.Lens.board)
         Text("Graph").tag(RoadmapModel.Lens.graph)
-      }.pickerStyle(.segmented)
-      Button("Find", systemImage: "magnifyingglass") {}.modifier(GlassCircle()).disabled(true)
+      }.pickerStyle(.segmented).disabled(roadmap.selection != nil)
+      Button("Find", systemImage: "magnifyingglass") { roadmap.reading.finds = true }.modifier(GlassCircle())
+        .disabled(graph || open.board.overall.total == 0).accessibilityIdentifier("roadmap-find")
       if roadmap.lens == .board {
-        Menu("Sort and filter", systemImage: "line.3.horizontal.decrease.circle") {}.modifier(GlassCircle()).disabled(true)
+        BoardTool(roadmap: roadmap, open: open).disabled(open.board.overall.total == 0)
       } else {
         Button("Fit", systemImage: "arrow.up.left.and.arrow.down.right") { roadmap.fit() }.modifier(GlassCircle())
           .disabled(!graph || !roadmap.graph.framed).accessibilityIdentifier("roadmap-fit")
@@ -114,9 +125,9 @@ struct RoadmapRoom: View {
 
   // The switch row stands in the bar's own safe area on iOS 26, and on the bar material over the list before it. Away,
   // it leaves that area to the screen.
-  @ViewBuilder func pinnedUnderBar(_ screen: some View, graph: Bool, away: Bool) -> some View {
-    if #available(iOS 26.0, *) { screen.safeAreaBar(edge: .top) { if !away { switchRow(graph: graph) } } }
-    else { screen.safeAreaInset(edge: .top) { if !away { switchRow(graph: graph).background(.bar) } } }
+  @ViewBuilder func pinnedUnderBar(_ screen: some View, of open: RoadmapModel.OpenRoadmap, graph: Bool, away: Bool) -> some View {
+    if #available(iOS 26.0, *) { screen.safeAreaBar(edge: .top) { if !away { switchRow(open, graph: graph) } } }
+    else { screen.safeAreaInset(edge: .top) { if !away { switchRow(open, graph: graph).background(.bar) } } }
   }
 }
 
@@ -134,7 +145,7 @@ struct GlassCircle: ViewModifier {
 
 // The bar's title over the Board (Roadmap · iOS 01.3, 01.9, 01.10): the open roadmap's name over its progress. Its menu
 // lists the three most recent roadmaps, each over its progress and the open one checked, then All Roadmaps…, New Roadmap,
-// Rename and Delete Roadmap. Rename is the system's: it turns the bar into one field, whose return key commits a name
+// Kinds, Rename and Delete Roadmap. Rename is the system's: it turns the bar into one field, whose return key commits a name
 // and leaves the old one where the field was emptied. Delete Roadmap asks under the title, on a view that stays on
 // screen once the menu has closed.
 struct RoadmapTitle: ViewModifier {
@@ -156,6 +167,7 @@ struct RoadmapTitle: ViewModifier {
         Divider()
         Button("New Roadmap", systemImage: "plus") { roadmap.nameRoadmap(from: .menu) }.tint(RoadmapPalette.ink)
         Divider()
+        Button("Kinds", systemImage: "paintpalette") { roadmap.openKinds(from: .menu) }
         RenameButton()
         Divider()
         Button("Delete Roadmap", systemImage: "trash", role: .destructive) { roadmap.askDelete(open.listed, from: .menu) }

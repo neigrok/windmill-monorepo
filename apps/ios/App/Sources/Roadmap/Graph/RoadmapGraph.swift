@@ -76,6 +76,9 @@ final class RoadmapGraph {
   @ObservationIgnored var opening: TimeInterval?
   // The glide under way, and the moment it began.
   @ObservationIgnored var glide: (course: GraphCamera.Glide, began: TimeInterval)?
+  // A step to bring into view once the picture holds it and the canvas is known: Open in Graph, from a screen where the
+  // Graph was not yet laid out.
+  @ObservationIgnored var bringing: String?
   @ObservationIgnored let frames = GraphFrames()
   @ObservationIgnored var reported: Set<String> = []
 
@@ -107,7 +110,7 @@ final class RoadmapGraph {
     if self.roadmap.map({ !$0.utf8.elementsEqual(roadmap.utf8) }) ?? true {
       self.roadmap = roadmap
       (picture, unseated, camera, captions, placer) = (nil, false, nil, [], CaptionPlacer())
-      (glide, pinched, fitted) = (nil, nil, false)
+      (glide, pinched, fitted, bringing) = (nil, nil, false, nil)
       placer.setInsets(insets, blocks: [])
       naming?.cancel()
     }
@@ -165,6 +168,7 @@ final class RoadmapGraph {
     let whole = GraphCamera(framing: picture.model.bounds, in: viewport, under: insets)
     let bound = fitted ? whole : glide.map { GraphCamera($0.course.to, over: picture.model.bounds, in: viewport, under: insets) }
     camera = camera.map { GraphCamera($0, over: picture.model.bounds, in: viewport, under: insets) } ?? whole
+    if let step = bringing, !fitted, picture.placeOf[UTF16Text(step)] != nil { return bring(step) }
     move(to: bound ?? camera)
   }
 
@@ -193,16 +197,21 @@ final class RoadmapGraph {
     if elapsed >= glide.course.seconds { rest() }
   }
 
-  // A step brought into view (04.3): its seat at the centre of what the bars leave, at a zoom where it reads.
+  // A step brought into view (04.3): its seat at the centre of what the bars leave, at a zoom where it reads; brought
+  // once the picture holds it and the canvas is known, where either is not yet.
   func bring(_ step: String) {
-    guard let picture, let place = picture.placeOf[UTF16Text(step)] else { return }
-    move(to: camera?.centred(on: Point(x: picture.model.nodes[place].x, y: picture.model.nodes[place].y)))
+    guard let picture, let place = picture.placeOf[UTF16Text(step)], let camera else {
+      bringing = step
+      return
+    }
+    bringing = nil
+    move(to: camera.centred(on: Point(x: picture.model.nodes[place].x, y: picture.model.nodes[place].y)))
   }
 
   // Fit (04.5): the whole roadmap as the layout frames it, kept so while Fit stands.
   func fit() {
     guard let picture, let viewport else { return }
-    fitted = true
+    (fitted, bringing) = (true, nil)
     move(to: GraphCamera(framing: picture.model.bounds, in: viewport, under: insets))
   }
 
@@ -238,17 +247,18 @@ final class RoadmapGraph {
     name()
   }
 
-  // One finger's drag, which no pinch is under way with and which ends a glide where it has come to.
+  // One finger's drag, which no pinch is under way with and which ends a glide where it has come to, or one still to come.
   func pan(by translation: CGSize) {
     frames.begin()
-    (glide, pinched) = (nil, nil)
+    (glide, pinched, bringing) = (nil, nil, nil)
     camera?.pan(by: translation)
     name()
   }
 
-  // A pinch about the point it began at, which ends a glide where it has come to.
+  // A pinch about the point it began at, which ends a glide where it has come to, or one still to come.
   func zoom(by factor: Double, about point: CGPoint) {
     frames.begin()
+    bringing = nil
     if glide != nil { (glide, pinched) = (nil, nil) }
     pinched = pinched ?? camera.map { GraphCamera.Pinched(from: $0, about: point) }
     camera?.zoom(by: factor, about: point)

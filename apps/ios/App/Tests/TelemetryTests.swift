@@ -271,6 +271,30 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
   }
 
+  // The Board's Find, sort and filter, branch and selection, and the Kinds sheet: each step by its kind, the kinds shown
+  // and the steps chosen as buckets, and never Find's words, a kind's name or description, a step's name or an id.
+  @Test func theBoardsQueryItsSelectionAndKindsTellWhatWasDoneAndNothingWritten() {
+    let events = ["roadmap_board_menu", "roadmap_board_sort", "roadmap_board_filter", "roadmap_board_clear", "roadmap_board_branch",
+                  "roadmap_board_search", "roadmap_board_select", "roadmap_board_bulk", "roadmap_kinds", "roadmap_board_edit", "roadmap_board_undo"]
+    #expect(events.filter(TelemetryPrivacy.events.contains) == events)
+    #expect(TelemetryPrivacy.properties(["menu": "sortFilter", "sort": "newest", "query": "reef", "search": "sail"]) ==
+            ["menu": .label("sortFilter"), "sort": .label("newest")])
+    #expect(TelemetryPrivacy.properties(["count": "2-5", "kinds": "olive,sky", "what": "kinds", "from": "empty"]) ==
+            ["count": .label("2-5"), "what": .label("kinds"), "from": .label("empty")])
+    #expect(TelemetryPrivacy.properties(["count": "4", "what": "Learn", "from": "Tie a bowline"]).isEmpty)
+    #expect(TelemetryPrivacy.properties(["step": "start", "door": "tool", "steps": "private-id"]) == ["step": .label("start"), "door": .label("tool")])
+    #expect(TelemetryPrivacy.properties(["step": "end", "via": "act"]) == ["step": .label("end"), "via": .label("act")])
+    #expect(TelemetryPrivacy.properties(["step": "delete_refused", "reason": "last_root", "node": "private-id"]) ==
+            ["step": .label("delete_refused"), "reason": .label("last_root")])
+    #expect(TelemetryPrivacy.properties(["surface": "board", "action": "openInGraph"]) == ["surface": .label("board"), "action": .label("openInGraph")])
+    #expect(TelemetryPrivacy.properties(["step": "saved", "legend": "rename", "label": "Practice", "description": "Hours on the water"]) ==
+            ["step": .label("saved"), "legend": .label("rename")])
+    #expect(TelemetryPrivacy.properties(["act": "removeKind", "outcome": "ok"]) == ["act": .label("removeKind"), "outcome": .label("ok")])
+    for write in ["BulkRecolor", "BulkDelete", "AddKind", "RenameKind", "DescribeKind", "RecolorKind", "RemoveKind"] {
+      #expect(TelemetryPrivacy.properties(["write": write, "refusal": "full"]) == ["write": .label(write), "refusal": .label("full")])
+    }
+  }
+
   @Test func workoutPickerStepsExcludeMovementAndRackContent() {
     #expect(TelemetryPrivacy.events.contains("gym_workout_picker"))
     for action in ["open", "select", "cancel"] {
