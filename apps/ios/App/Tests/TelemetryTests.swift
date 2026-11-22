@@ -134,6 +134,18 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
             ["room": .label("roadmap"), "action": .label("open_roadmap"), "operation": .label("roadmap_read"), "failure_kind": .label("decode")])
   }
 
+  @Test func theRoadmapRoomTellsItsWritesByTheirKindAndNothingOfAStep() {
+    let events = ["roadmap_board_complete", "roadmap_board_delete", "roadmap_board_undo", "roadmap_write_refused"]
+    #expect(events.filter(TelemetryPrivacy.events.contains) == events)
+    #expect(TelemetryPrivacy.properties(["door": "swipe", "act": "delete", "step": "held", "view": "board", "write": "DeleteNode", "refusal": "startingStep",
+                                         "outcome": "unavailable", "operation": "roadmap_write", "failure_kind": "storage",
+                                         "title": "private-marker", "tree": "private-id", "node": "private-id", "steps": "8"]) ==
+            ["door": .label("swipe"), "act": .label("delete"), "step": .label("held"), "view": .label("board"), "write": .label("DeleteNode"),
+             "refusal": .label("startingStep"), "outcome": .label("unavailable"), "operation": .label("roadmap_write"), "failure_kind": .label("storage")])
+    #expect(TelemetryPrivacy.properties(["door": "menu", "act": "complete", "write": "mark", "refusal": "gone", "step": "Read the wind"]) ==
+            ["door": .label("menu"), "act": .label("complete"), "write": .label("mark"), "refusal": .label("gone")])
+  }
+
   @Test func workoutPickerStepsExcludeMovementAndRackContent() {
     #expect(TelemetryPrivacy.events.contains("gym_workout_picker"))
     for action in ["open", "select", "cancel"] {

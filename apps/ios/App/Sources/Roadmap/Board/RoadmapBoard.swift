@@ -1,35 +1,58 @@
 import SwiftUI
 import RoadmapDomain
 
-// A roadmap's Board (Roadmap · iOS 01.1): one list of the domain's groups, Up next first, Done folded at rest, none drawn empty.
+// A roadmap's Board (Roadmap · iOS 01.1, 01.12, 02.1 to 02.4, 02.13, 02.15): one list of the domain's groups, Up next
+// first, each folding under its header. A row slides right for Complete and left for Delete, and a long press lists both.
+// With no step yet, or with every step done, the Board says so.
 struct RoadmapBoard: View {
-  static let groups: [BoardRead.Column.Name] = [.upNext, .locked, .done]
-
+  let roadmap: RoadmapModel
   let open: RoadmapModel.OpenRoadmap
-  @State var folded: Set<BoardRead.Column.Name> = [.done]
+  // The column the state symbols stand in, so every row's words start on one line down the list at any text size.
+  @ScaledMetric(relativeTo: .body) var symbolColumn = 24.0
 
   var body: some View {
-    let kinds = LegendRead(open.tree).kinds
-    List {
-      ForEach(Self.groups, id: \.self) { group in
-        let steps = open.board.columns.first { $0.name == group }?.ids ?? []
-        if !steps.isEmpty {
-          Section(isExpanded: expanded(group)) {
-            ForEach(steps, id: \.self) { id in
-              if let card = open.board.cards.first(where: { $0.id.utf8.elementsEqual(id.utf8) }), let step = open.tree.step(id) {
-                row(card, step, kind: kinds.first { $0.hue.utf8.elementsEqual(step.color.utf8) })
-              }
-            }
+    // 02.15: New Step is drawn and does nothing.
+    if open.board.overall.total == 0 {
+      ContentUnavailableView {
+        Label { Text("Your first step").foregroundStyle(RoadmapPalette.ink) } icon: { Image(systemName: "map").foregroundStyle(RoadmapPalette.inkDim) }
+      } description: {
+        Text("Give your roadmap a place to start.").foregroundStyle(RoadmapPalette.inkDim)
+      } actions: {
+        Button("New Step") {}.buttonStyle(RoomSecondaryStyle()).disabled(true).accessibilityIdentifier("roadmap-first-step")
+      }
+    } else {
+      List {
+        if open.everyStepDone { Section {} header: { everyStepDone } }
+        ForEach(open.groups) { group in
+          Section(isExpanded: expanded(group.id)) {
+            ForEach(group.rows) { row in self.row(row) }
           } header: {
-            header(group, count: steps.count)
+            header(group.id, count: group.rows.count)
           }.headerProminence(.increased)
         }
-      }
-    }.listStyle(.insetGrouped).scrollContentBackground(.hidden)
+      }.listStyle(.insetGrouped).scrollContentBackground(.hidden)
+        .roomMotion(open.groups.map { (group: RoadmapModel.Group) -> [String] in group.rows.map(\.id) })
+        .sensoryFeedback(trigger: roadmap.band) { _, band in
+          guard case .completed = band?.says else { return nil }
+          return .success
+        }
+    }
+  }
+
+  // 01.12: what heads the list once nothing is Up next or Locked. Share is drawn and does nothing.
+  var everyStepDone: some View {
+    VStack(spacing: 0) {
+      Image(systemName: "checkmark.circle.fill").font(.largeTitle).imageScale(.large).foregroundStyle(RoadmapPalette.act)
+        .accessibilityHidden(true)
+      Text("All \(open.board.overall.total) steps done").font(.title2.bold()).foregroundStyle(RoadmapPalette.ink).padding(.top, 12)
+      Text("Add a step whenever you’re ready.").font(.subheadline).foregroundStyle(RoadmapPalette.inkDim).padding(.top, RoomSpace.small)
+      Button("Share") {}.buttonStyle(RoomSecondaryStyle()).fontWeight(.semibold).disabled(true).padding(.top, RoomSpace.inset)
+        .accessibilityIdentifier("roadmap-share")
+    }.frame(maxWidth: .infinity).multilineTextAlignment(.center).textCase(nil)
   }
 
   func expanded(_ group: BoardRead.Column.Name) -> Binding<Bool> {
-    Binding(get: { !folded.contains(group) }, set: { if $0 { folded.remove(group) } else { folded.insert(group) } })
+    Binding(get: { !roadmap.folded.contains(group) }, set: { if $0 { roadmap.folded.remove(group) } else { roadmap.folded.insert(group) } })
   }
 
   // The header is the control that folds its section: this list style draws none of its own.
@@ -48,21 +71,44 @@ struct RoadmapBoard: View {
       .accessibilityIdentifier("roadmap-group-" + group.rawValue)
   }
 
-  // A step's row: its state's symbol in its kind's colour, said by the kind's name where the legend names the hue.
-  func row(_ card: BoardRead.Card, _ step: RoadmapDomain.Step, kind: Kind?) -> some View {
-    Label {
+  // A step's row: its state's symbol on its first line, in its kind's colour and said by the kind's name, or by the
+  // hue's where no kind names it. A step the last act brought up next is washed while the band says so.
+  func row(_ row: RoadmapModel.Row) -> some View {
+    let colour = row.kind?.label.nilIfEmpty ?? Self.hue(row.step.color)
+    let arrived = roadmap.band?.arrived.contains(row.id) == true
+    return HStack(alignment: .firstTextBaseline, spacing: 12) {
+      Image(systemName: Self.symbol(row.card.column)).imageScale(.large).foregroundStyle(RoadmapPalette.kind(row.step.color))
+        .frame(width: symbolColumn).accessibilityLabel(colour ?? "").accessibilityHidden(colour == nil)
       VStack(alignment: .leading, spacing: 2) {
-        Text(name(step)).foregroundStyle(card.column == .locked ? RoadmapPalette.inkDim : RoadmapPalette.ink)
-        if let reason = reason(card) { Text(reason).font(.footnote.weight(.semibold)).foregroundStyle(RoadmapPalette.inkDim) }
-        if !step.description.isEmpty { Text(step.description).font(.subheadline).foregroundStyle(RoadmapPalette.inkDim).lineLimit(2) }
+        Text(name(row.step)).foregroundStyle(row.card.column == .locked ? RoadmapPalette.inkDim : RoadmapPalette.ink)
+        if let reason = reason(row.card) { Text(reason).font(.footnote.weight(.semibold)).foregroundStyle(RoadmapPalette.inkDim) }
+        if !row.step.description.isEmpty { Text(row.step.description).font(.subheadline).foregroundStyle(RoadmapPalette.inkDim).lineLimit(2) }
       }
-    } icon: {
-      Image(systemName: Self.symbol(card.column)).foregroundStyle(RoadmapPalette.kind(step.color))
-        .accessibilityLabel(kind?.label ?? "").accessibilityHidden(kind == nil)
-    }.listRowBackground(RoadmapPalette.card).accessibilityElement(children: .combine).accessibilityIdentifier("roadmap-step")
+    }.listRowInsets(EdgeInsets(top: 11, leading: RoomSpace.inset, bottom: 11, trailing: 13))
+      .listRowBackground(ZStack { RoadmapPalette.card; if arrived { RoadmapPalette.accentSoft } }.roomMotion(arrived))
+      .accessibilityElement(children: .combine).accessibilityIdentifier("roadmap-step")
+      .swipeActions(edge: .leading, allowsFullSwipe: false) {
+        if row.completes { Button("Complete", systemImage: "checkmark") { roadmap.complete(row, by: .swipe) }.tint(RoadmapPalette.act) }
+      }
+      .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+        if row.deletes { Button("Delete", systemImage: "trash", role: .destructive) { roadmap.askDelete(row, by: .swipe) }.tint(nil) }
+      }
+      .contextMenu {
+        if row.completes { Button("Complete", systemImage: "checkmark") { roadmap.complete(row, by: .menu) }.tint(RoadmapPalette.ink) }
+        if row.completes && row.deletes { Divider() }
+        if row.deletes { Button("Delete Step", systemImage: "trash", role: .destructive) { roadmap.askDelete(row, by: .menu) } }
+      }
+      // 03.8: the question stands on the row, the view that stays on screen once the swipe or the menu has closed.
+      .confirmationDialog(String(localized: "Delete \(name(row.step))?", comment: "The question a step's delete asks, with the step's name"),
+                          isPresented: Binding(get: { roadmap.question?.row.id == row.id }, set: { if !$0 { roadmap.answer(delete: false) } }),
+                          titleVisibility: .visible) {
+        Button("Delete Step", role: .destructive) { roadmap.answer(delete: true) }
+      } message: {
+        Text(Self.cost(followers: roadmap.question?.followers ?? 0))
+      }
   }
 
-  func name(_ step: RoadmapDomain.Step?) -> String { step?.label.nilIfEmpty ?? String(localized: "Untitled step") }
+  func name(_ step: RoadmapDomain.Step?) -> String { Self.name(of: step?.label ?? "") }
 
   // Why a step stands in its group, in the Board's words over the domain's facts; a Done step says nothing.
   func reason(_ card: BoardRead.Card) -> String? {
@@ -82,6 +128,16 @@ struct RoadmapBoard: View {
                   comment: "An Up next step's reason: the first step that finishing it unlocks, and how many more")
   }
 
+  // A step is named by its label, and one without a label by these words.
+  static func name(of label: String) -> String { label.nilIfEmpty ?? String(localized: "Untitled step") }
+
+  // What a delete takes with it: the step alone, and each step that follows it is read through it.
+  static func cost(followers: Int) -> String {
+    if followers == 0 { return String(localized: "Removes this step") }
+    return String(localized: "Removes this step · \(followers) branches resplice", locale: .copy,
+                  comment: "A step's delete question: how many steps that follow the step are linked past it")
+  }
+
   static func title(_ group: BoardRead.Column.Name) -> String {
     switch group {
     case .upNext: String(localized: "Up next", comment: "The Board's group of steps that can be done now")
@@ -95,6 +151,19 @@ struct RoadmapBoard: View {
     case .upNext: "circle"
     case .locked: "lock.fill"
     case .done: "checkmark.circle.fill"
+    }
+  }
+
+  // A hue's own name, said of a step whose colour no kind names; none for a hue this build does not know.
+  static func hue(_ hue: String) -> String? {
+    switch hue {
+    case "terracotta": String(localized: "Terracotta", comment: "A step's colour, said where no kind names it")
+    case "olive": String(localized: "Olive", comment: "A step's colour, said where no kind names it")
+    case "gold": String(localized: "Gold", comment: "A step's colour, said where no kind names it")
+    case "brick": String(localized: "Brick", comment: "A step's colour, said where no kind names it")
+    case "sky": String(localized: "Sky", comment: "A step's colour, said where no kind names it")
+    case "plum": String(localized: "Plum", comment: "A step's colour, said where no kind names it")
+    default: nil
     }
   }
 }

@@ -34,6 +34,13 @@ extension XCUIApplication {
                                  "room-" + room.lowercased(), room, "room-menu")).firstMatch
   }
 
+  // A step's row on the Roadmap room's Board, by the step's name: its label leads with the name, or with its colour and
+  // then the name, and another row's reason may hold the name too.
+  func roadmapStep(_ name: String) -> XCUIElement {
+    descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND (label BEGINSWITH %@ OR label CONTAINS %@)",
+                                                     "roadmap-step", name + ", ", ", " + name + ", ")).firstMatch
+  }
+
   // The ledger's logged row for a set number, its label *Set N, logged, …*.
   func loggedSet(_ number: Int) -> XCUIElement {
     buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "workout-set-", "Set \(number),")).firstMatch
