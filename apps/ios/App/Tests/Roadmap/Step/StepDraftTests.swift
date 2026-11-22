@@ -247,7 +247,7 @@ import SyncTesting
     #expect(try page("Tie a bowline", in: elsewhere) == asItWas)
     #expect(told(telemetry) == [
       "roadmap_room_opened ", "roadmap_board_step_open column=upNext door=card surface=document", "roadmap_step_edit door=page step=open",
-      "roadmap_board_edit description=false kind=true name=true opens=true prerequisites=true step=saved",
+      "roadmap_board_edit description=false kind=true links=false name=true opens=true prerequisites=true step=saved",
       "roadmap_board_undo act=edit outcome=ok",
     ])
   }
@@ -331,7 +331,7 @@ import SyncTesting
       "roadmap_room_opened ", "roadmap_board_create door=foot step=open view=board", "roadmap_write_refused refusal=loop write=CreateNode",
       "roadmap_write_refused refusal=loop write=CreateNode", "roadmap_write_refused refusal=loop write=CreateNode",
       "roadmap_board_create door=foot step=discard", "roadmap_step_edit door=page step=open",
-      "roadmap_board_edit description=false kind=false name=false opens=true prerequisites=true step=saved",
+      "roadmap_board_edit description=false kind=false links=false name=false opens=true prerequisites=true step=saved",
     ])
   }
 
@@ -559,6 +559,80 @@ import SyncTesting
       "roadmap_room_opened ", "roadmap_board_step_open column=upNext door=card surface=document", "roadmap_step_edit door=page step=open",
       "roadmap_board_delete step=confirm view=board", "roadmap_board_delete door=form step=held view=board", "roadmap_board_undo act=delete outcome=ok",
       "roadmap_step_edit door=page step=open", "roadmap_board_create door=foot step=open view=board", "roadmap_sheet door=menu step=switch",
+    ])
+  }
+
+  // The links a step shares, as a page lists them, once the roadmap holds the step.
+  func links(of label: String, in model: RoadmapModel) -> [String]? {
+    guard case .open(let open) = model.phase, let step = open.tree.nodes.first(where: { $0.label == label }) else { return nil }
+    return step.links.map { "\($0.label) | \($0.url)" }
+  }
+
+  // The model reads again until a step shares the links expected.
+  func shows(_ model: RoadmapModel, linksOf label: String, _ expected: [String], on engine: SteppedEngine) async {
+    for _ in 0..<100 where links(of: label, in: model) != expected {
+      await engine.settleViews()
+      model.observe()
+    }
+    #expect(links(of: label, in: model) == expected)
+  }
+
+  // Roadmap · iOS 05.1, 05.8 and 03.11: the links a step shares are part of its draft. A new step is created with the
+  // link added to it; an edit lists every link the step holds, drops one and takes one, and writes them whole in its
+  // one save, which its one Undo takes back; and at the domain's limit of links the form offers no more.
+  @Test func theFormsLinksArePartOfTheDraftItsOneSaveAndItsOneUndo() async throws {
+    let (engine, runner, memory, suite) = phone(account: nil)
+    defer { memory.removePersistentDomain(forName: suite) }
+    _ = try learnToSail(on: engine, runner)
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    model.roomOpened()
+    await shows(model, board: ["3 of 8", "upNext: Read the wind, Tie a bowline", "locked: Leave the dock, Sail a triangle, Sail solo",
+                               "done: Rig the boat, Name the boat parts, Choose a sailing course"], on: engine)
+
+    model.newStep(from: .foot)
+    var draft = try #require(model.draft)
+    draft.name = "Reefing basics"
+    #expect(draft.links.isEmpty && draft.takesLink && draft.commits)
+    draft.add(link: try #require(LinkAddress(typed: "rya.org.uk/reefing")), titled: " Reefing guide ")
+    #expect(draft.links == [StepDraft.SharedLink(url: "https://rya.org.uk/reefing", label: "Reefing guide")] && draft.isChanged)
+    draft.save()
+    #expect(model.draft == nil && model.band?.undo?.act == .step("create"))
+    await shows(model, linksOf: "Reefing basics", ["Reefing guide | https://rya.org.uk/reefing"], on: engine)
+
+    let beaufort = "Beaufort wind scale | https://metoffice.gov.uk/weather/guides/coast-and-sea/beaufort-scale"
+    guard case .open(let open) = model.phase else { return }
+    model.edit(try #require(open.page(of: try row("Read the wind", in: model).id)))
+    draft = try #require(model.draft)
+    #expect(draft.links.map { "\($0.label) | \($0.url)" } == [beaufort] && !draft.commits)
+    draft.add(link: try #require(LinkAddress(typed: "https://rya.org.uk/telltales")), titled: "")
+    #expect(draft.commits && draft.links.count == 2)
+    draft.removeLink(at: 0)
+    draft.removeLink(at: 7)
+    #expect(draft.links == [StepDraft.SharedLink(url: "https://rya.org.uk/telltales", label: "")])
+    draft.save()
+    #expect(model.draft == nil && model.band?.says == .saved(step: "Read the wind") && model.band?.undo?.act == .step("edit"))
+    await shows(model, linksOf: "Read the wind", [" | https://rya.org.uk/telltales"], on: engine)
+    model.undo()
+    await shows(model, linksOf: "Read the wind", [beaufort], on: engine)
+
+    // A draft back at the links its step holds has nothing to save, and one at the limit takes no more.
+    guard case .open(let restored) = model.phase else { return }
+    model.edit(try #require(restored.page(of: try row("Read the wind", in: model).id)))
+    draft = try #require(model.draft)
+    let reef = try #require(LinkAddress(typed: "rya.org.uk/reefing"))
+    draft.add(link: reef, titled: "One more")
+    draft.removeLink(at: 1)
+    #expect(!draft.isChanged && !draft.commits)
+    for _ in 0..<40 { draft.add(link: reef, titled: "One more") }
+    #expect(draft.links.count == RoadmapSpecs.links.max && !draft.takesLink && draft.commits)
+    draft.discard()
+
+    #expect(told(telemetry) == [
+      "roadmap_room_opened ", "roadmap_board_create door=foot step=open view=board", "roadmap_board_create column=upNext step=saved",
+      "roadmap_step_edit door=page step=open",
+      "roadmap_board_edit description=false kind=false links=true name=false opens=false prerequisites=false step=saved",
+      "roadmap_board_undo act=edit outcome=ok", "roadmap_step_edit door=page step=open", "roadmap_step_edit door=page step=discard",
     ])
   }
 }

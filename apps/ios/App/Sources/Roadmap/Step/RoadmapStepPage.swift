@@ -1,11 +1,12 @@
 import SwiftUI
 import RoadmapDomain
 
-// A step's page (Roadmap · iOS 03.1, 03.4 to 03.8): one scroll headed by the step's name, which the bar takes once it has
-// scrolled away. The status row names the state, the kind and why the step stands there, and on a Done step what Reset
-// would do; then the description and the step's shared links, and what the step requires and opens, each row opening
-// its step. Complete stands at the foot of an Up next step, under the room's band; Edit raises the step's form over
-// the page, and the … menu holds Delete Step.
+// A step's page (Roadmap · iOS 03.1 to 03.8, 03.11, 03.14): one scroll headed by the step's name, which the bar takes
+// once it has scrolled away. The status row names the state, the kind and why the step stands there, and on a Done step
+// what Reset would do; then the description and the step's shared links, what the step requires and opens, each row
+// opening its step, and the person's workspace of it. Complete stands at the foot of an Up next step, under the room's
+// band, and the foot is away while Add Subtask has the keyboard; Edit raises the step's form over the page, and the …
+// menu holds Delete Step.
 struct RoadmapStepPage: View {
   // What the page last read of its step, which it goes on showing while it leaves the stack once the step is gone.
   final class LastRead {
@@ -17,6 +18,8 @@ struct RoadmapStepPage: View {
   @State private var last = LastRead()
   @State private var nameHeight = 0.0
   @State private var nameScrolledAway = false
+  @State private var addingLink = false
+  @FocusState private var addingSubtask: Bool
   @ScaledMetric(relativeTo: .body) private var symbolColumn = 24.0
 
   var body: some View {
@@ -30,7 +33,13 @@ struct RoadmapStepPage: View {
       Section {
         status(page, in: open)
         if !row.step.description.allSatisfy(\.isWhitespace) { Text(row.step.description).foregroundStyle(RoadmapPalette.ink) }
-        ForEach(Array(row.step.links.enumerated()), id: \.offset) { link in sharedLink(link.element) }
+        // A link the step shares, where its address is one the page opens.
+        ForEach(Array(row.step.links.enumerated()), id: \.offset) { link in
+          if let address = LinkAddress(link.element.url) {
+            StepLinkRow(title: link.element.label.nilIfEmpty ?? link.element.url, host: address.url.host(), opens: address.url)
+              .accessibilityIdentifier("roadmap-step-link")
+          }
+        }
       } header: {
         Text(row.name).font(.largeTitle.bold()).foregroundStyle(RoadmapPalette.ink).textCase(nil)
           .onGeometryChange(for: Double.self) { $0.size.height } action: { nameHeight = $0 }
@@ -48,7 +57,9 @@ struct RoadmapStepPage: View {
                 count: String(localized: "\(page.opens.count) steps", locale: .copy, comment: "How many steps a step opens, beside Opens"),
                 identifier: "roadmap-step-opens")
       }
+      StepWorkspaceSections(roadmap: roadmap, step: row.id, workspace: page.workspace, addingSubtask: $addingSubtask, addingLink: $addingLink)
     }.listStyle(.insetGrouped).scrollContentBackground(.hidden).contentMargins(.top, 0, for: .scrollContent)
+      .scrollDismissesKeyboard(.interactively)
       .background { RoadmapPalette.canvas.ignoresSafeArea() }
       .tint(RoadmapPalette.accent)
       // The name has scrolled away once the list has moved by the name's height.
@@ -70,7 +81,17 @@ struct RoadmapStepPage: View {
           }
         }
       }.roomBar(.roadmap)
-      .roadmapFoot(roadmap) {
+      // Cancel, or the form sent away, adds nothing; a link added closes it.
+      .sheet(isPresented: Binding(get: { addingLink }, set: { shown in
+        guard !shown else { return }
+        addingLink = false
+        roadmap.linkFormCancelled()
+      })) {
+        NewLink(title: RoadmapSpecs.linkTitle, address: RoadmapSpecs.url) { address, title in
+          if roadmap.addLink(address, titled: title, to: row.id) { addingLink = false }
+        }
+      }
+      .roadmapFoot(roadmap, away: addingSubtask) {
         if row.completes {
           Button { roadmap.complete(row, by: .page) } label: { Text("Complete").frame(maxWidth: .infinity) }
             .buttonStyle(RoomPrimaryStyle(room: .roadmap)).padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
@@ -100,31 +121,12 @@ struct RoadmapStepPage: View {
     }.alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
   }
 
-  // A link the step shares, which the page opens where its address is one the web's page opens too.
-  @ViewBuilder func sharedLink(_ link: RoadmapDomain.Step.Link) -> some View {
-    if let address = URL(string: link.url), ["http", "https", "mailto"].contains(address.scheme?.lowercased() ?? "") {
-      Link(destination: address) {
-        HStack(spacing: 12) {
-          Image(systemName: "link").frame(width: symbolColumn).accessibilityHidden(true)
-          VStack(alignment: .leading, spacing: 2) {
-            Text(link.label.nilIfEmpty ?? link.url)
-            if let host = address.host() { Text(host).font(.footnote).foregroundStyle(RoadmapPalette.inkDim) }
-          }
-        }
-      }.accessibilityIdentifier("roadmap-step-link")
-    }
-  }
-
   // Requires or Opens: the steps under their count, each row saying its step's state and opening its page.
   func related(_ rows: [RoadmapModel.Row], under title: LocalizedStringResource, count: String, identifier: String) -> some View {
     Section {
       ForEach(rows) { row in RoadmapStepRow(row: row, door: .step, line: Self.state(row.card)) }
     } header: {
-      HStack(spacing: 6) {
-        Text(title).fontWeight(.semibold)
-        Text(count)
-      }.font(.footnote).foregroundStyle(RoadmapPalette.inkDim).textCase(nil)
-        .accessibilityElement(children: .combine).accessibilityIdentifier(identifier)
+      StepSectionHeader(title: title, count: count).accessibilityIdentifier(identifier)
     }.listRowBackground(RoadmapPalette.card)
   }
 

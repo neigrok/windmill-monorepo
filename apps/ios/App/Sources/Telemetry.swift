@@ -44,7 +44,7 @@ nonisolated enum TelemetryPrivacy {
     "gym_intent_opened", "quick_action", "sign_in_restore", "account_delete", "roadmap_room_opened",
     "roadmap_board_complete", "roadmap_board_delete", "roadmap_board_undo", "roadmap_write_refused",
     "roadmap_board_step_open", "roadmap_board_step_action", "roadmap_sheet", "birth", "roadmap_board_create", "roadmap_deletion",
-    "roadmap_step_edit", "roadmap_board_edit", "roadmap_view_switch", "roadmap_graph_select"
+    "roadmap_step_edit", "roadmap_board_edit", "roadmap_view_switch", "roadmap_graph_select", "roadmap_board_workspace"
   ]
   static let labels: [String: Set<String>] = [
     "room": ["journal", "gym", "roadmap"],
@@ -52,7 +52,8 @@ nonisolated enum TelemetryPrivacy {
     "presentation": ["first_launch", "replay"],
     "screen": ["routine", "routine_editor", "edit_sets", "routine_movement_editor", "receipt", "routine_targets", "routine_movement", "movement", "session", "fix_set", "record", "bodyweight", "weigh_in", "session_share", "history", "notes", "note", "review", "connected_log", "connected_log_guide", "sources", "gym", "routines", "log", "on_this_phone", "coach", "workout", "welcome", "journal", "ink_notes", "keep", "address", "code", "you", "adoption", "discard_adoption", "23a", "23b", "23c", "24c", "24d", "apple_no_account", "apple_expired", "auth_pending"],
     "field": ["weight", "reps"],
-    "action": ["rename", "equipment", "drafts_rejected", "save_routines", "sign_in", "shown", "screenshot", "describe", "goal", "just_log", "build_manually", "open_routine", "routines_saved", "keep_routines", "photo_selected", "photo_removed", "create", "update", "share", "apply", "reject", "open_gym", "open_journal", "open_roadmap", "dismiss_ink", "write", "done_writing", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "use_account", "create_account", "remove_apple", "retry", "inspect", "fix", "open", "connect", "manage", "hide", "select", "menu", "stage", "new_chat", "view_answer", "open_conversation", "delete_conversation", "retarget", "add_set", "remove_set", "swap", "add_movement", "remove_movement", "rest", "land", "complete", "reset", "delete"],
+    "action": ["rename", "equipment", "drafts_rejected", "save_routines", "sign_in", "shown", "screenshot", "describe", "goal", "just_log", "build_manually", "open_routine", "routines_saved", "keep_routines", "photo_selected", "photo_removed", "create", "update", "share", "apply", "reject", "open_gym", "open_journal", "open_roadmap", "dismiss_ink", "write", "done_writing", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "use_account", "create_account", "remove_apple", "retry", "inspect", "fix", "open", "connect", "manage", "hide", "select", "menu", "stage", "new_chat", "view_answer", "open_conversation", "delete_conversation", "retarget", "add_set", "remove_set", "swap", "add_movement", "remove_movement", "rest", "land", "complete", "reset", "delete", "editNote",
+               "subtaskAdd", "subtaskToggle", "subtaskDelete", "linkOpen", "linkCancel", "linkAdd", "linkDelete", "noteSave", "undo"],
     "outcome": ["answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked", "started", "saved", "not-offered", "seat-required", "invalid-input", "invalid-arguments", "load-floor", "result-too-large", "coach-turn-volume", "pending", "unavailable", "settled", "released"],
     "reason": ["invalid", "too_large", "claim_conflict", "session-open", "session-overlap", "id-taken", "bad-instant", "too-many-sets", "invalid-set", "unknown-exercise", "session-finished", "unsent", "other"],
     "cap": ["daily", "ceiling", "allowance"],
@@ -71,9 +72,10 @@ nonisolated enum TelemetryPrivacy {
     // switcher, of a new roadmap or of the step form, the view a step's delete was made on, the group a step stands in
     // when its page opens or its form makes it, whether a step of another roadmap opens the one deleted, the write a
     // refusal or a failure names, and the refusal's kind. A step's page is the web's document, and its acts are the three
-    // actions above. A saved edit says of each part of the step whether it changed: `name` above, and the four below.
+    // actions above. A saved edit says of each part of the step whether it changed: `name` above, and the five below.
     // Of the Graph: the view the switch chose, and under a missed budget which one and the roadmap's size as a bucket.
-    "act": ["complete", "reset", "delete", "create", "edit"],
+    // Of a step's workspace: the act, among the actions above in the web's words, and the act its Undo took back.
+    "act": ["complete", "reset", "delete", "create", "edit", "subtaskToggle", "subtaskDelete", "linkDelete"],
     "step": ["confirm", "cancel", "held", "ask", "undo", "open", "switch", "search", "new", "rename", "saved", "discard"],
     "view": ["board", "graph"],
     "column": ["locked", "upNext", "done"],
@@ -82,9 +84,10 @@ nonisolated enum TelemetryPrivacy {
     "kind": ["true", "false"],
     "prerequisites": ["true", "false"],
     "opens": ["true", "false"],
+    "links": ["true", "false"],
     "budget": ["first_frame", "frames"],
     "steps": ["1-100", "101-1000", "1001-5000"],
-    "write": ["mark", "DeleteNode", "undo", "release", "createRoadmap", "title", "deleteRoadmap", "CreateNode", "EditNode"],
+    "write": ["mark", "DeleteNode", "undo", "release", "createRoadmap", "title", "deleteRoadmap", "CreateNode", "EditNode", "workspace", "note"],
     "refusal": ["invalid", "gone", "taken", "tooLarge", "full", "roadmapGone", "unreachable", "notARoot", "stepOpensARoadmap", "depthLimit", "other", "startingStep", "noName", "loop"],
     "appearance": ["light", "dark", "system"],
     "method": ["GET", "POST", "PUT", "DELETE", "email", "apple"],
