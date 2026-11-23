@@ -3,6 +3,7 @@ import { mintId } from '../core/derive.js';
 import { recipeFault, recordValues, valueIn } from '../core/restore.js';
 import { recordKey } from '../core/rows.js';
 import { CommitError, commitGesture } from './commit.js';
+import { stepOver } from './journal.js';
 import { drawn, stored } from './views.js';
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -18,11 +19,12 @@ function captureCommandOf(registry, scope) {
 
 // ActRequest.undo, checked against its scopes, with each segment's first local preimages read from the act's
 // initial snapshot (§7.1 Ordered local acts), each with the sequence of the row it was read over (the confirmed row,
-// else the dead row the record's spent id keeps; null where neither holds one) and the server epoch that sequence
-// counts in; a life's preimage also keeps the record
-// as read, which a revival draws. A slot unset there takes the recipe's explicit default; with none, the act
-// fails before anything changes. A segment named with no recipes is journaled for its receipts alone, as
-// evidence, and an act names at least one recipe. Answers the plan by segment index, or null.
+// else the dead row the record's spent id keeps; null where neither holds one), stepped over each of the device's
+// own acknowledged writes of the record whose receipt continues it, and the server epoch that sequence counts in; a
+// life's preimage also keeps the record as read, which a revival draws. A slot unset there takes the recipe's
+// explicit default; with none, the act fails before anything changes. A segment named with no recipes is journaled
+// for its receipts alone, as evidence, and an act names at least one recipe. Answers the plan by segment index, or
+// null.
 function planUndo(replica, registry, request) {
   const { undo } = request;
   if (undo === undefined || undo === null) return null;
@@ -46,9 +48,11 @@ function planUndo(replica, registry, request) {
         const value = valueIn(read, target.slot);
         if (value === undefined && defaultValue === undefined) throw new CommitError('an unset undo target needs its default');
         const readOver = replica.confirmedRow(target.scope, target.t, target.id) ?? replica.spentIds[target.scope]?.[recordKey(target.t, target.id)];
-        preimages.push({ target: structuredClone(target), value: structuredClone(value ?? defaultValue),
+        const preimage = { target: structuredClone(target), value: structuredClone(value ?? defaultValue),
           rowSeq: readOver?.seq ?? null, epoch: replica.meta.serverEpoch,
-          ...(target.slot.kind === 'life' && read ? { record: recordValues(read) } : {}) });
+          ...(target.slot.kind === 'life' && read ? { record: recordValues(read) } : {}) };
+        for (const entry of replica.entries()) stepOver(preimage, entry);
+        preimages.push(preimage);
       }
     }
     plan.set(segment.index, { scope, recipes: structuredClone(segment.recipes), preimages });

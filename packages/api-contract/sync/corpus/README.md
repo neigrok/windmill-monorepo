@@ -1384,7 +1384,8 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   under its own scopedEffects command or its scope kind's capture command when it writes a delta; the
   act's `ReversibleAct` holds one source entry per named segment that left an entry, with the first
   local preimages read before any segment changed a projection, each with the confirmed row sequence and
-  epoch it was read at (an unset slot takes the target's `defaultValue`, and with none the act throws), a
+  epoch it was read at, stepped over the receipt rows of the device's own earlier writes of the record that
+  continue it (an unset slot takes the target's `defaultValue`, and with none the act throws), a
   life's with the record it read, and the value the act left in each target. A malformed recipe throws before anything changes. Each
   source's ACK records `{epoch, n, outcome, acceptedEffects?}` in the result's transaction, one attempt an
   epoch; a death before the ACK records nothing and the resend's replayed result is retained; settling
@@ -1423,7 +1424,10 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   skips; an Undo requested, and a held act's cancellation, in the tree of a child board the server redirects
   follow it into the redirected tree; a mark's `opens` restored, written back or redone after the server
   redirects the board it names takes the redirected id, and a cancelled lap's Redo takes the run the server
-  joined.
+  joined; an Undo of a removal brings back a tag whose birth, by an act that keeps no journal, went up before
+  it, with it in one push, unpulled or still unsent when the Undo was asked, the removal's preimage stepping
+  over the birth's receipt row, while another device's write between the two, or a birth written as an
+  ordinary entry, whose answer carries no receipt, skips it.
 
 ### refusal/*.json
 

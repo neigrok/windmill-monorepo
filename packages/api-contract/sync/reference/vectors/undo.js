@@ -945,11 +945,93 @@ function typedValues() {
   return [preimage, reserved, written, unit, created];
 }
 
+// A tag born by an act whose journal the product releases at once, as roadmap's Add Kind keeps no Undo, then removed
+// by an act opted into Undo: the removal's preimage was read over the birth's write, so its Undo walks from the row that
+// birth left, whichever pushes the two reach the server in. Another device's write between them still breaks the walk,
+// and so does a birth the device wrote as an ordinary entry, whose answer carries no receipt.
+function releasedBirth() {
+  const elm = { scope: TREE, t: 'tag', id: 'elm' };
+  const birth = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: TREE, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'Elm' } }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restoreTree', record: elm }] }] } } };
+  const released = { op: 'releaseReversibleAct', actId: 'g1' };
+  const removal = { op: 'commitAct', deviceNow: 5100, segments: [{ scope: TREE, changes: [{ op: 'delete', t: 'tag', id: 'elm' }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: target(TREE, 'tag', 'elm', 'life') }] }] }] } } };
+  const undone = (session) => {
+    session.flush();
+    session.pull([TREE]);
+    return session.local({ op: 'readInverseResult', requestId: 'g4' }, viewStep(TREE));
+  };
+  const elmOf = (session) => session.state.rows[`tree:${BOARD}`][recordKeyOf('tag', 'elm')];
+  const labelOf = (returned) => returned.records.find((record) => record.t === 'tag' && record.id === 'elm' && record.life?.[0] === 'alive')?.f?.label?.[0] ?? null;
+  const restored = (name, session) => {
+    const sample = undone(session).vector(name);
+    assert.deepEqual(sample.expect.returns.at(-2), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: true, appliedCount: 1, skippedCount: 0 });
+    assert.equal(labelOf(sample.expect.returns.at(-1)), 'Elm');
+    assert.deepEqual([elmOf(session).life[0], elmOf(session).f.label[0]], ['alive', 'Elm']);
+    return sample;
+  };
+  const skipped = (name, session) => {
+    const sample = undone(session).vector(name);
+    assert.deepEqual(sample.expect.returns.at(-2), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: false, appliedCount: 0, skippedCount: 1 });
+    assert.equal(labelOf(sample.expect.returns.at(-1)), null);
+    assert.equal(elmOf(session).life[0], 'dead');
+    return sample;
+  };
+
+  const together = new Session(world()).local(birth, released, removal);
+  together.flush();
+  together.pull([TREE]);
+  together.local(requestStep('g2'));
+  const onePush = restored('an Undo of a removal brings back a record whose birth, by an act that keeps no journal, went up in the same push', together);
+
+  const unsent = new Session(world()).local(birth, released, removal, requestStep('g2'), viewStep(TREE));
+  const pending = restored('an Undo of a removal asked before the record\'s birth or removal was sent draws it at once and brings it back once both went up', unsent);
+  assert.deepEqual(pending.expect.returns[3], { kind: 'pending', requestId: 'g4', inverseActId: 'g3', localChanged: true });
+  assert.equal(labelOf(pending.expect.returns[4]), 'Elm');
+
+  const alone = new Session(world()).local(birth, released);
+  alone.flush();
+  alone.pull([TREE]);
+  alone.local(removal, requestStep('g2'));
+  const birthAlone = restored('an Undo of a removal brings back a record whose birth went up alone before it was removed', alone);
+
+  const acked = new Session(world()).local(birth, released);
+  acked.flush();
+  const birthSeq = elmOf(acked).seq;
+  acked.local(removal, requestStep('g2'));
+  const unpulled = restored('an Undo of a removal brings back a record whose birth the server acknowledged before the device pulled it, the removal\'s preimage read over that birth\'s row', acked);
+  assert.deepEqual(journalOf(unpulled).find(({ actId }) => actId === 'g2').sourceEntries[0].preimages.map(({ rowSeq }) => rowSeq), [birthSeq]);
+
+  const apart = new Session(world()).local(birth, released);
+  apart.flush();
+  apart.pull([TREE]);
+  apart.local(removal);
+  apart.flush();
+  apart.pull([TREE]);
+  apart.local(requestStep('g2'));
+  const eachAlone = restored('an Undo of a removal brings back a record whose birth and removal each went up alone', apart);
+
+  const raced = new Session(world()).local(birth, released);
+  raced.flush();
+  raced.elsewhere({ scope: TREE, d: [{ t: 'tag', id: 'elm', born: st(5000), f: { label: ['Theirs', st(7500, 0, OTHER)] } }] });
+  raced.local(removal);
+  raced.flush();
+  raced.local(requestStep('g2'));
+  const unseen = skipped('an Undo of a removal skips when another device wrote the record between its birth and its removal', raced);
+
+  const plain = new Session(world()).local({ op: 'commit', scope: TREE, deviceNow: 5000, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'Elm' } }] }, removal);
+  plain.flush();
+  plain.pull([TREE]);
+  plain.local(requestStep('g2'));
+  const ordinary = skipped('an Undo of a removal skips when the record\'s birth was an ordinary entry, whose answer proves nothing of the row it wrote', plain);
+  return [onePush, pending, birthAlone, unpulled, eachAlone, unseen, ordinary];
+}
+
 export function files() {
   return {
     'undo/journal.json': [...capture(), ...retention(), ...epochs(), ...retire(), ...release(), ...lifecycle(), ...remapped(),
       ...cancellationLifecycle(), ...deadScope(), ...startRelease()],
     'undo/restore.json': [...settledUndo(), ...mixed(), ...barrier(), ...laterEdit(), ...aba(), ...masked(), ...epochReplay(), ...strictCreation(), ...productInverse(), ...replacement(), ...requests(), ...heldRedo(), ...discarded(),
-      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival(), ...spentRevival(), ...redirected(), ...typedValues()],
+      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival(), ...spentRevival(), ...redirected(), ...typedValues(), ...releasedBirth()],
   };
 }

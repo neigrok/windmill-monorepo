@@ -4,7 +4,9 @@
 // settlement. The journal is the replica's local user data: values and ids never leave it but in a restore's
 // own arguments.
 
+import { sameJson } from '../core/jcs.js';
 import { moveEntry } from '../core/machines.js';
+import { effectsOf } from './projections.js';
 
 // The local id's ordinal: its position in its act's commit order.
 export function ordinalOf(localId) {
@@ -29,6 +31,27 @@ export function retainOutcome(replica, localId, { epoch, n, outcome, acceptedEff
   source.attempts = source.attempts.filter((attempt) => attempt.epoch !== epoch);
   source.attempts.push({ epoch, n, outcome, ...(acceptedEffects ? { acceptedEffects: structuredClone(acceptedEffects) } : {}) });
   if (outcome === 'ok' && !acceptedEffects) source.unavailable = true;
+}
+
+// §7.3 Capture: a preimage `drawn` read over this device's own earlier write of its record stands on the row that
+// write left, once the write's receipt shows it started where the preimage stood, in the preimage's epoch (one taken
+// before the replica held an epoch takes the receipt's). An entry with no receipt, an ordinary one, moves nothing.
+export function stepOver(preimage, entry) {
+  const { scope, t, id } = preimage.target;
+  const epoch = entry.resultEpoch;
+  if (entry.state !== 'acked' || !entry.acceptedEffects || (preimage.epoch ?? epoch) !== epoch) return;
+  const writes = effectsOf(entry).some((effect) => effect.scope === scope && effect.d.some((delta) => delta.t === t && sameJson(delta.id, id)));
+  const row = entry.acceptedEffects.find((effect) => effect.scope === scope)?.rows.find((candidate) => candidate.t === t && sameJson(candidate.id, id));
+  if (writes && row && row.beforeRowSeq === preimage.rowSeq) Object.assign(preimage, { rowSeq: row.rowSeq, epoch });
+}
+
+// §7.4 the ACK transaction's retention point, after the source's own: each preimage of a source entry still in the
+// outbox after this entry in commit order was read over its write, and steps over it.
+export function stepPreimagesOver(replica, entry) {
+  for (const source of replica.journal.flatMap((act) => act.sourceEntries)) {
+    if (!(replica.entry(source.localId)?.commitOrder > entry.commitOrder)) continue;
+    for (const preimage of source.preimages) stepOver(preimage, entry);
+  }
 }
 
 // §7.5 step 1: a restored server invalidates each source's proofs from another epoch. A source still in the
