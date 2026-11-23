@@ -103,7 +103,8 @@ catalog written to the provider's strict mode. It has `catalog.json`'s shape and
 differs only in its inputs: no keyword strict mode refuses, every object lists `required`, and a
 bound strict mode cannot state is in the description of the parameter it bounds. The server reads it:
 `gymToolCatalog()` declares its tools, so MCP lists its schemas, the server Coach offers them, and a
-`catalog/3` turn is offered and gated by them. `catalog.json` and `abilities/` are deleted when no
+`catalog/3` turn is offered and gated by them. The web's replica executor reads it too
+(`web/src/products/gym/domain/coach/`). `catalog.json` and `abilities/` are deleted when no
 released build opens a `catalog/2` turn.
 
 - `strict.py` checks it in the Coach contracts workflow: every ability's input holds only keywords
@@ -126,9 +127,11 @@ released build opens a `catalog/2` turn.
   executor, which runs them for MCP.
 - The server executor claims every case, by SHA-256 of canonical bytes, in
   `backend/test/products/gym/adapters/mcp/AbilitiesCorpusTest.cpp`, and holds each answer to the
-  ability's `result`; Swift's, Kotlin's and the web's do not yet. Its refusals are hand-written, not
-  the server's golden, so `WM_GENERATE_ABILITIES` never rewrites them: they are the contract each
-  executor is held to when it moves onto `catalog/3`.
+  ability's `result`. The web's claims them in `web/test/products/gym/domain/corpus.test.js`: a
+  withheld ability's and a share's as `not-offered`, which it answers for each, and every other case
+  byte for byte, but for one `create_exercise` case whose id no turn seeds. Swift's and Kotlin's do
+  not yet. Its refusals are hand-written, not the server's golden, so `WM_GENERATE_ABILITIES` never
+  rewrites them: they are the contract each executor is held to when it moves onto `catalog/3`.
 - A value outside a moved bound is refused `invalid-arguments` before any rule reads the store, so a
   refusal case's records need not make the rest of the call succeed, though each case's do.
 

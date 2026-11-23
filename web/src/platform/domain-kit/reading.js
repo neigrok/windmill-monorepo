@@ -22,7 +22,7 @@ import { precondition } from './values.js';
 /** @typedef {{ t: string, id: RecordID, born: string, seq?: number }} SpentId */
 /** @typedef {{ get(key: string): ViewRecord | undefined }} ConfirmedRows the scope's confirmed records by record key */
 /**
- * @typedef {{ spent?: SpentId[], devices?: Record<string, Json>, firstPullComplete?: boolean, actor?: string, isAnonymous?: boolean,
+ * @typedef {{ spent?: SpentId[], devices?: Record<string, Json>, firstPullComplete?: boolean, replica?: string, actor?: string, isAnonymous?: boolean,
  *   commands?: QueuedCommand[], checkpoint?: ScopeCheckpoint, mintId?: (type: string) => RecordID,
  *   opaqueID?: () => string, assertOpen?: () => void }} ViewMetadata
  */
@@ -47,7 +47,7 @@ export class Views {
    * @param {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, confirmed?: ConfirmedRows } & ViewMetadata} source
    */
   constructor(registry, { drawn, stored, confirmed = new Map(), spent = [], devices = {}, firstPullComplete = true,
-    actor = '', isAnonymous = false, commands = [], checkpoint = { epoch: null, cleanSeq: null }, mintId, opaqueID, assertOpen = () => {} }) {
+    replica = '', actor = '', isAnonymous = false, commands = [], checkpoint = { epoch: null, cleanSeq: null }, mintId, opaqueID, assertOpen = () => {} }) {
     this.assertOpen = assertOpen;
     this.registry = registry;
     this.drawn = drawn;
@@ -57,6 +57,7 @@ export class Views {
     this.#spentIds = new Map(spent.map((row) => [recordKey(row.t, row.id), row]));
     this.devices = devices;
     this.firstPullComplete = firstPullComplete;
+    this.replica = replica;
     this.actor = actor;
     this.isAnonymous = isAnonymous;
     this.commands = commands;
@@ -195,6 +196,8 @@ export class Reader {
     return this.views.registry;
   }
 
+  // The replica a run's commit writes to (§7.1), its `rp_` id; empty where the views name none.
+  get replica() { this.views.assertOpen(); return this.views.replica; }
   get actor() { this.views.assertOpen(); return this.views.actor; }
   get isAnonymous() { this.views.assertOpen(); return this.views.isAnonymous; }
 

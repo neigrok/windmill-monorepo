@@ -671,9 +671,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   words the band after a step completed on its page opens nothing, or after a Reset that locks nothing, and they are
   built as *Read the wind done*, the Board's sentence, and *Read the wind reset*; every board of the page draws
   the Coach circle or composer and History, and the page is built without them until their
-  screens are, so a Locked or a Done step's foot holds the band alone and the … menu holds *Delete Step* alone; the
-  roadmap's one starting step, which keeps no *Delete Step*, has no … button while that is the menu's one item, and
-  no board draws that step's menu; a link row shows the address's host as it is written, so *www.* stays where the
+  screens are, so a Locked or a Done step's foot holds the band alone and the … menu holds *Open in Graph*, *View
+  Branch* and *Delete Step*, without *Attach a Roadmap*; the roadmap's one starting step keeps no *Delete Step*, so
+  its menu holds the first two alone, and no board draws that step's menu; a link row shows the address's host as it is written, so *www.* stays where the
   address has it; an Undo of Reset marks the step done at the Undo's time, as the web's does, so the step then leads
   Done, and no board says so; the name is drawn as the first card's header, about 10 pt lower than 03.1 has it,
   with the list's own spacing between the cards (55 pt from card to card where the boards draw 43); and a Board row
@@ -707,8 +707,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   phone never signed in the title menu's three and All Roadmaps stand in the order of their ids, which no board says.
 - **Roadmap · iOS · what the step form leaves for the boards.** New Step, from the foot's + and from an empty roadmap,
   and *Edit* from a step's page are built in Debug builds from 05.1 to 05.8, 05.10 and 02.15. To draw or rule: every
-  board of the form draws the *Roadmap* row and Coach's composer, and 05.2 draws *Edit Kinds*, and the form is built
-  without them until their screens are; 05.2 draws the hues no kind names as Sky, Brick, Plum, where its NOTE keeps the web's list, whose order
+  board of the form draws the *Roadmap* row and Coach's composer, and the form is built without them until their
+  screens are; 05.2 draws the hues no kind names as Sky, Brick, Plum, where its NOTE keeps the web's list, whose order
   and the rule book's is Brick, Sky, Plum, and it is built so; 05.3's caption makes a step that would close a loop
   `.disabled`, and 05.6b has a tap on one name it in the footer: a disabled row takes no tap, so those rows are drawn
   dimmed and stay buttons, each with its group's reason as its hint; no board words the band after *Save*, and it is
@@ -716,9 +716,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   single-choice list; no board draws a save the domain refuses, since the form draws no save failure: the form stays
   open, a loop the domain finds over links made elsewhere since the lists were read is named under the links in 05.6b's
   words, a roadmap at its limit says *This roadmap is at its limit.* in the band at the sheet's foot, and any other
-  refusal, a step deleted elsewhere among them, shows nothing; 10.6a refuses New Step on a full roadmap before the form
-  opens, and no read of the domain gives the room that limit, so the + opens the form there and *Create* is refused;
-  the web drops a chosen step that comes to follow the draft's and says *… now comes after this step, so it left your
+  refusal, a step deleted elsewhere among them, shows nothing; the web drops a chosen step that comes to follow the draft's and says *… now comes after this step, so it left your
   selection*, and no board draws that, so the form drops nothing and the save is refused as above; a form whose step
   is deleted elsewhere, or whose roadmap is no longer the open one, closes and says nothing; within a state a list
   stands in the roadmap's order as the domain reads it, by place, then birth, then id, so steps planted in one moment,
@@ -728,6 +726,32 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   a pushed list goes back, where 05.1 draws the form at rest; the name and description fields stop at the domain's 200
   and 16,000 characters with no counter, as the NOTE rules; and the band's six seconds for *Undo* of a created step
   run under VoiceOver too, as every receipt's do.
+- **Roadmap · iOS · what the Board's Find, sort and filter, several steps and Kinds leave for the boards.** Find, the
+  Sort and filter menu, a branch, several steps selected, the long-press and … menus' new items, Kinds and a full
+  roadmap's New Step are built in Debug builds from 02.4 to 02.14, 03.7, 01.3, 05.2, 06.1 to 06.6 and 10.6a and 10.6b.
+  To draw or rule: 02.11 draws Recolor's unnamed hues as Sky, Brick, Plum, and the menu lists the six kinds as 05.2
+  does, the rule book's Brick, Sky, Plum; 06.4 and 06.5 draw Sky, the hue steps wear unnamed, before the kinds added
+  after it, and the legend lists the roadmap's kinds in their order and then the hues no kind names, as the web's legend
+  does, so Practice and Safety stand before Sky; the filter lists the kinds steps wear, so a kind shown that no step
+  wears any more leaves the menu and stays shown, and the Board says *No steps match · Showing Milestone* with *Clear
+  Filters* as 02.6b draws, until it is cleared, where the web's Board narrows only among the kinds its filter offers
+  (`among()`) and so drops a kind shown once no step wears it, the Board showing every step again: which surface keeps
+  it is for the owner and the designer to rule; a Find with a kind shown that matches nothing says *No steps match “…”*
+  over *Showing …* with both *New Step “…”* and *Clear Filters*, which no board draws; two kinds shown read *Showing
+  Learn and Sky*, which no board draws; one step chosen asks *Delete 1 step?* on *Delete 1 Step*, and its band says *Tie
+  a bowline deleted*, the web's sentence for one, where no board draws one; while several are selected Find and the tool
+  stay live, and a step the Board stops showing is chosen no longer, as the web's selection drops it; a kind's name and
+  description are written as their field leaves them, on return, on the next field or on Back, where 06.2's caption has
+  every change applied as it is made, so a person's typing is one write and not one a key; a kind Add Kind made and not
+  yet named, and a hue steps wear unnamed, are said in another kind's Color list as *In use*, where 10.6b words *In use
+  by …* for a named kind alone; a hue steps wear unnamed opens a page like a kind's, where a name or a description makes
+  it a kind wearing that hue and a free hue moves its steps to it, which no board draws; *Open in Graph* leaves the
+  Graph as the roadmap's view on this phone, as the switch does; 02.7's caption makes the order a `Picker`, whose label
+  an inline picker in a menu drops on iOS 26.5, so the order is built as three toggles under the *Sort* section the
+  board draws; 02.10b draws *Delete 2 Steps* beside its question, and the system's popover stands over the button; in
+  06.5 every row stands indented in edit mode, and the system indents only the row it offers to remove; and the Board's
+  own benchmark measures the switch to its first frame and its scrolls on a Mac's simulator alone, where §5 names an
+  iPhone XR.
 - **Roadmap · iOS · what a step's workspace leaves for the boards.** *Subtasks*, *Note* and *Your links* on a step's
   page and *Links* in the step form are built in Debug builds from 03.1 to 03.3, 03.5, 03.10, 03.11, 03.14, 05.1 and
   05.8. To draw or rule: no board draws the band after a workspace act, and it is built where the web's page gives an
@@ -758,9 +782,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   its limit.*, the Board's sentence; the rows are the system's 52 pt where the boards draw 44, the list's separators
   start at the words, and the sections stand the list's own distance apart; and every board of the page draws
   *History* and the Coach circle or composer, which are not built.
-- **Roadmap · iOS · what the Graph leaves for the boards.** The switch, the canvas, a selected step with its bar and
-  an empty roadmap are built in Debug builds from 04.1, 04.2, 04.4, 04.7 and S.2. To draw or rule: the boards draw
-  *Learn to sail* from the top down by hand, and the canvas seats it where the web's layout does, the first step at
+- **Roadmap · iOS · what the Graph leaves for the boards.** The switch, the canvas, a selected step with its bar,
+  *Next* with its menu, *Fit* and an empty roadmap are built in Debug builds from 04.1 to 04.5, 04.7 and S.2. To draw
+  or rule: the boards draw *Learn to sail* from the top down by hand, and the canvas seats it where the web's layout
+  does, the first step at
   the left and the rest fanned to its right, as [Roadmap on iOS](../foundation/roadmap-ios.md) P-4 holds it; 04.4 grows
   the captions with the discs, and the layout's captions are the web's, one size at every zoom, 13 pt in a 20 pt line,
   seated anew as the picture grows, so the discs, halos, rings and connectors grow and a caption does not; the NOTE has
@@ -777,22 +802,46 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   steps, and the layout leaves a step unnamed where no seat is free of discs and connectors, *Name the boat parts* at
   the opening frame on an iPhone 17; a caption appears a fifth of a second after its seat is found, with no fade; the
   NOTE has the system fade the canvas at a bar's edge, which it does for what scrolls and not for a `Canvas`, so the
-  picture runs under the bars unfaded; with *Fit* not built the switch row holds the picker and Find alone, and with
-  *Next* not built the band slot is empty until a step is selected; a receipt's band takes the slot from the selected
-  step while it stands; the selected step's bar is the system's glass capsule at its own height, not the kit's raised
-  ground and stroke; no board says how far a pinch goes, and it is held between the layout's floor, half the zoom
+  picture runs under the bars unfaded; a receipt's band takes the slot from *Next* and from the selected step while it stands; *Next*'s
+  bar and the selected step's are the system's glass capsule at its own height, not the kit's raised ground and
+  stroke; the system places *Next*'s menu centred over its bar and covers it, where 04.3 draws the menu to the right
+  with the bar's start showing; the menu lists every Up next step, 170 on the 5,000-step handbook's board, and no
+  board draws it past two; 04.3 has a picked step centred, and the camera puts it at the centre of what the bars
+  leave, comes no farther out than the working zoom, keeps a nearer zoom it already has, and glides there in the
+  web's 0.48 to 0.72 s under its easing, at once under Reduce Motion, as one pinch about a point of the canvas where
+  the web eases the centre and the zoom apart; 04.5 draws the picture a tenth larger with the bars gone, and the
+  layout's fit stops at the phone's working zoom, so under Fit *Learn to sail* keeps its size and stands in the
+  middle of what the status bar and the home indicator leave; no board says whether the picture can be moved while
+  Fit stands, and one finger and a pinch still move it, a tap alone ending Fit; that tap selects nothing, the step
+  under it included; Fit takes the foot's band away with the bars, so a receipt standing as Fit is pressed runs out
+  unseen with its *Undo*, a held delete's too, whose hold is then released, and no board says whether the band stays
+  under Fit; under Fit VoiceOver's one element has the hint *Brings the bars back.*, which no board words; no board says how far a pinch goes, and it is held between the layout's floor, half the zoom
   that shows the whole roadmap, and the web's pinch ceiling, 2.5; a drag ends where the finger leaves it, with no
   glide, and no board asks for one; a tap among steps closer than their 44 pt targets takes the nearest, where the
   web zooms in on a crowd instead; the selection stays through the Board and a step's page and goes with its step or
   its roadmap, which no board says; each roadmap opens in the view it was last switched to on this phone, the Board
   until then, as the web keeps it; VoiceOver hears the canvas as one element, *Graph*, with the roadmap's progress
   and *The Board lists every step.*, and no step of the picture is an element, so the question stands whether the
-  Graph should give its steps to VoiceOver in the roadmap's order; steps that follow each other in a loop have no
+  Graph should give its steps to VoiceOver in the roadmap's order; a double-tap on that element outside Fit is thought
+  to select whatever step stands at the canvas's centre, which its hint does not say, and no one has tried it with
+  VoiceOver; steps that follow each other in a loop have no
   seats, and the Graph then says *Couldn’t load this roadmap* with no button, which no board draws; a hue no kind of
   this build knows is drawn in the dim ink, and locked in the raised ground, the strong line and the faint ink; and
   the 5,000-step handbook opens with every disc at the layout's 6 pt floor and no connector wide enough to draw, 650
-  times farther out than the working zoom, so until *Next* and Find are built a person reaches a step there by
-  pinching.
+  times farther out than the working zoom, so until the Graph's own Find is built a person reaches a step there by
+  pinching, from *Next*, or by *Open in Graph* on the step's Board row or page.
+- **Roadmap · iOS · what a pinch of a crowd shows while it moves.** On an iPhone 13 mini a pinch with the whole
+  5,000-step handbook in view is given five sixths of its frames
+  ([Roadmap on iOS](../foundation/roadmap-ios.md) §13). The room holds three ways to keep them (`GraphPinch`), each
+  changing the picture while a pinch, or the camera's glide to a step or to *Fit*, moves more than 500 steps in view,
+  and none once it rests; it uses none until a phone has measured them. To rule with the phone's numbers, since no
+  board draws a pinch in motion: *held* shows the picture as it was last drawn, scaled with the fingers between stops
+  half again apart in zoom, so discs, rings and the selection ring run between about four fifths and six fifths of
+  their size, soft when grown, and return to their size at each stop; it shows no caption until the pinch rests; and
+  a pinch out from a view that holds part of the roadmap leaves up to a fifth of the canvas empty at its edges until
+  the next stop. *coarse* keeps every step in its place, sharp and with the captions, as one square of its colour: a
+  Done step loses its dot, an Up next step its halo and dot, a Locked step its ring and dot. *layered* shows what the
+  room shows now.
 - **Roadmap file · three locked roles a step off the web's.** In *iOS · Roadmap roles*, `roadmap/locked-brick-glyph`
   (Light `#CD9987`), `roadmap/locked-plum-fill` (Light `#E1D1D4`) and `roadmap/locked-plum-ring` (Dark `#4B2E42`) each
   differ by one step in one channel from the web's `locked/brick-glyph` (`#CC9987`), `locked/plum-fill` (`#E1D0D4`)

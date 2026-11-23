@@ -123,9 +123,10 @@ export class LastTime {
   // Not read yet: no workout found, and the account's history is not all here to say there is none.
   get isUnread() { return !this.isComplete && this.session === null; }
 
-  /** @param {Id<ExerciseValue>} exerciseId @param {TrainingLog} log */
-  static of(exerciseId, log) {
-    for (const session of log.drawnSessions) {
+  // The newest of the given closed sessions, in their order, holding a set of the movement.
+  /** @param {Id<ExerciseValue>} exerciseId @param {TrainingLog} log @param {readonly SessionValue[]} [among] */
+  static of(exerciseId, log, among = log.drawnSessions) {
+    for (const session of among) {
       if (session.isOpen) continue;
       const sets = log.setsFor(session.id).filter((set) => set.exerciseId.equals(exerciseId));
       if (sets.length > 0) return new LastTime(exerciseId, session, sets, log.firstPullComplete);

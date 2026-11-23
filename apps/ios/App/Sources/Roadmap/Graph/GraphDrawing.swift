@@ -5,8 +5,8 @@ import RoadmapLayout
 // and captions as the camera holds them. Every seat, bow and caption box is the layout's; the forms are the kit's,
 // each a share of the body the layout gives a step, so discs, rings and connectors grow with the zoom together. It
 // draws only what the camera holds: a connector whose curve's box and a disc whose reach miss the canvas are left out,
-// and each form is one path a colour, filled once.
-nonisolated struct GraphDrawing {
+// and each form is one path a colour, filled once. Two frames are equal when they draw the same.
+nonisolated struct GraphDrawing: Equatable {
   // The kit's node is 42 pt across at the phone's working zoom, the layout's body there: a Done disc fills it, an Up
   // next disc is 38 inside a 54 halo, a Locked disc is its 38 fill inside a ring to 42, the dot is 12, and the
   // selection ring is 2.5 wide around 52.
@@ -25,10 +25,41 @@ nonisolated struct GraphDrawing {
   static let captionFont = Font.system(size: GraphPicture.captionSize, weight: .semibold)
 
   let picture: GraphPicture
+  // The camera the picture is drawn under: the one a person moves, or the stop a held pinch keeps.
   let camera: GraphCamera
   let captions: [Caption]
   // The selected step, by its place.
   let selected: Int?
+  // Each disc drawn as one square of its colour, in place of the kit's forms.
+  let squared: Bool
+
+  // The frame `pinch` has the canvas draw at `camera`: the picture as it is at rest, unless a pinch is under way with
+  // more than `crowd` steps in view. Then `held` draws the nearest of the pinch's stops, without captions, since the
+  // layout seats them for the camera a person moves; and `coarse` squares the discs. `layered` draws as `live`: its
+  // surface composites the canvas at every camera.
+  init(picture: GraphPicture, camera: GraphCamera, captions: [Caption], selected: Int?, pinched: GraphCamera.Pinched? = nil,
+       by pinch: GraphPinch = .live, crowd: Int = GraphPinch.crowd) {
+    self.picture = picture
+    self.selected = selected
+    let way: GraphPinch = pinched != nil && pinch != .live && picture.steps(in: camera.holds()) > crowd ? pinch : .live
+    squared = way == .coarse
+    guard way == .held, let pinched else {
+      (self.camera, self.captions) = (camera, captions)
+      return
+    }
+    var stop = pinched.from
+    stop.zoom(by: pow(GraphPinch.reach, (log(camera.frame.zoom / pinched.from.frame.zoom) / log(GraphPinch.reach)).rounded()), about: pinched.about)
+    (self.camera, self.captions) = (stop, [])
+  }
+
+  // A picture is what its steps make it, and a caption what it says and where.
+  static func == (one: GraphDrawing, other: GraphDrawing) -> Bool {
+    one.camera == other.camera && one.selected == other.selected && one.squared == other.squared
+      && one.picture.steps == other.picture.steps
+      && one.captions.elementsEqual(other.captions) { (a: Caption, b: Caption) -> Bool in
+        a.id == b.id && a.left == b.left && a.top == b.top && a.width == b.width && a.shown == b.shown && a.lines == b.lines
+      }
+  }
 
   func draw(in context: inout GraphicsContext) {
     let nodes = picture.model.nodes
@@ -59,6 +90,11 @@ nonisolated struct GraphDrawing {
     for (place, node) in nodes.enumerated() where node.x >= held.minX && node.x <= held.maxX && node.y >= held.minY && node.y <= held.maxY {
       let (centre, body, hue) = (camera.screen(node.x, node.y), camera.body(crowned: node.crowned), picture.hueOf[place])
       let disc = { (across: Double) -> CGRect in CGRect(x: centre.x - across / 2, y: centre.y - across / 2, width: across, height: across) }
+      // A squared step is one square as wide as its body: a Locked one in its kind's locked fill, any other in its kind's colour.
+      if squared {
+        if node.tier == .locked { lockedFills[hue].addRect(disc(body)) } else { done[hue].addRect(disc(body)) }
+        continue
+      }
       switch node.tier {
       case .complete:
         done[hue].addEllipse(in: disc(body))

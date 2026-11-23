@@ -86,8 +86,8 @@ jobs:
           xcodegen --version
 
       # Every UI class runs in exactly one shard, except the opt-in ones, which must keep their guard: the design
-      # captures, the Graph's benchmark, which Tools/graph_bench.sh runs, and the nightly classes, which iOS nightly
-      # runs instead.
+      # captures, the Graph's and the Board's benchmarks, which Tools/graph_bench.sh and Tools/board_bench.sh run, and the
+      # nightly classes, which iOS nightly runs instead.
       - name: Check UI shard coverage
         run: |
           python3 - <<'PY'
@@ -104,6 +104,7 @@ jobs:
               "NightlyFlowTests": ("NightlyFlowTests.swift", "WM_NIGHTLY_UI"),
               "GymNightlyFlowTests": ("GymNightlyFlowTests.swift", "WM_NIGHTLY_UI"),
               "RoadmapGraphBenchmarks": ("RoadmapGraphBenchmarks.swift", "WM_GRAPH_BENCH"),
+              "RoadmapBoardBenchmarks": ("RoadmapBoardBenchmarks.swift", "WM_BOARD_BENCH"),
           }
           for name, (file, variable) in opt_in.items():
               guard = f'try XCTSkipUnless(ProcessInfo.processInfo.environment["{variable}"] == "1"'
@@ -289,12 +290,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - shard: gym-integration
+          - shard: integration-roadmap
             tests: >-
               -only-testing:WindmillUITests/GymIntegrationFlowTests
               -only-testing:WindmillUITests/GymRecoveryFlowTests
               -only-testing:WindmillUITests/JournalIntegrationFlowTests
               -only-testing:WindmillUITests/JournalEchoFlowTests
+              -only-testing:WindmillUITests/RoadmapFlowTests
           - shard: gym-journal
             tests: >-
               -only-testing:WindmillUITests/GymCoachFlowTests
@@ -305,7 +307,6 @@ jobs:
             tests: >-
               -only-testing:WindmillUITests/OfflineFlowTests
               -only-testing:WindmillUITests/OnboardingFlowTests
-              -only-testing:WindmillUITests/RoadmapFlowTests
               -only-testing:WindmillUITests/ShellFlowTests
               -only-testing:WindmillUITests/WorkoutActivityFlowTests
               -only-testing:WindmillUITests/WorkoutOutsideFlowTests

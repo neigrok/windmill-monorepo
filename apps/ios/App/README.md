@@ -111,7 +111,20 @@ leaves the stack or the app leaves the front (`background()`). And it holds the 
 each roadmap (`lens`, set by `show(_:)` and kept on the phone under `RoadmapModel.lastLens`, the Board until it is
 switched, as the web's `ViewPrefs` keeps it), the step selected on the Graph (`selected`, set by `select(_:)`, which goes
 once its step does or another roadmap opens), and the open roadmap's Graph (`graph`, a `RoadmapGraph`), which it has
-follow the roadmap as the phone's copy reads it while the Graph is the view.
+follow the roadmap as the phone's copy reads it while the Graph is the view. `pick(_:)` selects a step chosen from the
+Graph's *Next*, while it stands, and has the Graph bring it into view, and `fit()` and `unfit()` start and end the
+Graph's Fit. `openInGraph(_:from:)`, from a Board row's long-press menu or a step page's … menu, shows the Graph with the
+step selected and has the Graph bring it into view once its picture is laid out. Beside the model, and held by it, stand
+what the Board asks of the open roadmap (`reading`, a `BoardReading`: the order of Up next and Locked, the kinds shown, a
+branch and Find's words, which last the visit as the web's room keeps its query, so another roadmap opening or a launch
+starts it over; the model tells it each read of the open roadmap and the view it shows, so Find ends once the Graph is
+shown or another roadmap opens, telling words not yet told as it closes, and stays up while a step's page is pushed from
+the Board and popped), the steps chosen while the Board selects several (`selection`, a `BoardSelection`, which
+`startSelecting(_:from:)` makes and `endSelecting(via:)` lets go, and which goes once another roadmap opens), and what the
+Board measures of itself (`boardFrames`, a `BoardFrames`). `viewBranch(of:)` returns to the Board staying in a step's
+branch. The model also holds whether the Kinds sheet stands open and from where (`kindsDoor`). The open roadmap reads its
+legend once (`OpenRoadmap.legend`, a `RoadmapLegend`), which the step form's Kind list, the Kinds sheet, the Board's filter
+and Recolor all show.
 
 The model's write door is `write(_:as:)`: one act of `RoadmapDomain` run on `AppRuntime.roadmapRunner`, several as one
 gesture (`ActionRunner.runComposed`), each reading what the ones before it wrote, or a draft's one save
@@ -123,13 +136,15 @@ whoever asked (`told(as:_:)`): a refusal as an event, and in the band where it i
 Step*, `delete(_:by:)` runs `DeleteStep` and leaves the room on the Board, the form that asked closed. `create(named:)` runs `CreateRoadmap` and
 `rename(to:)` runs `WriteRoadmap`, and the engine keeps no Undo of either. A roadmap's delete is asked first too
 (`askDelete(_:from:)`, with what else goes) and, answered *Delete Roadmap*, `delete(_:from:taking:)` runs `DeleteRoadmap`:
-the room then opens the most recent other roadmap, or holds none. Each receipt is the room's one band
+the room then opens the most recent other roadmap, or holds none. `newStep(from:named:)` reads first how many steps the
+roadmap holds against the registry's cap, through the kit's `Capacity`, and at the cap refuses where the gesture is
+made, in the band, with no form. Each receipt is the room's one band
 (`RoadmapModel.Band`), which a newer one replaces. Its Undo cancels a removal while the engine holds it
 (`ActionRunner.cancelHeld`, for the engine's nine seconds) and takes any other act back by the kit's Undo of it
 (`ActionRunner.undo`, for six seconds); when the band leaves, the engine keeps no Undo of the act (`ActionRunner.release`). An
 Undo of Reset marks the step done anew, so it leads Done, and an Undo of a roadmap's delete opens the roadmap again where
 the room had it open. The band says a refusal only where it is a limit the boards word, and any other refusal shows
-nothing. Six facts the model reads or settles itself, as the web's room does. From the domain's graph: the one starting step a
+nothing. Facts the model reads or settles itself, as the web's room does. From the domain's graph: the one starting step a
 roadmap keeps, which offers no Delete; the steps that follow a step (`OpenRoadmap.followers`, the web's `childrenOf`),
 which a step's page lists under *Opens* and the delete question counts; and what Reset would return to Locked
 (`OpenStep.relocks`, the web's `resetRelocks`), the steps a Done step opened that stand Up next. From the domain's read of
@@ -137,20 +152,32 @@ every roadmap: what else a roadmap's delete takes (`openers(of:)`, the web's `Op
 the steps of the person's other roadmaps whose pointer opens it, which the server deletes with it. And of a name: it is
 written without the blanks around it (`name(typed:)`, the web's `NewTreeBirth.plant` and `ReplicaSession.renameTree`), and a
 blank roadmap starts with one step, named as the roadmap, in the first kind's colour (`create(named:)`, the web's
-`NewTreeBirth.plant`).
+`NewTreeBirth.plant`). Of a roadmap's kinds (`RoadmapLegend`): its legend is each kind that owns its hue in the roadmap's
+order, then each hue steps wear that no kind claims, called by the hue (the web's `deriveLegend` over the kinds
+`ReplicaRoadmap` keeps), each with how many steps wear it (`withCounts`); the six kinds a step may wear, the named ones
+first (`kindChoices`); the kinds the Board's filter offers, the ones steps wear, none where steps wear one hue alone
+(`kindOptions`); the hue Add Kind takes, the first no entry has (`freeHue`); and only a kind no step wears may be removed
+(`onRemoveKind`). Of several steps: they cannot be deleted while they hold every step the roadmap starts from
+(`OpenRoadmap.takesEveryStart`, the web's `takesEveryRoot`), and their delete costs the steps outside them that follow
+one of them (`deletionCost`). And of the Board's query: a step the form made that the query hides is shown by clearing
+each part that alone hides it (`BoardReading.reveal`, the web's `BoardQuery.revealing`), once the phone's copy holds the
+step, whether the Board then shows a list or nothing left.
 
 `RoadmapRoom.swift` is the room's one `NavigationStack` over the model's `path`: the room capsule and the account in the bar,
 the roadmap's name and progress, the switch row pinned under the bar, whose *Board | Graph* chooses the roadmap's view,
-and at the foot the band over New step, which raises the step form. It announces
+whose Find is the Board's and whose one tool is the Board's *Sort and filter* or the Graph's *Fit*, and at the foot the
+band over New step, which raises the step form. New step leaves the foot while Find is up and while several steps are
+selected. While Fit stands the bar, the switch row and the foot are away and the status bar stays. It announces
 and plays the band's haptic once, whichever screen stands over it. The title's menu (`RoadmapTitle`, `.toolbarTitleMenu`)
 lists the three most recent roadmaps, each name over its progress and the open one checked, then *All Roadmaps…*, *New
-Roadmap*, *Rename* and *Delete Roadmap*. *Rename* is the system's (`RenameButton` over a title that is a binding): the bar
+Roadmap*, *Kinds*, *Rename* and *Delete Roadmap*. *Rename* is the system's (`RenameButton` over a title that is a binding): the bar
 becomes one field, and its return key commits. A name the domain refuses leaves the old one; the field itself commits no
 empty name, so the old one stays there too; and a name of blanks alone is written empty, so the roadmap reads *Untitled
 roadmap*. *Delete Roadmap* asks once under the title, naming the steps of other roadmaps that open this one, and then
 the band holds *Undo* for the hold's nine seconds. The menu's other verbs wait for their screens and are left out:
-*Guide*, *Kinds*, *Activity*, *Share…* and *Export*. Before iOS 26 the name and the progress stand in the bar's
-principal slot (`roomTitle`); the menu and the rename are not tried there.
+*Guide*, *Activity*, *Share…* and *Export*. While several steps are selected the title counts them, with no progress and
+no menu. Before iOS 26 the name and the progress stand in the bar's
+principal slot (`roomTitle`) with the same menu attached; no iOS 18 runtime has drawn that menu or tried its rename.
 
 `Roadmaps/RoadmapsList.swift` is All Roadmaps, pushed on the stack: every roadmap in the domain's order, the open one
 checked. That order is by when a server last received each, the most recent first, so on a phone never signed in it is
@@ -161,22 +188,41 @@ sheet the title menu, All Roadmaps and *No roadmaps yet* all open: a name, held 
 domain takes, *Cancel* and *Create*, which plants a blank roadmap with its one starting step and opens it. Its *Start
 from* section (a quest, a copied plan, a file) is left out. All of it works on the phone's copy, signed in or out.
 
-`Board/RoadmapBoard.swift` is the Board's list, its groups
-under headers that fold them. A row opens its step's page. An Up next row that opens no roadmap slides right for *Complete*;
-every row but the kept one slides left for *Delete*, which asks once on the row with what it costs; a long press lists
-*Complete* and *Delete Step*. A full swipe commits neither. The long-press menu's other items wait for their screens and are
-left out: *Ask Coach*, *Edit*, *Open in Graph*, *Select*, and *Copy Link* on a public roadmap.
+`Board/RoadmapBoard.swift` is the Board's list, its groups under headers that fold them, as the Board's reading keeps
+them. A row opens its step's page. An Up next row that opens no roadmap slides right for *Complete*; every row but the
+kept one slides left for *Delete*, which asks once on the row with what it costs; a long press lists *Complete*, *Edit*,
+which raises the step's form, *Open in Graph*, *Select* and *Delete Step*. A full swipe commits neither. The long-press
+menu's other items wait for their screens and are left out: *Ask Coach*, and *Copy Link* on a public roadmap. Find, the
+switch row's magnifying glass, gives the list the system's search while it is up, its field at the foot above the
+keyboard with the bar and the switch row kept: the steps whose name or description holds the words stay in their groups,
+each header counting its own, Done open while it holds one, and a Board left with nothing says *No steps match “…”* with
+*New Step “…”*, which opens the form named so. The Board's tool (`BoardTool`) is one menu: the order (*Roadmap Order*,
+*Newest First*, *Oldest First*), *Filter by Kind* with a toggle for each kind steps wear, and *Select Steps*; its symbol
+fills while another order or a kind filter stands. A kind filter, and a branch from a step page's *View Branch*, say so in
+the list's first row with *Clear*, and a filter left with nothing says *No steps match* with *Clear Filters*. The subtitle
+counts the whole roadmap whatever the Board shows. Select and Select Steps put the list in the system's edit mode
+(`BoardSelectionBar`): *Select All* or *Deselect All* and the checkmark in the bar, the switch waiting, and the bottom
+toolbar's *Recolor*, a menu of the six kinds, and *Delete N Steps*, which asks once on itself with what it costs and is
+dimmed while the steps chosen hold every starting step, which the band then says, at once where the selection starts on
+them. *Select All* takes every step the Board's query keeps, a folded group's too, as 02.12 draws it taking the starting
+step from a folded Done; the delete's question counts what it takes, which is the person's check. Recolor is one gesture
+with six seconds of *Undo*, and the delete one gesture held nine seconds with *Undo*; either ends the selection, and a
+step the Board stops showing is chosen no longer. `Board/BoardReading.swift` and `Board/BoardSelection.swift` are the Board's query
+and its selection, each the domain's read and acts. `Board/BoardFrames.swift` measures the time from the switch to the
+Board's first frame and the frames each scroll is given, on a launch that names a file for them, and reports nothing.
 
 `Step/RoadmapStepPage.swift` is a step's page, pushed on the room's stack: one list under the step's name, which the bar
 takes once it has scrolled away; the status row, with the state, the kind's name (the hue's where no kind names it) and why
 the step stands there, or on a Done step what Reset would return to Locked beside *Reset*; the description and the step's
 shared links, each opened where its address is `http`, `https` or `mailto`; and *Requires* and *Opens* with their counts,
 each row opening its step. An Up next step that opens no roadmap has *Complete* at its foot: the page stays, and the band says
-what opened. *Reset* asks nothing. *Edit* in the bar raises the step's form over the page. The … menu holds *Delete Step*,
-which asks on the … button and, answered, returns to the Board with the step held; the roadmap's one starting step has no
-menu. After *Opens* the page lists the person's workspace of the step, and its foot is away while *Add Subtask* has the
-keyboard. Left out until their screens are built: the menu's *Open in Graph*, *View Branch*, *Attach a Roadmap* and
-*Copy Link*, *History*, the Coach circle and composer, and a step that opens a roadmap's pill and *Open Roadmap*.
+what opened. *Reset* asks nothing. *Edit* in the bar raises the step's form over the page. The … menu holds *Open in Graph*,
+*View Branch* on a step that is not Locked, as the web offers it, which returns to the Board staying in the step's branch,
+and *Delete Step*, which asks on the … button and,
+answered, returns to the Board with the step held; the roadmap's one starting step's menu has no *Delete Step*. After
+*Opens* the page lists the person's workspace of the step, and its foot is away while *Add Subtask* has the keyboard. Left
+out until their screens are built: the menu's *Attach a Roadmap* and *Copy Link*, *History*, the Coach circle and
+composer, and a step that opens a roadmap's pill and *Open Roadmap*.
 
 `Step/StepWorkspace.swift` is a step's private workspace as its page reads it, and its acts. `StepWorkspace.read(_:)`
 composes every step's workspace from one overlay's records, as the web's room does (`HeldRoadmap.workspace`): the
@@ -219,28 +265,50 @@ note's text as it is written.
 own control), the band's words, the delete question a step's Board row, its page and its form ask, and the one both the
 Board's title and a roadmap's row in All Roadmaps ask.
 
-`Graph/` is the Graph, the room's one custom part (boards 04.1, 04.2, 04.4; [Roadmap on iOS](../../../docs/foundation/roadmap-ios.md)
+`Graph/` is the Graph, the room's one custom part (boards 04.1 to 04.5; [Roadmap on iOS](../../../docs/foundation/roadmap-ios.md)
 §5). `GraphPicture.swift` is a roadmap's picture as `RoadmapLayout` draws it: the steps the domain reads, each with what
 it follows through any step that is gone and whether it is done, their seats, tiers and bows, and each step's caption
 wrapped under the canvas's 13 pt semibold. It is made off the main actor; the seats and tiers are the layout's and the
 picture decides neither. A picture made after another borrows its seats and captions where only a step's being done
 changed. `GraphCamera.swift` is the camera: the world point at the canvas's centre and the zoom, opened where the
 layout's `fitFrame` puts it and held between the layout's zoom floor and the web's pinch ceiling of 2.5, with the
-roadmap's box never out of what the bars leave. `GraphDrawing.swift` draws one frame into a `GraphicsContext`: the
+roadmap's box never out of what the bars leave. It keeps the place a move left it at, and over another canvas or other
+bars holds a copy of that place, so a band or a keyboard that comes and goes leaves the picture where it was. `centred(on:)` is the camera brought to a seat, the seat at the centre
+of what the bars leave and no farther out than the phone's working zoom, and `GraphCamera.Glide` the way there: 0.48,
+0.6 or 0.72 s by how far the centre travels, under the web's easing, as a pinch about the one point of the canvas at
+which both ends show the same place, or a pan between two ends at one zoom. `GraphDrawing.swift` draws one frame into a
+`GraphicsContext`: the
 connectors, 2 pt at the phone's working zoom and lit where they leave a done step; the discs in the kit's forms, each a
 share of the body the layout gives a step, a crowned root 1.55 times wider; the selection ring; and each caption in the
 box the layout gave it, once it is past its wait. It draws only what the camera holds: a connector whose curve's box
 misses the canvas and a disc whose reach misses it are left out, connectors thinner than a fifth of a point are not
-drawn, and each form is one path a colour. `RoadmapGraph.swift` is the Graph's state, which the model owns: it lays the
+drawn, and each form is one path a colour. `GraphSurface.swift` is the view that draws it: the picture on one `Canvas`
+under a camera, which draws again only when its drawing differs. It holds `GraphPinch`, the four ways the Graph can
+keep its frames while a pinch, a finger's or a glide's, moves a crowd of more than 500 steps in view: `live` draws the
+picture anew at every camera; `held` draws it only at the pinch's stops, the zooms half again apart counted from where
+the pinch began, and scales that drawing to the camera between them, with no caption; `coarse` draws each disc as one
+square of its colour; `layered` draws as `live` and composites the canvas through `drawingGroup` at every camera, so
+the canvas stays one view as a pinch begins. Each draws what `live` draws once the pinch rests and at any camera that
+holds no crowd. The room's own
+is `GraphPinch.room`, which is `live`: no phone has measured the other three. `RoadmapGraph.swift` is the Graph's state,
+which the model owns: it lays the
 picture out off the main actor, one layout at a time and only the latest read next, keeps the camera where a person left
-it when the picture changes, asks the layout's `CaptionPlacer` for the captions at each camera and again when the next
+it when the picture, the canvas or its bars change, asks the layout's `CaptionPlacer` for the captions at each camera and again when the next
 caption is due, answers which step a tap takes (the nearest whose disc, or whose 44 pt target where the disc is
-smaller, holds the point), and measures the Graph against the budget: the first frame after the tap that showed it,
-and the frames a display link sees while a gesture moves the camera (`GraphFrames`). `RoadmapGraphCanvas.swift` is the
-view: one `Canvas` under the room's bars, a `DragGesture` and a `MagnifyGesture` that move the camera, a tap that
-selects, and `GraphStepBar`, the selected step in the foot's band slot, which pushes the step's page. VoiceOver hears the
-canvas as one element, *Graph*, with the roadmap's progress and the hint that the Board lists every step. Left out until
-their screens are built: *Next* and its menu, so the band slot is empty with nothing selected, *Fit*, Find on the Graph,
+smaller, holds the point), holds the pinch under way with the camera it began from and the point it zooms about, glides
+the camera to a step (`bring(_:)`) and to the whole roadmap (`fit()`), at once under Reduce Motion, stops a glide where
+it has got to (`halt()`) once Fit ends or a tap selects another step, and keeps the whole roadmap framed while Fit
+stands. The room reads `framed`, whether there is a camera, and never the camera, which changes every frame. It measures the Graph against the budget: the first frame after the tap that showed
+it, and the frames a display link sees while a gesture or a glide moves the camera (`GraphFrames`).
+`RoadmapGraphCanvas.swift` is the
+view: the surface under the room's bars, a `DragGesture` and a `MagnifyGesture` that move the camera, and a tap that
+selects, or under Fit brings the bars back. Beside it are the two bars of the foot's band slot: `GraphNextBar`, *Next*
+over the first Up next step with a menu of every Up next step in Roadmap Order, shown while no step is selected and
+one is Up next, whose pick selects a step and brings it to the centre of the canvas; and `GraphStepBar`, the selected
+step, which pushes the step's page. VoiceOver hears the
+canvas as one element, *Graph*, with the roadmap's progress and the hint that the Board lists every step, or under Fit
+that a tap brings the bars back. Left out until
+their screens are built: Find on the Graph,
 the mark and progress of a step that opens a roadmap, a proposal's changes and a reader's cover.
 
 `Step/StepDraft.swift` is the step form's draft, which `newStep(from:)` and `edit(_:)` make and the model holds while the
@@ -271,6 +339,7 @@ closes one.
 over a step's page while the model holds a draft. Name and Description, then *Kind*, *Requires* and *Opens*, each a list
 pushed inside the sheet and bound to the draft, with no Apply: *Kind* returns with the kind chosen, and a tap in
 *Requires* or *Opens* takes or drops a step in place, the steps chosen as the list opened heading it under *Selected*.
+Under *Kind*'s six choices *Edit Kinds* raises the Kinds sheet over the form.
 The steps that would close a loop stand dimmed in their own group, whose footer says why; they are drawn dimmed and not
 disabled, so a tap on one can be refused and named. Under the links one footer says where the step will land, always
 for a new step and for a step only where the change would move it to another group. *Cancel* closes an unchanged draft
@@ -278,12 +347,30 @@ and asks *Discard draft?* on a changed one, which a swipe down does not send awa
 change. A step that may go has *Delete Step* in the form, which asks there as its page does. The room's band stands at
 the sheet's foot, away while a field has the keyboard. Under the placement footer *Links* lists the links the step
 shares, each sliding left for *Delete*, over *Add Link*, which raises New Link over the form; a link there only stands,
-and opens on the step's page. Left out until their screens are built: the *Roadmap* row, *Edit Kinds* and Coach's
-composer.
+and opens on the step's page. Left out until their screens are built: the *Roadmap* row and Coach's composer.
+
+`Kinds/` is a roadmap's kinds. `Kinds/RoadmapLegend.swift` is the legend the open roadmap reads once. `Kinds/KindActs.swift`
+is the Kinds sheet's acts, each one act of the domain through the door, on an entry by its subject as the legend holds it
+when the act is made, so a kind a step has come to wear is not removed: Add Kind ends the band standing over the sheet
+and makes a kind at once, unnamed, on the first hue no entry has (`CreateKind`); a name and a description, each held to the domain's 24 and 80 characters, are written as their field
+leaves them (`ChangeKind`), and a hue no kind names that is given one becomes a kind wearing it (`CreateKind`); a free hue
+chosen recolors the kind and every step that wears it (`RecolourKind`, the server's command, predicted on the phone), or
+moves the steps of a hue no kind names in one gesture (`ChangeStep`), with no band; and a kind no step wears is removed at
+once (`DeleteKind`), the band holding *Undo* for six seconds, since the engine does not hold a kind's removal. Add, a name,
+a description and a colour keep no *Undo*, as the web's legend keeps none. `Kinds/RoadmapKinds.swift` is the sheet, a large
+one with its own stack, which the room raises from the title menu's *Kinds* and the form from *Edit Kinds*: the legend
+under the roadmap's name, each entry with its disc, name, description and how many steps wear it, pushing its page; *Add
+Kind* while a hue is free, which opens the kind's page with Name focused once the phone's copy holds it, and at six the
+footer saying why it is gone; and the system's edit mode and swipe, which remove only a kind no step wears, the footer
+then saying why the others cannot go, and a removal refused leaving its row. A kind's page is a settings-style form with
+no Save: Name, *What belongs here?*, and *Color*, the six hues as an inline picker, a hue another entry has dimmed with
+whose it is. While the entry a name or a colour moved it to is still to be read, the page draws the entry it read last
+(`LastRead`, as a step's page does while it leaves), so its form and the keyboard stay. The band stands at the sheet's
+foot.
 
 A roadmap with no step says *Your first step* over *New Step*, which opens the form as the foot's + does, under the Graph
-as under the Board, and one with every step done says so over Done. Find, the Board's Sort and filter and a finished
-Board's *Share* are drawn disabled. Debug simulator boards
+as under the Board, and one with every step done says so over Done. A finished Board's *Share* is drawn disabled. Debug
+simulator boards
 (`RoadmapFixture`): `-board roadmap-empty` opens the room on a phone that holds no roadmap; `-board roadmap-learn-to-sail`
 signs the phone in to an account whose eight-step roadmap another phone planted on the model server, three steps done a second
 apart and *Read the wind* sharing one link, so it arrives by sync; `-board roadmap-all-done` is that roadmap with every step
@@ -298,9 +385,13 @@ the subtask *Ask about the tide table* to that step; `-board roadmap-many` is a 
 roadmap-handbook` is a phone never signed in that holds *Coastal navigation handbook*, the 5,000 steps, links and colours
 of the layout's shared fixture, read from the repository the build was made in and planted through the domain, so its
 steps' ids are the phone's, with the first 120 of the fixture's 1,800 done steps marked, since signed out each mark's
-commit reads everything the phone has still to send; and `-board roadmap-unreadable` opens the room over views it cannot
-make. A simulator launch
-with `-graph-measures <path>` appends what the Graph measures of itself to that file, one JSON line a measure. The roadmaps under *Learn to sail* hold a few steps
+commit reads everything the phone has still to send; `-board roadmap-full` is a phone never signed in that holds *Every
+harbour in Europe*, as many steps as the registry lets a roadmap hold, each harbour entered Up next and its berth Locked
+behind it; and `-board roadmap-unreadable` opens the room over views it cannot make. A simulator launch with
+`-graph-measures <path>` appends what the Graph measures of itself to that file, and with `-board-measures <path>` what
+the Board measures, one JSON line a measure; with
+`-graph-pinch <way>` it keeps a pinch's frames that way, and with `-graph-crowd <count>` it does so from that many
+steps in view, so a way can act on a board of eight steps. The roadmaps under *Learn to sail* hold a few steps
 each, not the counts the boards draw, and the account's board holds three roadmaps, not nine: it is planted by a
 second engine on the model server, which takes about half a second longer for every roadmap the account already
 holds. A board's clock stands still, so the engine's release timer never ends a hold there: a held delete is sent once
@@ -792,15 +883,101 @@ the whole roadmap, five pinches in with a pan after each, and five pinches out. 
 that draws the picture, with the layout's share of it, and for each gesture the gaps between the frames a display link
 on the main actor sees and how long the main actor worked in each, its commit to the screen included (`GraphFrames`).
 
-Each measure prints one `bench` line beside its budget with the share of the budget it used, and a measure over its
-budget fails the run. The budgets are §5's own: a second for the first frame and for each part of it, a frame at 60 a
+`apps/ios/GraphBench` puts the same Graph on a device's own screen, in an app of its own that compiles `GraphPicture`,
+`GraphCamera`, `GraphDrawing` and `GraphSurface` from here and draws the handbook on the room's own surface, alone on
+the screen ([its README](../GraphBench/README.md)). One command builds it, runs it on a phone or on a simulator and
+removes it: a script pans and pinches at five cameras, at 5,000 steps and at the first 1,000, under each of the four
+ways the surface can keep a pinch's frames (`GraphPinch`). `SHORT=1` runs the 5,000 steps at the whole roadmap and at
+zoom 0.011 alone, every way three times. It judges a pan or a pinch over its budget when more than a tenth of its
+frames are later than a frame and a half, or when it is given fewer than nine tenths of the 180 frames its three
+seconds owe.
+
+On an iPhone 13 mini (iOS 27.2, a 60 Hz screen, thermal state nominal, Low Power Mode off), drawn as the room draws
+now, `live`, three runs at each size:
+
+| | 5,000 steps | 1,000 steps |
+|---|---|---|
+| The first frame, with the picture's making | 164 to 169 ms | 50 ms |
+| The whole roadmap, a pan: frames later than a frame and a half | 2 to 3 of 177 | none of 181 |
+| The whole roadmap, a pinch: the same | 21 to 23 of 150 | none of 181 |
+| The whole roadmap, a pinch: the main actor's work in a frame, median and nineteenth of twenty | 8 to 9 ms, 34 ms | 7.5 ms, 9 ms |
+| The four closer cameras: frames later than a frame and a half | one, in one pan of twenty-four | none |
+| The four closer cameras: the main actor's work in a frame, median | 5.6 to 8.4 ms | 5.2 to 7.5 ms |
+
+On that phone one `Canvas` drawn live holds the budget at 1,000 steps at every camera, and at 5,000 steps at every
+camera but one: a pinch with the whole roadmap in view, where about a seventh of the frames come late in every run,
+more than the tenth the budget allows, and the gesture is given 150 frames of its 180. The draw closure and the
+script's handler take about 2 ms each of those frames; the rest is the view's update and its commit. An iPhone 13
+mini is faster than the oldest phone the app supports, so a camera that misses here misses there. No phone has run
+`held`, `coarse` or `layered`.
+
+On an iPhone 17 simulator on an M3 Pro, the short form twice, six runs of each way at 5,000 steps, with `layered`
+composited at every camera, its pans and its pinch at zoom 0.011 among them, as `GraphSurface` composites it:
+
+| | `live` | `held` | `coarse` | `layered` |
+|---|---|---|---|---|
+| The whole roadmap, a pinch: frames given of 180, and late | 178 to 180, 2 at most | 175 to 180, 5 at most | 167 to 180, 1 at most | 178 to 180, 2 at most |
+| The same: the main actor's work in a frame, median and nineteenth of twenty | 7.2 to 9.5 ms, 9 to 12 ms | 3.0 to 3.5 ms, 7 to 11 ms | 7.3 to 8.7 ms, 10 to 11 ms | 6.1 to 8.9 ms, 8 to 12 ms |
+| The same: draws of the canvas | 179 to 180 | 9 | 168 to 181 | 178 to 180 |
+| The whole roadmap, a pan: frames given, and late | 178 to 180, 2 at most | 178 to 180, 2 at most | 179 to 180, 1 at most | 180, none |
+| The same: the main actor's work, median and nineteenth of twenty | 6.6 to 9.1 ms, 10 to 13 ms | 7.9 to 9.5 ms, 11 to 14 ms | 7.7 to 9.2 ms, 11 to 13 ms | 6.0 to 7.7 ms, 8 to 12 ms |
+| Zoom 0.011, a pinch: frames given, and late | 180, none | 180, none | 180, none | 180, none |
+| The same: the main actor's work, median and nineteenth of twenty | 5.1 to 6.8 ms, 7 to 10 ms | 4.7 to 6.9 ms, 7 to 10 ms | 5.4 to 6.8 ms, 7 to 9 ms | 2.2 to 4.2 ms, 6 to 10 ms |
+| Zoom 0.011, a pan: frames given, and late | 180, none | 180, none | 180, none | 180, none |
+| The same: the main actor's work, median and nineteenth of twenty | 3.3 to 5.7 ms, 6 to 11 ms | 3.5 to 5.7 ms, 6 to 10 ms | 3.3 to 5.2 ms, 6 to 9 ms | 2.3 to 4.2 ms, 6 to 10 ms |
+
+Every pan and pinch holds the budget there under every way, `live` included: the simulator does not show the late
+frames the phone gives a pinch of the whole roadmap, so it cannot choose among them. What it does show: under `held`
+the canvas draws 9 times in a pinch's 180 frames and the main actor's work in a frame falls by three fifths, and in
+one session of the two a redraw at a stop cost a late frame, three to five in a pinch; `coarse` and `layered` move
+the work by less than one run differs from the next; at zoom 0.011, where some 280 steps are in view, `held` and
+`coarse` draw every frame as `live` does; and one pinch under `coarse` lost 13 frames to a single stall of a quarter
+of a second, as a frame or two stall now and then under any way.
+
+In `graph_bench.sh` each measure prints one `bench` line beside its budget with the share of the budget it used, and a
+measure over its budget fails the run. The budgets are §5's own: a second for the first frame and for each part of it, a frame at 60 a
 second for the room's part of a frame and for the median of the main actor's work in a gesture's frames, and no more
 than a tenth of a gesture's frames later than a frame and a half. Now and then a frame or two of a gesture stall, at
 the closest zoom too, where the canvas draws a step or two; their cause is not found, and the nineteenth of twenty is
 printed and not judged. The budgets are held on the Mac that runs the simulator, which is faster than any iPhone
-the app supports: a run under budget does not say a phone holds it, the share says how wide the margin is, and no phone
-has measured it. A display link sees the main actor's frames, not what the screen composited after them. Both classes
+the app supports: a run under budget does not say a phone holds it, and the share says how wide the margin is. A
+display link sees the main actor's frames, not what the screen composited after them. Both classes
 run only under `WM_GRAPH_BENCH=1`, which the script sets, so the unit scheme and the UI shards skip them.
+
+## The Board's benchmark
+
+`Tools/board_bench.sh` measures the Board against the same budget ([Roadmap on iOS](../../../docs/foundation/roadmap-ios.md)
+§5: from the tap that opens a roadmap of 5,000 steps to the Board's first frame under a second, and 60 frames a second)
+inside an iOS simulator, on the same kind of Release-configuration build:
+
+```sh
+bash apps/ios/App/Tools/board_bench.sh    # SIM=<udid> uses a booted simulator, DERIVED_DATA=<path> a build folder
+```
+
+`Tests/Roadmap/Board/BoardBenchmarks.swift`, hosted in the app, plants the 5,000-step handbook through the domain and
+times the room's read of the open roadmap, which the model takes at every change of the phone's copy (the account's
+read, the domain's Board and legend, every step's row, the groups and what follows each step), against the first frame's
+second; and the Board read again under each query a person asks of it (*Newest First*, one kind shown, Find's first key,
+a word, a branch), against a frame at 60 a second, since Find reads it at every key. It times *Recolor* and *Delete N
+Steps* too, each one act of a hundred parts and of a thousand on a phone never signed in, against the two seconds past
+which the App Hang report names the app frozen, since the room writes on the main actor. The benchmark has not run
+them. On the stepped engine's store in Debug, each part of such an act costs about 250 ms on a roadmap of 250 steps and
+2 to 3 s on one of 5,000, most of it the engine decoding a planted step's whole outbox entry at each read. So both are
+expected over budget until the engine stops doing that (the dogfood tree's
+`m1-read-a-planted-step-without-parsing-its-whole-entry`).
+`UITests/RoadmapBoardBenchmarks.swift` launches `-board roadmap-handbook`, switches to the Graph and back to the Board
+three times, and flings the list eight times down through Up next and Locked and eight times back. The app measures
+itself there (`BoardFrames`, written to the launch's `-board-measures` file): the time from the switch's tap to the
+Board's first frame, and for each scroll, from the finger's first move to the list at rest, the gaps between the frames
+a display link on the main actor sees and how long the main actor worked in each, judged as a Graph gesture's are. On an
+iPhone 17 simulator on an M3 Pro, one run: the room's read of the open roadmap takes 14 ms at the median of five, 1% of
+the first frame's second; the Board read again under a query takes 2.3 ms (a branch) to 5.8 ms (*Newest First*), a
+seventh to a third of a frame; the switch to the Board's first frame takes 96 to 112 ms, a tenth of its second; and
+sixteen flings through the list are given 2,433 frames, one of them later than a frame and a half, with the main actor's
+work in a frame at 1.8 ms at the median, 7.5 ms at the nineteenth of twenty and 18 ms at most. The same cautions hold as
+for the Graph's: the Mac is faster than any iPhone the app supports, so the share is the margin a phone has to spend,
+and no phone has run the Board's benchmark. Both classes run only under `WM_BOARD_BENCH=1`, which the script sets, so
+the unit scheme and the UI shards skip them.
 
 ## Design captures
 
@@ -849,6 +1026,10 @@ python3 Tools/export_design_captures.py --result "$RESULT" --output "$CAPTURES"
 ```
 
 Repeat `-only-testing:` for more tests, or name `WindmillUITests/RoutinesCaptures` for an area.
+`RoadmapCaptures/testFiveThousandSteps` (02.14) needs a Release-configuration build that compiles the room in, as
+`Tools/board_bench.sh` builds it (`-configuration Release ENABLE_TESTABILITY=YES WM_ROADMAP_ROOM_ENABLED=YES
+'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) DEBUG'`): in a Debug build the app plants the 5,000-step handbook as
+it launches and answers no query for longer than XCTest waits for one, so the capture's first query fails.
 `TEST_RUNNER_WM_CAPTURE_ARGUMENTS` adds launch arguments to every capture the app launches itself, such as
 `-AppleLanguages (ar) -AppleLocale ar_SA` to capture the app under another system language. The exporter writes
 one PNG per capture named by the capture, `$CAPTURES/02L.1-routines-dark.png`, replacing that capture's PNG from an

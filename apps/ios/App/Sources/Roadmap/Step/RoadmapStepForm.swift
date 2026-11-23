@@ -96,6 +96,7 @@ struct RoadmapStepForm: View {
             addingLink = false
           }
         }
+        .sheet(isPresented: Binding(get: { roadmap.kindsDoor == .form }, set: { if !$0 { roadmap.closeKinds() } })) { RoadmapKinds(roadmap: roadmap) }
     }.tint(RoadmapPalette.accent).presentationDetents([.large]).presentationDragIndicator(.visible)
       .interactiveDismissDisabled(draft.isChanged)
       .onChange(of: name) { _, typed in
@@ -136,30 +137,37 @@ struct RoadmapStepForm: View {
 }
 
 // Kind (Roadmap · iOS 05.2), pushed inside the form: the six kinds, the chosen one checked. A tap chooses and returns,
-// as a single-choice picker's list does.
+// as a single-choice picker's list does. Edit Kinds raises the Kinds sheet over the form.
 struct StepKinds: View {
   let draft: StepDraft
   @Environment(\.dismiss) private var dismiss
   @ScaledMetric(relativeTo: .body) private var disc = 22.0
 
   var body: some View {
-    List(draft.kinds) { kind in
-      Button {
-        draft.kind = kind.hue
-        dismiss()
-      } label: {
-        HStack(spacing: 12) {
-          Circle().fill(RoadmapPalette.kind(kind.hue)).frame(width: disc, height: disc).accessibilityHidden(true)
-          VStack(alignment: .leading, spacing: 2) {
-            Text(kind.name).foregroundStyle(RoadmapPalette.ink)
-            if !kind.description.isEmpty { Text(kind.description).font(.footnote).foregroundStyle(RoadmapPalette.inkDim) }
-          }.frame(maxWidth: .infinity, alignment: .leading)
-          if kind.hue == draft.kind { Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(RoadmapPalette.accent).accessibilityHidden(true) }
-        }.contentShape(Rectangle())
-      }.buttonStyle(.plain).listRowBackground(RoadmapPalette.card)
-        .listRowInsets(EdgeInsets(top: 11, leading: RoomSpace.inset, bottom: 11, trailing: RoomSpace.inset))
-        .accessibilityElement(children: .combine).accessibilityAddTraits(kind.hue == draft.kind ? .isSelected : [])
-        .accessibilityIdentifier("roadmap-kind")
+    List {
+      Section {
+        ForEach(draft.kinds) { kind in
+          Button {
+            draft.kind = kind.hue
+            dismiss()
+          } label: {
+            HStack(spacing: 12) {
+              Circle().fill(RoadmapPalette.kind(kind.hue)).frame(width: disc, height: disc).accessibilityHidden(true)
+              VStack(alignment: .leading, spacing: 2) {
+                Text(kind.name).foregroundStyle(RoadmapPalette.ink)
+                if !kind.description.isEmpty { Text(kind.description).font(.footnote).foregroundStyle(RoadmapPalette.inkDim) }
+              }.frame(maxWidth: .infinity, alignment: .leading)
+              if kind.hue == draft.kind { Image(systemName: "checkmark").fontWeight(.semibold).foregroundStyle(RoadmapPalette.accent).accessibilityHidden(true) }
+            }.contentShape(Rectangle())
+          }.buttonStyle(.plain).listRowBackground(RoadmapPalette.card)
+            .listRowInsets(EdgeInsets(top: 11, leading: RoomSpace.inset, bottom: 11, trailing: RoomSpace.inset))
+            .accessibilityElement(children: .combine).accessibilityAddTraits(kind.hue == draft.kind ? .isSelected : [])
+            .accessibilityIdentifier("roadmap-kind")
+        }
+      }
+      Section {
+        Button("Edit Kinds") { draft.room.openKinds(from: .form) }.foregroundStyle(RoadmapPalette.accent).accessibilityIdentifier("roadmap-edit-kinds")
+      }.listRowBackground(RoadmapPalette.card)
     }.listStyle(.insetGrouped).scrollContentBackground(.hidden).contentMargins(.top, RoomSpace.related, for: .scrollContent)
       .background { RoadmapPalette.canvas.ignoresSafeArea() }
       .navigationTitle("Kind").navigationBarTitleDisplayMode(.inline).roomBar(.roadmap)

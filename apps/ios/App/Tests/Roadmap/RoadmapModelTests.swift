@@ -112,6 +112,7 @@ import SyncTesting
     switch model.question {
     case nil: return "nothing"
     case .step(let row, let door, let followers): return "step \(row.step.label) by \(door.rawValue), \(followers) follows"
+    case .steps(let rows, let followers): return "steps \(rows.map(\.step.label).joined(separator: ", ")), \(followers) follow"
     case .roadmap(let roadmap, let place, let openers):
       let also = openers.map { ", with \($0.steps) steps in \($0.roadmaps.map { $0 ?? "" }.joined(separator: " and "))" } ?? ""
       return "roadmap \(roadmap.title ?? "") from \(place.rawValue)\(also)"

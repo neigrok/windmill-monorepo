@@ -2,9 +2,9 @@
 
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
-v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json`,
-`coach-onboarding-actions.json`, `coach-conversation-actions.json` and `../rules/collation.json` run in Swift and Kotlin and do
-not apply on the web (their rows say why); every other file runs in all three.
+v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json`
+and `coach-onboarding-actions.json` run in Swift and Kotlin and do not apply on the web (their rows say
+why); every other file runs in all three.
 `workout-plan-actions.json` and `workout-proposals-actions.json` hold the open workout's editable plan and its
 workout proposals. R118 metadata reads remain optional
 for legacy records. The pinned rule book covers ten entities, `WorkoutProposal` the newest; `RoutineCreation`
@@ -26,7 +26,7 @@ executor (`apps/ios/Domain/Sources/GymDomain/Coach/`, `CoachAbilitiesTests`) and
 (`apps/android/gym/domain/src/main/kotlin/works/windmill/gym/domain/coach/`, `CorpusTests`): each case runs through `RunAbility` over its
 given records as the case's seat at its moment, and the result's JCS bytes, its SHA-256 and the records the gesture writes
 are compared with the server's golden. The Coach `thread` and `message` entities keep a rule book of their own
-(`CoachRules.book`, in Swift and Kotlin) until every gym implementation carries them, so `rules.json` stays the book the three share.
+(`CoachRules.book` in Swift and Kotlin, `CoachBook.book` on the web), so `rules.json` stays the book the three share.
 
 ## Files
 
@@ -38,7 +38,7 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `bodyweight-actions.json` | Whole-day weigh-in saves, corrections and held deletes |
 | `routines-actions.json` | Guarded editor saves, atomic routine/catalogue plans, reorder, delete, ordered targets, frozen-plan decoding |
 | `coach-onboarding-actions.json` | One batch of preassigned routines and required custom movements with a transactional per-result replay receipt; Kotlin and Swift claim the cases, while web carries no anonymous import door |
-| `coach-conversation-actions.json` | A phone turn's records: `OpenTurn`, `EndTurn` with the receipt its calls derive, a call's record as the calls bound fills, and a read's week. Kotlin and Swift claim the cases; a web turn writes its conversation on the server, so the web holds no `thread` or `message` entity |
+| `coach-conversation-actions.json` | A phone turn's records: `OpenTurn`, `EndTurn` with the receipt its calls derive, a call's record as the calls bound fills, and a read's week. Kotlin, Swift and the web (`web/src/products/gym/domain/coach/`) claim the cases |
 | `catalogue-actions.json` | Create (a dumbbell movement's count included), rename, seed overrides, aliases, byte-sensitive search, decoding failures |
 | `preferences-actions.json` | Draft preference saves and rest defaults |
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
@@ -49,7 +49,7 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `training-reads.json` | Prefill and the loads it offers ahead, the rest target, last time, readouts, the canonical estimate, complete progress projection, movement records, the log's new bests, chart windows and shared history documents |
 | `units.json` | Units, signed weight ladder, formatting, rounding and rep steps |
 | `../rules/bodyweight.json` | Bodyweight stance, readings, chart windows and gaps |
-| `../rules/collation.json` | The kit's `Collation`, which orders `list_exercises`: `{read: "collation", names}` → `{result: {order}}`, the names sorted stably. Accents composed and decomposed, the marks of combining class 0 (U+FE0F, U+0E31, U+0941), case, punctuation, digits, emoji, ties at each level, and every edge of the combining table the toolchains share. The Swift rule writes the expectations; Swift and Kotlin claim them, and the web runs no replica executor |
+| `../rules/collation.json` | The kit's `Collation`, which orders `list_exercises`: `{read: "collation", names}` → `{result: {order}}`, the names sorted stably. Accents composed and decomposed, the marks of combining class 0 (U+FE0F, U+0E31, U+0941), case, punctuation, digits, emoji, ties at each level, and every edge of the combining table the toolchains share. The Swift rule writes the expectations; Swift, Kotlin and the web claim them |
 | `../../gym-ladder.json` | The existing cross-surface ladder, also run directly by both domains |
 
 Entity vectors may name `nonFinite: {path, value}` with `NaN`, `Infinity` or `-Infinity` to exercise the declared field check on a typed draft value. The harness exercises that check before completing whole-entity validation, keeping non-finite numbers outside wire JSON and production decoders.

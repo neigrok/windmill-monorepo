@@ -10,7 +10,7 @@ import { translate } from '../../../src/platform/domain-kit/translation.js';
 import { Valid } from '../../../src/platform/domain-kit/validation.js';
 import { CountSpec, Fault, Path, Violation } from '../../../src/platform/domain-kit/values.js';
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
-import { applySpec, momentOf, viewRecords } from './vectors.js';
+import { VECTOR_REPLICA, applySpec, momentOf, viewRecords } from './vectors.js';
 
 /** @typedef {import('../../../src/platform/domain-kit/values.js').Json} Json */
 /** @typedef {import('./vectors.js').Vector} Vector */
@@ -62,7 +62,7 @@ export class ProductCorpus {
     const records = this.records(vector, scope);
     const stored = viewRecords(records.stored ?? records.drawn);
     return Views.ofRecords(this.book.registry, { drawn: viewRecords(records.drawn), stored, confirmed: stored, spent: records.spent ?? [],
-      devices: device, firstPullComplete, mintId });
+      devices: device, firstPullComplete, replica: VECTOR_REPLICA, mintId });
   }
 
   /** @param {Vector} vector */
