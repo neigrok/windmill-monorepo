@@ -279,10 +279,12 @@ extension Store {
     }
   }
 
-  // A hello's offset sample (§10.4).
+  // A hello's offset sample (§10.4), which reads the replica's meta alone.
   public func sample(serverTime: Int64, timing: Timing) throws -> Written<Void> {
-    try onActive(.offset) { replica in
+    try write(.offset) { tx in
+      var replica = try loaded(try tx.activeReplica(), in: tx, entries: EntrySelection(), journal: .unread)
       replica.update { $0.sample(serverTime: serverTime, send: timing.send, recv: timing.recv) }
+      return Planned((), replica.batch)
     }
   }
 
