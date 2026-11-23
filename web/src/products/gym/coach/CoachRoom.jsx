@@ -39,6 +39,11 @@ export function CoachRoom({ log, threadId = null }) {
   const view = useDomainRead((read) => (threadId ? conversationView(read, threadId, running?.coach ?? null) : null), [threadId, running]);
   const off = snapshot?.refusal?.state === 'off';
   const workout = log.phase !== 'ready' || Boolean(log.session);
+  // A turn taken back with the conversation it opened leaves that conversation's address for the fresh chat.
+  const withdrawn = snapshot?.withdrawn;
+  useEffect(() => {
+    if (withdrawn && withdrawn.thread === null && withdrawn.from.record === threadId) window.location.hash = COACH_HREF;
+  }, [withdrawn, threadId]);
 
   return (
     <div className={`gym-coach-room${off ? ' is-off' : ''}`}>

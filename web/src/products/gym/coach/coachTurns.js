@@ -204,7 +204,7 @@ export class CoachTurns {
       if (!recover) this.tells.asked(['allowance', 'capacity'].includes(refusal.state) ? 'capped' : refusal.state === 'offline' ? 'offline'
         : refusal.state === 'off' ? 'absent' : 'refused', durationMs);
       this.setDraft(live.question);
-      this.publish({ refusal, withdrawn: { question: live.question, picture: live.picture, thread: live.lease.threadStands ? live.lease.turn.thread : null } });
+      this.publish({ refusal, withdrawn: { question: live.question, picture: live.picture, thread: live.lease.threadStands ? live.lease.turn.thread : null, from: live.lease.turn.thread } });
       return;
     }
     if (end.state === 'failed' && end.code === 'host-fault') {
@@ -226,7 +226,7 @@ export class CoachTurns {
       try {
         await this.host.withdraw(live.lease);
         this.setDraft(live.question);
-        this.publish({ withdrawn: { question: live.question, picture: live.picture, thread: live.lease.threadStands ? live.lease.turn.thread : null } });
+        this.publish({ withdrawn: { question: live.question, picture: live.picture, thread: live.lease.threadStands ? live.lease.turn.thread : null, from: live.lease.turn.thread } });
       } catch (withdrawing) {
         if (!(withdrawing instanceof HostUnavailable)) this.tells.fault('storage', withdrawing);
       }
