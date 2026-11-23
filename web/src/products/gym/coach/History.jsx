@@ -1,6 +1,5 @@
 import React from 'react';
 import { ChevronLeft, ChevronRight, MessageSquarePlus, Trash2 } from 'lucide-react';
-import { Menu } from '../../../design-system/index.js';
 import { Id } from '../../../platform/domain-kit/entities.js';
 import { CoachThread } from '../domain/coach/conversation.js';
 import { t } from '../i18n/index.js';
@@ -43,7 +42,7 @@ function lineOf(line) {
 }
 
 // History (08W.2): one list with the phones, newest first, the open conversation marked. A row's delete is a hover or
-// focus button on a wide screen and the row's menu on a narrow one.
+// focus button on a wide screen; on a narrow one the list is links alone, and a conversation's delete is in its More.
 export function HistoryList({ rows, current = null, onDelete, ready, page = false }) {
   return <section className={`gym-coach-history${page ? ' is-page' : ''}`} aria-labelledby="gym-coach-history-title">
     <header className="gym-coach-history-head">
@@ -63,9 +62,7 @@ export function HistoryList({ rows, current = null, onDelete, ready, page = fals
               {line && <span className="gym-coach-history-line">{line}</span>}
               {page && <ChevronRight className="gym-coach-history-go" size={18} aria-hidden="true" />}
             </a>
-            {page
-              ? <span className="gym-coach-history-menu"><Menu label={t('gym.coach.moreOptions')} items={[{ label: t('gym.coach.history.delete'), run: () => onDelete(row.id) }]} /></span>
-              : <button type="button" className="gym-coach-history-delete" aria-label={t('gym.coach.history.delete')} onClick={() => onDelete(row.id)}><Trash2 size={16} aria-hidden="true" /></button>}
+            {!page && <button type="button" className="gym-coach-history-delete" aria-label={t('gym.coach.history.delete')} onClick={() => onDelete(row.id)}><Trash2 size={18} aria-hidden="true" /></button>}
           </li>;
         })}
       </ul>
@@ -74,7 +71,7 @@ export function HistoryList({ rows, current = null, onDelete, ready, page = fals
 }
 
 // History as its own page on a narrow screen (08W.2 · 390).
-export function HistoryPage({ log, turns }) {
+export function HistoryPage({ log }) {
   const { rows, ready } = useHistoryRows(log);
-  return <HistoryList rows={rows} onDelete={(id) => deleteConversation(log, turns, id, false)} ready={ready} page />;
+  return <HistoryList rows={rows} ready={ready} page />;
 }

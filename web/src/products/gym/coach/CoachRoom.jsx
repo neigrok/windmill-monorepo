@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ArrowUpRight, BookOpen, ChevronRight, CircleCheck, History as HistoryIcon, ImageOff, ImagePlus, Plus, Smartphone, Square } from 'lucide-react';
+import { ArrowUpRight, BookOpen, ChevronRight, CircleCheck, History as HistoryIcon, ImageOff, ImagePlus, Plus, Smartphone, Square, WifiOff } from 'lucide-react';
 import { Dialog, Menu } from '../../../design-system/index.js';
 import { Id } from '../../../platform/domain-kit/entities.js';
 import { useSyncEngine } from '../../../platform/sync/react.js';
@@ -57,6 +57,7 @@ export function CoachRoom({ log, threadId = null }) {
               { label: t('gym.coach.connectedLog'), run: () => { window.location.href = CONNECT_HREF; } },
               { label: t('gym.coach.account'), run: () => { window.location.hash = '#/settings'; } },
               { label: t('gym.coach.newChat'), run: () => { window.location.hash = COACH_HREF; } },
+              ...(threadId ? [{ label: t('gym.coach.history.delete'), run: () => deleteConversation(log, turns, threadId, true) }] : []),
             ]} />
           </nav>}
         </header>
@@ -78,12 +79,14 @@ export function CoachRoom({ log, threadId = null }) {
 
 function Conversation({ turns, snapshot, view, threadId, greet, movements }) {
   const reading = useRef(null);
+  const resend = useRef(null);
   const messages = view.data?.messages ?? [];
   const last = messages.at(-1);
+  // The newest words stay in sight: the room scrolls with the gym's page, so the page's scroller follows them.
   useEffect(() => {
-    const element = reading.current;
-    if (element) element.scrollTop = element.scrollHeight;
-  }, [messages.length, last?.text, snapshot?.live?.text]);
+    const scroller = reading.current?.closest('.gym-scroll');
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+  }, [messages.length, last?.text, snapshot?.live?.text, snapshot?.refusal, snapshot?.fault]);
   return <>
     <div className="gym-coach-reading" ref={reading}>
       {greet && <Greeting turns={turns} />}
@@ -101,8 +104,8 @@ function Conversation({ turns, snapshot, view, threadId, greet, movements }) {
       </ol>
     </div>
     <div className="gym-coach-bottom">
-      <Notice turns={turns} snapshot={snapshot} />
-      <Composer turns={turns} snapshot={snapshot} threadId={threadId} />
+      <Notice snapshot={snapshot} onRetry={() => resend.current?.()} />
+      <Composer turns={turns} snapshot={snapshot} threadId={threadId} resend={resend} />
     </div>
   </>;
 }
@@ -194,6 +197,7 @@ function CoachAnswer({ message, live, stopping, catalog, movements }) {
 export function receiptWords(read) {
   if (read.totalsOnly) return t('gym.coach.receipt.history');
   if (!read.sessions && !read.sets && !read.weeks) return t('gym.coach.receipt.nothing');
+  if (read.thisWorkout) return t('gym.coach.receipt.thisWorkout', { weeks: read.weeks });
   return t('gym.coach.receipt.read', { sessions: read.sessions, weeks: read.weeks });
 }
 
@@ -222,7 +226,7 @@ function WhatCoachRead({ message, catalog, onClose }) {
 }
 
 // What stands between the person and a question (Coach engine §7), said once above the composer.
-function Notice({ turns, snapshot }) {
+function Notice({ snapshot, onRetry }) {
   if (!snapshot) return null;
   const { refusal, fault } = snapshot;
   const day = (ms) => shortDayLabel(ms);
@@ -232,7 +236,7 @@ function Notice({ turns, snapshot }) {
     return <div className="gym-coach-notice" role="status"><p>{words}</p></div>;
   }
   if (!refusal) return null;
-  const again = <button type="button" className="gym-coach-notice-act" onClick={() => turns.forget('refusal')}>{t('gym.coach.access.tryAgain')}</button>;
+  const again = <button type="button" className="gym-coach-notice-act" onClick={onRetry}>{t('gym.coach.access.tryAgain')}</button>;
   switch (refusal.state) {
     case 'busy': return <div className="gym-coach-notice" role="status"><p>{t('gym.coach.access.busy')}</p></div>;
     case 'too-long': return <div className="gym-coach-notice" role="status"><p>{t('gym.coach.tooLong')}</p></div>;
@@ -242,7 +246,7 @@ function Notice({ turns, snapshot }) {
       <p>{refusal.period === 'day' ? t('gym.coach.access.day') : refusal.resetsAt ? t('gym.coach.access.monthBack', { day: day(refusal.resetsAt) }) : t('gym.coach.access.month')}</p>
       {refusal.period === 'day' && refusal.resetsAt && <p className="gym-coach-notice-detail">{t('gym.coach.access.useAgain', { day: day(refusal.resetsAt), time: timeLabel(refusal.resetsAt) })}</p>}
       <a className="gym-coach-notice-act" href={CONNECT_HREF}>{t('gym.coach.access.ownAgent')}</a></div>;
-    case 'offline': return <div className="gym-coach-notice" role="status"><p>{t('gym.coach.access.offline')}</p>{again}</div>;
+    case 'offline': return <div className="gym-coach-notice" role="status"><WifiOff size={20} aria-hidden="true" /><p>{t('gym.coach.access.offline')}</p>{again}</div>;
     case 'update': return <div className="gym-coach-notice" role="status"><p>{t('gym.coach.access.update')}</p>
       <button type="button" className="gym-coach-notice-act" onClick={() => window.location.reload()}>{t('gym.coach.access.updateVerb')}</button></div>;
     case 'sign-in': return <div className="gym-coach-notice" role="status"><p>{t('gym.coach.access.signIn')}</p>
@@ -251,7 +255,7 @@ function Notice({ turns, snapshot }) {
   }
 }
 
-function Composer({ turns, snapshot, threadId }) {
+function Composer({ turns, snapshot, threadId, resend }) {
   const picker = useRef(null);
   const [picture, setPicture] = useState(null);
   const [preparing, setPreparing] = useState(false);
@@ -268,10 +272,12 @@ function Composer({ turns, snapshot, threadId }) {
     if (!turn) { setPicture(sent); return; }
     if (!threadId) window.location.hash = threadHref(turn.thread.record);
   };
+  resend.current = send;
+
   return <>
     {picture && <div className="gym-coach-picture-draft">
       <img className="gym-coach-picture" src={pictureSource(picture.original)} alt={t('gym.coach.photo.readyAlt')} />
-      <button type="button" className="gym-coach-notice-act" onClick={() => setPicture(null)}>{t('gym.coach.photo.remove')}</button>
+      <button type="button" className="gym-coach-picture-remove" onClick={() => setPicture(null)}>{t('gym.coach.photo.remove')}</button>
     </div>}
     <div className={`gym-coach-compose${closed ? ' is-closed' : ''}`}>
       <input ref={picker} className="gym-visually-hidden" type="file" accept="image/*" tabIndex={-1} aria-label={t('gym.coach.photo.choose')}

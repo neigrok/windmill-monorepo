@@ -1,83 +1,96 @@
-import React, { useEffect, useState } from 'react';
-import { AlertCircle, ArrowLeftRight, CircleCheck, CircleSlash, List, Minus, Pencil, Plus } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertCircle, ArrowLeftRight, ChevronRight, CircleCheck, CircleSlash, List, Minus, Pencil, Plus } from 'lucide-react';
+import { Id } from '../../../platform/domain-kit/entities.js';
+import { Catalogue } from '../domain/catalogue.js';
+import { Proposal, ProposalState } from '../domain/proposals.js';
+import { ProposalDiff } from '../domain/proposalDiff.js';
+import { Routine } from '../domain/routines.js';
+import { GymUnits } from '../domain/units.js';
 import { failureReason } from '../errors.js';
 import { useGymApi } from '../gymRuntime.js';
 import { t } from '../i18n/index.js';
-import { nameOfMovement, recordHref } from '../log.js';
-import { diffRows } from '../proposals.js';
-import { useGymRead } from '../useGymRead.js';
+import { nameOfMovement } from '../log.js';
+import { weightUnit } from '../units.js';
+import { useDomainRead } from '../useDomainRead.js';
 
 const SHOWN = 2;
-const KIND_ICONS = { renamed: Pencil, reordered: ArrowLeftRight, retargeted: Pencil, added: Plus, removed: Minus };
+const KIND_ICONS = { renamed: Pencil, moved: ArrowLeftRight, changed: Pencil, removed: Minus, added: Plus };
 
-// One changed block of the card: what changed, with a line per field, old struck through and the new value beside it.
-function Block({ row, catalog }) {
-  const Icon = KIND_ICONS[row.kind] ?? Pencil;
-  const title = row.kind === 'renamed' ? t('gym.proposals.diffName') : row.kind === 'reordered' ? t('gym.proposals.diffOrder')
-    : nameOfMovement(catalog, row.exerciseId);
-  const lines = row.kind === 'renamed' ? [{ field: '', from: row.from, to: row.to }]
-    : row.kind === 'retargeted' ? row.moves : [];
-  const note = row.kind === 'reordered' ? t('gym.proposals.reorderedNote') : row.kind === 'added' ? row.targets
-    : row.kind === 'removed' ? row.kept ?? t('gym.proposals.removed') : null;
-  return <li className={`gym-coach-proposal-block is-${row.kind}`}>
-    <p className="gym-coach-proposal-movement"><Icon size={18} aria-hidden="true" />
-      {row.exerciseId ? <a href={recordHref(row.exerciseId)}>{title}</a> : <span>{title}</span>}</p>
-    {note && <p className="gym-coach-proposal-note">{note}</p>}
-    {lines.map((line, index) => <p key={index} className="gym-coach-proposal-line">
-      <span>{line.field}</span>
-      <span><s>{line.from}</s><span aria-hidden="true"> › </span><strong>{line.to}</strong></span>
-    </p>)}
-  </li>;
+// A proposal as its card reads it (08.2P in web form): the shared `ProposalDiff`'s blocks against the routine, its name,
+// and whether Apply would still be taken.
+function proposalCard(read, record) {
+  const proposal = read.repository(Proposal).find(new Id(record, Proposal), 'drawn');
+  if (proposal === null) return null;
+  const routine = read.repository(Routine).find(proposal.routineId, 'drawn');
+  const catalogue = new Catalogue(read);
+  const each = proposal.changes.map((change) => change.exerciseId)
+    .filter((id) => { const movement = catalogue.find(id); return movement?.equipment === 'dumbbell' && movement.loadCount === 2; });
+  return { diff: new ProposalDiff(proposal, routine, GymUnits.reading(weightUnit()), each), state: proposal.state,
+    name: proposal.baseName ?? routine?.name ?? proposal.proposedName ?? '', outOfDate: ProposalState.of(read, proposal.id).outOfDate === true };
+}
+
+// One line of a block: its label, the old value struck through and the new one, or the one side a new or gone line has.
+function FieldLine({ field }) {
+  return <p className="gym-coach-proposal-line">
+    <span>{field.label}</span>
+    <span>
+      {field.before !== null && <s>{field.before}</s>}
+      {field.before !== null && field.after !== null && <ChevronRight size={14} aria-hidden="true" />}
+      {field.after !== null && <strong>{field.after}</strong>}
+    </span>
+  </p>;
 }
 
 // A routine proposal under the answer whose call made it (08W.25–08W.28): pending with Reject and Apply, applied,
 // rejected, or out of date. Apply and Reject are the lifter's gestures and the server's commands; no ability decides one.
 export function CoachProposalCard({ id, movements }) {
   const api = useGymApi();
-  const view = useGymRead(() => api.proposal(id), [id], { sync: true, ready: Boolean(api?.ready) });
-  const [settled, setSettled] = useState(null);
+  const card = useDomainRead((read) => proposalCard(read, id), [id]).data;
   const [busy, setBusy] = useState(null);
   const [failure, setFailure] = useState('');
   const [open, setOpen] = useState(false);
-  useEffect(() => setSettled(null), [view.data]);
-  const proposal = settled ?? (view.phase === 'ready' ? view.data : null);
-  if (!proposal) return null;
-  const name = proposal.baseName ?? proposal.name ?? '';
-  const rows = diffRows(proposal).filter((row) => row.kind !== 'kept');
-  const count = proposal.changeCount ?? rows.length;
-  if (proposal.state === 'dismissed') {
+  if (!card) return null;
+  const { diff, name, state } = card;
+  if (state === 'dismissed') {
     return <p className="gym-coach-proposal-rejected"><CircleSlash size={18} aria-hidden="true" />{t('gym.coach.proposal.rejected', { name })}</p>;
   }
-  const pending = proposal.state === 'pending' && proposal.outOfDate !== true;
-  const outOfDate = proposal.state !== 'applied' && !pending;
+  const applied = state === 'applied';
+  const pending = state === 'pending' && !card.outOfDate;
+  const outOfDate = !applied && !pending;
   const decide = async (verb) => {
     if (busy) return;
     setBusy(verb);
     setFailure('');
     try {
-      const answer = verb === 'apply' ? await api.applyProposal(id) : await api.dismissProposal(id);
-      setSettled(answer?.proposal ?? proposal);
+      if (verb === 'apply') await api.applyProposal(id);
+      else await api.dismissProposal(id);
     } catch (error) {
-      if (['proposal-superseded', 'proposal-settled', 'unknown-record', 'record-dead'].includes(error.code)) view.refresh();
       setFailure(error.sentence || t('gym.proposals.notDecided', { verb, reason: failureReason(error) }));
     } finally {
       setBusy(null);
     }
   };
-  const shown = open ? rows : rows.slice(0, SHOWN);
+  const blocks = open ? diff.blocks : diff.blocks.slice(0, SHOWN);
+  const Symbol = applied ? CircleCheck : outOfDate ? AlertCircle : List;
   return <section className={`gym-coach-proposal-card${outOfDate ? ' is-out-of-date' : ''}`} aria-label={name}>
     <header>
-      {proposal.state === 'applied' ? <CircleCheck size={22} aria-hidden="true" className="gym-coach-made-check" />
-        : outOfDate ? <AlertCircle size={22} aria-hidden="true" /> : <List size={22} aria-hidden="true" className="gym-coach-made-check" />}
+      <Symbol size={22} aria-hidden="true" className={outOfDate ? undefined : 'gym-coach-made-check'} />
       <span>
-        <strong>{proposal.state === 'applied' ? t('gym.coach.proposal.applied', { name }) : outOfDate ? t('gym.coach.proposal.outOfDate', { name }) : name}</strong>
+        <strong>{applied ? t('gym.coach.proposal.applied', { name }) : outOfDate ? t('gym.coach.proposal.outOfDate', { name }) : name}</strong>
         {outOfDate ? t('gym.coach.proposal.outOfDateLine', { name })
-          : proposal.state === 'applied' ? t('gym.coach.proposal.changes', { count }) : t('gym.coach.proposal.suggested', { count })}
+          : applied ? t('gym.coach.proposal.changes', { count: diff.blocks.length }) : t('gym.coach.proposal.suggested', { count: diff.blocks.length })}
       </span>
     </header>
-    <ul className="gym-coach-proposal-blocks">{shown.map((row, index) => <Block key={index} row={row} catalog={movements} />)}</ul>
-    {!open && rows.length > SHOWN && <button type="button" className="gym-coach-proposal-more" onClick={() => setOpen(true)}>
-      {t('gym.coach.proposal.more', { count: rows.length - SHOWN })}<span aria-hidden="true"> ›</span></button>}
+    <ul className="gym-coach-proposal-blocks">{blocks.map((block, index) => {
+      const Icon = KIND_ICONS[block.kind];
+      return <li key={index} className={`gym-coach-proposal-block is-${block.kind}`}>
+        <p className="gym-coach-proposal-movement"><Icon size={18} aria-hidden="true" />
+          <span>{block.exerciseId === null ? name : nameOfMovement(movements, block.exerciseId.record)}</span></p>
+        {block.fields.map((field, line) => <FieldLine key={line} field={field} />)}
+      </li>;
+    })}</ul>
+    {!open && diff.blocks.length > SHOWN && <button type="button" className="gym-coach-proposal-more" aria-expanded="false" onClick={() => setOpen(true)}>
+      {t('gym.coach.proposal.more', { count: diff.blocks.length - SHOWN })}<ChevronRight size={18} aria-hidden="true" /></button>}
     {failure && <p className="gym-coach-proposal-failure" role="alert">{failure}</p>}
     {pending && <div className="gym-coach-proposal-decide">
       <button type="button" className="gym-coach-proposal-reject" disabled={Boolean(busy)} onClick={() => decide('dismiss')}>{t('gym.coach.proposal.reject')}</button>

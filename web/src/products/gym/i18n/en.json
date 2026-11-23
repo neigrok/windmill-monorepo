@@ -591,7 +591,7 @@
   "gym.bodyweight.back": "The log",
   "gym.coach.access.allowance": "You have used all of your AI allowance.",
   "gym.coach.access.busy": "Coach is answering another message. Try again when it finishes.",
-  "gym.coach.access.day": "Coach’s shared free AI capacity is unavailable for today.",
+  "gym.coach.access.day": "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.",
   "gym.coach.access.month": "Coach is paused for everyone this month.",
   "gym.coach.access.monthBack": "Coach is paused for everyone this month. It comes back on {day}.",
   "gym.coach.access.off": "This Windmill does not have Coach. You can still read your log.",
@@ -653,5 +653,6 @@
   "gym.coach.routine.madeLabel": "Routines Coach created",
   "gym.coach.when": "{day} {time}",
   "gym.coach.workoutProposal.count": "{count, plural, one {# suggested change} other {# suggested changes}} · now",
-  "gym.coach.workoutProposal.title": "This workout"
+  "gym.coach.workoutProposal.title": "This workout",
+  "gym.coach.receipt.thisWorkout": "Read this workout · {weeks, plural, one {# week} other {# weeks}}"
 }

@@ -35,7 +35,7 @@ test('a phone\'s conversation reads here whole: its picture held there, the rout
   assert.deepEqual(view.messages[0].pictures, [{ id: 'picture0001', copy: null }]);
   const answer = view.messages[1];
   assert.deepEqual([answer.answering, answer.read, answer.routines, answer.proposals, answer.workoutProposals], [null,
-    { sets: 0, sessions: 1, weeks: 6, totalsOnly: false }, [{ id: 'routine001', name: 'Upper A', movements: 2 }], [], [{ id: 'workout001', changes: 1 }]]);
+    { sets: 0, sessions: 1, weeks: 6, totalsOnly: false, thisWorkout: false }, [{ id: 'routine001', name: 'Upper A', movements: 2 }], [], [{ id: 'workout001', changes: 1 }]]);
 });
 
 test('History names what a conversation\'s last turn made, newest first, and a running turn of another device answers elsewhere', () => {
@@ -45,4 +45,11 @@ test('History names what a conversation\'s last turn made, newest first, and a r
     at: 1_799_999_000_000, replica, text: '', state: 'running', truncated: false, calls: [] }) : each));
   assert.equal(conversationView(reader(running), 'thread0001', null).messages[1].answering, 'elsewhere');
   assert.equal(historyRows(reader(running))[0].line, null);
+});
+
+test('an answer whose one workout read is the workout open at its opening says it read this workout', () => {
+  const opened = records.map((each) => (each.id === 'coach00001' ? row('message', 'coach00001', { threadId: 'thread0001', role: 'coach',
+    at: 1_799_999_000_000, replica, text: 'Bench stays as logged.', state: 'completed', truncated: false,
+    receipt: { read: { sets: 4, sessions: 1, weeks: 6 }, results: [] }, calls: [{ ...call('get_session'), callId: 'context-get_session' }] }) : each));
+  assert.equal(conversationView(reader(opened), 'thread0001', null).messages[1].read.thisWorkout, true);
 });

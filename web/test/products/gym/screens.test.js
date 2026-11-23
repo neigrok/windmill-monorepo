@@ -204,7 +204,7 @@ test('the landing sells no panel, no plan behind Coach, and names the cap Coach 
 
 test('History is a room in the frame, and a conversation is the Coach room keyed by account', () => {
   const app = read('GymApp.jsx');
-  assert.equal(app.includes("{screen === 'threads' && <CoachHistory key={account?.id} log={log} />}"), true);
+  assert.equal(app.includes("{screen === 'threads' && <HistoryPage key={account?.id} log={log} />}"), true);
   assert.equal(app.includes("['coach', 'thread', 'threads', 'notes'].includes(screen)"), true);
 });
 

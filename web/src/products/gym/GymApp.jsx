@@ -8,7 +8,7 @@ import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
 import { useSignInDoor, useSignInDoorHost } from '../../shell/auth/SignInDoor.jsx';
 import { Backfill } from './backfill/Backfill.jsx';
 import { BodyweightScreen } from './bodyweight/Bodyweight.jsx';
-import { CoachRoom, useCoachTurns } from './coach/CoachRoom.jsx';
+import { CoachRoom } from './coach/CoachRoom.jsx';
 import { HistoryPage } from './coach/History.jsx';
 import { FinishScreen } from './Finish.jsx';
 import { t } from './i18n/index.js';
@@ -107,12 +107,6 @@ function SignInPitch({ onSignIn }) {
   );
 }
 
-// History as its own page (08W.2), the narrow screen's door to a conversation.
-function CoachHistory({ log }) {
-  const { turns } = useCoachTurns();
-  return <HistoryPage log={log} turns={turns} />;
-}
-
 function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
   const { account } = useAuth();
   const log = useTrainingLog();
@@ -140,7 +134,7 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
           {screen === 'finish' && <FinishScreen id={finishIdOf(hash)} log={log} />}
           {screen === 'backfill' && <Backfill key={hash} target={backfillTargetOf(hash)} from={backfillFromOf(hash)} log={log} />}
           {screen === 'coach' && <CoachRoom key={account?.id} log={log} />}
-          {screen === 'threads' && <CoachHistory key={account?.id} log={log} />}
+          {screen === 'threads' && <HistoryPage key={account?.id} log={log} />}
           {screen === 'thread' && <CoachRoom key={account?.id} log={log} threadId={threadIdOf(hash)} />}
           {screen === 'notes' && <Notes log={log} />}
           {screen === 'share-log' && <LogShareScreen />}

@@ -2,6 +2,7 @@ import { Id } from '../../../platform/domain-kit/entities.js';
 import { AbilityCall, CoachMessage, CoachThread, Conversation, ReadTally } from '../domain/coach/conversation.js';
 import { CoachPictureRow, Mark } from '../domain/coach/turn.js';
 import { Proposal } from '../domain/proposals.js';
+import { ProposalDiff } from '../domain/proposalDiff.js';
 import { Routine } from '../domain/routines.js';
 import { WorkoutProposal } from '../domain/workoutProposals.js';
 import { CONTEXT_CALL_PREFIX } from './turnHost.js';
@@ -27,7 +28,10 @@ function readOf(message) {
   const receipt = message.receipt ?? AbilityCall.receipt(message.calls);
   const read = receipt?.read;
   if (!read || typeof read !== 'object') return null;
-  return { sets: read.sets, sessions: read.sessions, weeks: read.weeks, totalsOnly: receipt.truncated === true };
+  // A turn opened with a workout open reads it at its opening; when that workout is the one workout it read, the receipt
+  // names it as this workout.
+  const thisWorkout = read.sessions === 1 && message.calls.some((call) => call.isOk && call.callId === `${CONTEXT_CALL_PREFIX}get_session`);
+  return { sets: read.sets, sessions: read.sessions, weeks: read.weeks, totalsOnly: receipt.truncated === true, thisWorkout };
 }
 
 // Each call the model asked for, in order, as What Coach read draws it: its ability, its outcome and what it served.
@@ -84,7 +88,7 @@ export function historyRows(read) {
       line: making === null ? null
         : making.routines.length ? { kind: 'created', count: making.routines.length }
           : proposal ? { kind: 'proposal', routine: proposal.baseName ?? routines.find(proposal.routineId, 'drawn')?.name ?? '',
-            count: proposal.changeCount ?? proposal.changes.length }
+            count: new ProposalDiff(proposal, routines.find(proposal.routineId, 'drawn')).blocks.length }
             : making.workoutProposals.length ? { kind: 'workout', count: making.workoutProposals[0].changes }
               : answer.text ? { kind: 'words', text: answer.text.split('\n')[0] } : null,
     };
