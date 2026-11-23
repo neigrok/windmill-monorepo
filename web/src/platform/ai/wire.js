@@ -132,7 +132,11 @@ export class HttpAiTransport {
       } catch { throw new TransportFailure(signal?.aborted ? 'stopped' : globalThis.navigator?.onLine === false ? 'offline' : 'lost'); }
       if (response.status === 404) return { status: 404, body: null };
       try { return { status: response.status, body: await response.json() }; }
-      catch { throw new TransportFailure(signal?.aborted ? 'stopped' : response.status === 200 ? 'invalid-answer' : 'lost'); }
+      catch {
+        if (signal?.aborted) throw new TransportFailure('stopped');
+        if (response.status === 200) throw new TransportFailure('invalid-answer');
+        return { status: response.status, body: null };
+      }
     } finally {
       signal?.removeEventListener('abort', stop);
       this.timers.clearTimeout(timer);

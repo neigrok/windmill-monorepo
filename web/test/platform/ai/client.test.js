@@ -260,7 +260,7 @@ test('resent PUT keeps thirty seconds for paused, concurrency and provider refus
   }
 });
 
-test('pass proxy errors are quiet preparation failures and retry after uncertain dispatch', async () => {
+test('pass proxy errors are quiet, never a lost connection, and retry after uncertain dispatch', async () => {
   for (const prior of ['none', 'lost']) for (const body of ['<html>Bad gateway</html>', '{"code":"unknown"}']) {
     let now = 0; let passes = 0; let calls = 0; const reports = [];
     const transport = new HttpAiTransport({ fetch: async (url) => {
@@ -275,7 +275,7 @@ test('pass proxy errors are quiet preparation failures and retry after uncertain
     const client = new AiClient({ transport, now: () => now, wait: async (ms) => { now += ms; return true; }, telemetry: { failure: (operation) => reports.push(operation) } });
     const result = await client.text({ callId: 'AAAAAAAAAAAAAAAAAAAAAA', request: {}, label: 'other', use: 'vector.coach', version: 1, onText() {} });
     if (prior === 'lost') { assert.equal(result.event, 'ended'); assert.equal(calls, 2); assert.equal(now, 3000); }
-    else { assert.deepEqual(result, { failure: { source: 'transport', code: null, admission: 'none', allowance: null } }); assert.equal(calls, 0); }
+    else { assert.deepEqual(result, { failure: { source: 'pass', code: null, admission: 'none', allowance: null } }); assert.equal(calls, 0); }
     assert.deepEqual(reports, []);
   }
 });
@@ -305,7 +305,7 @@ test('pass refusals require their status, known code and string error with exact
   ]) {
     const reports = [];
     const client = new AiClient({ telemetry: { failure: (operation) => reports.push(operation) }, transport: { pass: async () => ({ status, body }) } });
-    assert.deepEqual(await client.credential('vector.coach', 1, 0), { failure: { source: code ? 'pass' : 'transport', code, admission: 'none', allowance: null } }, JSON.stringify({ status, body }));
+    assert.deepEqual(await client.credential('vector.coach', 1, 0), { failure: { source: 'pass', code, admission: 'none', allowance: null } }, JSON.stringify({ status, body }));
     assert.deepEqual(reports, []);
   }
 });

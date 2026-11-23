@@ -61,8 +61,9 @@ export class AiClient {
       if (signal?.aborted) throw new TransportFailure('stopped');
       if (response.status !== 200) {
         if (response.status === 404) return { failure: { source: 'pass', code: 'anonymous_ai_unavailable', admission: 'none', allowance: null } };
+        // The door answered, so this is no lost connection: a body that is no refusal it knows says only that it did not answer.
         try { validatePassRefusal(response.body, response.status); }
-        catch { return { failure: { source: 'transport', code: null, admission: 'none', allowance: null } }; }
+        catch { return { failure: { source: 'pass', code: null, admission: 'none', allowance: null } }; }
         const code = response.body.code;
         if (DEFECTS.has(code)) this.telemetry.failure('ai-pass');
         return { failure: { source: 'pass', code, admission: 'none', allowance: null } };
@@ -143,7 +144,7 @@ export class AiClient {
         const expired = deadlineFailure();
         if (expired) return expired;
         if (pass.failure) {
-          if (admission !== 'none' && (pass.failure.source === 'transport' || ['rate_limited', 'unavailable'].includes(pass.failure.code))) throw new TransportFailure('lost');
+          if (admission !== 'none' && (pass.failure.code === null || ['rate_limited', 'unavailable'].includes(pass.failure.code))) throw new TransportFailure('lost');
           return { failure: { ...pass.failure, admission } };
         }
         forcePass = false;

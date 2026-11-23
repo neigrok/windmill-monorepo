@@ -15,7 +15,8 @@ await `seatWillChange()` before credentials, active replica or host generation c
 waits for pending host mutations, writes interrupted, and drops the in-memory pass immediately.
 If the active record has disappeared, the barrier resolves without writing or reporting a failure.
 An unexpected barrier write failure reports `agent-host` before rejecting. The turn reports that
-failure once even if its provider finishes later and the original run encounters it again.
+failure once even if its provider finishes later and the original run encounters it again. A host
+fault inside a turn ends it `failed` with the code `host-fault`, never a code the AI service answers.
 
 The host implements `open(input)`, `recover(turnId,seat)`, `beginRound(lease,text,mark)`,
 `text(lease,text)`, `check(lease,rule,call)`, `execute(lease,identity,call)`, `end(lease,end)` and
@@ -30,7 +31,8 @@ age. The engine retains the working conversation only in memory.
 
 The telemetry port receives `turn` (state, seat kind, bounded code, rounds, admitted ability calls,
 gate refusals, UTF-8 answer bytes and duration), `ability` (offered name or `unoffered`, outcome and
-bounded refusal code), and static `failure` operations. Product adapters choose event names and
+bounded refusal code), and static `failure` operations; an `agent-host` failure carries the error the
+host raised, for the product's reporter to scrub and keep. Product adapters choose event names and
 send them through the first-party events intake. No seat key, ID, prompt, carry or result reaches
 telemetry. Observer errors do not interrupt writes.
 
