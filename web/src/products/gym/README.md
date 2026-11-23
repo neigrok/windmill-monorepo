@@ -8,9 +8,9 @@ name or note title is written NFC-normalised, trimmed and at most 60 code points
 refused before it is written;
 a rename to the name the store holds writes nothing. Deletes commit durable held deaths, and the engine owns
 their release and restart. The room draws their Undo from the engine's `undoOffers`, so a delete
-still held when the room is drawn again is offered with the deadline it already had. Coach and the
-workout and log shares use their REST doors in `gymApi.js`; a Coach conversation delete is held on the
-room's own clock, and when the room unmounts or the document hides it is dropped unsent and the
+still held when the room is drawn again is offered with the deadline it already had. The workout and log
+shares use their REST doors in `gymApi.js`; a Coach conversation delete is held on the room's own clock, then
+deletes the conversation's records, and when the room unmounts or the document hides it is dropped unsent and the
 conversation stays. The account gate remains in `GymApp`.
 
 Every local gym read and write uses the domain kit through `gymRuntime.js`. Training entities and rules live in
@@ -53,7 +53,22 @@ withdraw, a conversation's delete), the `runningTurn` and `runningRound` mark an
 `ForgetCoachAtSignOut`. `runAbility.js` is the replica executor: `RunAbility` gates a call against `catalog/3` and
 the bounds strict mode cannot state, runs the ability of `abilityReads.js` or `abilityWrites.js` over the gym domain, and
 records the call on the Coach message in the same write; `RunAbility.ordinal` names a new record from the turn's id
-and the admitted minting calls before it, as the server's gate does. The room still speaks the server's Coach; nothing in it runs these yet.
+and the admitted minting calls before it, as the server's gate does; `RecordShareCall` records a share the Share door made.
+
+The Coach room runs each turn in the browser (`coach/`). `CoachTurns` admits a send, opens its records, and runs the turn on
+the Coach engine (`platform/agent`) with `GymTurnHost` and `GymProfile`, each model round a call to the AI service
+(`platform/ai`); the host writes the text about once a second and the round's mark, runs each call through
+`RunAbility` on the turn's replica or a share through the Share door, and ends, withdraws or recovers the turn. One turn
+runs at a time in a browser across its tabs, the mark refusing a second; a tab that opens on a turn in its last round
+recovers its answer; a send opens under a browser-wide lock until the engine holds the turn's own, so another tab's
+recovery never meets a fresh turn. Pictures stay in the browser's `picture:<id>` rows, their model copy uploaded once a
+turn. As a sign-out begins (`routes.sync.signOutBegins`) a running turn ends `interrupted`; the mark and the pictures no
+unsent question names go in the write that finishes the sign-out (`routes.sync.signOutForgets`), so a cancelled one keeps
+them. Whenever the page's account changes, in this tab or another, `CoachTurns.leaveSeat` drops the pass, the allowance,
+the field's words and a question taken back, and the room starts Coach afresh for the new seat. The server Coach's
+storage under `windmill.gym.coach.` and its photos' database are deleted at gym boot and at sign-out
+(`coach/retiredCoach.js`). `conversations.js` reads History and a conversation from the records, so a
+phone's conversations open here as the browser's do.
 
 `TrainingHistory` composes typed domain reads into screen documents. The global seed catalogue
 is outside sync and is checked against `schema.sql` in CI. Observation updates refresh local reads
@@ -114,18 +129,9 @@ a `GymRefusal` is expected and reports nothing, and a store failure is the engin
 Engine telemetry owns transport, storage, authentication and admission failures. Refusal content stays on the device; the room announces
 unresolved notices.
 
-Every ask sends `routineReview: true`, so Coach drafts new routines for review instead of saving them. The review card
-lists movements, targets in the display unit with their load basis, and equipment; a movement the log has not synced yet
-reads "New movement" with no basis. Only **Save routine** confirms its persisted operation. Drafts survive interrupted
-responses and thread history; confirmation retries retain the thread, request and operation identity. Saved state and its
-receipt survive older streamed or paged snapshots. An unsaved confirmation answers inside its card: a missing draft (404)
-or one the server cannot write (400, 422) closes the card's Save; signed out (401) asks for sign-in; a busy lease (409),
-an unavailable engine (5xx) or a lost reply offers a retry without asserting the routine was not saved. New chat waits
-while a routine saves and clears the card's note. `gym_coach_routine_confirm` reports only `outcome`: `started`, `saved`
-(even after the room unmounts), `refused` (a 4xx answer) or `failed` (5xx, network or a reply naming another draft).
-Only `failed` reports static `gym-coach-routine-confirm` to Sentry. Neither report contains routine or conversation content.
-A step receipt says `drafted a routine for your review` on a turn that carries drafts, `created a routine` on an older
-turn that saved directly, and `updated a movement` for a catalogue change Coach applied.
+A routine Coach creates exists the moment its call commits, as the lifter's own New routine would; its card links the
+routine. A routine proposal stands under the answer whose call made it, with Reject and Apply, the lifter's gestures and
+the server's commands; a workout proposal a phone made stands as a read-only row.
 
 ## Gates
 

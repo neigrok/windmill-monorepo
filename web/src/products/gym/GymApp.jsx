@@ -9,7 +9,8 @@ import { useSignInDoor, useSignInDoorHost } from '../../shell/auth/SignInDoor.js
 import { Backfill } from './backfill/Backfill.jsx';
 import { BodyweightScreen } from './bodyweight/Bodyweight.jsx';
 import { CoachRoom } from './coach/CoachRoom.jsx';
-import { ThreadDetail, ThreadsList } from './coach/Threads.jsx';
+import { HistoryPage } from './coach/History.jsx';
+import { forgetRetiredCoach } from './coach/retiredCoach.js';
 import { FinishScreen } from './Finish.jsx';
 import { t } from './i18n/index.js';
 import { LogList } from './Log.jsx';
@@ -44,6 +45,7 @@ export function GymApp({ hash, inShell = false }) {
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
   const legacyConnect = /^#\/gym\/connect(\/|$|\?)/.test(hash || '');
+  React.useEffect(() => { forgetRetiredCoach(); }, []);
   React.useEffect(() => {
     if (legacyConnect) navigate('/app/connect', { replace: true });
   }, [legacyConnect]);
@@ -133,9 +135,9 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
           {screen === 'routine' && <RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />}
           {screen === 'finish' && <FinishScreen id={finishIdOf(hash)} log={log} />}
           {screen === 'backfill' && <Backfill key={hash} target={backfillTargetOf(hash)} from={backfillFromOf(hash)} log={log} />}
-          {screen === 'coach' && <CoachRoom key={account?.id} log={log} accountId={account?.id} />}
-          {screen === 'threads' && <ThreadsList log={log} accountId={account?.id} />}
-          {screen === 'thread' && <ThreadDetail key={`${account?.id}-${threadIdOf(hash)}`} id={threadIdOf(hash)} log={log} accountId={account?.id} />}
+          {screen === 'coach' && <CoachRoom key={account?.id} log={log} />}
+          {screen === 'threads' && <HistoryPage key={account?.id} log={log} />}
+          {screen === 'thread' && <CoachRoom key={account?.id} log={log} threadId={threadIdOf(hash)} />}
           {screen === 'notes' && <Notes log={log} />}
           {screen === 'share-log' && <LogShareScreen />}
         </main>

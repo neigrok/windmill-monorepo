@@ -521,10 +521,11 @@ export function materialize(replica, ctx, request) {
     }
     const { recipe } = slot;
     let args = null;
-    slot.skipped = [];
+    const recorded = slot.skipped ?? [];
+    slot.skipped = recorded;
     if (recipe.kind === 'restore' && epoch !== null) {
       const results = recipe.operations.map((op) => ({ op, result: bound(replica, source, history, op) }));
-      slot.skipped = results.filter(({ result }) => result?.skip).map(({ result }) => ({ code: result.skip }));
+      slot.skipped = [...recorded, ...results.filter(({ result }) => result?.skip).map(({ result }) => ({ code: result.skip }))];
       const sent = results.filter(({ result }) => result?.wire);
       recipe.operations = sent.map(({ op }) => op);
       if (sent.length) args = { expectedEpoch: epoch, operations: sent.map(({ result }) => result.wire) };
@@ -540,7 +541,7 @@ export function materialize(replica, ctx, request) {
           }),
           unchangedCreatedRecords: records.map(({ record, proof }) => ({ record: structuredClone(record), ...proof })),
           unchangedCreatedScopes: scopes } };
-      } else slot.skipped = [{ code: 'history-changed' }];
+      } else slot.skipped = [...recorded, { code: 'history-changed' }];
     }
     if (args === null) {
       if (recipe.kind === 'restore') recipe.operations = [];
@@ -620,6 +621,43 @@ function anchorPreimages(replica, request, entry, epoch) {
     const row = rowsOf(entry.acceptedEffects ?? [], preimage.target)[0];
     if (row) Object.assign(preimage, { rowSeq: row.beforeRowSeq, epoch });
   }
+}
+
+// §7.10 Add: an act adopted from `from` never read `into`'s own writes, which reach the server before its own. Each
+// adopted act gives up every field target whose record `into` holds a write of, an outbox entry whose stored effects
+// write it or a receipt row its journal keeps: the target leaves its recipes, preimages and written values, and a waiting
+// request withdraws its operation there, counted skipped `history-changed`. A created record and a command recipe stay,
+// proven by the act's own receipts alone. Answers how many targets the adopted acts gave up.
+export function giveUpUnread(into, from) {
+  const written = new Set();
+  const note = (scope, t, id) => written.add(jcs([scope, t, id]));
+  for (const entry of into.entries()) for (const { scope, d } of effectsOf(entry)) for (const delta of d) note(scope, delta.t, delta.id);
+  for (const source of into.journal.flatMap((act) => act.sourceEntries)) {
+    for (const effect of source.attempts.flatMap((attempt) => attempt.acceptedEffects ?? [])) for (const row of effect.rows) note(effect.scope, row.t, row.id);
+  }
+  const unread = ({ scope, t, id }) => written.has(jcs([scope, t, id]));
+  let given = 0;
+  for (const source of from.journal.flatMap((act) => act.sourceEntries)) {
+    source.recipes = source.recipes.flatMap((recipe) => {
+      if (recipe.kind !== 'fields') return [recipe];
+      const targets = recipe.targets.filter(({ target }) => !unread(target));
+      given += recipe.targets.length - targets.length;
+      return targets.length ? [{ ...recipe, targets }] : [];
+    });
+    source.preimages = source.preimages.filter(({ target }) => !unread(target));
+    source.written = (source.written ?? []).filter(({ target }) => !unread(target));
+  }
+  for (const request of from.inverses.filter(({ state }) => state === 'waiting')) {
+    for (const slot of request.slots.filter((candidate) => candidate.state === 'waiting' && candidate.recipe.kind === 'restore')) {
+      const kept = slot.recipe.operations.filter((op) => op.kind !== 'field' || op.reference || !unread(op.target));
+      const withdrawn = slot.recipe.operations.length - kept.length;
+      if (withdrawn === 0) continue;
+      slot.recipe.operations = kept;
+      slot.skipped = [...(slot.skipped ?? []), ...Array.from({ length: withdrawn }, () => ({ code: 'history-changed' }))];
+      keepProjection(from.entry(slot.localId), kept);
+    }
+  }
+  return given;
 }
 
 // readInverseResult(requestId): cancelled, pending, settled or unavailable.

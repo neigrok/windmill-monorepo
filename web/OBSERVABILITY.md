@@ -75,7 +75,7 @@ Add/Discard and sign-out emit `sync_signin`/`sync_signout` with `outcome: pendin
 completed transitions. A product that words its own question (`sync.signInWords`, `sync.signOutWords`) tells its steps
 through the words' `onStep` (roadmap's `roadmap_signin` and `roadmap_signout` below); the shell adds none of its own. A
 product's hook into a question that throws (`adoptionAnswer`, `adoptionCount`, `signInWords`, `signOutWords`, the words'
-`onStep`, `signOutNotice`) reports `auth-product-words`, and the shell asks as it would of a product that says nothing. Escape
+`onStep`, `signOutNotice`, `signOutBegins`, `signOutForgets`) reports `auth-product-words`, and the shell asks as it would of a product that says nothing. Escape
 on such a sign-in question cancels the sign-in: one write drops the pending sign-in and records the cookie's cleanup, a
 cancel that fails reports `auth-session` and keeps the question, and the cookie is let go as a finished sign-out's is. Revoking this session uses the sign-out question before clearing its cookie.
 Account closure persists its account and current session before the server request and discards local
@@ -179,11 +179,27 @@ Proposal decisions run through the gym domain. Removal snapshots persist in the 
 until their outcome is visible; acknowledging one emits `gym_action` with `proposal-apply` and
 `closed`. Failed acknowledgment uses `gym-proposal-apply`; a storage failure remains engine-owned.
 
-Coach routine confirmation emits `gym_coach_routine_confirm` with only `outcome`: `started` when Save routine
-sends, `saved` once the server confirms the draft (emitted even when the room has unmounted), `refused` when the
-server answers 4xx (400, 401, 404, 409, 422) and `failed` on a 5xx, a network loss or a reply naming another draft.
-Only `failed` reports to Sentry, under the static operation `gym-coach-routine-confirm`. No routine name, movement,
-conversation, question, identifier or server text is reported.
+Gym's Coach runs its turn in the browser (`products/gym/coach/`: `CoachTurns`, `GymTurnHost`, `GymTurnTelemetry`). Each
+send that opens a turn emits `gym_ask_started` (`screen: coach`), and each send ends in one `gym_ask_outcome` with `screen:
+coach`, `outcome` (`answered`, `cancelled`, `refused`, `failed`, `interrupted` when the seat changed under it, `gone` when
+its conversation was deleted elsewhere, `capped` for the allowance or the shared capacity, `offline`, `absent` for a server
+without Coach) and, for a turn that ran, `duration_ms`. A picture chosen for a question emits `coach_picture` (`outcome`:
+`attached` or `failed`), and a conversation deleted from History `coach_conversation_delete` (`outcome`: `deleted`,
+`answering` when its turn runs on this page and it stays, `refused`, `failed`). The engine's port emits one
+`coach_turn` per turn (`state`, `seat`, `code` from a closed list or `other`, `rounds`, `ability_calls`, `refusals`,
+`answer_bytes`, `duration_ms`) and one `coach_ability` per call, the turn's opening context reads included (`name`, a
+catalog/3 ability or `other`, and `outcome`, `ok` or a known refusal code). A turn recovered on return emits its
+`coach_turn` and no `gym_ask_outcome`. Failures report to Sentry with the error's stack, its message struck out: the
+engine's `agent-host` for a fault of the host inside a turn, which then ends `failed` as `host-fault`; `gym-coach-turn`
+tagged `failure_kind` `storage` (a write of the turn's own, or a conversation's delete, that failed outside the engine; a
+write refused because the account changed under it is not one), `share` (the Share door answering 5xx or unreadable; a
+4xx, a lost connection and a door silent for 15 s are the model's `refused`, with no Issue), `refusal` (a picture sweep
+held by a message this build cannot read), `settle` (the room's own reading of a turn's end failed) or `picture` (the
+browser failed to prepare a picture it could read); and the AI client's own `ai-call` and `ai-pass`, with the error the
+client caught. A report names its error's kind only from a closed list, else `other`. A pass door
+that answered, whatever its body, is never read as a lost connection: the room says Coach did not answer. A conversation
+deleted on another device under a running turn, and a turn ended by a sign-out, are expected and report nothing. No
+question, answer, picture, call input or result, id, pass or call id enters an event or a report.
 
 ## Roadmap
 
@@ -475,7 +491,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-sync-refused` | An unexpected refusal, once per bounded code per session, with `code` as a tag | The refusal notice |
 | `auth-session` | An unexpected account refresh failure | The session's existing path |
 | `auth-credential-held` | Telling the engine whose credential a read of `/v1/me` found threw, its store having failed or closed underneath it (a store failure the engine reports as `sync-storage` too); once a page, stack frames only | The read goes on: the shell settles the account it read, and the engine hears the next read, 20 seconds on at most |
-| `auth-product-words` | A product's hook into an account-change question threw, tagged `question`: `adoption` (`adoptionAnswer`, the product's own answer to a sign-in question), `signin` (`signInWords` or `adoptionCount`, the sign-in question's words or its count of the product's records), `signout` (`signOutWords`), `step` (the words' `onStep`, a step of the question told to the product) or `notice` (`signOutNotice`, the product's line on what signing out discards from this tab). Stack frames only: never the product's words, a count or an account | The shell asks as it would of a product that says nothing: the person answers the sign-in question, in the shell's words with the engine's count, and the sign-out question in the next product's words or the shell's, without that product's line or its step event, so signing in and out go on |
+| `auth-product-words` | A product's hook into an account-change question threw, tagged `question`: `adoption` (`adoptionAnswer`, the product's own answer to a sign-in question), `signin` (`signInWords` or `adoptionCount`, the sign-in question's words or its count of the product's records), `signout` (`signOutWords`), `step` (the words' `onStep`, a step of the question told to the product), `begin` (`signOutBegins`, what the product does as a sign-out begins, before the engine sends what the device holds), `forget` (`signOutForgets`, the device rows the product's finished sign-out takes) or `notice` (`signOutNotice`, the product's line on what signing out discards from this tab). Stack frames only: never the product's words, a count or an account | The shell asks as it would of a product that says nothing: the person answers the sign-in question, in the shell's words with the engine's count, and the sign-out question in the next product's words or the shell's, without that product's line or its step event, so signing in and out go on |
 | `billing-subscription` | The subscription read (`GET /v1/subscription`), kind `billing`, under the tag `reason`: `server` for a 5xx, `shape` for a 200 that is not a SubscriptionResponse. A request lost and a 4xx report nothing | The page reads as holding no Windmill One until the next read, at the next focus |
 
 Expected answers are not Issues: a null receipt, a not-ready session on create or delete, a capacity or missing-tree
@@ -499,17 +515,16 @@ operation and no exception stack or message. One invalidator cannot stop the sco
 
 ## Device Coach libraries
 
-The product-neutral Coach engine and AI client are available as libraries; released products do
-not call them yet. The engine's injected telemetry port emits one turn outcome (state, seat kind,
-code, counts, answer byte count and duration) and each ability's bounded name and outcome. Product
-adapters supply event names through the first-party intake when they integrate the library.
-`AiClient` reports defects and unreadable answers through `telemetry/sentry.js` under static
-`ai-call`, and pass-door defects under `ai-pass`. Expected actionable refusals return as outcomes.
+The product-neutral Coach engine and AI client run gym's Coach (above). The engine's injected telemetry port emits one
+turn outcome (state, seat kind, code, counts, answer byte count and duration) and each ability's bounded name and
+outcome; gym's adapter names the events. `AiClient` reports defects and unreadable answers through `telemetry/sentry.js`
+under static `ai-call`, and pass-door defects under `ai-pass`. Expected actionable refusals return as outcomes.
 Transport loss, unvalidated HTTP error envelopes or status/code pairs, temporary pass unavailability, a missing host
-record at the seat barrier, and recovery `call_unknown` are quiet. A live `call_unknown` and malformed
+record at the seat barrier, and recovery `call_unknown` are quiet. A pass-door answer whose body is no refusal it knows
+is quiet too, and reads as the door not answering, never as a lost connection. A live `call_unknown` and malformed
 successful protocol replies remain defects; retrying cannot erase admission evidence. Sign-in
 refused while sign-out is pending does not report an auth failure. Stop during preparation or a
 repeated request's headers/error body reports the stopped turn outcome without a technical failure.
-Unexpected host write failures report `agent-host` once per turn. A seat-barrier write failure reports
-before the barrier rejects, without waiting for an in-flight provider to finish.
+Unexpected host failures report `agent-host` once per turn, with the error the host raised. A seat-barrier write failure
+reports before the barrier rejects, without waiting for an in-flight provider to finish.
 No telemetry includes seat keys, call IDs, credentials, prompts, questions, answers or tool results.

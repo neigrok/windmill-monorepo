@@ -189,6 +189,8 @@ struct RefusalLine {
     code: &'static str,
     client: &'static str,
     tier: Option<&'static str>,
+    refusal: Option<ai_providers::RefusalReason>,
+    provider_request_id: Option<String>,
 }
 #[derive(Clone)]
 struct WriteOutcome(&'static str);
@@ -258,6 +260,8 @@ async fn no_store(State(service): State<Arc<Service>>, request: Request, next: N
             code = line.code,
             client = line.client,
             tier = line.tier,
+            refusal = line.refusal.map(ai_providers::RefusalReason::as_str),
+            provider_request_id = line.provider_request_id.as_deref(),
             label,
             environment = service.config.environment.label(),
             duration_ms,
@@ -463,6 +467,8 @@ pub async fn reject(
             code: code.as_str(),
             client: identity.client.as_str(),
             tier: allowance.map(|value| value.tier.as_str()),
+            refusal: None,
+            provider_request_id: None,
         });
     }
     response
@@ -797,7 +803,12 @@ async fn text(
                 FailureCode::ProviderUnavailable => StaticCode::ProviderUnavailable,
                 FailureCode::ProviderFailed => StaticCode::ProviderFailed,
             };
-            return reject(&service, &identity, code, "call.text").await;
+            let mut response = reject(&service, &identity, code, "call.text").await;
+            if let Some(line) = response.extensions_mut().get_mut::<RefusalLine>() {
+                line.refusal = failure.refusal;
+                line.provider_request_id = failure.request_id;
+            }
+            return response;
         }
     };
     match crate::database(
@@ -990,6 +1001,7 @@ async fn text_task(
         started: start,
         http_status: outcome.http_status,
         failure_kind: outcome.failure.as_ref().map(|failure| failure.kind),
+        refusal: outcome.failure.as_ref().and_then(|failure| failure.refusal),
         usage,
     };
     let charged = settle(

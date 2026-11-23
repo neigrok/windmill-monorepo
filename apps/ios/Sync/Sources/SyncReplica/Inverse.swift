@@ -489,7 +489,8 @@ public struct Inverses: Sendable {
         continue
       }
       var args: JSON?
-      slots[index].skipped = []
+      let recorded = slots[index].skipped ?? []
+      slots[index].skipped = recorded
       switch slots[index].recipe {
       case .restore(let command, let operations):
         guard let epoch else { break }
@@ -511,7 +512,7 @@ public struct Inverses: Sendable {
         }
         let scopes = selection.unchangedCreatedScopes.map { Inverses.createdScope(history, $0) }
         guard records.allSatisfy({ $0 != nil }), scopes.allSatisfy({ $0 != nil }) else {
-          slots[index].skipped = ["history-changed"]
+          slots[index].skipped = recorded + ["history-changed"]
           break
         }
         let owned = selection.ownedFields.compactMap { (target: Target) -> Evidence.OwnedField? in
@@ -764,6 +765,57 @@ public struct Inverses: Sendable {
       }
     }
     entry.predictions = predictions
+  }
+
+  // MARK: Adoption
+
+  // §7.10 Add: an act adopted from the anon replica never read `into`'s own writes, which reach the server before its
+  // own. Each adopted act gives up every field target whose record `into` holds a write of, an outbox entry whose stored
+  // effects write it or a receipt row its journal keeps: the target leaves its recipes, preimages and written values, and
+  // a waiting request withdraws its operation there, with its projection, counted skipped `history-changed`. A created
+  // record and a command recipe stay, proven by the act's own receipts alone. The anon journal and entries as they move,
+  // and how many targets the adopted acts gave up.
+  static func givingUpUnread(_ journal: Journal, entries: [OutboxEntry], into: LoadedReplica) -> (journal: Journal, entries: [OutboxEntry], givenUp: Int) {
+    var written: Set<RecordAddress> = []
+    for entry in into.outbox {
+      for effect in entry.effects() { written.formUnion(effect.deltas.map { RecordAddress(scope: effect.scope, key: $0.key) }) }
+    }
+    for attempt in into.journal.acts.flatMap(\.sourceEntries).flatMap(\.attempts) {
+      for effect in attempt.acceptedEffects ?? [] { written.formUnion(effect.rows.map { RecordAddress(scope: effect.scope, key: $0.key) }) }
+    }
+    guard !written.isEmpty else { return (journal, entries, 0) }
+    var adopted = journal
+    var moving = entries
+    var givenUp = 0
+    for act in adopted.acts.indices {
+      for index in adopted.acts[act].sourceEntries.indices {
+        var source = adopted.acts[act].sourceEntries[index]
+        source.recipes = source.recipes.compactMap { (recipe: ActUndoRecipe) -> ActUndoRecipe? in
+          guard case .fields(let command, let targets) = recipe else { return recipe }
+          let kept = targets.filter { !written.contains($0.target.address) }
+          givenUp += targets.count - kept.count
+          return kept.isEmpty ? nil : .fields(restoreCommand: command, targets: kept)
+        }
+        source.preimages.removeAll { written.contains($0.target.address) }
+        source.written.removeAll { written.contains($0.target.address) }
+        adopted.acts[act].sourceEntries[index] = source
+      }
+    }
+    for request in adopted.inverses.indices where adopted.inverses[request].state == .waiting {
+      for index in adopted.inverses[request].slots.indices where adopted.inverses[request].slots[index].state == .waiting {
+        let slot = adopted.inverses[request].slots[index]
+        guard case .restore(let command, let operations) = slot.recipe else { continue }
+        let kept = operations.filter { (operation: PlannedOperation) -> Bool in
+          guard case .field(let target, _, .none, _) = operation else { return true }
+          return !written.contains(target.address)
+        }
+        guard kept.count < operations.count else { continue }
+        adopted.inverses[request].slots[index].recipe = .restore(command: command, operations: kept)
+        adopted.inverses[request].slots[index].skipped = (slot.skipped ?? []) + Array(repeating: "history-changed", count: operations.count - kept.count)
+        if let entry = moving.firstIndex(where: { $0.localId.isSameID(as: slot.localId) }) { Inverses.keep(kept, in: &moving[entry]) }
+      }
+    }
+    return (adopted, moving, givenUp)
   }
 
   // MARK: The sender

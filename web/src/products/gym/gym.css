@@ -478,7 +478,6 @@ button.gym-set:focus-visible .gym-set-fix {
   box-shadow: none;
 }
 
-
 /* Sheets cover the room independently of its content scroll. */
 .gym-sheet-catch {
   position: fixed;
@@ -629,7 +628,6 @@ button.gym-set:focus-visible .gym-set-fix {
   color: var(--gym-ink-faint);
 }
 
-
 /* The focus ring is the brand's, not the browser's. */
 .gym-picker :focus-visible {
   outline: 2px solid var(--color-brand);
@@ -779,7 +777,6 @@ button.gym-set:focus-visible .gym-set-fix {
 }
 
 /* ── Routines, and one of them under the hand ──────────────── */
-
 
 .gym-routines {
   list-style: none;
@@ -2381,8 +2378,7 @@ button.gym-set:focus-visible .gym-set-fix {
   flex-direction: column;
   padding-bottom: 12px;
 }
-.gym-coach,
-.gym-column.has-coach > .gym-thread {
+.gym-coach {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -2401,15 +2397,7 @@ button.gym-set:focus-visible .gym-set-fix {
   align-items: center;
   gap: 12px;
 }
-.gym-coach-threads-door {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  color: var(--gym-ink-dim);
-  font-size: 14px;
-  font-weight: 700;
-  text-decoration: none;
-}
+
 .gym-coach-doors .wm-menu-open,
 .gym-routine .wm-menu-open {
   min-width: 44px;
@@ -2452,66 +2440,14 @@ button.gym-set:focus-visible .gym-set-fix {
   color: var(--gym-ink);
   user-select: text;
 }
-.gym-coach-copy {
-  position: absolute;
-  right: 0;
-  top: 0;
-  opacity: 0;
-  pointer-events: none;
-  min-height: 44px;
-  padding: 0 14px;
-  border: 1px solid var(--gym-line-strong);
-  border-radius: var(--radius-md);
-  background: var(--gym-surface);
-  color: var(--gym-ink);
-  font: inherit;
-  cursor: pointer;
-}
-.gym-coach-turn:hover > .gym-coach-copy,
-.gym-coach-turn:focus-within > .gym-coach-copy,
-.gym-coach-turn.is-menu-open > .gym-coach-copy {
-  opacity: 1;
-  pointer-events: auto;
-  z-index: 1;
-}
-.gym-coach-copy-notice:empty {
-  display: none;
-}
-.gym-coach-copy-notice,
-.gym-coach-read,
+
 .gym-coach-steps {
   margin: 0;
   font-size: 12px;
   line-height: 1.45;
   color: var(--gym-ink-dim);
 }
-.gym-coach-read {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
-.gym-coach-trace {
-  margin: 0;
-}
-.gym-coach-trace > summary {
-  cursor: pointer;
-}
-.gym-coach-trace > .gym-coach-steps {
-  margin-top: 4px;
-}
-.gym-coach-result {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 16px;
-  font-size: 14px;
-  color: var(--gym-ink-dim);
-}
-.gym-coach-result a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  color: var(--color-brand);
-}
+
 .gym-coach-proposal {
   padding: 14px 15px 13px;
   border: 1px solid var(--color-brand);
@@ -2538,15 +2474,7 @@ button.gym-set:focus-visible .gym-set-fix {
   line-height: 1.45;
   color: var(--gym-ink-dim);
 }
-.gym-coach-proposal-door {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  color: var(--color-brand);
-  font-size: 14px;
-  font-weight: 700;
-  text-decoration: none;
-}
+
 .gym-coach-bottom {
   flex: none;
   padding-top: 8px;
@@ -2595,29 +2523,7 @@ button.gym-set:focus-visible .gym-set-fix {
   opacity: 0.45;
   cursor: default;
 }
-.gym-coach-closed,
-.gym-coach-note {
-  margin: 0 0 8px;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--gym-ink-dim);
-}
-.gym-coach-older,
-.gym-coach-latest,
-.gym-coach-retry {
-  min-height: 44px;
-  padding: 0 10px;
-  border: 0;
-  background: transparent;
-  color: var(--color-brand);
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
-}
-.gym-coach-latest {
-  align-self: center;
-  flex: none;
-}
+
 .gym-visually-hidden {
   position: absolute;
   width: 1px;
@@ -2627,7 +2533,6 @@ button.gym-set:focus-visible .gym-set-fix {
   clip-path: inset(50%);
   white-space: nowrap;
 }
-
 
 .gym-coach-add-photo {
   display: inline-flex;
@@ -2646,46 +2551,6 @@ button.gym-set:focus-visible .gym-set-fix {
   opacity: 0.4;
   cursor: default;
 }
-.gym-coach-photo {
-  display: block;
-  width: auto;
-  height: auto;
-  max-width: 100%;
-  max-height: 320px;
-  object-fit: contain;
-  border-radius: var(--radius-md);
-}
-.gym-coach-photo-open {
-  align-self: flex-start;
-  max-width: 100%;
-}
-.gym-coach-photo-draft {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-.gym-coach-photo-draft .gym-coach-photo {
-  width: 80px;
-  height: 80px;
-  object-fit: cover;
-  flex: none;
-}
-.gym-coach-photo-actions {
-  min-width: 0;
-}
-.gym-coach-photo-actions progress {
-  display: block;
-  width: 140px;
-  max-width: 100%;
-  accent-color: var(--color-brand);
-}
-.gym-coach-photo-placeholder,
-.gym-coach-photo-note {
-  font-size: 13px;
-  color: var(--gym-ink-dim);
-}
-
 
 /* ── A confirmation — the turn-down, and it is the only one the room asks ── */
 .gym-confirm {
@@ -2737,165 +2602,16 @@ button.gym-set:focus-visible .gym-set-fix {
 }
 
 /* ── Threads — the question on top, what came of it underneath ── */
-.gym-threads {
-  padding-bottom: 24px;
-}
-.gym-threads-head {
-  margin: 8px 0 18px;
-}
-.gym-threads-count {
-  margin: 4px 0 0;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--gym-ink-faint);
-}
-.gym-threads-month {
-  margin-bottom: 18px;
-}
-.gym-threads-month-head {
-  margin: 0 0 9px;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--gym-ink-faint);
-}
-.gym-threads-rows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.gym-thread-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 13px 14px;
-  border: 1px solid var(--gym-line);
-  border-radius: var(--radius-lg);
-  background: var(--gym-surface);
-  color: var(--gym-ink);
-  text-decoration: none;
-}
-.gym-thread-row:hover {
-  border-color: var(--gym-line-strong);
-}
-.gym-thread-row.is-applied {
-  border-color: var(--color-brand);
-}
+
 /* Drawn whole, wrapping rather than truncating, and pre-wrap: the line breaks were typed. */
-.gym-thread-title {
-  font-size: 14.5px;
-  font-weight: 700;
-  line-height: 1.35;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.gym-thread-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.gym-thread-chip {
-  padding: 3px 8px;
-  border-radius: var(--radius-full);
-  background: var(--gym-raised);
-  color: var(--gym-ink-dim);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-.gym-thread-chip.is-applied {
-  background: var(--color-brand-soft);
-  color: var(--color-brand);
-}
-.gym-thread-outcome {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--gym-ink-dim);
-}
-.gym-thread-when {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--gym-ink-faint);
-}
+
 /* Opens a NEW conversation rather than continuing an old one. */
-.gym-threads-new {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 52px;
-  margin-top: 6px;
-  border-radius: var(--radius-lg);
-  background: var(--color-brand);
-  color: var(--gym-on-accent);
-  font-size: 15.5px;
-  font-weight: 800;
-  text-decoration: none;
-}
 
 /* The same bubbles Coach draws, with the instant each turn was said under it. */
-.gym-thread {
-  padding-bottom: 24px;
-}
-.gym-thread-head {
-  margin: 8px 0 16px;
-}
-.gym-thread-name {
-  margin: 0;
-  font-size: 19px;
-  font-weight: 800;
-  line-height: 1.3;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.gym-thread-outcome-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin: 10px 0 0;
-}
-.gym-thread-routine-door {
-  color: var(--color-brand);
-  font-size: 12.5px;
-  font-weight: 700;
-  text-decoration: none;
-}
-.gym-thread-said {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--gym-ink-faint);
-}
-.gym-thread-proposals {
-  margin-top: 20px;
-}
+
 /* One press, no arming: the delete is withheld and the room's transient carries the way back, so
    nothing here has a second state to draw. There is no red in this product. */
-.gym-thread-delete {
-  margin-top: 26px;
-  padding-top: 16px;
-  border-top: 1px solid var(--gym-line);
-}
-.gym-thread-delete-verb {
-  min-height: 44px;
-  padding: 0 16px;
-  border: 1px solid var(--gym-line-strong);
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--gym-ink-dim);
-  font: inherit;
-  font-size: 13.5px;
-  font-weight: 700;
-  cursor: pointer;
-}
+
 /* Drawn only where the wire carried a thread. */
 .gym-proposal-thread,
 .gym-history-thread {

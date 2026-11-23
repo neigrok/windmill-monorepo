@@ -466,8 +466,11 @@ final class EngineCore: Sendable {
         telemetry.failure("sync_digest", kind: "digest_mismatch", properties: ["scope_kind": kind])
       case .pushMalformed:
         telemetry.failure("sync_admission", kind: "malformed")
-      case .inverseSettled(let applied, let skipped):
-        telemetry.event("sync_inverse", properties: ["outcome": "settled", "applied": String(applied), "skipped": String(skipped)])
+      case .inverseSettled(let applied, let skipped, let reason):
+        telemetry.event("sync_inverse", properties: ["outcome": "settled", "applied": String(applied), "skipped": String(skipped),
+                                                     "skip_reason": reason.rawValue])
+      case .adoptionGaveUp(let targets):
+        telemetry.event("sync_inverse", properties: ["outcome": "adopted", "given_up": String(targets)])
       case .ended, .activeReplicaChanged: break
       }
     }

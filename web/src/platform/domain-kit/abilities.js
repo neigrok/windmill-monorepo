@@ -22,6 +22,9 @@ export class Ability {
       || (entry.strict !== undefined && typeof entry.strict !== 'boolean')
       || (entry.since !== undefined && (typeof entry.since !== 'string' || !entry.since.startsWith('catalog/')))) throw new TypeError('invalid ability');
     this.name = entry.name;
+    // What the model reads of the ability, from the copy the app ships (gym Coach on the AI service §3).
+    if (typeof entry.description !== 'string') throw new TypeError('invalid ability');
+    this.description = entry.description;
     this.kind = entry.class;
     this.agent = entry.agent;
     this.seats = entry.seats;

@@ -52,11 +52,11 @@ export class Mark {
   /** @param {Id<CoachMessageValue>} message */
   names(message) { return this.turnId !== null && this.turnId === message.record; }
 
-  // Every write that clears `runningTurn` clears `runningRound` in the same write.
+  // Every write that clears `runningTurn` clears `runningRound` beside it.
   /** @param {Plan} plan */
   clear(plan) {
     plan.device(Mark.turnKey, null);
-    plan.device(Mark.roundKey, null);
+    if (this.roundRow) plan.device(Mark.roundKey, null);
   }
 
   /** @param {Reader} read */
@@ -130,14 +130,14 @@ export class OpenTurn {
   }
 }
 
-// This replica's Coach message, while its writer has not ended it (gym Coach on the AI service §4.2). A message another
-// device marked `interrupted` is still the writer's to answer while this browser's mark names it; the writer's own end,
-// `interrupted` included, lets go of the mark.
+// This replica's Coach message, while its writer has not ended it: a message another device marked `interrupted` is
+// still the writer's to answer (gym Coach on the AI service §4.2), but only while this browser's mark names it, since an
+// `interrupted` the writer wrote itself cleared the mark in the same write.
 /** @param {CoachMessageValue | null} message @param {string} replica @param {Mark} mark */
 export function writersOwn(message, replica, mark) {
   if (message === null || !message.isCoach || message.replica !== replica) return false;
-  if (message.state === 'running') return true;
-  return message.state === 'interrupted' && mark.names(message.id);
+  if (message.state === 'interrupted') return mark.names(message.id);
+  return !MessageStates.isWritersTerminal(message.state);
 }
 
 // The answer as it streams: this replica's Coach message takes the text so far, until its writer ends it.
@@ -152,7 +152,9 @@ export class StreamTurnText {
   }
 
   /** @param {Reader} read */
-  load(read) { return { message: read.repository(CoachMessage).find(this.message, 'drawn'), replica: read.replica, moment: read.moment, mark: Mark.read(read) }; }
+  load(read) {
+    return { message: read.repository(CoachMessage).find(this.message, 'drawn'), replica: read.replica, mark: Mark.read(read), moment: read.moment };
+  }
 
   /** @param {ReturnType<StreamTurnText['load']>} loaded @param {IDSource} ids */
   decide(loaded, ids) {
@@ -227,6 +229,38 @@ export class EndTurn {
     EndTurn.write(plan, running, this.state, this.text ?? running.text, this.truncated, loaded.moment);
     if (loaded.mark.turnId === null || loaded.mark.names(this.message)) loaded.mark.clear(plan);
     return Decision.write(plan, null);
+  }
+}
+
+// A turn nobody ends (Coach engine §5, R-5): any of the person's devices ends a running Coach message no write has
+// reached for `TURN_STALE` by the server's clock, writing `interrupted` and nothing else. `serverNow` is the server's
+// time as this device's live sync connection measures it; a message this browser's mark names is its own to end.
+export class InterruptStaleTurn {
+  static turnStaleMs = 1_800_000;
+  scope = CoachMessage.scope;
+  refusals = GymRefusals;
+
+  /** @param {Id<CoachMessageValue>} message @param {number} serverNow */
+  constructor(message, serverNow) {
+    this.message = message;
+    this.serverNow = serverNow;
+  }
+
+  /** @param {Reader} read */
+  load(read) {
+    const confirmed = read.confirmed(CoachMessage, this.message);
+    return { message: read.repository(CoachMessage).find(this.message, 'drawn'), mark: Mark.read(read), moment: read.moment,
+      changedAt: typeof /** @type {any} */ (confirmed)?.ru === 'number' ? /** @type {any} */ (confirmed).ru : null };
+  }
+
+  /** @param {ReturnType<InterruptStaleTurn['load']>} loaded @param {IDSource} ids */
+  decide(loaded, ids) {
+    const running = loaded.message?.isCoach && loaded.message.state === 'running' ? loaded.message : null;
+    if (running === null || loaded.mark.names(this.message) || loaded.changedAt === null
+      || this.serverNow - loaded.changedAt < InterruptStaleTurn.turnStaleMs) return Decision.unchanged(false);
+    const plan = new Plan();
+    plan.update(new Valid(running.with({ state: 'interrupted' }), loaded.moment, ['state']), { fields: ['state'] });
+    return Decision.write(plan, true);
   }
 }
 
@@ -459,33 +493,37 @@ export class ForgetUnclaimedPictures {
   }
 }
 
-// Signing out takes what Coach keeps in the browser (gym Coach on the AI service §5): the mark, and every picture but
-// those a message not yet sent names, which stay with the unsent work a Keep keeps. A seat change ends this replica's
-// running turn `interrupted` (Coach engine §5), in the same write that clears the mark, so the account's record carries
-// the end. Run on the account's replica as the sign-out begins; a Discard then takes the rest with the replica. It
-// answers the picture ids removed.
-export class ForgetCoachAtSignOut {
+// A seat change ends this replica's running turn `interrupted` (Coach engine §5), in the write that clears the mark, so the
+// account's record carries the end. Run on the account's replica as the sign-out begins; it forgets nothing else, so a
+// sign-out cancelled afterwards loses no picture. It answers whether it ended a turn.
+export class EndTurnAtSignOut {
   scope = CoachMessage.scope;
   refusals = GymRefusals;
 
   /** @param {Reader} read */
   load(read) {
-    const unsent = drawnMessages(read).filter((message) => message !== null && read.confirmed(CoachMessage, message.id) === null);
     const mark = Mark.read(read);
     const named = mark.turnId === null ? null : read.repository(CoachMessage).find(new Id(mark.turnId, CoachMessage), 'drawn');
-    return { rows: Object.keys(read.devices(CoachPictureRow.prefix)), mark, markHeld: read.device(Mark.turnKey) !== null, moment: read.moment,
-      running: named !== null && writersOwn(named, read.replica, mark) ? named : null,
-      named: new Set(unsent.flatMap((message) => message?.pictures ?? []).map((picture) => CoachPictureRow.key(picture.id))) };
+    return { mark, moment: read.moment, running: named !== null && writersOwn(named, read.replica, mark) ? named : null };
   }
 
-  /** @param {ReturnType<ForgetCoachAtSignOut['load']>} loaded @param {IDSource} ids */
+  /** @param {ReturnType<EndTurnAtSignOut['load']>} loaded @param {IDSource} ids */
   decide(loaded, ids) {
-    const forgotten = loaded.rows.filter((key) => !loaded.named.has(key));
-    if (forgotten.length === 0 && !loaded.markHeld && !loaded.mark.roundRow) return Decision.unchanged(/** @type {string[]} */ ([]));
+    if (loaded.running === null) return Decision.unchanged(false);
     const plan = new Plan();
-    if (loaded.running !== null) EndTurn.write(plan, loaded.running, 'interrupted', loaded.running.text, loaded.running.truncated, loaded.moment);
-    if (loaded.markHeld || loaded.mark.roundRow) loaded.mark.clear(plan);
-    for (const key of forgotten) plan.device(key, null);
-    return Decision.write(plan, forgotten.map((key) => key.slice(CoachPictureRow.prefix.length)));
+    EndTurn.write(plan, loaded.running, 'interrupted', loaded.running.text, loaded.running.truncated, loaded.moment);
+    loaded.mark.clear(plan);
+    return Decision.write(plan, true);
   }
+}
+
+// What a finished sign-out takes from the account's replica (gym Coach on the AI service §5): the mark, and every picture
+// but those a message not yet sent names, which stay with the unsent work a Keep keeps. Read as the sign-out is decided;
+// the engine deletes these rows in the write that finishes it, so a sign-out cancelled or failed keeps them all.
+/** @param {Reader} read @returns {string[]} */
+export function coachRowsAtSignOut(read) {
+  const unsent = drawnMessages(read).filter((message) => message !== null && read.confirmed(CoachMessage, message.id) === null);
+  const named = new Set(unsent.flatMap((message) => message?.pictures ?? []).map((picture) => CoachPictureRow.key(picture.id)));
+  return [...[Mark.turnKey, Mark.roundKey].filter((key) => read.device(key) !== null),
+    ...Object.keys(read.devices(CoachPictureRow.prefix)).filter((key) => !named.has(key))];
 }

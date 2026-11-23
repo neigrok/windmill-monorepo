@@ -12750,7 +12750,7 @@
                           }
                         },
                         "value": "New",
-                        "rowSeq": 2,
+                        "rowSeq": 3,
                         "epoch": "ep-1"
                       }
                     ],
@@ -12837,7 +12837,7 @@
                           }
                         },
                         "value": "Grown",
-                        "rowSeq": 1,
+                        "rowSeq": 3,
                         "epoch": "ep-1"
                       }
                     ],

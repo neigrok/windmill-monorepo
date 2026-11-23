@@ -124,6 +124,7 @@ impl LiveClient {
                                     .get("x-request-id")
                                     .and_then(|header| header.to_str().ok()),
                             ),
+                            response.body().as_deref().unwrap_or_default(),
                         );
                     }
                     ProviderFailure::new(

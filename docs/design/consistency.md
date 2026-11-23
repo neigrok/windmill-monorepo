@@ -314,17 +314,6 @@ and Android disagree.
 - **10e · The Gym door's line.** The iOS build draws the *Where to start?* Gym door as *Log today's
   sets*, beside the Journal door's *Write tonight's page*, since the rack draws no *Last time* line. Check the first-run *Where to start?* boards and redraw any door that
   promises *last time*.
-- **10f · What Coach did, in iOS's words.** The web puts the phrase table's words in a step
-  list behind the read receipt. iOS and Android draw no step list: the receipt row opens *What Coach read*
-  (board 08.5), and the table's words stand where iOS says what Coach did — the receipt's *Read your
-  movement history* for a totals-only read and *Read nothing from your log*, *Also read your notes.*
-  under *What Coach read*, and one row per act, *Open routine · Push A* and *Saved a note*, which iOS
-  draws as a card under the answer (10v). The words
-  differ too: the return receipt on boards 08.12–08.13 reads *Applied · Push A · 4 changes*,
-  *Applied · Push A · routine removed* and *Rejected · Push A.*; the web's `receiptLine` still says
-  *Turned down* (10v); iOS's card and History share one word per outcome — *Applied*, *Removed*,
-  *Rejected* — and add *Out of date* for a superseded proposal (`CoachCopy.settled`). Decide whether the step list holds on every surface, and whether web and Android take
-  *Removed* and *Out of date*.
 - **10g · Backend: the read receipt's weeks.** The server's read receipt counts weeks no
   observation names: `GymTools.cpp` adds every week `get_stats` returns, empty ones included, and
   `ReadReceipt.cpp` each set's week. iOS counts weeks only from the workouts *What Coach read*
@@ -385,7 +374,9 @@ and Android disagree.
   `CoachTab.swift`): bubbles with tails, the lifter's in `gym/accent` set in `on-accent`, a sent photo
   as a 200 pt image bubble, timestamps, the typing bubble, Markdown in a full-width bubble, and the
   round + outside the field with the send arrow that appears with text. Android draws its own Material form of
-  them (`coach/CoachBubble.kt`); the web still draws the older chat.
+  them (`coach/CoachBubble.kt`). The web's target is 08W (12u), not the Messages language: the lifter's message a
+  right-aligned bubble with no tail, Coach's answer full-width prose with no bubble, and the send button inside the
+  field; its build still draws the older chat.
 - **10s · Library swap (closed 2026-10-22).** The owner published the Design System additions; the Gym
   iOS and Components pages now use library symbols, the library keyboard (`delete.left`, and
   `Type=Decimal` on the weigh-in) and Theme `ios/system/red` for every destructive paint. The local
@@ -395,10 +386,11 @@ and Android disagree.
   down*); Reject asks nothing; no promise, reassurance or restating lines; Coach's strings in simple
   English. Boards 01.1–01.15 and 08.1–08.31 say so. Build work:
   - *Turn down* / *Turn this down* / *Turned down* and the confirm alert live on in Android
-    `Proposal.kt` and its review actions and web `proposals.js` `receiptLine`; iOS says *Apply*,
-    *Reject* and *Rejected* and asks nothing.
+    `Proposal.kt` and its review actions; iOS says *Apply*, *Reject* and *Rejected* and asks nothing. The web's
+    words are 08W-P's (12u).
   - Drafts have Apply and Reject on one card on iOS (Reject drops them on the phone and leaves *Rejected · N
-    routines*); the web and Android's retained onboarding answers still offer only Save. The card's loads read *60 kg* and *22 kg each*, the
+    routines*); Android's retained onboarding answers still offer only Save. On the web Coach creates routines at once,
+    with no draft (08W.4, 12u). The card's loads read *60 kg* and *22 kg each*, the
     proposals' words, where 01.7 draws *60 kg total* and *22 kg, one dumbbell*.
   - Block order: a rename, moves, changes, removals, then additions, as the shared `ProposalDiff`
     vectors order them; iOS follows the vectors, and 08.2P and 08.27P draw that order.
@@ -423,10 +415,9 @@ and Android disagree.
   - A failed apply's red line and **Try again** and Reject disabled while Applying (08.29, 08.30) are built
     on iOS only.
   - Strings in code still carry the cut and pre-simple-English copy: *You decide the numbers at the rack.* (Android
-    `Program.kt`, web `routines.js`), and web `coach.js` *Coach reads your log, so it needs you
-    signed in.*, *Coach isn’t part of this Windmill…* and *The next question frees up…*. Android's
+    `Program.kt`, web `i18n/entry/en.json`). The web Coach's strings are 08W's (12u). Android's
     refusals name a moment only where the server's `budgetResetsAtMs` names one
-    (`coach/turn/CoachTurnRefusal.kt`); web ignores the server's moments. iOS Coach's
+    (`coach/turn/CoachTurnRefusal.kt`). iOS Coach's
     greeting, access states, allowance refusal and photo captions now read as 01.1–01.11 and 08.6–08.8, but for the
     departures below.
   - iOS departs from a board where the board's words claim more than the build can keep; the boards want redrawing:
@@ -1956,6 +1947,40 @@ Android. It and the product differ in these places.
   phone's allowance is $0.25, and an account's month is $0.50, which counts this phone's spend from the same month, so about
   $0.25 is left after signing in and *Sign in to continue.* holds. An account truly run out says the same first sentence and *It comes back on {date}.*,
   08.44's words, on Android; iOS's signed-in notice names no date.
+- **12u · The web's Coach room, ✅ Ready for dev (owner approved 2026-11-23).** The Gym file's Web page holds the room as
+  [08W](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2123-9861) (08W.1–08W.23) and its proposal card and
+  greeting as [08W-P](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2128-11609) (08W.24–08W.28), Dark only.
+  Owner ruling: Coach's greeting is part of onboarding and shows only while the person has no conversation at all; a New
+  chat for someone who already has one opens the plain fresh chat of the phones' 08.1, with no greeting. 08W.24 draws the
+  greeting beside an empty History, and 08W.3's desktop board draws the same screen. iOS keys its greeting to this phone
+  (until a first message is accepted, while the gym holds no routines or is signed out: `CoachTab.greets`,
+  `CoachConversation.showsGreeting`), not to whether the account has a conversation. The owner settled each open question
+  as drawn: a History row names no device; the empty History keeps 08.53's *on this phone* words; another tab's turn says
+  *Answering on another device*; a picture held elsewhere is a wordless tile with no tooltip, the same when the picture is
+  gone; a phone's workout proposal stays a read-only count row after the workout ends; allowance used says *You have used
+  all of your AI allowance.* whatever the allowance holds; shared capacity says 08.44's words, with *Use your own AI agent*
+  (five words, over the three-word budget); Update keeps the phones' sentence and reloads the page; *Build my own* opens New
+  routine and *Add screenshot* keeps its word on desktop; Applying and a failed apply take iOS's 08.29 and 08.30 in the card's
+  web form. No board names the picture tile's accessible name (designer). Daylight is not drawn. The web's build still draws
+  the earlier room: the step list behind the read receipt, *Turned down*, *Review routine* and *Save routine*, *Logged sets
+  stay unchanged.*, *Response stopped.*, *Stop didn’t reach Coach. Try again.*, *The next question frees up in a couple of
+  hours.*, *Coach reads your log, so it needs you signed in.* and *Coach isn’t part of this Windmill…* (`web/src/products/gym/i18n/en.json`, `proposals.js` `receiptLine`), which
+  08W retires.
+- **12v · iOS says a Stop reaches a server.** A Stop that fails for want of a connection says *Coach is stopped on this phone.
+  Stopping it on the server needs a connection.* (`Turn/CoachTurnDriver.swift`), true while the server runs the phone's loop
+  and holds a stop route. On the AI service the turn runs on the device and the stop route retires (gym Coach on the AI
+  service §4, §9), as 08W.11 retires the web's *Stop didn’t reach Coach. Try again.*, and no board draws a Stop that needs a
+  connection. The second sentence goes with the move; for the owner, whether iOS's band then says only *Coach is stopped on
+  this phone.*
+- **12w · 01.8 says *Check them, then apply.*** iOS 01.8 (`1173:4471`, 🚀) draws Coach's answer as *Your screenshot has 3
+  full-body days. Here are 3 new routines. Check them, then apply.* over three *Routine created* rows. A routine Coach creates
+  exists at once, with nothing to apply (gym Coach on the AI service R-7; 08W.13 ends the sentence at *routines.*). iOS's capture fixture says
+  the same sentence (`Coach/CoachFixtures.swift`), and *Check it, then apply.* for one routine. The board's last sentence
+  goes (designer), and the fixture with it.
+- **12x · *did not answer* has no full stop on the phones.** iOS (`CoachCopy.noAnswer`, `Coach/CoachWire.swift`) and Android
+  (`gym_coach_fault_no_answer`) say *Coach didn’t answer. Try again in a moment* with no full stop; iOS appends `. ` and a
+  detail to it when the server names one (`CoachTransport.swift`). The web's `gym.coach.noAnswer` and 08W.18 end it with a
+  full stop. For the phones' build: the full stop, with any detail joined after it.
 
 ### Native and web differences
 

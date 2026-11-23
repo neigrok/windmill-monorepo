@@ -208,3 +208,20 @@ for (const file of readdirSync(new URL('../../../../packages/api-contract/agent/
     if (trace.end && exists) assert.equal(state, trace.end.state);
   });
 }
+
+test('a host fault mid-turn ends it failed as host-fault and reports the error the host raised, once', async () => {
+  const story = JSON.parse(readFileSync(new URL('../../../../packages/api-contract/agent/turns/text.json', import.meta.url), 'utf8'));
+  const fault = new Error('store refused');
+  const reports = [];
+  const ends = [];
+  const runner = new TurnRunner({
+    ai: { clearPass() {}, connected: () => true, text: async ({ onText }) => { await onText('Hi'); return { failure: { code: null } }; } },
+    telemetry: { failure: (operation, error) => reports.push([operation, error]) },
+    runtime: { now: () => 0, newId: () => story.runtime.callIds[0], withLock: (_, options, body) => body(true) },
+    host: { open: async () => ({ ...story.host.open, lease: 'lease' }), beginRound: async () => {}, text: async () => { throw fault; },
+      end: async (lease, end) => { ends.push(end); } },
+  });
+  assert.deepEqual(await runner.run(story.input, story.profile), { state: 'failed', text: 'Hi', truncated: false, code: 'host-fault' });
+  assert.deepEqual(ends, [{ state: 'failed', text: 'Hi', truncated: false, code: 'host-fault' }]);
+  assert.deepEqual(reports, [['agent-host', fault]]);
+});

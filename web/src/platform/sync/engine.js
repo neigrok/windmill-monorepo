@@ -1212,7 +1212,9 @@ export class BrowserSyncEngine {
     }
   }
 
-  async finishSignOut({ choice, counted, deviceCleanup = false, beforeSignOutCommit }) {
+  // `forgetDeviceRows`, `{ [product]: keys }`, names device rows the products take from the account's replica when the
+  // sign-out finishes with Keep, in the write that finishes it: a sign-out cancelled or failed keeps them.
+  async finishSignOut({ choice, counted, deviceCleanup = false, beforeSignOutCommit, forgetDeviceRows = {} }) {
     if (this.device.activeReplica.meta.state !== 'bound') throw new CommitError('sign-out requires a bound account');
     const account = this.device.activeReplica.meta.account;
     const handle = this.device.activeReplica.storageHandle;
@@ -1222,8 +1224,10 @@ export class BrowserSyncEngine {
         || device.activeReplica.storageHandle !== handle || device.meta.signOut?.lock !== session)
         throw new CommitError('account changed during sign-out');
       device.meta.authGeneration = (device.meta.authGeneration ?? 0) + 1;
+      const bound = device.activeReplica;
       const result = signOut(device, ctx, { choice, counted });
       if (result.complete) {
+        for (const [product, keys] of Object.entries(forgetDeviceRows)) for (const key of keys) delete bound.deviceRows(product)[key];
         const fence = beforeSignOutCommit?.();
         if (fence?.then) throw new Error('sign-out fence must be synchronous');
         device.meta.clearCredential = account;

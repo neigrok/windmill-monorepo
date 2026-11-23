@@ -512,6 +512,7 @@ async fn session(
                 started: call_start,
                 http_status: failure.http_status,
                 failure_kind: Some(failure.kind),
+                refusal: failure.refusal,
                 usage: None,
             };
             if failure.key_account_fault {
@@ -731,6 +732,7 @@ async fn session(
             failure_kind: transcript.failure_kind.or_else(|| {
                 (final_code == Some(StaticCode::ProviderFailed)).then_some(FailureKind::Protocol)
             }),
+            refusal: None,
             usage: None,
         },
     )

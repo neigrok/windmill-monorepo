@@ -440,12 +440,13 @@ internal fun Engine.materialize(replica: ReplicaState, request: InverseRequest) 
         val entry = replica.entry(slot.localId)
         if (entry == null) { slot.settle(null, "refused"); continue }
         val recipe = slot.recipe
-        slot.skipped = emptyList()
+        val recorded = slot.skipped.orEmpty()
+        slot.skipped = recorded
         val args: Json? = when {
             epoch == null -> null
             recipe is SlotRecipe.Restore -> {
                 val results = recipe.operations.map { op -> op to replica.bind(act, history, op) }
-                slot.skipped = results.mapNotNull { (it.second as? Bound.Skipped)?.code }
+                slot.skipped = recorded + results.mapNotNull { (it.second as? Bound.Skipped)?.code }
                 val sent = results.mapNotNull { (op, result) -> (result as? Bound.Sent)?.let { op to it.operation } }
                 slot.recipe = recipe.copy(operations = sent.map { it.first })
                 sent.takeIf { it.isNotEmpty() }?.let { RestoreArguments(epoch, it.map { (_, wire) -> wire }).json }
@@ -454,7 +455,7 @@ internal fun Engine.materialize(replica: ReplicaState, request: InverseRequest) 
                 val selection = recipe.recipe.evidence
                 val records = selection.unchangedCreatedRecords.map { (history.createdFootprint(it) as? CreatedProof.Held)?.proof }
                 val scopes = selection.unchangedCreatedScopes.map(history::createdScope)
-                if (records.any { it == null } || scopes.any { it == null }) null.also { slot.skipped = listOf("history-changed") }
+                if (records.any { it == null } || scopes.any { it == null }) null.also { slot.skipped = recorded + "history-changed" }
                 else Json.objectOf("input" to recipe.recipe.input, "evidence" to Evidence(epoch,
                     selection.ownedFields.mapNotNull { target -> history.latestOwned(target)?.let { Evidence.OwnedField(target, it) } },
                     records.filterNotNull(), scopes.filterNotNull()).json)
@@ -473,6 +474,42 @@ internal fun Engine.materialize(replica: ReplicaState, request: InverseRequest) 
     }
     request.state = "materialized"
     replica.settleRequest(request)
+}
+
+// §7.10 Add: an act adopted from `from` never read this replica's own writes, which reach the server before its own. Each adopted act
+// gives up every field target whose record this replica holds a write of, an outbox entry whose stored effects write it or a receipt row
+// its journal keeps: the target leaves its recipes, preimages and written values, and a waiting request withdraws its operation there,
+// with its projection, counted skipped `history-changed`. A created record and a command recipe stay, proven by the act's own receipts
+// alone. Answers how many targets the adopted acts gave up.
+internal fun ReplicaState.giveUpUnread(from: ReplicaState): Int {
+    val written = buildSet {
+        for (entry in outbox) for (effect in entry.effects) for (delta in effect.deltas) add(RecordAddress(effect.scope, delta.key))
+        for (attempt in journal.flatMap { it.sourceEntries }.flatMap { it.attempts }) {
+            for (effect in attempt.acceptedEffects.orEmpty()) for (row in effect.rows) add(RecordAddress(effect.scope, row.key))
+        }
+    }
+    if (written.isEmpty()) return 0
+    var givenUp = 0
+    for (source in from.journal.flatMap { it.sourceEntries }) {
+        source.recipes = source.recipes.mapNotNull { recipe ->
+            if (recipe !is UndoRecipe.Fields) return@mapNotNull recipe
+            val kept = recipe.targets.filter { it.target.record !in written }
+            givenUp += recipe.targets.size - kept.size
+            kept.takeIf { it.isNotEmpty() }?.let { recipe.copy(targets = it) }
+        }
+        source.preimages = source.preimages.filter { it.target.record !in written }
+        source.written = source.written.filter { it.target.record !in written }
+    }
+    for (request in from.inverses.filter { it.state == "waiting" }) for (slot in request.slots.filter { it.state == "waiting" }) {
+        val recipe = slot.recipe as? SlotRecipe.Restore ?: continue
+        val kept = recipe.operations.filter { it !is PlannedOperation.Field || it.reference != null || it.target.record !in written }
+        val withdrawn = recipe.operations.size - kept.size
+        if (withdrawn == 0) continue
+        slot.recipe = recipe.copy(operations = kept)
+        slot.skipped = slot.skipped.orEmpty() + List(withdrawn) { "history-changed" }
+        from.entry(slot.localId)?.let { keepProjection(it, kept) }
+    }
+    return givenUp
 }
 
 // The projection of the operations a slot still holds, the rest withdrawn.
