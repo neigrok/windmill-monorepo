@@ -157,8 +157,20 @@ TEST(gym_catalog_2_and_catalog_3_differ_in_what_they_take_and_in_the_log_row) {
     }
     newer.removeMember("strict");
     if (newer["name"] == "list_sessions") {
-      older.removeMember("result");
-      newer.removeMember("result");
+      // catalog/3's row drops the frozen plan, adds a line per movement and names the top set's movement; the rest is catalog/2's.
+      const auto without = [](const Json::Value& names, const std::string& name) {
+        Json::Value kept(Json::arrayValue);
+        for (const Json::Value& each : names)
+          if (each.asString() != name) kept.append(each);
+        return kept;
+      };
+      Json::Value& olderRow = older["result"]["properties"]["sessions"]["items"];
+      Json::Value& newerRow = newer["result"]["properties"]["sessions"]["items"];
+      olderRow["properties"].removeMember("plan");
+      newerRow["properties"].removeMember("movements");
+      newerRow["required"] = without(newerRow["required"], "movements");
+      newerRow["properties"]["topSet"]["properties"].removeMember("exerciseId");
+      newerRow["properties"]["topSet"]["required"] = without(newerRow["properties"]["topSet"]["required"], "exerciseId");
     }
     CHECK_EQ(sync::jcs(older), sync::jcs(newer));
   }
