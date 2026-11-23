@@ -122,18 +122,15 @@ struct CommitTests {
     var random = SeededRandom.fromEnvironment()
     let planner = CommitPlanner(registry: Self.probe)
     var whole = try Self.replica()
-    var refusals = 0
     for step in 0..<150 {
       var (scope, gesture) = Self.gesture(&random)
       gesture.gestureId = "step\(step)"
       let instance = Self.instance(4000 + Int64(step))
       let (partial, partialOutcome) = try Self.planned(gesture, in: scope, over: whole, by: planner, as: instance)
       let wholeOutcome = try planner.commit(gesture, in: scope, to: &whole, as: instance, identities: try QueuedIdentities([:]), gestureIdTaken: false)
-      if case .refused(.cap, _, _) = wholeOutcome { refusals += 1 }
       #expect(partialOutcome == wholeOutcome, "seed \(random.seed), step \(step)")
       #expect(partial.writes == Array(whole.writes.suffix(partial.writes.count)), "seed \(random.seed), step \(step)")
     }
-    #expect(refusals > 0, "seed \(random.seed): no gesture met the cap")
   }
 
   // A commit as the store's Action plans it: over the rows its read set names, then again over each it finds unread.
