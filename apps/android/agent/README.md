@@ -1,10 +1,11 @@
 # Agent turns
 
-`:agent` is a plain JVM library with only `:sync-core` and coroutines as dependencies. The released
-Gym protocol uses `TurnDriver`, `TurnHost` and `TurnWire`. The device-hosted Coach engine lives in
-`works.windmill.agent.coach`; it is a library and has no product cutover or screen integration.
+`:agent` is a plain JVM library with only `:sync-core` and coroutines as dependencies: the Coach engine
+of [Coach engine](../../../docs/foundation/coach-engine.md), in `works.windmill.agent.coach`. Gym's Coach
+runs on it (`gym/coach/turn/`: `CoachTurns`, `GymTurnHost`, `GymProfile`).
 
-`Profile` validates plain JSON before admission. `TurnRunner` runs one sequential turn through
+`Profile` validates plain JSON before admission; a tool states `strict` only where its profile does, and the
+request carries it as stated. `TurnRunner` runs one sequential turn through
 `ToolHost`, `AiClient` and `Telemetry`. Its working messages, carry, full tool results and prompts
 stay in memory. A host atomically creates its visible records and a null-call `Mark`, then returns
 an opaque lease. Every text, round, execution, final end and withdrawal checks that lease and
@@ -34,32 +35,33 @@ are serialized once per call, event cursors suppress replay, and admission only 
 Before round 1 writes its mark, `TurnRunner` asks `AiClient.connected()` once whether the device
 reports a connection. With none it withdraws the turn, so its draft returns at once with no mark,
 pass fetch, picture upload or request; later rounds and recovery never ask. `CoachAiClient` answers
-from the `connection` it was constructed with. No application constructs this client yet, and until
-one passes `connection` (its connectivity callback's report), every turn counts as connected.
+from the `connection` it was constructed with; gym's `CoachTurns` passes the sync engine's online state.
 Before a text dispatch, an offline pass or picture preparation failure also withdraws the turn. A
 text dispatch that fails is uncertain whatever the device reports and retains its records. Lost calls keep their original twenty-minute deadline through temporary
 pass refresh failures and proxy responses. A resent PUT still gives paused, concurrency and
 provider-unavailable refusals thirty seconds from the first PUT.
 `CoachRuntime` supplies cryptographic 128-bit identifiers and process-local turn leases. Its
 injected background lease is acquired and released with the turn. `AndroidCoachBackgroundLease`
-provides a bounded partial wake lock for a future integrating application that declares
-`android.permission.WAKE_LOCK`; the current Gym app continues using its existing expedited job.
+provides a bounded partial wake lock for an application that declares `android.permission.WAKE_LOCK`;
+the Gym app passes none and holds its own expedited job (`TurnLease`) for the turn's work.
 
 The engine's telemetry port emits one bounded turn outcome and one bounded outcome per attempted
 ability. It reports unexpected host faults as `agent-host`; the platform adapter reports wire,
 transport and protocol defects as `ai-call`, and unexpected pass-door faults as `ai-pass`, through
 the existing Android Sentry boundary. Lost connections and expected refusals do not become Issues.
-A product adapter supplies its registered first-party event names. No IDs, seats' keys, content,
+Gym's `GymTurnTelemetry` is the port, and names the first-party events. No IDs, seats' keys, content,
 credentials, raw errors or amounts enter these outcomes. Telemetry observers cannot fail a turn.
 Recovery `call_unknown` is an interrupted turn without an Issue; the same refusal during a live
-turn is a call defect. Non-service HTTP error bodies and expected temporary pass refusals are quiet.
+turn is a call defect. AI service error bodies that are no service refusal and expected temporary pass refusals are quiet; a pass-door 5xx that names no refusal is reported, as `proxy-5xx`, and read as not answering. Each report carries the throwable that failed, or a bounded code where none did.
 See [Android observability](../../../docs/ANDROID_OBSERVABILITY.md).
 
 From `apps/android`, `:platform:testDebugUnitTest --tests '*Coach*Tests'` runs every shared story in
 `packages/api-contract/agent/turns` against the actual runner and client with a deterministic
 transport and guarded host. It also consumes the AI fixtures, checks credential isolation, strict
-SSE, delayed record deletion and seat changes. `:agent:test` checks the pure policies and released
-runner; `:sync-engine:testDebugUnitTest` checks the runtime's live freshness along with sync.
+SSE, delayed record deletion and seat changes. `:agent:test` checks the pure policies and the
+runner; `:sync-engine:testDebugUnitTest` checks the runtime's live freshness along with sync. Gym's
+host is held to the engine in `:gym`'s `CoachTurnsTests`, and end to end in `CoachTurnsLiveWireTests`
+([the app's README](../README.md)).
 Platform client changes also run the [app's source checks](../README.md#local-verification).
 
 The opt-in process probe is `works.windmill.platform.ai.CoachServiceProbe`. Build

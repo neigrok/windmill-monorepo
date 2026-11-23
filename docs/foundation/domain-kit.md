@@ -180,8 +180,9 @@ hold the product-neutral [Coach engine](coach-engine.md). Kotlin's existing serv
 [the phone Coach](mobile/gym_coach.md) (§4) stays beside it: `:agent` depends on `:sync-core` and
 kotlinx-coroutines-core, so it is neither kit nor domain and §2.3's class rules do not read it. The
 conversation's records, its receipts and context reads, and every screen stay gym's. `:gym:domain` holds the
-actions of a turn's records (`StreamTurnText`, `WithdrawTurn`, `KeepPicture`, `DeleteConversation`), which Swift
-keeps in the app target (`Gym/Coach/Turn/CoachTurnRecords.swift`). A
+actions of a turn's records (`StreamTurnText`, `WithdrawTurn`, `KeepPicture`, `DeleteConversation`). Swift's
+`GymDomain` holds the same actions but `KeepPicture`, which it keeps in the app target
+(`Gym/Coach/Turn/CoachTurnRecords.swift`). A
 Kotlin module `:a:b` lives at `apps/android/a/b`. `settings.gradle.kts` includes exactly these modules
 and no other build. A `jvm` module applies exactly the plugin set `{org.jetbrains.kotlin.jvm}`.
 

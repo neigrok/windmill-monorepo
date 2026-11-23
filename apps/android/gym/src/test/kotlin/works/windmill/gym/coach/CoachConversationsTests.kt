@@ -324,11 +324,19 @@ class CoachConversationsTests {
         }
     }
 
+    // An input as catalog/3 asks for it: the reads' members a call leaves out are the ones that mean "every" or "the newest".
+    private fun asked(name: String, input: String): Json {
+        val given = Json.parse(input).obj()
+        val defaults = mapOf("list_sessions" to """{"before":null,"beforeId":null,"limit":20}""", "list_routines" to """{"routineId":null}""",
+            "list_bodyweight" to """{"from":null,"to":null}""", "get_session" to """{"review":false}""", "propose_routine_change" to """{"name":null}""")
+        return Json.Obj((defaults[name]?.let { Json.parse(it).obj() }.orEmpty() + given).toList())
+    }
+
     private fun EngineRoomFixture.turn(thread: Id<CoachThread>?, vararg calls: Pair<String, String>, phoneReads: List<String> = emptyList()): OpenTurn.Turn {
         val runner = ActionRunner(engine, engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
         val turn = (runner.run(OpenTurn(thread, "Question")) as Outcome.Committed).result
         fun ran(id: String, name: String, input: String) {
-            val outcome = runner.run(RunAbility(AbilityRequest(id, name, Json.parse(input)), turn.coach, Seat.bound, TurnPhone.catalog(), "https://windmill.works"))
+            val outcome = runner.run(RunAbility(AbilityRequest(id, name, asked(name, input)), turn.coach, Seat.bound, TurnPhone.catalog(), "https://windmill.works"))
             assertTrue("$name ran: $outcome", (outcome as Outcome.Committed).result is AbilityOutcome.Result)
         }
         phoneReads.forEach { name -> ran(contextCallPrefix + name, name, "{}") }
@@ -373,7 +381,7 @@ class CoachConversationsTests {
             conversations.read()
             val reply = checkNotNull(conversations.exchanges("chat").single().answer)
             assertEquals("Read nothing from your log", reply.readLine.spelled())
-            assertEquals(listOf(CreatedRoutine("rt_00000001", "Day 1", 1), CreatedRoutine("rt_00000002", "Day 2", 1), CreatedRoutine("rt_00000003", "Day 3", 1)), reply.routines)
+            assertEquals((1..3).map { CreatedRoutine("${made.coach.record.string}-$it", "Day $it", 1) }, reply.routines)
             room.now += 60_000
             room.turn(made.thread, phoneReads = CoachTurnBounds.contextReads)
             conversations.read()
@@ -481,15 +489,16 @@ class CoachConversationsTests {
             val runner = ActionRunner(room.engine, room.engine.registry, FixedZone(0), object : ActionContext { override var insideRun = false })
             val turn = (runner.run(OpenTurn(null, "Question")) as Outcome.Committed).result
                 fun ran(name: String, input: String) {
-                val outcome = runner.run(RunAbility(AbilityRequest("call-$name", name, Json.parse(input)), turn.coach, Seat.bound, TurnPhone.catalog(), "https://windmill.works"))
+                val outcome = runner.run(RunAbility(AbilityRequest("call-$name", name, asked(name, input)), turn.coach, Seat.bound, TurnPhone.catalog(), "https://windmill.works"))
                 val answered = (outcome as Outcome.Committed).result
                 assertTrue("$name ran: $answered", answered is AbilityOutcome.Result)
             }
             ran("list_sessions", "{}")
             ran("save_note", """{"id":"note00000001","title":"Shoulder","body":"Left shoulder hurts on wide-grip bench."}""")
             ran("create_exercise", """{"id":"ex_00000001","name":"Incline Dumbbell Press","pattern":"press","equipment":"dumbbell","stepKg":2.5}""")
-            ran("create_routine", """{"id":"rt_00000001","name":"Push A","position":0,"entries":[{"exerciseId":"bench-press"},{"exerciseId":"ex_00000001"}]}""")
-            ran("propose_routine_change", """{"id":"pr_00000001","routineId":"rt_00000001","summary":"Heavier.","entries":[{"exerciseId":"bench-press","sets":[{"reps":3,"weightKg":90}]}]}""")
+            val seeded = { n: Int -> "${turn.coach.record.string}-$n" }
+            ran("create_routine", """{"id":"rt_00000001","name":"Push A","position":0,"entries":[{"exerciseId":"bench-press"},{"exerciseId":"${seeded(2)}"}]}""")
+            ran("propose_routine_change", """{"id":"pr_00000001","routineId":"${seeded(3)}","summary":"Heavier.","entries":[{"exerciseId":"bench-press","sets":[{"reps":3,"weightKg":90}]}]}""")
             ran("list_notes", "{}")
             ran("list_routines", "{}")
             check(runner.run(EndTurn(turn.coach, MessageState.completed, "An answer")) is Outcome.Committed)
@@ -511,12 +520,12 @@ class CoachConversationsTests {
                 "Read your notes" to "1 note",
                 "Read your program" to "Push A",
             ), conversations.withDetails(reply.id, reply.readRows).map { it.title.spelled() to it.detail.spelled() })
-            assertEquals(listOf(CreatedRoutine("rt_00000001", "Push A", movements = 2)), reply.routines)
-            assertEquals(listOf(SavedNote("note00000001", "Left shoulder hurts on wide-grip bench.")), reply.savedNotes)
-            assertEquals(listOf(MadeMovement("ex_00000001", "Incline Dumbbell Press", Words.Message(R.string.gym_equipment_dumbbells), 2.5)), reply.madeMovements)
+            assertEquals(listOf(CreatedRoutine(seeded(3), "Push A", movements = 2)), reply.routines)
+            assertEquals(listOf(SavedNote(seeded(1), "Left shoulder hurts on wide-grip bench.")), reply.savedNotes)
+            assertEquals(listOf(MadeMovement(seeded(2), "Incline Dumbbell Press", Words.Message(R.string.gym_equipment_dumbbells), 2.5)), reply.madeMovements)
             assertEquals("Dumbbells", reply.madeMovements.single().equipment.spelled())
             assertEquals("Read 1 workout · 1 week", reply.readLine.spelled())
-            assertEquals("a proposal this phone minted names its routine before the server does", "Push A", room.training.proposal("pr_00000001")?.routineNamed.spelled())
+            assertEquals("a proposal this phone minted names its routine before the server does", "Push A", room.training.proposal(seeded(4))?.routineNamed.spelled())
         }
     }
 }

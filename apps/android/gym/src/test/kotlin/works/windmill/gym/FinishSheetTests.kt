@@ -60,7 +60,6 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.agent.TurnRefusal
 import works.windmill.gym.coach.CoachDraft
 import works.windmill.gym.coach.LocalCoach
 import works.windmill.gym.coach.heldThreads
@@ -516,7 +515,7 @@ class FinishSheetTests {
 
     @Test
     fun testWithoutCoachOnThisDeploymentTheReceiptOffersNoShareWithCoach() {
-        val server = ScriptedTurns(emptyList()).apply { refuseOpen = TurnRefusal(404, "not-found", null) }
+        val server = ScriptedTurns(emptyList()).apply { refuseOpen = ScriptedTurns.Refusal.of("not_found") }
         inRoom(server) { room ->
             read(room)
             show(room)
@@ -530,7 +529,7 @@ class FinishSheetTests {
             finish()
 
             compose.onAllNodesWithText(string(R.string.gym_finish_share_with_coach)).assertCountEquals(0)
-            assertEquals("the one ask was the opener", listOf("What’s stalled?"), server.opened.map { it.question })
+            assertEquals("the one ask was the opener, which the pass door answered", 1 to 0, server.passes to server.opened.size)
         }
     }
 

@@ -55,11 +55,13 @@ export class ProductCorpus {
     return scopes === undefined ? single : scopes[scope] ?? { drawn: [] };
   }
 
-  // A case's records in one scope as the kit's views, with the scene's device rows; `ids` are minted in order.
+  // A case's records in one scope as the kit's views, with its device rows: a single scene's under `records.device`, a
+  // scene of several scopes' under `device`. `ids` are minted in order.
   /** @param {Vector} vector @param {string} scope @param {(type: string) => import('../../../src/platform/domain-kit/entities.js').RecordID} mintId */
   views(vector, scope, mintId) {
-    const { device = {}, firstPullComplete = true } = vector.input;
+    const { firstPullComplete = true } = vector.input;
     const records = this.records(vector, scope);
+    const device = (vector.input.scopes === undefined ? records.device : vector.input.device) ?? {};
     const stored = viewRecords(records.stored ?? records.drawn);
     return Views.ofRecords(this.book.registry, { drawn: viewRecords(records.drawn), stored, confirmed: stored, spent: records.spent ?? [],
       devices: device, firstPullComplete, replica: VECTOR_REPLICA, mintId });

@@ -20,11 +20,11 @@ class AbilitiesTests {
     fun catalog(vararg entries: String): Catalog = Catalog(Json.parse("""{"catalog": "catalog/9", "abilities": [${entries.joinToString(",")}]}"""))
 
     @Test fun aCatalogReadsItsVersionAndItsAbilitiesInOrder() {
-        val read = catalog(entry("second", "remove", "proposes", "bound", """, "since": "catalog/2", "declared": false"""), entry("first"))
+        val read = catalog(entry("second", "remove", "proposes", "bound", """, "since": "catalog/2", "declared": false, "strict": false"""), entry("first"))
         assertEquals("catalog/9", read.version)
         assertEquals(listOf(
-            Ability("second", AbilityClass.remove, AgentRule.proposes, AbilitySeats.bound, false, "read second", Json.parse("""{"type":"object"}"""), Json.parse("""{"type":"array"}""")),
-            Ability("first", AbilityClass.read, AgentRule.runs, AbilitySeats.any, true, "read first", Json.parse("""{"type":"object"}"""), Json.parse("""{"type":"array"}""")),
+            Ability("second", AbilityClass.remove, AgentRule.proposes, AbilitySeats.bound, false, "read second", Json.parse("""{"type":"object"}"""), Json.parse("""{"type":"array"}"""), "d", false),
+            Ability("first", AbilityClass.read, AgentRule.runs, AbilitySeats.any, true, "read first", Json.parse("""{"type":"object"}"""), Json.parse("""{"type":"array"}"""), "d", true),
         ), read.abilities)
         assertEquals("first", read.ability("first")?.name)
         assertNull(read.ability("absent"))
@@ -56,6 +56,8 @@ class AbilitiesTests {
             """{"catalog": "catalog/9", "abilities": [${entry("a", seats = "none")}]}""",
             """{"catalog": "catalog/9", "abilities": [${entry("a", extra = """, "declared": "no"""")}]}""",
             """{"catalog": "catalog/9", "abilities": [${entry("a", extra = """, "since": "2"""")}]}""",
+            """{"catalog": "catalog/9", "abilities": [${entry("a", extra = """, "strict": "yes"""")}]}""",
+            """{"catalog": "catalog/9", "abilities": [${entry("a").replace(""""description": "d"""", """"description": 1""")}]}""",
             """{"catalog": "catalog/9", "abilities": [${entry("a", extra = """, "since": 2""")}]}""",
             """{"catalog": "catalog/9", "abilities": [${entry("a", extra = """, "extra": 1""")}]}""",
             """{"catalog": "catalog/9", "abilities": [${entry("a").replace(""""ui": "a"""", """"unknown": "a"""")}]}""",

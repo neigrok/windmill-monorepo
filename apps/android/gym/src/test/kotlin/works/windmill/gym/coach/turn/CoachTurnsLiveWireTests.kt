@@ -1,18 +1,12 @@
 package works.windmill.gym.coach.turn
 
 import android.content.Context
-import java.io.ByteArrayOutputStream
+import android.graphics.Bitmap
+import android.graphics.Color
 import java.io.File
-import java.io.IOException
-import java.io.InputStream
-import java.net.ServerSocket
-import java.net.Socket
 import java.util.Collections
 import java.util.UUID
-import java.util.concurrent.TimeUnit
 import javax.crypto.KeyGenerator
-import kotlin.concurrent.thread
-import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -20,11 +14,14 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import okhttp3.ConnectionPool
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -37,20 +34,35 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.SQLiteMode
 import works.windmill.domain.kit.Catalog
+import works.windmill.domain.kit.Id
+import works.windmill.domain.kit.Instant
+import works.windmill.domain.kit.Outcome
 import works.windmill.domain.kit.Repository
+import works.windmill.gym.coach.CoachAttachment
 import works.windmill.gym.domain.coach.AbilityCall
 import works.windmill.gym.domain.coach.CoachMessage
 import works.windmill.gym.domain.coach.CoachTurnBounds
+import works.windmill.gym.domain.coach.EndTurn
+import works.windmill.gym.domain.coach.Mark
 import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.OpenTurn
+import works.windmill.gym.domain.sync.ApplyProposal
+import works.windmill.gym.domain.sync.Exercise
+import works.windmill.gym.domain.sync.ImportSession
+import works.windmill.gym.domain.sync.ImportedSet
+import works.windmill.gym.domain.sync.Proposal
 import works.windmill.gym.domain.sync.Routine
+import works.windmill.gym.domain.sync.Session
+import works.windmill.gym.domain.sync.TrainingSet
+import works.windmill.gym.net.GymHttp
 import works.windmill.gym.store.EngineTraining
 import works.windmill.gym.telemetry.GymEvents
-import works.windmill.platform.agent.TurnHttp
+import works.windmill.platform.ai.AiHttp
 import works.windmill.platform.ai.AiInstallation
 import works.windmill.platform.ai.AiInstallationHttp
 import works.windmill.platform.auth.KeptValues
 import works.windmill.platform.auth.SecretVault
+import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.telemetry.AndroidTelemetry
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.Json
@@ -59,116 +71,45 @@ import works.windmill.sync.engine.*
 import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
 
-// A door between the phone and the local backend, losing the next open as it is told; every other request goes through whole.
-private class LossyDoor(private val server: HttpUrl, private val route: String) : AutoCloseable {
-    enum class Loss { none, neverArrivesOnce, answerLostOnce, always }
-
-    @Volatile var loss = Loss.none
-    private val socket = ServerSocket(0)
-    val base = "http://127.0.0.1:${socket.localPort}/".toHttpUrl()
-
-    init {
-        thread(isDaemon = true) {
-            while (true) {
-                val phone = try { socket.accept() } catch (closed: IOException) { break }
-                thread(isDaemon = true) { phone.use(::serve) }
-            }
-        }
-    }
-
-    private fun serve(phone: Socket) {
-        val input = phone.getInputStream()
-        val request = wholeRequest(input) ?: return
-        val opening = request.decodeToString().startsWith("POST $route HTTP/")
-        val lost = if (opening) loss else Loss.none
-        if (opening && lost != Loss.always) loss = Loss.none
-        if (lost == Loss.neverArrivesOnce || lost == Loss.always) return
-        Socket(server.host, server.port).use { backend ->
-            backend.getOutputStream().apply { write(request); flush() }
-            if (lost == Loss.answerLostOnce) {
-                backend.getInputStream().read()
-                return
-            }
-            thread(isDaemon = true) { try { input.transferTo(backend.getOutputStream()) } catch (closed: IOException) { } }
-            try { backend.getInputStream().transferTo(phone.getOutputStream()) } catch (closed: IOException) { }
-        }
-    }
-
-    private fun wholeRequest(input: InputStream): ByteArray? {
-        val read = ByteArrayOutputStream()
-        while (!read.toString(Charsets.ISO_8859_1).endsWith("\r\n\r\n")) {
-            val byte = input.read()
-            if (byte == -1) return null
-            read.write(byte)
-        }
-        val length = read.toString(Charsets.ISO_8859_1).split("\r\n").firstOrNull { it.startsWith("Content-Length:", ignoreCase = true) }?.substringAfter(':')?.trim()?.toInt() ?: 0
-        read.write(input.readNBytes(length))
-        return read.toByteArray()
-    }
-
-    override fun close() = socket.close()
-}
-
-// The turn against a local backend and a fake model vendor: signed in and signed out, a read batch, a `create_routine`, a proposal and a Stop, then a sign-in under a running signed-out turn, on the real wire, a real SQLite engine and the real event delivery. The harness that starts them greps the server's lines and the intake.
+// Gym Coach on the AI service end to end (gym Coach on the AI service §10): the real engine on SQLite, the real AI client over HTTP and the real event delivery, against the backend signing passes, the AI service, and a provider the stack plays (`apps/android/tools/coach_turn_stack.py`, which starts them and runs this). The stories: a question answered, an ability that writes, a proposal applied, a share, a picture, Stop, a connection lost and found, a sign-in under a running turn, an app killed in its last round, and an allowance used up.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 @SQLiteMode(SQLiteMode.Mode.NATIVE)
 class CoachTurnsLiveWireTests {
-    private val scope = ScopeRef(Gym.scope)
+    private val gym = ScopeRef(Gym.scope)
 
-    private fun TurnsOn.routines(): List<Routine> = engine.read(scope) { Repository.decode(Routine, it.drawn(Routine.type)) }
-    private fun TurnsOn.message(turn: OpenTurn.Turn): CoachMessage = checkNotNull(engine.read(scope) { read -> Repository.decode(CoachMessage, read.drawn(CoachMessage.type)) }.firstOrNull { it.id == turn.coach })
+    private class Wire(val base: HttpUrl, val bearer: String, val evidence: File) {
+        val context: Context = RuntimeEnvironment.getApplication()
+        val client = OkHttpClient()
+        val failures: MutableList<String> = Collections.synchronizedList(mutableListOf())
+        val clock = object : EngineClock { override fun now() = System.currentTimeMillis() }
+        val ids = object : IdentitySource {
+            override fun opaqueID() = UUID.randomUUID().toString()
+            override fun draw(bound: Int) = java.security.SecureRandom().nextInt(bound)
+        }
+        val initial = Engine.memory(SyncSchema.registry, clock = clock).use { it.snapshot() }
+        val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+        val http = HTTPTransport(base.toString(), SyncSchema.registry.version.toInt())
 
-    private class TurnsOn(val engine: Engine, val turns: CoachTurns)
-
-    private suspend fun TurnsOn.send(question: String, anonymous: Boolean): OpenTurn.Turn {
-        val turn = checkNotNull(turns.send(question, null, null, anonymous)) { "refused: ${turns.refusal.value} ${turns.fault.value}" }
-        return turn
+        // What the stack is told to do next, through its origin.
+        fun steer(action: String) {
+            client.newCall(Request.Builder().url(base.resolve("/__stack/$action")!!).post(ByteArray(0).toRequestBody()).build()).execute().use {
+                assertTrue("the stack took $action", it.isSuccessful)
+            }
+        }
     }
 
-    private suspend fun TurnsOn.settled(turn: OpenTurn.Turn): CoachMessage = withTimeout(30_000) {
-        while (turns.turn.value != null) delay(20)
-        message(turn)
+    private class Phone(val engine: Engine, val turns: CoachTurns, val work: CoroutineScope) {
+        val training = EngineTraining(engine)
     }
 
-    // Every step a real turn takes, on one seat.
-    private suspend fun TurnsOn.walk(anonymous: Boolean, reads: List<String> = CoachTurnBounds.contextReads) {
-        val read = settled(send("wire read-batch", anonymous))
-        assertEquals(MessageState.completed, read.state)
-        assertEquals(reads + listOf("list_routines", "list_exercises"), read.calls.map { it.name })
-        assertTrue(read.calls.all { it.outcome == AbilityCall.Outcome.Ok })
-        assertEquals("Checking.Done, read-batch.", read.text.replace("\n", ""))
-        assertEquals(AbilityCall.receipt(read.calls), read.receipt)
-
-        val made = settled(send("wire create-routine", anonymous))
-        assertEquals(MessageState.completed, made.state)
-        val created = made.calls.last()
-        assertEquals("create_routine", created.name)
-        assertEquals(AbilityCall.Outcome.Ok, created.outcome)
-        val routine = routines().single { it.name == "Wire day" }
-        assertEquals(listOf(routine.id.ref), created.created)
-        assertEquals(Json.objectOf("read" to made.receipt!!.member("read"), "results" to Json.Arr(listOf(Json.objectOf("t" to Json.of(Gym.Types.routine), "id" to routine.id.json)))).jcs, made.receipt!!.jcs)
-
-        val proposed = settled(send("wire proposal routine=${routine.id.record.string}", anonymous))
-        assertEquals(MessageState.completed, proposed.state)
-        assertEquals("propose_routine_change", proposed.calls.last().name)
-        assertEquals(AbilityCall.Outcome.Ok, proposed.calls.last().outcome)
-        assertEquals(1, proposed.calls.last().created.size)
-
-        val stopping = send("wire stop", anonymous)
-        withTimeout(30_000) { turns.liveAnswer.first { it?.message == stopping.coach && it.text.isNotEmpty() } }
-        turns.requestStop()
-        val stopped = settled(stopping)
-        assertEquals(MessageState.stopped, stopped.state)
-        assertEquals(reads, stopped.calls.map { it.name })
-        assertNull(turns.fault.value)
-        assertNull(turns.refusal.value)
-    }
-
-    private fun kept(context: Context, name: String): KeptValues {
-        val prefs = context.getSharedPreferences(name, Context.MODE_PRIVATE)
-        assertTrue(prefs.edit().clear().commit())
-        return object : KeptValues {
+    private fun Wire.phone(name: String, token: String?, telemetry: Telemetry, scope: CoroutineScope, existing: Boolean = false): Phone {
+        val file = File(evidence, "$name.sqlite")
+        if (!existing) file.delete()
+        val engine = AndroidSqlite.open(file, SyncSchema.registry, initial, clock, ids, ids.actorID(), rewriteDeviceValue = EngineTraining.rewriteDeviceValue)
+        val prefs = context.getSharedPreferences("wire-installation-$name", Context.MODE_PRIVATE)
+        if (!existing) assertTrue(prefs.edit().clear().commit())
+        val kept = object : KeptValues {
             override fun read(key: String) = prefs.getString(key, null)
             override fun write(values: Map<String, String?>) {
                 val edit = prefs.edit()
@@ -176,212 +117,233 @@ class CoachTurnsLiveWireTests {
                 check(edit.commit())
             }
         }
+        val installation = AiInstallation(kept, SecretVault { key }, AiInstallationHttp(base, telemetry, client), telemetry)
+        lateinit var turns: CoachTurns
+        val transport = AiHttp(base, { turns.credentials }, allowLocalHttp = true)
+        val shares = { token?.let { bearer -> GymHttp(WindmillApi(base, { bearer }, client)) } }
+        turns = CoachTurns(EngineTraining(engine), transport, installation, { token }, PictureFiles { File(evidence, "$name-pictures") },
+            lazy { Catalog(context.assets.open("gym-catalog.json").use { Json.parse(it.readBytes()) }) }, lazy { CoachWords.shipped(context.assets) },
+            telemetry, {}, base.toString().trimEnd('/'), shares, scope)
+        return Phone(engine, turns, scope)
     }
 
-    // §4.5 on the real server, signed out: an open that never arrived and one that landed with its answer lost are each answered, one vendor call apiece, as the harness greps; one no attempt gets through comes back with nothing on the record, and what it tells reaches the intake.
-    @Test fun aLostOpenIsAnsweredOnceOrComesBackOnTheRealWire() = runBlocking {
+    private fun Phone.message(turn: OpenTurn.Turn): CoachMessage = checkNotNull(engine.read(gym) { Repository.decode(CoachMessage, it.drawn(CoachMessage.type)) }.firstOrNull { it.id == turn.coach })
+    private fun Phone.routines(): List<Routine> = engine.read(gym) { Repository.decode(Routine, it.drawn(Routine.type)) }
+
+    private suspend fun Phone.send(question: String, anonymous: Boolean, picture: ChosenPicture? = null): OpenTurn.Turn =
+        checkNotNull(turns.send(question, picture, null, anonymous)) { "refused: ${turns.refusal.value} ${turns.fault.value}" }
+
+    private suspend fun Phone.settled(turn: OpenTurn.Turn): CoachMessage = withTimeout(60_000) {
+        while (turns.turn.value != null) delay(20)
+        message(turn)
+    }
+
+    private suspend fun answer(wire: Wire, reply: Reply<SyncResponse>): SyncResponse = when (reply) {
+        is Reply.Answer -> reply.value
+        is Reply.Failed -> reply.response
+        Reply.Unreachable -> error("The local stack is unavailable.")
+    }
+
+    private suspend fun Wire.pull(engine: Engine) {
+        val request = checkNotNull(engine.pullRequest(listOf(gym)))
+        val at = clock.reading()
+        engine.onPullResponse(request, answer(this, http.pull(request, bearer)), RequestTiming(at, clock.reading()))
+    }
+
+    // What the host wrote is what the real server admits: every intent lands, and no refusal comes back.
+    private suspend fun Wire.pushAll(engine: Engine) {
+        withTimeout(30_000) {
+            while (true) {
+                val push = engine.nextPush() ?: break
+                val at = clock.reading()
+                val response = answer(this@pushAll, http.push(push, bearer))
+                assertEquals(200, response.status)
+                engine.onPushResponse(push, response, RequestTiming(at, clock.reading()))
+                pull(engine)
+            }
+        }
+        val replica = engine.snapshot().let { snapshot -> snapshot.member("replicas").arr().single { it.member("meta").member("replica") == snapshot.member("active") } }
+        assertEquals(0, replica["notices"]?.arr().orEmpty().count())
+    }
+
+    private suspend fun Wire.signedIn(phone: Phone) {
+        val at = clock.reading()
+        val hello = answer(this, http.hello(bearer))
+        assertEquals(200, hello.status)
+        phone.engine.onHello(hello, RequestTiming(at, clock.reading()))
+        val body = checkNotNull(hello.body)
+        val question = phone.engine.signIn(body.member("as").str(), body.member("holdsRecords").obj().mapValues { it.value.bool() }, serverSchema = body.member("schema").long())
+        if (!question.member("complete").bool()) {
+            val pins = question.member("due").arr().associate { due -> due.member("product").str() to due.member("counted").arr().map(Json::str) }
+            assertTrue(phone.engine.signIn(body.member("as").str(), body.member("holdsRecords").obj().mapValues { it.value.bool() }, mapOf("gym" to "add"), pins,
+                serverSchema = body.member("schema").long()).member("complete").bool())
+        }
+        phone.engine.subscribe(gym)
+        withTimeout(20_000) { while (!phone.training.firstPullComplete) pull(phone.engine) }
+    }
+
+    private fun picture(): ChosenPicture {
+        val bitmap = Bitmap.createBitmap(40, 30, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
+        val bytes = java.io.ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
+        return ChosenPicture(CoachAttachment("thr_" + UUID.randomUUID().toString().replace("-", "").take(16), "image/jpeg", 40, 30, bytes.size.toLong()), bytes)
+    }
+
+    @Test fun gymCoachRunsOnTheAiServiceEndToEnd() = runBlocking {
         assumeTrue(System.getenv("WM_ANDROID_TURN_WIRE_TEST") == "1")
         val base = checkNotNull(System.getenv("WM_WIRE_BASE")).toHttpUrl()
         require(base.host in setOf("127.0.0.1", "localhost"))
-        val evidence = File(checkNotNull(System.getenv("WM_WIRE_EVIDENCE"))).apply { mkdirs() }
-        val context = RuntimeEnvironment.getApplication()
-        val eventPrefs = context.getSharedPreferences("works.windmill.telemetry", Context.MODE_PRIVATE)
+        val wire = Wire(base, checkNotNull(System.getenv("WM_WIRE_BEARER")), File(checkNotNull(System.getenv("WM_WIRE_EVIDENCE"))).apply { mkdirs() })
+        val eventPrefs = wire.context.getSharedPreferences("works.windmill.telemetry", Context.MODE_PRIVATE)
         assertTrue(eventPrefs.edit().clear().commit())
         val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        val delivery = AndroidTelemetry(context, base, "android-apc-w6d", "local", "w6d", "4", null, { null }, applicationScope, GymEvents.schemas)
-        val failures = Collections.synchronizedList(mutableListOf<String>())
+        var credential: String? = null
+        val delivery = AndroidTelemetry(wire.context, base, "android-gact", "local", "gact", "4", null, { credential }, applicationScope, GymEvents.schemas)
+        val events = Collections.synchronizedList(mutableListOf<Pair<String, Map<String, String>>>())
         val telemetry = object : Telemetry {
-            override fun event(name: String, properties: Map<String, String>) = delivery.event(name, properties)
+            override fun event(name: String, properties: Map<String, String>) {
+                events += name to properties
+                delivery.event(name, properties)
+            }
             override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
-                failures += "$operation $properties"
+                wire.failures += "$operation $properties"
                 delivery.failure(operation, error, properties)
             }
-        }
-        val clock = object : EngineClock { override fun now() = System.currentTimeMillis() }
-        val ids = object : IdentitySource {
-            override fun opaqueID() = UUID.randomUUID().toString()
-            override fun draw(bound: Int) = java.security.SecureRandom().nextInt(bound)
-        }
-        val initial = Engine.memory(SyncSchema.registry, clock = clock).use { it.snapshot() }
-        val catalog = lazy { Catalog(context.assets.open("gym-catalog.json").use { Json.parse(it.readBytes()) }) }
-        val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
-        val client = OkHttpClient()
-        val route = "/v1/gym/coach/turns"
-        LossyDoor(base, route).use { door ->
-            val engine = AndroidSqlite.open(File(evidence, "lost-open.sqlite"), SyncSchema.registry, initial, clock, ids, ids.actorID(), rewriteDeviceValue = EngineTraining.rewriteDeviceValue)
-            val installation = AiInstallation(kept(context, "wire-installation-lost-open"), SecretVault { key }, AiInstallationHttp(base, telemetry, client), telemetry)
-            // No connection is kept, so every open passes the door.
-            val everyRequestConnects = OkHttpClient.Builder().connectionPool(ConnectionPool(0, 1, TimeUnit.MILLISECONDS)).build()
-            val phone = TurnsOn(engine, CoachTurns(EngineTraining(engine), TurnHttp(door.base, route, SyncSchema.version.toInt(), everyRequestConnects), installation, { null },
-                PictureFiles { File(evidence, "lost-open-pictures") }, catalog, telemetry, {}, base.toString().trimEnd('/'), applicationScope, beat = 100.milliseconds))
-            try {
-                engine.use {
-                    phone.turns.start()
-
-                    door.loss = LossyDoor.Loss.neverArrivesOnce
-                    val unheard = phone.settled(phone.send("wire never-arrived", anonymous = true))
-                    assertEquals(MessageState.completed, unheard.state)
-                    assertEquals("Done, never-arrived.", unheard.text)
-
-                    door.loss = LossyDoor.Loss.answerLostOnce
-                    val landed = phone.settled(phone.send("wire answer-lost", anonymous = true))
-                    assertEquals(MessageState.completed, landed.state)
-                    assertEquals("Done, answer-lost.", landed.text)
-                    assertEquals(CoachTurnBounds.contextReads, landed.calls.map { it.name })
-                    assertNull(phone.turns.withdrawn.value)
-
-                    door.loss = LossyDoor.Loss.always
-                    val gone = phone.send("wire every-attempt-lost", anonymous = true)
-                    withTimeout(30_000) { while (phone.turns.turn.value != null) delay(20) }
-                    assertEquals(WithdrawnTurn("wire every-attempt-lost", null, null), phone.turns.withdrawn.value)
-                    assertEquals(CoachTurnRefusal.Offline, phone.turns.refusal.value)
-                    assertEquals(false, engine.read(scope) { read -> Repository.decode(CoachMessage, read.drawn(CoachMessage.type)) }.any { it.id == gone.coach })
-
-                    assertEquals(emptyList<String>(), failures.toList())
-                    withTimeout(15_000) {
-                        while (eventPrefs.getString("queue", null)?.let { raw ->
-                            Json.parse(raw).member("shelves").arr().all { it.member("events").arr().isEmpty() }
-                        } != true) delay(100)
-                    }
-                    File(evidence, "lost-open-completed").writeText("lost opens")
-                }
-            } finally {
-                applicationScope.cancel()
-            }
-        }
-    }
-
-    @Test fun aTurnRunsOnTheRealWireOnBothSeats() = runBlocking {
-        assumeTrue(System.getenv("WM_ANDROID_TURN_WIRE_TEST") == "1")
-        val base = checkNotNull(System.getenv("WM_WIRE_BASE")).toHttpUrl()
-        require(base.host in setOf("127.0.0.1", "localhost"))
-        val bearer = checkNotNull(System.getenv("WM_WIRE_BEARER"))
-        val evidence = File(checkNotNull(System.getenv("WM_WIRE_EVIDENCE"))).apply { mkdirs() }
-        val context = RuntimeEnvironment.getApplication()
-        val eventPrefs = context.getSharedPreferences("works.windmill.telemetry", Context.MODE_PRIVATE)
-        assertTrue(eventPrefs.edit().clear().commit())
-        val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        var credential: String? = bearer
-        val delivery = AndroidTelemetry(context, base, "android-apc-w4", "local", "w4", "4", null, { credential }, applicationScope, GymEvents.schemas)
-        val failures = Collections.synchronizedList(mutableListOf<String>())
-        val telemetry = object : Telemetry {
-            override fun event(name: String, properties: Map<String, String>) = delivery.event(name, properties)
-            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
-                failures += "$operation $properties"
-                delivery.failure(operation, error, properties)
-            }
-        }
-        val clock = object : EngineClock { override fun now() = System.currentTimeMillis() }
-        val ids = object : IdentitySource {
-            override fun opaqueID() = UUID.randomUUID().toString()
-            override fun draw(bound: Int) = java.security.SecureRandom().nextInt(bound)
-        }
-        val initial = Engine.memory(SyncSchema.registry, clock = clock).use { it.snapshot() }
-        val catalog = lazy { Catalog(context.assets.open("gym-catalog.json").use { Json.parse(it.readBytes()) }) }
-        val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
-        val client = OkHttpClient()
-        val transport = TurnHttp(base, "/v1/gym/coach/turns", SyncSchema.version.toInt(), client)
-        fun turnsOn(name: String, token: String?): TurnsOn {
-            val engine = AndroidSqlite.open(File(evidence, "$name.sqlite"), SyncSchema.registry, initial, clock, ids, ids.actorID(), rewriteDeviceValue = EngineTraining.rewriteDeviceValue)
-            val installation = AiInstallation(kept(context, "wire-installation-$name"), SecretVault { key }, AiInstallationHttp(base, telemetry, client), telemetry)
-            return TurnsOn(engine, CoachTurns(EngineTraining(engine), transport, installation, { token }, PictureFiles { File(evidence, "$name-pictures") }, catalog,
-                telemetry, {}, base.toString().trimEnd('/'), applicationScope))
         }
         try {
-            val http = HTTPTransport(base.toString(), SyncSchema.registry.version.toInt())
-            suspend fun answer(reply: Reply<SyncResponse>): SyncResponse = when (reply) {
-                is Reply.Answer -> reply.value
-                is Reply.Failed -> reply.response
-                Reply.Unreachable -> error("The local verification server is unavailable.")
-            }
-            suspend fun pull(engine: Engine) {
-                val request = checkNotNull(engine.pullRequest(listOf(scope)))
-                val at = clock.reading()
-                engine.onPullResponse(request, answer(http.pull(request, bearer)), RequestTiming(at, clock.reading()))
-            }
-            // What the host wrote is what the real server admits: every intent lands, and no refusal comes back.
-            suspend fun pushAll(engine: Engine) {
-                withTimeout(30_000) {
-                    while (true) {
-                        val push = engine.nextPush() ?: break
-                        val at = clock.reading()
-                        val response = answer(http.push(push, bearer))
-                        assertEquals(200, response.status)
-                        engine.onPushResponse(push, response, RequestTiming(at, clock.reading()))
-                        pull(engine)
-                    }
-                }
-                val replica = engine.snapshot().let { snapshot -> snapshot.member("replicas").arr().single { it.member("meta").member("replica") == snapshot.member("active") } }
-                assertEquals(0, replica["notices"]?.arr().orEmpty().count())
-            }
+            // Signed out: the installation's seat.
+            val anon = wire.phone("anon", null, telemetry, applicationScope)
+            anon.engine.use {
+                anon.turns.start()
 
-            val signedIn = turnsOn("bound", bearer)
-            signedIn.engine.use { engine ->
-                signedIn.turns.start()
-                val sent = clock.reading()
-                val hello = answer(http.hello(bearer))
-                assertEquals(200, hello.status)
-                engine.onHello(hello, RequestTiming(sent, clock.reading()))
-                val body = checkNotNull(hello.body)
-                assertTrue(engine.signIn(body.member("as").str(), body.member("holdsRecords").obj().mapValues { it.value.bool() }, serverSchema = body.member("schema").long()).member("complete").bool())
-                engine.subscribe(scope)
+                val asked = anon.settled(anon.send("wire question", anonymous = true))
+                assertEquals(MessageState.completed, asked.state)
+                assertEquals("Done, question.", asked.text)
+                assertEquals(CoachTurnBounds.contextReads.map { contextCallPrefix + it }, asked.calls.map { it.callId })
+                assertNull(anon.engine.read(gym) { it.device(EndTurn.runningTurnKey) })
+                assertNull(anon.engine.read(gym) { it.device(Mark.roundKey) })
 
-                val arriving = signedIn.turns.send("wire read-batch", null, null, anonymous = false)
-                assertNull(arriving)
-                assertEquals(CoachTurnRefusal.LogArriving, signedIn.turns.refusal.value)
+                val written = anon.send("wire write", anonymous = true)
+                val wrote = anon.settled(written)
+                assertEquals("Done, write.", wrote.text)
+                val routine = anon.routines().single { it.name == "Wire day" }
+                assertEquals("${written.coach.record.string}-1", routine.id.record.string)
+                assertEquals(listOf(routine.id.ref), wrote.calls.last().created)
 
-                val training = EngineTraining(engine)
-                withTimeout(20_000) { while (!training.firstPullComplete) pull(engine) }
+                val seen = anon.settled(anon.send("wire picture", anonymous = true, picture = picture()))
+                assertEquals("Done, picture.", seen.text)
 
-                signedIn.walk(anonymous = false)
-                pushAll(engine)
-            }
+                val stopping = anon.send("wire stop", anonymous = true)
+                withTimeout(30_000) { anon.turns.liveAnswer.first { it?.message == stopping.coach && it.text.isNotEmpty() } }
+                anon.turns.requestStop()
+                val stopped = anon.settled(stopping)
+                assertEquals(MessageState.stopped, stopped.state)
+                assertEquals("Checking.", stopped.text)
 
-            credential = null
-            delivery.identity(null)
-            val signedOut = turnsOn("anon", null)
-            signedOut.engine.use {
-                signedOut.turns.start()
-                signedOut.walk(anonymous = true)
-            }
+                wire.steer("cut-next-stream")
+                val found = anon.settled(anon.send("wire cut", anonymous = true))
+                assertEquals(MessageState.completed, found.state)
+                assertEquals("Part one. Part two.", found.text)
 
-            // A sign-in under a running signed-out turn: its decision lands at the first answer, the turn ends, and what it wrote joins the account.
-            val signingIn = turnsOn("rebound", null)
-            signingIn.engine.use { engine ->
-                signingIn.turns.start()
-                val running = signingIn.send("wire stop", anonymous = true)
-                withTimeout(30_000) { signingIn.turns.liveAnswer.first { it?.message == running.coach && it.text.isNotEmpty() } }
-                val replica = engine.activeReplica()
-                val at = clock.reading()
-                val hello = answer(http.hello(bearer))
-                engine.onHello(hello, RequestTiming(at, clock.reading()))
-                val body = checkNotNull(hello.body)
-                val account = body.member("as").str()
-                val holds = body.member("holdsRecords").obj().mapValues { it.value.bool() }
-                val question = engine.signIn(account, holds, serverSchema = body.member("schema").long())
-                assertFalse(question.member("complete").bool())
-                assertTrue(engine.signInAsking())
-                val pins = question.member("due").arr().associate { due -> due.member("product").str() to due.member("counted").arr().map(Json::str) }
-                assertTrue(engine.signIn(account, holds, mapOf("gym" to "add"), pins, serverSchema = body.member("schema").long()).member("complete").bool())
-                assertEquals(replica, engine.activeReplica())
-                // The seat change writes the end after the turn has let go.
-                val ended = withTimeout(30_000) {
-                    while (signingIn.message(running).state == MessageState.running) delay(20)
-                    signingIn.message(running)
-                }
+                // A sign-in under a running signed-out turn: its decision lands, the turn ends interrupted, and what it wrote joins the account.
+                val running = anon.send("wire stop", anonymous = true)
+                withTimeout(30_000) { anon.turns.liveAnswer.first { it?.message == running.coach && it.text.isNotEmpty() } }
+                credential = wire.bearer
+                delivery.identity(null)
+                wire.signedIn(anon)
+                val ended = anon.settled(running)
                 assertEquals(MessageState.interrupted, ended.state)
-                assertEquals(CoachTurnBounds.contextReads, ended.calls.map { it.name })
-                engine.subscribe(scope)
-                pushAll(engine)
+                assertFalse(anon.training.anonymous)
+                wire.pushAll(anon.engine)
+                credential = null
             }
 
-            assertEquals(emptyList<String>(), failures.toList())
+            // Signed in: the account's seat, its writes admitted by the real server.
+            credential = wire.bearer
+            val boundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val bound = wire.phone("bound", wire.bearer, telemetry, boundScope)
+            bound.engine.use {
+                bound.turns.start()
+                wire.signedIn(bound)
+
+                val written = bound.send("wire write", anonymous = false)
+                assertEquals("Done, write.", bound.settled(written).text)
+                val routine = bound.routines().single { it.id.record.string == "${written.coach.record.string}-1" }
+                wire.pushAll(bound.engine)
+
+                val proposing = bound.send("wire proposal routine=${routine.id.record.string}", anonymous = false)
+                val proposed = bound.settled(proposing)
+                assertEquals(MessageState.completed, proposed.state)
+                val proposal = Id<Proposal>("${proposing.coach.record.string}-1", Proposal)
+                assertEquals(listOf(proposal.ref), proposed.calls.last().created)
+                wire.pushAll(bound.engine)
+                assertTrue(bound.training.pinnedOn(bound.training.pin()) { runner -> runner.run(ApplyProposal(proposal)) } is Outcome.Committed)
+                wire.pushAll(bound.engine)
+                assertEquals(listOf("back-squat"), bound.routines().single { it.id == routine.id }.entries.map { it.exerciseId.record.string })
+
+                val session = Id<Session>("ses" + UUID.randomUUID().toString().replace("-", "").take(13), Session)
+                val at = System.currentTimeMillis() - 3_600_000
+                assertTrue(bound.training.pinnedOn(bound.training.pin()) { runner -> runner.run(ImportSession(session, Instant(at), Instant(at + 1_800_000),
+                    listOf(ImportedSet(Id("set" + UUID.randomUUID().toString().replace("-", "").take(13), TrainingSet), Id("bench-press", Exercise), 60.0, 5, Instant(at + 60_000))))) } is Outcome.Committed)
+                wire.pushAll(bound.engine)
+                val shared = bound.settled(bound.send("wire share session=${session.record.string}", anonymous = false))
+                assertEquals("Done, share.", shared.text)
+                assertEquals(AbilityCall.Outcome.Ok, shared.calls.single { it.name == "share_session" }.outcome)
+                wire.pushAll(bound.engine)
+
+                // The app killed in its last round: a new process reads the round's answer and never sends it again.
+                val killing = bound.send("wire killed", anonymous = false)
+                withContext(Dispatchers.IO) { wire.steer("holding") }
+                withTimeout(30_000) { bound.turns.liveAnswer.first { it?.message == killing.coach && it.text.isNotEmpty() } }
+                bound.turns.appStopped()
+                delay(500)
+                val process = boundScope.coroutineContext[kotlinx.coroutines.Job]!!
+                process.cancel()
+                if (withTimeoutOrNull(10_000) { process.join() } == null)
+                    File(wire.evidence, "still-running.txt").writeText(process.children.joinToString("\n") { it.toString() })
+                assertEquals(MessageState.running, bound.message(killing).state)
+            }
+            wire.steer("release")
+            val reopenedScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val reopened = wire.phone("bound", wire.bearer, telemetry, reopenedScope, existing = true)
+            reopened.engine.use {
+                reopened.turns.start()
+                val recovered = withTimeout(60_000) {
+                    while (true) {
+                        val message = reopened.engine.read(gym) { Repository.decode(CoachMessage, it.drawn(CoachMessage.type)) }.single { it.text.startsWith("Almost.") }
+                        if (message.state != MessageState.running) return@withTimeout message
+                        delay(50)
+                    }
+                    @Suppress("UNREACHABLE_CODE") error("unreachable")
+                }
+                assertEquals(MessageState.completed, recovered.state)
+                assertEquals("Almost. Done, killed.", recovered.text)
+                assertNull(reopened.engine.read(gym) { it.device(EndTurn.runningTurnKey) })
+            }
+            reopenedScope.cancel()
+
+            // An allowance used up: the turn never began, and its question returns with what holds it.
+            credential = null
+            val spent = wire.phone("spent", null, telemetry, applicationScope)
+            spent.engine.use {
+                spent.turns.start()
+                assertEquals("Done, question.", spent.settled(spent.send("wire question", anonymous = true)).text)
+                wire.steer("exhaust-installations")
+                spent.send("wire question again", anonymous = true)
+                withTimeout(30_000) { while (spent.turns.turn.value != null) delay(20) }
+                assertEquals(CoachTurnRefusal.Shortfall(AllowanceShortfall.spent), spent.turns.refusal.value)
+                assertEquals("wire question again", spent.turns.withdrawn.value?.question)
+            }
+
+            assertEquals(emptyList<String>(), wire.failures.toList())
+            assertTrue(events.any { it.first == "coach_turn" && it.second["state"] == "completed" && it.second["rounds"] == "2" })
+            assertTrue(events.any { it.first == "coach_ability" && it.second == mapOf("name" to "share_session", "outcome" to "ok") })
+            assertTrue(events.none { (_, properties) -> properties.values.any { "wire" in it || "Done" in it } })
             withTimeout(15_000) {
                 while (eventPrefs.getString("queue", null)?.let { raw ->
                     Json.parse(raw).member("shelves").arr().all { it.member("events").arr().isEmpty() }
                 } != true) delay(100)
             }
-            File(evidence, "completed").writeText("both seats")
+            File(wire.evidence, "completed").writeText("every story")
         } finally {
             applicationScope.cancel()
         }

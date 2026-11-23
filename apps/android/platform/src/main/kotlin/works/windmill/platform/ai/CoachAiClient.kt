@@ -26,7 +26,7 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
     private val uploads = mutableSetOf<String>()
     override fun clearPass() = synchronized(state) { generation++; pass = null; passLock = Mutex(); uploads.clear() }
     override fun connected() = connection()
-    private fun report(operation: FailureOperation) { try { telemetry.failure(operation) } catch (_: Exception) {} }
+    private fun report(operation: FailureOperation, cause: Throwable? = null, code: String? = null) { try { telemetry.failure(operation, cause, code) } catch (_: Exception) {} }
 
     private suspend fun <T : Any> withStop(stop: StopSignal?, discard: (T) -> Unit = {}, dispatch: suspend () -> T): T {
         if (stop == null) return dispatch()
@@ -63,7 +63,7 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
             if (error is AiTransportFailure && error.code == "stopped") throw error
             if (error is AiTransportFailure && error.code in setOf("offline", "lost"))
                 return@withLock null to AiAnswer.Failure(AiFailure("transport", null, Admission.none))
-            report(FailureOperation.aiPass)
+            report(FailureOperation.aiPass, error)
             return@withLock null to AiAnswer.Failure(AiFailure("pass", null, Admission.none))
         }
         response.use {
@@ -73,9 +73,14 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
                     val code = AiWire.passRefusal(response)
                     if (code == null) {
                         if (response.status == 404) return@withLock null to AiAnswer.Failure(AiFailure("pass", "anonymous_ai_unavailable", Admission.none))
+                        // A 5xx that names no refusal is the door failing, never a lost connection: it did not answer, and is reported by its status class alone.
+                        if (response.status >= 500) {
+                            report(FailureOperation.aiPass, code = "proxy-5xx")
+                            return@withLock null to AiAnswer.Failure(AiFailure("pass", "unavailable", Admission.none))
+                        }
                         return@withLock null to AiAnswer.Failure(AiFailure("transport", null, Admission.none))
                     }
-                    if (code in defects) report(FailureOperation.aiPass)
+                    if (code in defects) report(FailureOperation.aiPass, code = code)
                     return@withLock null to AiAnswer.Failure(AiFailure("pass", code, Admission.none))
                 }
                 try {
@@ -85,8 +90,8 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
                     require(value.isNotEmpty())
                     pass = Pass(value, now() + expires, use, version)
                     value to null
-                } catch (_: Exception) {
-                    report(FailureOperation.aiPass)
+                } catch (malformed: Exception) {
+                    report(FailureOperation.aiPass, malformed, "invalid-answer")
                     null to AiAnswer.Failure(AiFailure("pass", "invalid-answer", Admission.none))
                 }
             }
@@ -128,8 +133,8 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
         }
     }
 
-    private fun failedAnswer(source: String, code: String?, admission: Admission, allowance: Json? = null): AiAnswer.Failure {
-        if (code in defects || code?.startsWith("pass_") == true || code == "picture_gone" || source == "transport" && code != null) report(FailureOperation.aiCall)
+    private fun failedAnswer(source: String, code: String?, admission: Admission, allowance: Json? = null, cause: Throwable? = null): AiAnswer.Failure {
+        if (code in defects || code?.startsWith("pass_") == true || code == "picture_gone" || source == "transport" && code != null) report(FailureOperation.aiCall, cause, code)
         return AiAnswer.Failure(AiFailure(source, code, admission, allowance))
     }
 
@@ -197,7 +202,7 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
                     if (currentGeneration != generation || stop.invalidated) return seatChanged()
                     if (error is AiTransportFailure && error.code == "stopped") return AiAnswer.Failure(AiFailure("result", "stopped", admission))
                     promote(Admission.possible); lost = true; retryLostCall = true
-                    if (error !is AiTransportFailure || error.code !in setOf("offline", "lost")) return failedAnswer("transport", "invalid-answer", admission)
+                    if (error !is AiTransportFailure || error.code !in setOf("offline", "lost")) return failedAnswer("transport", "invalid-answer", admission, cause = error)
                     null
                 }
                 var repaired = false
@@ -245,7 +250,7 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
                             if (terminal != null) {
                                 val event = terminal.member("event").str()
                                 val data = terminal.member("data")
-                                if (event == "failed" && data.member("code").str() in defects) report(FailureOperation.aiCall)
+                                if (event == "failed" && data.member("code").str() in defects) report(FailureOperation.aiCall, code = data.member("code").str())
                                 return AiAnswer.Terminal(event, data)
                             }
                         } catch (error: AiTransportFailure) {
@@ -263,7 +268,7 @@ class CoachAiClient(private val transport: AiTransport, private val telemetry: T
                 if (error is AiTransportFailure && error.code in setOf("offline", "lost")) {
                     if (admission == Admission.none) return failedAnswer("transport", null, admission)
                     lost = true; retryLostCall = true
-                } else return failedAnswer("wire", "invalid-answer", admission)
+                } else return failedAnswer("wire", "invalid-answer", admission, cause = error)
             }
             val deadline = start!! + if (retryLostCall) 1_200_000 else 30_000
             val delay = minOf(1000L shl minOf(retry++, 3), maxOf(0, deadline - now()))

@@ -145,7 +145,5 @@
     <string name="gym_coach_fault_account_changing">Your account is changing. Your question is kept here.</string>
     <string name="gym_coach_fault_no_answer">Coach didn’t answer. Try again in a moment</string>
     <string name="gym_coach_fault_picture_unavailable">That photo is unavailable. Remove it and choose it again.</string>
-    <string name="gym_coach_fault_stopped_offline">Coach is stopped on this phone. Stopping it on the server needs a connection.</string>
-    <string name="gym_coach_fault_stop_unheard">Coach is stopped on this phone.</string>
     <string name="gym_coach_could_not_take">Coach couldn’t take that one</string>
 </resources>

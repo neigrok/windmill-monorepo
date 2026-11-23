@@ -11,9 +11,9 @@ enum class AbilitySeats { any, bound }
 // Whose store a turn runs against.
 enum class Seat { anon, bound }
 
-// `declared` is false for an ability the server declares no tool for; the phone does not run it either.
+// `declared` is false for an ability the server declares no tool for; the phone does not run it either. `strict` says whether a turn declares the tool strict to the provider; a catalog that does not say holds every tool strict.
 data class Ability(val name: String, val kind: AbilityClass, val agent: AgentRule, val seats: AbilitySeats,
-    val declared: Boolean, val phrase: String, val input: Json, val result: Json) {
+    val declared: Boolean, val phrase: String, val input: Json, val result: Json, val description: String, val strict: Boolean) {
     constructor(entry: Json) : this(
         entry.member("name").str(),
         AbilityClass.valueOf(entry.member("class").str()),
@@ -23,8 +23,10 @@ data class Ability(val name: String, val kind: AbilityClass, val agent: AgentRul
         entry.member("phrase").str(),
         entry.member("input"),
         entry.member("result"),
+        entry.member("description").str(),
+        entry["strict"]?.bool() ?: true,
     ) {
-        entry.expectKeys(listOf("name", "description", "input", "result", "class", "agent", "seats", "phrase", "ui"), listOf("declared", "since"))
+        entry.expectKeys(listOf("name", "description", "input", "result", "class", "agent", "seats", "phrase", "ui"), listOf("declared", "since", "strict"))
         if (entry["since"]?.str()?.startsWith("catalog/") == false) throw JsonError("since")
     }
 

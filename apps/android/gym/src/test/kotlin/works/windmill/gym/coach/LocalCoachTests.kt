@@ -11,7 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.agent.AllowanceShortfall
+import works.windmill.gym.coach.turn.AllowanceShortfall
 import works.windmill.platform.storage.AtomicDocument
 
 class LocalCoachTests {

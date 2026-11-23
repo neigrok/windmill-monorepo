@@ -299,7 +299,7 @@ class CoachOverWorkoutTests {
     }
 
     private fun routineChange(routineId: String, vararg movements: String) =
-        """{"callId":"toolu_2","name":"propose_routine_change","input":{"id":"prWWWWWWWWWWWWW1","routineId":"$routineId","summary":"","entries":[${movements.joinToString(",") { entry(it) }}]}}"""
+        """{"callId":"toolu_2","name":"propose_routine_change","input":{"id":"prWWWWWWWWWWWWW1","routineId":"$routineId","name":null,"summary":"","entries":[${movements.joinToString(",") { entry(it) }}]}}"""
 
     // A routine's change reaches that routine's next workout: its card says so, and its review is the ordinary one (08.56).
     @Test fun oneAnswerCarriesBothKindsEachOnItsOwnCardAndClosingARoutinesReviewReturnsToCoachOverTheRack() {

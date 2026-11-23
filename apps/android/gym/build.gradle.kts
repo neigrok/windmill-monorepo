@@ -56,7 +56,7 @@ android {
 androidComponents.onVariants { variant ->
     val capitalized = variant.name.replaceFirstChar { it.uppercase() }
     val copy = tasks.register<CopyCoachContract>("copy${capitalized}CoachContract") {
-        catalog.set(rootProject.file("../../packages/api-contract/gym/catalog.json"))
+        catalog.set(rootProject.file("../../packages/api-contract/gym/catalog-3.json"))
         words.set(rootProject.file("../../packages/api-contract/gym/coach"))
         outputDirectory.set(layout.buildDirectory.dir("generated/coachContract/${variant.name}/assets"))
     }

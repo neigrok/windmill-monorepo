@@ -48,36 +48,58 @@ struct CoachConversationTests {
     #expect(MessageState.allCases.map(\.rank) == [0, 1, 2, 2, 2, 2])
   }
 
-  // The shared vectors: opening a turn, ending it, and the pure rules of a call's record and a read's week.
+  // The shared vectors: what a turn writes around its records and the mark it reads, and the pure rules of a call's record
+  // and a read's week.
   @Test(arguments: try Contract.vectors("gym/domain/coach-conversation-actions.json"))
   func sharedCase(_ vector: Vector) throws {
     let corpus = ProductCorpus(CoachRules.book)
     let input = try vector.input.member("input")
     let f = try Fields(input)
-    let result: JSON = switch try vector.input.member("action").asString() {
+    let result: JSON
+    switch try vector.input.member("action").asString() {
     case "OpenTurn":
-      try corpus.decision(of: OpenTurn(thread: try f.optionalRef("thread", CoachThread.self), question: try f.string("question"),
-                                       pictures: try f.optionalList("pictures", of: Picture.self) ?? []), vector,
-                          result: { ["thread": $0.thread.json, "lifter": $0.lifter.json, "coach": $0.coach.json] }, refusal: \.form)
+      result = try corpus.decision(of: OpenTurn(thread: try f.optionalRef("thread", CoachThread.self), question: try f.string("question"),
+                                                pictures: try f.optionalList("pictures", of: Picture.self) ?? []), vector,
+                                   result: { ["thread": $0.thread.json, "lifter": $0.lifter.json, "coach": $0.coach.json] }, refusal: \.form)
     case "EndTurn":
-      try corpus.decision(of: EndTurn(try f.ref("message", CoachMessage.self), state: try #require(MessageState(rawValue: try f.string("state"))),
-                                      text: try f.optionalString("text"), truncated: try f.bool("truncated", default: false)), vector,
-                          result: { _ in .null }, refusal: \.form)
+      result = try corpus.decision(of: EndTurn(try f.ref("message", CoachMessage.self), state: try #require(MessageState(rawValue: try f.string("state"))),
+                                               text: try f.optionalString("text"), truncated: try f.bool("truncated", default: false)), vector,
+                                   result: { _ in .null }, refusal: \.form)
+    case "BeginRound":
+      result = try corpus.decision(of: BeginRound(message: try f.ref("message", CoachMessage.self), callId: try f.string("callId"),
+                                                  bytesBefore: try f.int("bytesBefore")), vector, result: { _ in .null }, refusal: \.form)
+    case "StreamTurnText":
+      result = try corpus.decision(of: StreamTurnText(message: try f.ref("message", CoachMessage.self), text: try f.string("text")), vector,
+                                   result: { _ in .null }, refusal: \.form)
+    case "RunAbility":
+      let call = try Fields(try input.member("call"))
+      let request = AbilityRequest(callId: try call.string("callId"), name: try call.string("name"), input: try input.member("call").member("input"))
+      result = try corpus.decision(of: RunAbility(request, on: try f.ref("message", CoachMessage.self), seat: try f.string("seat") == "anon" ? .anon : .bound,
+                                                  appBaseUrl: "https://windmill.works"), vector, result: CoachAbilitiesTests.form, refusal: \.form)
+    case "RecoverMark":
+      result = try corpus.decision(of: RecoverMark(), vector, result: { mark in
+        ["turnId": mark.turnId?.json ?? .null, "callId": .of(mark.callId), "textBytesBeforeRound": JSON(mark.textBytesBeforeRound)]
+      }, refusal: \.form)
+    case "ForgetRunningTurn":
+      result = try corpus.decision(of: ForgetRunningTurn(message: try f.ref("message", CoachMessage.self)), vector, result: { _ in .null }, refusal: \.form)
+    case "WithdrawTurn":
+      let turn = OpenTurn.Turn(thread: try f.ref("thread", CoachThread.self), lifter: try f.ref("lifter", CoachMessage.self),
+                                 coach: try f.ref("coach", CoachMessage.self))
+      result = try corpus.decision(of: WithdrawTurn(turn: turn), vector, result: { .array($0.map(JSON.string)) }, refusal: \.form)
+    case "DeleteConversation":
+      result = try corpus.decision(of: DeleteConversation(thread: try f.ref("thread", CoachThread.self)), vector, result: { .array($0.map(JSON.string)) },
+                                   refusal: \.form)
     case "AbilityCall.recorded":
-      try Self.recordedForm(try CoachMessage(form: try input.member("message")), call: try AbilityCall(json: try input.member("call")))
+      var message = try CoachMessage(form: try input.member("message"))
+      let recorded = message.recorded(try AbilityCall(json: try input.member("call")))
+      if let recorded { message.calls.append(recorded) }
+      result = ["recorded": recorded?.json ?? .null, "callsBytes": JSON(message.callsBytes)]
     case "ReadServed.week":
-      ["week": JSON(ReadServed.week(of: try f.instant("at")))]
+      result = ["week": JSON(ReadServed.week(of: try f.instant("at")))]
     case let name:
       throw ContractError("no coach conversation action \(name)")
     }
     #expect(result == vector.expect, "\(vector)\n  got    \(result.jcsText)")
-  }
-
-  static func recordedForm(_ message: CoachMessage, call: AbilityCall) -> JSON {
-    let recorded = message.recorded(call)
-    var after = message
-    if let recorded { after.calls.append(recorded) }
-    return ["recorded": recorded?.json ?? .null, "callsBytes": JSON(after.callsBytes)]
   }
 
   @Test func aTurnOpensInOneGestureAndEndsWithItsReceipt() throws {
@@ -87,7 +109,7 @@ struct CoachConversationTests {
     let messages = try a.stored(CoachMessage.self)
     #expect(messages.map(\.role) == [turn.lifter, turn.coach].sorted().map { $0 == turn.lifter ? CoachMessage.Role.lifter : .coach })
     #expect(try Self.coachMessage(a, turn).state == .running)
-    #expect(try a.runner.read(Gym.scope) { try $0.device(EndTurn.runningTurnKey) } == turn.coach.json)
+    #expect(try a.runner.read(Gym.scope) { try $0.device(Mark.turnKey) } == turn.coach.json)
     let b = a.device()
     a.sync()
     #expect(try b.stored(CoachMessage.self).count == 2)
@@ -97,13 +119,43 @@ struct CoachConversationTests {
     let ended = try Self.coachMessage(a, turn)
     #expect(ended.state == .completed && ended.text == "Add 5 kg." && ended.truncated == false)
     #expect(ended.receipt == ["read": ["sets": 0, "sessions": 0, "weeks": 0], "results": []])
-    #expect(try a.runner.read(Gym.scope) { try $0.device(EndTurn.runningTurnKey) } == nil)
+    #expect(try a.runner.read(Gym.scope) { try $0.device(Mark.turnKey) } == nil)
     #expect(unchanged(try a.runner.run(EndTurn(turn.coach, state: .stopped))) != nil)
     #expect(try Self.executor(a).run(Self.request("list_notes", [:], callId: "call-2"), on: turn.coach, seat: .bound).refusal
       == .other(Refused(Gym.Codes.messageFinal, subject: turn.coach.ref, path: .predicted)))
     a.sync()
     #expect(try a.notices(GymRefusal.self).isEmpty)
     #expect(try b.stored(CoachMessage.self).first { $0.id == turn.coach }?.state == .completed)
+  }
+
+  // gym Coach on the AI service §4.2, §4.4: a turn another phone marked interrupted stays its writer's while the writer's
+  // mark names it. Its round, its text and its calls land on the real engine, its end clears both rows of the mark, and
+  // the writer's end reaches the other phone.
+  @Test func aTurnAnotherPhoneMarkedInterruptedStaysItsWritersWhileTheMarkNamesIt() throws {
+    let a = Self.phone()
+    let turn = try Self.open(a)
+    let b = a.device()
+    a.sync()
+    #expect(committed(try b.runner.run(EndTurn(turn.coach, state: .interrupted))) != nil)
+    b.sync()
+    #expect(try Self.coachMessage(a, turn).state == .interrupted)
+
+    let round = String(repeating: "A", count: 22)
+    #expect(committed(try a.runner.run(BeginRound(message: turn.coach, callId: round, bytesBefore: 0))) != nil)
+    #expect(committed(try a.runner.run(StreamTurnText(message: turn.coach, text: "On it."))) != nil)
+    _ = try #require(committed(try Self.executor(a).run(Self.request("list_notes", [:]), on: turn.coach, seat: .bound)))
+    let mark = try a.runner.read(Gym.scope, Mark.init)
+    #expect(mark.turnId == turn.coach && mark.callId == round && mark.textBytesBeforeRound == 0 && !mark.roundIsStale)
+    #expect(unchanged(try b.runner.run(StreamTurnText(message: turn.coach, text: "Elsewhere"))) != nil)
+
+    #expect(committed(try a.runner.run(EndTurn(turn.coach, state: .completed, text: "On it."))) != nil)
+    #expect(try a.runner.read(Gym.scope) { [try $0.device(Mark.turnKey), try $0.device(Mark.roundKey)] } == [nil, nil])
+    #expect(try Self.executor(a).run(Self.request("list_notes", [:], callId: "call-2"), on: turn.coach, seat: .bound).refusal
+      == .other(Refused(Gym.Codes.messageFinal, subject: turn.coach.ref, path: .predicted)))
+    a.sync()
+    #expect(try a.notices(GymRefusal.self).isEmpty && b.notices(GymRefusal.self).isEmpty)
+    let ended = try #require(try b.stored(CoachMessage.self).first { $0.id == turn.coach })
+    #expect(ended.state == .completed && ended.text == "On it." && ended.calls.map(\.callId) == ["call-1"])
   }
 
   @Test func aQuestionPastTheBoundOrBlankIsRefused() throws {

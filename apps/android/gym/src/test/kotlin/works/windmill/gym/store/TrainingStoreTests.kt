@@ -26,7 +26,6 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import works.windmill.platform.i18n.Words
 import works.windmill.sync.engine.signIn
-import works.windmill.agent.TurnRefusal
 import works.windmill.domain.kit.ActionContext
 import works.windmill.domain.kit.ActionRunner
 import works.windmill.domain.kit.FixedZone
@@ -39,6 +38,7 @@ import works.windmill.gym.coach.ConversationRow
 import works.windmill.gym.coach.heldConversation
 import works.windmill.gym.coach.heldThreads
 import works.windmill.gym.coach.turn.CoachTurnRefusal
+import works.windmill.gym.coach.turn.scriptedAllowance
 import works.windmill.gym.coach.turn.ScriptedTurns
 import works.windmill.gym.domain.coach.CoachThread
 import works.windmill.gym.domain.coach.ReadTally
@@ -252,8 +252,8 @@ class TrainingStoreTests {
 
             val reply = checkNotNull(room.store.coach.exchanges(chat).single().answer)
             assertEquals("Done — as a proposal on Push A.", reply.text)
-            assertEquals(listOf("proposal1"), reply.proposals)
-            assertEquals(listOf("proposal1"), room.store.routines.pendingProposals.map { it.id })
+            assertEquals(listOf("${reply.id}-1"), reply.proposals)
+            assertEquals(listOf("${reply.id}-1"), room.store.routines.pendingProposals.map { it.id })
             assertEquals("the routine reads as it did until the lifter applies", "Push A", room.store.routines.routine("rt_00000001")?.name)
         }
     }
@@ -282,10 +282,10 @@ class TrainingStoreTests {
             val other = coach.freshChat()
             val chat = coach.freshChat()
             for ((refusal, said) in listOf(
-                TurnRefusal(429, "subject_exhausted", null) to CoachTurnRefusal.Shortfall(null),
-                TurnRefusal(429, "free_day_exhausted", null) to CoachTurnRefusal.Allowance("free_day_exhausted"),
-                TurnRefusal(429, "free_month_exhausted", 1_900_000_000_000L) to CoachTurnRefusal.FreeMonthExhausted(1_900_000_000_000L),
-                TurnRefusal(429, TurnRefusal.rateLimited, null) to CoachTurnRefusal.RateLimited,
+                ScriptedTurns.Refusal.of("subject_exhausted") to CoachTurnRefusal.Shortfall(null),
+                ScriptedTurns.Refusal.of("free_day_exhausted") to CoachTurnRefusal.Allowance("free_day_exhausted"),
+                ScriptedTurns.Refusal.of("free_month_exhausted", scriptedAllowance("free_month_exhausted", "1", budgetResetsAt = 1_900_000_000_000L)) to CoachTurnRefusal.FreeMonthExhausted(1_900_000_000_000L),
+                ScriptedTurns.Refusal.of("rate_limited") to CoachTurnRefusal.RateLimited,
             )) {
                 turns.refuseOpen = refusal
                 assertTrue(coach.send(chat, "what's stalled?"))
@@ -296,7 +296,7 @@ class TrainingStoreTests {
                 assertFalse(coach.absent)
             }
 
-            turns.refuseOpen = TurnRefusal(500, TurnRefusal.vendorError, null)
+            turns.refuseOpen = ScriptedTurns.Refusal.of("provider_unavailable")
             assertTrue(coach.send(chat, "what's stalled?"))
             advanceUntilIdle()
             assertEquals(CoachTurnRefusal.Unanswered, coach.refusal(chat))
@@ -304,7 +304,7 @@ class TrainingStoreTests {
             assertEquals(CoachDraft("what's stalled?"), coach.draft(chat))
             assertFalse(coach.absent)
 
-            turns.refuseOpen = TurnRefusal(404, "not-found", null)
+            turns.refuseOpen = ScriptedTurns.Refusal.of("not_found")
             assertTrue(coach.send(chat, "what's stalled?"))
             advanceUntilIdle()
             assertEquals(CoachTurnRefusal.Absent, coach.refusal(chat))
