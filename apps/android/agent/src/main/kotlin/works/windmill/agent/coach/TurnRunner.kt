@@ -136,7 +136,11 @@ class TurnRunner(private val host: ToolHost, private val ai: AiClient, private v
                 }
                 finish(turn, if (turn.wait.stopped) EndState.stopped else EndState.failed, code = if (turn.wait.stopped) null else "model-call-limit")
             }
-        } catch (_: HostUnavailable) { abandon(turn); return turn.end }
+        } catch (_: HostUnavailable) {
+            // A host that let go because the seat is changing leaves the end to `seatWillChange`, which writes it through what the change still allows.
+            if (!turn.seatChanged) abandon(turn)
+            return turn.end
+        }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
             observe { failure(FailureOperation.host) }

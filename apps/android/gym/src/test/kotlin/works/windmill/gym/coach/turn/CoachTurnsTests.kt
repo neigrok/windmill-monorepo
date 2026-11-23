@@ -5,6 +5,7 @@ import android.graphics.Color
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -588,6 +589,72 @@ class CoachTurnsTests {
             assertEquals("Four words arrived here", message?.text)
             assertEquals("Question", reopened.message(turn.lifter)?.text)
             assertNull(reopened.device(EndTurn.runningTurnKey))
+        }
+    }
+
+    // Coach engine §5, the seat changes: a sign-out confirmed while the turn's call waits on the account ends the turn interrupted with what arrived, both rows of the mark cleared, through the training the change still lets write.
+    @Test fun aSignOutConfirmedWhileACallWaitsEndsTheTurnInterrupted() = runTest {
+        var writable = true
+        val server = script("""[
+            {"event":"text","data":{"delta":"Hello"}},
+            {"await":"stop"},
+            {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"list_notes","input":{}}]}},
+            {"await":"results","batch":1},
+            {"event":"done","data":{"state":"completed"}}]""")
+        TurnPhone(this, folder.newFolder(), server, writable = { writable }).use { phone ->
+            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
+            advanceTimeBy(1_000)
+            writable = false
+            phone.server.release()
+            advanceTimeBy(3_000)
+            val drain = works.windmill.gym.store.EngineTraining(phone.room.training.engine, writeAuthority = { true })
+            val confirming = launch { phone.turns.seatWillChange(drain) }
+            advanceUntilIdle()
+            confirming.join()
+            val message = checkNotNull(phone.message(turn.coach))
+            assertEquals(MessageState.interrupted to "Hello", message.state to message.text)
+            assertNull(phone.device(EndTurn.runningTurnKey))
+            assertNull(phone.device(Mark.roundKey))
+            assertEquals(listOf("interrupted"), phone.telling.named("coach_turn").map { it["state"] })
+            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
+        }
+    }
+
+    // The same confirmation while the round streams, nothing waiting on the account.
+    @Test fun aSignOutConfirmedWhileTheRoundStreamsEndsTheTurnInterrupted() = runTest {
+        var writable = true
+        val server = script("""[{"event":"text","data":{"delta":"Hello"}},{"await":"stop"},{"event":"done","data":{"state":"completed"}}]""")
+        TurnPhone(this, folder.newFolder(), server, writable = { writable }).use { phone ->
+            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
+            advanceTimeBy(1_000)
+            writable = false
+            val drain = works.windmill.gym.store.EngineTraining(phone.room.training.engine, writeAuthority = { true })
+            val confirming = launch { phone.turns.seatWillChange(drain) }
+            advanceTimeBy(3_000)
+            phone.server.release()
+            advanceUntilIdle()
+            confirming.join()
+            val message = checkNotNull(phone.message(turn.coach))
+            assertEquals(MessageState.interrupted to "Hello", message.state to message.text)
+            assertNull(phone.device(EndTurn.runningTurnKey))
+        }
+    }
+
+    // A trailing commit that comes round after the writer ended its turn lands nowhere: the end stands, its words whole.
+    @Test fun aTrailingCommitAfterTheEndLandsNowhere() = runTest {
+        TurnPhone(this, folder.newFolder(), script("""[{"event":"text","data":{"delta":"Hel"}},{"await":"stop"},{"event":"done","data":{"state":"completed"}}]""")).use { phone ->
+            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
+            advanceTimeBy(1_000)
+            val drain = works.windmill.gym.store.EngineTraining(phone.room.training.engine, writeAuthority = { true })
+            launch { phone.turns.seatWillChange(drain) }
+            advanceTimeBy(1)
+            assertEquals(MessageState.interrupted to "Hel", phone.message(turn.coach)?.let { it.state to it.text })
+            val late = phone.room.training.pinnedOn(phone.room.training.pin()) { it.run(works.windmill.gym.domain.coach.StreamTurnText(turn.coach, "He")) }
+            assertEquals(works.windmill.domain.kit.Outcome.Unchanged(Unit), late)
+            advanceTimeBy(10_000)
+            phone.server.release()
+            advanceUntilIdle()
+            assertEquals(MessageState.interrupted to "Hel", phone.message(turn.coach)?.let { it.state to it.text })
         }
     }
 

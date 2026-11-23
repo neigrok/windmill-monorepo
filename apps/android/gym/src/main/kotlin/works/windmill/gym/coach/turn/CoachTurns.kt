@@ -14,6 +14,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -221,8 +222,17 @@ class CoachTurns(
     suspend fun seatWillChange(writer: EngineTraining) {
         val live = running ?: return
         live.lease.writer = writer
-        live.lease.released = true
-        attempted(Unit) { runner.seatWillChange() }
+        letGo(live)
+    }
+
+    // The engine hears of the change before the host lets go, so a write the host stops waiting on leaves the turn's end to the engine, which writes it through the lease's writer when it has one.
+    private suspend fun letGo(live: LiveTurn) {
+        attempted(Unit) {
+            coroutineScope {
+                launch(start = CoroutineStart.UNDISPATCHED) { runner.seatWillChange() }
+                live.lease.released = true
+            }
+        }
     }
 
     // A new seat hears nothing of the last one's sends, and the same words said to it again are news. A deployment without Coach is no seat's, and stays said.
@@ -401,8 +411,7 @@ class CoachTurns(
     private suspend fun seatChanged(previous: String?, ranUnder: (LiveTurn) -> Boolean) {
         val left = admitting.withLock { running?.takeIf(ranUnder) }
         if (left != null) {
-            left.lease.released = true
-            attempted(Unit) { runner.seatWillChange() }
+            letGo(left)
             if (running === left) running = null
         }
         admitting.withLock {
