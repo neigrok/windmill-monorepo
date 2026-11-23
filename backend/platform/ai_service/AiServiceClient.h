@@ -24,6 +24,7 @@ namespace wm {
 // long it took, and never a prompt, an answer, a pass or a callId.
 class AiServiceClient : public AiText {
 public:
+  // `url` is the service's origin, http or https; any other throws std::invalid_argument.
   AiServiceClient(std::string url, std::shared_ptr<const AiPasses> passes, Clock& clock);
 
   TextAnswer ask(const UserId& account, const TextQuestion& question) override;

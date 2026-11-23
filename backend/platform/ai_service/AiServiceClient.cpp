@@ -143,7 +143,6 @@ std::optional<TextAnswer> put(const std::string& url, const std::string& pass, c
     lines = curl_slist_append(lines, line.c_str());
   const auto headers = std::unique_ptr<curl_slist, decltype(&curl_slist_free_all)>(lines, curl_slist_free_all);
   curl_easy_setopt(handle.get(), CURLOPT_URL, url.c_str());
-  curl_easy_setopt(handle.get(), CURLOPT_PROTOCOLS_STR, "http,https");
   curl_easy_setopt(handle.get(), CURLOPT_CUSTOMREQUEST, "PUT");
   curl_easy_setopt(handle.get(), CURLOPT_HTTPHEADER, headers.get());
   curl_easy_setopt(handle.get(), CURLOPT_POSTFIELDS, body.data());
@@ -182,6 +181,7 @@ std::optional<TextAnswer> put(const std::string& url, const std::string& pass, c
 
 AiServiceClient::AiServiceClient(std::string url, std::shared_ptr<const AiPasses> passes, Clock& clock)
     : url_(std::move(url)), passes_(std::move(passes)), clock_(clock) {
+  if (!url_.starts_with("http://") && !url_.starts_with("https://")) throw std::invalid_argument("AI_SERVICE_URL must be http(s)");
   while (!url_.empty() && url_.back() == '/') url_.pop_back();
 }
 

@@ -11,6 +11,7 @@
 
 #include <trantor/utils/Logger.h>
 
+#include <algorithm>
 #include <atomic>
 #include <fstream>
 #include <memory>
@@ -267,47 +268,32 @@ TEST(every_refusal_before_the_stream_is_read_by_its_code_whatever_its_status) {
   for (const Json::Value& each : wire["refusals"]) refusals.emplace_back(each["status"].asInt(), each["body"]);
   for (const std::string& name : wire["prestreamRefusals"].getMemberNames())
     refusals.emplace_back(wire["prestreamRefusals"][name]["status"].asInt(), wire["prestreamRefusals"][name]["body"]);
-  // The shared background budgets' own refusal, which the fixtures may not carry yet.
-  refusals.emplace_back(429, parse(R"({"code":"background_exhausted","allowance":null})"));
+  // The shared background budgets' refusal, played here wherever the fixtures do not carry it.
+  if (std::none_of(refusals.begin(), refusals.end(), [](const auto& each) { return each.second["code"] == "background_exhausted"; }))
+    refusals.emplace_back(429, parse(R"({"code":"background_exhausted","allowance":null})"));
 
   std::string read;
+  std::string expected;
   for (const auto& [status, body] : refusals) {
     if (body["code"].asString() == "pass_expired") continue;
     PlayedService service{{refusal(status, dump(body))}};
     StillClock clock;
     const TextAnswer answer = AiServiceClient{service.url(), signer(), clock}.ask(UserId{"account-vector"}, question());
-    read += std::to_string(status) + " " + answer.code + " " + std::to_string(service.requests().size()) + "\n";
+    read += std::to_string(status) + " " + answer.code + " asked " + std::to_string(service.requests().size()) + "\n";
+    expected += std::to_string(status) + " " + body["code"].asString() + " asked 1\n";
   }
   PlayedService unreadable{{refusal(502, "<html>bad gateway</html>")}};
   StillClock clock;
   read += "502 " + AiServiceClient{unreadable.url(), signer(), clock}.ask(UserId{"account-vector"}, question()).code + "\n";
+  expected += "502 unreadable\n";
 
-  CHECK_EQ(read, std::string("400 invalid_request 1\n"
-                             "400 provider_rejected 1\n"
-                             "401 pass_missing 1\n"
-                             "401 pass_signature 1\n"
-                             "401 pass_audience 1\n"
-                             "401 pass_malformed 1\n"
-                             "403 funding_required 1\n"
-                             "403 device_bound 1\n"
-                             "404 call_unknown 1\n"
-                             "409 conflict 1\n"
-                             "410 result_gone 1\n"
-                             "410 picture_gone 1\n"
-                             "413 too_large 1\n"
-                             "429 subject_exhausted 1\n"
-                             "429 free_month_exhausted 1\n"
-                             "429 free_day_exhausted 1\n"
-                             "429 concurrency_exhausted 1\n"
-                             "429 rate_limited 1\n"
-                             "503 busy 1\n"
-                             "503 paused 1\n"
-                             "503 accounting_unavailable 1\n"
-                             "503 provider_unavailable 1\n"
-                             "400 provider_rejected 1\n"
-                             "503 provider_unavailable 1\n"
-                             "429 background_exhausted 1\n"
-                             "502 unreadable\n"));
+  CHECK_EQ(read, expected);
+  // Every refusal echoes-on-ai-service.md §5 sorts is one the fixtures, or this case, play.
+  for (const char* code : {"invalid_request", "too_large", "conflict", "result_gone", "subject_exhausted",
+                           "concurrency_exhausted", "rate_limited", "background_exhausted", "busy", "paused",
+                           "accounting_unavailable", "provider_unavailable", "provider_rejected", "pass_missing",
+                           "pass_signature", "pass_audience", "pass_malformed"})
+    CHECK(read.find(std::string(" ") + code + " asked 1\n") != std::string::npos);
 }
 
 TEST(an_expired_pass_is_signed_again_and_the_call_asked_once_more) {

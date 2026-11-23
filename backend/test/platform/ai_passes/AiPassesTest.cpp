@@ -1,4 +1,5 @@
 #include "platform/ai_passes/AiPasses.h"
+#include "platform/adapters/json/JsonText.h"
 #include "test/testing.h"
 #include <drogon/utils/Utilities.h>
 #include <fstream>
@@ -51,6 +52,16 @@ TEST(the_server_pass_states_the_account_as_background_work_and_nothing_else) {
   CHECK_EQ(payload, std::string(R"({"aud":"ai","client":"server","env":"development","exp":1800000600000,)"
                                 R"("iat":1800000000000,"plan":"none","sub":{"account":"account-vector"}})"));
   CHECK_EQ(pass, signer.signPayload(payload));
+
+  // And it is the server pass the AI service's vectors hold as one it opens, wherever they hold one.
+  std::ifstream file(std::string(WM_API_CONTRACT_DIR) + "/ai/passes/vectors.json");
+  Json::Value vectors;
+  file >> vectors;
+  for (const auto& item : vectors["cases"]) {
+    const Json::Value claims = parse(item["payload"].asString());
+    if (item["expected"].asString() != "ok" || !claims.isObject() || claims["client"] != "server") continue;
+    CHECK(parse(payload) == claims);
+  }
 
   // The pass door reaches no server pass: its request refuses the client, and its claims throw for it.
   CHECK_FALSE(AiPassRequest::parse(R"({"client":"server","use":"gym.coach","version":1})"));
