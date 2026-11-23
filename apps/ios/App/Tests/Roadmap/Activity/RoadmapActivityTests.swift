@@ -83,7 +83,7 @@ import SyncTesting
 
     model.path.append(.step(try step("Read the wind", in: model), by: .activity))
     #expect(told(telemetry) == [
-      "roadmap_room_opened ", "roadmap_activity read=loaded surface=activity",
+      "roadmap_room_opened ", "roadmap_activity read=loaded step=open surface=activity",
       "roadmap_board_step_open column=done door=activity surface=document",
     ])
   }
@@ -144,7 +144,7 @@ import SyncTesting
     await reads(model, on: engine) { $0.shown?.step(tie) == nil }
     #expect(model.path.isEmpty)
     #expect(told(telemetry) == [
-      "roadmap_room_opened ", "roadmap_board_step_open column=locked door=card surface=document", "roadmap_activity read=loaded surface=history",
+      "roadmap_room_opened ", "roadmap_board_step_open column=locked door=card surface=document", "roadmap_activity read=loaded step=open surface=history",
     ])
   }
 
@@ -178,11 +178,11 @@ import SyncTesting
     await reads(model, on: engine) { $0.shown?.listed.title == "Night sailing" }
     #expect(model.path.isEmpty)
 
-    // A roadmap with no step has no Activity, which its event says.
-    model.path = [.activity(of: try #require(model.shown).listed.id)]
-    #expect(activity(model).isEmpty)
+    // A roadmap with no step has no Activity, which its event says; the title menu's Activity pushes the open roadmap's.
+    model.showActivity()
+    #expect(model.path == [.activity(of: try #require(model.shown).listed.id)] && activity(model).isEmpty)
     #expect(told(telemetry).filter { $0.hasPrefix("roadmap_activity") } == [
-      "roadmap_activity read=loaded surface=activity", "roadmap_activity read=empty surface=activity",
+      "roadmap_activity read=loaded step=open surface=activity", "roadmap_activity read=empty step=open surface=activity",
     ])
   }
 
@@ -242,6 +242,46 @@ import SyncTesting
       ("z", noon - 13 * hour - 1_000, nil), ("y", noon + 11 * hour - 1_000, nil), ("x", noon + 11 * hour + 1_000, nil),
     ]
     #expect(laidOut(ActivityDays(read(aroundMidnight), now: late, folds: true)) == ["today: created x", "yesterday: created y", "earlier: created z"])
+  }
+
+  // 01.13b: a fold is named by the first step it took, so a step added within that minute joins it under the same name, and
+  // the screen keeps it open; one added past the minute stands on its own.
+  @Test func aFoldKeepsItsNameAsAStepLandsWithinItsMinute() {
+    let noon: Int64 = 1_790_424_000_000
+    let now = Moment(now: Instant(ms: noon), zone: FixedZone(offsetSeconds: 0))
+    let planted: [(id: String, at: Int64, done: Int64?)] = [("a", noon - 3_600_000, nil), ("b", noon - 3_590_000, nil),
+                                                           ("c", noon - 3_580_000, nil), ("d", noon - 3_570_000, nil)]
+    let folds = { (steps: [(id: String, at: Int64, done: Int64?)]) -> [String] in
+      ActivityDays(self.read(steps), now: now, folds: true).sections.flatMap(\.entries).map(\.id)
+    }
+    #expect(folds(planted) == ["fold-a"])
+    #expect(folds(planted + [("e", noon - 3_550_000, nil)]) == ["fold-a"])
+    #expect(laidOut(ActivityDays(read(planted + [("e", noon - 3_550_000, nil)]), now: now, folds: true)) == ["today: added e d c b a"])
+    #expect(folds(planted + [("e", noon - 3_550_000, nil), ("f", noon - 3_530_000, nil)]) == ["created-f", "fold-a"])
+  }
+
+  // 01.5b: how the first read's wait ended, said as the spinner leaves: the room read its copy, its read failed, or it was
+  // put away with the read still under way.
+  @Test func theFirstReadsWaitEndsReadFailedOrLeft() async throws {
+    let (engine, runner, memory, suite) = phone(account: nil)
+    defer { memory.removePersistentDomain(forName: suite) }
+    try RoadmapFixture.plantLearnToSail(runner)
+    struct Unreadable: Error {}
+    let telemetry = TelemetryRecorder()
+    let waiting = room(engine, runner, memory, telemetry: telemetry)
+    waiting.firstReadWaits()
+    waiting.firstReadEnded()
+    let read = room(engine, runner, memory, telemetry: telemetry)
+    read.roomOpened()
+    await reads(read, on: engine) { $0.shown != nil }
+    read.firstReadEnded()
+    let failing = RoadmapModel(records: { _, _ in throw Unreadable() }, runner: runner, phone: memory, telemetry: telemetry)
+    failing.roomOpened()
+    failing.firstReadEnded()
+    #expect(told(telemetry).filter { $0.hasPrefix("roadmap_first_read") } == [
+      "roadmap_first_read step=shown", "roadmap_first_read outcome=left step=ended", "roadmap_first_read outcome=read step=ended",
+      "roadmap_first_read outcome=failed step=ended",
+    ])
   }
 
   // Earlier says its date, with the year only for a year that is not this one; Today and Yesterday say the clock time.

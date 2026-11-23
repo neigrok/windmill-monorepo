@@ -168,6 +168,25 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
             ["step": .label("held"), "door": .label("page"), "view": .label("board")])
   }
 
+  // Activity, a step's History and the room's first read tell their screen, what their read came to, a fold opened with
+  // its steps as a bucket and how the first read's wait ended: never a step, a time or a count finer than a bucket.
+  @Test func activityAndTheFirstReadTellWhatTheirReadCameToAndNothingOfAStep() {
+    let events = ["roadmap_activity", "roadmap_first_read", "roadmap_board_step_open"]
+    #expect(events.filter(TelemetryPrivacy.events.contains) == events)
+    for (surface, read) in [("activity", "loaded"), ("history", "empty")] {
+      #expect(TelemetryPrivacy.properties(["step": "open", "surface": surface, "read": read, "rows": "11", "tree": "private-id"]) ==
+              ["step": .label("open"), "surface": .label(surface), "read": .label(read)])
+    }
+    #expect(TelemetryPrivacy.properties(["step": "unfold", "surface": "activity", "count": "6-20", "steps": "8", "label": "Sail solo"]) ==
+            ["step": .label("unfold"), "surface": .label("activity"), "count": .label("6-20")])
+    #expect(TelemetryPrivacy.properties(["surface": "document", "door": "activity", "column": "done", "node": "private-id"]) ==
+            ["surface": .label("document"), "door": .label("activity"), "column": .label("done")])
+    #expect(TelemetryPrivacy.properties(["step": "shown", "ms": "512"]) == ["step": .label("shown")])
+    for outcome in ["read", "failed", "left"] {
+      #expect(TelemetryPrivacy.properties(["step": "ended", "outcome": outcome, "tree": "private-id"]) == ["step": .label("ended"), "outcome": .label(outcome)])
+    }
+  }
+
   @Test func theGraphTellsItsSwitchItsSelectionAndItsReportsAndNothingOfAStep() {
     let events = ["roadmap_view_switch", "roadmap_graph_select", "roadmap_board_step_open", "roadmap_board_create", "roadmap_whats_next",
                   "roadmap_graph_fit"]

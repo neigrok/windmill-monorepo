@@ -5,14 +5,16 @@ import RoadmapDomain
 // A roadmap's Activity (Roadmap · iOS 01.13, 01.13b, 01.15), pushed from the title menu: the domain's read of the phone's
 // copy, so it asks no server and reads the same signed out and with no connection, and a change the copy comes to hold
 // shows as it lands. Each step's creation and completion, the symbol in the step's kind colour, its name and its time,
-// under Today, Yesterday and Earlier; more than three steps added within a minute fold into one row a tap opens in place.
-// A row opens its step's page.
+// under Today, Yesterday and Earlier; more than three steps added within a minute fold into one row a tap opens in place,
+// and which stays open as a step lands within that minute. A row opens its step's page.
 struct RoadmapActivity: View {
   let roadmap: RoadmapModel
+  // The folds opened, by their ids.
+  @State private var unfolded: Set<String> = []
 
   var body: some View {
     let open = roadmap.shown
-    let days = open.map { ActivityDays(ActivityRead($0.graph), now: roadmap.moment, folds: true) }
+    let days = roadmap.activity().map { ActivityDays($0, now: roadmap.moment, folds: true) }
     Group {
       if let open, let days, !days.sections.isEmpty {
         List {
@@ -46,7 +48,14 @@ struct RoadmapActivity: View {
     case .row(let row): self.row(row, on: day, in: open, days: days)
     // 01.13b: the steps added at once, under one row that says how many, whose chevron unfolds them in place.
     case .added(let rows):
-      DisclosureGroup {
+      DisclosureGroup(isExpanded: Binding(get: { unfolded.contains(entry.id) }, set: { opens in
+        guard opens else {
+          unfolded.remove(entry.id)
+          return
+        }
+        unfolded.insert(entry.id)
+        roadmap.unfolded(rows.count)
+      })) {
         ForEach(rows, id: \.step) { row in self.row(row, on: day, in: open, days: days) }
       } label: {
         let count = String(localized: "\(rows.count) steps", locale: .copy, comment: "How many steps: beside Opens on a step's page, and Activity's row of the steps added within one minute")
@@ -90,9 +99,8 @@ struct StepHistory: View {
   let step: String
 
   var body: some View {
-    let open = roadmap.shown
-    let row = open?.step(step)
-    let days = open.map { ActivityDays(ActivityRead($0.graph, step: step), now: roadmap.moment, folds: false) }
+    let row = roadmap.shown?.step(step)
+    let days = roadmap.activity(of: step).map { ActivityDays($0, now: roadmap.moment, folds: false) }
     List {
       ForEach(days?.sections ?? []) { section in
         Section {
@@ -154,7 +162,8 @@ struct ActivitySymbol: View {
 // What Activity and History lay out of the domain's read (01.13, 01.13b, 03.12): its rows, in its order, under the day
 // each falls on in the phone's zone, Today, Yesterday or Earlier, Today's and Yesterday's at their clock time and
 // Earlier's at their date, the year only where it is not this one. Where it folds, more than three steps added within a
-// minute of the newest of them stand as one entry; folding is the view's, and the read still gives each its row.
+// minute of the first of them stand as one entry, named by that first step, so a step that lands within the minute joins
+// the same entry; folding is the view's, and the read still gives each its row.
 struct ActivityDays {
   enum Day: Hashable, CaseIterable {
     case today, yesterday, earlier
@@ -180,7 +189,7 @@ struct ActivityDays {
     var id: String {
       switch self {
       case .row(let row): "\(row.kind.rawValue)-\(row.step)"
-      case .added(let rows): "fold-\(rows[0].step)"
+      case .added(let rows): "fold-\(rows[rows.count - 1].step)"
       }
     }
   }
@@ -214,16 +223,17 @@ struct ActivityDays {
     }
   }
 
-  // A run of creations, each within a minute of the run's newest, is one entry where it holds more than three of them.
+  // A run of creations, each within a minute of the run's first, is one entry where it holds more than three of them. The
+  // rows are read from the oldest, so a run starts at its first step, and the entries are given newest first again.
   static func folded(_ rows: [ActivityRead.Row]) -> [Entry] {
     var entries: [Entry] = []
     var run: [ActivityRead.Row] = []
     let close = {
-      entries += run.count > foldsPast ? [.added(run)] : run.map(Entry.row)
+      entries += run.count > foldsPast ? [.added(Array(run.reversed()))] : run.map(Entry.row)
       run = []
     }
-    for row in rows {
-      if row.kind == .created, let newest = run.first, newest.at.ms - row.at.ms < foldWindowMs {
+    for row in rows.reversed() {
+      if row.kind == .created, let first = run.first, row.at.ms - first.at.ms < foldWindowMs {
         run.append(row)
         continue
       }
@@ -231,7 +241,7 @@ struct ActivityDays {
       if row.kind == .created { run = [row] } else { entries.append(.row(row)) }
     }
     close()
-    return entries
+    return Array(entries.reversed())
   }
 
   // A row's time as its day's section shows it.

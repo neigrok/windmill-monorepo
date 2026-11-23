@@ -178,7 +178,7 @@ band over New step, which raises the step form. New step leaves the foot while F
 selected. While Fit stands the bar, the switch row and the foot are away and the status bar stays. It announces
 and plays the band's haptic once, whichever screen stands over it. Before the phone's copy is first read the room is its
 bar alone, the room capsule and the account, and a large spinner shows once the read has run half a second
-(`RoadmapRoom.FirstRead`, 01.5b); a read that fails says *Couldn’t load this roadmap* and *The copy on this iPhone
+(`RoadmapRoom.FirstRead`, 01.5b), which is told, and how the wait ended: read, failed, or the room put away first; a read that fails says *Couldn’t load this roadmap* and *The copy on this iPhone
 couldn’t be read.* with *Try Again*, which asks the engine for every view anew (01.5c). The title's menu (`RoadmapTitle`,
 `.toolbarTitleMenu`) lists the three most recent roadmaps, each name over its progress and the open one checked, then
 *All Roadmaps…*, *New Roadmap*, *Kinds*, *Activity*, *Rename* and *Delete Roadmap*. *Rename* is the system's (`RenameButton` over a title that is a binding): the bar
@@ -240,10 +240,12 @@ each pushed on the room's stack, from the title menu's *Activity* and from a ste
 domain's `ActivityRead` of the open roadmap as the phone's copy reads it: each step's creation and completion the copy
 holds a time for, newest first ([the shared cases](../../../packages/api-contract/roadmap/domain/activity.json)), so
 they make no request, read the same signed out and with no connection, and show a change made elsewhere once the copy
-holds it. `ActivityDays` lays the rows out under Today, Yesterday and Earlier, by the engine's clock in the phone's zone
-(`RoadmapModel.moment`), Today's and Yesterday's at their clock time and Earlier's at their date, the year only for
-another year; on Activity more than three steps added within a minute of the newest of them fold into one
-`DisclosureGroup` row, *12 steps*, which a tap opens in place. An Activity row is the step's symbol, a plus for a
+holds it; the model reads it once for each read of the copy (`RoadmapModel.activity(of:)`). `ActivityDays` lays the rows
+out under Today, Yesterday and Earlier, by the engine's clock in the phone's zone (`RoadmapModel.moment`, which a midnight
+passing lays out again), Today's and Yesterday's at their clock time and Earlier's at their date, the year only for
+another year; on Activity more than three steps added within a minute of the first of them fold into one
+`DisclosureGroup` row, *12 steps*, which a tap opens in place, told with its steps as a bucket, and which stays open as a
+step lands within that minute. An Activity row is the step's symbol, a plus for a
 creation and a check for a completion, in its kind's colour, its name and its time, and opens the step's page, which its
 event tells with door activity; VoiceOver reads *Completed Rig the boat, 9:12*, and the fold *Added 12 steps, 8:02*. A
 roadmap with no step says *No activity yet*. History is the same read narrowed to the step, *Completed* and *Added* with

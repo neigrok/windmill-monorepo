@@ -350,6 +350,7 @@ final class RoadmapModel {
       note?.follow()
       if let shown { reading.read(shown, shown: view(of: shown)) }
       if !removedKinds.isEmpty { removedKinds = removedKinds.filter { shown?.legend.entry($0.key) != nil } }
+      activities = [:]
       guard !path.isEmpty else { return }
       if case .open(let open) = phase, path.allSatisfy({ $0.stands(in: open) }) { return }
       path = []
@@ -375,9 +376,9 @@ final class RoadmapModel {
         note = StepNoteDraft(of: ID(RecordID(step)), in: open.id, room: self)
         telemetry.event("roadmap_board_step_action", properties: ["surface": "document", "action": "editNote"])
       case .activity, .history:
-        guard let shown, pushed.stands(in: shown) else { return }
-        let read = ActivityRead(shown.graph, step: pushed.step)
-        telemetry.event("roadmap_activity", properties: ["surface": pushed.step == nil ? "activity" : "history", "read": read.rows.isEmpty ? "empty" : "loaded"])
+        guard let shown, pushed.stands(in: shown), let read = activity(of: pushed.step) else { return }
+        telemetry.event("roadmap_activity", properties: ["step": "open", "surface": pushed.step == nil ? "activity" : "history",
+                                                         "read": read.rows.isEmpty ? "empty" : "loaded"])
       }
     }
   }
@@ -417,6 +418,13 @@ final class RoadmapModel {
   @ObservationIgnored var account = RoadmapAccount([])
   // A roadmap the room made, or brought back by Undo, which it opens once the list holds it.
   @ObservationIgnored var arriving: String?
+  // The open roadmap's Activity, and each step's History, by the step, as the domain read them from the phone's copy:
+  // read once for each read of the copy, however often the screens that show them are drawn.
+  @ObservationIgnored var activities: [String?: ActivityRead] = [:]
+  // The phone's midnights while the room stands, which whatever reads `moment` is drawn again at.
+  private(set) var midnights = 0
+  // The observer that counts them.
+  @ObservationIgnored var dayChanges: (any NSObjectProtocol)?
   // Every view the room asked the engine for, kept so each stays live.
   @ObservationIgnored var views: [ViewKey: RecordsView] = [:]
   // The observation now live; one begun later ends the one before it.
@@ -430,12 +438,51 @@ final class RoadmapModel {
     self.graph = graph ?? RoadmapGraph(telemetry: telemetry)
     self.boardFrames = boardFrames
     reading = BoardReading(telemetry: telemetry)
+    dayChanges = NotificationCenter.default.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: .main) { [weak self] _ in
+      MainActor.assumeIsolated { self?.midnights += 1 }
+    }
   }
 
   // The engine's now in the phone's zone, by which Activity and a step's History place each row's day; the phone's own
-  // clock where the store cannot say it.
+  // clock where the store cannot say it. It reads the midnights passed, so a screen laid out by it is drawn again at one.
   var moment: Moment {
-    (try? runner.moment()) ?? Moment(now: Instant(ms: Int64((Date().timeIntervalSince1970 * 1_000).rounded())), zone: DeviceZone())
+    _ = midnights
+    return (try? runner.moment()) ?? Moment(now: Instant(ms: Int64((Date().timeIntervalSince1970 * 1_000).rounded())), zone: DeviceZone())
+  }
+
+  // The open roadmap's Activity, or a step's History, read once for each read of the phone's copy.
+  func activity(of step: String? = nil) -> ActivityRead? {
+    guard let shown else { return nil }
+    if let read = activities[step] { return read }
+    let read = ActivityRead(shown.graph, step: step)
+    activities[step] = read
+    return read
+  }
+
+  // Activity, from the title menu: the open roadmap's, pushed over its Board.
+  func showActivity() {
+    guard let shown else { return }
+    path = [.activity(of: shown.listed.id)]
+  }
+
+  // 01.13b: a fold of steps added at once opened in place, told with how many it holds as a bucket.
+  func unfolded(_ steps: Int) {
+    telemetry.event("roadmap_activity", properties: ["step": "unfold", "surface": "activity", "count": Self.bucket(steps)])
+  }
+
+  // 01.5b: the room's first read has run half a second and its spinner shows; then how that wait ended: read, failed,
+  // or left, the room put away first.
+  func firstReadWaits() {
+    telemetry.event("roadmap_first_read", properties: ["step": "shown"])
+  }
+
+  func firstReadEnded() {
+    let outcome = switch phase {
+    case .unread: "left"
+    case .failed: "failed"
+    case .open, .empty: "read"
+    }
+    telemetry.event("roadmap_first_read", properties: ["step": "ended", "outcome": outcome])
   }
 
   // The roadmap the room has open, where it has one.

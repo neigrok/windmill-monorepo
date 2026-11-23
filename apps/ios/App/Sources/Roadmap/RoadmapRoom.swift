@@ -57,7 +57,7 @@ struct RoadmapRoom: View {
 
   @ViewBuilder var content: some View {
     switch roadmap.phase {
-    case .unread: FirstRead()
+    case .unread: FirstRead(roadmap: roadmap)
     case .open(let open): views(of: open)
     // 01.5: the room with no roadmap, where the band still holds the Undo of the last one's delete.
     case .empty:
@@ -81,8 +81,9 @@ struct RoadmapRoom: View {
   }
 
   // 01.5b: before the first read of the phone's copy the room is its bar alone, and a large spinner shows only once the
-  // read has run half a second, so a quick read never flashes one.
+  // read has run half a second, so a quick read never flashes one. A spinner shown is told, and how its wait ended.
   struct FirstRead: View {
+    let roadmap: RoadmapModel
     @State private var waited = false
 
     var body: some View {
@@ -92,7 +93,9 @@ struct RoadmapRoom: View {
         .task {
           guard (try? await Task.sleep(for: .milliseconds(500))) != nil else { return }
           waited = true
+          roadmap.firstReadWaits()
         }
+        .onDisappear { if waited { roadmap.firstReadEnded() } }
     }
   }
 
@@ -195,7 +198,7 @@ struct RoadmapTitle: ViewModifier {
     Button("New Roadmap", systemImage: "plus") { roadmap.nameRoadmap(from: .menu) }.tint(RoadmapPalette.ink)
     Divider()
     Button("Kinds", systemImage: "paintpalette") { roadmap.openKinds(from: .menu) }.tint(RoadmapPalette.ink)
-    Button("Activity", systemImage: "clock.arrow.circlepath") { roadmap.path = [.activity(of: open.listed.id)] }.tint(RoadmapPalette.ink)
+    Button("Activity", systemImage: "clock.arrow.circlepath") { roadmap.showActivity() }.tint(RoadmapPalette.ink)
     RenameButton()
     Divider()
     Button("Delete Roadmap", systemImage: "trash", role: .destructive) { roadmap.askDelete(open.listed, from: .menu) }

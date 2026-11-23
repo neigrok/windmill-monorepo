@@ -125,14 +125,14 @@ note, the names its lines take and its clearing are `landing-actions.json`'s.
 Run from `web`: `node --test test/products/roadmap/domain/corpus.test.js`.
 
 The harness inputs are `{operation, tree, subjects}` for `graph`, `{operation, trees}` for `account` and `list`,
-`{operation, trees, tree: id}` for `guides`, `progress`, `pointers` and `openings`, `{operation, trees, tree: id, step?}` for
-`activity`, `{operation, id, listed, tree,
-overlay: {drawn, queued} | null, read}` for `roadmap`, its records engine view records and `queued` the
-overlay's records (`{t, id}`) a queued entry still changes, `{operation, tree, query}` for
-`board` and `search`, `{operation, tree}` for `legend` and `diagnostics`, and
-`{operation, tree, own: {nodes: [id], edges: [[from,to]]}}` for `landing`. `subjects` selects detailed
-graph reads only; it never narrows states. `query` is Board's `{sort,kinds,search,branch,doneExpanded}`
-or MCP's `{query,color,kind}`. Optional query fields have the defaults in `reads.js`.
+`{operation, trees, tree: id}` for `guides`, `progress`, `pointers` and `openings`,
+`{operation, trees, tree: id, step?}` for `activity`,
+`{operation, id, listed, tree, overlay: {drawn, queued} | null, read}` for `roadmap`, its records engine view records and
+`queued` the overlay's records (`{t, id}`) a queued entry still changes, `{operation, tree, query}` for `board` and
+`search`, `{operation, tree}` for `legend` and `diagnostics`, and
+`{operation, tree, own: {nodes: [id], edges: [[from,to]]}}` for `landing`. `subjects` selects detailed graph reads only;
+it never narrows states. `query` is Board's `{sort,kinds,search,branch,doneExpanded}` or MCP's `{query,color,kind}`.
+Optional query fields have the defaults in `reads.js`.
 
 The read modules are `records.js` (normalized values, authored ordering, the device's landing note, and each
 tree's `TreeIndex`: its raw adjacency by slot and its own marks, derived once per tree), `graph.js` (iterative
