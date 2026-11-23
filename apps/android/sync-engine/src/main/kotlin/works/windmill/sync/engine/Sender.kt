@@ -197,6 +197,7 @@ private fun Engine.acceptPushResult(replica: ReplicaState, entry: Entry, result:
     }
     if (effects != null) applyReceipt(replica, entry, effects, result.items("write"))
     replica.retainOutcome(entry.id, Attempt(epoch, n, ok = true, entry.acceptedEffects))
+    replica.stepPreimagesOver(entry)
     replica.resolveReferences(entry, epoch)
     replica.applyInverseResult(entry, result, epoch)
     resolveIfCovered(replica, entry)
