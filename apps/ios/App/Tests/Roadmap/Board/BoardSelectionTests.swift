@@ -131,6 +131,27 @@ import SyncTesting
     ])
   }
 
+  // 02.10d: the steps' Undo asked once the hold has ended finds nothing held; they stay deleted, and the band counts what
+  // could not come back, with no Undo of its own.
+  @Test func anUndoOfSeveralStepsAfterTheHoldSaysHowManyCouldNotComeBack() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    try await learnToSail(model, on: engine, runner)
+    model.startSelecting(nil, from: .tool)
+    let selection = try #require(model.selection)
+    selection.steps = [try step("Sail a triangle", in: model), try step("Tie a bowline", in: model)]
+    selection.askDelete()
+    model.answer(delete: true)
+    engine.advance(ms: Constants.holdMs)
+    model.undo()
+    #expect(model.band?.says == .unrestored(.deletedSteps(count: 2), partly: false) && model.band?.undo == nil && model.band?.lasts == .seconds(6))
+    #expect(model.band?.says.words == "Couldn’t bring back 2 steps")
+    await reads(model, on: engine) { $0.shown?.board.overall.total == 6 }
+    #expect(told(telemetry).last == "roadmap_board_undo act=delete outcome=unavailable")
+  }
+
   // 02.12: a choice that holds the roadmap's one starting step cannot be deleted, which the band says once as the
   // choice comes to hold it; Recolor still works.
   @Test func aChoiceHoldingTheStartingStepCanBeRecoloredAndNotDeleted() async throws {

@@ -152,6 +152,27 @@ import SyncTesting
     ])
   }
 
+  // 06.5c: a kind's removal whose Undo the engine keeps nothing of by the time it is asked stays removed, and the band at
+  // the sheet's foot names the kind that could not come back, with no Undo of its own.
+  @Test func aKindsUndoThatFindsNothingNamesTheKindThatCouldNotComeBack() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let telemetry = TelemetryRecorder()
+    let model = try await learnToSail(engine, runner, memory, telemetry: telemetry)
+    let practice = try #require(model.addKind())
+    await reads(model, on: engine) { $0.shown?.legend.entry(practice) != nil }
+    _ = model.name(practice, "Practice")
+    await reads(model, on: engine) { $0.shown?.legend.entry(practice)?.name == "Practice" }
+    #expect(model.remove(practice))
+    try runner.release(try #require(model.band?.undo?.gesture))
+    model.undo()
+    #expect(model.band?.says == .unrestored(.removedKind("Practice"), partly: false) && model.band?.undo == nil)
+    #expect(model.band?.says.words == "Couldn’t bring back Practice")
+    await reads(model, on: engine) { $0.shown?.legend.entry(practice) == nil }
+    #expect(model.removedKinds.isEmpty)
+    #expect(told(telemetry).last == "roadmap_board_undo act=removeKind outcome=unavailable")
+  }
+
   // 06.5b: the sheet lets a removed kind's row go before the phone's copy is read again, and Undo may come first; the row
   // stands again as the Undo is taken, and otherwise once a read no longer holds the kind.
   @Test func aKindUndoneBeforeTheCopyIsReadAgainStandsInTheSheetAgain() async throws {

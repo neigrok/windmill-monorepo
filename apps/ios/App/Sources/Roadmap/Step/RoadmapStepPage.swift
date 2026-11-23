@@ -4,9 +4,9 @@ import RoadmapDomain
 // A step's page (Roadmap · iOS 03.1 to 03.8, 03.11, 03.14): one scroll headed by the step's name, which the bar takes
 // once it has scrolled away. The status row names the state, the kind and why the step stands there, and on a Done step
 // what Reset would do; then the description and the step's shared links, what the step requires and opens, each row
-// opening its step, and the person's workspace of it. Complete stands at the foot of an Up next step, under the room's
-// band, and the foot is away while Add Subtask has the keyboard; Edit raises the step's form over the page, and the …
-// menu holds Open in Graph, View Branch and Delete Step (03.7).
+// opening its step, the person's workspace of it, and last the row that opens its History (03.12). Complete stands at
+// the foot of an Up next step, under the room's band, and the foot is away while Add Subtask has the keyboard; Edit raises
+// the step's form over the page, and the … menu holds Open in Graph, View Branch and Delete Step (03.7).
 struct RoadmapStepPage: View {
   typealias Read = (step: RoadmapModel.OpenStep, open: RoadmapModel.OpenRoadmap)
 
@@ -62,10 +62,19 @@ struct RoadmapStepPage: View {
       }
       if !page.opens.isEmpty {
         related(page.opens, under: "Opens",
-                count: String(localized: "\(page.opens.count) steps", locale: .copy, comment: "How many steps a step opens, beside Opens"),
+                count: String(localized: "\(page.opens.count) steps", locale: .copy,
+                              comment: "How many steps: beside Opens on a step's page, and Activity's row of the steps added within one minute"),
                 identifier: "roadmap-step-opens")
       }
       StepWorkspaceSections(roadmap: roadmap, step: row.id, workspace: page.workspace, addingSubtask: $addingSubtask, addingLink: $addingLink)
+      Section {
+        NavigationLink(value: RoadmapModel.Visit.history(of: row.id)) {
+          HStack(spacing: 12) {
+            Image(systemName: "clock.arrow.circlepath").foregroundStyle(RoadmapPalette.accent).frame(width: symbolColumn).accessibilityHidden(true)
+            Text("History").foregroundStyle(RoadmapPalette.ink)
+          }
+        }.accessibilityIdentifier("roadmap-step-history")
+      }.listRowBackground(RoadmapPalette.card)
     }.listStyle(.insetGrouped).scrollContentBackground(.hidden).contentMargins(.top, 0, for: .scrollContent)
       .scrollDismissesKeyboard(.interactively)
       .background { RoadmapPalette.canvas.ignoresSafeArea() }

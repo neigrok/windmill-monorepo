@@ -71,6 +71,23 @@ extension RoadmapModel.Band.Says {
       return String(localized: "\(name) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title")
     case .refused(.keepsStartingStep): return String(localized: "A roadmap keeps one starting step")
     case .refused(.full): return String(localized: "This roadmap is at its limit.")
+    // An Undo that did not bring back all its receipt said (02.10d, 06.5c): a delete names what could not come back, one
+    // thing by its name and several steps by their count; any other act could not be undone; and an Undo that brought
+    // back part of it says not every change was undone.
+    case .unrestored(_, partly: true):
+      return String(localized: "Couldn’t undo every change", comment: "The band after an Undo that brought back only part of what its act did")
+    case .unrestored(.deletedSteps(let count), partly: false):
+      return String(localized: "Couldn’t bring back \(count) steps", locale: .copy, comment: "The band after an Undo of a delete of several steps brought none back: how many")
+    case .unrestored(let receipt, partly: false):
+      let lost: String? = switch receipt {
+      case .deleted(let step): RoadmapModel.Row.name(of: step)
+      case .deletedRoadmap(let title): ListedRoadmap.name(of: title)
+      case .removedKind(let name), .deletedFromWorkspace(let name): name
+      default: nil
+      }
+      guard let lost else { return String(localized: "Couldn’t undo", comment: "The band after an Undo that brought nothing back of an act that is not a delete") }
+      return String(localized: "Couldn’t bring back \(lost)",
+                    comment: "The band after an Undo of a delete brought nothing back: the name of the step, the roadmap or the kind, or a subtask's words or a link's title")
     }
   }
 }

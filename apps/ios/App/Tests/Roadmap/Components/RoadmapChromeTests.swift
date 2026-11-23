@@ -1,4 +1,7 @@
 import Testing
+import DomainKit
+import RoadmapDomain
+import SyncCore
 @testable import Windmill
 
 @Suite @MainActor struct RoadmapChromeTests {
@@ -26,6 +29,23 @@ import Testing
       "Reefing basics added · Locked", "Untitled step added · Up next", "Read the wind saved", "Untitled step saved",
       "A roadmap keeps one starting step", "This roadmap is at its limit.",
     ])
+  }
+
+  // Roadmap · iOS 02.10d and 06.5c: an Undo that brought nothing back names what could not come back, one thing by its
+  // name and several steps by their count, and says it could not undo an act that is not a delete; one that brought back
+  // part of it says so, whatever the act.
+  @Test func theBandSaysWhatAnUndoCouldNotBringBack() {
+    let receipts: [RoadmapModel.Band.Says] = [
+      .deleted(step: "Read the wind"), .deleted(step: ""), .deletedSteps(count: 2), .removedKind("Practice"), .deletedRoadmap("Learn to sail"),
+      .deletedRoadmap(nil), .deletedFromWorkspace("Check the harbour flag"), .completed(step: "Read the wind", upNext: [], inPlace: true),
+      .reset(step: "Rig the boat", locked: 0), .recolored(count: 2), .checked(DomainKit.ID(RecordID("subtask")), label: "Check the harbour flag"),
+    ]
+    #expect(receipts.map { RoadmapModel.Band(unrestored: $0, partly: false).says.words } == [
+      "Couldn’t bring back Read the wind", "Couldn’t bring back Untitled step", "Couldn’t bring back 2 steps", "Couldn’t bring back Practice",
+      "Couldn’t bring back Learn to sail", "Couldn’t bring back Untitled roadmap", "Couldn’t bring back Check the harbour flag",
+      "Couldn’t undo", "Couldn’t undo", "Couldn’t undo", "Couldn’t undo",
+    ])
+    #expect(Set(receipts.map { RoadmapModel.Band(unrestored: $0, partly: true).says.words }) == ["Couldn’t undo every change"])
   }
 
   // Roadmap · iOS 01.10: what else a roadmap's delete takes, by how many steps open it and the roadmaps that hold them,
