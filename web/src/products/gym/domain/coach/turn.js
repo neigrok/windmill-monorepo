@@ -232,6 +232,38 @@ export class EndTurn {
   }
 }
 
+// A turn nobody ends (Coach engine §5, R-5): any of the person's devices ends a running Coach message no write has
+// reached for `TURN_STALE` by the server's clock, writing `interrupted` and nothing else. `serverNow` is the server's
+// time as this device's live sync connection measures it; a message this browser's mark names is its own to end.
+export class InterruptStaleTurn {
+  static turnStaleMs = 1_800_000;
+  scope = CoachMessage.scope;
+  refusals = GymRefusals;
+
+  /** @param {Id<CoachMessageValue>} message @param {number} serverNow */
+  constructor(message, serverNow) {
+    this.message = message;
+    this.serverNow = serverNow;
+  }
+
+  /** @param {Reader} read */
+  load(read) {
+    const confirmed = read.confirmed(CoachMessage, this.message);
+    return { message: read.repository(CoachMessage).find(this.message, 'drawn'), mark: Mark.read(read), moment: read.moment,
+      changedAt: typeof /** @type {any} */ (confirmed)?.ru === 'number' ? /** @type {any} */ (confirmed).ru : null };
+  }
+
+  /** @param {ReturnType<InterruptStaleTurn['load']>} loaded @param {IDSource} ids */
+  decide(loaded, ids) {
+    const running = loaded.message?.isCoach && loaded.message.state === 'running' ? loaded.message : null;
+    if (running === null || loaded.mark.names(this.message) || loaded.changedAt === null
+      || this.serverNow - loaded.changedAt < InterruptStaleTurn.turnStaleMs) return Decision.unchanged(false);
+    const plan = new Plan();
+    plan.update(new Valid(running.with({ state: 'interrupted' }), loaded.moment, ['state']), { fields: ['state'] });
+    return Decision.write(plan, true);
+  }
+}
+
 // A turn whose message is gone, as a conversation deleted elsewhere takes it: the mark lets go of it, and of no other.
 export class ForgetRunningTurn {
   scope = CoachMessage.scope;

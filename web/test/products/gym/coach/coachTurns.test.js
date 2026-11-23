@@ -224,3 +224,18 @@ test('a picture is kept in the browser, named localOnly on the question, and its
   assert.equal(lifter.pictures[0].localOnly, true);
   assert.ok(phone.runner.read(CoachMessage.scope, (read) => read.device(`picture:${lifter.pictures[0].id}`)));
 });
+
+test('a device whose sync is live ends another device\'s turn no write reached for thirty minutes, and one that is not ends none', async (t) => {
+  const { phone, turns } = await room(t, playedAi([]));
+  const other = await phone.device();
+  const opened = await other.runner.run(new OpenTurn({ question: 'Left running?' }));
+  await other.sync();
+  const turn = opened.result;
+  const changedAt = phone.runner.read(CoachMessage.scope, (read) => read.confirmed(CoachMessage, turn.coach)).ru;
+  phone.engine.freshness = () => ({ syncLive: false, serverNow: changedAt + 1_800_000 });
+  await turns.endStale();
+  assert.equal(coachOf(phone, turn).state, 'running');
+  phone.engine.freshness = () => ({ syncLive: true, serverNow: changedAt + 1_800_000 });
+  await turns.endStale();
+  assert.equal(coachOf(phone, turn).state, 'interrupted');
+});

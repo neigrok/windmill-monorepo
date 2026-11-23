@@ -179,11 +179,21 @@ Proposal decisions run through the gym domain. Removal snapshots persist in the 
 until their outcome is visible; acknowledging one emits `gym_action` with `proposal-apply` and
 `closed`. Failed acknowledgment uses `gym-proposal-apply`; a storage failure remains engine-owned.
 
-Coach routine confirmation emits `gym_coach_routine_confirm` with only `outcome`: `started` when Save routine
-sends, `saved` once the server confirms the draft (emitted even when the room has unmounted), `refused` when the
-server answers 4xx (400, 401, 404, 409, 422) and `failed` on a 5xx, a network loss or a reply naming another draft.
-Only `failed` reports to Sentry, under the static operation `gym-coach-routine-confirm`. No routine name, movement,
-conversation, question, identifier or server text is reported.
+Gym's Coach runs its turn in the browser (`products/gym/coach/`: `CoachTurns`, `GymTurnHost`, `GymTurnTelemetry`). Each
+send that opens a turn emits `gym_ask_started` (`screen: coach`), and each send ends in one `gym_ask_outcome` with `screen:
+coach`, `outcome` (`answered`, `cancelled`, `refused`, `failed`, `capped` for the allowance or the shared capacity,
+`offline`, `absent` for a server without Coach) and, for a turn that ran, `duration_ms`. The engine's port emits one
+`coach_turn` per turn (`state`, `seat`, `code` from a closed list or `other`, `rounds`, `ability_calls`, `refusals`,
+`answer_bytes`, `duration_ms`) and one `coach_ability` per call, the turn's opening context reads included (`name`, a
+catalog/3 ability or `other`, and `outcome`, `ok` or a known refusal code). A turn recovered on return emits its
+`coach_turn` and no `gym_ask_outcome`. Failures report to Sentry with the error's stack, its message struck out: the
+engine's `agent-host` for a fault of the host inside a turn, which then ends `failed` as `host-fault`; `gym-coach-turn`
+tagged `failure_kind` `storage` (a write of the turn's own that failed outside the engine), `share` (the Share door
+answering 5xx or unreadable; a 4xx and a lost connection are the model's `refused`, with no Issue) or `refusal` (a
+picture sweep held by a message this build cannot read); and the AI client's own `ai-call` and `ai-pass`. A pass door
+that answered, whatever its body, is never read as a lost connection: the room says Coach did not answer. A conversation
+deleted on another device under a running turn, and a turn ended by a sign-out, are expected and report nothing. No
+question, answer, picture, call input or result, id, pass or call id enters an event or a report.
 
 ## Roadmap
 
@@ -499,17 +509,16 @@ operation and no exception stack or message. One invalidator cannot stop the sco
 
 ## Device Coach libraries
 
-The product-neutral Coach engine and AI client are available as libraries; released products do
-not call them yet. The engine's injected telemetry port emits one turn outcome (state, seat kind,
-code, counts, answer byte count and duration) and each ability's bounded name and outcome. Product
-adapters supply event names through the first-party intake when they integrate the library.
-`AiClient` reports defects and unreadable answers through `telemetry/sentry.js` under static
-`ai-call`, and pass-door defects under `ai-pass`. Expected actionable refusals return as outcomes.
+The product-neutral Coach engine and AI client run gym's Coach (above). The engine's injected telemetry port emits one
+turn outcome (state, seat kind, code, counts, answer byte count and duration) and each ability's bounded name and
+outcome; gym's adapter names the events. `AiClient` reports defects and unreadable answers through `telemetry/sentry.js`
+under static `ai-call`, and pass-door defects under `ai-pass`. Expected actionable refusals return as outcomes.
 Transport loss, unvalidated HTTP error envelopes or status/code pairs, temporary pass unavailability, a missing host
-record at the seat barrier, and recovery `call_unknown` are quiet. A live `call_unknown` and malformed
+record at the seat barrier, and recovery `call_unknown` are quiet. A pass-door answer whose body is no refusal it knows
+is quiet too, and reads as the door not answering, never as a lost connection. A live `call_unknown` and malformed
 successful protocol replies remain defects; retrying cannot erase admission evidence. Sign-in
 refused while sign-out is pending does not report an auth failure. Stop during preparation or a
 repeated request's headers/error body reports the stopped turn outcome without a technical failure.
-Unexpected host write failures report `agent-host` once per turn. A seat-barrier write failure reports
-before the barrier rejects, without waiting for an in-flight provider to finish.
+Unexpected host failures report `agent-host` once per turn, with the error the host raised. A seat-barrier write failure
+reports before the barrier rejects, without waiting for an in-flight provider to finish.
 No telemetry includes seat keys, call IDs, credentials, prompts, questions, answers or tool results.

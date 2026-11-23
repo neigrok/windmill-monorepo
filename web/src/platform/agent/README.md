@@ -3,7 +3,7 @@
 `TurnRunner` runs one sequential turn from a plain-data profile. It knows no product, catalog,
 transport or store. `turn.js` contains the runner, profile checks, access mapping and the pure
 30-minute server-clock stale predicate. `runtime.js` supplies browser Web Locks, cryptographic
-128-bit base64url call IDs and cancellable waits. Nothing connects these libraries to a screen.
+128-bit base64url call IDs and cancellable waits. Gym's Coach runs on it (`products/gym/coach/`).
 
 The constructor takes `host`, `ai`, `telemetry` and `runtime`. `run(input, profile)` returns the end;
 `run(input, profile, {recover:true})` takes the lock without waiting and reads the marked call only.

@@ -8,8 +8,8 @@ import { Id } from '../../../platform/domain-kit/entities.js';
 import { TextSpec } from '../../../platform/domain-kit/values.js';
 import { API_BASE } from '../../../shell/apiBase.js';
 import { CoachMessage, CoachRules } from '../domain/coach/conversation.js';
-import { CoachPictureRow, DeleteConversation, EndTurn, ForgetCoachAtSignOut, ForgetPicture, ForgetRunningTurn, ForgetUnclaimedPictures,
-  KeepPicture, Mark, OpenTurn, writersOwn } from '../domain/coach/turn.js';
+import { CoachPictureRow, DeleteConversation, ForgetCoachAtSignOut, ForgetPicture, ForgetRunningTurn, ForgetUnclaimedPictures,
+  InterruptStaleTurn, KeepPicture, Mark, OpenTurn, writersOwn } from '../domain/coach/turn.js';
 import { Picture } from '../domain/coach/conversation.js';
 import { deviceZone } from '../gymRuntime.js';
 import { gymApi } from '../gymApi.js';
@@ -43,6 +43,7 @@ export class CoachTurns {
     this.profile = profile;
     this.catalog = profile.catalog;
     this.zone = zone;
+    this.timers = timers;
     this.online = online;
     this.now = now;
     // The field's words while the page stays, by the replica they were typed on: nothing of an unsent question is
@@ -86,6 +87,23 @@ export class CoachTurns {
     this.started = true;
     this.settleLeft().catch((error) => this.tells.fault('storage', error));
     this.readAllowance();
+    const sweep = () => this.endStale().catch((error) => this.tells.fault('storage', error));
+    sweep();
+    this.timers.setInterval(sweep, 60_000)?.unref?.();
+  }
+
+  // A turn nobody ends (Coach engine §5): a running Coach message no write has reached for thirty minutes, by the
+  // server's clock as the live sync connection measures it, ends `interrupted`. A device whose sync is not live ends none.
+  async endStale() {
+    const { syncLive, serverNow } = this.engine.freshness(CoachMessage.scope);
+    if (!syncLive || !Number.isFinite(serverNow)) return;
+    const runner = this.host.runnerOn(this.replica);
+    const running = runner.read(CoachMessage.scope, (read) => read.repository(CoachMessage).all('drawn')
+      .filter((message) => message.isCoach && message.state === 'running').map((message) => message.id));
+    for (const id of running) {
+      if (this.running?.lease.turn.coach.equals(id)) continue;
+      await runner.run(new InterruptStaleTurn(id, serverNow));
+    }
   }
 
   async readAllowance() {

@@ -8,7 +8,7 @@ import { Fault } from '../../../../../src/platform/domain-kit/values.js';
 import { Instant } from '../../../../../src/platform/domain-kit/time.js';
 import { registry } from '../../../../../src/platform/sync/schema.js';
 import { AbilityCall, CoachBook, CoachMessage, CoachMessageValue, CoachThread, CoachThreadValue, Conversation, Picture } from '../../../../../src/products/gym/domain/coach/conversation.js';
-import { BeginRound, CoachPictureRow, DeleteConversation, EndTurn, ForgetCoachAtSignOut, ForgetUnclaimedPictures, KeepPicture, Mark, OpenTurn,
+import { BeginRound, CoachPictureRow, DeleteConversation, EndTurn, ForgetCoachAtSignOut, ForgetUnclaimedPictures, InterruptStaleTurn, KeepPicture, Mark, OpenTurn,
   PictureCopy, RecoverMark, StreamTurnText, WithdrawTurn } from '../../../../../src/products/gym/domain/coach/turn.js';
 import { RegistryCheck } from '../../../../platform/domain-kit/checks.js';
 import { Harness } from '../../../../platform/domain-kit/harness.js';
@@ -137,9 +137,26 @@ test('a writer that ended its own turn interrupted writes no more text, rounds o
   await committed(a, new EndTurn(turn.coach, 'interrupted'));
   assert.equal((await a.runner.run(new StreamTurnText(turn.coach, 'Half and more'))).kind, 'unchanged');
   const round = await a.runner.run(new BeginRound(turn.coach, callId, 4));
-  assert.equal(round.kind === 'refused' && round.refusal.refused?.code, 'message-final');
+  assert.equal(round.kind === 'refused' && /** @type {any} */ (round.refusal).refused?.code, 'message-final');
   const message = a.drawn(CoachMessage).find((each) => each.id.equals(turn.coach));
   assert.deepEqual([message?.state, message?.text], ['interrupted', 'Half']);
+});
+
+test('a turn no write has reached for thirty minutes by the server\'s clock is ended interrupted by another device, state alone', async (t) => {
+  const { a, b } = await phones(t);
+  const turn = await open(a);
+  await committed(a, new StreamTurnText(turn.coach, 'Half'));
+  await a.sync();
+  const changedAt = /** @type {any} */ (b.runner.read(CoachMessage.scope, (read) => read.confirmed(CoachMessage, turn.coach))).ru;
+  assert.equal(typeof changedAt, 'number');
+  assert.equal((await b.runner.run(new InterruptStaleTurn(turn.coach, changedAt + 1_799_999))).kind, 'unchanged');
+  assert.equal((await a.runner.run(new InterruptStaleTurn(turn.coach, changedAt + 1_800_000))).kind, 'unchanged', 'the writer\'s own mark names it');
+  assert.equal(await committed(b, new InterruptStaleTurn(turn.coach, changedAt + 1_800_000)), true);
+  await b.sync();
+  for (const phone of [a, b]) {
+    const message = phone.drawn(CoachMessage).find((each) => each.id.equals(turn.coach));
+    assert.deepEqual([message?.state, message?.text], ['interrupted', 'Half']);
+  }
 });
 
 test('a withdrawn turn and a deleted conversation take their messages, pictures and the whole mark', async (t) => {

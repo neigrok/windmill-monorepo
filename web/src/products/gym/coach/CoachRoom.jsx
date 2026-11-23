@@ -171,7 +171,6 @@ function CoachAnswer({ message, live, stopping, catalog, movements }) {
         <ArrowUpRight size={18} aria-hidden="true" />
       </a></li>)}
     </ul>}
-    {message.proposals.map((id) => <CoachProposalCard key={id} id={id} movements={movements} />)}
     {message.workoutProposals.map((proposal) => <div key={proposal.id} className="gym-coach-workout-proposal">
       <Smartphone size={20} aria-hidden="true" />
       <span><strong>{t('gym.coach.workoutProposal.title')}</strong>{t('gym.coach.workoutProposal.count', { count: proposal.changes })}</span>
@@ -182,6 +181,7 @@ function CoachAnswer({ message, live, stopping, catalog, movements }) {
       : message.read && <button type="button" className="gym-coach-receipt-door" onClick={() => setReading(true)}>
         <BookOpen size={16} aria-hidden="true" />{receiptWords(message.read)}<ChevronRight size={16} aria-hidden="true" />
       </button>}
+    {message.proposals.map((id) => <CoachProposalCard key={id} id={id} movements={movements} />)}
     {reading && <WhatCoachRead message={message} catalog={catalog} onClose={() => setReading(false)} />}
   </li>;
 }

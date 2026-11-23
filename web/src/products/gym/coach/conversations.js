@@ -70,6 +70,7 @@ export function historyRows(read) {
     byThread.set(message.threadId.record, held);
   }
   const proposals = read.repository(Proposal);
+  const routines = read.repository(Routine);
   return read.repository(CoachThread).all('drawn').map((thread) => {
     const messages = new Conversation(byThread.get(thread.id.record) ?? []).messages;
     const last = messages.at(-1);
@@ -82,7 +83,8 @@ export function historyRows(read) {
       at: last?.at.ms ?? 0,
       line: making === null ? null
         : making.routines.length ? { kind: 'created', count: making.routines.length }
-          : proposal ? { kind: 'proposal', routine: proposal.baseName ?? '', count: proposal.changeCount ?? proposal.changes.length }
+          : proposal ? { kind: 'proposal', routine: proposal.baseName ?? routines.find(proposal.routineId, 'drawn')?.name ?? '',
+            count: proposal.changeCount ?? proposal.changes.length }
             : making.workoutProposals.length ? { kind: 'workout', count: making.workoutProposals[0].changes }
               : answer.text ? { kind: 'words', text: answer.text.split('\n')[0] } : null,
     };

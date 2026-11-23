@@ -183,8 +183,8 @@
 /* History (08W.2): the rail's list and, below 1100px, a page of its own. */
 .gym-root .gym-coach-history { display: flex; flex-direction: column; }
 .gym-root .gym-coach-history-head { display: flex; align-items: center; gap: 8px; min-height: 44px; }
-.gym-root .gym-coach-history-head h2 { flex: 1; margin: 0; font: 700 17px/24px var(--font-body); color: var(--gym-ink); }
-.gym-root .gym-coach-history.is-page .gym-coach-history-head h2 { font: inherit; }
+.gym-root .gym-coach-history-head h2 { flex: 1; margin: 0; color: var(--gym-ink); }
+.gym-root .gym-coach-history:not(.is-page) .gym-coach-history-head h2 { font: 700 17px/24px var(--font-body); }
 .gym-root .gym-coach-history-back, .gym-root .gym-coach-new-chat { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px;
   color: var(--gym-ink); }
 .gym-root .gym-coach-history-empty { margin: 4px 0 16px; font: 400 13px/18px var(--font-body); color: var(--gym-ink-dim); }
