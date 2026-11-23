@@ -13,6 +13,7 @@ import works.windmill.sync.core.Delta
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.RefusalCode
+import works.windmill.sync.core.SeededId
 import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.schema.SyncSchema
 import works.windmill.sync.testing.Vector
@@ -20,7 +21,8 @@ import works.windmill.sync.testing.Vector
 class CorpusTests {
     val book = GymRules.book
     val corpus = ProductCorpus(book)
-    val catalog = Catalog(Contract.json("gym/catalog.json"))
+    // The replica executor claims catalog/3's corpora; catalog/2's are the server's until they retire (gym Coach on the AI service §9).
+    val catalog = Catalog(Contract.json("gym/catalog-3.json"))
     val paths = listOf("gym/domain/rules.json", "gym/domain/values.json", "gym/domain/notes-actions.json",
         "gym/domain/bodyweight-actions.json", "gym/domain/routines-actions.json", "gym/domain/catalogue-actions.json",
         "gym/domain/preferences-actions.json", "gym/domain/proposals-actions.json", "gym/domain/training-actions.json",
@@ -28,19 +30,17 @@ class CorpusTests {
         "gym/rules/bodyweight.json", "gym/rules/collation.json", "gym/domain/workout-plan-actions.json", "gym/domain/workout-proposals-actions.json",
         "gym/domain/coach-conversation-actions.json")
 
-    val abilities = listOf("create_exercise", "create_routine", "get_last_times", "get_session", "get_sessions", "get_stats", "last_time",
-        "list_bodyweight", "list_exercises", "list_notes", "list_routines", "list_sessions", "propose_routine_change",
-        "propose_routine_removal", "propose_workout_change", "revoke_share", "save_note", "share_session").map { "gym/abilities/$it.json" }
+    val abilities = Contract.files("gym").filter { it.startsWith("gym/abilities-3/") }
 
     @Test fun everyProductFileIsClaimedAndEveryVectorPasses() {
         val files = Contract.files("gym")
         // The turn's exchanges replay as the phone, through :agent's driver and :gym's host on a real engine, not as vectors of this module.
         val replayedByTheTurnTests = files.filter { it.startsWith("gym/turns/") }
-        val readByCatalogTests = "gym/catalog.json"
-        val claimedByNoExecutorYet = files.filter { it == "gym/catalog-3.json" || it.startsWith("gym/abilities-3/") }
+        val readByCatalogTests = "gym/catalog-3.json"
+        val catalog2 = files.filter { it == "gym/catalog.json" || it.startsWith("gym/abilities/") }
         // The words Coach's model reads are no vectors: :gym's CoachWordsAssetsTests reads them from its assets.
         val coachWords = files.filter { it.startsWith("gym/coach/") }
-        assertEquals((paths + abilities + readByCatalogTests + replayedByTheTurnTests + claimedByNoExecutorYet + coachWords).sorted(), files)
+        assertEquals((paths + abilities + readByCatalogTests + replayedByTheTurnTests + catalog2 + coachWords).sorted(), files)
         val failures = mutableListOf<String>()
         try { RuleBookParity.check(book, paths[0]) } catch (error: Exception) {
             failures += "${paths[0]} · ${error.message}"
@@ -54,7 +54,9 @@ class CorpusTests {
             cases++
         }
         val abilityCases = abilities.flatMap(Contract::abilityCases)
-        for (case in abilityCases) {
+        // A minting call whose id no turn seeds is a case the server's gate never hands its tool host, so no seeding executor can replay it; it waits for its corpus to give it a seeded id.
+        val unseeded = abilityCases.filter { it.call in AbilityRequest.creates && SeededId.parse(it.input["id"]?.str() ?: "") == null }
+        for (case in abilityCases - unseeded.toSet()) {
             try {
                 val actual = ability(case)
                 val expected = abilityExpected(case)
@@ -63,22 +65,26 @@ class CorpusTests {
         }
         failures.forEach(::println)
         assertTrue("${failures.size} gym corpus failures:\n${failures.joinToString("\n")}", failures.isEmpty())
-        val shares = abilityCases.count { it.call in RunAbility.serverRun }
-        val refused = abilityCases.count { it.call !in RunAbility.serverRun && it.expect["refused"] != null }
-        println("Gym corpus: ${paths.size + abilities.size + 1}/${files.size} files, $cases cases, ${abilityCases.size} ability cases (${abilityCases.size - shares - refused} results byte-equal, $refused refused alike, $shares shares refused on the phone), ${replayedByTheTurnTests.size} replayed by the turn tests, no pending case, no unclaimed file")
+        val run = abilityCases - unseeded.toSet()
+        val notOffered = run.count { abilityExpected(it)["refused"]?.str() == AbilityRefusal.notOffered.code }
+        val refused = run.count { it.expect["refused"] != null } - notOffered
+        val notApplicable = catalog2.size + replayedByTheTurnTests.size + coachWords.size
+        println("Gym corpus: ${paths.size + abilities.size + 1}/${files.size} files, $cases cases, ${run.size} ability cases (${run.size - notOffered - refused} results byte-equal, $refused refused alike, $notOffered withheld or shares refused on the phone), ${unseeded.size} minting cases with no seeded id, $notApplicable explicitly not applicable (catalog/2, the turn wire, the words), no unclaimed file")
     }
 
-    // Coach §3.5, INV-1, INV-2: the case's call through the executor's action over its records as its seat at its moment, beside a thread and a running Coach message of this turn.
+    // gym Coach §3.5, INV-1, INV-2: the case's call through the executor's action over its records as its seat at its moment, beside a thread and a running Coach message of this replica's turn. A minting call's id is the server gate's seeded id (G-7): the turn is its seed, and the calls before it the ordinal's admitted predecessors, refused by their rule.
     fun ability(case: AbilityCase): Json {
-        val turn = Id("turnAAAAAAAAAAA1", CoachMessage)
+        val seeded = if (case.call in AbilityRequest.creates) SeededId.parse(case.input.member("id").str()) else null
+        val turn = Id(seeded?.seed ?: "turnAAAAAAAAAAA1", CoachMessage)
         val thread = "thrdAAAAAAAAAAA1"
         val stamp = "${case.now}:0:r_aaaaaaaaaaaa"
         fun row(type: String, id: String, seq: Int, vararg fields: Pair<String, Json>) = Json.objectOf("t" to Json.of(type), "id" to Json.of(id), "seq" to Json.of(seq),
             "life" to Json.array(Json.of("alive"), Json.of(stamp)), "f" to Json.Obj(fields.map { (name, value) -> name to Json.array(value, Json.of(stamp)) }))
+        val before = (1 until (seeded?.ordinal ?: 1L)).map { AbilityCall("prior-$it", case.call, null, AbilityCall.Outcome.Refused(AbilityRefusal.refused)).json }
         val conversation = listOf(
             row(CoachThread.type, thread, 1_000_000, "title" to Json.of("How heavy today?")),
             row(CoachMessage.type, turn.record.string!!, 1_000_001, "threadId" to Json.of(thread), "role" to Json.of("coach"),
-                "replica" to Json.of("rp_00000000000000000000000000000001"), "state" to Json.of("running"), "at" to Json.of(case.now)),
+                "replica" to Json.of("rp_00000000000000000000000000000001"), "state" to Json.of("running"), "at" to Json.of(case.now), "calls" to Json.Arr(before)),
         )
         val action = RunAbility(AbilityRequest("call-1", case.call, case.input), turn, case.seat, catalog, case.appBaseUrl ?: "https://windmill.works")
         val decision = corpus.decision(action, case.vector(conversation), { outcome -> when (outcome) {
@@ -88,13 +94,12 @@ class CorpusTests {
         return case.answer(decision, CoachMessage.type)
     }
 
-    // What the corpus says of a case on this phone. Shares are server records, so the phone refuses one that reaches it. The corpus is the server tool's golden, and on the phone the gate's G-3 stands before the tool, so an input the schema refuses answers `invalid-input` where the tool answered `invalid-arguments`.
+    // What the corpus says of a case on this phone. A withheld ability and a share never reach the executor: G-1 refuses the one and the host calls the Share door for the other, so the executor refuses either that reaches it. Every other case is the corpus's own, since no `abilities-3/` input breaks its schema, and a refusal writes nothing.
     fun abilityExpected(case: AbilityCase): Json {
-        fun refused(code: AbilityRefusal) = Json.objectOf("refused" to Json.of(code.code), "writes" to Json.Arr(emptyList()))
-        if (case.call in RunAbility.serverRun) return refused(AbilityRefusal.notOffered)
-        val code = case.expect["refused"]?.str() ?: return case.expect
-        val gated = code == AbilityRefusal.invalidArguments.code && JsonSchema(catalog.ability(case.call)!!.input).fault(case.input) != null
-        return refused(if (gated) AbilityRefusal.invalidInput else AbilityRefusal.entries.single { it.code == code })
+        val offered = catalog.ability(case.call)
+        val code = if (offered == null || offered.agent == AgentRule.withheld || case.call in RunAbility.serverRun) AbilityRefusal.notOffered.code
+            else case.expect["refused"]?.str() ?: return case.expect
+        return Json.objectOf("refused" to Json.of(code), "writes" to Json.Arr(emptyList()))
     }
 
     @Test fun everySharedLocalRuleAndCodeIsCovered() {
