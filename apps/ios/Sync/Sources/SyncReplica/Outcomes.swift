@@ -340,7 +340,10 @@ public struct PushPlanner: Sendable {
         try applyWriteMap(write, of: entry.localId, in: &replica, instance: instance)
       }
       replica.retain(Attempt(epoch: epoch, n: result.n, ok: true, acceptedEffects: replica.entry(entry.localId)?.acceptedEffects), of: entry.localId)
-      if let acked = replica.entry(entry.localId) { inverses.resolveReferences(of: acked, epoch: epoch, in: &replica) }
+      if let acked = replica.entry(entry.localId) {
+        replica.stepPreimages(over: acked)
+        inverses.resolveReferences(of: acked, epoch: epoch, in: &replica)
+      }
       try inverses.settle(entry, by: result, epoch: epoch, in: &replica)
       try replica.settle(entry.localId)
     }

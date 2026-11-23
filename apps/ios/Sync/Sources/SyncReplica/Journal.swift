@@ -41,8 +41,8 @@ public struct RecordValues: Sendable, Hashable {
 }
 
 // What a slot read before an act changed it: a field, a text or a life, as a logical value, with the sequence of the
-// confirmed row it was read over (nil where none was confirmed) and the epoch that sequence counts in. A life's
-// preimage keeps the record it read, which a revival draws.
+// row it was read over (nil where none was) and the epoch that sequence counts in. A life's preimage keeps the record it
+// read, which a revival draws.
 public struct Preimage: Sendable, Hashable {
   public var target: Target
   public var value: JSON
@@ -72,6 +72,18 @@ public struct Preimage: Sendable, Hashable {
                                "epoch": epoch.map(JSON.string) ?? .null]
     object["record"] = record?.json
     return .object(object)
+  }
+
+  // §7.3 Capture: `drawn` read over this device's own earlier write of the record, so the preimage stands on the row that
+  // write left, once the write's receipt shows it started where the preimage stood, in the preimage's epoch (one taken
+  // before the replica held an epoch takes the receipt's). An entry with no receipt, an ordinary one, moves nothing.
+  mutating func step(over entry: OutboxEntry) {
+    guard entry.state == .acked, let effects = entry.acceptedEffects, let answered = entry.resultEpoch, (epoch ?? answered).isSameID(as: answered),
+          entry.deltas(in: target.scope).contains(where: { $0.key == target.key }),
+          let row = effects.first(where: { $0.scope == target.scope })?.rows.first(where: { $0.key == target.key }),
+          row.beforeRowSeq == rowSeq else { return }
+    rowSeq = row.rowSeq
+    epoch = answered
   }
 }
 
@@ -752,6 +764,23 @@ extension LoadedReplica {
     updateJournal { $0.retain(attempt, of: localId) }
   }
 
+  // §7.4 the ACK transaction's retention point, after the source's own: each preimage of a source entry still in the
+  // outbox after this entry in commit order was read over its write, and steps over it.
+  public mutating func stepPreimages(over entry: OutboxEntry) {
+    guard entry.acceptedEffects != nil else { return }
+    let later = Set(journal.acts.flatMap(\.sourceEntries).map(\.localId).filter { (named($0)?.commitOrder ?? 0) > entry.commitOrder })
+    guard !later.isEmpty else { return }
+    updateJournal { journal in
+      for act in journal.acts.indices {
+        for source in journal.acts[act].sourceEntries.indices where later.contains(journal.acts[act].sourceEntries[source].localId) {
+          for preimage in journal.acts[act].sourceEntries[source].preimages.indices {
+            journal.acts[act].sourceEntries[source].preimages[preimage].step(over: entry)
+          }
+        }
+      }
+    }
+  }
+
   // §7.5 step 1: an epoch change drops every attempt of another epoch. A source still in the outbox replays and earns its
   // own; a collected one has none left, and its history is `unavailable`.
   public mutating func invalidateAttempts(outside epoch: String?) {
@@ -1078,7 +1107,8 @@ extension ViewRecord {
 extension CommitPlanner {
   // §7.3 capture: the act's undo request checked against its scopes, each segment's first local preimages read from
   // `drawn` before any segment changes it, each with the sequence of the row it was read over, the confirmed row or else
-  // the dead row the record's spent id keeps, and the epoch that sequence counts in, a life's with the record it read.
+  // the dead row the record's spent id keeps, stepped over each of the device's own acknowledged writes of the record
+  // whose receipt continues it, and the epoch that sequence counts in, a life's with the record it read.
   // An unset slot takes its target's default; with none, and for any malformed recipe, the act throws before anything
   // changes. A segment named with no recipes is journaled for its receipts alone, as evidence, and an act names at least
   // one recipe.
@@ -1105,7 +1135,9 @@ extension CommitPlanner {
           }
           let rowSeq: Int64? = replica.rows(scope).row(item.target.key)?.seq ?? replica.spentIDs(scope)[item.target.key]?.seq
           let record: RecordValues? = item.target.slot == .life ? read.map(RecordValues.init) : nil
-          preimages.append(Preimage(target: item.target, value: value, rowSeq: rowSeq, epoch: replica.meta.serverEpoch, record: record))
+          var preimage = Preimage(target: item.target, value: value, rowSeq: rowSeq, epoch: replica.meta.serverEpoch, record: record)
+          for entry in replica.entries(touching: item.target.key, in: scope) { preimage.step(over: entry) }
+          preimages.append(preimage)
         }
       }
       segments[segment.index] = UndoPlan.Segment(scope: scope, recipes: segment.recipes, preimages: preimages)
