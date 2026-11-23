@@ -2,11 +2,14 @@
 // client steps against the reference server, so every response a vector carries is one the server answered.
 
 import assert from 'node:assert/strict';
-import { freshMeta } from '../client/replica.js';
+import { Device, freshMeta } from '../client/replica.js';
+import { onPushResponse } from '../client/sender.js';
+import { steadyTiming } from '../core/clock.js';
+import { CONSTANTS } from '../core/constants.js';
 import { pull } from '../server/pull.js';
 import { push } from '../server/push.js';
 import { ServerState } from '../server/state.js';
-import { OTHER, overlayScope, product, productScope, registry, row, serverState, st, treeScope } from './fixtures.js';
+import { ACTOR, OTHER, overlayScope, product, productScope, registry, row, serverState, st, treeScope } from './fixtures.js';
 import { runSteps, settle, stepsVector } from './steps.js';
 
 export const REPLICA = 'rp_00000000000000000000000000000001';
@@ -1080,11 +1083,95 @@ function releasedBirth() {
   return [unsentBoth, pending, birthAlone, unpulled, eachAlone, unseen, ordinary, ownSegment, added, twoWrites];
 }
 
+// An act made signed out never read what the account's dormant replica wrote meanwhile, and sign-in's Add numbers the
+// act after it: the dormant write reaches the server first. So the Add makes each adopted act give up every target whose
+// record the dormant replica holds a write of, an unsent entry, an entry acknowledged but not yet pulled, or a receipt
+// its journal keeps, and the act's Undo restores nothing there. The journaled ones close a hole older than the step over
+// own writes: the walk took any journaled receipt for a write the act had seen. A waiting Undo counts what it gives up,
+// and a write of another record takes nothing away.
+function adoptedAct() {
+  const id = '2026-11-24';
+  const day = { scope: 'self/probe', t: 'day', id };
+  const put = (value, deviceNow, undo, dayId = id) => ({ op: 'commitAct', deviceNow,
+    segments: [{ scope: 'self/probe', changes: [{ op: 'put', t: 'day', id: dayId, f: { score: value } }] }], ...(undo ? { opts: { undo } } : {}) });
+  const created = (dayId = id) => ({ version: 1, segments: [{ index: 0, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restore',
+    record: { ...day, id: dayId } }] }] });
+  const scored = { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore',
+    targets: [{ target: target('self/probe', 'day', id, 'field', 'score'), defaultValue: 0 }] }] }] };
+  const signOut = { op: 'signOut', choice: 'keep', deviceNow: 5050 };
+  const signIn = { op: 'signIn', account: 'A', holdsRecords: { probe: true }, decisions: { probe: 'add' } };
+  const anon = { ids: ['rp_00000000000000000000000000000009'] };
+  const scoreOf = (session) => session.state.rows['acct:A/probe'][recordKeyOf('day', id)].f.score[0];
+  const undone = (session, actId, requestId, name) => {
+    session.flush();
+    session.pull(['self/probe']);
+    session.local(requestStep(actId));
+    session.flush();
+    session.pull(['self/probe']);
+    return session.local({ op: 'readInverseResult', requestId }).vector(name);
+  };
+  const givenUp = (session, name) => {
+    const sample = undone(session, 'g2', 'g4', name);
+    assert.deepEqual(sample.expect.returns.at(-1), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: false, appliedCount: 0, skippedCount: 0 });
+    const adopted = journalOf(sample).find(({ actId }) => actId === 'g2').sourceEntries[0];
+    assert.deepEqual([adopted.recipes, adopted.preimages, adopted.written], [[], [], []]);
+    assert.equal(scoreOf(session), 9);
+    return sample;
+  };
+
+  const released = givenUp(new Session(world(), anon).local(put(3, 5000, created()), { op: 'releaseReversibleAct', actId: 'g1' }, signOut,
+    put(9, 5100, scored), signIn), 'an act made signed out gives up at sign-in a target the dormant replica holds an unsent write of, by an act that keeps no journal');
+  const journaled = givenUp(new Session(world(), anon).local(put(3, 5000, created()), signOut, put(9, 5100, scored), signIn),
+    'an act made signed out gives up at sign-in a target the dormant replica\'s journaled act writes unsent, which the walk once took for a write the act had seen');
+
+  const kept = new Session(world(), anon).local(put(3, 5000, created()));
+  kept.flush();
+  kept.pull(['self/probe']);
+  kept.local(signOut, put(9, 5100, scored), signIn);
+  const receipt = givenUp(kept, 'an act made signed out gives up at sign-in a target whose receipt the dormant replica\'s journal keeps');
+
+  const late = new Session(world(), anon).local(put(3, 5000, created()), { op: 'releaseReversibleAct', actId: 'g1' }, { op: 'push', deviceNow: 5010 });
+  const request = late.last();
+  late.serverNow += 1000;
+  const answered = push({ state: late.state, registry, product, account: 'A', request, serverNow: late.serverNow });
+  late.state = answered.state;
+  const signedOut = new Device(late.local(signOut).run().device);
+  const dormant = signedOut.replicas.find((replica) => replica.meta.state === 'dormant');
+  onPushResponse(dormant, { registry, ended: [], telemetry: [], events: [], limits: CONSTANTS, actor: ACTOR, deviceNow: 5060 }, request,
+    answered.response, steadyTiming(5060, 5060));
+  assert.deepEqual(dormant.entries().map(({ state }) => state), ['acked']);
+  const answeredLate = new Session({ device: signedOut.toJSON(), state: late.state }).local(put(9, 5100, scored), signIn);
+  answeredLate.serverNow = late.serverNow;
+  const acked = givenUp(answeredLate, 'an act made signed out gives up at sign-in a target the dormant replica holds a write of acknowledged after sign-out and not yet pulled');
+
+  const alone = new Session(world(), anon).local(signOut, put(9, 5100, scored), signIn);
+  const control = undone(alone, 'g1', 'g3', 'an act made signed out keeps at sign-in a target the dormant replica holds no write of, and its Undo restores it');
+  assert.deepEqual(control.expect.returns.at(-1), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(scoreOf(alone), 0);
+
+  const elsewhere = new Session(world(), anon).local(put(3, 5000, created('2026-11-25'), '2026-11-25'), signOut, put(9, 5100, scored), signIn);
+  const other = undone(elsewhere, 'g2', 'g4', 'an act made signed out keeps at sign-in a target when the dormant replica writes only another record');
+  assert.deepEqual(other.expect.returns.at(-1), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(scoreOf(elsewhere), 0);
+
+  const asked = new Session(world(), anon).local(put(3, 5000, created()), { op: 'releaseReversibleAct', actId: 'g1' }, signOut,
+    put(9, 5100, scored), requestStep('g2', 5200), viewStep('self/probe'), signIn, viewStep('self/probe'));
+  asked.flush();
+  asked.pull(['self/probe']);
+  const waiting = asked.local({ op: 'readInverseResult', requestId: 'g4' })
+    .vector('an Undo waiting signed out withdraws at sign-in its operation on a target the dormant replica holds a write of, and counts it skipped');
+  const scoreIn = (returned) => returned.records.find((record) => record.t === 'day' && record.id === id)?.f?.score?.[0];
+  assert.deepEqual([scoreIn(waiting.expect.returns[5]), scoreIn(waiting.expect.returns[7])], [0, 9]);
+  assert.deepEqual(waiting.expect.returns.at(-1), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: false, appliedCount: 0, skippedCount: 1 });
+  assert.equal(scoreOf(asked), 9);
+  return [released, journaled, receipt, acked, control, other, waiting];
+}
+
 export function files() {
   return {
     'undo/journal.json': [...capture(), ...retention(), ...epochs(), ...retire(), ...release(), ...lifecycle(), ...remapped(),
       ...cancellationLifecycle(), ...deadScope(), ...startRelease()],
     'undo/restore.json': [...settledUndo(), ...mixed(), ...barrier(), ...laterEdit(), ...aba(), ...masked(), ...epochReplay(), ...strictCreation(), ...productInverse(), ...replacement(), ...requests(), ...heldRedo(), ...discarded(),
-      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival(), ...spentRevival(), ...redirected(), ...typedValues(), ...releasedBirth()],
+      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival(), ...spentRevival(), ...redirected(), ...typedValues(), ...releasedBirth(), ...adoptedAct()],
   };
 }
