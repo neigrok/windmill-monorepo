@@ -828,10 +828,12 @@ import XCTest
     XCTAssertTrue(done.roadmapStep("Sail solo").exists)
   }
 
-  // Roadmap · iOS 10.9, for a read of the phone's copy the room cannot make: it says so and offers to try again.
+  // Roadmap · iOS 01.5c, for a read of the phone's copy the room cannot make: it says so, naming the phone, and offers to
+  // try again.
   func testARoadmapThePhoneCannotReadSaysSoAndOffersToTryAgain() {
     let app = launch("roadmap-unreadable")
     XCTAssertTrue(app.staticTexts["Couldn’t load this roadmap"].waitForExistence(timeout: 30))
+    XCTAssertTrue(app.staticTexts["The copy on this iPhone couldn’t be read."].exists)
     XCTAssertEqual(app.buttons["room-menu"].label, "Roadmap")
     XCTAssertFalse(app.buttons["roadmap-new-step"].exists || app.segmentedControls.firstMatch.exists)
     app.buttons["roadmap-try-again"].tap()

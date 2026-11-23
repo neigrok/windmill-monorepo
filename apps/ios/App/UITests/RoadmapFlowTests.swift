@@ -2,7 +2,8 @@ import XCTest
 
 // The Roadmap room's flows on the simulator's boards: a step's workspace (Roadmap · iOS 03.2, 03.3, 03.10, 03.11, 03.14),
 // the step form's links (05.1, 05.8), the Board's Find, sort and filter, branch and several steps with Kinds (02.4 to
-// 02.12, 03.7, 06.1 to 06.5b), then the Graph's (04.1 to 04.5, 04.7). The canvas is one element, as
+// 02.12, 03.7, 06.1 to 06.5b), the Graph's (04.1 to 04.5, 04.7), then Activity and a step's History (01.13, 01.13b,
+// 03.12), the room's first read (01.5b) and an Undo that brings nothing back (02.10d). The canvas is one element, as
 // VoiceOver hears it, so a step is tapped where the layout seats it: *Learn to sail* opens at the phone's working zoom
 // with the middle of its seats' box at the centre of what the bars leave, and each step stands a known way from that
 // centre (`packages/api-contract/roadmap/layout/learn-to-sail.json` pins the seats). The zoom floor is half the opening
@@ -586,5 +587,70 @@ import XCTest
     XCTAssertFalse(app.descendants(matching: .any)["roadmap-graph"].exists || app.buttons["Sort and filter"].exists)
     app.buttons["roadmap-first-step"].tap()
     XCTAssertTrue(app.textFields["roadmap-form-name"].waitForExistence(timeout: 10))
+  }
+
+  // A row of Activity, or of a step's History, whose label begins with the words given.
+  func activityRow(_ words: String, in app: XCUIApplication, history: Bool = false) -> XCUIElement {
+    app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND label BEGINSWITH %@",
+                                                         history ? "roadmap-history-row" : "roadmap-activity-row", words)).firstMatch
+  }
+
+  // Roadmap · iOS 01.13b and 03.12, on a phone never signed in and with no server: Activity in the title menu reads the
+  // phone's copy, its completions newest first and the eight steps planted at once folded into one row a tap opens; a
+  // row opens its step's page, whose last row opens its History, the step's completion over its creation.
+  func testActivityAndAStepsHistoryReadThePhonesCopySignedOut() {
+    let app = launch("roadmap-many")
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    app.navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Learn to sail")).firstMatch.tap()
+    XCTAssertTrue(app.buttons["Activity"].waitForExistence(timeout: 5))
+    app.buttons["Activity"].tap()
+    XCTAssertTrue(app.navigationBars["Activity"].waitForExistence(timeout: 10))
+    let folded = app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND label BEGINSWITH %@", "roadmap-activity-added", "Added 8 steps, ")).firstMatch
+    XCTAssertTrue(activityRow("Completed Rig the boat, ", in: app).waitForExistence(timeout: 10))
+    XCTAssertTrue(activityRow("Completed Name the boat parts, ", in: app).exists && activityRow("Completed Choose a sailing course, ", in: app).exists)
+    XCTAssertTrue(folded.exists && !activityRow("Added Sail solo, ", in: app).exists)
+    folded.tap()
+    XCTAssertTrue(activityRow("Added Sail solo, ", in: app).waitForExistence(timeout: 5))
+
+    activityRow("Completed Rig the boat, ", in: app).tap()
+    XCTAssertTrue(app.roadmapStepPage("Rig the boat"))
+    // The page's last row, drawn up until it stands clear of the foot.
+    let history = app.buttons["roadmap-step-history"]
+    for _ in 0..<8 where !(history.exists && history.isHittable && history.frame.maxY < app.frame.maxY - 120) { app.swipeUp(velocity: .slow) }
+    XCTAssertTrue(history.waitForHittable(timeout: 5))
+    history.tap()
+    XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 10))
+    XCTAssertTrue(activityRow("Completed, ", in: app, history: true).waitForExistence(timeout: 10))
+    XCTAssertTrue(activityRow("Added, ", in: app, history: true).exists)
+    XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "roadmap-history-row").count, 2)
+  }
+
+  // 01.5b: while the signed-in phone's first read of its roadmaps runs, the room is its bar alone with a spinner, and the
+  // Board takes its place once the copy is read.
+  func testTheRoomsFirstReadShowsItsBarAndASpinnerUntilTheBoard() {
+    let app = launch("roadmap-first-read")
+    let spinner = app.descendants(matching: .any)["roadmap-first-read"]
+    XCTAssertTrue(spinner.waitForExistence(timeout: 30))
+    XCTAssertTrue(app.buttons["room-menu"].exists && !app.segmentedControls.firstMatch.exists && !app.buttons["roadmap-new-step"].exists)
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 60))
+    XCTAssertFalse(spinner.exists)
+  }
+
+  // 02.10d: an Undo that finds the delete no longer held brings nothing back; the band says so in the receipt's place with
+  // no Undo, and the step stays deleted.
+  func testAnUndoThatFindsNothingSaysWhatCouldNotComeBack() {
+    let app = launch("roadmap-undo-finds-nothing")
+    let undo = app.buttons["roadmap-undo"]
+    XCTAssertTrue(app.roadmapStep("Tie a bowline").waitForExistence(timeout: 30))
+    app.roadmapStep("Tie a bowline").swipeLeft()
+    XCTAssertTrue(app.buttons["Delete"].waitForExistence(timeout: 5))
+    app.buttons["Delete"].tap()
+    XCTAssertTrue(app.buttons["Delete Step"].waitForExistence(timeout: 5))
+    app.buttons["Delete Step"].tap()
+    XCTAssertTrue(undo.waitForExistence(timeout: 10))
+    undo.tap()
+    XCTAssertTrue(app.staticTexts["Couldn’t bring back Tie a bowline"].waitForExistence(timeout: 5))
+    XCTAssertFalse(undo.exists)
+    XCTAssertTrue(app.staticTexts["3 of 7 done"].exists && !app.roadmapStep("Tie a bowline").exists)
   }
 }

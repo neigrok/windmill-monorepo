@@ -7,13 +7,15 @@ import SyncSchema
 
 // Simulator boards. An account's roadmaps arriving by sync: roadmap-learn-to-sail (three steps done), roadmap-all-done
 // (all eight), roadmap-no-steps (*Night sailing*, with no step), roadmap-several (*Learn to sail* over two more, the
-// most recent first), roadmap-workspace (*Learn to sail* with the workspace the boards draw on *Read the wind*) and
+// most recent first), roadmap-workspace (*Learn to sail* with the workspace the boards draw on *Read the wind*),
 // roadmap-two-phones (*Learn to sail*, where the account's other phone adds a subtask to the first step whose page is
-// opened). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no order a server gave
-// them; roadmap-handbook, the 5,000 steps the Graph's and the Board's budget is measured at; roadmap-full, a roadmap at
-// the steps the registry lets it hold; and roadmap-empty, which holds none. roadmap-unreadable cannot make its views. A
-// launch can also name where the Graph's measures go and how it keeps a pinch's frames (`graph(telemetry:)`), and where
-// the Board's go (`boardFrames()`).
+// opened) and roadmap-first-read (*Learn to sail*, each pull of the signed-in phone answered three seconds late, so the
+// room's first read runs long). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no
+// order a server gave them; roadmap-handbook, the 5,000 steps the Graph's and the Board's budget is measured at;
+// roadmap-full, a roadmap at the steps the registry lets it hold; roadmap-undo-finds-nothing, *Learn to sail*, where
+// every band's Undo finds nothing to take back (`undoFindsNothing(in:)`); and roadmap-empty, which holds none.
+// roadmap-unreadable cannot make its views. A launch can also name where the Graph's measures go and how it keeps a
+// pinch's frames (`graph(telemetry:)`), and where the Board's go (`boardFrames()`).
 enum RoadmapFixture {
   // The engine's views of every record of a type in a scope, visible or not, as the room's model takes them.
   static func records(_ runtime: AppRuntime) -> RoadmapModel.Records {
@@ -88,12 +90,14 @@ enum RoadmapFixture {
     // The steps of *Learn to sail* each board's account completed, the oldest first.
     let completed = ["roadmap-learn-to-sail": ["choose", "parts", "rig"], "roadmap-several": ["choose", "parts", "rig"],
                      "roadmap-workspace": ["choose", "parts", "rig"], "roadmap-two-phones": ["choose", "parts", "rig"],
+                     "roadmap-first-read": ["choose", "parts", "rig"],
                      "roadmap-all-done": ["choose", "parts", "rig", "read", "tie", "leave", "tri", "solo"]][board]
-    guard completed != nil || ["roadmap-no-steps", "roadmap-many", "roadmap-handbook", "roadmap-full"].contains(board) else { return true }
+    let local = ["roadmap-many", "roadmap-handbook", "roadmap-full", "roadmap-undo-finds-nothing"]
+    guard completed != nil || board == "roadmap-no-steps" || local.contains(board) else { return true }
     do {
-      // roadmap-many, roadmap-handbook and roadmap-full are made on the phone itself, signed out: the first with *Learn
-      // to sail* remembered as the roadmap last open, the others holding their one roadmap alone.
-      if ["roadmap-many", "roadmap-handbook", "roadmap-full"].contains(board) {
+      // roadmap-many, roadmap-handbook, roadmap-full and roadmap-undo-finds-nothing are made on the phone itself, signed
+      // out: the first with *Learn to sail* remembered as the roadmap last open, the others holding their one roadmap alone.
+      if local.contains(board) {
         guard let runner = model.runtime?.roadmapRunner else { throw AppFailure(message: "no runtime") }
         if board == "roadmap-handbook" {
           try plantHandbook(runner)
@@ -101,6 +105,11 @@ enum RoadmapFixture {
         }
         if board == "roadmap-full" {
           try plantFull(runner)
+          return true
+        }
+        if board == "roadmap-undo-finds-nothing" {
+          try plantLearnToSail(runner)
+          Task { @MainActor in await undoFindsNothing(in: model) }
           return true
         }
         let sail = try plantLearnToSail(runner).tree
@@ -161,7 +170,10 @@ enum RoadmapFixture {
         }
         try await sent()
       }
-      server.state.withLock { $0.pushesReceivedLaterMs = 0 }
+      server.state.withLock { state in
+        state.pushesReceivedLaterMs = 0
+        if board == "roadmap-first-read" { (state.pullsAnsweredBeforeHold, state.pullDelaySeconds) = (Int.max, 3) }
+      }
       try await model.signIn(identity)
       if board == "roadmap-two-phones", let tree = planted?.tree {
         Task { @MainActor in
@@ -194,6 +206,26 @@ enum RoadmapFixture {
       if let step = model.roadmap?.path.compactMap(\.step).first { return step }
       await withCheckedContinuation { (changed: CheckedContinuation<Void, Never>) in
         withObservationTracking { _ = model.roadmap?.path } onChange: { changed.resume() }
+      }
+    }
+  }
+
+  // roadmap-undo-finds-nothing (02.10d, 06.5c): once a band stands with its Undo, the engine keeps nothing for it, as when
+  // the hold has ended or the act's Undo is gone by the time it is tapped: a held removal is let go into the queue, as
+  // leaving the app lets it go, and any other act's Undo is released. The band is read again after each change to it.
+  static func undoFindsNothing(in model: AppModel) async {
+    guard let room = model.roadmap, let runtime = model.runtime else { return }
+    while true {
+      if let undo = room.band?.undo {
+        if undo.held {
+          try? runtime.engine.leave()
+          runtime.engine.foreground()
+        } else {
+          try? runtime.roadmapRunner.release(undo.gesture)
+        }
+      }
+      await withCheckedContinuation { (changed: CheckedContinuation<Void, Never>) in
+        withObservationTracking { _ = room.band } onChange: { changed.resume() }
       }
     }
   }

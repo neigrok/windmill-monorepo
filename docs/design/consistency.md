@@ -627,23 +627,22 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   links*.
 - **Roadmap · iOS · boards that disagree with what the room reads.** [Roadmap on iOS](../foundation/roadmap-ios.md)
   names every read and command the boards need (§3 INV-1, §7.1 to §7.4) and rules three of the differences (R-7 to
-  R-9). To redraw, the build tree's step `m0-redraw-what-the-reads-cannot-serve`: Activity (01.13) and History
-  (03.12) without their dated *unlocked* rows (R-7) and showing only what the phone's copy holds a time for, since
-  both are read from it (R-11), so *Activity with no connection* (01.14) and *History with no connection* (03.13)
-  are states the room never reaches; a gallery row (09.12a) without its author (R-8), and its
-  caption, which says newest first where `GET /v1/gallery` ranks by forks, then by last activity; the words for the
-  feed's other deeds — steps removed and recolored, links drawn and taken away, kinds added, renamed, described,
-  recolored, reordered and removed — where the boards word only *added*, *renamed* and *completed* and the server's
-  sentence for several deeds of one gesture says *nodes*; a reader's History, which has no board and whose deeds are
-  the owner's, not *You*; and Quests (01.7), whose nine sizes are not the roster's (*Learn to sail* 22 steps, the
-  roster 17) and whose estimates lack the roster's *~*.
-- **Roadmap · iOS · two states of the room have no board.** A read of the phone's own copy that fails shows
-  *Couldn’t load this roadmap* and *Try Again* in the room, under the room menu: the one board with those words
-  (10.9) is a shared roadmap's cover, and its sentence, *It may have moved, or the server is unreachable.*, is
-  false of a read that asks no server, so the room says no sentence. While the phone's first read of the
-  person's roadmaps runs, the room is its bare canvas. To draw, with the build tree's step
-  `m0-redraw-what-the-reads-cannot-serve`: the room's failed read with a true sentence, and the room before its
-  first read.
+  R-9). To redraw, the build tree's step `m0-redraw-what-the-reads-cannot-serve`: a gallery row (09.12a) without its
+  author (R-8), and its caption, which says newest first where `GET /v1/gallery` ranks by forks, then by last
+  activity; and Quests (01.7), whose nine sizes are not the roster's (*Learn to sail* 22 steps, the roster 17) and
+  whose estimates lack the roster's *~*.
+- **Roadmap · iOS · what Activity, History and an empty Undo leave for the boards.** Activity, a step's History, the
+  room before its first read and its failed read, and the band of an Undo that brought nothing back are built in Debug
+  builds from 01.13, 01.13b, 01.15, 03.12, 01.5b, 01.5c, 02.10d and 06.5c. To draw or rule: 01.13's caption sets a row's
+  time in `.footnote` where 01.13 and 03.12 draw it at the body size, and it is built at the body size; a time and a date
+  follow the phone's region, so a US phone reads *9:12 AM* and *Nov 3* where the boards draw *9:12* and *3 Nov*; the
+  system's `DisclosureGroup` draws 01.13b's fold chevron in the label's ink whatever its tint or foreground, where the
+  board draws it in the accent, and opened it indents the folded rows, which no board draws; the fold's plus is
+  `roadmap/ink-dim` whatever kinds its steps wear; steps made in one moment share their time and stand in the roadmap's
+  authored order reversed, which for a planted roadmap follows the ids the phone minted, where 01.13 draws the plan's
+  order reversed; Activity and History stand on the room's band like every screen of the room, where their boards draw
+  no foot; and no board draws an Undo that brought back part of what its act did, built as *Couldn’t undo every change*
+  in the band's pattern, six seconds with no Undo.
 - **Roadmap · iOS · what the Board's writes leave for the boards.** Complete, Delete, their *Undo* and the long-press
   menu are built in Debug builds from 02.1 to 02.4, 02.13, 02.15, 01.12 and the question of 03.8. To draw or rule:
   a slid row is drawn as its own rounded card on `roadmap/raised` (02.1, 02.3), and SwiftUI shapes it so only where
@@ -661,8 +660,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   draws it, so the page is built to the NOTE and 03.4's row reads *Sky · Reset returns 1 step to Locked*; no board
   words the band after a step completed on its page opens nothing, or after a Reset that locks nothing, and they are
   built as *Read the wind done*, the Board's sentence, and *Read the wind reset*; every board of the page draws
-  the Coach circle or composer and History, and the page is built without them until their
-  screens are, so a Locked or a Done step's foot holds the band alone and the … menu holds *Open in Graph*, *View
+  the Coach circle or composer, and the page is built without it until its screen is, so a Locked or a Done step's
+  foot holds the band alone and the … menu holds *Open in Graph*, *View
   Branch* and *Delete Step*, without *Attach a Roadmap*; the roadmap's one starting step keeps no *Delete Step*, so
   its menu holds the first two alone, and no board draws that step's menu; a link row shows the address's host as it is written, so *www.* stays where the
   address has it; an Undo of Reset marks the step done at the Undo's time, as the web's does, so the step then leads
