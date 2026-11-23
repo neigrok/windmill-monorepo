@@ -206,6 +206,10 @@ class ConversationTests {
         assertEquals(Violation(CoachRules.question, Path("text"), Violation.Reason.TooLong(8_000, MeasureUnit.bytes, 8_001)).json, tooLong.violation.json)
         val blank = (a.runner.run(OpenTurn(question = " ")) as Outcome.Refused).refusal as GymRefusal.Invalid
         assertEquals(Violation(CoachRules.question, Path("text"), Violation.Reason.Blank).json, blank.violation.json)
+        for (id in listOf("picture id", "picture/0001", "piçture0001")) {
+            val notAnId = (a.runner.run(OpenTurn(question = "This?", pictures = listOf(Picture(id, "image/jpeg")))) as Outcome.Refused).refusal as GymRefusal.Invalid
+            assertEquals(id, Violation(CoachRules.pictureId.path, Path("pictures.0.id"), Violation.Reason.Custom("notAnId")).json, notAnId.violation.json)
+        }
         val absent = Id("thrdAAAAAAAAAAA1", CoachThread)
         assertEquals(gone(CoachThread.type, absent), (a.runner.run(OpenTurn(absent, "And then?")) as Outcome.Refused).refusal)
         assertEquals(before, a.engine.engine.snapshot())
@@ -219,7 +223,7 @@ class ConversationTests {
         assertEquals(opened, a.engine.engine.snapshot())
     }
 
-    @Test fun theTextStreamsOnlyOntoThisReplicasRunningMessage() = twoPhones { a, b ->
+    @Test fun theTextStreamsOnlyOntoThisReplicasMessageUntilItsWriterEndsIt() = twoPhones { a, b ->
         val turn = a.open()
         assertTrue(a.runner.run(StreamTurnText(turn.coach, "Add")) is Outcome.Committed)
         assertEquals("Add", a.message(turn.coach).text)
@@ -237,6 +241,9 @@ class ConversationTests {
         assertEquals("message.text", over.violation.rule)
         assertEquals(longest, a.message(turn.coach).text)
 
+        assertTrue(b.runner.run(EndTurn(turn.coach, MessageState.interrupted)) is Outcome.Committed)
+        b.engine.sync()
+        assertEquals(MessageState.interrupted, a.message(turn.coach).state)
         assertTrue(a.runner.run(StreamTurnText(turn.coach, "Add 5")) is Outcome.Committed)
         assertTrue(a.runner.run(EndTurn(turn.coach, MessageState.stopped)) is Outcome.Committed)
         assertEquals(Outcome.Unchanged(Unit), a.runner.run(StreamTurnText(turn.coach, "Late words")))

@@ -48,7 +48,12 @@ data class Picture(val id: String, val mediaType: String, val localOnly: Boolean
         if (localOnly) add("localOnly" to Json.of(true))
     })
 
-    override fun validated(at: Path) = Picture(CoachRules.pictureId.apply(id, at + "id"), CoachRules.mediaType.apply(mediaType, at + "mediaType"), localOnly)
+    // An id the registry's `picture:<id>` row admits: its length by the spec, then its characters.
+    override fun validated(at: Path): Picture {
+        val checked = CoachRules.pictureId.apply(id, at + "id")
+        if (!CoachRules.pictureIdPattern.matches(checked)) throw Violation(CoachRules.pictureId.path, at + "id", Violation.Reason.Custom("notAnId"))
+        return Picture(checked, CoachRules.mediaType.apply(mediaType, at + "mediaType"), localOnly)
+    }
 
     companion object : ValueType<Picture> {
         override fun decode(f: Fields) = Picture(f.string("id"), f.string("mediaType"), f.bool("localOnly", false))
@@ -145,6 +150,7 @@ object CoachRules {
     val text = TextSpec("message.text", MeasureUnit.bytes, 0, 131_072, trim = false, nfc = false)
     val pictures = CountSpec("message.pictures", 0, 1)
     val pictureId = TextSpec("message.pictures.id", MeasureUnit.chars, 8, 64, trim = false, nfc = false)
+    val pictureIdPattern = Regex("^[A-Za-z0-9_-]{8,64}$")
     val mediaType = TextSpec("message.pictures.mediaType", MeasureUnit.bytes, 1, 255, trim = false, nfc = false)
 
     // A book of its own: packages/api-contract/gym/domain/rules.json pins GymRules.book, which every gym implementation shares.
