@@ -52,11 +52,11 @@ export class Mark {
   /** @param {Id<CoachMessageValue>} message */
   names(message) { return this.turnId !== null && this.turnId === message.record; }
 
-  // Every write that clears `runningTurn` clears `runningRound` beside it.
+  // Every write that clears `runningTurn` clears `runningRound` in the same write.
   /** @param {Plan} plan */
   clear(plan) {
     plan.device(Mark.turnKey, null);
-    if (this.roundRow) plan.device(Mark.roundKey, null);
+    plan.device(Mark.roundKey, null);
   }
 
   /** @param {Reader} read */

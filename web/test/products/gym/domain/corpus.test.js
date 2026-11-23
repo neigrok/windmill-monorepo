@@ -25,7 +25,7 @@ import { GymUnits, WeightLadder } from '../../../../src/products/gym/domain/unit
 import { PlanChanges, PlanOperations, ReviseWorkoutPlan } from '../../../../src/products/gym/domain/workoutPlan.js';
 import { ApplyWorkoutProposal, DismissWorkoutProposal, ProposeWorkout, WorkoutProposal, WorkoutProposalState } from '../../../../src/products/gym/domain/workoutProposals.js';
 import { AbilityCall, CoachMessage, CoachThread, Picture, ReadServed } from '../../../../src/products/gym/domain/coach/conversation.js';
-import { EndTurn, OpenTurn } from '../../../../src/products/gym/domain/coach/turn.js';
+import { BeginRound, DeleteConversation, EndTurn, ForgetRunningTurn, OpenTurn, RecoverMark, WithdrawTurn } from '../../../../src/products/gym/domain/coach/turn.js';
 import { Instant } from '../../../../src/platform/domain-kit/time.js';
 import { Catalog } from '../../../../src/platform/domain-kit/abilities.js';
 import { Collation } from '../../../../src/platform/domain-kit/collation.js';
@@ -566,6 +566,13 @@ const handlers = {
         pictures: f.optionalList('pictures', Picture.decode) ?? [] }), vector, (turn) => ({ thread: turn.thread.json, lifter: turn.lifter.json, coach: turn.coach.json }), refusalForm);
       case 'EndTurn': return corpus.decision(new EndTurn(f.ref('message', CoachMessage), input.state, f.optionalString('text'), f.bool('truncated', false)),
         vector, () => null, refusalForm);
+      case 'BeginRound': return corpus.decision(new BeginRound(f.ref('message', CoachMessage), f.string('callId'), f.int('bytesBefore')), vector, () => null, refusalForm);
+      case 'RecoverMark': return corpus.decision(new RecoverMark(), vector,
+        (mark) => ({ turnId: mark.turnId, callId: mark.callId, textBytesBeforeRound: mark.textBytesBeforeRound }), refusalForm);
+      case 'ForgetRunningTurn': return corpus.decision(new ForgetRunningTurn(f.ref('message', CoachMessage)), vector, () => null, refusalForm);
+      case 'WithdrawTurn': return corpus.decision(new WithdrawTurn({ thread: f.ref('thread', CoachThread), lifter: f.ref('lifter', CoachMessage),
+        coach: f.ref('coach', CoachMessage) }), vector, (pictures) => pictures, refusalForm);
+      case 'DeleteConversation': return corpus.decision(new DeleteConversation(f.ref('thread', CoachThread)), vector, (pictures) => pictures, refusalForm);
       case 'AbilityCall.recorded': {
         const message = CoachMessage.decode(Fields.values('message', input.message.id, input.message.fields));
         const recorded = message.recorded(AbilityCall.decode(Fields.object(input.call)));
