@@ -238,7 +238,8 @@ Link*, the Coach circle and composer, and a step that opens a roadmap's pill and
 `Activity/RoadmapActivity.swift` is a roadmap's Activity and a step's History (boards 01.13, 01.13b, 01.15 and 03.12),
 each pushed on the room's stack, from the title menu's *Activity* and from a step page's *History*. Both show the
 domain's `ActivityRead` of the open roadmap as the phone's copy reads it: each step's creation and completion the copy
-holds a time for, newest first ([the shared cases](../../../packages/api-contract/roadmap/domain/activity.json)), so
+holds a time for, newest first, each at the time the person did it, the device's, and the server's receipt only where
+the copy holds none ([the shared cases](../../../packages/api-contract/roadmap/domain/activity.json)), so
 they make no request, read the same signed out and with no connection, and show a change made elsewhere once the copy
 holds it; the model reads it once for each read of the copy (`RoadmapModel.activity(of:)`). `ActivityDays` lays the rows
 out under Today, Yesterday and Earlier, by the engine's clock in the phone's zone (`RoadmapModel.moment`, which a midnight

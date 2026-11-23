@@ -136,11 +136,10 @@ public struct Step: Authored, Sendable {
     self.branchStamp = branchStamp
   }
 
-  // When the step was made: the server's receipt of its create, else its birth stamp's time, the device's own before the
-  // server holds it; none for an unset birth.
+  // When the person made the step: its birth stamp's time, the device's, else the server's receipt of its create where its
+  // birth holds no time (an unset birth, or one at the epoch).
   public var createdAt: Instant? {
-    if let rc { return rc }
-    return born == .unset ? nil : Instant(ms: born.ms)
+    born.ms > 0 ? Instant(ms: born.ms) : rc
   }
 }
 
@@ -204,8 +203,11 @@ public struct RoadmapTree: Sendable {
     }
 
     public var isComplete: Bool { status.utf8.elementsEqual("complete".utf8) }
-    // When the server received it, else when the device made it.
-    public var at: Instant? { recordedAt ?? deviceAt }
+    // When the person made it: its device's time, else the server's receipt where the mark holds no device time.
+    public var at: Instant? {
+      guard let deviceAt, deviceAt.ms > 0 else { return recordedAt }
+      return deviceAt
+    }
   }
 
   // The roadmap a step opens, and the stamp it was set under.

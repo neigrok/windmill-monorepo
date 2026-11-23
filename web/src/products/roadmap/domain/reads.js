@@ -91,7 +91,7 @@ export class BoardRead {
       members.sort((a, b) => {
         if (name === 'done') return dateOrder(graph.dateAt[slotOf(a)] ?? null, graph.dateAt[slotOf(b)] ?? null, true);
         if (this.sort === 'roadmap') return (cardOf(a).needs?.toGo ?? 0) - (cardOf(b).needs?.toGo ?? 0) || cardOf(b).unlockCount - cardOf(a).unlockCount;
-        return dateOrder(graph.nodes[slotOf(a)]?.rc ?? null, graph.nodes[slotOf(b)]?.rc ?? null, this.sort === 'newest');
+        return dateOrder(graph.nodes[slotOf(a)]?.createdAt ?? null, graph.nodes[slotOf(b)]?.createdAt ?? null, this.sort === 'newest');
       });
       const cards = members.map(cardOf);
       const ids = cards.map((card) => card.id);

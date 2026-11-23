@@ -191,7 +191,7 @@ public struct BoardRead: Sendable {
     columns = Column.Name.allCases.map { name in
       let members = cards.indices.filter { cards[$0].column == name }.stablySorted { a, b in
         if name == .done { return dated(graph.dateAt[slots[a]], graph.dateAt[slots[b]], true) }
-        if query.sort != .roadmap { return dated(index.nodes[slots[a]].rc, index.nodes[slots[b]].rc, query.sort == .newest) }
+        if query.sort != .roadmap { return dated(index.nodes[slots[a]].createdAt, index.nodes[slots[b]].createdAt, query.sort == .newest) }
         let (owed, other) = (cards[a].needs?.toGo ?? 0, cards[b].needs?.toGo ?? 0)
         return owed != other ? owed < other : cards[a].unlockCount > cards[b].unlockCount
       }

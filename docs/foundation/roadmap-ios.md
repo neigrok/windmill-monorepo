@@ -99,7 +99,10 @@ Activity and the web demo.
   room shows no save failure and no refused change otherwise.
 - **Activity and History** are a read of the domain over the phone's copy (R-11): what the copy
   holds a time for, such as a step's creation and its completion, in order of time, a roadmap's
-  Activity over all its steps and a step's History over that step. They make no request, and work
+  Activity over all its steps and a step's History over that step. Each time is when the person
+  did it, as the device that did it stamped it: a creation's birth and a completion's mark, the
+  server's receipt only where the copy holds no such time. The Board's Done and its Newest and
+  Oldest orders read the same times, on the iPhone as on the web (R-14). They make no request, and work
   with no connection and signed out. What the copy does not keep is not shown: an earlier name, a
   step that was removed, a mark that was reset. The read is shared with the web as cases under
   `packages/api-contract/roadmap/domain/`, which say exactly which rows it gives. A roadmap gone
@@ -429,3 +432,4 @@ makes it false.
 | R-11 | Where Activity and History come from | The device's copy, by a read of the domain; no request to the backend. (2026-11-21) |
 | R-12 | Whether sharing's requests move into synchronization | Decided when links and readers are built; until then the gallery, Fork and the owner's progress on a cover stay requests. (2026-11-21) |
 | R-13 | Quests on the iPhone | Not offered: New Roadmap starts a roadmap blank, from a copied plan or from a file. Quests return with a design of their own. (2026-11-23) |
+| R-14 | Which time Activity, History and the Board's Done order show | When the person did it: a step's birth and a mark's device time, the server's receipt only where the copy holds none, on the iPhone and on the web alike. (2026-11-23) |

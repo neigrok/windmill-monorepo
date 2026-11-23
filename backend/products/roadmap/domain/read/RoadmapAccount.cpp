@@ -93,7 +93,7 @@ RoadmapAccount::RoadmapAccount(std::vector<RoadmapTree> trees) {
       if (!mark || mark->status != "complete") continue;
       --pending;
       if (mark->stamp.isSet())
-        latest = later(latest, LatestMark{mark->stamp, mark->recordedAt ? mark->recordedAt : mark->deviceAt});
+        latest = later(latest, LatestMark{mark->stamp, mark->at()});
     }
     const bool hasSteps = std::any_of(tree.nodes.begin(), tree.nodes.end(), [](const Step& step) { return step.present; });
     openings_[id] = std::move(openings);
@@ -274,11 +274,11 @@ std::optional<Progress> RoadmapAccount::progress(const std::string& id) const {
     const auto found = openings.find(node);
     const Opening* opening = found == openings.end() ? nullptr : found->second;
     if (!opening || opening->status == OpeningStatus::dangling) {
-      progress.dates.push_back(DatedStep{node, mark ? (mark->recordedAt ? mark->recordedAt : mark->deviceAt) : std::nullopt});
+      progress.dates.push_back(DatedStep{node, mark ? mark->at() : std::nullopt});
       continue;
     }
     if (mark && mark->status == "complete" && mark->stamp.isSet()) {
-      progress.dates.push_back(DatedStep{node, mark->recordedAt ? mark->recordedAt : mark->deviceAt});
+      progress.dates.push_back(DatedStep{node, mark->at()});
       continue;
     }
     Hlc setAt;

@@ -6,11 +6,11 @@ import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/
 /** @typedef {{id:string, present?:boolean, born?:string|null, rc?:number|null, ru?:number|null, label?:string, icon?:string, color?:string, ord?:string, status?:string, description?:string, links?:{url:string,label:string}[], branch?:string|null, branchStamp?:string|null}} StepInput */
 /** @typedef {{id:string, present?:boolean, born?:string|null, hue:string, label?:string, description?:string, ord?:string}} KindInput */
 /** @typedef {{from:string,to:string,present:boolean}} Edge */
-/** @typedef {{node:string,status:string,outOfOrder:boolean,recordedAt:number|null,deviceAt:number|null,stamp?:string|null}} Mark */
+/** @typedef {{node:string,status:string,outOfOrder?:boolean,recordedAt:number|null,deviceAt:number|null,stamp?:string|null}} MarkInput */
 /** @typedef {{node:string,present:boolean,opens:string,setAt?:string|null}} Pointer */
 /** @typedef {{tree:string,step:string}} Parent */
 /** @typedef {{title:string,guide:string,guideInherited:boolean,root:string,depth:number,visibility:string,reach:string}} Metadata */
-/** @typedef {{id:string,present?:boolean,read?:'loaded'|'unread',own?:boolean,updatedAt?:number|null,parent?:Parent|null,meta?:Partial<Metadata>|null,nodes?:StepInput[],edges?:Edge[],kinds?:KindInput[],marks?:Mark[],pointers?:Pointer[]}} TreeInput */
+/** @typedef {{id:string,present?:boolean,read?:'loaded'|'unread',own?:boolean,updatedAt?:number|null,parent?:Parent|null,meta?:Partial<Metadata>|null,nodes?:StepInput[],edges?:Edge[],kinds?:KindInput[],marks?:MarkInput[],pointers?:Pointer[]}} TreeInput */
 
 export class Step {
   /** @param {StepInput} input */
@@ -31,12 +31,31 @@ export class Step {
     this.branchStamp = input.branchStamp ?? null;
   }
 
-  // When the step was made: the server's receipt of its create, else its birth stamp's time, the device's own before the
-  // server holds it; none for an unset birth.
+  // When the person made the step: its birth stamp's time, the device's, else the server's receipt of its create where its
+  // birth holds no time (an unset birth, or one at the epoch).
   /** @returns {number|null} */
   get createdAt() {
-    if (this.rc !== null) return this.rc;
-    return this.born === Stamp.UNSET ? null : Stamp.parse(this.born).ms;
+    const born = Stamp.parse(this.born).ms;
+    return born > 0 ? born : this.rc;
+  }
+}
+
+// A person's `progress` mark on a step: the time the server received it, the device's, and its stamp.
+export class Mark {
+  /** @param {MarkInput} input */
+  constructor(input) {
+    this.node = input.node;
+    this.status = input.status;
+    this.outOfOrder = input.outOfOrder ?? false;
+    this.recordedAt = input.recordedAt ?? null;
+    this.deviceAt = input.deviceAt ?? null;
+    this.stamp = input.stamp ?? null;
+  }
+
+  // When the person made it: its device's time, else the server's receipt where the mark holds no device time.
+  /** @returns {number|null} */
+  get at() {
+    return this.deviceAt ? this.deviceAt : this.recordedAt;
   }
 }
 
@@ -94,7 +113,7 @@ export class TreeIndex {
     for (const mark of marks.values()) {
       const slot = this.slot.get(mark.node);
       if (slot === undefined) continue;
-      this.markedAt[slot] = mark.recordedAt ?? mark.deviceAt;
+      this.markedAt[slot] = mark.at;
       if (mark.status === 'complete' && !this.nodes[slot]?.branch && !pointers.get(mark.node)?.present) this.markedDone[slot] = 1;
     }
   }
@@ -126,7 +145,7 @@ export class RoadmapTree {
     this.nodesById = new Map(this.nodes.map((node) => [node.id, node]));
     this.edges = (input.edges ?? []).map((edge) => ({ ...edge })).sort(edgeOrder);
     this.kinds = (input.kinds ?? []).map((kind) => new Kind(kind)).sort(authoredOrder);
-    this.marks = new Map((input.marks ?? []).map((mark) => [mark.node, { ...mark }]));
+    this.marks = new Map((input.marks ?? []).map((mark) => [mark.node, new Mark(mark)]));
     this.pointers = new Map((input.pointers ?? []).map((pointer) => [pointer.node, { ...pointer }]));
     this.index = new TreeIndex(this.nodes, this.edges, this.marks, this.pointers);
     if (this.nodesById.size !== this.nodes.length || new Set(this.kinds.map((kind) => kind.id)).size !== this.kinds.length) {

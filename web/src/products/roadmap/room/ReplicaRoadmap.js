@@ -152,7 +152,7 @@ export class ReplicaRoadmap {
         const pointer = tree.pointers.get(step.id);
         return {
           id: step.id, label: step.label, icon: step.icon, color: step.color, order: step.ord,
-          createdAt: Stamp.parse(step.born), createdMs: step.rc,
+          createdAt: Stamp.parse(step.born), createdMs: step.createdAt,
           prerequisites: graph.followed(step.id).map((followed) => followed.id),
           status: step.status === 'none' ? undefined : step.status,
           description: step.description || undefined, links: step.links.length ? step.links : undefined,

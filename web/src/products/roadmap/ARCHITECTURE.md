@@ -1395,8 +1395,9 @@ replacement atomically record pending device cleanup with the replica transition
 engine networking on reload and clears it only after product cleanup finishes; roadmap blob deletions must
 commit before their index stamps are removed. A failed cleanup retains the marker for retry. The marker grants
 no session or device-read authority. `ProgressStore.drainInto` migrates
-older local marks into the private lane. Displayed completion dates use the server's `markedAt`; local
-completion clocks support only incomplete local history.
+older local marks into the private lane. Through this sync (`LatticeReading`), displayed completion dates use the
+server's `markedAt`; local completion clocks support only incomplete local history. The room that reads the device's
+copy dates them by the person's own time (Reading the device's copy, above).
 
 **Sharing.** `ShareDialog` waits for successful publication before copying a public `/t/:id` link. The owner
 sees that anyone can view or fork it and that it may appear in the gallery. Clipboard failure leaves the URL

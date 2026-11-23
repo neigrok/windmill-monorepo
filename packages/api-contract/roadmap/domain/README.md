@@ -80,11 +80,12 @@ opening. Hidden subtrees have no address/count/title. A subtree's title is its o
 step's label. Completion is the least fixed point; empty/unread trees are incomplete. Valid and
 unknown openings set personal marks aside; dangling pointers retain the mark's meaning.
 
-`progress` keeps an ordinary mark's server receipt time, falling back to its pending device time.
+`progress` dates an ordinary mark by when the person made it: its device time (`deviceAt`), falling back to the server's
+receipt (`recordedAt`) where the mark holds no device time, none or one at the epoch.
 For a complete opening it reproduces `readerView`: a stored complete mark with a non-UNSET stamp
 keeps its date; otherwise the later stamp of target completion and the pointer/branch register
-supplies the date. The target's latest mark is selected by full stamp, carrying that mark's receipt
-time; a pointer/branch stamp carries its own physical milliseconds. Unstamped evidence cannot
+supplies the date. The target's latest mark is selected by full stamp, carrying that mark's date by
+the same rule; a pointer/branch stamp carries its own physical milliseconds. Unstamped evidence cannot
 supply an effective opening date. With neither source known, the date is null. `account.graph(id)`
 passes these effective dates into Board reads. A standalone graph has ordinary mark dates only
 and treats supplied opening identities as unresolved, setting their marks aside. `account.graph(id)`
@@ -92,13 +93,14 @@ resolves valid and dangling openings.
 
 `activity` is what Activity and a step's History show, read from the device's copy alone (the iPhone's
 [Roadmap on iOS](../../../../docs/foundation/roadmap-ios.md) §3, R-11). It reads `account.graph(id)`, so a step that
-opens or owns a roadmap is completed as the Board's Done has it. A row is `{kind, step, at}`: `created` at the step's
-`rc`, the server's receipt of its create, else at its `born` stamp's milliseconds, the device's own time before the
-server holds the step (none for an unset birth); `completed` at the date `progress` gives a completed step, none where
-it gives none. A time the copy does not hold makes no row. Newest first; at one time a completion before a creation,
-then the steps in reverse authored order, the last authored first. With `step` it is that step's rows alone, none for a
-step that is not present. What the copy does not keep makes no row: a step's earlier name (a row names its step by id,
-which a reader shows by its label now), a removed step and its mark, a mark that was reset, and a step unlocking (R-7).
+opens or owns a roadmap is completed as the Board's Done has it. A row is `{kind, step, at}` and says when the person did
+it: `created` at the step's `born` stamp's milliseconds, the time of its create on the device that made it, else at its
+`rc`, the server's receipt of the create, where the birth holds no time (unset, or at the epoch); `completed` at the date
+`progress` gives a completed step, its mark's device time first, none where it gives none. A time the copy does not hold
+makes no row. Newest first; at one time a completion before a creation, then the steps in reverse authored order, the
+last authored first. With `step` it is that step's rows alone, none for a step that is not present. What the copy does
+not keep makes no row: a step's earlier name (a row names its step by id, which a reader shows by its label now), a
+removed step and its mark, a mark that was reset, and a step unlocking (R-7).
 
 MCP search uses ASCII case folding and does not trim. It ranks exact ID, ID prefix, label
 substring, ID substring, description substring, and keeps authored order within each rank. Board
@@ -106,8 +108,9 @@ search trims and uses Unicode lowercase, matches only label or description, and 
 Board kinds are hues (OR); MCP kind is a present legend ID
 and intersects color. Board branch includes that present step, ancestors and descendants; a missing
 branch does not filter. Board roadmap order is owed count ascending then unlock count descending;
-newest/oldest use node `rc`, unknown last. Done sorts by its effective date (an ordinary
-mark uses `recordedAt ?? deviceAt`), newest first, unknown last, and folds above twelve unless expanded. Filters never change states or overall counts.
+newest/oldest use the step's creation time (`createdAt`: its `born` stamp's milliseconds, else its `rc`), unknown last.
+Done sorts by its effective date (an ordinary mark uses its `deviceAt`, else its `recordedAt`), newest first, unknown
+last, and folds above twelve unless expanded. Filters never change states or overall counts.
 
 Legend hue ownership is earliest birth (missing is `Stamp.UNSET`), then ID bytes; display order
 is independent.

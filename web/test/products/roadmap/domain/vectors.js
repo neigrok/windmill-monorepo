@@ -256,7 +256,7 @@ export function runRead(input) {
       overlay: input.overlay && reader(RoadmapScopes.overlay(input.id), input.overlay.drawn), queued: input.overlay?.queued ?? [] });
     return { id: tree.id, present: tree.present, read: tree.read, own: tree.own, updatedAt: tree.updatedAt, parent: tree.parent, meta: tree.meta,
       nodes: tree.nodes.map((step) => ({ ...step })), edges: tree.edges, kinds: tree.kinds.map((kind) => ({ ...kind })),
-      marks: [...tree.marks.values()], pointers: [...tree.pointers.values()] };
+      marks: [...tree.marks.values()].map((mark) => ({ ...mark })), pointers: [...tree.pointers.values()] };
   }
   if (['account', 'activity', 'guides', 'pointers', 'progress', 'openings', 'list'].includes(input.operation)) {
     const account = new RoadmapAccount(input.trees.map((/** @type {any} */ tree) => new RoadmapTree(tree)));

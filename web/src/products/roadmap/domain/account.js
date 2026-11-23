@@ -72,7 +72,7 @@ export class RoadmapAccount {
         const mark = tree.marks.get(node.id);
         if (mark?.status !== 'complete') continue;
         pending--;
-        if (mark.stamp && mark.stamp !== Stamp.UNSET) latest = laterMark(latest, { stamp: mark.stamp, at: mark.recordedAt ?? mark.deviceAt });
+        if (mark.stamp && mark.stamp !== Stamp.UNSET) latest = laterMark(latest, { stamp: mark.stamp, at: mark.at });
       }
       this.openings.set(id, openings);
       this.staleBranches.set(id, stale);
@@ -182,8 +182,8 @@ export class RoadmapAccount {
     const dates = completed.map((node) => {
       const mark = tree.marks.get(node);
       const opening = openings.get(node);
-      if (!opening || opening.status === 'dangling') return { node, at: mark?.recordedAt ?? mark?.deviceAt ?? null };
-      if (mark?.status === 'complete' && mark.stamp && mark.stamp !== Stamp.UNSET) return { node, at: mark.recordedAt ?? mark.deviceAt };
+      if (!opening || opening.status === 'dangling') return { node, at: mark?.at ?? null };
+      if (mark?.status === 'complete' && mark.stamp && mark.stamp !== Stamp.UNSET) return { node, at: mark.at };
       const setAt = opening.kind === 'subtree' ? tree.nodesById.get(node)?.branchStamp : tree.pointers.get(node)?.setAt;
       const pointer = setAt && setAt !== Stamp.UNSET ? { stamp: setAt, at: Stamp.parse(setAt).ms } : null;
       return { node, at: laterMark(this.latestMarks.get(opening.tree) ?? null, pointer)?.at ?? null };

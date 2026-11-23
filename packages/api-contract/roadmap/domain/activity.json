@@ -27,7 +27,7 @@
     ]
   },
   {
-    "name": "The server's receipt of a creation or a completion stands before the device's own time",
+    "name": "A creation or a completion is the person's own time, the device's, and the server's receipt only where the device's holds none",
     "input": {
       "operation": "activity",
       "trees": [
@@ -37,21 +37,29 @@
           "meta": {"title": "Run a 10k"},
           "nodes": [
             {"id": "x", "born": "1500:0:dev", "rc": 2000, "label": "Run 5k", "ord": "a0"},
-            {"id": "y", "born": "2500:0:dev", "rc": null, "label": "Run 10k", "ord": "a1"}
+            {"id": "y", "born": "2500:0:dev", "rc": null, "label": "Run 10k", "ord": "a1"},
+            {"id": "z", "born": null, "rc": 1800, "label": "Stretch", "ord": "a2"},
+            {"id": "w", "born": "0:0:srv", "rc": 1700, "label": "Rest a day", "ord": "a3"}
           ],
           "marks": [
             {"node": "x", "status": "complete", "outOfOrder": false, "recordedAt": 3000, "deviceAt": 2800, "stamp": "2800:0:dev"},
-            {"node": "y", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 2600, "stamp": "2600:0:dev"}
+            {"node": "y", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 2600, "stamp": "2600:0:dev"},
+            {"node": "z", "status": "complete", "outOfOrder": false, "recordedAt": 2700, "deviceAt": null},
+            {"node": "w", "status": "complete", "outOfOrder": false, "recordedAt": 2650, "deviceAt": 0, "stamp": "0:0:srv"}
           ]
         }
       ],
       "tree": "S"
     },
     "expect": [
-      {"kind": "completed", "step": "x", "at": 3000},
+      {"kind": "completed", "step": "x", "at": 2800},
+      {"kind": "completed", "step": "z", "at": 2700},
+      {"kind": "completed", "step": "w", "at": 2650},
       {"kind": "completed", "step": "y", "at": 2600},
       {"kind": "created", "step": "y", "at": 2500},
-      {"kind": "created", "step": "x", "at": 2000}
+      {"kind": "created", "step": "z", "at": 1800},
+      {"kind": "created", "step": "w", "at": 1700},
+      {"kind": "created", "step": "x", "at": 1500}
     ]
   },
   {
@@ -182,7 +190,7 @@
       "tree": "B"
     },
     "expect": [
-      {"kind": "completed", "step": "b", "at": 40},
+      {"kind": "completed", "step": "b", "at": 30},
       {"kind": "created", "step": "b", "at": 20}
     ]
   },
