@@ -225,6 +225,38 @@ public struct BoardRead: Sendable {
   }
 }
 
+// A roadmap's Activity, or with `step` that step's History (spec §3, R-11): each present step's creation and completion
+// that the copy holds a time for, newest first. At one time a completion stands before a creation, then the roadmap's
+// authored order reversed, the last authored step first. A completion is the graph's, so a step that opens or owns a
+// roadmap is completed, and dated, as the Board's Done has it.
+public struct ActivityRead: Sendable {
+  public struct Row: Sendable, Equatable {
+    public enum Kind: String, Sendable {
+      case created, completed
+    }
+
+    public let kind: Kind
+    public let step: String
+    public let at: Instant
+  }
+
+  public let rows: [Row]
+
+  public init(_ graph: FollowGraph, step: String? = nil) {
+    var rows: [(row: Row, slot: Int)] = []
+    for (slot, node) in graph.tree.index.nodes.enumerated() {
+      if let step, !node.id.utf8.elementsEqual(step.utf8) { continue }
+      if graph.done[slot], let at = graph.dateAt[slot] { rows.append((Row(kind: .completed, step: node.id, at: at), slot)) }
+      if let at = node.createdAt { rows.append((Row(kind: .created, step: node.id, at: at), slot)) }
+    }
+    self.rows = rows.sorted { a, b in
+      if a.row.at != b.row.at { return a.row.at > b.row.at }
+      if a.row.kind != b.row.kind { return a.row.kind == .completed }
+      return a.slot > b.slot
+    }.map(\.row)
+  }
+}
+
 // A step the device linked that is now read through an absent step: its own links that bridge the absence, and what it follows through them.
 public struct LandingFact: Sendable {
   public let node: String

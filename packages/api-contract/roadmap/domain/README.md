@@ -5,7 +5,7 @@ corpus (`web/test/products/roadmap/domain/corpus.test.js`) claims every file by 
 complete outputs. The server's read domain (`backend/products/roadmap/domain/read/`) claims the reads
 the table marks as the server's, by JCS, in `backend/test/products/roadmap/domain/read/ReadVectorsTest.cpp`,
 which fails on a file it neither claims nor names as a device's. Swift's domain (`apps/ios/Domain/Sources/RoadmapDomain/`)
-claims, by JCS, in `apps/ios/Domain/Tests/RoadmapDomainTests/`, the reads' files (`account`, `board`, `diagnostics`, `graph`,
+claims, by JCS, in `apps/ios/Domain/Tests/RoadmapDomainTests/`, the reads' files (`account`, `activity`, `board`, `diagnostics`, `graph`,
 `guides`, `landing`, `legend`, `pointers`, `progress`, `replica` and `search`), `rules.json`, `values.json`, and every
 `*-actions.json` (`roadmaps`, `steps`, `kinds`, `progress`, `workspace` and `landing`), each action case with its records
 reversed too. Its `CorpusTests.swift` names `undo.json` as waiting for its scenes, and fails on a file in neither list.
@@ -43,6 +43,7 @@ ID byte order.
 | `diagnostics` | Bounded graph errors and warnings | yes |
 | `pointers` | Shortest pointer-loop paths and known dangling targets, with omission counts | yes |
 | `landing` | The device's own links (`edges`) whose current followed prerequisites bridge absence | no |
+| `activity` | A roadmap's Activity, or one step's History: each present step's creation and completion the copy holds a time for, newest first; null for an unread/hidden tree | no |
 | `roadmap` (`replica.json`) | One roadmap's records as a replica holds them, as the normalized tree | no |
 | `openings` (`replica.json`) | One tree's openings as `account` reads them, without reading every tree | no |
 | `list` (`replica.json`) | The person's own roots that stand, newest first by `updatedAt`, none received last, ID byte ties | no |
@@ -89,6 +90,16 @@ passes these effective dates into Board reads. A standalone graph has ordinary m
 and treats supplied opening identities as unresolved, setting their marks aside. `account.graph(id)`
 resolves valid and dangling openings.
 
+`activity` is what Activity and a step's History show, read from the device's copy alone (the iPhone's
+[Roadmap on iOS](../../../../docs/foundation/roadmap-ios.md) §3, R-11). It reads `account.graph(id)`, so a step that
+opens or owns a roadmap is completed as the Board's Done has it. A row is `{kind, step, at}`: `created` at the step's
+`rc`, the server's receipt of its create, else at its `born` stamp's milliseconds, the device's own time before the
+server holds the step (none for an unset birth); `completed` at the date `progress` gives a completed step, none where
+it gives none. A time the copy does not hold makes no row. Newest first; at one time a completion before a creation,
+then the steps in reverse authored order, the last authored first. With `step` it is that step's rows alone, none for a
+step that is not present. What the copy does not keep makes no row: a step's earlier name (a row names its step by id,
+which a reader shows by its label now), a removed step and its mark, a mark that was reset, and a step unlocking (R-7).
+
 MCP search uses ASCII case folding and does not trim. It ranks exact ID, ID prefix, label
 substring, ID substring, description substring, and keeps authored order within each rank. Board
 search trims and uses Unicode lowercase, matches only label or description, and never relevance-ranks.
@@ -114,7 +125,8 @@ note, the names its lines take and its clearing are `landing-actions.json`'s.
 Run from `web`: `node --test test/products/roadmap/domain/corpus.test.js`.
 
 The harness inputs are `{operation, tree, subjects}` for `graph`, `{operation, trees}` for `account` and `list`,
-`{operation, trees, tree: id}` for `guides`, `progress`, `pointers` and `openings`, `{operation, id, listed, tree,
+`{operation, trees, tree: id}` for `guides`, `progress`, `pointers` and `openings`, `{operation, trees, tree: id, step?}` for
+`activity`, `{operation, id, listed, tree,
 overlay: {drawn, queued} | null, read}` for `roadmap`, its records engine view records and `queued` the
 overlay's records (`{t, id}`) a queued entry still changes, `{operation, tree, query}` for
 `board` and `search`, `{operation, tree}` for `legend` and `diagnostics`, and
@@ -126,7 +138,7 @@ The read modules are `records.js` (normalized values, authored ordering, the dev
 tree's `TreeIndex`: its raw adjacency by slot and its own marks, derived once per tree), `graph.js` (iterative
 strongly connected components and compact prerequisite/debt closure over a tree's index), `account.js`
 (standing, least-fixed-point completion, effective dates, guides, one tree's openings and the person's list),
-`reads.js` (Board, legend, search and landing facts), `diagnostics.js` (bounded findings), and `readRoadmap` in
+`reads.js` (Board, legend, search, landing facts and Activity), `diagnostics.js` (bounded findings), and `readRoadmap` in
 `roadmaps.js` (a replica's records as the normalized tree). Detailed followed provenance is enumerated on demand.
 A step's state, unmet count and first, followed count and owed count are kept by slot. A step whose parents
 are all present follows them directly; only an absent step, and a step behind one, takes a bitset row, so no

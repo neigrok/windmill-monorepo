@@ -376,7 +376,6 @@ makes it false.
 - `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
   room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once: no Undo scene,
   plan grammar, quest or Coach executor.
-- Activity and History have no read (§3): no case states one, and neither the web's domain nor Swift's gives it.
 - One SwiftUI `Canvas` in the room's Graph draws `RoadmapLayout`'s picture (`apps/ios/App/Sources/Roadmap/Graph/`).
   The budget of §5 is measured at 5,000 steps on a Mac's simulator alone, by `apps/ios/App/Tools/graph_bench.sh` on a
   Release-configuration build: the picture's time with its layout, the domain's read taken for it, the room's part of

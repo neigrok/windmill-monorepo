@@ -135,6 +135,13 @@ public struct Step: Authored, Sendable {
     self.branch = branch
     self.branchStamp = branchStamp
   }
+
+  // When the step was made: the server's receipt of its create, else its birth stamp's time, the device's own before the
+  // server holds it; none for an unset birth.
+  public var createdAt: Instant? {
+    if let rc { return rc }
+    return born == .unset ? nil : Instant(ms: born.ms)
+  }
 }
 
 // A `kind` record of a roadmap's legend: the hue it wears and what it calls it.

@@ -23,7 +23,7 @@ import { Contract, savedForm, viewRecords } from '../../../platform/domain-kit/v
 import { RoadmapTree } from '../../../../src/products/roadmap/domain/records.js';
 import { FollowGraph } from '../../../../src/products/roadmap/domain/graph.js';
 import { RoadmapAccount } from '../../../../src/products/roadmap/domain/account.js';
-import { BoardRead, LegendRead, selectNodes, landingFacts } from '../../../../src/products/roadmap/domain/reads.js';
+import { ActivityRead, BoardRead, LegendRead, selectNodes, landingFacts } from '../../../../src/products/roadmap/domain/reads.js';
 import { diagnose, pointerDiagnostics } from '../../../../src/products/roadmap/domain/diagnostics.js';
 
 /** @typedef {import('../../../../src/platform/domain-kit/values.js').Json} Json */
@@ -258,9 +258,13 @@ export function runRead(input) {
       nodes: tree.nodes.map((step) => ({ ...step })), edges: tree.edges, kinds: tree.kinds.map((kind) => ({ ...kind })),
       marks: [...tree.marks.values()], pointers: [...tree.pointers.values()] };
   }
-  if (['account', 'guides', 'pointers', 'progress', 'openings', 'list'].includes(input.operation)) {
+  if (['account', 'activity', 'guides', 'pointers', 'progress', 'openings', 'list'].includes(input.operation)) {
     const account = new RoadmapAccount(input.trees.map((/** @type {any} */ tree) => new RoadmapTree(tree)));
     if (input.operation === 'account') return account.result();
+    if (input.operation === 'activity') {
+      const graph = account.graph(input.tree);
+      return graph === null ? null : new ActivityRead(graph, input.step ?? null).result();
+    }
     if (input.operation === 'progress') return account.progress(input.tree);
     if (input.operation === 'openings') return account.openingsOf(input.tree);
     if (input.operation === 'list') return account.list();

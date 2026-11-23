@@ -30,6 +30,14 @@ export class Step {
     this.branch = input.branch ?? null;
     this.branchStamp = input.branchStamp ?? null;
   }
+
+  // When the step was made: the server's receipt of its create, else its birth stamp's time, the device's own before the
+  // server holds it; none for an unset birth.
+  /** @returns {number|null} */
+  get createdAt() {
+    if (this.rc !== null) return this.rc;
+    return this.born === Stamp.UNSET ? null : Stamp.parse(this.born).ms;
+  }
 }
 
 export class Kind {

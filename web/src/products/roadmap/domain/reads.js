@@ -102,6 +102,29 @@ export class BoardRead {
   }
 }
 
+// A roadmap's Activity, or with `step` that step's History (spec §3, R-11): each present step's creation and completion
+// that the copy holds a time for, newest first. At one time a completion stands before a creation, then the roadmap's
+// authored order reversed, the last authored step first. A completion is the graph's, so a step that opens or owns a
+// roadmap is completed, and dated, as the Board's Done has it.
+export class ActivityRead {
+  /** @param {FollowGraph} graph @param {string|null} step */
+  constructor(graph, step = null) {
+    /** @type {{kind:'created'|'completed', step:string, at:number, slot:number}[]} */
+    const rows = [];
+    for (let slot = 0; slot < graph.nodes.length; slot++) {
+      const node = /** @type {import('./records.js').Step} */ (graph.nodes[slot]);
+      if (step !== null && node.id !== step) continue;
+      const completedAt = graph.done[slot] ? graph.dateAt[slot] ?? null : null;
+      if (completedAt !== null) rows.push({ kind: 'completed', step: node.id, at: completedAt, slot });
+      if (node.createdAt !== null) rows.push({ kind: 'created', step: node.id, at: node.createdAt, slot });
+    }
+    rows.sort((a, b) => b.at - a.at || Number(a.kind === 'created') - Number(b.kind === 'created') || b.slot - a.slot);
+    this.rows = rows.map(({ kind, step: id, at }) => ({ kind, step: id, at }));
+  }
+
+  result() { return this.rows; }
+}
+
 /** @param {number|null} a @param {number|null} b @param {boolean} newest */
 function dateOrder(a, b, newest) {
   if (a === null || b === null) return Number(a === null) - Number(b === null);
