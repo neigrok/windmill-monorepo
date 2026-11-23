@@ -328,6 +328,23 @@ func trainingSet(_ id: String, of exercise: ID<Exercise> = ID("back-squat"), in 
     return (fit, card)
   }
 
+  // The card once the ledger has stopped moving: its frame unchanged over two looks a tenth of a second apart, and its
+  // scroll at its last row, or what it is after four seconds. A slow runner scrolls the ledger home later than a fixed wait.
+  func settledLedgerCard(in window: UIWindow) async throws -> (fit: CardFit, frame: CGRect) {
+    try await Task.sleep(for: .milliseconds(300))
+    window.layoutIfNeeded()
+    var card = try ledgerCard(in: window)
+    for _ in 0..<40 {
+      try await Task.sleep(for: .milliseconds(100))
+      window.layoutIfNeeded()
+      let next = try ledgerCard(in: window)
+      let still: Bool = abs(next.frame.minY - card.frame.minY) < 0.5 && abs(next.frame.height - card.frame.height) < 0.5
+      card = next
+      if still && next.fit.endsOnTheLastRow { break }
+    }
+    return card
+  }
+
   // The ledger's card is as tall as its rows up to the page's foot, 8 pt above the rack, its current row whole (L.1–L.3).
   func testTheLedgerCardIsAsTallAsItsRowsUpToTheRack() async throws {
     var cards: [String: CardFit] = [:]
@@ -361,12 +378,13 @@ func trainingSet(_ id: String, of exercise: ID<Exercise> = ID("back-squat"), in 
     var cards: [(fit: CardFit, frame: CGRect)] = []
     for message in [nil, "The workout changed. Check the current set.", nil] {
       gym.workout.message = message
-      try await Task.sleep(for: .milliseconds(900))
-      window.layoutIfNeeded()
-      cards.append(try ledgerCard(in: window))
+      cards.append(try await settledLedgerCard(in: window))
     }
     XCTAssertLessThan(cards[1].frame.height, cards[0].frame.height - RoomSpace.minimumTarget / 2, "The band takes room from the card")
-    XCTAssertEqual(cards[2].frame, cards[0].frame)
+    for (back, before) in [(cards[2].frame.minY, cards[0].frame.minY), (cards[2].frame.height, cards[0].frame.height),
+                           (cards[2].frame.minX, cards[0].frame.minX), (cards[2].frame.width, cards[0].frame.width)] as [(CGFloat, CGFloat)] {
+      XCTAssertEqual(back, before, accuracy: 0.5, "The card grows back to where it stood")
+    }
     XCTAssertEqual(cards.map(\.fit), Array(repeating: CardFit(height: .room, endsOnTheLastRow: true), count: 3))
   }
 
