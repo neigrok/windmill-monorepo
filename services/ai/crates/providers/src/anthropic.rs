@@ -16,8 +16,8 @@ use zeroize::Zeroize;
 
 use crate::{
     AssistantMessage, Certainty, Effort, FailureCode, FailureKind, MAX_PROVIDER_FRAME,
-    MAX_PROVIDER_RESPONSE, MAX_TEXT_BODY, Message, Part, ProviderFailure, Secret, Stop, TextEvent,
-    TextOutcome, TextRequest, ToolCall, Usage, ValidationError, request_id,
+    MAX_PROVIDER_RESPONSE, MAX_REFUSAL_BODY, MAX_TEXT_BODY, Message, Part, ProviderFailure, Secret,
+    Stop, TextEvent, TextOutcome, TextRequest, ToolCall, Usage, ValidationError, request_id,
 };
 
 pub struct CarryKey([u8; 32]);
@@ -382,7 +382,7 @@ impl Anthropic {
                     .and_then(|value| value.to_str().ok()),
             );
             if !response.status().is_success() {
-                return Err(ProviderFailure::status(status, id));
+                return Err(refused(status, id, response).await);
             }
             let mut bytes = Vec::new();
             let mut stream = response.bytes_stream();
@@ -478,7 +478,7 @@ impl Anthropic {
                 .and_then(|value| value.to_str().ok()),
         );
         if !response.status().is_success() {
-            return TextOutcome::failed(ProviderFailure::status(status, id));
+            return TextOutcome::failed(refused(status, id, response).await);
         }
         let mut parser = EventStream::default();
         let mut message = AnthropicMessage::default();
@@ -550,6 +550,26 @@ impl Anthropic {
         }
         outcome
     }
+}
+
+async fn refused(
+    status: u16,
+    request_id: Option<String>,
+    response: reqwest::Response,
+) -> ProviderFailure {
+    let mut body = Vec::new();
+    let mut stream = response.bytes_stream();
+    let read = async {
+        while body.len() < MAX_REFUSAL_BODY
+            && let Some(Ok(chunk)) = stream.next().await
+        {
+            body.extend_from_slice(&chunk[..chunk.len().min(MAX_REFUSAL_BODY - body.len())]);
+        }
+    };
+    let _ = tokio::time::timeout(Duration::from_secs(2), read).await;
+    let failure = ProviderFailure::status(status, request_id, &body);
+    body.zeroize();
+    failure
 }
 
 #[derive(Default)]
