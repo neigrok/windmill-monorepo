@@ -193,10 +193,9 @@ import SyncTesting
     #expect(told(telemetry).filter { $0.hasPrefix("roadmap_board_undo") } == ["roadmap_board_undo act=removeKind outcome=ok"])
   }
 
-  // Signed in, a kind added and removed before either reached the server goes up in one push with its removal. The
-  // engine then skips the restore the Undo sends, so the kind does not come back, and the room tells the Undo as
-  // unavailable (m1-restore-a-record-born-and-removed-in-one-push).
-  @Test func anUndoTheEngineSkipsIsToldUnavailable() async throws {
+  // Signed in, a kind added and removed before either reached the server comes back with the removal's Undo: the removal
+  // was read over the kind's birth, and its Undo walks from the row that birth left.
+  @Test func aKindRemovedBeforeItsBirthWasSentComesBackWithUndoSignedIn() async throws {
     let (engine, runner, memory, suite) = phone(account: "acct-1")
     defer { memory.removePersistentDomain(forName: suite) }
     let telemetry = TelemetryRecorder()
@@ -209,15 +208,9 @@ import SyncTesting
 
     model.undo()
     engine.sync()
-    for _ in 0..<5 {
-      await engine.settleViews()
-      model.observe()
-    }
-    #expect(told(telemetry).filter { $0.hasPrefix("roadmap_board_undo") } == ["roadmap_board_undo act=removeKind outcome=unavailable"])
+    await reads(model, on: engine) { $0.shown?.legend.entry(brick) != nil }
+    #expect(told(telemetry).filter { $0.hasPrefix("roadmap_board_undo") } == ["roadmap_board_undo act=removeKind outcome=ok"])
     #expect(model.removedKinds.isEmpty)
-    withKnownIssue("The engine skips the restore of a record born and removed in one push") {
-      #expect(model.shown?.legend.entry(brick) != nil)
-    }
   }
 
   // 06.5 against a screen drawn a moment before: a kind a step has come to wear is not removed, as the web's legend reads
