@@ -707,6 +707,21 @@ class RunAbilityTests {
         assertEquals(listOf("apple curl", "bench", "Bench", "BENCH", "bénch", "bench press", "éclair fly", "Étude press", "Zed row"), custom)
     }
 
+    // gym Coach on the AI service §4.3: a share the Share door made is recorded on the Coach message as any call is, what it answered or its refusal, and creates no record here; a message its writer ended records none.
+    @Test fun aShareTheDoorMadeIsRecordedAsAnyCall() = phones { a, _ ->
+        val turn = a.open()
+        val made = AbilityOutcome.Result("""{"expiresAt":1,"token":"tok","url":"u"}""".encodeToByteArray())
+        val shared = AbilityRequest("call-1", "share_session", Json.parse("""{"sessionId":"sesAAAAAAAAAAAA1"}"""))
+        assertEquals(made, answered(a.runner.run(RecordShareCall(shared, turn.coach, made))))
+        val revoked = AbilityRequest("call-2", "revoke_share", Json.parse("""{"sessionId":"sesAAAAAAAAAAAA2"}"""))
+        assertEquals(refused(AbilityRefusal.refused), answered(a.runner.run(RecordShareCall(revoked, turn.coach, refused(AbilityRefusal.refused)))))
+        assertEquals(listOf(AbilityCall("call-1", "share_session", shared.input, AbilityCall.Outcome.Ok),
+            AbilityCall("call-2", "revoke_share", revoked.input, AbilityCall.Outcome.Refused(AbilityRefusal.refused))), a.calls(turn))
+        assertTrue(a.runner.run(EndTurn(turn.coach, MessageState.completed, "Shared.")) is Outcome.Committed)
+        val ended = a.runner.run(RecordShareCall(shared.copy(callId = "call-3"), turn.coach, made)) as Outcome.Refused
+        assertEquals(GymRefusal.Other(Refused(RefusalCode(Gym.Codes.messageFinal), turn.coach.ref, path = Refused.Path.predicted)), ended.refusal)
+    }
+
     @Test fun anOutcomeReadsAsItsBytes() {
         val bytes = """{"a":1}""".encodeToByteArray()
         assertEquals(AbilityOutcome.Result(bytes), AbilityOutcome.Result("""{"a":1}""".encodeToByteArray(), Sha256.hex(bytes)))

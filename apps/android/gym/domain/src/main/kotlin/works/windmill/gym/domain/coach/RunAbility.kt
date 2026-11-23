@@ -117,27 +117,6 @@ class RunAbility(val request: AbilityRequest, val message: Id<CoachMessage>, sea
         return recording(call, AbilityOutcome.Result(bytes), plan, coach, moment)
     }
 
-    // The call on the Coach message, in the same gesture as the ability's writes (kit §9.3), in the fullest form the message's calls hold (`CoachMessage.recorded`): refused `coach-turn-volume`, writes dropped, when only a bare record fits the bound; and refused unrecorded, as the message's own bound, when not even that fits. Calls hold no U+0000, so an input that does records without itself. A call run again under a `callId` the message already holds keeps one record: this run's, holding every id either run created, in the first's place when the gate admitted the first, and last otherwise, as its ordinal stands. A first record that answered stands when this run was refused, and one the gate admitted stands when this run's was not, so no admitted call ever gives up its ordinal.
-    private fun recording(call: AbilityCall, outcome: AbilityOutcome, plan: Plan, coach: CoachMessage, moment: Moment): Decision<AbilityOutcome, GymRefusal> {
-        val found = coach.calls.indexOfFirst { it.callId == call.callId }
-        val prior = coach.calls.getOrNull(found)
-        val answered = prior?.outcome == AbilityCall.Outcome.Ok
-        if (answered && call.outcome != AbilityCall.Outcome.Ok || prior != null && prior.admitted && !call.admitted) return Decision.Unchanged(outcome)
-        val first = if (prior != null && prior.admitted) found else -1
-        val others = coach.calls.filterIndexed { index, _ -> index != found }
-        val whole = call.copy(created = (prior?.created.orEmpty() + call.created).distinct())
-        val storable = if (whole.input?.firstNul(Path("input")) == null) whole else whole.copy(input = null)
-        val recorded = coach.copy(calls = others).recorded(storable)
-            ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.tooLarge, coach.id.ref, path = Refused.Path.predicted)))
-        val fits = recorded.outcome == storable.outcome
-        if (answered && !fits) return Decision.Unchanged(AbilityOutcome.Refused(AbilityRefusal.volume))
-        val calls = if (first < 0) others + recorded else others.take(first) + recorded + others.drop(first)
-        if (calls == coach.calls && plan.operations.isEmpty()) return Decision.Unchanged(outcome)
-        val written = if (fits) plan else Plan()
-        written.update(Valid(coach.copy(calls = calls), CoachMessage, listOf("calls"), moment), listOf("calls"))
-        return Decision.Write(written, if (fits) outcome else AbilityOutcome.Refused(AbilityRefusal.volume))
-    }
-
     companion object {
         // Shares are server records: the host calls the Share door for them, and never sends one here (§4.3).
         val serverRun = setOf("share_session", "share_log", "revoke_share")
@@ -224,5 +203,49 @@ class RunAbility(val request: AbilityRequest, val message: Id<CoachMessage>, sea
             if (SyncSchema.registry.type(type.type)?.idPattern?.matches(id) != true) throw DecodeError(type.type, field, "not an id the registry admits")
             return Id(id, type)
         }
+    }
+}
+
+// A call on the Coach message, in the same gesture as the ability's writes (kit §9.3), in the fullest form the message's calls hold (`CoachMessage.recorded`): refused `coach-turn-volume`, writes dropped, when only a bare record fits the bound; and refused unrecorded, as the message's own bound, when not even that fits. Calls hold no U+0000, so an input that does records without itself. A call run again under a `callId` the message already holds keeps one record: this run's, holding every id either run created, in the first's place when the gate admitted the first, and last otherwise, as its ordinal stands. A first record that answered stands when this run was refused, and one the gate admitted stands when this run's was not, so no admitted call ever gives up its ordinal.
+internal fun recording(call: AbilityCall, outcome: AbilityOutcome, plan: Plan, coach: CoachMessage, moment: Moment): Decision<AbilityOutcome, GymRefusal> {
+    val found = coach.calls.indexOfFirst { it.callId == call.callId }
+    val prior = coach.calls.getOrNull(found)
+    val answered = prior?.outcome == AbilityCall.Outcome.Ok
+    if (answered && call.outcome != AbilityCall.Outcome.Ok || prior != null && prior.admitted && !call.admitted) return Decision.Unchanged(outcome)
+    val first = if (prior != null && prior.admitted) found else -1
+    val others = coach.calls.filterIndexed { index, _ -> index != found }
+    val whole = call.copy(created = (prior?.created.orEmpty() + call.created).distinct())
+    val storable = if (whole.input?.firstNul(Path("input")) == null) whole else whole.copy(input = null)
+    val recorded = coach.copy(calls = others).recorded(storable)
+        ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.tooLarge, coach.id.ref, path = Refused.Path.predicted)))
+    val fits = recorded.outcome == storable.outcome
+    if (answered && !fits) return Decision.Unchanged(AbilityOutcome.Refused(AbilityRefusal.volume))
+    val calls = if (first < 0) others + recorded else others.take(first) + recorded + others.drop(first)
+    if (calls == coach.calls && plan.operations.isEmpty()) return Decision.Unchanged(outcome)
+    val written = if (fits) plan else Plan()
+    written.update(Valid(coach.copy(calls = calls), CoachMessage, listOf("calls"), moment), listOf("calls"))
+    return Decision.Write(written, if (fits) outcome else AbilityOutcome.Refused(AbilityRefusal.volume))
+}
+
+// A share the host ran through the Share door (gym Coach on the AI service §4.3), recorded on the Coach message as the executor records a call: the door made the server's record, so the call creates none here.
+class RecordShareCall(val request: AbilityRequest, val message: Id<CoachMessage>, val outcome: AbilityOutcome) : Action<RecordShareCall.Loaded, AbilityOutcome, GymRefusal> {
+    data class Loaded(val message: CoachMessage?, val replica: String, val moment: Moment)
+
+    init { require(request.name in RunAbility.serverRun) { "only a share runs through the door" } }
+
+    override val scope = CoachMessage.scope
+    override val refusals = GymRefusal
+
+    override fun load(read: Reader) = Loaded(read.repository(CoachMessage).find(message, ViewMode.drawn), read.replica, read.moment)
+
+    override fun decide(loaded: Loaded, ids: IDSource): Decision<AbilityOutcome, GymRefusal> {
+        val coach = loaded.message?.takeIf { it.role == CoachMessage.Role.coach }
+            ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, message.ref, path = Refused.Path.predicted)))
+        if (!coach.writersOwn(loaded.replica)) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.messageFinal, message.ref))
+        val ended = when (outcome) {
+            is AbilityOutcome.Result -> AbilityCall.Outcome.Ok
+            is AbilityOutcome.Refused -> AbilityCall.Outcome.Refused(outcome.code)
+        }
+        return recording(AbilityCall(request.callId, request.name, request.input, ended), outcome, Plan(), coach, loaded.moment)
     }
 }

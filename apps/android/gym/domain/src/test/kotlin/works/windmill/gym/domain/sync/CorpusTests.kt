@@ -34,13 +34,13 @@ class CorpusTests {
 
     @Test fun everyProductFileIsClaimedAndEveryVectorPasses() {
         val files = Contract.files("gym")
-        // The turn's exchanges replay as the phone, through :agent's driver and :gym's host on a real engine, not as vectors of this module.
-        val replayedByTheTurnTests = files.filter { it.startsWith("gym/turns/") }
+        // The server turn wire's stories, which this phone no longer speaks: its turn runs on the Coach engine, held to agent/turns/.
+        val turnWire = files.filter { it.startsWith("gym/turns/") }
         val readByCatalogTests = "gym/catalog-3.json"
         val catalog2 = files.filter { it == "gym/catalog.json" || it.startsWith("gym/abilities/") }
         // The words Coach's model reads are no vectors: :gym's CoachWordsAssetsTests reads them from its assets.
         val coachWords = files.filter { it.startsWith("gym/coach/") }
-        assertEquals((paths + abilities + readByCatalogTests + replayedByTheTurnTests + catalog2 + coachWords).sorted(), files)
+        assertEquals((paths + abilities + readByCatalogTests + turnWire + catalog2 + coachWords).sorted(), files)
         val failures = mutableListOf<String>()
         try { RuleBookParity.check(book, paths[0]) } catch (error: Exception) {
             failures += "${paths[0]} · ${error.message}"
@@ -68,7 +68,7 @@ class CorpusTests {
         val run = abilityCases - unseeded.toSet()
         val notOffered = run.count { abilityExpected(it)["refused"]?.str() == AbilityRefusal.notOffered.code }
         val refused = run.count { it.expect["refused"] != null } - notOffered
-        val notApplicable = catalog2.size + replayedByTheTurnTests.size + coachWords.size
+        val notApplicable = catalog2.size + turnWire.size + coachWords.size
         println("Gym corpus: ${paths.size + abilities.size + 1}/${files.size} files, $cases cases, ${run.size} ability cases (${run.size - notOffered - refused} results byte-equal, $refused refused alike, $notOffered withheld or shares refused on the phone), ${unseeded.size} minting cases with no seeded id, $notApplicable explicitly not applicable (catalog/2, the turn wire, the words), no unclaimed file")
     }
 
