@@ -2,8 +2,8 @@ use std::time::{Duration, Instant};
 
 use ai_providers::{
     Anthropic, AssistantMessage, CarryKey, Certainty, CountSource, Effort, FailureCode,
-    FailureKind, ModelProfile, Part, PreparedText, Reasoning, Secret, Stop, TextEvent, TextOutcome,
-    TextRequest, Usage, ValidationError,
+    FailureKind, ModelProfile, Part, PreparedText, Reasoning, RefusalReason, Secret, Stop,
+    TextEvent, TextOutcome, TextRequest, Usage, ValidationError,
 };
 use serde_json::{Value, json};
 use tokio::{
@@ -290,15 +290,27 @@ async fn count_deadline_covers_response_body_and_falls_back_to_conservative_raw_
 
 #[tokio::test]
 async fn status_refusals_are_unconsumed_and_redirects_are_never_followed() {
-    for (status, code) in [
-        (400, FailureCode::ProviderRejected),
-        (413, FailureCode::ProviderRejected),
-        (422, FailureCode::ProviderRejected),
-        (401, FailureCode::ProviderUnavailable),
-        (402, FailureCode::ProviderUnavailable),
-        (403, FailureCode::ProviderUnavailable),
-        (429, FailureCode::ProviderUnavailable),
-        (302, FailureCode::ProviderUnavailable),
+    for (status, code, refusal) in [
+        (
+            400,
+            FailureCode::ProviderRejected,
+            Some(RefusalReason::Unparsed),
+        ),
+        (
+            413,
+            FailureCode::ProviderRejected,
+            Some(RefusalReason::RequestTooLarge),
+        ),
+        (
+            422,
+            FailureCode::ProviderRejected,
+            Some(RefusalReason::Unparsed),
+        ),
+        (401, FailureCode::ProviderUnavailable, None),
+        (402, FailureCode::ProviderUnavailable, None),
+        (403, FailureCode::ProviderUnavailable, None),
+        (429, FailureCode::ProviderUnavailable, None),
+        (302, FailureCode::ProviderUnavailable, None),
     ] {
         let fixture = HttpFixture::new(vec![(
             status,
@@ -328,13 +340,15 @@ async fn status_refusals_are_unconsumed_and_redirects_are_never_followed() {
                 failure.code,
                 failure.certainty,
                 failure.http_status,
-                failure.key_account_fault
+                failure.key_account_fault,
+                failure.refusal
             ),
             (
                 code,
                 Certainty::Unconsumed,
                 Some(status),
-                matches!(status, 401..=403)
+                matches!(status, 401..=403),
+                refusal
             )
         );
         assert!(!format!("{failure:?}").contains("PRIVATE_PROVIDER_ERROR_TEXT"));
@@ -702,6 +716,128 @@ async fn provider_request_limit_counts_exact_serialized_bytes_including_escapes(
             assert!(result.is_ok());
         } else {
             assert!(matches!(result, Err(ValidationError::TooLarge)));
+        }
+    }
+}
+
+#[tokio::test]
+async fn refusals_carry_the_classified_reason_on_the_messages_and_count_paths() {
+    let error = |kind: &str, message: &str| {
+        json!({"type":"error","error":{"type":kind,"message":format!("{message} PRIVATE_PROVIDER_ERROR_TEXT")}})
+            .to_string()
+    };
+    for (status, body, reason) in [
+        (
+            400,
+            error(
+                "invalid_request_error",
+                "Schema is too complex for compilation.",
+            ),
+            RefusalReason::SchemaTooComplex,
+        ),
+        (
+            400,
+            error(
+                "invalid_request_error",
+                "Too many strict tools: at most 20 tools with strict: true are allowed.",
+            ),
+            RefusalReason::TooManyStrictTools,
+        ),
+        (
+            400,
+            error(
+                "invalid_request_error",
+                "Too many optional parameters in strict tool schemas.",
+            ),
+            RefusalReason::TooManyOptionalParameters,
+        ),
+        (
+            400,
+            error(
+                "invalid_request_error",
+                "Too many parameters with union types.",
+            ),
+            RefusalReason::TooManyUnionParameters,
+        ),
+        (
+            400,
+            error(
+                "invalid_request_error",
+                "tools.0.custom.input_schema: the 'pattern' keyword is not supported.",
+            ),
+            RefusalReason::SchemaUnsupported,
+        ),
+        (
+            400,
+            error(
+                "invalid_request_error",
+                "prompt is too long: 214213 tokens > 200000 maximum",
+            ),
+            RefusalReason::PromptTooLong,
+        ),
+        (
+            400,
+            error(
+                "invalid_request_error",
+                "max_tokens: 100000 > 64000, which is the maximum allowed number of output tokens",
+            ),
+            RefusalReason::MaxTokens,
+        ),
+        (
+            422,
+            error("invalid_request_error", "messages.0: unexpected role"),
+            RefusalReason::InvalidRequestOther,
+        ),
+        (
+            413,
+            error(
+                "request_too_large",
+                "Request exceeds the maximum allowed number of bytes.",
+            ),
+            RefusalReason::RequestTooLarge,
+        ),
+        (
+            400,
+            "PRIVATE_PROVIDER_ERROR_TEXT".to_owned(),
+            RefusalReason::Unparsed,
+        ),
+        (
+            400,
+            format!("{{\"padding\":\"{}\"}}", "x".repeat(64 * 1024)),
+            RefusalReason::Unparsed,
+        ),
+    ] {
+        let fixture = HttpFixture::new(vec![
+            (status, body.clone(), Duration::ZERO),
+            (status, body, Duration::ZERO),
+        ])
+        .await;
+        let client = Anthropic::new(
+            &fixture.url,
+            Secret::new("test".into()),
+            CarryKey::new([7; 32]),
+        )
+        .unwrap();
+        let prepared = client.prepare(request(), &profile()).unwrap();
+        let counted = client.count(&prepared).await.unwrap_err();
+        let outcome = client.run(prepared, 1024, |_| {}).await;
+        let ran = outcome.failure.unwrap();
+        for failure in [counted, ran] {
+            assert_eq!(
+                (
+                    failure.code,
+                    failure.refusal,
+                    failure.http_status,
+                    failure.request_id.as_deref()
+                ),
+                (
+                    FailureCode::ProviderRejected,
+                    Some(reason),
+                    Some(status),
+                    Some("req_fixture_1")
+                )
+            );
+            assert!(!format!("{failure:?}").contains("PRIVATE_PROVIDER_ERROR_TEXT"));
         }
     }
 }

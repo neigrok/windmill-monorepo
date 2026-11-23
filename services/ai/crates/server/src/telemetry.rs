@@ -173,6 +173,7 @@ pub struct CallSignal {
     pub started: std::time::Instant,
     pub http_status: Option<u16>,
     pub failure_kind: Option<ai_providers::FailureKind>,
+    pub refusal: Option<ai_providers::RefusalReason>,
     pub usage: Option<ai_domain::TokenUsage>,
 }
 
@@ -182,6 +183,7 @@ impl CallSignal {
             started,
             http_status: None,
             failure_kind: None,
+            refusal: None,
             usage: None,
         }
     }
@@ -223,6 +225,8 @@ impl CallSignal {
             charged = outcome.charged.nanos(),
             http_status = self.http_status,
             failure_kind = ?self.failure_kind,
+            refusal = self.refusal.map(ai_providers::RefusalReason::as_str),
+            provider_request_id = settlement.provider_request_id.as_deref(),
             input = self.usage.map(|usage| usage.input),
             output = self.usage.map(|usage| usage.output),
             cache_write = self.usage.map(|usage| usage.cache_write),
