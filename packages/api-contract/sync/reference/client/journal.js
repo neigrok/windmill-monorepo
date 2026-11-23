@@ -4,7 +4,7 @@
 // settlement. The journal is the replica's local user data: values and ids never leave it but in a restore's
 // own arguments.
 
-import { sameJson } from '../core/jcs.js';
+import { jcs, sameJson } from '../core/jcs.js';
 import { moveEntry } from '../core/machines.js';
 import { effectsOf } from './projections.js';
 
@@ -43,6 +43,24 @@ export function stepOver(preimage, entry) {
   const writes = effectsOf(entry).some((effect) => effect.scope === scope && effect.d.some((delta) => delta.t === t && sameJson(delta.id, id)));
   const row = entry.acceptedEffects.find((effect) => effect.scope === scope)?.rows.find((candidate) => candidate.t === t && sameJson(candidate.id, id));
   if (writes && row && row.beforeRowSeq === preimage.rowSeq) Object.assign(preimage, { rowSeq: row.rowSeq, epoch });
+}
+
+// §7.3 Capture: the acknowledged entries with a receipt that write each record, in commit order, the only writes a
+// capture's preimages can step over; an entry still unanswered is passed over before its effects are read.
+export function acknowledgedWrites(replica) {
+  const writes = new Map();
+  for (const entry of replica.entries()) {
+    if (entry.state !== 'acked' || !entry.acceptedEffects) continue;
+    for (const { scope, d } of effectsOf(entry)) {
+      for (const delta of d) {
+        const key = jcs([scope, delta.t, delta.id]);
+        const entries = writes.get(key) ?? [];
+        if (entries.at(-1) !== entry) entries.push(entry);
+        writes.set(key, entries);
+      }
+    }
+  }
+  return writes;
 }
 
 // §7.4 the ACK transaction's retention point, after the source's own: each preimage of another act's source entry

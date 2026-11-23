@@ -255,6 +255,20 @@ internal fun ReplicaState.retainOutcome(localId: String, attempt: Attempt) {
     if (attempt.ok && attempt.acceptedEffects == null) source.unavailable = true
 }
 
+// §7.3 Capture: the acknowledged entries with a receipt that write each record, in commit order, the only writes a capture's preimages can
+// step over; an entry still unanswered is passed over before its deltas are read.
+internal fun ReplicaState.acknowledgedWrites(): Map<RecordAddress, List<Entry>> {
+    val writes = linkedMapOf<RecordAddress, MutableList<Entry>>()
+    for (entry in entries()) {
+        if (entry.state != "acked" || entry.acceptedEffects.isEmpty()) continue
+        for (effect in entry.effects) for (delta in effect.deltas) {
+            val record = writes.getOrPut(RecordAddress(effect.scope, delta.key)) { mutableListOf() }
+            if (record.lastOrNull() !== entry) record.add(entry)
+        }
+    }
+    return writes
+}
+
 // The ACK transaction's retention point, after the source's own: each preimage of another act's source entry still in the outbox after this
 // entry in commit order was read over its write, and steps over it. An act's own segments come after its preimages were read.
 internal fun ReplicaState.stepPreimagesOver(entry: Entry) {

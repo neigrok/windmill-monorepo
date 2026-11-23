@@ -83,6 +83,7 @@ private class UndoPlan(val scope: ScopeRef, val recipes: List<UndoRecipe>, val p
 private fun Engine.planUndo(replica: ReplicaState, request: ActRequest): Map<Int, UndoPlan>? {
     val segments = request.undo ?: return null
     val plan = linkedMapOf<Int, UndoPlan>()
+    val acknowledged = replica.acknowledgedWrites()
     for (segment in segments) {
         if (segment.index !in request.scopes.indices || segment.index in plan) throw CommitFailure.malformed("undo-segment")
         val scope = request.scopes[segment.index]
@@ -97,7 +98,7 @@ private fun Engine.planUndo(replica: ReplicaState, request: ActRequest): Map<Int
                 store.row(replica.id, target.scope, target.key)?.seq ?: replica.spentId(target.scope, target.key)?.get("seq")?.long(),
                 replica.meta["serverEpoch"]?.orNull()?.str(),
                 read?.takeIf { target.slot.kind == Slot.Kind.life }?.drawnRecord())
-            replica.entries().fold(preimage) { stepped, entry -> stepped.steppedOver(entry) }
+            acknowledged[target.record].orEmpty().fold(preimage) { stepped, entry -> stepped.steppedOver(entry) }
         }
         plan[segment.index] = UndoPlan(scope, segment.recipes, preimages)
     }

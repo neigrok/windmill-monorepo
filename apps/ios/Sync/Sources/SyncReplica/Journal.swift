@@ -795,22 +795,44 @@ extension LoadedReplica {
     updateJournal { $0.retain(attempt, of: localId) }
   }
 
-  // §7.4 the ACK transaction's retention point, after the source's own: each preimage of another act's source entry still
-  // in the outbox after this entry in commit order was read over its write, and steps over it. An act's own segments come
-  // after its preimages were read.
-  public mutating func stepPreimages(over entry: OutboxEntry) {
-    guard entry.acceptedEffects != nil else { return }
-    let others = journal.acts.filter { !$0.actId.isSameID(as: entry.gestureId) }
-    let later = Set(others.flatMap(\.sourceEntries).map(\.localId).filter { (named($0)?.commitOrder ?? 0) > entry.commitOrder })
-    guard !later.isEmpty else { return }
-    updateJournal { journal in
-      for act in journal.acts.indices {
-        for source in journal.acts[act].sourceEntries.indices where later.contains(journal.acts[act].sourceEntries[source].localId) {
-          for preimage in journal.acts[act].sourceEntries[source].preimages.indices {
-            journal.acts[act].sourceEntries[source].preimages[preimage].step(over: entry)
-          }
+  // §7.3 Capture: the acknowledged entries with a receipt that write each record, in commit order, the only writes a
+  // capture's preimages can step over. An entry still unanswered is passed over before its deltas are read, so a capture
+  // over a large unsent outbox reads none of it.
+  func acknowledgedWrites() -> [RecordAddress: [OutboxEntry]] {
+    var writes: [RecordAddress: [OutboxEntry]] = [:]
+    for entry in loadedEntries where entry.state == .acked && entry.acceptedEffects != nil {
+      for effect in entry.effects() {
+        for delta in effect.deltas where writes[RecordAddress(scope: effect.scope, key: delta.key)]?.last?.localId.isSameID(as: entry.localId) != true {
+          writes[RecordAddress(scope: effect.scope, key: delta.key), default: []].append(entry)
         }
       }
+    }
+    return writes
+  }
+
+  // §7.4 the ACK transaction's retention point, after the source's own: each preimage of another act's source entry still
+  // in the outbox after this entry in commit order was read over its write, and steps over it. An act's own segments come
+  // after its preimages were read. Only a preimage of a record the entry's receipt names can step, and the journal is
+  // written only for the acts in which one did.
+  public mutating func stepPreimages(over entry: OutboxEntry) {
+    guard let effects = entry.acceptedEffects, !journal.acts.isEmpty else { return }
+    let written = Set(effects.flatMap { (effect: EffectReceipt) -> [RecordAddress] in effect.rows.map { RecordAddress(scope: effect.scope, key: $0.key) } })
+    guard !written.isEmpty else { return }
+    var stepped: [(index: Int, act: ReversibleAct)] = []
+    for (index, act) in journal.acts.enumerated() where !act.actId.isSameID(as: entry.gestureId) {
+      var next = act
+      for source in next.sourceEntries.indices {
+        guard next.sourceEntries[source].preimages.contains(where: { written.contains($0.target.address) }),
+              let later = named(next.sourceEntries[source].localId), later.commitOrder > entry.commitOrder else { continue }
+        for preimage in next.sourceEntries[source].preimages.indices where written.contains(next.sourceEntries[source].preimages[preimage].target.address) {
+          next.sourceEntries[source].preimages[preimage].step(over: entry)
+        }
+      }
+      if next != act { stepped.append((index, next)) }
+    }
+    guard !stepped.isEmpty else { return }
+    updateJournal { journal in
+      for (index, act) in stepped { journal.acts[index] = act }
     }
   }
 
@@ -1148,6 +1170,7 @@ extension CommitPlanner {
   public func undoPlan(_ undo: ActUndo?, scopes: [ScopeRef], in replica: LoadedReplica) throws -> UndoPlan? {
     guard let undo else { return nil }
     var segments: [Int: UndoPlan.Segment] = [:]
+    let acknowledged = replica.acknowledgedWrites()
     for segment in undo.segments {
       guard scopes.indices.contains(segment.index), segments[segment.index] == nil else {
         throw CommitFailure.malformed("an undo segment names one act segment and its recipes")
@@ -1169,7 +1192,7 @@ extension CommitPlanner {
           let rowSeq: Int64? = replica.rows(scope).row(item.target.key)?.seq ?? replica.spentIDs(scope)[item.target.key]?.seq
           let record: RecordValues? = item.target.slot == .life ? read.map(RecordValues.init) : nil
           var preimage = Preimage(target: item.target, value: value, rowSeq: rowSeq, epoch: replica.meta.serverEpoch, record: record)
-          for entry in replica.entries(touching: item.target.key, in: scope) { preimage.step(over: entry) }
+          for entry in acknowledged[item.target.address] ?? [] { preimage.step(over: entry) }
           preimages.append(preimage)
         }
       }

@@ -1,9 +1,10 @@
 import { CONSTANTS } from '../core/constants.js';
 import { mintId } from '../core/derive.js';
+import { jcs } from '../core/jcs.js';
 import { recipeFault, recordValues, valueIn } from '../core/restore.js';
 import { recordKey } from '../core/rows.js';
 import { CommitError, commitGesture } from './commit.js';
-import { stepOver } from './journal.js';
+import { acknowledgedWrites, stepOver } from './journal.js';
 import { drawn, stored } from './views.js';
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -31,6 +32,7 @@ function planUndo(replica, registry, request) {
   if (!isObject(undo) || Object.keys(undo).sort().join() !== 'segments,version' || undo.version !== 1 || !Array.isArray(undo.segments))
     throw new CommitError('an act undo is {version: 1, segments}');
   const plan = new Map();
+  const writes = acknowledgedWrites(replica);
   for (const segment of undo.segments) {
     if (!isObject(segment) || Object.keys(segment).sort().join() !== 'index,recipes' || !Number.isSafeInteger(segment.index)
       || segment.index < 0 || segment.index >= request.scopes.length || plan.has(segment.index)
@@ -51,7 +53,7 @@ function planUndo(replica, registry, request) {
         const preimage = { target: structuredClone(target), value: structuredClone(value ?? defaultValue),
           rowSeq: readOver?.seq ?? null, epoch: replica.meta.serverEpoch,
           ...(target.slot.kind === 'life' && read ? { record: recordValues(read) } : {}) };
-        for (const entry of replica.entries()) stepOver(preimage, entry);
+        for (const entry of writes.get(jcs([target.scope, target.t, target.id])) ?? []) stepOver(preimage, entry);
         preimages.push(preimage);
       }
     }
