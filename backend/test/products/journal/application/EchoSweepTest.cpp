@@ -758,13 +758,14 @@ TEST(a_rejudge_re_cuts_only_the_page_whose_stored_cut_is_of_other_bytes) {
   CHECK(echoes.cutFromTheseBytes(uid("u1"), ld(kOldDay), settled));
 }
 
-// Every way the AI service can end one of Echoes' two calls, and what it does to the page (echoes-on-ai-service.md §5):
-// how the pass counts it, the status and the attempts storage holds, the outcome of the page's line, and whether Sentry
-// is told. Either step failing reads the same.
+// Every way the AI service can end one of Echoes' two calls, and what it does to the page and the pass
+// (echoes-on-ai-service.md §4, §5): how the pass counts it, the status and the attempts storage holds, the outcome and
+// code of the page's line, the Issue Sentry is told it under, and how much of the pass it stops. Either step failing
+// reads the same.
 TEST(every_answer_the_ai_service_gives_a_step_lands_the_page_where_section_five_says) {
   struct Failures : FailureReporter {
-    int issues = 0;
-    void report(const std::string&, const std::string&, const std::string&) override { ++issues; }
+    std::vector<std::string> issues;
+    void report(const std::string&, const std::string& where, const std::string&) override { issues.push_back(where); }
   };
   struct ReporterScope {
     std::shared_ptr<Failures> failures = std::make_shared<Failures>();
@@ -786,11 +787,11 @@ TEST(every_answer_the_ai_service_gives_a_step_lands_the_page_where_section_five_
   const auto table = [&](bool segmentFails) {
     std::string landed;
     for (const std::string code : {"declined", "truncated", "provider_failed", "provider_rejected", "invalid_request",
-                                   "too_large", "conflict", "tool_calls", "unreadable", "subject_exhausted",
-                                   "concurrency_exhausted", "rate_limited", "background_exhausted", "busy", "paused",
-                                   "accounting_unavailable", "provider_unavailable", "unreachable", "result_gone",
-                                   "call_unknown", "pass_expired", "pass_malformed", "pass_signature",
-                                   "free_month_exhausted"}) {
+                                   "too_large", "conflict", "tool_calls", "unreadable", "result_gone", "call_unknown",
+                                   "subject_exhausted", "concurrency_exhausted", "rate_limited", "background_exhausted",
+                                   "busy", "paused", "accounting_unavailable", "provider_unavailable", "unreachable",
+                                   "pass_expired", "pass_malformed", "pass_signature", "free_month_exhausted",
+                                   "free_day_exhausted", "funding_required"}) {
       FakeEchoRepository echoes;
       FakeSegmenter segmenter;
       FakeEmbedder embedder;
@@ -802,47 +803,131 @@ TEST(every_answer_the_ai_service_gives_a_step_lands_the_page_where_section_five_
       curator.callSucceeds = segmentFails;
       curator.failure = code;
       EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
-      std::string line;
+      WriteCompletion line;
       installWriteSink([&](const WriteCompletion& completion) {
-        if (completion.operation == "journal.echo.derive") line = completion.outcome;
+        if (completion.operation == "journal.echo.derive") line = completion;
       });
-      const int issuesBefore = reporter.failures->issues;
+      const std::size_t issuesBefore = reporter.failures->issues.size();
       const EchoSweepReport report = sweep.derivePage(uid("u1"), ld(kNewDay));
       installWriteSink({});
       const auto& stored = echoes.curations[FakeEchoRepository::pageKey(uid("u1"), ld(kNewDay))];
       const char* counted = report.pagesRefused ? "refused" : report.pagesFailed ? "failed" : report.pagesDeferred ? "deferred" : "derived";
-      landed += code + " " + counted + " " + word(stored.status) + " attempts=" + std::to_string(stored.attempts) + " " +
-          line + (reporter.failures->issues > issuesBefore ? " told" : "") + "\n";
+      const std::string issue = reporter.failures->issues.size() > issuesBefore ? reporter.failures->issues.back() : "none";
+      const std::string stops = report.accountsStopped ? "account" : report.passStoppedBy == code ? "pass" : "page";
+      landed += code + " " + counted + " " + word(stored.status) + " attempts=" + std::to_string(stored.attempts) +
+          " line=" + line.outcome + " code=" + line.code + " issue=" + issue + " stops=" + stops + "\n";
     }
     return landed;
   };
 
-  const std::string expected = "declined refused refused attempts=0 refused\n"
-                               "truncated failed truncated attempts=1 failed told\n"
-                               "provider_failed failed transport attempts=1 failed told\n"
-                               "provider_rejected failed transport attempts=1 failed told\n"
-                               "invalid_request failed transport attempts=1 failed told\n"
-                               "too_large failed transport attempts=1 failed told\n"
-                               "conflict failed transport attempts=1 failed told\n"
-                               "tool_calls failed schema_invalid attempts=1 failed told\n"
-                               "unreadable failed schema_invalid attempts=1 failed told\n"
-                               "subject_exhausted deferred budget_limited attempts=0 budget_limited\n"
-                               "concurrency_exhausted deferred budget_limited attempts=0 budget_limited\n"
-                               "rate_limited deferred budget_limited attempts=0 budget_limited\n"
-                               "background_exhausted deferred budget_limited attempts=0 budget_limited\n"
-                               "busy deferred budget_limited attempts=0 budget_limited\n"
-                               "paused deferred budget_limited attempts=0 budget_limited\n"
-                               "accounting_unavailable deferred budget_limited attempts=0 budget_limited\n"
-                               "provider_unavailable deferred budget_limited attempts=0 budget_limited\n"
-                               "unreachable deferred budget_limited attempts=0 budget_limited\n"
-                               "result_gone deferred budget_limited attempts=0 budget_limited\n"
-                               "call_unknown deferred budget_limited attempts=0 budget_limited\n"
-                               "pass_expired deferred budget_limited attempts=0 budget_limited told\n"
-                               "pass_malformed deferred budget_limited attempts=0 budget_limited told\n"
-                               "pass_signature deferred budget_limited attempts=0 budget_limited told\n"
-                               "free_month_exhausted deferred budget_limited attempts=0 budget_limited told\n";
+  const std::string expected =
+      "declined refused refused attempts=0 line=refused code=declined issue=none stops=page\n"
+      "truncated failed truncated attempts=1 line=failed code=truncated issue=journal.echo.derive stops=page\n"
+      "provider_failed failed transport attempts=1 line=failed code=provider_failed issue=journal.echo.derive stops=page\n"
+      "provider_rejected failed transport attempts=1 line=failed code=provider_rejected issue=journal.echo.derive stops=page\n"
+      "invalid_request failed transport attempts=1 line=failed code=invalid_request issue=journal.echo.derive stops=page\n"
+      "too_large failed transport attempts=1 line=failed code=too_large issue=journal.echo.derive stops=page\n"
+      "conflict failed transport attempts=1 line=failed code=conflict issue=journal.echo.derive stops=page\n"
+      "tool_calls failed schema_invalid attempts=1 line=failed code=tool_calls issue=journal.echo.derive stops=page\n"
+      "unreadable failed schema_invalid attempts=1 line=failed code=unreadable issue=journal.echo.derive stops=page\n"
+      "result_gone deferred budget_limited attempts=0 line=budget_limited code=result_gone issue=none stops=page\n"
+      "call_unknown deferred budget_limited attempts=0 line=budget_limited code=call_unknown issue=none stops=page\n"
+      "subject_exhausted deferred budget_limited attempts=0 line=budget_limited code=subject_exhausted issue=none stops=account\n"
+      "concurrency_exhausted deferred budget_limited attempts=0 line=budget_limited code=concurrency_exhausted issue=none stops=account\n"
+      "rate_limited deferred budget_limited attempts=0 line=budget_limited code=rate_limited issue=none stops=account\n"
+      "background_exhausted deferred budget_limited attempts=0 line=budget_limited code=background_exhausted issue=none stops=pass\n"
+      "busy deferred budget_limited attempts=0 line=budget_limited code=busy issue=none stops=pass\n"
+      "paused deferred budget_limited attempts=0 line=budget_limited code=paused issue=none stops=pass\n"
+      "accounting_unavailable deferred budget_limited attempts=0 line=budget_limited code=accounting_unavailable issue=none stops=pass\n"
+      "provider_unavailable deferred budget_limited attempts=0 line=budget_limited code=provider_unavailable issue=none stops=pass\n"
+      "unreachable deferred budget_limited attempts=0 line=budget_limited code=unreachable issue=none stops=pass\n"
+      "pass_expired deferred budget_limited attempts=0 line=budget_limited code=pass_expired issue=journal.echo.pass_refused stops=pass\n"
+      "pass_malformed deferred budget_limited attempts=0 line=budget_limited code=pass_malformed issue=journal.echo.pass_refused stops=pass\n"
+      "pass_signature deferred budget_limited attempts=0 line=budget_limited code=pass_signature issue=journal.echo.pass_refused stops=pass\n"
+      "free_month_exhausted deferred budget_limited attempts=0 line=budget_limited code=free_month_exhausted issue=journal.echo.unexpected_answer stops=pass\n"
+      "free_day_exhausted deferred budget_limited attempts=0 line=budget_limited code=free_day_exhausted issue=journal.echo.unexpected_answer stops=pass\n"
+      "funding_required deferred budget_limited attempts=0 line=budget_limited code=funding_required issue=journal.echo.unexpected_answer stops=pass\n";
   CHECK_EQ(table(true), expected);
   CHECK_EQ(table(false), expected);
+}
+
+namespace {
+
+// A curator that refuses one writer's calls with `code` and judges everyone else's as the fake does.
+struct RefusingOne : FakeCurator {
+  UserId refused;
+  std::string code;
+  Curation curate(const UserId& user, const std::vector<Vectored>& tonight, const std::vector<Vectored>& candidates,
+                  const std::vector<Pairing>& proposed) override {
+    if (!(user == refused)) return FakeCurator::curate(user, tonight, candidates, proposed);
+    ++calls;
+    billed.push_back(user);
+    return Curation{false, code, {}};
+  }
+};
+
+}
+
+// The AI service refusing the account's own budget, slot or rate ends that account's part of the pass, and the pass goes
+// on to the next account; every page not asked stays due, with no attempt counted.
+TEST(an_accounts_own_refusal_ends_its_part_of_the_pass_and_the_next_account_is_derived) {
+  FakeEchoRepository echoes;
+  FakeEmbedder embedder;
+  RefusingOne curator;
+  curator.refused = uid("u1");
+  curator.code = "subject_exhausted";
+  FakeClock clock;
+  armReachingBack(echoes, embedder);
+  echoes.addDuePage(uid("u1"), ld("2026-05-02"), kNewLine);
+  echoes.addUser(uid("u2"));
+  echoes.plantSpan(uid("u2"), ld(kOldDay), 21, kOldLine, embedder.embed({kOldLine})[0]);
+  echoes.addDuePage(uid("u2"), ld(kNewDay), kNewLine);
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+
+  const EchoSweepReport report = sweep.run(kNow - kDay);
+
+  CHECK_EQ(report.accountsStopped, 1);
+  CHECK_EQ(report.passStoppedBy, std::string{});
+  CHECK_EQ(report.pagesDeferred, 1);
+  CHECK_EQ(report.pagesDerived, 1);
+  CHECK(curator.billed == std::vector<UserId>({uid("u1"), uid("u2")}));
+  // The second page of u1 was never asked: nothing is recorded for it, so it stays due as it was.
+  CHECK_EQ(echoes.curations.count(FakeEchoRepository::pageKey(uid("u1"), ld("2026-05-02"))), std::size_t{0});
+  CHECK(echoes.curations[FakeEchoRepository::pageKey(uid("u1"), ld(kNewDay))].status == CurationStatus::budgetLimited);
+}
+
+// The AI service refusing for itself, or giving no answer, ends the whole pass: no other page and no other account is
+// asked, and all of them stay due.
+TEST(the_services_own_refusal_or_no_answer_ends_the_whole_pass) {
+  for (const std::string code : {"background_exhausted", "unreachable"}) {
+    FakeEchoRepository echoes;
+    FakeEmbedder embedder;
+    RefusingOne curator;
+    curator.refused = uid("u1");
+    curator.code = code;
+    FakeClock clock;
+    armReachingBack(echoes, embedder);
+    echoes.addDuePage(uid("u1"), ld("2026-05-02"), kNewLine);
+    echoes.addUser(uid("u2"));
+    echoes.plantSpan(uid("u2"), ld(kOldDay), 21, kOldLine, embedder.embed({kOldLine})[0]);
+    echoes.addDuePage(uid("u2"), ld(kNewDay), kNewLine);
+    EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+    std::string sweepCode;
+    installWriteSink([&](const WriteCompletion& completion) {
+      if (completion.operation == "journal.echo.sweep") sweepCode = completion.code;
+    });
+
+    const EchoSweepReport report = sweep.run(kNow - kDay);
+    installWriteSink({});
+
+    CHECK_EQ(report.passStoppedBy, code);
+    CHECK_EQ(sweepCode, code);
+    CHECK_EQ(report.accountsStopped, 0);
+    CHECK_EQ(report.pagesDeferred, 1);
+    CHECK_EQ(report.pagesDerived, 0);
+    CHECK(curator.billed == std::vector<UserId>({uid("u1")}));
+    CHECK_EQ(echoes.outcomes.size(), std::size_t{1});
+  }
 }
 
 TEST(a_deferred_page_stays_due_and_is_derived_once_the_service_answers) {

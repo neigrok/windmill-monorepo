@@ -11,6 +11,8 @@
 
 #include <cstdint>
 #include <functional>
+#include <string>
+#include <string_view>
 
 namespace wm {
 
@@ -33,7 +35,18 @@ struct EchoSweepReport {
   int pagesRefused = 0;
   int inboundEnqueued = 0;
   int pagesOverBudget = 0;
+  // Accounts whose part of the pass ended at the AI service's refusal of the account's own budget, slot or rate; their
+  // pages not yet asked stay due.
+  int accountsStopped = 0;
+  // The word that ended the whole pass early — the AI service's refusal for itself, no answer from it, or a refusal of
+  // the backend's pass — or empty for a pass that ran to its end. The pages not yet asked stay due.
+  std::string passStoppedBy;
 };
+
+// How much of a pass the end of one page stops (echoes-on-ai-service.md §4): nothing past the page; the rest of its
+// account's pages, when the AI service refused the account's own budget, slot or rate; or the whole pass, when the
+// service refused for itself, gave no answer, refused the backend's pass or answered as no background call should.
+enum class EchoHalt { page, account, pass };
 
 // What one night is allowed to cost a single user.
 struct SweepBudget {
@@ -72,18 +85,19 @@ public:
   EchoSweepReport derivePage(const UserId& user, const LocalDate& day);
 
 private:
-  // What derive() leaves for settlePage(): the outcome to record, and whether the step that ended it met a fault to
-  // tell Sentry rather than an end the pass expects.
+  // A page's end: what storage records, the word the step that ended it failed with, how much of the pass that stops,
+  // and the static name Sentry is told it under — empty for an end the pass expects.
   struct Derivation {
     CurationOutcome outcome;
-    bool told = false;
+    std::string failure;
+    EchoHalt halt = EchoHalt::page;
+    std::string_view toldAs;
   };
 
   // The caller owns the report counters.
   Derivation derive(const UserId& user, const DuePage& page, std::uint64_t corpusStamp, EchoSweepReport& report);
 
-  CurationOutcome settlePage(const UserId& user, const DuePage& page,
-                            std::uint64_t corpusStamp, EchoSweepReport& report);
+  Derivation settlePage(const UserId& user, const DuePage& page, std::uint64_t corpusStamp, EchoSweepReport& report);
   PipelineVersions versions() const;
 
   EchoRepository& echoes_;

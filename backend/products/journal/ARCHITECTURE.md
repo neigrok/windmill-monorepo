@@ -288,7 +288,7 @@ refused while nudges are enabled`; a nonzero admitted `asOfMs` forces a dry run.
 `{ran,due,claimed,sent,failed,held,wouldSend,skipped,errors}`. Echo sweep preserves 400 `sinceMs must
 be a millisecond timestamp`, its `sinceMs` account window and `rejudge=1|true`; its 200 report is
 `{usersScanned,pagesDerived,triggersSkippedRefrain,passagesEmbedded,echoesWritten,pagesFailed,
-inboundEnqueued,pagesOverBudget,pagesRefused,unitsDiscarded}`. Echo explain
+inboundEnqueued,pagesOverBudget,pagesRefused,unitsDiscarded,accountsStopped,passStoppedBy}`. Echo explain
 additionally requires the caller's owner session (401 `sign in as the owner of the page`), rejects
 invalid dates with 400 `bad date`, and keeps the diagnostic 200 response described in `ECHOES.md`.
 

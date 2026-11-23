@@ -24,7 +24,7 @@ EchoDerivations::EchoDerivations(EchoSweep& sweep, Clock& clock, LiveDerivationR
 void EchoDerivations::start() {
   heartbeat_.start(kDrainFirstTickSeconds, kDrainTickSeconds, [this] {
     const EchoLiveReport report = drain(clock_.nowMs());
-    if (report.derived > 0 || report.failed > 0 || report.refused > 0)
+    if (report.derived > 0 || report.failed > 0 || report.refused > 0 || report.aiDeferred > 0)
       LOG_INFO << "journal echo live: " << report.derived << " derived, " << report.failed
                << " failed, " << report.refused << " refused, " << report.deferred
                << " deferred to the repair pass, " << report.aiDeferred << " deferred by the AI service, "

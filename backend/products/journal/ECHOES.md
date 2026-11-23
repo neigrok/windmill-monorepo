@@ -115,14 +115,22 @@ Only `ok`, `empty_ok` and `refused` settle a page and advance its derivation sta
 fails lands the page where `EchoSweep::fateOf` puts the word it failed with
 ([Echoes on the AI service §5](../../../docs/foundation/echoes-on-ai-service.md#5-what-an-answer-does-to-the-work)):
 
-| The AI service says | The page | Told to Sentry |
-|---|---|---|
-| `ended` `declined` | `refused`, settled | |
-| `ended` `truncated` | `truncated`, an attempt counted | yes |
-| `failed` `provider_failed` or `provider_rejected`; `invalid_request`, `too_large`, `conflict` | `transport`, an attempt counted | yes |
-| an answer that cannot be read, or `ended` `tool_calls` | `schema_invalid`, an attempt counted | yes |
-| `subject_exhausted`, `concurrency_exhausted`, `rate_limited`, `background_exhausted`, `busy`, `paused`, `accounting_unavailable`, `provider_unavailable`; no answer at all; `result_gone` or `call_unknown` when a broken stream is asked again | `budget_limited`: deferred, no attempt counted; the next pass asks under a new `callId` | |
-| a `pass_` code (a `pass_expired` the client met twice) or any other code | `budget_limited`: deferred, no attempt counted | yes |
+| The AI service says | The page | The pass | Told to Sentry |
+|---|---|---|---|
+| `ended` `declined` | `refused`, settled | goes on | |
+| `ended` `truncated` | `truncated`, an attempt counted | goes on | `journal.echo.derive` |
+| `failed` `provider_failed` or `provider_rejected`; `invalid_request`, `too_large`, `conflict` | `transport`, an attempt counted | goes on | `journal.echo.derive` |
+| an answer that cannot be read, or `ended` `tool_calls` | `schema_invalid`, an attempt counted | goes on | `journal.echo.derive` |
+| `result_gone` or `call_unknown` when a broken stream is asked again | `budget_limited`: deferred, no attempt counted; the next pass asks under a new `callId` | goes on | |
+| `subject_exhausted`, `concurrency_exhausted`, `rate_limited`: the account's own | `budget_limited`: deferred, no attempt counted | the account's part ends | |
+| `background_exhausted`, `busy`, `paused`, `accounting_unavailable`, `provider_unavailable`: the service's own; no answer at all | `budget_limited`: deferred, no attempt counted | ends | |
+| a `pass_` code (a `pass_expired` the client met twice) | `budget_limited`: deferred, no attempt counted | ends | `journal.echo.pass_refused` |
+| `free_month_exhausted`, `free_day_exhausted`, or any other code | `budget_limited`: deferred, no attempt counted | ends | `journal.echo.unexpected_answer` |
+
+"The pass" is the repair pass: a page a stopped pass did not ask stays due with no attempt counted, and
+a live derivation, one saved page, stops nothing past itself. The repair pass is one request, so
+Sentry hears at most its first told page; each live derivation is a request of its own. Calls the AI service
+has given no answer to for 15 minutes are reported as `ai_service.unreachable`.
 
 A refusal reopens only on a body edit or pipeline version change, not corpus movement. Version claims
 are recorded after the corresponding spans are stored. `attempts` counts unsettled passes in a row,
