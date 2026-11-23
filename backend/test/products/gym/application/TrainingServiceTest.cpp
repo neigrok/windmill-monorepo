@@ -761,10 +761,11 @@ TEST(log_lists_newest_first_with_counts_and_sorted_names) {
            (std::vector<std::string>{"Back Squat", "Bench Press"}));
 }
 
-// The top set is the heaviest set, ties to more reps, never volume.
+// The top set is the heaviest set over every movement, ties to more reps, never volume.
 TEST(log_carries_the_top_set_of_each_session) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
+  const std::uint64_t first = h.clock.now;
   h.startAt(h.clock.now, "ses_00000001");
   h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
   h.door.append(h.user, sid(),
@@ -778,13 +779,20 @@ TEST(log_carries_the_top_set_of_each_session) {
                              std::nullopt, "", h.clock.now + 4});
   h.door.finish(h.user, sid(), h.clock.now + 5);
   h.clock.now += 10'000;
+  const std::uint64_t second = h.clock.now;
   h.startAt(h.clock.now, "ses_00000002");   // nothing logged into it yet
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 1);
 
+  const PerformedFact bench{setId("set_00000001"), 80.0, 8, std::nullopt};
+  const PerformedFact single{setId("set_00000004"), 140.0, 1, std::nullopt};
+  const MovementSessionFact squats{ExerciseId{"back-squat"}, 3, single, estimated(single), std::nullopt};
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(2));
-  CHECK_EQ(listed[0].summary.topSet, std::optional<HeaviestSet>());   // not 0 kg × 0
-  CHECK_EQ(listed[1].summary.topSet, std::optional<HeaviestSet>(HeaviestSet{140.0, 1}));   // never 100 × 8
+  CHECK_EQ(listed[0].progress, (ProgressSession{sid("ses_00000002"), second, {}}));
+  CHECK_EQ(listed[0].progress.heaviestMovement(), std::optional<MovementSessionFact>());   // not 0 kg × 0
+  CHECK_EQ(listed[1].progress,
+           (ProgressSession{sid(), first, {squats, {ExerciseId{"bench-press"}, 1, bench, estimated(bench), std::nullopt}}}));
+  CHECK_EQ(listed[1].progress.heaviestMovement(), std::optional(squats));   // never 100 × 8
 }
 
 TEST(log_counts_every_set_and_sums_what_they_moved) {
@@ -863,12 +871,18 @@ TEST(log_puts_the_domains_estimate_on_the_row_and_omits_it_where_there_is_no_est
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
 
+  const PerformedFact twelve{setId("set_00000003"), 40.0, 12, std::nullopt};
+  const PerformedFact bodyweight{setId("set_00000002"), 0.0, 9, std::nullopt};
+  const PerformedFact five{setId("set_00000001"), 100.0, 5, std::nullopt};
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(3));
-  CHECK_EQ(listed[0].summary.topSet, std::optional<HeaviestSet>(HeaviestSet{40.0, 12}));
+  CHECK_EQ(listed[0].progress.heaviestMovement(),
+           std::optional(MovementSessionFact{ExerciseId{"bench-press"}, 1, twelve, std::nullopt, std::nullopt}));
   CHECK_EQ(listed[0].topE1rm, std::optional<double>());
-  CHECK_EQ(listed[1].summary.topSet, std::optional<HeaviestSet>(HeaviestSet{0.0, 9}));
+  CHECK_EQ(listed[1].progress.heaviestMovement(),
+           std::optional(MovementSessionFact{ExerciseId{"bench-press"}, 1, bodyweight, std::nullopt, bodyweight}));
   CHECK_EQ(listed[1].topE1rm, std::optional<double>());
-  CHECK_EQ(listed[2].summary.topSet, std::optional<HeaviestSet>(HeaviestSet{100.0, 5}));
+  CHECK_EQ(listed[2].progress.heaviestMovement(),
+           std::optional(MovementSessionFact{ExerciseId{"back-squat"}, 1, five, estimated(five), std::nullopt}));
   CHECK_EQ(listed[2].topE1rm, e1rm(100.0, 5));
 }
 
@@ -889,9 +903,12 @@ TEST(log_and_the_finish_screen_agree_on_a_session_whose_back_offs_beat_its_top_s
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
   std::optional<Review> finished = h.training.review(h.user, sid());
 
+  const PerformedFact top{setId("set_00000001"), 100.0, 5, std::nullopt};
+  const PerformedFact backOff{setId("set_00000002"), 95.0, 10, std::nullopt};
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
   REQUIRE(finished.has_value());
-  CHECK_EQ(listed[0].summary.topSet, std::optional<HeaviestSet>(HeaviestSet{100.0, 5}));
+  CHECK_EQ(listed[0].progress.heaviestMovement(),
+           std::optional(MovementSessionFact{ExerciseId{"back-squat"}, 4, top, estimated(backOff), std::nullopt}));
   CHECK_EQ(listed[0].topE1rm, e1rm(95.0, 10));         // not the top set's
   CHECK_EQ(listed[0].topE1rm, finished->stats.topE1rm);
   CHECK(e1rm(95.0, 10) > e1rm(100.0, 5));              // the two really do disagree
@@ -2073,8 +2090,10 @@ TEST(a_correction_moves_the_record_and_every_read_that_stands_on_it) {
   // the log's row and its gold dot
   std::vector<LogRow> rows = h.logBefore(h.clock.now + 10 * kWeek);
   REQUIRE_EQ(rows.size(), static_cast<std::size_t>(2));
+  const PerformedFact firstFive{setId("set_00000021"), 100.0, 5, std::nullopt};
   CHECK_EQ(rows[0].summary.session.id, sid("ses_00000002"));
-  CHECK_EQ(rows[0].summary.topSet, std::optional<HeaviestSet>(HeaviestSet{100.0, 5}));
+  CHECK_EQ(rows[0].progress, (ProgressSession{sid("ses_00000002"), week1,
+                                              {{ExerciseId{"back-squat"}, 4, firstFive, estimated(firstFive), std::nullopt}}}));
   CHECK_EQ(rows[0].summary.tonnageKg, 1950.0);
   CHECK_EQ(rows[0].topE1rm, e1rm(100, 5));
   CHECK_FALSE(rows[0].record);

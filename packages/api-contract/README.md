@@ -49,7 +49,7 @@ by side with catalog/2.
 `catalog3Text()`), and declares its tools from them: each tool's name, description and input schema
 are the file's, and its grant level is its `class`'s. `CatalogContractTest.cpp` holds both files to
 this shape, pins what MCP lists to `catalog-3.json` byte for byte, and checks that the two differ
-only in their inputs; a change that breaks either fails `ctest -R mcp`.
+only in their inputs and in `list_sessions`' row; a change that breaks either fails `ctest -R mcp`.
 
 ## `gym/abilities/`
 
@@ -89,7 +89,9 @@ Read as a test by `backend/test/products/gym/adapters/mcp/AbilitiesCorpusTest.cp
 `WM_SYNC_DATABASE_URL`, calls `GymTools`, compares the answer's JCS bytes and SHA-256, and holds a
 result to the ability's `result` in `catalog.json`. The server
 is the golden source: with `WM_GENERATE_ABILITIES=1` the same run writes each `expect` from the
-server's answer instead of comparing it.
+server's answer instead of comparing it. `list_sessions.json` is the exception: it holds `catalog/2`'s
+row, the contract of the phones' `catalog/2` executors, while the server answers `catalog/3`'s, so the
+test skips that file by name and generation leaves it as it stands.
 
 ```sh
 WM_PG_TEST=1 WM_GENERATE_ABILITIES=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
@@ -100,8 +102,12 @@ WM_PG_TEST=1 WM_GENERATE_ABILITIES=1 DATABASE_URL="postgresql:///wm_rest_test?ho
 
 `catalog/3` ([Gym Coach on the AI service](../../docs/foundation/gym-coach-on-ai-service.md) §3), the
 catalog written to the provider's strict mode. It has `catalog.json`'s shape and abilities, and
-differs only in its inputs and in `strict`: no keyword strict mode refuses, every object lists
-`required`, and a bound strict mode cannot state is in the description of the parameter it bounds.
+differs only in its inputs, in `strict` and in `list_sessions`' row. In its inputs no keyword strict
+mode refuses, every object lists `required`, and a bound strict mode cannot state is in the
+description of the parameter it bounds. `list_sessions`' row names the lift behind its numbers and
+holds no frozen plan: `movements` is one line per movement, in `exerciseId` order, with that
+movement's heaviest set and its own `topE1rm`; `topSet` names its `exerciseId`; and `routineName` is
+the name the workout went by, the display override else the frozen plan's routine.
 Each ability's `strict` says whether a device turn declares its tool strict to the provider:
 `create_routine`, `create_exercise` and the three `propose_*` writes are, and the model's own
 adherence holds the rest, so the grammar the provider compiles stays one it accepts. MCP and the
@@ -123,10 +129,13 @@ released build opens a `catalog/2` turn.
   rule it refuses and each way it counts.
 - `abilities-3/` has `abilities/`'s case format. Its 18 files hold `abilities/`'s cases with the
   inputs `catalog/3` asks for (a required `review` or `limit`, `null` where a parameter is left
-  empty) and the same `expect`, and a refusal for each value just outside every bound that moved out
-  of a schema. The fields `list_routines` answers with that a write ignores are not in
-  `catalog/3`'s write schemas, so no case sends them; that a day read back over MCP is a day sent is
-  the server doors' own tests (`GymToolsTest.cpp`, `AskServiceTest.cpp`, `TurnGateTest.cpp`).
+  empty) and the same `expect`, but for `list_sessions`, whose results are `catalog/3`'s row and which
+  adds a case for each part of it: the heaviest set and the best estimate on different movements, a
+  tie across movements, and each source of `routineName`. The files also hold a refusal for each
+  value just outside every bound that moved out of a schema. The fields `list_routines` answers with
+  that a write ignores are not in `catalog/3`'s write schemas, so no case sends them; that a day read
+  back over MCP is a day sent is the server doors' own tests (`GymToolsTest.cpp`, `AskServiceTest.cpp`,
+  `TurnGateTest.cpp`).
 - `start_session`, `log_set`, `log_sets`, `import_session`, `finish_session` and `update_exercise`
   are withheld from Coach; their files hold the refusals of their moved bounds alone, for the server
   executor, which runs them for MCP.

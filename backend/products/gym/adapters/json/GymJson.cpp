@@ -295,8 +295,8 @@ Json::Value toJson(const std::vector<Set>& sets) {
   return array;
 }
 
-// tonnageKg is always present: null is unavailable and zero is a real answer. topSet is omitted for a session with no
-// set; topE1rm is null when no set earned an available estimate.
+// tonnageKg is always present: null is unavailable and zero is a real answer. topSet is the heaviest movement's heaviest
+// set, omitted for a session with no set; topE1rm is null when no set earned an available estimate.
 Json::Value toJson(const LogRow& row) {
   Json::Value body = toJson(row.summary.session);
   body["setCount"] = row.summary.setCount;
@@ -305,11 +305,11 @@ Json::Value toJson(const LogRow& row) {
   Json::Value names(Json::arrayValue);
   for (const std::string& name : row.summary.exerciseNames) names.append(name);
   body["exercises"] = names;
-  if (row.summary.topSet) {
-    Json::Value top(Json::objectValue);
-    top["weightKg"] = row.summary.topSet->weightKg;
-    top["reps"] = row.summary.topSet->reps;
-    body["topSet"] = top;
+  if (const std::optional<MovementSessionFact> top = row.progress.heaviestMovement()) {
+    Json::Value set(Json::objectValue);
+    set["weightKg"] = top->heaviest.weightKg;
+    set["reps"] = top->heaviest.reps;
+    body["topSet"] = set;
   }
   body["topE1rm"] = row.topE1rm ? Json::Value(Estimate::stated(*row.topE1rm)) : Json::Value();
   body["record"] = row.record;

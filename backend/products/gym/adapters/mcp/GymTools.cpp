@@ -209,6 +209,30 @@ ToolResult listExercises(CatalogRepository& catalog, const UserId& caller) {
   return ToolResult::json(out);
 }
 
+// list_sessions' row (catalog-3.json): the log's row without the frozen plan, under the name the workout went by, its
+// top set naming its movement, and one line per movement holding that movement's heaviest set and best estimate.
+Json::Value sessionRow(const LogRow& row) {
+  Json::Value body = toJson(row);
+  body.removeMember("plan");
+  const std::string name = row.summary.session.routineName();
+  if (name.empty()) body.removeMember("routineName");
+  else body["routineName"] = name;
+  if (const std::optional<MovementSessionFact> top = row.progress.heaviestMovement())
+    body["topSet"]["exerciseId"] = top->exercise.str();
+  Json::Value movements(Json::arrayValue);
+  for (const MovementSessionFact& movement : row.progress.movements) {
+    Json::Value line(Json::objectValue);
+    line["exerciseId"] = movement.exercise.str();
+    line["topSet"]["weightKg"] = movement.heaviest.weightKg;
+    line["topSet"]["reps"] = movement.heaviest.reps;
+    const std::optional<double> e1rm = movement.estimate ? movement.estimate->estimate.e1rm : std::nullopt;
+    line["topE1rm"] = e1rm ? Json::Value(Estimate::stated(*e1rm)) : Json::Value();
+    movements.append(line);
+  }
+  body["movements"] = movements;
+  return body;
+}
+
 ToolResult listSessions(TrainingService& training, const UserId& caller, const Json::Value& args,
                         ReadReceipt& served) {
   // The cursor is the previous page's LAST ROW, both halves, because only the pair is unique. No
@@ -243,7 +267,7 @@ ToolResult listSessions(TrainingService& training, const UserId& caller, const J
     served.sawSession(row.summary.session.id, row.summary.session.startedAtMs);
     served.observed(SessionObservation{"list_sessions", row.summary.session, ReadCoverage::summary, 0,
         WorkoutObservation{row.summary.session, row.summary.workingSetCount, row.summary.tonnageKg}});
-    sessions.append(toJson(row));
+    sessions.append(sessionRow(row));
   }
   Json::Value out(Json::objectValue);
   out["sessions"] = sessions;

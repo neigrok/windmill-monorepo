@@ -250,6 +250,52 @@ TEST(gym_progress_bodyweight_most_reps_stays_independent_of_added_load_and_effor
   CHECK_EQ(progress.sessions[0].movements[0].mostReps, std::optional<PerformedFact>{best});
 }
 
+// A session's heaviest set is chosen over every movement by the rule each movement's own is: the squat single at 100
+// outweighs the bench's 90 × 8, whose estimate is the higher, and an assisted movement's heaviest is its least assistance.
+TEST(gym_progress_session_names_the_movement_holding_its_heaviest_set) {
+  const Session session{kFirst, UserId{"u1"}, 1'000};
+  const ExerciseId squat{"back-squat"};
+  const ExerciseId pullUp{"pull-up"};
+  const PerformedFact single{SetId{"set_00000001"}, 100, 1, std::nullopt};
+  const PerformedFact eights{SetId{"set_00000002"}, 90, 8, std::nullopt};
+  const PerformedFact deep{SetId{"set_00000003"}, -20, 8, std::nullopt};
+  const PerformedFact light{SetId{"set_00000004"}, -10, 6, std::nullopt};
+  const MovementSessionFact squats{squat, 1, single, estimated(single), std::nullopt};
+  const MovementSessionFact pullUps{pullUp, 2, light, std::nullopt, std::nullopt};
+
+  const ProgressSession worked = ProgressSession::of(session, {{kFirst, 1'000, pullUp, deep}, {kFirst, 1'000, kBench, eights},
+                                                              {kFirst, 1'000, squat, single}, {kFirst, 1'000, pullUp, light}});
+  const ProgressSession assisted = ProgressSession::of(session, {{kFirst, 1'000, pullUp, deep}, {kFirst, 1'000, pullUp, light}});
+
+  CHECK_EQ(worked, (ProgressSession{kFirst, 1'000, {squats, {kBench, 1, eights, estimated(eights), std::nullopt}, pullUps}}));
+  CHECK_EQ(worked.heaviestMovement(), std::optional(squats));
+  CHECK_EQ(assisted, (ProgressSession{kFirst, 1'000, {pullUps}}));
+  CHECK_EQ(assisted.heaviestMovement(), std::optional(pullUps));
+}
+
+// Two movements' heaviest sets tie on load and reps: the session's is the lower set id, whichever movement sorts first.
+TEST(gym_progress_session_breaks_a_tie_across_movements_by_the_lower_set_id) {
+  const ExerciseId squat{"back-squat"};
+  const PerformedFact squats{SetId{"set_00000002"}, 100, 5, std::nullopt};
+  const PerformedFact benches{SetId{"set_00000001"}, 100, 5, std::nullopt};
+  const MovementSessionFact bench{kBench, 1, benches, estimated(benches), std::nullopt};
+
+  const ProgressSession worked =
+      ProgressSession::of(Session{kFirst, UserId{"u1"}, 1'000}, {{kFirst, 1'000, squat, squats}, {kFirst, 1'000, kBench, benches}});
+
+  CHECK_EQ(worked, (ProgressSession{kFirst, 1'000, {{squat, 1, squats, estimated(squats), std::nullopt}, bench}}));
+  CHECK_EQ(worked.heaviestMovement(), std::optional(bench));
+}
+
+// A session holding no set has no movement and no heaviest set, and another session's set is not one of its own.
+TEST(gym_progress_session_is_read_from_its_own_sets_alone) {
+  const ProgressSession worked =
+      ProgressSession::of(Session{kFirst, UserId{"u1"}, 1'000}, {benched(kSecond, 2'000, "set_00000001", 100, 5)});
+
+  CHECK_EQ(worked, (ProgressSession{kFirst, 1'000, {}}));
+  CHECK_EQ(worked.heaviestMovement(), std::optional<MovementSessionFact>());
+}
+
 // An equal score keeps the earlier session: 70 × 10 was the best before 80 × 5 equalled it.
 TEST(gym_series_best_keeps_the_earliest_session_on_an_equal_score) {
   const MovementSeries series{progressSessions({benched(kSecond, 2'000, "set_00000002", 80, 5),
