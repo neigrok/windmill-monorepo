@@ -404,7 +404,7 @@ struct CoachPhotoView: View {
   @Namespace var zoom
   var row: CoachPictureRow? {
     guard local == nil else { return nil }
-    return CoachPictureRow(id: id, json: try? gym.runner.read(Gym.scope) { try $0.device(CoachPictureRow.key(id)) })
+    return CoachPictureRow(id: id, json: try? gym.runner.read(Gym.scope) { try $0.device(Picture.rowKey(id)) })
   }
   var attachment: CoachAttachment? { local?.0 ?? row?.attachment }
   var image: UIImage? { (local?.1 ?? row?.original).flatMap(UIImage.init(data:)) }
