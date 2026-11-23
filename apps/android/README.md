@@ -469,11 +469,11 @@ no Sentry upload token, and builds and the release helper perform no mapping upl
 a production Issue: the release Robolectric envelope test and Debug Files listing provide proof.
 
 Minified acceptance runs after review on a freshly wiped `Release_API34` Google APIs emulator,
-using the retained-key candidate with a version code above 322:
+using the retained-key candidate with a version code above 463:
 
 1. Check non-debuggable badging with `aapt2`, the asset UUID against provenance, and record APK
    sizes before and after minification in the release notes.
-2. Install published 0.17.0/code 322. Signed out, create a finished two-set workout, an open
+2. Install published 0.18.0/code 463. Signed out, create a finished two-set workout, an open
    workout with a logged set, a bodyweight routine with negative per-set loads, a set note (Notes
    need an account) and a weigh-in. Update with `adb install -r`; preserve all data and finish the open workout. Check
    the image's keyboard (Gboard on `Release_API34`) minus key for uniform and per-set loads.
@@ -491,40 +491,38 @@ using the retained-key candidate with a version code above 322:
    with an empty Routines tab. On an emulator with TalkBack,
    also verify heading navigation reaches Movements, History and Performed.
 8. Across devices, on one account: a conversation started on iOS reads on Android and the reverse, a running turn
-   shows as answering on the other device, and a seat change interrupts it. The web stays on its own conversations
-   and shows neither phone's.
+   shows as answering on the other device, and a seat change interrupts it. The web's History holds both phones'
+   conversations, and the phones' hold the web's.
 
-The published [0.17.0/code322 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.17.0)
-uses tag `android-v0.17.0` at `62c2a186f1ede8c50ddd554339eb911ac8690759`,
-[Actions run 42850545320](https://github.com/neigrok/windmill-monorepo/actions/runs/42850545320),
+The published [0.18.0/code463 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.18.0)
+uses tag `android-v0.18.0` at `f903adea89e753c625b4f0f25d16fa2e9f19d69f`,
+[Actions run 45237851825](https://github.com/neigrok/windmill-monorepo/actions/runs/45237851825),
 attempt 1, from a tag push. Both jobs passed. Local finalization verified the retained certificate,
 non-debuggable package, unchanged application contents and linked provenance. All three
 anonymously downloaded assets are byte-identical to the accepted files. The APK SHA-256 is
-`02a4a2c366d3d44201e697f673757341ac8911eb287bc8ac12ac7cc8f5bb19ba`, at 8,492,428 bytes (the unsigned CI
-candidate is 8,472,977 bytes). The release workflow supplies
+`b697831aa9e7ae02af95c6bb908f9ac5a5108126f8b2d090c443e8d34da9c760`, at 8,595,129 bytes (the unsigned CI
+candidate is 8,575,778 bytes). The release workflow supplies
 `-Pwindmill.updateUrl=https://github.com/neigrok/windmill-monorepo/releases/latest`; the APK contains that
 destination, which resolves to this release. The R8 mapping, bound to the APK by `apk.proguardUuid`
-`1188ef80-1e35-3047-9c30-8c724578bb4c`, is not yet uploaded to Sentry: the release machine has no Sentry CLI
-or token, so the upload and the Debug Files check are pending, as they still are for 0.16.0's mapping
-(`2be7ac5f-e208-3acb-9550-b6cfc08892fb`).
+`521624fb-c3da-3d83-bf78-26510bdddd86`, is not yet uploaded to Sentry: the release machine has no Sentry CLI
+or token, so the upload and the Debug Files check are pending, as they still are for 0.17.0's
+(`1188ef80-1e35-3047-9c30-8c724578bb4c`) and 0.16.0's (`2be7ac5f-e208-3acb-9550-b6cfc08892fb`) mappings.
 
-Android 14 acceptance ran on a freshly wiped API 34 Google APIs emulator with 4 GB of RAM against the
-production configuration, signed out, on the release-signed APK. The public 0.16.0/code309 APK's finished
-two-set workout, live workout with one logged set and its set note, bodyweight routine with negative per-set
-loads and weigh-in survived `adb install -r` in place, which is the same-key update check; on 0.17.0 the live
-workout logged six more sets and finished. Notes need an account, so the signed-out note is a set note. The
-image carries no AOSP keyboard; its preloaded Gboard 12.4 number pad's minus key entered `−15` as a uniform
-load and `−7.5` as a per-set load. With an eight-set plan the ledger showed six whole rows above the rack,
-rested on the set in hand with the latest logged sets above it, and scrolled to the earlier ones. HOME then
-`am kill` restored a routine draft with Vary by set open, the logger's Assembly, Picker (with its search) and
-Fix (with an unsaved edit) sheets, a pushed movement page, session detail and the Finish sheet. In airplane
-mode a set logged, survived a force-stop and an offline restart, and the workout finished offline. A clean
-install opened the welcome carousel and, after Skip, Coach with an empty Routines tab; with TalkBack 14.2,
-heading navigation (reading control Headings, swipe down through the emulator's touchscreen) reached
-Movements and History in the routine editor and Performed on Finish. The crash buffer stayed empty, the
-system dropbox recorded no app crash or ANR, and none of the listed exceptions appeared in the logcat captured
-from the update through the offline run and over a second clean install. Not run:
-6 (no owner-designated address is recorded, so sign-in and everything behind it) and 8 (cross-device).
+Android 14 acceptance ran on a freshly wiped API 34 Google APIs emulator with 2 GB of RAM against the
+production configuration, signed out, on the release-signed APK. The public 0.17.0/code322 APK's finished
+two-set workout, open workout with one logged set and its set note, bodyweight routine with negative uniform
+and per-set loads and weigh-in survived `adb install -r` in place, which is the same-key update check; on
+0.18.0 the open workout logged two more sets and finished. Gboard's minus key entered `−15` and `−20` as
+uniform loads and `−7.5` and `−2.5` as per-set loads. HOME then `am kill` restored a routine draft with Vary
+by set open, the logger's Assembly, Picker (with its search) and Fix (with an unsaved edit) sheets, a pushed
+movement page, session detail and the Finish sheet. In airplane mode a set logged, survived a force-stop and
+an offline restart, and the workout finished offline. A clean install opened the welcome carousel and, after
+Skip, Coach with an empty Routines tab; with TalkBack 14.2, heading navigation reached Movements and History
+in the routine editor and Performed on Finish. Signed out, one question to Coach on production ran its turn
+on the phone and streamed a complete answer with its read receipt in about ten seconds. The crash buffer
+stayed empty, the system dropbox recorded no app crash or ANR, and none of the listed exceptions appeared in
+the logcat captured from the 0.17.0 install to the end. Not run: 6 (sign-in and everything behind it need the
+owner's address and inbox) and 8 (cross-device, which needs a signed-in account on two devices).
 
 Distribution is by sideload. Published APKs through 0.7.1 use different debug certificates and
 cannot update in place with the retained release key. This build reads no device records written
