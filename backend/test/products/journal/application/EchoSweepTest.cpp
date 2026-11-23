@@ -786,10 +786,11 @@ TEST(every_answer_the_ai_service_gives_a_step_lands_the_page_where_section_five_
   const auto table = [&](bool segmentFails) {
     std::string landed;
     for (const std::string code : {"declined", "truncated", "provider_failed", "provider_rejected", "invalid_request",
-                                   "too_large", "conflict", "result_gone", "tool_calls", "unreadable",
-                                   "subject_exhausted", "concurrency_exhausted", "rate_limited", "background_exhausted",
-                                   "busy", "paused", "accounting_unavailable", "provider_unavailable", "unreachable",
-                                   "pass_expired", "pass_malformed", "pass_signature", "free_month_exhausted"}) {
+                                   "too_large", "conflict", "tool_calls", "unreadable", "subject_exhausted",
+                                   "concurrency_exhausted", "rate_limited", "background_exhausted", "busy", "paused",
+                                   "accounting_unavailable", "provider_unavailable", "unreachable", "result_gone",
+                                   "call_unknown", "pass_expired", "pass_malformed", "pass_signature",
+                                   "free_month_exhausted"}) {
       FakeEchoRepository echoes;
       FakeSegmenter segmenter;
       FakeEmbedder embedder;
@@ -823,7 +824,6 @@ TEST(every_answer_the_ai_service_gives_a_step_lands_the_page_where_section_five_
                                "invalid_request failed transport attempts=1 failed told\n"
                                "too_large failed transport attempts=1 failed told\n"
                                "conflict failed transport attempts=1 failed told\n"
-                               "result_gone failed transport attempts=1 failed told\n"
                                "tool_calls failed schema_invalid attempts=1 failed told\n"
                                "unreadable failed schema_invalid attempts=1 failed told\n"
                                "subject_exhausted deferred budget_limited attempts=0 budget_limited\n"
@@ -835,6 +835,8 @@ TEST(every_answer_the_ai_service_gives_a_step_lands_the_page_where_section_five_
                                "accounting_unavailable deferred budget_limited attempts=0 budget_limited\n"
                                "provider_unavailable deferred budget_limited attempts=0 budget_limited\n"
                                "unreachable deferred budget_limited attempts=0 budget_limited\n"
+                               "result_gone deferred budget_limited attempts=0 budget_limited\n"
+                               "call_unknown deferred budget_limited attempts=0 budget_limited\n"
                                "pass_expired deferred budget_limited attempts=0 budget_limited told\n"
                                "pass_malformed deferred budget_limited attempts=0 budget_limited told\n"
                                "pass_signature deferred budget_limited attempts=0 budget_limited told\n"

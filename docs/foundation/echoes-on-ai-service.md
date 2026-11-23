@@ -91,8 +91,8 @@ refuses.
 
 - **INV-1.** The backend makes no Echoes call to a provider, and holds no provider key for it.
 - **INV-2.** Within one call, an answer the stream lost is asked for under the same `callId`, so the
-  service answers it without a second charge; and no answer is applied to a page other than the one
-  it was asked about.
+  service answers it without a second charge while it still holds it; and no answer is applied to a
+  page other than the one it was asked about.
 
 ## §5 What an answer does to the work
 
@@ -100,8 +100,9 @@ refuses.
 |---|---|---|
 | `ended` `completed` | the answer is parsed and validated | |
 | `ended` `declined` | refused: settled, and only an edit or a version change reopens it | |
-| `ended` `truncated`; `failed` `provider_failed` or `provider_rejected`; `invalid_request`, `too_large`, `conflict`, `result_gone`; an answer the backend cannot read | unsettled; an attempt is counted | yes |
+| `ended` `truncated`; `failed` `provider_failed` or `provider_rejected`; `invalid_request`, `too_large`, `conflict`; an answer the backend cannot read | unsettled; an attempt is counted | yes |
 | `subject_exhausted`, `concurrency_exhausted`, `rate_limited`, `background_exhausted`, `busy`, `paused`, `accounting_unavailable`, `provider_unavailable`; no answer from the service | deferred | |
+| `result_gone` or `call_unknown`, when a stream that broke is asked again: the service restarted, or the answer outlived its linger | deferred; the next pass asks under a new `callId` | |
 | any `pass_` code, `pass_expired` once it has been signed for again; a code no background call should meet | deferred | yes |
 
 - *Deferred* leaves the page due and counts no attempt; the queue records it as `budget_limited`.

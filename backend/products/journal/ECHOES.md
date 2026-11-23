@@ -119,9 +119,9 @@ fails lands the page where `EchoSweep::fateOf` puts the word it failed with
 |---|---|---|
 | `ended` `declined` | `refused`, settled | |
 | `ended` `truncated` | `truncated`, an attempt counted | yes |
-| `failed` `provider_failed` or `provider_rejected`; `invalid_request`, `too_large`, `conflict`, `result_gone` | `transport`, an attempt counted | yes |
+| `failed` `provider_failed` or `provider_rejected`; `invalid_request`, `too_large`, `conflict` | `transport`, an attempt counted | yes |
 | an answer that cannot be read, or `ended` `tool_calls` | `schema_invalid`, an attempt counted | yes |
-| `subject_exhausted`, `concurrency_exhausted`, `rate_limited`, `background_exhausted`, `busy`, `paused`, `accounting_unavailable`, `provider_unavailable`; no answer at all | `budget_limited`: deferred, no attempt counted | |
+| `subject_exhausted`, `concurrency_exhausted`, `rate_limited`, `background_exhausted`, `busy`, `paused`, `accounting_unavailable`, `provider_unavailable`; no answer at all; `result_gone` or `call_unknown` when a broken stream is asked again | `budget_limited`: deferred, no attempt counted; the next pass asks under a new `callId` | |
 | a `pass_` code (a `pass_expired` the client met twice) or any other code | `budget_limited`: deferred, no attempt counted | yes |
 
 A refusal reopens only on a body edit or pipeline version change, not corpus movement. Version claims

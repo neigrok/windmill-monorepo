@@ -339,6 +339,31 @@ TEST(a_stream_that_breaks_before_its_end_is_asked_once_more_under_the_same_call_
   CHECK_EQ(brokenTwice.requests().size(), std::size_t{2});
 }
 
+// Asked again, the service may no longer hold the call: it restarted, or the answer outlived its linger. The call ends
+// with the service's word for that, and the next call is asked under a callId of its own.
+TEST(a_call_the_service_no_longer_holds_when_asked_again_ends_with_its_word_and_the_next_call_is_new) {
+  const Json::Value wire = fixtures();
+  const std::string broken = stream(event(wire["textEvents"][0], 1) + "event: ended\ndata: {\"st");
+  std::string ended;
+  for (const auto& [status, code] : std::vector<std::pair<int, std::string>>{{410, "result_gone"}, {404, "call_unknown"}}) {
+    StillClock clock;
+    PlayedService service{{broken, refusal(status, R"({"code":")" + code + R"(","allowance":null})"), stream(everyTextEvent())}};
+    AiServiceClient client{service.url(), signer(), clock};
+
+    const TextAnswer gone = client.ask(UserId{"account-vector"}, question());
+    const TextAnswer next = client.ask(UserId{"account-vector"}, question());
+
+    const auto asked = service.requests();
+    REQUIRE_EQ(asked.size(), std::size_t{3});
+    const auto target = [&](std::size_t i) { return asked[i].head.substr(0, asked[i].head.find("\r\n")); };
+    ended += gone.code + " " + next.code + (target(0) == target(1) ? " same call" : " another call") +
+        (target(1) == target(2) ? ", then the same call\n" : ", then another call\n");
+  }
+
+  CHECK_EQ(ended, std::string("result_gone completed same call, then another call\n"
+                              "call_unknown completed same call, then another call\n"));
+}
+
 TEST(a_service_nobody_answers_for_is_unreachable) {
   int port = 0;
   {

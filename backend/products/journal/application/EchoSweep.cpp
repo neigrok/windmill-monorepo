@@ -27,8 +27,9 @@ constexpr std::uint64_t kEchoLookbackMs = 24ull * 60 * 60 * 1000;
 // What a step's failure does to the page (echoes-on-ai-service.md §5): the word the step failed with — the AI service's
 // stop or code, its client's `unreachable` or `unreadable`, or the adapter's `unreadable` — onto the queue's outcomes.
 // `told` goes to Sentry; the rest are log lines. An unsettled page counts an attempt, a deferred one (`budgetLimited`)
-// counts none and stays due. A word not listed is a pass the service would not take or a code no background call should
-// meet: the page is deferred and the fault told.
+// counts none and stays due: among them a call whose answer the service no longer holds when it is asked again after a
+// broken stream (`result_gone`, `call_unknown`), which the next pass asks under a new callId. A word not listed is a
+// pass the service would not take or a code no background call should meet: the page is deferred and the fault told.
 struct StepFate {
   CurationStatus status;
   bool told;
@@ -45,7 +46,6 @@ StepFate fateOf(const std::string& failure) {
       {"invalid_request", {CurationStatus::transport, true}},
       {"too_large", {CurationStatus::transport, true}},
       {"conflict", {CurationStatus::transport, true}},
-      {"result_gone", {CurationStatus::transport, true}},
       {"subject_exhausted", {CurationStatus::budgetLimited, false}},
       {"concurrency_exhausted", {CurationStatus::budgetLimited, false}},
       {"rate_limited", {CurationStatus::budgetLimited, false}},
@@ -55,6 +55,8 @@ StepFate fateOf(const std::string& failure) {
       {"accounting_unavailable", {CurationStatus::budgetLimited, false}},
       {"provider_unavailable", {CurationStatus::budgetLimited, false}},
       {"unreachable", {CurationStatus::budgetLimited, false}},
+      {"result_gone", {CurationStatus::budgetLimited, false}},
+      {"call_unknown", {CurationStatus::budgetLimited, false}},
   };
   const auto fate = fates.find(failure);
   return fate == fates.end() ? StepFate{CurationStatus::budgetLimited, true} : fate->second;
