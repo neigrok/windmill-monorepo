@@ -11,7 +11,7 @@ roadmap tree records each landing. The owner approved it on 2026-11-17; what it 
 plans, Export, Share, the gallery and Activity follows the boards and has not been before
 the owner. The iPhone app carries journal and gym. Roadmap's design for it is
 [Roadmap · iOS](../design/ios/roadmap.md), with its boards in the Roadmap Figma file, every one
-✅ Ready for dev since the owner's approval of 2026-11-21. The build order lives in the Roadmap on
+✅ Ready for dev by the owner's approvals of 2026-11-21 and 2026-11-23, but 01.7, set aside (R-13). The build order lives in the Roadmap on
 iOS roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node `roadmap-ios`.
 
 **Scope:** How the Roadmap room is built in the iPhone app: where its code lives, what it reads and

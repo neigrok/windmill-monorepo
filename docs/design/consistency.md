@@ -625,25 +625,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   seconds with *Undo*; the web shows Done as its twelve newest and *Show all N* where iOS folds each group; the web's reader on an app route sees an
   *Author's note* and iOS's cover shows none; the web's private links are *Personal links* and iOS's are *Your
   links*.
-- **Roadmap · iOS · boards that disagree with what the room reads.** [Roadmap on iOS](../foundation/roadmap-ios.md)
-  names every read and command the boards need (§3 INV-1, §7.1 to §7.4) and rules three of the differences (R-7 to
-  R-9). To redraw, the build tree's step `m0-redraw-what-the-reads-cannot-serve`: Activity (01.13) and History
-  (03.12) without their dated *unlocked* rows (R-7) and showing only what the phone's copy holds a time for, since
-  both are read from it (R-11), so *Activity with no connection* (01.14) and *History with no connection* (03.13)
-  are states the room never reaches; a gallery row (09.12a) without its author (R-8), and its
-  caption, which says newest first where `GET /v1/gallery` ranks by forks, then by last activity; the words for the
-  feed's other deeds — steps removed and recolored, links drawn and taken away, kinds added, renamed, described,
-  recolored, reordered and removed — where the boards word only *added*, *renamed* and *completed* and the server's
-  sentence for several deeds of one gesture says *nodes*; a reader's History, which has no board and whose deeds are
-  the owner's, not *You*; and Quests (01.7), whose nine sizes are not the roster's (*Learn to sail* 22 steps, the
-  roster 17) and whose estimates lack the roster's *~*.
-- **Roadmap · iOS · two states of the room have no board.** A read of the phone's own copy that fails shows
-  *Couldn’t load this roadmap* and *Try Again* in the room, under the room menu: the one board with those words
-  (10.9) is a shared roadmap's cover, and its sentence, *It may have moved, or the server is unreachable.*, is
-  false of a read that asks no server, so the room says no sentence. While the phone's first read of the
-  person's roadmaps runs, the room is its bare canvas. To draw, with the build tree's step
-  `m0-redraw-what-the-reads-cannot-serve`: the room's failed read with a true sentence, and the room before its
-  first read.
 - **Roadmap · iOS · what the Board's writes leave for the boards.** Complete, Delete, their *Undo* and the long-press
   menu are built in Debug builds from 02.1 to 02.4, 02.13, 02.15, 01.12 and the question of 03.8. To draw or rule:
   a slid row is drawn as its own rounded card on `roadmap/raised` (02.1, 02.3), and SwiftUI shapes it so only where
