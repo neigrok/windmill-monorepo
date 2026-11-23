@@ -11,7 +11,7 @@ import { Preferences, PreferencesValue, restSettings } from './preferences.js';
 import { Routine } from './routines.js';
 import { SeedExercises } from './seedExercises.js';
 import { EstimateScore, GymVolume, Session, SessionRules, TrainingSet } from './training.js';
-import { GymEstimate, StatsProgress, TrainingLog } from './trainingReads.js';
+import { GymEstimate, PerformedFact, StatsProgress, TrainingLog } from './trainingReads.js';
 
 /** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
 /** @typedef {import('./proposals.js').ProposalValue} ProposalValue */
@@ -87,7 +87,7 @@ function totals(sets, catalogue) {
 
 /** @param {readonly TrainingSetValue[]} sets */
 function topSet(sets) {
-  return [...sets].sort((a, b) => b.weightKg - a.weightKg || b.reps - a.reps || Id.compare(a.id, b.id))[0] ?? null;
+  return sets.map((set) => new PerformedFact(set)).sort(PerformedFact.heavierFirst)[0] ?? null;
 }
 
 /** @param {SessionValue} a @param {SessionValue} b */

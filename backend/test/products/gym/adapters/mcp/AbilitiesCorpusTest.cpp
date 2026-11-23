@@ -19,8 +19,8 @@
 
 // packages/api-contract/gym/abilities (gym_coach.md §3.5) and abilities-3 (gym-coach-on-ai-service.md §3) over the server
 // executor, compared by JCS bytes and SHA-256. WM_GENERATE_ABILITIES=1 writes each `expect` of abilities/ from the
-// server's answer, so the server is its golden source; abilities-3's refusals are hand-written, the contract every
-// executor is held to, and are never generated.
+// server's answer, so the server is its golden source, but for a file it does not claim, which it leaves as it stands;
+// abilities-3's refusals are hand-written, the contract every executor is held to, and are never generated.
 using namespace wm;
 using namespace wm::gym;
 
@@ -28,16 +28,20 @@ namespace {
 
 namespace fs = std::filesystem;
 
-// A corpus, the catalog file its inputs are written to, and whether the server writes its answers.
+// A corpus, the catalog file its inputs are written to, whether the server writes its answers, and the files it holds for
+// other executors alone, each with the reason the server does not claim it.
 struct Corpus {
   const char* name;
   fs::path dir;
   std::string_view catalogText;
   bool golden;
+  std::map<std::string, std::string> unclaimed;
 };
 
-const Corpus kCorpora[] = {{"gym_abilities", WM_GYM_ABILITIES_DIR, catalog2Text(), true},
-                           {"gym_abilities_3", WM_GYM_ABILITIES_3_DIR, catalog3Text(), false}};
+const Corpus kCorpora[] = {
+    {"gym_abilities", WM_GYM_ABILITIES_DIR, catalog2Text(), true,
+     {{"list_sessions.json", "catalog/2's row is the phone executors' contract; the server answers catalog/3's"}}},
+    {"gym_abilities_3", WM_GYM_ABILITIES_3_DIR, catalog3Text(), false, {}}};
 
 bool generating() { return std::getenv("WM_GENERATE_ABILITIES") != nullptr; }
 
@@ -194,6 +198,8 @@ std::map<fs::path, Json::Value>& generated() {
 }
 
 void runCase(const Corpus& corpus, const fs::path& file, Json::ArrayIndex index) {
+  if (const auto unclaimed = corpus.unclaimed.find(file.filename().string()); unclaimed != corpus.unclaimed.end())
+    SKIP(unclaimed->second);
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   const Json::Value spec = readJson(file)[index];
   REQUIRE_EQ(spec["call"]["name"].asString(), file.stem().string());

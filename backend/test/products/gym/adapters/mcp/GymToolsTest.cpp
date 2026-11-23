@@ -3,6 +3,7 @@
 #include "platform/adapters/mcp/CompositeToolHost.h"
 #include "platform/application/WriteObservation.h"
 #include "platform/domain/sync/FractionalIndex.h"
+#include "platform/domain/sync/Jcs.h"
 #include "products/gym/adapters/json/GymJson.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 #include "products/gym/application/AskService.h"
@@ -993,6 +994,87 @@ TEST(gym_a_page_cursor_id_with_no_instant_beside_it_is_refused) {
   CHECK_EQ(message(refused),
            std::string("list_sessions: \"beforeId\" needs \"before\" beside it — an id with no "
                        "instant names no row in the page order."));
+}
+
+// A row names the lift behind its numbers: the squat single is the session's heaviest set and the bench's 90 × 8 its best
+// estimate, a zero-load movement's line has no estimate, and an assisted movement's heaviest is its least assistance.
+TEST(gym_the_log_row_names_its_heaviest_set_and_reads_one_line_per_movement) {
+  MemoryHarness h;
+  const Agent me{h.tools, uid()};
+  h.repo.db.seed(Exercise{ExerciseId{"chin-up"}, "Chin-up", Pattern::pull, Equipment::bodyweight, 2.5, false});
+  h.repo.db.seed(Exercise{ExerciseId{"pull-up"}, "Pull-up", Pattern::pull, Equipment::bodyweight, 2.5, false});
+  h.repo.db.seedSession(Session{sid(), uid(), 1'700'000'000'000, 1'700'003'600'000});
+  h.repo.db.seedSet(Set{setId("set_00000001"), sid(), ExerciseId{"back-squat"}, 0, 100, 1, std::nullopt, "", 1'700'000'060'000});
+  h.repo.db.seedSet(Set{setId("set_00000002"), sid(), ExerciseId{"bench-press"}, 0, 90, 8, std::nullopt, "", 1'700'000'120'000});
+  h.repo.db.seedSet(Set{setId("set_00000003"), sid(), ExerciseId{"chin-up"}, 0, 0, 10, std::nullopt, "", 1'700'000'180'000});
+  h.repo.db.seedSet(Set{setId("set_00000004"), sid(), ExerciseId{"pull-up"}, 0, -20, 8, std::nullopt, "", 1'700'000'240'000});
+  h.repo.db.seedSet(Set{setId("set_00000005"), sid(), ExerciseId{"pull-up"}, 0, -10, 6, std::nullopt, "", 1'700'000'300'000});
+
+  const ToolResult listed = me.call("list_sessions", Json::Value(Json::objectValue));
+
+  REQUIRE(!listed.isError);
+  CHECK_EQ(sync::jcs(body(listed)["sessions"]), sync::jcs(sync::parseJson(
+      R"([{"closedItself":false,"exercises":["Back Squat","Bench Press","Chin-up","Pull-up"],"finishedAt":1700003600000,)"
+      R"("id":"ses_00000001","movements":[{"exerciseId":"back-squat","topE1rm":100,"topSet":{"reps":1,"weightKg":100}},)"
+      R"({"exerciseId":"bench-press","topE1rm":114,"topSet":{"reps":8,"weightKg":90}},)"
+      R"({"exerciseId":"chin-up","topE1rm":null,"topSet":{"reps":10,"weightKg":0}},)"
+      R"({"exerciseId":"pull-up","topE1rm":null,"topSet":{"reps":6,"weightKg":-10}}],)"
+      R"("record":false,"setCount":5,"startedAt":1700000000000,"tonnageKg":820,"topE1rm":114,)"
+      R"("topSet":{"exerciseId":"back-squat","reps":1,"weightKg":100},"workingSetCount":5}])")));
+}
+
+// Two movements' heaviest sets tie on load and reps: the row's top set is the lower set id's, though its movement sorts
+// second.
+TEST(gym_the_log_row_breaks_a_tie_across_movements_by_the_lower_set_id) {
+  MemoryHarness h;
+  const Agent me{h.tools, uid()};
+  h.repo.db.seedSession(Session{sid(), uid(), 1'700'000'000'000, 1'700'003'600'000});
+  h.repo.db.seedSet(Set{setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 0, 100, 5, std::nullopt, "", 1'700'000'060'000});
+  h.repo.db.seedSet(Set{setId("set_00000002"), sid(), ExerciseId{"back-squat"}, 0, 100, 5, std::nullopt, "", 1'700'000'120'000});
+
+  const ToolResult listed = me.call("list_sessions", Json::Value(Json::objectValue));
+
+  REQUIRE(!listed.isError);
+  CHECK_EQ(sync::jcs(body(listed)["sessions"]), sync::jcs(sync::parseJson(
+      R"([{"closedItself":false,"exercises":["Back Squat","Bench Press"],"finishedAt":1700003600000,"id":"ses_00000001",)"
+      R"("movements":[{"exerciseId":"back-squat","topE1rm":116.7,"topSet":{"reps":5,"weightKg":100}},)"
+      R"({"exerciseId":"bench-press","topE1rm":116.7,"topSet":{"reps":5,"weightKg":100}}],)"
+      R"("record":false,"setCount":2,"startedAt":1700000000000,"tonnageKg":1000,"topE1rm":116.7,)"
+      R"("topSet":{"exerciseId":"bench-press","reps":5,"weightKg":100},"workingSetCount":2}])")));
+}
+
+// A row is named by the name the workout went by — the display override, else the frozen plan's routine, and nothing
+// for an ad-hoc workout or a plan with no name — and carries no plan; a workout holding no set has no line and no top set.
+TEST(gym_the_log_row_goes_by_the_workouts_own_name_and_carries_no_plan) {
+  MemoryHarness h;
+  const Agent me{h.tools, uid()};
+  const auto plan = [](std::string name) {
+    return PlanSnapshot{std::move(name), {PlanEntry{ExerciseId{"bench-press"}, straight(5, 5, 82.5), 180}}};
+  };
+  h.repo.db.seedSession(Session{sid("ses_00000001"), uid(), 1'700'000'000'000, 1'700'003'600'000, rtId(), plan("Push A"),
+                                ClosedBy::finish, "Heavy Monday"});
+  h.repo.db.seedSession(Session{sid("ses_00000002"), uid(), 1'700'100'000'000, 1'700'103'600'000, rtId(), plan("Push A"),
+                                ClosedBy::finish});
+  h.repo.db.seedSession(Session{sid("ses_00000003"), uid(), 1'700'200'000'000, 1'700'203'600'000, std::nullopt,
+                                std::nullopt, ClosedBy::finish});
+  h.repo.db.seedSession(Session{sid("ses_00000004"), uid(), 1'700'300'000'000, 1'700'303'600'000, rtId(), plan(""),
+                                ClosedBy::finish});
+
+  const ToolResult listed = me.call("list_sessions", Json::Value(Json::objectValue));
+
+  REQUIRE(!listed.isError);
+  CHECK_EQ(sync::jcs(body(listed)["sessions"]), sync::jcs(sync::parseJson(
+      R"([{"closedItself":false,"exercises":[],"finishedAt":1700303600000,"id":"ses_00000004","movements":[],)"
+      R"("record":false,"routineId":"rt_00000001","setCount":0,"startedAt":1700300000000,"tonnageKg":0,"topE1rm":null,)"
+      R"("workingSetCount":0},)"
+      R"({"closedItself":false,"exercises":[],"finishedAt":1700203600000,"id":"ses_00000003","movements":[],)"
+      R"("record":false,"setCount":0,"startedAt":1700200000000,"tonnageKg":0,"topE1rm":null,"workingSetCount":0},)"
+      R"({"closedItself":false,"exercises":[],"finishedAt":1700103600000,"id":"ses_00000002","movements":[],)"
+      R"("record":false,"routineId":"rt_00000001","routineName":"Push A","setCount":0,"startedAt":1700100000000,)"
+      R"("tonnageKg":0,"topE1rm":null,"workingSetCount":0},)"
+      R"({"closedItself":false,"exercises":[],"finishedAt":1700003600000,"id":"ses_00000001","movements":[],)"
+      R"("record":false,"routineId":"rt_00000001","routineName":"Heavy Monday","setCount":0,"startedAt":1700000000000,)"
+      R"("tonnageKg":0,"topE1rm":null,"workingSetCount":0}])")));
 }
 
 TEST(gym_the_session_read_carries_the_finish_readout_only_when_it_is_asked_for) {

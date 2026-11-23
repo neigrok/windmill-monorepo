@@ -184,21 +184,16 @@ LogPage PgLogRepository::log(const UserId& user, const LogCursor& cursor) {
   // floor of the text order.
   // The fact statements read the projection of domain/Progress.h; loads at or below zero are kept. The
   // fourth is the sets standing before the page, counts finished sessions only, and is skipped for an empty page.
-  // The top set is a lateral over the session's sets, heaviest first, ties to more reps.
   const std::string beforeId = cursor.beforeId ? cursor.beforeId->str() : "";
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result sessions = txn.exec_params(
       "SELECT " + std::string(kSessionColumns) +
-          ", top.weight_kg::float8 AS top_weight_kg, top.reps AS top_reps, "
-          "(CASE WHEN closed_by IS NOT NULL THEN closed_by = 'stale' "
+          ", (CASE WHEN closed_by IS NOT NULL THEN closed_by = 'stale' "
           "      ELSE finished_at IS NOT NULL AND finished_at = coalesce("
           "        (SELECT max(a.completed_at) FROM gym_sets a WHERE a.session_id = gym_sessions.id), "
           "        started_at) END) AS closed_itself "
           "FROM gym_sessions "
-          "LEFT JOIN LATERAL (SELECT w.weight_kg, w.reps FROM gym_sets w "
-          "                   WHERE w.session_id = gym_sessions.id AND w.user_id = gym_sessions.user_id "
-          "                   ORDER BY w.weight_kg DESC, w.reps DESC LIMIT 1) top ON true "
           "WHERE user_id = $1::uuid "
           "AND (started_at, id) < (to_timestamp($2::bigint / 1000.0), $3) "
           "ORDER BY started_at DESC, id DESC LIMIT $4",
@@ -244,19 +239,15 @@ LogPage PgLogRepository::log(const UserId& user, const LogCursor& cursor) {
   LogPage page;
   for (const auto& row : sessions) {
     Session session = sessionFrom(row);
-    std::optional<HeaviestSet> top;
-    if (!row["top_weight_kg"].is_null())
-      top = HeaviestSet{row["top_weight_kg"].as<double>(), row["top_reps"].as<int>()};
     const bool closedItself = row["closed_itself"].as<bool>();
     const auto tally = tallyBySession.find(session.id.str());
     if (tally == tallyBySession.end()) {
-      page.sessions.push_back(SessionSummary{session, 0, 0, 0, {}, top, {}, closedItself});
+      page.sessions.push_back(SessionSummary{session, 0, 0, 0, {}, {}, closedItself});
       continue;
     }
     page.sessions.push_back(SessionSummary{session, tally->second.setCount,
                                            tally->second.workingSetCount, totalVolume(tally->second.volume),
-                                           tally->second.exerciseNames, top,
-                                           tally->second.worked, closedItself});
+                                           tally->second.exerciseNames, tally->second.worked, closedItself});
   }
   if (page.sessions.empty()) return page;
 

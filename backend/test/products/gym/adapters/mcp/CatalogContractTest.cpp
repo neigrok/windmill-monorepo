@@ -105,7 +105,7 @@ TEST(gym_catalog_derived_result_metrics_admit_explicit_null) {
   };
   for (const auto& [version, file] : servedFiles())
     for (const auto& ability : file["abilities"]) collect(ability["result"]);
-  CHECK_EQ(metrics.size(), std::size_t(22));
+  CHECK_EQ(metrics.size(), std::size_t(23));
   const auto expected = sync::parseJson(R"({"type":["number","null"]})");
   for (const auto& schema : metrics) {
     CHECK_EQ(schema, expected);
@@ -142,9 +142,10 @@ TEST(gym_catalog_3_is_what_mcp_lists_byte_for_byte) {
     ::testing::fail(("catalog-3.json declares " + name + ", which the server does not list").c_str(), __FILE__, __LINE__);
 }
 
-// The two files hold one set of abilities, each of one class, agent rule and seats, and say the same of what each
-// returns: catalog/3 moved only inputs, and says which tools a device turn declares strict.
-TEST(gym_catalog_2_and_catalog_3_differ_only_in_what_they_take) {
+// The two files hold one set of abilities, each of one class, agent rule and seats: catalog/3 moved inputs, says which
+// tools a device turn declares strict, and answers list_sessions with a row that names its lifts and holds no plan.
+// Every other ability returns the same in both.
+TEST(gym_catalog_2_and_catalog_3_differ_in_what_they_take_and_in_the_log_row) {
   const Json::Value second = sync::parseJson(catalog2Text());
   REQUIRE_EQ(second["abilities"].size(), catalog()["abilities"].size());
   for (Json::ArrayIndex i = 0; i < second["abilities"].size(); ++i) {
@@ -155,6 +156,22 @@ TEST(gym_catalog_2_and_catalog_3_differ_only_in_what_they_take) {
       newer.removeMember(moved);
     }
     newer.removeMember("strict");
+    if (newer["name"] == "list_sessions") {
+      // catalog/3's row drops the frozen plan, adds a line per movement and names the top set's movement; the rest is catalog/2's.
+      const auto without = [](const Json::Value& names, const std::string& name) {
+        Json::Value kept(Json::arrayValue);
+        for (const Json::Value& each : names)
+          if (each.asString() != name) kept.append(each);
+        return kept;
+      };
+      Json::Value& olderRow = older["result"]["properties"]["sessions"]["items"];
+      Json::Value& newerRow = newer["result"]["properties"]["sessions"]["items"];
+      olderRow["properties"].removeMember("plan");
+      newerRow["properties"].removeMember("movements");
+      newerRow["required"] = without(newerRow["required"], "movements");
+      newerRow["properties"]["topSet"]["properties"].removeMember("exerciseId");
+      newerRow["properties"]["topSet"]["required"] = without(newerRow["properties"]["topSet"]["required"], "exerciseId");
+    }
     CHECK_EQ(sync::jcs(older), sync::jcs(newer));
   }
 }

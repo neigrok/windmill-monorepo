@@ -43,16 +43,11 @@ std::vector<ExerciseId> movementsOf(const std::vector<Set>& sets) {
   return out;
 }
 
-// One session's top set among `sets`: the heaviest, then the most reps, then the lowest set id.
+// One session's top set among `sets`, by `heavierThan`.
 std::optional<ProgressSet> topOf(const std::vector<ProgressSet>& sets) {
   std::optional<ProgressSet> top;
-  for (const ProgressSet& set : sets) {
-    const PerformedFact& now = set.performed;
-    if (top && std::tuple(now.weightKg, now.reps, top->performed.set.str()) <=
-                   std::tuple(top->performed.weightKg, top->performed.reps, now.set.str()))
-      continue;
-    top = set;
-  }
+  for (const ProgressSet& set : sets)
+    if (!top || set.performed.heavierThan(top->performed)) top = set;
   return top;
 }
 
@@ -124,14 +119,13 @@ std::vector<Set> setsOfMovement(const std::vector<Set>& sets, const ExerciseId& 
   return out;
 }
 
-// The heaviest set, ties broken by more reps and then by the earlier one — never the largest volume
-// and never the best e1RM.
+// The heaviest set by `heavierThan` — never the largest volume and never the best e1RM.
 std::optional<Set> heaviestOf(const std::vector<Set>& sets) {
   std::optional<Set> top;
-  for (const Set& set : sets) {
-    if (top && std::pair(set.weightKg, set.reps) <= std::pair(top->weightKg, top->reps)) continue;
-    top = set;
-  }
+  for (const Set& set : sets)
+    if (!top || PerformedFact{set.id, set.weightKg, set.reps, set.rpe}.heavierThan(
+                    PerformedFact{top->id, top->weightKg, top->reps, top->rpe}))
+      top = set;
   return top;
 }
 

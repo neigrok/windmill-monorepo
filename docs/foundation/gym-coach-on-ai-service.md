@@ -130,7 +130,8 @@ own executors and MCP. (R-11)
   of §10.
 - A bound strict mode cannot state moves into the ability's rule, which refuses a value outside it
   as `invalid-arguments` before any rule reads the store, and into the description of the
-  parameter it bounds, which tells the model. What an ability does and returns is unchanged.
+  parameter it bounds, which tells the model. What an ability does and returns is unchanged, but for
+  `list_sessions`, whose row names the lift behind its numbers and holds no frozen plan.
 - Fewer inputs may be left out. A parameter whose usual value the model can state is required:
   `limit`, `review`. One whose absence means something no value says (every routine, the first
   page, keep the name, no summary, the equipment's step) is required and takes `null`. A field of a

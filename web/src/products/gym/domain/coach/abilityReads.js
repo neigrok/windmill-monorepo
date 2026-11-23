@@ -16,7 +16,7 @@ import { Proposal, RoutineChange } from '../proposals.js';
 import { Routine } from '../routines.js';
 import { GymEstimate, Session } from '../training.js';
 import { TrainingHistory, exerciseDocument, sessionDocument, setDocument } from '../trainingHistory.js';
-import { LastTime } from '../trainingReads.js';
+import { LastTime, PerformedFact, ProgressSession } from '../trainingReads.js';
 import { ReadServed } from './conversation.js';
 
 /** @typedef {import('../../../../platform/domain-kit/values.js').Json} Json */
@@ -168,7 +168,17 @@ export class LogRead {
         const page = LogRead.newestFirst(history)
           .filter((session) => session.startedAt.ms < query.before || (session.startedAt.ms === query.before && compareText(String(session.id.record), query.beforeId) < 0))
           .slice(0, query.limit);
-        return Decision.unchanged(new AbilityAnswer({ sessions: CoachDocuments.stated(page.map((session) => history.summary(session))) },
+        // A row: the workout's summary by the name it went by, without its plan, with a line per movement it held.
+        const rows = page.map((session) => {
+          const { plan, routineName, topSet, ...summary } = history.summary(session);
+          const lines = ProgressSession.of(session, history.log.setsFor(session.id)).movements;
+          const top = [...lines].sort((a, b) => PerformedFact.heavierFirst(a.heaviest, b.heaviest))[0];
+          return { ...summary, ...(session.name ? { routineName: session.name } : {}),
+            ...(top ? { topSet: { exerciseId: top.exerciseId.record, weightKg: top.heaviest.weightKg, reps: top.heaviest.reps } } : {}),
+            movements: lines.map((line) => ({ exerciseId: line.exerciseId.record, topSet: { weightKg: line.heaviest.weightKg, reps: line.heaviest.reps },
+              topE1rm: line.estimate?.e1rm ?? null })) };
+        });
+        return Decision.unchanged(new AbilityAnswer({ sessions: CoachDocuments.stated(rows) },
           page.reduce((served, session) => served.sawSession(session), ReadServed.none)));
       }
       case 'workout': {

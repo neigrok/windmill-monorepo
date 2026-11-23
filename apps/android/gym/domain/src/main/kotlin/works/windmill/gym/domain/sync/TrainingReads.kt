@@ -181,6 +181,11 @@ data class PerformedFact(val setId: Id<TrainingSet>, val weightKg: Double, val r
         add("setId" to setId.json); add("weightKg" to Json.of(weightKg)); add("reps" to Json.of(reps))
         rpe?.let { add("rpe" to Json.of(it)) }
     })
+
+    companion object {
+        // The heaviest set first: the highest load, ties to more reps, then to the lowest set id.
+        val heavierFirst: Comparator<PerformedFact> = compareByDescending<PerformedFact> { it.weightKg }.thenByDescending { it.reps }.thenBy { it.setId }
+    }
 }
 
 data class EstimatedFact(val performed: PerformedFact, val e1rm: Double?) {
@@ -201,29 +206,35 @@ data class MovementSessionFact(val exerciseId: Id<Exercise>, val workingSetCount
         estimate?.let { add("estimate" to it.json) }
         if (!estimatesComplete) add("estimatesComplete" to Json.Bool(false))
     })
+
+    companion object {
+        // One movement's sets of one workout: its heaviest set, most reps, the set earning its estimate and most reps at zero load.
+        fun of(sets: List<TrainingSet>): MovementSessionFact {
+            val performed = sets.map { PerformedFact(it) }
+            val estimates = sets.filter { GymEstimate.qualifies(it.weightKg, it.reps, it.rpe) }.map { EstimatedFact(it, it.e1rm) }
+            return MovementSessionFact(sets.first().exerciseId, sets.size,
+                heaviest = performed.sortedWith(PerformedFact.heavierFirst).first(),
+                mostReps = performed.sortedWith(compareByDescending<PerformedFact> { it.reps }.thenByDescending { it.weightKg }.thenBy { it.setId }).first(),
+                estimate = estimates.sortedWith(compareByDescending<EstimatedFact> { it.score }.thenBy { it.setId }).firstOrNull(),
+                bodyweightReps = performed.filter { it.weightKg == 0.0 }.sortedWith(compareByDescending<PerformedFact> { it.reps }.thenBy { it.setId }).firstOrNull(),
+                estimatesComplete = estimates.all { it.e1rm != null })
+        }
+    }
 }
 
+// A workout's movements, a fact each, in the byte order of their ids; none for a workout holding no set.
 data class ProgressSession(val sessionId: Id<Session>, val startedAt: Instant, val movements: List<MovementSessionFact>) {
+    constructor(session: Session, sets: List<TrainingSet>) : this(session.id, session.startedAt,
+        sets.groupBy { it.exerciseId }.toSortedMap().values.map(MovementSessionFact::of))
+
     val json: Json get() = Json.objectOf("sessionId" to sessionId.json, "startedAt" to Json.of(startedAt.ms),
         "movements" to Json.Arr(movements.map { it.json }))
 }
 
 data class StatsProgress(val asOf: Instant, val sessions: List<ProgressSession>, val isComplete: Boolean = true) {
     constructor(log: TrainingLog, asOf: Instant = log.moment.now) : this(asOf,
-        log.drawnSessions.filter { !it.isOpen }.mapNotNull { session ->
-            val movements = log.sets(session.id).groupBy { it.exerciseId }
-                .toSortedMap().map { (exerciseId, sets) ->
-                    val heaviest = sets.sortedWith(compareByDescending<TrainingSet> { it.weightKg }.thenByDescending { it.reps }.thenBy { it.id }).first()
-                    val mostReps = sets.sortedWith(compareByDescending<TrainingSet> { it.reps }.thenByDescending { it.weightKg }.thenBy { it.id }).first()
-                    val estimates = sets.filter { GymEstimate.qualifies(it.weightKg, it.reps, it.rpe) }.map { EstimatedFact(it, it.e1rm) }
-                    val estimate = estimates
-                        .sortedWith(compareByDescending<EstimatedFact> { it.score }.thenBy { it.setId }).firstOrNull()
-                    val bodyweightReps = sets.filter { it.weightKg == 0.0 }.sortedWith(compareByDescending<TrainingSet> { it.reps }.thenBy { it.id }).firstOrNull()
-                    MovementSessionFact(exerciseId, sets.size, PerformedFact(heaviest), PerformedFact(mostReps), estimate,
-                        bodyweightReps?.let(::PerformedFact), estimates.all { it.e1rm != null })
-                }
-            if (movements.isEmpty()) null else ProgressSession(session.id, session.startedAt, movements)
-        }.sortedWith(compareBy({ it.startedAt }, { it.sessionId })), log.firstPullComplete)
+        log.drawnSessions.filter { !it.isOpen }.map { ProgressSession(it, log.sets(it.id)) }.filter { it.movements.isNotEmpty() }
+            .sortedWith(compareBy({ it.startedAt }, { it.sessionId })), log.firstPullComplete)
     constructor(read: Reader) : this(TrainingLog(read))
 
     val json: Json get() = Json.objectOf("asOf" to Json.of(asOf.ms), "sessions" to Json.Arr(sessions.map { it.json }))
@@ -324,9 +335,8 @@ class ProgressRecords(val progress: StatsProgress) {
     }
 }
 
-// The log's top set: the heaviest load, then the most reps at it.
-fun topSet(sets: List<TrainingSet>): TrainingSet? =
-    sets.sortedWith(compareByDescending<TrainingSet> { it.weightKg }.thenByDescending { it.reps }.thenBy { it.id }).firstOrNull()
+// The log's top set: the heaviest of the sets, by `PerformedFact.heavierFirst`.
+fun topSet(sets: List<TrainingSet>): TrainingSet? = sets.sortedWith(compareBy(PerformedFact.heavierFirst) { PerformedFact(it) }).firstOrNull()
 
 // The record a workout earned against every finished workout before it: a stated estimate gain ranks first, then a
 // heavier top set, then more reps at a load. Nothing before the account's first pull, when that history is not yet here.

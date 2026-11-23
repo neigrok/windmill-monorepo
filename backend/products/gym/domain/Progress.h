@@ -42,6 +42,8 @@ struct PerformedFact {
   std::optional<double> rpe;
 
   std::optional<Estimate> estimate() const;
+  // The heaviest-set rule: more load, then more reps, then the lower set id.
+  bool heavierThan(const PerformedFact& other) const;
 
   bool operator==(const PerformedFact&) const = default;
 };
@@ -67,8 +69,8 @@ struct ProgressSet {
   bool operator==(const ProgressSet&) const = default;
 };
 
-// One movement in one session: how many sets it took, its heaviest set (ties to more reps, then the lowest
-// set id), the set earning its estimate (the highest score, ties to the lowest set id), and its most reps at zero load.
+// One movement in one session: how many sets it took, its heaviest set (`heavierThan`), the set earning its estimate (the
+// highest score, ties to the lowest set id), and its most reps at zero load.
 struct MovementSessionFact {
   ExerciseId exercise;
   int workingSetCount;
@@ -85,6 +87,13 @@ struct ProgressSession {
   SessionId session;
   std::uint64_t startedAtMs;
   std::vector<MovementSessionFact> movements;
+
+  // One session from its own sets; a session holding none has no movement.
+  static ProgressSession of(const Session& session, const std::vector<ProgressSet>& sets);
+
+  // The movement holding the session's heaviest set, by the rule each movement's own is chosen by; absent for a session
+  // holding no set.
+  std::optional<MovementSessionFact> heaviestMovement() const;
 
   bool operator==(const ProgressSession&) const = default;
 };

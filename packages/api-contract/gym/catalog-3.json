@@ -262,7 +262,7 @@
     },
     {
       "name": "list_sessions",
-      "description": "Your training log, newest first — one row per workout: the session, `setCount` and `workingSetCount` (the same number: every set it held counts), `tonnageKg` (the load those sets moved, an assisted or zero-load bodyweight set contributing zero — so a zero tonnage is not a claim that nothing was done), which movements were in it, its heaviest set, `topE1rm` (the best Epley estimate any set in it earned — the session's own number, not the heaviest set's), `record` (a personal record happened in that workout — best e1RM, most reps at a load, or the heaviest load, judged against the log as it stands now, and false on around 190 rows in 200), and `closedItself` (the four-hour rule ended it rather than a tap). Page with BOTH halves of the last row's key, `before` and `beforeId`, because two workouts can start in the same millisecond. Unavailable derived metrics are null; they never stand for zero or a smaller record.",
+      "description": "Your training log, newest first — one row per workout: the session; `routineName`, the routine it followed by the name it had that day (absent for an ad-hoc workout); `setCount` and `workingSetCount` (the same number: every set it held counts); `tonnageKg` (the load those sets moved, an assisted or zero-load bodyweight set contributing zero — so a zero tonnage is not a claim that nothing was done); which movements were in it; `movements`, one line per movement by `exerciseId` with its heaviest set and its own `topE1rm` — read a lift's progress across workouts from these lines; `topSet`, the session's heaviest set, with the `exerciseId` it was lifted on; `topE1rm` (the best Epley estimate any set in it earned — the session's own number, not the heaviest set's; the line with the same `topE1rm` names its movement); `record` (a personal record happened in that workout — best e1RM, most reps at a load, or the heaviest load, judged against the log as it stands now, and false on around 190 rows in 200); and `closedItself` (the four-hour rule ended it rather than a tap). A row holds no plan: `get_session` has the plan a workout started from beside the sets lifted. Page with BOTH halves of the last row's key, `before` and `beforeId`, because two workouts can start in the same millisecond. Unavailable derived metrics are null; they never stand for zero or a smaller record.",
       "input": {
         "additionalProperties": false,
         "properties": {
@@ -312,53 +312,6 @@
                 "routineId": {
                   "type": "string"
                 },
-                "plan": {
-                  "type": "object",
-                  "properties": {
-                    "routine": {
-                      "type": "string"
-                    },
-                    "entries": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "exerciseId": {
-                            "type": "string"
-                          },
-                          "sets": {
-                            "type": "array",
-                            "items": {
-                              "type": "object",
-                              "properties": {
-                                "reps": {
-                                  "type": "integer"
-                                },
-                                "weightKg": {
-                                  "type": "number"
-                                }
-                              },
-                              "required": [],
-                              "additionalProperties": false
-                            }
-                          },
-                          "restSeconds": {
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "exerciseId"
-                        ],
-                        "additionalProperties": false
-                      }
-                    }
-                  },
-                  "required": [
-                    "routine",
-                    "entries"
-                  ],
-                  "additionalProperties": false
-                },
                 "routineName": {
                   "type": "string"
                 },
@@ -380,9 +333,51 @@
                     "type": "string"
                   }
                 },
+                "movements": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "exerciseId": {
+                        "type": "string"
+                      },
+                      "topSet": {
+                        "type": "object",
+                        "properties": {
+                          "weightKg": {
+                            "type": "number"
+                          },
+                          "reps": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "weightKg",
+                          "reps"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "topE1rm": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "exerciseId",
+                      "topSet",
+                      "topE1rm"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
                 "topSet": {
                   "type": "object",
                   "properties": {
+                    "exerciseId": {
+                      "type": "string"
+                    },
                     "weightKg": {
                       "type": "number"
                     },
@@ -391,6 +386,7 @@
                     }
                   },
                   "required": [
+                    "exerciseId",
                     "weightKg",
                     "reps"
                   ],
@@ -416,6 +412,7 @@
                 "workingSetCount",
                 "tonnageKg",
                 "exercises",
+                "movements",
                 "record",
                 "closedItself"
               ],
