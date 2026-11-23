@@ -24,7 +24,7 @@ import { ProposeWorkout, WorkoutProposal } from '../workoutProposals.js';
 import { BodyweightRead, CatalogueRead, LogRead, NotesRead, ProgramRead } from './abilityReads.js';
 import { CreateExerciseCall, CreateRoutineCall, ProposeRoutineCall, ProposeWorkoutCall, SaveNoteAbility } from './abilityWrites.js';
 import { AbilityCall, AbilityRefusals, CoachMessage, CoachRules } from './conversation.js';
-import { writersOwn } from './turn.js';
+import { Mark, writersOwn } from './turn.js';
 
 /** @typedef {import('../../../../platform/domain-kit/values.js').Json} Json */
 /** @typedef {import('../../../../platform/domain-kit/reading.js').Reader} Reader */
@@ -204,7 +204,7 @@ export class RunAbility {
   /** @param {Reader} read */
   load(read) {
     const coach = read.repository(CoachMessage).find(this.message, 'drawn');
-    const own = coach !== null && writersOwn(coach, read.replica);
+    const own = coach !== null && writersOwn(coach, read.replica, Mark.read(read));
     const gate = own && this.admission === null ? this.gate(this.request, /** @type {CoachMessageValue} */ (coach)) : null;
     return { message: coach, own, gate, deciding: gate !== null && 'run' in gate ? gate.run.load(read) : null, moment: read.moment };
   }
@@ -228,7 +228,7 @@ export class RunAbility {
 
   /** @param {AbilityRequest} request @param {string} code @param {Json | null} input @param {CoachMessageValue} coach @param {import('../../../../platform/domain-kit/time.js').Moment} moment */
   refusing(request, code, input, coach, moment) {
-    return this.recording(new AbilityCall({ callId: request.callId, name: request.name, input, outcome: code }), { kind: 'refused', code }, new Plan(), coach, moment);
+    return RunAbility.recording(new AbilityCall({ callId: request.callId, name: request.name, input, outcome: code }), { kind: 'refused', code }, new Plan(), coach, moment);
   }
 
   // gym Coach §4.3 step 2, §6.4: the result as the server answers it, with the tally of what the call served when it
@@ -242,7 +242,7 @@ export class RunAbility {
     const bytes = jcsBytes(tallied);
     if (bytes.length > CoachRules.maxResultBytes) return this.refusing(request, AbilityRefusals.resultTooLarge, request.input, coach, moment);
     const call = new AbilityCall({ callId: request.callId, name: request.name, input: request.input, outcome: 'ok', created: answer.created, read: answer.served });
-    return this.recording(call, { kind: 'result', jcs: bytes, sha256: sha256(bytes) }, plan, coach, moment);
+    return RunAbility.recording(call, { kind: 'result', jcs: bytes, sha256: sha256(bytes) }, plan, coach, moment);
   }
 
   // The call on the Coach message, in the same gesture as the ability's writes (kit §9.3), in the fullest form the
@@ -253,7 +253,7 @@ export class RunAbility {
   // otherwise, as its ordinal stands. A first record that answered stands when this run was refused, and one the gate
   // admitted stands when this run's was not, so no admitted call ever gives up its ordinal.
   /** @param {AbilityCall} call @param {AbilityOutcome} outcome @param {Plan} plan @param {CoachMessageValue} coach @param {import('../../../../platform/domain-kit/time.js').Moment} moment */
-  recording(call, outcome, plan, coach, moment) {
+  static recording(call, outcome, plan, coach, moment) {
     const found = coach.calls.findIndex((each) => each.callId === call.callId);
     const prior = coach.calls[found] ?? null;
     const answered = prior?.isOk === true;
@@ -275,5 +275,35 @@ export class RunAbility {
     const written = fits ? plan : new Plan();
     written.update(new Valid(coach.with({ calls }), moment, ['calls']), { fields: ['calls'] });
     return Decision.write(written, fits ? outcome : volume);
+  }
+}
+
+// A share the host made through the Share door (gym Coach on the AI service §4.3), recorded on the Coach message as any
+// call is: the door's result or its one refusal, in the same bound and order as a call the replica ran.
+export class RecordShareCall {
+  scope = CoachMessage.scope;
+  refusals = GymRefusals;
+
+  /** @param {AbilityRequest} request @param {Id<CoachMessageValue>} message @param {AbilityOutcome} outcome */
+  constructor(request, message, outcome) {
+    if (!SERVER_RUN.includes(request.name)) throw new TypeError('only a share runs through the door');
+    this.request = request;
+    this.message = message;
+    this.outcome = outcome;
+  }
+
+  /** @param {Reader} read */
+  load(read) {
+    return { message: read.repository(CoachMessage).find(this.message, 'drawn'), replica: read.replica, mark: Mark.read(read), moment: read.moment };
+  }
+
+  /** @param {ReturnType<RecordShareCall['load']>} loaded @param {IDSource} ids */
+  decide(loaded, ids) {
+    const coach = loaded.message?.isCoach ? loaded.message : null;
+    if (coach === null) return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-record', this.message.ref, null, 'predicted')));
+    if (!writersOwn(coach, loaded.replica, loaded.mark)) return Decision.refuse(GymRefusals.ofRefused(new Refused('message-final', this.message.ref, null, 'predicted')));
+    const outcome = this.outcome.kind === 'result' ? 'ok' : this.outcome.code;
+    return RunAbility.recording(new AbilityCall({ callId: this.request.callId, name: this.request.name, input: this.request.input, outcome }),
+      this.outcome, new Plan(), coach, loaded.moment);
   }
 }

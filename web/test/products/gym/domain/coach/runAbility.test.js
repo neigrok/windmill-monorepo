@@ -7,7 +7,7 @@ import { Catalog } from '../../../../../src/platform/domain-kit/abilities.js';
 import { registry } from '../../../../../src/platform/sync/schema.js';
 import { Note } from '../../../../../src/products/gym/domain/notes.js';
 import { CoachMessage } from '../../../../../src/products/gym/domain/coach/conversation.js';
-import { AbilityRequest, RunAbility } from '../../../../../src/products/gym/domain/coach/runAbility.js';
+import { AbilityRequest, RecordShareCall, RunAbility } from '../../../../../src/products/gym/domain/coach/runAbility.js';
 import { EndTurn, OpenTurn } from '../../../../../src/products/gym/domain/coach/turn.js';
 import { Contract } from '../../../../platform/domain-kit/vectors.js';
 import { Harness } from '../../../../platform/domain-kit/harness.js';
@@ -123,6 +123,28 @@ test('a call runs on a turn another device marked interrupted, and on no message
   const ended = await call(a, turn, 'call-3', 'list_notes', {});
   assert.deepEqual([ended.kind, /** @type {any} */ (ended).refusal?.refused?.code], ['refused', 'message-final']);
   assert.deepEqual(coach(a, turn).calls.map((each) => each.callId), ['call-1']);
+});
+
+test('a call on a turn its own writer ended interrupted is refused as final', async (t) => {
+  const { a } = await phones(t);
+  const turn = await open(a);
+  assert.equal((await a.runner.run(new EndTurn(turn.coach, 'interrupted'))).kind, 'committed');
+  const late = await call(a, turn, 'call-1', 'list_notes', {});
+  assert.deepEqual([late.kind, /** @type {any} */ (late).refusal?.refused?.code], ['refused', 'message-final']);
+  assert.deepEqual(coach(a, turn).calls, []);
+});
+
+test('a share the door made is recorded on the Coach message as any call, and the door\'s refusal as its code', async (t) => {
+  const { a } = await phones(t);
+  const turn = await open(a);
+  const made = new AbilityRequest('call-1', 'share_session', { sessionId: 'session-1' });
+  const result = { kind: 'result', jcs: new TextEncoder().encode('{"url":"u"}'), sha256: '' };
+  assert.equal(answered(await a.runner.run(new RecordShareCall(made, turn.coach, /** @type {any} */ (result)))), result);
+  const refused = { kind: 'refused', code: 'refused' };
+  assert.deepEqual(answered(await a.runner.run(new RecordShareCall(new AbilityRequest('call-2', 'revoke_share', { sessionId: 'session-1' }), turn.coach, /** @type {any} */ (refused)))), refused);
+  assert.deepEqual(coach(a, turn).calls.map((each) => [each.callId, each.name, each.outcome, each.input]),
+    [['call-1', 'share_session', 'ok', { sessionId: 'session-1' }], ['call-2', 'revoke_share', 'refused', { sessionId: 'session-1' }]]);
+  assert.throws(() => new RecordShareCall(new AbilityRequest('call-3', 'list_notes', {}), turn.coach, /** @type {any} */ (refused)), TypeError);
 });
 
 test('a refused call records its refusal alone and writes nothing of its ability', async (t) => {

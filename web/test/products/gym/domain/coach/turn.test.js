@@ -130,6 +130,18 @@ test('a writer goes on answering a turn another device marked interrupted, and i
   }
 });
 
+test('a writer that ended its own turn interrupted writes no more text, rounds or calls on it', async (t) => {
+  const { a } = await phones(t);
+  const turn = await open(a);
+  await committed(a, new StreamTurnText(turn.coach, 'Half'));
+  await committed(a, new EndTurn(turn.coach, 'interrupted'));
+  assert.equal((await a.runner.run(new StreamTurnText(turn.coach, 'Half and more'))).kind, 'unchanged');
+  const round = await a.runner.run(new BeginRound(turn.coach, callId, 4));
+  assert.equal(round.kind === 'refused' && round.refusal.refused?.code, 'message-final');
+  const message = a.drawn(CoachMessage).find((each) => each.id.equals(turn.coach));
+  assert.deepEqual([message?.state, message?.text], ['interrupted', 'Half']);
+});
+
 test('a withdrawn turn and a deleted conversation take their messages, pictures and the whole mark', async (t) => {
   const { a } = await phones(t);
   await committed(a, new KeepPicture(picture));
