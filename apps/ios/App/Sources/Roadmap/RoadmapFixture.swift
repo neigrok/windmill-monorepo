@@ -1,5 +1,6 @@
 import Foundation
 import DomainKit
+import Synchronization
 import RoadmapDomain
 import SyncCore
 import SyncEngine
@@ -133,8 +134,9 @@ enum RoadmapFixture {
       guard let server = model.runtime?.auth.fake else { throw AppFailure(message: "no model server") }
       let identity = server.identity(email: "roadmap-fixture@example.com")
       let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+      let clock = SteppingBoardClock()
       let remote = try AppRuntime(settings: AppSettings(arguments: ["fixture", "-model-server", "-board", board]),
-                                  directory: directory, service: UUID().uuidString, syncTransport: server)
+                                  directory: directory, service: UUID().uuidString, syncTransport: server, wall: clock)
       // The other phone goes once the board is planted; roadmap-two-phones keeps it until it has written.
       let retire = {
         try? remote.tokens.delete(for: identity.account)
@@ -142,11 +144,12 @@ enum RoadmapFixture {
       }
       defer { if board != "roadmap-two-phones" { retire() } }
       _ = try await remote.engine.signIn(account: identity.account, token: identity.token)
-      // The board's clock stands still, so the server receives each sending a second after the one before: Done, newest
-      // first, and the account's roadmaps, most recent first, have an order.
+      // The board's clock stands still, so the other phone makes each sending a second after the one before, and the
+      // server receives it so: Done, newest first, and the account's roadmaps, most recent first, have an order.
       var sendings: Int64 = 0
       let sent = { () async throws -> Void in
         server.state.withLock { $0.pushesReceivedLaterMs = sendings * 1_000 }
+        clock.step(to: sendings * 1_000)
         sendings += 1
         try remote.engine.leave()
         for _ in 0..<40 where try remote.store.read({ try $0.device().activeReplica.outbox.contains { $0.state != .acked } }) {
@@ -383,6 +386,21 @@ enum RoadmapFixture {
     guard let step = planted.steps.first(where: { $0.key == key })?.id,
           case .committed = try runner.runAct(MarkStep.complete(tree: planted.tree, step: step)) else {
       throw AppFailure(message: "Learn to sail's \(key) was not marked done.")
+    }
+  }
+
+  // The board's clock for the fixture's other phone, stepped forward as the fixture makes each sending, so writes it makes
+  // one after another stand in that order by the device's time, as they do by the server's.
+  nonisolated final class SteppingBoardClock: WallClock {
+    private let later = Mutex<Int64>(0)
+
+    func step(to ms: Int64) { later.withLock { $0 = ms } }
+
+    func nowMs() -> Int64 { BoardClock().nowMs() + later.withLock { $0 } }
+
+    func reading() -> ClockReading {
+      let board = BoardClock().reading()
+      return ClockReading(wall: nowMs(), mono: board.mono, boot: board.boot)
     }
   }
   #endif
