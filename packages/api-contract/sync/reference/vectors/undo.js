@@ -949,8 +949,8 @@ function typedValues() {
 // by an act opted into Undo: the removal's preimage was read over the birth's write, so its Undo walks from the row that
 // birth left, whichever pushes the two reach the server in. Another device's write between them still breaks the walk,
 // and so does a birth the device wrote as an ordinary entry, whose answer carries no receipt. A preimage steps over
-// writes made before its act only, never over an earlier segment of the act itself. Signed out, a day born and removed
-// and its removal undone comes back once sign-in adds the work and sends it.
+// writes made before its act only, never over an earlier segment of the act itself, and over several in commit order.
+// Signed out, a day born and removed and its removal undone comes back once sign-in adds the work and sends it.
 function releasedBirth() {
   const elm = { scope: TREE, t: 'tag', id: 'elm' };
   const birth = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: TREE, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'Elm' } }] }],
@@ -1062,7 +1062,22 @@ function releasedBirth() {
   assert.ok(dayOf(added.expect.returns[4]) && dayOf(added.expect.returns.at(-1)));
   assert.deepEqual(added.expect.returns.at(-2), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: true, appliedCount: 1, skippedCount: 0 });
   assert.equal(signedOut.state.rows['acct:A/probe'][recordKeyOf('day', day.id)].life[0], 'alive');
-  return [unsentBoth, pending, birthAlone, unpulled, eachAlone, unseen, ordinary, ownSegment, added];
+
+  const renamed = new Session(world()).local(birth, released,
+    { op: 'commitAct', deviceNow: 5010, segments: [{ scope: TREE, changes: [{ op: 'update', t: 'tag', id: 'elm', f: { label: 'Elder' } }] }],
+      opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: target(TREE, 'tag', 'elm', 'field', 'label') }] }] }] } } },
+    { op: 'releaseReversibleAct', actId: 'g2' });
+  renamed.flush();
+  const renamedSeq = elmOf(renamed).seq;
+  renamed.local(removal, requestStep('g3'));
+  renamed.flush();
+  renamed.pull([TREE]);
+  const twoWrites = renamed.local({ op: 'readInverseResult', requestId: 'g5' }, viewStep(TREE))
+    .vector('an Undo of a removal walks over two acknowledged own writes of the record in commit order, its birth and then its rename');
+  assert.deepEqual(journalOf(twoWrites).find(({ actId }) => actId === 'g3').sourceEntries[0].preimages.map(({ rowSeq }) => rowSeq), [renamedSeq]);
+  assert.deepEqual(twoWrites.expect.returns.at(-2), { kind: 'settled', requestId: 'g5', inverseActId: 'g4', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(labelOf(twoWrites.expect.returns.at(-1)), 'Elder');
+  return [unsentBoth, pending, birthAlone, unpulled, eachAlone, unseen, ordinary, ownSegment, added, twoWrites];
 }
 
 export function files() {

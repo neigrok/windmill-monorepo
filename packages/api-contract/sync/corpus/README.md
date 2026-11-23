@@ -1429,7 +1429,7 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   Undo was asked, the removal's preimage stepping over the birth's receipt row, while another device's write
   between the two, or a birth written as an
   ordinary entry, whose answer carries no receipt, skips it; a preimage never steps over an earlier segment
-  of its own act; and an Undo asked signed out of a removal whose record was born there brings it back once
+  of its own act, and steps over two acknowledged own writes, a birth and a rename, in commit order; and an Undo asked signed out of a removal whose record was born there brings it back once
   sign-in adds the work and sends it.
 
 ### refusal/*.json
