@@ -99,7 +99,10 @@ Activity and the web demo.
   room shows no save failure and no refused change otherwise.
 - **Activity and History** are a read of the domain over the phone's copy (R-11): what the copy
   holds a time for, such as a step's creation and its completion, in order of time, a roadmap's
-  Activity over all its steps and a step's History over that step. They make no request, and work
+  Activity over all its steps and a step's History over that step. Each time is when the person
+  did it, as the device that did it stamped it: a creation's birth and a completion's mark, the
+  server's receipt only where the copy holds no such time. The Board's Done and its Newest and
+  Oldest orders read the same times, on the iPhone as on the web (R-14). They make no request, and work
   with no connection and signed out. What the copy does not keep is not shown: an earlier name, a
   step that was removed, a mark that was reset. The read is shared with the web as cases under
   `packages/api-contract/roadmap/domain/`, which say exactly which rows it gives. A roadmap gone
@@ -360,18 +363,19 @@ makes it false.
   the step form's *Edit Kinds*. The step form sets a step's name, description and kind, what it requires, what it opens
   and the links it shares, and has no *Roadmap* row or Coach composer. A step's page holds the person's workspace of
   it, subtasks, a note and links read live from their overlay on the phone's copy, each written by an act of the
-  domain, and has no History or *Open Roadmap*, and its menu has no *Attach a Roadmap* or *Copy Link*; the note's field
-  sets bold and italic alone, from the system's Format menu on iOS 26; the title menu has no *Guide*, *Activity*,
-  *Share…* or *Export*, New Roadmap starts a blank roadmap alone, from no plan or file, and All Roadmaps has no
-  gallery. The Graph draws the picture, pans and zooms it, selects a step and opens its page, lists the Up next steps
-  under *Next*, brings the one chosen there or by *Open in Graph* into view, and shows the whole roadmap alone under
+  domain, and its History, and has no *Open Roadmap*, and its menu has no *Attach a Roadmap* or *Copy Link*; the note's
+  field sets bold and italic alone, from the system's Format menu on iOS 26. The title menu's *Activity* and a step's
+  *History* are the domain's read of the phone's copy (§3); the title menu has no *Guide*, *Share…* or *Export*, New
+  Roadmap starts a blank roadmap alone, from no plan or file, and All Roadmaps has no gallery. An Undo that brings
+  nothing back says so in the band. The Graph draws the picture, pans and zooms it, selects a step and opens its page,
+  lists the Up next steps under *Next*, brings the one chosen there or by *Open in Graph* into view, and shows the whole
+  roadmap alone under
   *Fit*; it has no Find, no mark on a step that opens a roadmap, and draws no proposal and no reader's cover; no link
   or Coach is built, and the Board has no pasted steps. The app has no associated domain, and its onboarding says
   roadmap is on the web.
 - `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
   room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once: no Undo scene,
   plan grammar or Coach executor.
-- Activity and History have no read (§3): no case states one, and neither the web's domain nor Swift's gives it.
 - One SwiftUI `Canvas` in the room's Graph draws `RoadmapLayout`'s picture (`apps/ios/App/Sources/Roadmap/Graph/`).
   The budget of §5 is measured at 5,000 steps on a Mac's simulator alone, by `apps/ios/App/Tools/graph_bench.sh` on a
   Release-configuration build: the picture's time with its layout, the domain's read taken for it, the room's part of
@@ -428,3 +432,4 @@ makes it false.
 | R-11 | Where Activity and History come from | The device's copy, by a read of the domain; no request to the backend. (2026-11-21) |
 | R-12 | Whether sharing's requests move into synchronization | Decided when links and readers are built; until then the gallery, Fork and the owner's progress on a cover stay requests. (2026-11-21) |
 | R-13 | Quests on the iPhone | Not offered: New Roadmap starts a roadmap blank, from a copied plan or from a file. Quests return with a design of their own. (2026-11-23) |
+| R-14 | Which time Activity, History and the Board's Done order show | When the person did it: a step's birth and a mark's device time, the server's receipt only where the copy holds none, on the iPhone and on the web alike. (2026-11-23) |

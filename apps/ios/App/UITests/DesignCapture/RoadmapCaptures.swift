@@ -534,14 +534,69 @@ final class RoadmapCaptures: DesignCapture {
     }
   }
 
-  // *Learn to sail* on a board that holds other roadmaps, with its title's menu open.
-  func titleMenu(of board: String, _ look: Look) -> XCUIApplication {
+  // A roadmap on a board, *Learn to sail* unless named, with its title's menu open once its Board stands.
+  func titleMenu(of board: String, named roadmap: String = "Learn to sail", _ look: Look) -> XCUIApplication {
     let app = launch(board, look)
-    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
     // The roadmap's name leads the label of the bar's title, which the system reports as a button or as a text.
-    app.navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Learn to sail")).firstMatch.tap()
+    let title = app.navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", roadmap)).firstMatch
+    XCTAssertTrue(title.waitForExistence(timeout: 30))
+    title.tap()
     XCTAssertTrue(app.buttons["All Roadmaps…"].waitForExistence(timeout: 5))
     return app
+  }
+
+  // Activity from the title menu of a roadmap on a board.
+  func activity(of board: String, named roadmap: String = "Learn to sail", _ look: Look) -> XCUIApplication {
+    let app = titleMenu(of: board, named: roadmap, look)
+    app.buttons["Activity"].tap()
+    XCTAssertTrue(app.navigationBars["Activity"].waitForExistence(timeout: 10))
+    return app
+  }
+
+  // 01.13: Activity of the account's *Learn to sail*, its completions newest first over the eight steps planted at
+  // once, their fold opened. The board's clock stands still, so every row falls on one day.
+  func testActivity() {
+    captureBoard("01.13-roadmap-activity") { look in
+      let app = activity(of: "roadmap-learn-to-sail", look)
+      let folded = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Added 8 steps")).firstMatch
+      XCTAssertTrue(folded.waitForExistence(timeout: 10))
+      folded.tap()
+      XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Added Sail solo")).firstMatch.waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // 01.13b: Activity of *Learn to sail* made on a phone never signed in, the steps planted at once folded.
+  func testActivitySignedOut() {
+    captureBoard("01.13b-roadmap-activity-signed-out") { look in
+      let app = activity(of: "roadmap-many", look)
+      XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Added 8 steps")).firstMatch
+        .waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 01.15: Activity of *Night sailing*, which has no step.
+  func testActivityNothingYet() {
+    captureBoard("01.15-roadmap-activity-nothing-yet") { look in
+      let app = activity(of: "roadmap-no-steps", named: "Night sailing", look)
+      XCTAssertTrue(app.staticTexts["No activity yet"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 03.12: *Read the wind* completed on its page (03.4), then its History from the page's last row once the band has left.
+  func testStepHistory() {
+    captureBoard("03.12-roadmap-step-history") { look in
+      let app = stepPage(["Read the wind"], look)
+      app.buttons["roadmap-complete"].tap()
+      XCTAssertTrue(app.buttons["roadmap-reset"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.buttons["roadmap-undo"].waitForNonExistence(timeout: 15))
+      reach(app.buttons["roadmap-step-history"], app).tap()
+      XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "roadmap-history-row").firstMatch.waitForExistence(timeout: 10))
+      return app
+    }
   }
 
   // Delete Roadmap from the title's menu, up to its question.
@@ -561,11 +616,20 @@ final class RoadmapCaptures: DesignCapture {
     }
   }
 
-  // 10.9, in the room: a read of the phone's copy that failed.
-  func testCouldNotLoad() {
-    captureBoard("10.9-roadmap-could-not-load") { look in
+  // 01.5b: the room's first read running long, its bar alone and the spinner that shows once it has run half a second.
+  func testBeforeTheFirstRead() {
+    captureBoard("01.5b-roadmap-before-the-first-read", settle: 0.3) { look in
+      let app = launch("roadmap-first-read", look)
+      XCTAssertTrue(app.descendants(matching: .any)["roadmap-first-read"].waitForExistence(timeout: 30))
+      return app
+    }
+  }
+
+  // 01.5c: the room's read of the phone's own copy failed.
+  func testCouldNotRead() {
+    captureBoard("01.5c-roadmap-could-not-read") { look in
       let app = launch("roadmap-unreadable", look)
-      XCTAssertTrue(app.staticTexts["Couldn’t load this roadmap"].waitForExistence(timeout: 30))
+      XCTAssertTrue(app.staticTexts["The copy on this iPhone couldn’t be read."].waitForExistence(timeout: 30))
       return app
     }
   }
@@ -684,6 +748,22 @@ final class RoadmapCaptures: DesignCapture {
     }
   }
 
+  // 02.10d: the two steps deleted, and their Undo taken once the engine kept no Undo of their delete: the band says how
+  // many could not come back, with no Undo.
+  func testStepsUndoBroughtNothingBack() {
+    captureBoard("02.10d-roadmap-undo-brought-nothing-back") { look in
+      let app = selecting(["Tie a bowline", "Sail a triangle"], look, board: "roadmap-undo-finds-nothing")
+      app.buttons["roadmap-delete-steps"].tap()
+      let answer = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "Delete 2 Steps", "roadmap-delete-steps")).firstMatch
+      XCTAssertTrue(answer.waitForExistence(timeout: 5))
+      answer.tap()
+      XCTAssertTrue(app.buttons["roadmap-undo"].waitForExistence(timeout: 10))
+      app.buttons["roadmap-undo"].tap()
+      XCTAssertTrue(app.staticTexts["Couldn’t bring back 2 steps"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
   // 02.12: Select All took the roadmap's one starting step: Delete is dimmed and the band says why.
   func testStartingStepCannotGo() {
     captureBoard("02.12-roadmap-starting-step-cannot-go") { look in
@@ -769,6 +849,27 @@ final class RoadmapCaptures: DesignCapture {
     }
   }
 
+  // 06.5c: Practice removed, and its Undo taken once the engine kept nothing of the removal: the band at the sheet's foot
+  // names the kind that could not come back, with no Undo.
+  func testKindUndoBroughtNothingBack() {
+    captureBoard("06.5c-roadmap-kind-undo-brought-nothing-back") { look in
+      let app = kinds(look, board: "roadmap-undo-finds-nothing")
+      addKind("Practice", "Hours on the water", app)
+      app.buttons["roadmap-kinds-edit"].tap()
+      let practice = app.buttons.matching(NSPredicate(format: "identifier == %@ AND label CONTAINS %@", "roadmap-kinds-row", "Practice")).firstMatch
+      XCTAssertTrue(practice.waitForExistence(timeout: 5))
+      practice.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5)).tap()
+      XCTAssertTrue(app.buttons["Delete"].waitForExistence(timeout: 5))
+      app.buttons["Delete"].tap()
+      // The band stands at the sheet's foot and at the Board's behind it, where it cannot be tapped.
+      let undo = app.buttons.matching(identifier: "roadmap-undo")
+      XCTAssertTrue(undo.firstMatch.waitForExistence(timeout: 10))
+      undo.allElementsBoundByIndex.first { $0.isHittable }?.tap()
+      XCTAssertTrue(app.staticTexts["Couldn’t bring back Practice"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
   // 06.6: Learn moved from Olive to Plum, back on the Board: its steps wear the new hue.
   func testKindRecolored() {
     captureBoard("06.6-roadmap-kind-recolored") { look in
@@ -823,8 +924,8 @@ final class RoadmapCaptures: DesignCapture {
   }
 
   // Select Steps from the Board's tool, then a tap on each step named.
-  func selecting(_ steps: [String], _ look: Look) -> XCUIApplication {
-    let app = learnToSail(look)
+  func selecting(_ steps: [String], _ look: Look, board: String = "roadmap-learn-to-sail") -> XCUIApplication {
+    let app = learnToSail(look, board: board)
     boardTool(app)
     app.buttons["Select Steps"].tap()
     XCTAssertTrue(app.buttons["roadmap-select-done"].waitForExistence(timeout: 5))
@@ -834,8 +935,8 @@ final class RoadmapCaptures: DesignCapture {
   }
 
   // Kinds from the title menu over *Learn to sail*.
-  func kinds(_ look: Look) -> XCUIApplication {
-    let app = titleMenu(of: "roadmap-learn-to-sail", look)
+  func kinds(_ look: Look, board: String = "roadmap-learn-to-sail") -> XCUIApplication {
+    let app = titleMenu(of: board, look)
     app.buttons["Kinds"].tap()
     XCTAssertTrue(app.buttons["roadmap-kinds-add"].waitForExistence(timeout: 5))
     return app

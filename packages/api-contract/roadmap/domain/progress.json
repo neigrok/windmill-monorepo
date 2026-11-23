@@ -50,7 +50,7 @@
     },
     "expect": {
       "completed": ["opening", "ordinary", "stored"],
-      "dates": [{"node": "opening", "at": 800}, {"node": "ordinary", "at": 7}, {"node": "stored", "at": 123}]
+      "dates": [{"node": "opening", "at": 20}, {"node": "ordinary", "at": 7}, {"node": "stored", "at": 4}]
     }
   },
   {
@@ -104,7 +104,7 @@
     },
     "expect": {
       "completed": ["opening", "ordinary", "stored"],
-      "dates": [{"node": "opening", "at": 40}, {"node": "ordinary", "at": 7}, {"node": "stored", "at": 123}]
+      "dates": [{"node": "opening", "at": 40}, {"node": "ordinary", "at": 7}, {"node": "stored", "at": 4}]
     }
   },
   {

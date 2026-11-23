@@ -246,6 +246,10 @@ extension Guide {
   var form: JSON { ["tree": .string(tree), "title": .string(title), "text": .string(text), "own": .bool(own)] }
 }
 
+extension ActivityRead {
+  var form: JSON { .array(rows.map { ["kind": .string($0.kind.rawValue), "step": .string($0.step), "at": .of($0.at)] }) }
+}
+
 extension ListedRoadmap {
   var form: JSON { ["id": .string(id), "title": .of(title), "counts": counts?.form ?? .null, "updatedAt": .of(updatedAt)] }
 }

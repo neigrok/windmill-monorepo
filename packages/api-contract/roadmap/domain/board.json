@@ -85,7 +85,7 @@
     }
   },
   {
-    "name": "Done uses server receipt time then device time, unknown last, and folds at twelve",
+    "name": "Done stands newest first by when the person completed each step, the device's time, else the server's receipt, unknown last, and folds at twelve",
     "input": {
       "operation": "board",
       "tree": {
@@ -115,8 +115,8 @@
         "marks": [
           {"node": "n00", "status": "complete", "outOfOrder": false, "recordedAt": 0, "deviceAt": 0},
           {"node": "n01", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 1},
-          {"node": "n02", "status": "complete", "outOfOrder": false, "recordedAt": 2, "deviceAt": 2},
-          {"node": "n03", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 3},
+          {"node": "n02", "status": "complete", "outOfOrder": false, "recordedAt": 99, "deviceAt": 2},
+          {"node": "n03", "status": "complete", "outOfOrder": false, "recordedAt": 3, "deviceAt": null},
           {"node": "n04", "status": "complete", "outOfOrder": false, "recordedAt": 4, "deviceAt": 4},
           {"node": "n05", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 5},
           {"node": "n06", "status": "complete", "outOfOrder": false, "recordedAt": 6, "deviceAt": 6},
@@ -167,7 +167,7 @@
     }
   },
   {
-    "name": "Board newest dates put unknown last with authored ties",
+    "name": "Board newest dates each step by its birth, else the server's receipt, unknown last",
     "input": {
       "operation": "board",
       "tree": {
@@ -179,7 +179,7 @@
         "nodes": [
           {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "olive", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
           {"id": "b", "present": true, "born": null, "rc": 20, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
-          {"id": "c", "present": true, "born": null, "rc": 10, "ru": null, "label": "c", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "c", "present": true, "born": "30:0:dev", "rc": 10, "ru": null, "label": "c", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
           {"id": "d", "present": true, "born": null, "rc": 20, "ru": null, "label": "d", "icon": "x", "color": "olive", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
         ],
         "edges": [{"from": "a", "to": "b", "present": true}],
@@ -196,14 +196,14 @@
       "recovery": null,
       "columns": [
         {"name": "locked", "count": 1, "ids": ["b"], "shown": ["b"], "folded": false},
-        {"name": "upNext", "count": 3, "ids": ["d", "c", "a"], "shown": ["d", "c", "a"], "folded": false},
+        {"name": "upNext", "count": 3, "ids": ["c", "d", "a"], "shown": ["c", "d", "a"], "folded": false},
         {"name": "done", "count": 0, "ids": [], "shown": [], "folded": false}
       ],
       "cards": [
         {"id": "a", "column": "upNext", "needs": null, "unlocks": {"first": "b", "extra": 0}, "unlockCount": 1},
         {"id": "b", "column": "locked", "needs": {"first": "a", "extra": 0, "toGo": 1}, "unlocks": null, "unlockCount": 0},
-        {"id": "c", "column": "upNext", "needs": null, "unlocks": null, "unlockCount": 0},
-        {"id": "d", "column": "upNext", "needs": null, "unlocks": null, "unlockCount": 0}
+        {"id": "d", "column": "upNext", "needs": null, "unlocks": null, "unlockCount": 0},
+        {"id": "c", "column": "upNext", "needs": null, "unlocks": null, "unlockCount": 0}
       ]
     }
   },

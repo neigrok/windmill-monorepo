@@ -6,17 +6,19 @@ row in the room menu, its door on *Where to start?*, the Board with its swipes t
 *Undo* in the band, the long-press menu's *Complete*, *Edit*, *Open in Graph*, *Select* and *Delete Step*, Find with
 its matches in their groups and *New Step “…”* where none matches, the Sort and filter menu with its order, its kind
 filters and *Select Steps*, a narrowed Board and a branch said in the first row with *Clear*, several steps selected with
-*Recolor* and *Delete N Steps* and their *Undo*, the 5,000-step Board, a full roadmap's New Step refused in the band, an
-empty roadmap, every step done, *No roadmaps yet* and the room's failed read; a step's page, opened by a Board row: its
+*Recolor* and *Delete N Steps* and their *Undo*, an *Undo* that brings nothing back said in the band, the 5,000-step
+Board, a full roadmap's New Step refused in the band, an empty roadmap, every step done, *No roadmaps yet*, the room
+before its first read and its failed read; a step's page, opened by a Board row or an Activity row: its
 status row, description and shared links, *Requires* and *Opens*, *Complete* and *Reset* in place with their *Undo*, the
 … menu's *Open in Graph*, *View Branch* and *Delete Step* with its question, and the person's workspace: *Subtasks*
 checked in place, added in the list and removed by a swipe, the *Note* on its own screen with bold and italic from the
-system's Format menu, and *Your links* with New Link's two fields, without *History*; the step form, New Step from the
+system's Format menu, and *Your links* with New Link's two fields, and *History*; the step form, New Step from the
 foot's + and from an empty roadmap, and *Edit* from a step's page or a Board row: Name, Description, *Kind* with *Edit
 Kinds*, *Requires* and *Opens* pushed inside the sheet, the *Links* the step shares, their refusals as footers, *Discard
 draft?*, the created step shown on the Board and each save with its *Undo*, without its *Roadmap* row or Coach's
 composer; the room's roadmaps: the title menu with the three most recent, *All Roadmaps…*, *New Roadmap*, *Kinds*,
-*Rename* and *Delete Roadmap*, All Roadmaps with its search and its swipe to Delete, New Roadmap for a blank roadmap,
+*Activity*, *Rename* and *Delete Roadmap*, Activity with its days and its fold, All Roadmaps with its search and its
+swipe to Delete, New Roadmap for a blank roadmap,
 renaming in the bar, and a roadmap's delete asked once and held with *Undo*; Kinds: a roadmap's kinds added, named,
 described, recolored and removed with *Undo*, at most six; and the Graph:
 the switch row's *Board | Graph*, the canvas with its discs, connectors and captions, one finger's pan and a pinch, a

@@ -349,8 +349,72 @@ import SyncTesting
     ])
   }
 
-  // An Undo asked after the hold ended finds nothing held: the delete stands, and the room says so in its event alone.
-  @Test func anUndoAskedAfterTheHoldEndedLeavesTheDeleteStanding() async throws {
+  // An Undo asked after the hold ended, the delete sent, still brings the step back: a step's delete keeps the kit's Undo
+  // of it past its hold, and the account holds the step again once it has synced.
+  @Test func anUndoAskedAfterTheHoldEndedStillBringsTheStepBack() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    _ = try learnToSail(on: engine, runner)
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    model.roomOpened()
+    let atRest = ["3 of 8", "upNext: Read the wind, Tie a bowline", "locked: Leave the dock, Sail a triangle, Sail solo",
+                  "done: Rig the boat, Name the boat parts, Choose a sailing course"]
+    await shows(model, board: atRest, on: engine)
+    model.delete(try row("Tie a bowline", in: model), by: .swipe)
+    engine.advance(ms: Constants.holdMs)
+    engine.sync()
+    #expect(engine.undoOffers().isEmpty)
+    model.undo()
+    #expect(model.band == nil)
+    await shows(model, board: atRest, on: engine)
+    engine.sync()
+    let other = engine.device()
+    let elsewhere = room(other, ActionRunner(replica: other.replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0)), memory)
+    engine.sync()
+    elsewhere.roomOpened()
+    await shows(elsewhere, board: atRest, on: other)
+    #expect(self.told(telemetry).last == "roadmap_board_undo act=delete outcome=ok")
+  }
+
+  // 02.10d: a step the account's other phone recolored, with its kind, while this phone held its delete cannot come back:
+  // that change came between what the delete read and the delete, and the engine writes nothing back over it. The band
+  // says so in the receipt's place, with no Undo, for six seconds, the step stays deleted, and the event says nothing was
+  // taken back.
+  @Test func aStepAnotherPhoneRecoloredWhileItsDeleteWasHeldCannotComeBackAndTheBandSaysSo() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let planted = try learnToSail(on: engine, runner)
+    let other = engine.device()
+    let elsewhere = ActionRunner(replica: other.replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
+    engine.sync()
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    model.roomOpened()
+    await shows(model, "open Learn to sail", on: engine)
+    model.delete(try row("Tie a bowline", in: model), by: .swipe)
+    guard case .committed = try elsewhere.runAct(RecolourKind(tree: planted.tree, kind: ID(RecordID("learn")), hue: "brick")) else {
+      Issue.record("Learn, which Tie a bowline wears, was not recolored on the other phone")
+      return
+    }
+    engine.sync()
+    engine.advance(ms: Constants.holdMs)
+    engine.sync()
+    let deleted = ["3 of 7", "upNext: Read the wind", "locked: Leave the dock, Sail a triangle, Sail solo",
+                   "done: Rig the boat, Name the boat parts, Choose a sailing course"]
+    await shows(model, board: deleted, on: engine)
+    model.undo()
+    let told = try #require(model.band)
+    #expect(told.says == .unrestored(.deleted(step: "Tie a bowline")) && told.undo == nil && told.lasts == .seconds(6))
+    #expect(told.says.words == "Couldn’t bring back Tie a bowline")
+    engine.sync()
+    await shows(model, board: deleted, on: engine)
+    #expect(self.told(telemetry).last == "roadmap_board_undo act=delete outcome=unavailable")
+  }
+
+  // 02.10d for an act that is not a delete: an Undo the engine keeps nothing of by the time it is asked takes nothing
+  // back, and the band says it could not undo, with no Undo of its own.
+  @Test func anUndoTheEngineNoLongerKeepsSaysItCouldNotUndo() async throws {
     let (engine, runner, memory, suite) = phone()
     defer { memory.removePersistentDomain(forName: suite) }
     _ = try learnToSail(on: engine, runner)
@@ -358,13 +422,16 @@ import SyncTesting
     let model = room(engine, runner, memory, telemetry: telemetry)
     model.roomOpened()
     await shows(model, "open Learn to sail", on: engine)
-    model.delete(try row("Tie a bowline", in: model), by: .swipe)
-    engine.advance(ms: Constants.holdMs)
+    model.complete(try row("Tie a bowline", in: model), by: .menu)
+    let receipt = try #require(model.band?.undo)
+    try runner.release(receipt.gesture)
     model.undo()
-    #expect(model.band == nil)
-    await shows(model, board: ["3 of 7", "upNext: Read the wind", "locked: Leave the dock, Sail a triangle, Sail solo",
-                               "done: Rig the boat, Name the boat parts, Choose a sailing course"], on: engine)
-    #expect(told(telemetry).last == "roadmap_board_undo act=delete outcome=unavailable")
+    let told = try #require(model.band)
+    #expect(told.says == .unrestored(.completed(step: "Tie a bowline", upNext: [], inPlace: false)))
+    #expect(told.says.words == "Couldn’t undo" && told.undo == nil && told.lasts == .seconds(6))
+    await shows(model, board: ["4 of 8", "upNext: Read the wind", "locked: Leave the dock, Sail a triangle, Sail solo",
+                               "done: Tie a bowline, Rig the boat, Name the boat parts, Choose a sailing course"], on: engine)
+    #expect(self.told(telemetry).suffix(2) == ["roadmap_board_complete door=menu", "roadmap_board_undo act=complete outcome=unavailable"])
   }
 
   // Roadmap · iOS 02.12's rule at the room's door: the one step that follows nothing is kept, and the band says why.
@@ -932,7 +999,8 @@ import SyncTesting
     await shows(model, "open Learn Rust", on: engine)
     engine.advance(ms: Constants.holdMs)
     model.undo()
-    #expect(model.band == nil)
+    #expect(model.band?.says == .unrestored(.deletedRoadmap("Learn to sail")) && model.band?.undo == nil)
+    #expect(model.band?.says.words == "Couldn’t bring back Learn to sail")
     await engine.settleViews()
     model.observe()
     #expect(name(model.phase) == "open Learn Rust" && model.roadmaps.count == 1)

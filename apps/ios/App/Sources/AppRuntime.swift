@@ -128,7 +128,8 @@ final class AppRuntime {
 
   init(settings: AppSettings, telemetry: any Telemetry = NoopTelemetry(), directory: URL? = nil,
        service: String? = nil, syncTransport: (any SyncTransport)? = nil,
-       connectivity: (any Connectivity)? = nil, authSession: URLSession? = nil, installation: AiInstallation? = nil) throws {
+       connectivity: (any Connectivity)? = nil, authSession: URLSession? = nil, installation: AiInstallation? = nil,
+       wall: (any WallClock)? = nil) throws {
     self.settings = settings; self.telemetry = telemetry
     gymBinding = GymBinding()
     let telemetry: any Telemetry = telemetry is NoopTelemetry ? telemetry : BoundedTelemetry(telemetry)
@@ -195,7 +196,7 @@ final class AppRuntime {
     self.connectivity = reach
     engine = try SyncEngine(config: settings.engineConfig, bindings: [gymBinding], store: store, transport: syncTransport ?? transport,
                             tokens: tokens,
-                            forkGuard: storage.forkGuard, clock: EngineClock(wall: boardClock ? BoardClock() : SystemClock(), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: reach, telemetry: telemetry)
+                            forkGuard: storage.forkGuard, clock: EngineClock(wall: wall ?? (boardClock ? BoardClock() : SystemClock()), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: reach, telemetry: telemetry)
     runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: DeviceZone(), holdRemovals: false)
     lifecycle = AppLifecycle(engine: engine, signals: .application, time: ApplicationBackgroundTime())
     background = BackgroundActivity(time: ApplicationBackgroundTime())

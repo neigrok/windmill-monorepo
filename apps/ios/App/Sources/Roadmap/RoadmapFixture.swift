@@ -1,5 +1,6 @@
 import Foundation
 import DomainKit
+import Synchronization
 import RoadmapDomain
 import SyncCore
 import SyncEngine
@@ -7,13 +8,16 @@ import SyncSchema
 
 // Simulator boards. An account's roadmaps arriving by sync: roadmap-learn-to-sail (three steps done), roadmap-all-done
 // (all eight), roadmap-no-steps (*Night sailing*, with no step), roadmap-several (*Learn to sail* over two more, the
-// most recent first), roadmap-workspace (*Learn to sail* with the workspace the boards draw on *Read the wind*) and
+// most recent first), roadmap-workspace (*Learn to sail* with the workspace the boards draw on *Read the wind*),
 // roadmap-two-phones (*Learn to sail*, where the account's other phone adds a subtask to the first step whose page is
-// opened). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no order a server gave
-// them; roadmap-handbook, the 5,000 steps the Graph's and the Board's budget is measured at; roadmap-full, a roadmap at
-// the steps the registry lets it hold; and roadmap-empty, which holds none. roadmap-unreadable cannot make its views. A
-// launch can also name where the Graph's measures go and how it keeps a pinch's frames (`graph(telemetry:)`), and where
-// the Board's go (`boardFrames()`).
+// opened) and roadmap-first-read (*Learn to sail*, each pull of the signed-in phone answered three seconds late, so the
+// room's first read runs long). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no
+// order a server gave them; roadmap-handbook, the 5,000 steps the Graph's and the Board's budget is measured at;
+// roadmap-full, a roadmap at the steps the registry lets it hold; roadmap-undo-finds-nothing, *Learn to sail*, where
+// the engine keeps no Undo of a band's act by the time it is tapped (`undoFindsNothing(in:)`); and roadmap-empty, which
+// holds none.
+// roadmap-unreadable cannot make its views. A launch can also name where the Graph's measures go and how it keeps a
+// pinch's frames (`graph(telemetry:)`), where the Board's go (`boardFrames()`), and how long a band stands (`wait()`).
 enum RoadmapFixture {
   // The engine's views of every record of a type in a scope, visible or not, as the room's model takes them.
   static func records(_ runtime: AppRuntime) -> RoadmapModel.Records {
@@ -81,6 +85,18 @@ enum RoadmapFixture {
     #endif
   }
 
+  // How the room waits out a band's time. A simulator launch with `-band-stands` has every band stand that many seconds
+  // in place of its six or the hold's nine, so a flow that takes a band's Undo cannot be outlasted by a slow runner.
+  static func wait() -> RoadmapModel.Wait {
+    #if DEBUG && targetEnvironment(simulator)
+    let arguments = ProcessInfo.processInfo.arguments
+    if let named = arguments.firstIndex(of: "-band-stands"), named + 1 < arguments.count, let seconds = Int(arguments[named + 1]) {
+      return { _ in try await Task.sleep(for: .seconds(seconds)) }
+    }
+    #endif
+    return { try await Task.sleep(for: $0) }
+  }
+
   static func prepare(_ board: String, model: AppModel) async -> Bool {
     #if DEBUG && targetEnvironment(simulator)
     guard board.hasPrefix("roadmap-") else { return false }
@@ -88,12 +104,14 @@ enum RoadmapFixture {
     // The steps of *Learn to sail* each board's account completed, the oldest first.
     let completed = ["roadmap-learn-to-sail": ["choose", "parts", "rig"], "roadmap-several": ["choose", "parts", "rig"],
                      "roadmap-workspace": ["choose", "parts", "rig"], "roadmap-two-phones": ["choose", "parts", "rig"],
+                     "roadmap-first-read": ["choose", "parts", "rig"],
                      "roadmap-all-done": ["choose", "parts", "rig", "read", "tie", "leave", "tri", "solo"]][board]
-    guard completed != nil || ["roadmap-no-steps", "roadmap-many", "roadmap-handbook", "roadmap-full"].contains(board) else { return true }
+    let local = ["roadmap-many", "roadmap-handbook", "roadmap-full", "roadmap-undo-finds-nothing"]
+    guard completed != nil || board == "roadmap-no-steps" || local.contains(board) else { return true }
     do {
-      // roadmap-many, roadmap-handbook and roadmap-full are made on the phone itself, signed out: the first with *Learn
-      // to sail* remembered as the roadmap last open, the others holding their one roadmap alone.
-      if ["roadmap-many", "roadmap-handbook", "roadmap-full"].contains(board) {
+      // roadmap-many, roadmap-handbook, roadmap-full and roadmap-undo-finds-nothing are made on the phone itself, signed
+      // out: the first with *Learn to sail* remembered as the roadmap last open, the others holding their one roadmap alone.
+      if local.contains(board) {
         guard let runner = model.runtime?.roadmapRunner else { throw AppFailure(message: "no runtime") }
         if board == "roadmap-handbook" {
           try plantHandbook(runner)
@@ -101,6 +119,11 @@ enum RoadmapFixture {
         }
         if board == "roadmap-full" {
           try plantFull(runner)
+          return true
+        }
+        if board == "roadmap-undo-finds-nothing" {
+          try plantLearnToSail(runner)
+          Task { @MainActor in await undoFindsNothing(in: model) }
           return true
         }
         let sail = try plantLearnToSail(runner).tree
@@ -111,8 +134,9 @@ enum RoadmapFixture {
       guard let server = model.runtime?.auth.fake else { throw AppFailure(message: "no model server") }
       let identity = server.identity(email: "roadmap-fixture@example.com")
       let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+      let clock = SteppingBoardClock()
       let remote = try AppRuntime(settings: AppSettings(arguments: ["fixture", "-model-server", "-board", board]),
-                                  directory: directory, service: UUID().uuidString, syncTransport: server)
+                                  directory: directory, service: UUID().uuidString, syncTransport: server, wall: clock)
       // The other phone goes once the board is planted; roadmap-two-phones keeps it until it has written.
       let retire = {
         try? remote.tokens.delete(for: identity.account)
@@ -120,11 +144,12 @@ enum RoadmapFixture {
       }
       defer { if board != "roadmap-two-phones" { retire() } }
       _ = try await remote.engine.signIn(account: identity.account, token: identity.token)
-      // The board's clock stands still, so the server receives each sending a second after the one before: Done, newest
-      // first, and the account's roadmaps, most recent first, have an order.
+      // The board's clock stands still, so the other phone makes each sending a second after the one before, and the
+      // server receives it so: Done, newest first, and the account's roadmaps, most recent first, have an order.
       var sendings: Int64 = 0
       let sent = { () async throws -> Void in
         server.state.withLock { $0.pushesReceivedLaterMs = sendings * 1_000 }
+        clock.step(to: sendings * 1_000)
         sendings += 1
         try remote.engine.leave()
         for _ in 0..<40 where try remote.store.read({ try $0.device().activeReplica.outbox.contains { $0.state != .acked } }) {
@@ -161,7 +186,10 @@ enum RoadmapFixture {
         }
         try await sent()
       }
-      server.state.withLock { $0.pushesReceivedLaterMs = 0 }
+      server.state.withLock { state in
+        state.pushesReceivedLaterMs = 0
+        if board == "roadmap-first-read" { (state.pullsAnsweredBeforeHold, state.pullDelaySeconds) = (Int.max, 3) }
+      }
       try await model.signIn(identity)
       if board == "roadmap-two-phones", let tree = planted?.tree {
         Task { @MainActor in
@@ -194,6 +222,25 @@ enum RoadmapFixture {
       if let step = model.roadmap?.path.compactMap(\.step).first { return step }
       await withCheckedContinuation { (changed: CheckedContinuation<Void, Never>) in
         withObservationTracking { _ = model.roadmap?.path } onChange: { changed.resume() }
+      }
+    }
+  }
+
+  // roadmap-undo-finds-nothing (02.10d, 06.5c): once a band stands with its Undo, the engine keeps no Undo of its act, as
+  // when the act's Undo is gone by the time it is tapped, so the Undo truly restores nothing: a held removal is let go into
+  // the queue, as leaving the app lets it go, and the act's Undo is released. The band is read again after each change.
+  static func undoFindsNothing(in model: AppModel) async {
+    guard let room = model.roadmap, let runtime = model.runtime else { return }
+    while true {
+      if let undo = room.band?.undo {
+        if undo.held {
+          try? runtime.engine.leave()
+          runtime.engine.foreground()
+        }
+        try? runtime.roadmapRunner.release(undo.gesture)
+      }
+      await withCheckedContinuation { (changed: CheckedContinuation<Void, Never>) in
+        withObservationTracking { _ = room.band } onChange: { changed.resume() }
       }
     }
   }
@@ -339,6 +386,21 @@ enum RoadmapFixture {
     guard let step = planted.steps.first(where: { $0.key == key })?.id,
           case .committed = try runner.runAct(MarkStep.complete(tree: planted.tree, step: step)) else {
       throw AppFailure(message: "Learn to sail's \(key) was not marked done.")
+    }
+  }
+
+  // The board's clock for the fixture's other phone, stepped forward as the fixture makes each sending, so writes it makes
+  // one after another stand in that order by the device's time, as they do by the server's.
+  nonisolated final class SteppingBoardClock: WallClock {
+    private let later = Mutex<Int64>(0)
+
+    func step(to ms: Int64) { later.withLock { $0 = ms } }
+
+    func nowMs() -> Int64 { BoardClock().nowMs() + later.withLock { $0 } }
+
+    func reading() -> ClockReading {
+      let board = BoardClock().reading()
+      return ClockReading(wall: nowMs(), mono: board.mono, boot: board.boot)
     }
   }
   #endif

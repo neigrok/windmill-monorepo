@@ -356,12 +356,13 @@ void runRead(const std::string& file, Json::ArrayIndex index) {
   CHECK_EQ(sync::jcs(answer(vector["input"])), sync::jcs(vector["expect"]));
 }
 
-// The files a device claims alone: its Board, landing and replica reads, its gestures and their Undo scenes, and the
-// pinned rule book and values.
+// The files a device claims alone: its Board, landing, replica and Activity reads, its gestures and their Undo scenes,
+// and the pinned rule book and values.
 const std::set<std::string> kDevices{"board.json",            "landing.json",           "replica.json",
-                                     "roadmaps-actions.json", "steps-actions.json",     "kinds-actions.json",
-                                     "progress-actions.json", "workspace-actions.json", "landing-actions.json",
-                                     "undo.json",             "rules.json",             "values.json"};
+                                     "activity.json",         "roadmaps-actions.json",  "steps-actions.json",
+                                     "kinds-actions.json",    "progress-actions.json",  "workspace-actions.json",
+                                     "landing-actions.json",  "undo.json",              "rules.json",
+                                     "values.json"};
 
 }
 

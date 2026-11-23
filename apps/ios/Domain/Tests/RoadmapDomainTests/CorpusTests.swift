@@ -5,7 +5,7 @@ import Testing
 
 // The runner of roadmap's shared vectors, `packages/api-contract/roadmap/domain/`: each read over the records a case states.
 struct CorpusTests {
-  static let reads = ["account", "board", "diagnostics", "graph", "guides", "landing", "legend", "pointers", "progress", "replica", "search"]
+  static let reads = ["account", "activity", "board", "diagnostics", "graph", "guides", "landing", "legend", "pointers", "progress", "replica", "search"]
 
   // `rules.json` and `values.json` run in RoadmapRulesTests, and each family's actions in its own tests.
   @Test func everyFileIsClaimedOrWaitsForItsScenes() throws {
@@ -33,6 +33,7 @@ struct CorpusTests {
       }
       let tree = try input.member("tree").asString()
       switch operation {
+      case "activity": return try account.graph(tree).map { ActivityRead($0, step: try input.optionalString("step")).form } ?? .null
       case "progress": return account.progress(tree)?.form ?? .null
       case "guides": return .array(account.guides(tree).map(\.form))
       case "openings": return .array(account.openings(of: tree).map(\.form))

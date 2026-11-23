@@ -625,6 +625,17 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   seconds with *Undo*; the web shows Done as its twelve newest and *Show all N* where iOS folds each group; the web's reader on an app route sees an
   *Author's note* and iOS's cover shows none; the web's private links are *Personal links* and iOS's are *Your
   links*.
+- **Roadmap · iOS · what Activity, History and an empty Undo leave for the boards.** Activity, a step's History, the
+  room before its first read and its failed read, and the band of an Undo that brought nothing back are built in Debug
+  builds from 01.13, 01.13b, 01.15, 03.12, 01.5b, 01.5c, 02.10d and 06.5c. To draw or rule: 01.13's caption sets a row's
+  time in `.footnote` where 01.13 and 03.12 draw it at the body size, and it is built at the body size; a time and a date
+  follow the phone's region, so a US phone reads *9:12 AM* and *Nov 3* where the boards draw *9:12* and *3 Nov*; the
+  system's `DisclosureGroup` draws 01.13b's fold chevron in the label's ink whatever its tint or foreground, where the
+  board draws it in the accent, and opened it indents the folded rows, which no board draws; the fold's plus is
+  `roadmap/ink-dim` whatever kinds its steps wear; steps made in one moment share their time and stand in the roadmap's
+  authored order reversed, which for a planted roadmap follows the ids the phone minted, where 01.13 draws the plan's
+  order reversed; and Activity and History stand on the room's band like every screen of the room, where their boards
+  draw no foot.
 - **Roadmap · iOS · what the Board's writes leave for the boards.** Complete, Delete, their *Undo* and the long-press
   menu are built in Debug builds from 02.1 to 02.4, 02.13, 02.15, 01.12 and the question of 03.8. To draw or rule:
   a slid row is drawn as its own rounded card on `roadmap/raised` (02.1, 02.3), and SwiftUI shapes it so only where
@@ -642,8 +653,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   draws it, so the page is built to the NOTE and 03.4's row reads *Sky · Reset returns 1 step to Locked*; no board
   words the band after a step completed on its page opens nothing, or after a Reset that locks nothing, and they are
   built as *Read the wind done*, the Board's sentence, and *Read the wind reset*; every board of the page draws
-  the Coach circle or composer and History, and the page is built without them until their
-  screens are, so a Locked or a Done step's foot holds the band alone and the … menu holds *Open in Graph*, *View
+  the Coach circle or composer, and the page is built without it until its screen is, so a Locked or a Done step's
+  foot holds the band alone and the … menu holds *Open in Graph*, *View
   Branch* and *Delete Step*, without *Attach a Roadmap*; the roadmap's one starting step keeps no *Delete Step*, so
   its menu holds the first two alone, and no board draws that step's menu; a link row shows the address's host as it is written, so *www.* stays where the
   address has it; an Undo of Reset marks the step done at the Undo's time, as the web's does, so the step then leads

@@ -2,11 +2,12 @@ import SwiftUI
 import UIKit
 import RoadmapDomain
 
-// The Roadmap room (Roadmap · iOS S.1, S.2, 01.3, 01.5, 02.10, 04.5, 04.7, 11.22a): one stack, the open roadmap under its
-// name with the switch row, its Board or its Graph, and at the foot the one band over New step. All Roadmaps, a step's
-// page and its note are pushed on the stack, and New Roadmap, the step form and Kinds are its sheets. What the band says
-// is announced and felt once, whichever screen stands over it. While the Graph's Fit stands, the bar, the switch row and
-// the foot are away; while several steps are selected the bar and the bottom toolbar are the selection's.
+// The Roadmap room (Roadmap · iOS S.1, S.2, 01.3, 01.5, 01.5b, 01.5c, 02.10, 04.5, 04.7, 11.22a): one stack, the open
+// roadmap under its name with the switch row, its Board or its Graph, and at the foot the one band over New step. All
+// Roadmaps, Activity, a step's page, its note and its History are pushed on the stack, and New Roadmap, the step form and
+// Kinds are its sheets. What the band says is announced and felt once, whichever screen stands over it. While the
+// Graph's Fit stands, the bar, the switch row and the foot are away; while several steps are selected the bar and the
+// bottom toolbar are the selection's.
 struct RoadmapRoom: View {
   @Bindable var roadmap: RoadmapModel
   let app: AppModel
@@ -29,8 +30,10 @@ struct RoadmapRoom: View {
         .navigationDestination(for: RoadmapModel.Visit.self) { visit in
           switch visit {
           case .roadmaps: RoadmapsList(roadmap: roadmap)
+          case .activity: RoadmapActivity(roadmap: roadmap)
           case .step(let step, _): RoadmapStepPage(roadmap: roadmap, step: step)
           case .note: RoadmapNoteEditor(roadmap: roadmap)
+          case .history(let step): StepHistory(roadmap: roadmap, step: step)
           }
         }
     }.onAppear { roadmap.roomOpened() }
@@ -43,6 +46,7 @@ struct RoadmapRoom: View {
         switch band?.says {
         case .completed, .created: .success
         case .reset: .impact
+        case .unrestored: .warning
         default: nil
         }
       }
@@ -53,7 +57,7 @@ struct RoadmapRoom: View {
 
   @ViewBuilder var content: some View {
     switch roadmap.phase {
-    case .unread: Color.clear
+    case .unread: FirstRead(roadmap: roadmap)
     case .open(let open): views(of: open)
     // 01.5: the room with no roadmap, where the band still holds the Undo of the last one's delete.
     case .empty:
@@ -64,13 +68,34 @@ struct RoadmapRoom: View {
       } actions: {
         Button("New Roadmap") { roadmap.nameRoadmap(from: .empty) }.buttonStyle(RoomSecondaryStyle()).accessibilityIdentifier("roadmap-new")
       }.roadmapFoot(roadmap) {}
-    // 10.9, for a read of the phone's copy that failed: the board's sentence speaks of a server, so it is not said here.
+    // 01.5c: the read of the phone's own copy failed, which asks no server, so the sentence names the phone.
     case .failed:
       ContentUnavailableView {
         Label { Text("Couldn’t load this roadmap").foregroundStyle(RoadmapPalette.ink) } icon: { Image(systemName: "map").foregroundStyle(RoadmapPalette.inkDim) }
+      } description: {
+        Text("The copy on this iPhone couldn’t be read.").foregroundStyle(RoadmapPalette.inkDim)
       } actions: {
         Button("Try Again") { roadmap.retry() }.buttonStyle(RoomSecondaryStyle()).accessibilityIdentifier("roadmap-try-again")
       }
+    }
+  }
+
+  // 01.5b: before the first read of the phone's copy the room is its bar alone, and a large spinner shows only once the
+  // read has run half a second, so a quick read never flashes one. A spinner shown is told, and how its wait ended.
+  struct FirstRead: View {
+    let roadmap: RoadmapModel
+    @State private var waited = false
+
+    var body: some View {
+      ZStack {
+        if waited { ProgressView().controlSize(.large).tint(RoadmapPalette.inkDim).accessibilityIdentifier("roadmap-first-read") }
+      }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+          guard (try? await Task.sleep(for: .milliseconds(500))) != nil else { return }
+          waited = true
+          roadmap.firstReadWaits()
+        }
+        .onDisappear { if waited { roadmap.firstReadEnded() } }
     }
   }
 
@@ -146,9 +171,9 @@ struct GlassCircle: ViewModifier {
 
 // The bar's title over the Board (Roadmap · iOS 01.3, 01.9, 01.10): the open roadmap's name over its progress. Its menu
 // lists the three most recent roadmaps, each over its progress and the open one checked, then All Roadmaps…, New Roadmap,
-// Kinds, Rename and Delete Roadmap. Rename is the system's: it turns the bar into one field, whose return key commits a name
-// and leaves the old one where the field was emptied. Delete Roadmap asks under the title, on a view that stays on
-// screen once the menu has closed. While several steps are selected the title counts them, with no progress, no menu
+// Kinds, Activity, Rename and Delete Roadmap. Rename is the system's: it turns the bar into one field, whose return key
+// commits a name and leaves the old one where the field was emptied. Delete Roadmap asks under the title, on a view that
+// stays on screen once the menu has closed. While several steps are selected the title counts them, with no progress, no menu
 // and no rename (02.10). The title stands on a view of its own behind the screen, which changes with it, so the screen
 // under the title is not made anew as a selection starts and ends.
 struct RoadmapTitle: ViewModifier {
@@ -173,6 +198,7 @@ struct RoadmapTitle: ViewModifier {
     Button("New Roadmap", systemImage: "plus") { roadmap.nameRoadmap(from: .menu) }.tint(RoadmapPalette.ink)
     Divider()
     Button("Kinds", systemImage: "paintpalette") { roadmap.openKinds(from: .menu) }.tint(RoadmapPalette.ink)
+    Button("Activity", systemImage: "clock.arrow.circlepath") { roadmap.showActivity() }.tint(RoadmapPalette.ink)
     RenameButton()
     Divider()
     Button("Delete Roadmap", systemImage: "trash", role: .destructive) { roadmap.askDelete(open.listed, from: .menu) }

@@ -36,7 +36,7 @@ test('a roadmap someone else owns reads as theirs: no pointer and no workspace, 
     { state: 'open', mine: false, workspace: {},
       sail: { treeId: subtree, read: false, owned: true, face: 'unread' },
       book: { id: steps.book, label: 'Write the book', icon: '', color: 'terracotta', order: 'a1',
-        createdAt: { ms: 1_800_000_000_000, counter: 1, actor: 'r_000000000002' }, createdMs: null, prerequisites: [],
+        createdAt: { ms: 1_800_000_000_000, counter: 1, actor: 'r_000000000002' }, createdMs: 1_800_000_000_000, prerequisites: [],
         status: undefined, description: undefined, links: undefined, opens: undefined } });
 
     const told = Opening.owned({ id: subtree, done: 1, total: 2, state: 'open' });

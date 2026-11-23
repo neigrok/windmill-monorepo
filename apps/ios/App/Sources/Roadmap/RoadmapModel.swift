@@ -61,23 +61,35 @@ final class RoadmapModel {
     case board, graph
   }
 
-  // A screen on the room's stack over the Board: All Roadmaps, a step's page with what opened it as its event names
-  // it, a Board row, the web's card, a row of another step's page, or the Graph's bar of the selected step, or a step's
-  // note over its page.
+  // A screen on the room's stack over the Board: All Roadmaps; a roadmap's Activity; a step's page with what opened it as
+  // its event names it, a Board row, the web's card, a row of another step's page, the Graph's bar of the selected step,
+  // or a row of Activity; a step's note over its page; or a step's History.
   enum Visit: Hashable {
     enum Door: String {
-      case card, step, graph
+      case card, step, graph, activity
     }
 
     case roadmaps
+    case activity(of: String)
     case step(String, by: Door)
     case note(of: String)
+    case history(of: String)
 
-    // The step whose page or note the screen is.
+    // The step whose page, note or History the screen is.
     var step: String? {
       switch self {
-      case .roadmaps: nil
-      case .step(let step, _), .note(let step): step
+      case .roadmaps, .activity: nil
+      case .step(let step, _), .note(let step), .history(let step): step
+      }
+    }
+
+    // Whether the screen still has what it shows in the roadmap the room has open: Activity its roadmap, and a step's
+    // screens their step.
+    func stands(in open: OpenRoadmap) -> Bool {
+      switch self {
+      case .roadmaps: true
+      case .activity(let roadmap): open.listed.id.utf8.elementsEqual(roadmap.utf8)
+      case .step(let step, _), .note(let step), .history(let step): open.step(step) != nil
       }
     }
   }
@@ -172,7 +184,7 @@ final class RoadmapModel {
     }
   }
 
-  // What the room shows: nothing while the phone's copy is not read yet, a roadmap, no roadmap, or a failed read.
+  // What the room shows: its bar alone while the phone's copy is not read yet, a roadmap, no roadmap, or a failed read.
   enum Phase {
     case unread, empty, open(OpenRoadmap), failed
   }
@@ -253,6 +265,8 @@ final class RoadmapModel {
       // A subtask or a link of a step's workspace deleted, by its words or its title.
       case deletedFromWorkspace(String)
       case refused(Limit)
+      // An Undo that brought back nothing of what its receipt said.
+      indirect case unrestored(Says)
     }
 
     // A receipt's Undo: the gesture its act wrote, whether the engine holds that act, and the act it takes back.
@@ -263,6 +277,13 @@ final class RoadmapModel {
         case step(String)
         case workspace(String)
         case roadmapDelete(reopens: String?)
+
+        // An act on steps or kinds keeps the kit's Undo of it past the engine's hold, so a step's delete is restored once
+        // its hold has ended too; a roadmap's delete and a removal from a workspace are undone by their hold alone.
+        var outlivesHold: Bool {
+          guard case .step = self else { return false }
+          return true
+        }
       }
 
       let gesture: String
@@ -290,6 +311,12 @@ final class RoadmapModel {
     init(refused limit: Limit) {
       says = .refused(limit); undo = nil; arrived = []; lasts = RoadmapModel.bandLasts
     }
+
+    // An Undo that brought nothing back: the receipt's words give way to what could not come back, with no Undo, for six
+    // seconds.
+    init(unrestored receipt: Says) {
+      says = .unrestored(receipt); undo = nil; arrived = []; lasts = RoadmapModel.bandLasts
+    }
   }
 
   // The types the domain reads one roadmap from, in its tree scope and in its owner's overlay.
@@ -311,10 +338,11 @@ final class RoadmapModel {
   let graph: RoadmapGraph
   // What the Board measures of itself, where a launch asks for it.
   let boardFrames: BoardFrames
-  // A step that goes while its page or its note is open, deleted here or by another device, takes the stack back to the
-  // Board, and so does the last roadmap going while All Roadmaps is open. The form closes once its roadmap is not the
-  // open one, or the step it edits is gone, and a selected step that is gone is selected no longer. A note open on its
-  // screen follows what the phone's copy now holds of it, and the Board's reading what the room shows.
+  // A step that goes while its page, its note or its History is open, deleted here or by another device, takes the stack
+  // back to the Board, and so does the roadmap whose Activity is open no longer being the open one, or the last roadmap
+  // going while All Roadmaps is open. The form closes once its roadmap is not the open one, or the step it edits is gone,
+  // and a selected step that is gone is selected no longer. A note open on its screen follows what the phone's copy now
+  // holds of it, and the Board's reading what the room shows.
   private(set) var phase = Phase.unread {
     didSet {
       if let draft, draft.open == nil { self.draft = nil }
@@ -322,14 +350,15 @@ final class RoadmapModel {
       note?.follow()
       if let shown { reading.read(shown, shown: view(of: shown)) }
       if !removedKinds.isEmpty { removedKinds = removedKinds.filter { shown?.legend.entry($0.key) != nil } }
+      activities = [:]
       guard !path.isEmpty else { return }
-      if case .open(let open) = phase, path.allSatisfy({ (visit: Visit) -> Bool in visit.step.map { open.step($0) != nil } ?? true }) { return }
+      if case .open(let open) = phase, path.allSatisfy({ $0.stands(in: open) }) { return }
       path = []
     }
   }
   // The screens open over the Board, the one on screen last. A screen pushed is told once: All Roadmaps, a step's page
-  // with the group its step stands in, or a step's note, which opens on a draft. A note's screen that leaves the stack,
-  // by Done, by Back or with its step, saves its draft.
+  // with the group its step stands in, a step's note, which opens on a draft, and Activity or a step's History with what
+  // its read came to. A note's screen that leaves the stack, by Done, by Back or with its step, saves its draft.
   var path: [Visit] = [] {
     didSet {
       if let note, !path.contains(.note(of: note.step.description)) {
@@ -346,6 +375,10 @@ final class RoadmapModel {
         guard case .open(let open) = phase, open.step(step) != nil else { return }
         note = StepNoteDraft(of: ID(RecordID(step)), in: open.id, room: self)
         telemetry.event("roadmap_board_step_action", properties: ["surface": "document", "action": "editNote"])
+      case .activity, .history:
+        guard let shown, pushed.stands(in: shown), let read = activity(of: pushed.step) else { return }
+        telemetry.event("roadmap_activity", properties: ["step": "open", "surface": pushed.step == nil ? "activity" : "history",
+                                                         "read": read.rows.isEmpty ? "empty" : "loaded"])
       }
     }
   }
@@ -385,6 +418,13 @@ final class RoadmapModel {
   @ObservationIgnored var account = RoadmapAccount([])
   // A roadmap the room made, or brought back by Undo, which it opens once the list holds it.
   @ObservationIgnored var arriving: String?
+  // The open roadmap's Activity, and each step's History, by the step, as the domain read them from the phone's copy:
+  // read once for each read of the copy, however often the screens that show them are drawn.
+  @ObservationIgnored var activities: [String?: ActivityRead] = [:]
+  // The phone's midnights while the room stands, which whatever reads `moment` is drawn again at.
+  private(set) var midnights = 0
+  // The observer that counts them.
+  @ObservationIgnored var dayChanges: (any NSObjectProtocol)?
   // Every view the room asked the engine for, kept so each stays live.
   @ObservationIgnored var views: [ViewKey: RecordsView] = [:]
   // The observation now live; one begun later ends the one before it.
@@ -398,6 +438,51 @@ final class RoadmapModel {
     self.graph = graph ?? RoadmapGraph(telemetry: telemetry)
     self.boardFrames = boardFrames
     reading = BoardReading(telemetry: telemetry)
+    dayChanges = NotificationCenter.default.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: .main) { [weak self] _ in
+      MainActor.assumeIsolated { self?.midnights += 1 }
+    }
+  }
+
+  // The engine's now in the phone's zone, by which Activity and a step's History place each row's day; the phone's own
+  // clock where the store cannot say it. It reads the midnights passed, so a screen laid out by it is drawn again at one.
+  var moment: Moment {
+    _ = midnights
+    return (try? runner.moment()) ?? Moment(now: Instant(ms: Int64((Date().timeIntervalSince1970 * 1_000).rounded())), zone: DeviceZone())
+  }
+
+  // The open roadmap's Activity, or a step's History, read once for each read of the phone's copy.
+  func activity(of step: String? = nil) -> ActivityRead? {
+    guard let shown else { return nil }
+    if let read = activities[step] { return read }
+    let read = ActivityRead(shown.graph, step: step)
+    activities[step] = read
+    return read
+  }
+
+  // Activity, from the title menu: the open roadmap's, pushed over its Board.
+  func showActivity() {
+    guard let shown else { return }
+    path = [.activity(of: shown.listed.id)]
+  }
+
+  // 01.13b: a fold of steps added at once opened in place, told with how many it holds as a bucket.
+  func unfolded(_ steps: Int) {
+    telemetry.event("roadmap_activity", properties: ["step": "unfold", "surface": "activity", "count": Self.bucket(steps)])
+  }
+
+  // 01.5b: the room's first read has run half a second and its spinner shows; then how that wait ended: read, failed,
+  // or left, the room put away first.
+  func firstReadWaits() {
+    telemetry.event("roadmap_first_read", properties: ["step": "shown"])
+  }
+
+  func firstReadEnded() {
+    let outcome = switch phase {
+    case .unread: "left"
+    case .failed: "failed"
+    case .open, .empty: "read"
+    }
+    telemetry.event("roadmap_first_read", properties: ["step": "ended", "outcome": outcome])
   }
 
   // The roadmap the room has open, where it has one.
@@ -859,18 +944,19 @@ final class RoadmapModel {
     show(Band(.deletedRoadmap(roadmap.title), of: written.receipt, act: .roadmapDelete(reopens: wasOpen ? roadmap.id : nil)))
   }
 
-  // The band's Undo: a removal the engine holds is cancelled while it is held, and any other act is taken back by the
-  // kit's Undo of it. The engine then keeps nothing more of the act, nor of its Undo, which the room never redoes. A
-  // roadmap brought back is the open one again where it was.
+  // The band's Undo: a removal the engine holds is cancelled while it is held, and any other act, or a step's delete whose
+  // hold has ended, is taken back by the kit's Undo of it. The engine then keeps nothing more of the act, nor of its Undo,
+  // which the room never redoes. A roadmap brought back is the open one again where it was. An Undo that brought nothing
+  // back, a roadmap's delete or a workspace removal past its hold, an act the engine keeps no Undo of, or one whose every
+  // restore a write elsewhere stood in the way of, says so in the band's place, with a warning (02.10d, 06.5c).
   func undo() {
-    guard let undo = band?.undo else { return }
+    guard let receipt = band, let undo = receipt.undo else { return }
     bandTime?.cancel()
     band = nil
     do {
       var taken = false
-      if undo.held {
-        taken = try runner.cancelHeld(undo.gesture)
-      } else {
+      if undo.held { taken = try runner.cancelHeld(undo.gesture) }
+      if !taken && (!undo.held || undo.act.outlivesHold) {
         switch try runner.undo(undo.gesture) {
         case .cancelled(_, let inverse, let changed), .pending(_, let inverse, let changed), .settled(_, let inverse, let changed, _, _):
           taken = changed
@@ -888,6 +974,7 @@ final class RoadmapModel {
         telemetry.event("roadmap_deletion", properties: ["step": "undo", "outcome": taken ? "cancelled" : "released"])
         if taken, let reopens { arriving = reopens }
       }
+      if !taken { show(Band(unrestored: receipt.says)) }
     } catch {
       report(error, write: "undo")
     }

@@ -254,9 +254,10 @@ jobs:
         working-directory: apps/ios/App
         run: python3 Tools/string_catalogs.py --check --derived-data "$RUNNER_TEMP/app-release"
 
+  # A runner's build of the app takes 7 to 28 minutes, and the unit tests about 15.
   app-unit-tests:
     runs-on: macos-26
-    timeout-minutes: 40
+    timeout-minutes: 55
     defaults:
       run:
         working-directory: apps/ios/App

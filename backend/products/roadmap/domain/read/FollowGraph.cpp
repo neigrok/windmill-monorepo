@@ -141,7 +141,7 @@ FollowGraph::FollowGraph(const RoadmapTree& tree, std::optional<std::set<std::st
   }
   if (dates) dates_ = std::move(*dates);
   else
-    for (const auto& [node, mark] : tree.marks) dates_[node] = mark.recordedAt ? mark.recordedAt : mark.deviceAt;
+    for (const auto& [node, mark] : tree.marks) dates_[node] = mark.at();
 
   std::vector<std::uint32_t> completeBits(words, 0);
   for (const std::string& id : completed_) {

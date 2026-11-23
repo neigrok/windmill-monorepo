@@ -1,0 +1,287 @@
+[
+  {
+    "name": "A roadmap planted on the device in one moment: each creation at its birth's time, the last authored first, and a completion at the device's time",
+    "input": {
+      "operation": "activity",
+      "trees": [
+        {
+          "id": "P",
+          "read": "loaded",
+          "meta": {"title": "Learn to sail"},
+          "nodes": [
+            {"id": "choose", "born": "5000:0:dev", "rc": null, "label": "Choose a course", "ord": "a0"},
+            {"id": "parts", "born": "5000:1:dev", "rc": null, "label": "Name the parts", "ord": "a1"},
+            {"id": "rig", "born": "5000:2:dev", "rc": null, "label": "Rig the boat", "ord": "a2"}
+          ],
+          "edges": [{"from": "choose", "to": "parts", "present": true}, {"from": "parts", "to": "rig", "present": true}],
+          "marks": [{"node": "choose", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 7000, "stamp": "7000:0:dev"}]
+        }
+      ],
+      "tree": "P"
+    },
+    "expect": [
+      {"kind": "completed", "step": "choose", "at": 7000},
+      {"kind": "created", "step": "rig", "at": 5000},
+      {"kind": "created", "step": "parts", "at": 5000},
+      {"kind": "created", "step": "choose", "at": 5000}
+    ]
+  },
+  {
+    "name": "A creation or a completion is the person's own time, the device's, and the server's receipt only where the device's holds none",
+    "input": {
+      "operation": "activity",
+      "trees": [
+        {
+          "id": "S",
+          "read": "loaded",
+          "meta": {"title": "Run a 10k"},
+          "nodes": [
+            {"id": "x", "born": "1500:0:dev", "rc": 2000, "label": "Run 5k", "ord": "a0"},
+            {"id": "y", "born": "2500:0:dev", "rc": null, "label": "Run 10k", "ord": "a1"},
+            {"id": "z", "born": null, "rc": 1800, "label": "Stretch", "ord": "a2"},
+            {"id": "w", "born": "0:0:srv", "rc": 1700, "label": "Rest a day", "ord": "a3"}
+          ],
+          "marks": [
+            {"node": "x", "status": "complete", "outOfOrder": false, "recordedAt": 3000, "deviceAt": 2800, "stamp": "2800:0:dev"},
+            {"node": "y", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 2600, "stamp": "2600:0:dev"},
+            {"node": "z", "status": "complete", "outOfOrder": false, "recordedAt": 2700, "deviceAt": null},
+            {"node": "w", "status": "complete", "outOfOrder": false, "recordedAt": 2650, "deviceAt": 0, "stamp": "0:0:srv"}
+          ]
+        }
+      ],
+      "tree": "S"
+    },
+    "expect": [
+      {"kind": "completed", "step": "x", "at": 2800},
+      {"kind": "completed", "step": "z", "at": 2700},
+      {"kind": "completed", "step": "w", "at": 2650},
+      {"kind": "completed", "step": "y", "at": 2600},
+      {"kind": "created", "step": "y", "at": 2500},
+      {"kind": "created", "step": "z", "at": 1800},
+      {"kind": "created", "step": "w", "at": 1700},
+      {"kind": "created", "step": "x", "at": 1500}
+    ]
+  },
+  {
+    "name": "A step completed and then reset shows its creation alone",
+    "input": {
+      "operation": "activity",
+      "trees": [
+        {
+          "id": "R",
+          "read": "loaded",
+          "meta": {"title": "Spanish B1"},
+          "nodes": [
+            {"id": "r", "rc": 1000, "label": "Order at a café", "ord": "a0"},
+            {"id": "s", "rc": 1100, "label": "Describe your day", "ord": "a1"}
+          ],
+          "marks": [
+            {"node": "r", "status": "none", "outOfOrder": false, "recordedAt": 4000, "deviceAt": 4000, "stamp": "4000:0:dev"},
+            {"node": "s", "status": "complete", "outOfOrder": false, "recordedAt": 3000, "deviceAt": 3000, "stamp": "3000:0:dev"}
+          ]
+        }
+      ],
+      "tree": "R"
+    },
+    "expect": [
+      {"kind": "completed", "step": "s", "at": 3000},
+      {"kind": "created", "step": "s", "at": 1100},
+      {"kind": "created", "step": "r", "at": 1000}
+    ]
+  },
+  {
+    "name": "A removed step leaves no row, its completion included",
+    "input": {
+      "operation": "activity",
+      "trees": [
+        {
+          "id": "D",
+          "read": "loaded",
+          "meta": {"title": "Ship v1"},
+          "nodes": [
+            {"id": "gone", "present": false, "rc": 1000, "label": "Cut the scope", "ord": "a0"},
+            {"id": "kept", "rc": 1500, "label": "Ship it", "ord": "a1"}
+          ],
+          "marks": [{"node": "gone", "status": "complete", "outOfOrder": false, "recordedAt": 2000, "deviceAt": 2000, "stamp": "2000:0:dev"}]
+        }
+      ],
+      "tree": "D"
+    },
+    "expect": [
+      {"kind": "created", "step": "kept", "at": 1500}
+    ]
+  },
+  {
+    "name": "An empty roadmap has no rows",
+    "input": {
+      "operation": "activity",
+      "trees": [{"id": "E", "read": "loaded", "meta": {"title": "Night sailing"}}],
+      "tree": "E"
+    },
+    "expect": []
+  },
+  {
+    "name": "At one time a completion stands before a creation, and creations the last authored first",
+    "input": {
+      "operation": "activity",
+      "trees": [
+        {
+          "id": "M",
+          "read": "loaded",
+          "meta": {"title": "Room makeover"},
+          "nodes": [
+            {"id": "m", "rc": 1000, "label": "Pick a palette", "ord": "a0"},
+            {"id": "n", "rc": 1000, "label": "Paint a wall", "ord": "a1"}
+          ],
+          "marks": [{"node": "m", "status": "complete", "outOfOrder": false, "recordedAt": 1000, "deviceAt": 1000, "stamp": "1000:0:dev"}]
+        }
+      ],
+      "tree": "M"
+    },
+    "expect": [
+      {"kind": "completed", "step": "m", "at": 1000},
+      {"kind": "created", "step": "n", "at": 1000},
+      {"kind": "created", "step": "m", "at": 1000}
+    ]
+  },
+  {
+    "name": "A creation or a completion the copy holds no time for is no row",
+    "input": {
+      "operation": "activity",
+      "trees": [
+        {
+          "id": "U",
+          "read": "loaded",
+          "meta": {"title": "Learn watercolor"},
+          "nodes": [
+            {"id": "u", "born": null, "rc": null, "label": "Mix a wash", "ord": "a0"},
+            {"id": "v", "rc": 1200, "label": "Paint a sky", "ord": "a1"}
+          ],
+          "marks": [{"node": "u", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": null}]
+        }
+      ],
+      "tree": "U"
+    },
+    "expect": [
+      {"kind": "created", "step": "v", "at": 1200}
+    ]
+  },
+  {
+    "name": "A roadmap gone into has its own Activity, of its own steps",
+    "input": {
+      "operation": "activity",
+      "trees": [
+        {
+          "id": "A",
+          "read": "loaded",
+          "own": true,
+          "meta": {"title": "Become a day skipper"},
+          "nodes": [{"id": "own", "rc": 10, "label": "Learn to sail", "ord": "a0", "branch": "B", "branchStamp": "50:0:a"}]
+        },
+        {
+          "id": "B",
+          "read": "loaded",
+          "parent": {"tree": "A", "step": "own"},
+          "meta": {"title": "Learn to sail", "root": "A", "depth": 1},
+          "nodes": [{"id": "b", "rc": 20, "label": "Rig the boat", "ord": "a0"}],
+          "marks": [{"node": "b", "status": "complete", "outOfOrder": false, "recordedAt": 40, "deviceAt": 30, "stamp": "30:0:a"}]
+        }
+      ],
+      "tree": "B"
+    },
+    "expect": [
+      {"kind": "completed", "step": "b", "at": 30},
+      {"kind": "created", "step": "b", "at": 20}
+    ]
+  },
+  {
+    "name": "A step that owns a roadmap is completed as that roadmap is, at the date the Board's Done gives it",
+    "input": {
+      "operation": "activity",
+      "trees": [
+        {
+          "id": "A",
+          "read": "loaded",
+          "own": true,
+          "meta": {"title": "Become a day skipper"},
+          "nodes": [{"id": "own", "rc": 10, "label": "Learn to sail", "ord": "a0", "branch": "B", "branchStamp": "50:0:a"}]
+        },
+        {
+          "id": "B",
+          "read": "loaded",
+          "parent": {"tree": "A", "step": "own"},
+          "meta": {"title": "Learn to sail", "root": "A", "depth": 1},
+          "nodes": [{"id": "b", "rc": 20, "label": "Rig the boat", "ord": "a0"}],
+          "marks": [{"node": "b", "status": "complete", "outOfOrder": false, "recordedAt": 40, "deviceAt": 30, "stamp": "30:0:a"}]
+        }
+      ],
+      "tree": "A"
+    },
+    "expect": [
+      {"kind": "completed", "step": "own", "at": 50},
+      {"kind": "created", "step": "own", "at": 10}
+    ]
+  },
+  {
+    "name": "A step's History is its own rows of the same read",
+    "input": {
+      "operation": "activity",
+      "trees": [
+        {
+          "id": "P",
+          "read": "loaded",
+          "meta": {"title": "Learn to sail"},
+          "nodes": [
+            {"id": "choose", "born": "5000:0:dev", "rc": null, "label": "Choose a course", "ord": "a0"},
+            {"id": "parts", "born": "5000:1:dev", "rc": null, "label": "Name the parts", "ord": "a1"}
+          ],
+          "edges": [{"from": "choose", "to": "parts", "present": true}],
+          "marks": [{"node": "choose", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 7000, "stamp": "7000:0:dev"}]
+        }
+      ],
+      "tree": "P",
+      "step": "choose"
+    },
+    "expect": [
+      {"kind": "completed", "step": "choose", "at": 7000},
+      {"kind": "created", "step": "choose", "at": 5000}
+    ]
+  },
+  {
+    "name": "A removed step has no History",
+    "input": {
+      "operation": "activity",
+      "trees": [
+        {
+          "id": "D",
+          "read": "loaded",
+          "meta": {"title": "Ship v1"},
+          "nodes": [
+            {"id": "gone", "present": false, "rc": 1000, "label": "Cut the scope", "ord": "a0"},
+            {"id": "kept", "rc": 1500, "label": "Ship it", "ord": "a1"}
+          ],
+          "marks": [{"node": "gone", "status": "complete", "outOfOrder": false, "recordedAt": 2000, "deviceAt": 2000, "stamp": "2000:0:dev"}]
+        }
+      ],
+      "tree": "D",
+      "step": "gone"
+    },
+    "expect": []
+  },
+  {
+    "name": "A roadmap the device has not read yet has no Activity at all, which is not an empty one",
+    "input": {
+      "operation": "activity",
+      "trees": [
+        {
+          "id": "N",
+          "read": "unread",
+          "meta": {"title": "Personal finance reset"},
+          "nodes": [{"id": "list", "rc": 1000, "label": "List every account", "ord": "a0"}]
+        }
+      ],
+      "tree": "N"
+    },
+    "expect": null
+  }
+]
