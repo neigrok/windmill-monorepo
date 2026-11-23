@@ -269,6 +269,16 @@ fn request_parsers_accept_complete_contract_and_reject_unknown_fields() {
         invalid[key] = json!("forbidden");
         assert!(TextRequest::parse(&serde_json::to_vec(&invalid).unwrap()).is_err());
     }
+    for (said, strict) in [(None, true), (Some(false), false), (Some(true), true)] {
+        let mut request = fixture["textRequest"].clone();
+        let tool = request["tools"][0].as_object_mut().unwrap();
+        tool.remove("strict");
+        if let Some(said) = said {
+            tool.insert("strict".into(), json!(said));
+        }
+        let parsed = TextRequest::parse(&serde_json::to_vec(&request).unwrap()).unwrap();
+        assert_eq!(parsed.tools[0].strict, strict);
+    }
     let request: wire::FundRequest =
         serde_json::from_value(fixture["internalRequests"]["fund"].clone()).unwrap();
     assert_eq!(

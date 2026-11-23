@@ -206,7 +206,7 @@ impl Anthropic {
                     "name": tool.name,
                     "description": tool.description,
                     "input_schema": tool.input,
-                    "strict": true,
+                    "strict": tool.strict,
                 })
             })
             .collect();

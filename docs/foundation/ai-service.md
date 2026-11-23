@@ -409,7 +409,7 @@ the pass as `Authorization: Bearer <pass>`, the WebSocket as §6.6 says, and ans
 {
   "model": "large",
   "system": ["You are…"],
-  "tools": [{"name": "…", "description": "…", "input": {"type": "object"}}],
+  "tools": [{"name": "…", "description": "…", "input": {"type": "object"}, "strict": true}],
   "messages": [
     {"role": "user", "parts": [{"text": "…"}, {"image": {"mediaType": "image/jpeg", "data": "…"}}]},
     {"role": "assistant", "parts": [{"text": "…"}, {"toolCall": {"id": "…", "name": "…", "input": {}}}], "carry": "…"},
@@ -428,8 +428,10 @@ the pass as `Authorization: Bearer <pass>`, the WebSocket as §6.6 says, and ans
   answer every `toolCall` of the assistant message before it and nothing else.
 - An image part holds the picture's bytes as above, or `{"picture": "<pictureId>"}`, naming a
   picture the caller uploaded (§6.7).
-- `tools[].input` is a JSON Schema and every tool is sent to the provider in strict mode. A model
-  may call several tools in one answer. A tool's result is text.
+- `tools[].input` is a JSON Schema. `tools[].strict`, default `true`, sends the tool to the provider
+  in strict mode, where its calls match the schema; `false` sends it without, for a caller whose
+  tools together pass what the provider's strict mode compiles. A model may call several tools in
+  one answer. A tool's result is text.
 - `carry` is an opaque string the service returned with that assistant message, sealed with a key
   only the service holds. A caller that continues a conversation SHOULD send each assistant message
   back with its `carry` unchanged: it holds what the provider needs to continue its own reasoning,

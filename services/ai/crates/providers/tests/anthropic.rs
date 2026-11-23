@@ -156,6 +156,47 @@ fn request_rejects_unknown_fields_illegal_parts_and_incomplete_tool_results() {
     ));
 }
 
+// A tool is strict unless the caller says it is not, so a caller that never names `strict` keeps every tool strict.
+#[tokio::test]
+async fn each_tool_reaches_the_provider_strict_unless_the_caller_says_otherwise() {
+    let mut fixture =
+        HttpFixture::new(vec![(200, "{\"input_tokens\":1}".into(), Duration::ZERO)]).await;
+    let client = Anthropic::new(
+        &fixture.url,
+        Secret::new("test-key".into()),
+        CarryKey::new([7; 32]),
+    )
+    .unwrap();
+    let mut body = serde_json::to_value(request()).unwrap();
+    let input = body["tools"][0]["input"].clone();
+    body["tools"] = json!([
+        {"name":"unsaid","description":"tool marker","input":input},
+        {"name":"loose","description":"tool marker","input":input,"strict":false},
+        {"name":"held","description":"tool marker","input":input,"strict":true},
+    ]);
+    let parsed = TextRequest::parse(body.to_string().as_bytes()).unwrap();
+    let prepared = client.prepare(parsed, &profile()).unwrap();
+    client.count(&prepared).await.unwrap();
+    let (_, count) = fixture.requests.recv().await.unwrap();
+    let sent: Vec<(&str, &Value)> = count["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| (tool["name"].as_str().unwrap(), &tool["strict"]))
+        .collect();
+    assert_eq!(
+        sent,
+        vec![
+            ("unsaid", &json!(true)),
+            ("loose", &json!(false)),
+            ("held", &json!(true))
+        ]
+    );
+    let mut wrong = serde_json::to_value(request()).unwrap();
+    wrong["tools"][0]["strict"] = json!("yes");
+    assert!(TextRequest::parse(wrong.to_string().as_bytes()).is_err());
+}
+
 #[tokio::test]
 async fn count_has_same_input_as_dispatch_strict_tools_and_exact_cache_breakpoints() {
     let mut fixture = HttpFixture::new(vec![
