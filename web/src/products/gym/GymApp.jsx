@@ -10,6 +10,7 @@ import { Backfill } from './backfill/Backfill.jsx';
 import { BodyweightScreen } from './bodyweight/Bodyweight.jsx';
 import { CoachRoom } from './coach/CoachRoom.jsx';
 import { HistoryPage } from './coach/History.jsx';
+import { forgetRetiredCoach } from './coach/retiredCoach.js';
 import { FinishScreen } from './Finish.jsx';
 import { t } from './i18n/index.js';
 import { LogList } from './Log.jsx';
@@ -44,6 +45,7 @@ export function GymApp({ hash, inShell = false }) {
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
   const legacyConnect = /^#\/gym\/connect(\/|$|\?)/.test(hash || '');
+  React.useEffect(() => { forgetRetiredCoach(); }, []);
   React.useEffect(() => {
     if (legacyConnect) navigate('/app/connect', { replace: true });
   }, [legacyConnect]);

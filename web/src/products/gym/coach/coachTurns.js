@@ -8,12 +8,13 @@ import { Id } from '../../../platform/domain-kit/entities.js';
 import { TextSpec } from '../../../platform/domain-kit/values.js';
 import { API_BASE } from '../../../shell/apiBase.js';
 import { CoachMessage, CoachRules } from '../domain/coach/conversation.js';
-import { CoachPictureRow, DeleteConversation, ForgetCoachAtSignOut, ForgetPicture, ForgetRunningTurn, ForgetUnclaimedPictures,
+import { CoachPictureRow, coachRowsAtSignOut, DeleteConversation, EndTurnAtSignOut, ForgetPicture, ForgetRunningTurn, ForgetUnclaimedPictures,
   InterruptStaleTurn, KeepPicture, Mark, OpenTurn, writersOwn } from '../domain/coach/turn.js';
 import { Picture } from '../domain/coach/conversation.js';
 import { deviceZone } from '../gymRuntime.js';
 import { gymApi } from '../gymApi.js';
 import { sharedHref } from '../log.js';
+import { PictureRefused } from './pictures.js';
 import { GymProfile } from './profile.js';
 import { GymTurn, GymTurnHost } from './turnHost.js';
 import { GymTurnTelemetry } from './turnTelemetry.js';
@@ -40,6 +41,7 @@ export class CoachTurns {
     appBaseUrl = globalThis.location?.origin ?? '', zone = deviceZone, online = () => globalThis.navigator?.onLine !== false,
     now = () => performance.now(), textEvery = 1000, timers = globalThis }) {
     this.engine = engine;
+    this.runtime = runtime;
     this.profile = profile;
     this.catalog = profile.catalog;
     this.zone = zone;
@@ -56,9 +58,34 @@ export class CoachTurns {
     this.runner = new TurnRunner({ host: this.host, ai: this.ai, telemetry: this.tells, runtime });
     this.running = null;
     this.started = false;
+    this.sweep = null;
     this.listeners = new Set();
-    this.snapshot = Object.freeze({ draft: '', turn: null, stopping: false, refusal: null, fault: null, withdrawn: null, allowance: null, live: null });
+    this.seatHeld = this.seatKey();
+    this.snapshot = Object.freeze({ ...EMPTY, seat: this.seatHeld });
     this.host.subscribe(() => this.publish({ live: this.host.live }));
+    engine.observeEngine?.(() => { if (this.seatKey() !== this.seatHeld) this.leaveSeat(); });
+  }
+
+  // The account the page's replica belongs to: the replica and its binding, so a sign-in in place changes it too.
+  seatKey() {
+    const replica = this.engine.device?.activeReplica;
+    return replica ? `${replica.id}|${replica.meta?.account ?? ''}` : String(this.engine.activeReplica());
+  }
+
+  // The account in this page changed under Coach: a sign-out or a sign-in in this tab or another, or a session that ended
+  // elsewhere. Nothing of the seat that left stays in the page: its pass, its allowance, its refusal, the field's words,
+  // a question taken back with its picture. A turn still running here ends with the seat, and the room starts Coach
+  // afresh for the seat that came.
+  leaveSeat() {
+    this.seatHeld = this.seatKey();
+    this.ai.clearPass();
+    this.runner.seatWillChange().catch((error) => { if (!(error instanceof HostUnavailable)) this.tells.fault('storage', error); });
+    this.drafts.clear();
+    this.started = false;
+    if (this.sweep !== null) this.timers.clearInterval(this.sweep);
+    this.sweep = null;
+    this.snapshot = Object.freeze({ ...EMPTY, seat: this.seatHeld });
+    for (const listener of this.listeners) listener();
   }
 
   listen = (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
@@ -85,11 +112,12 @@ export class CoachTurns {
   start() {
     if (this.started) return;
     this.started = true;
-    this.settleLeft().catch((error) => this.tells.fault('storage', error));
+    this.settleLeft().catch((error) => this.storageFault(error));
     this.readAllowance();
-    const sweep = () => this.endStale().catch((error) => this.tells.fault('storage', error));
+    const sweep = () => this.endStale().catch((error) => this.storageFault(error));
     sweep();
-    this.timers.setInterval(sweep, 60_000)?.unref?.();
+    this.sweep = this.timers.setInterval(sweep, 60_000);
+    this.sweep?.unref?.();
   }
 
   // A turn nobody ends (Coach engine §5): a running Coach message no write has reached for thirty minutes, by the
@@ -107,8 +135,9 @@ export class CoachTurns {
   }
 
   async readAllowance() {
+    const seat = this.seatHeld;
     const allowance = await this.ai.allowance({ use: GymProfile.name, version: GymProfile.version });
-    if (allowance?.failure) return;
+    if (allowance?.failure || seat !== this.seatHeld) return;
     this.publish({ allowance, refusal: allowance.code === 'ok' ? this.unlessCapped() : refusalOf({ code: allowance.code, allowance }) });
   }
 
@@ -118,6 +147,10 @@ export class CoachTurns {
   // last round's answer can still be read, and ended `interrupted` otherwise; the engine decides which. A mark naming a
   // message that ended lets go of it, and so does one naming a message gone from a replica caught up with its log.
   async settleLeft({ recover = true } = {}) {
+    return this.runtime.withLock(OPENING, { ifAvailable: false }, () => this.settleLeftOpen(recover));
+  }
+
+  async settleLeftOpen(recover) {
     if (this.running) return;
     const replica = this.replica;
     const runner = this.host.runnerOn(replica);
@@ -134,6 +167,7 @@ export class CoachTurns {
     if (named?.own && recover) {
       const lease = new GymTurn({ thread: named.message.threadId, lifter: named.id, coach: named.id }, replica);
       this.launch({ lease, question: '', picture: null }, true);
+      await lease.held;
     }
     await this.sweepPictures(runner);
   }
@@ -151,6 +185,13 @@ export class CoachTurns {
     if (this.snapshot.refusal) return this.refusing(this.snapshot.refusal);
     if (lengthIn('bytes', question) > CoachRules.maxQuestionBytes) return this.refusing({ state: 'too-long' });
     if (!this.online()) return this.refusing({ state: 'offline' });
+    return this.runtime.withLock(OPENING, { ifAvailable: false }, () => this.open(question, picture, thread));
+  }
+
+  // A browser opens one turn at a time across its tabs: the open's write and the engine taking the turn's own lock happen
+  // under one lock, so another tab's recovery never meets a fresh turn before its lock is held.
+  async open(question, picture, thread) {
+    if (this.running) return this.refusing({ state: 'busy' });
     const replica = this.replica;
     const runner = this.host.runnerOn(replica);
     let turn;
@@ -171,18 +212,25 @@ export class CoachTurns {
     }
     this.tells.started();
     this.setDraft('');
-    this.launch({ lease: new GymTurn(turn, replica), question, picture }, false);
+    const lease = new GymTurn(turn, replica);
+    this.launch({ lease, question, picture }, false);
+    await lease.held;
     return turn;
   }
 
   launch(live, recover) {
     live.started = this.now();
+    live.seat = this.seatHeld;
     this.running = live;
     this.host.prepare(live.lease);
     this.publish({ turn: live.lease.turn, stopping: false });
     const input = { turnId: live.lease.turnId, seat: this.seat, question: TextSpec.isBlank(live.question) ? '' : live.question };
-    live.done = this.runner.run(input, this.profile.of('bound'), { recover })
-      .then((end) => this.settled(end, live, recover), (error) => this.broke(error, live))
+    const run = this.runner.run(input, this.profile.of('bound'), { recover });
+    // A run that ends before the engine took the lease lets the open's lock go all the same.
+    run.then(live.lease.hold, live.lease.hold);
+    live.done = run
+      .then((end) => this.settled(end, live, recover), (error) => this.broke(error, live, recover))
+      .catch((error) => this.tells.fault('settle', error))
       .finally(() => {
         if (this.running === live) this.running = null;
         this.publish({ turn: this.running?.lease.turn ?? null, stopping: false });
@@ -196,7 +244,13 @@ export class CoachTurns {
     this.ai.failure = null;
     const durationMs = this.now() - live.started;
     if (end === null) {
-      if (recover) await this.settleLeft({ recover: false });
+      // A run that wrote no end: the seat changed under it, or its conversation was deleted elsewhere.
+      if (!recover) this.tells.asked(live.seat === this.seatHeld ? 'gone' : 'interrupted', durationMs);
+      if (recover && live.seat === this.seatHeld) await this.settleLeft({ recover: false });
+      return;
+    }
+    if (live.seat !== this.seatHeld) {
+      if (!recover) this.tells.asked('interrupted', durationMs);
       return;
     }
     if (live.lease.withdrawn) {
@@ -213,7 +267,7 @@ export class CoachTurns {
       return;
     }
     const refusal = end.state === 'failed' ? refusalOf(failure?.code === end.code ? failure : { source: 'engine', code: end.code }) : null;
-    if (!recover) this.tells.asked({ completed: 'answered', stopped: 'cancelled', declined: 'refused' }[end.state] ?? 'failed', durationMs);
+    if (!recover) this.tells.asked({ completed: 'answered', stopped: 'cancelled', declined: 'refused', interrupted: 'interrupted' }[end.state] ?? 'failed', durationMs);
     this.publish({ refusal: refusal && refusal.state !== 'did-not-answer' ? refusal : this.unlessCapped() });
     if (failure?.allowance) this.publish({ allowance: failure.allowance });
   }
@@ -221,7 +275,8 @@ export class CoachTurns {
   // A run that rejected: the engine reported the host's fault once. A turn whose record the host opened and never handed
   // the engine is taken back, so no record stays running and the question returns to the field (finding: a host failure
   // before the lease).
-  async broke(error, live) {
+  async broke(error, live, recover) {
+    if (live.seat !== this.seatHeld) return;
     if (!live.lease.opened && !live.lease.withdrawn) {
       try {
         await this.host.withdraw(live.lease);
@@ -231,8 +286,13 @@ export class CoachTurns {
         if (!(withdrawing instanceof HostUnavailable)) this.tells.fault('storage', withdrawing);
       }
     }
-    this.tells.asked('failed', this.now() - live.started);
+    if (!recover) this.tells.asked('failed', this.now() - live.started);
     this.publish({ fault: 'no-answer' });
+  }
+
+  // A store that failed; a write refused because the seat changed under it is no failure.
+  storageFault(error) {
+    if (!(error instanceof HostUnavailable)) this.tells.fault('storage', error);
   }
 
   // Coach engine §5: Stop takes effect before the next round or the next call; the round in flight is read to its end.
@@ -242,26 +302,41 @@ export class CoachTurns {
     this.publish({ stopping: true });
   }
 
-  // The seat is about to change (Coach engine §5): the running turn ends `interrupted` now, while the account's replica
-  // still takes the write, before a sign-out sends what this browser holds, and the pass goes with the seat. Then what
-  // Coach kept in the browser goes (gym Coach on the AI service §5): the mark, the pictures no unsent message names, and
-  // the field's words.
+  // A sign-out begins (Coach engine §5): the running turn ends `interrupted` now, while the account's replica still takes
+  // the write, before the sign-out sends what this browser holds, and the pass goes with the seat. What else Coach kept
+  // goes when the seat itself changes (`leaveSeat`) and, of the rows, when the sign-out finishes (`coachRowsToForget`).
   async seatWillChange() {
     try { await this.runner.seatWillChange(); }
     catch (error) { if (!(error instanceof HostUnavailable)) throw error; }
-    await forgetCoachAtSignOut(this.engine);
-    this.drafts.clear();
-    this.publish({ draft: '', refusal: null, fault: null, withdrawn: null, allowance: null });
   }
 
-  // A conversation deleted from History, unless its turn is running on this page.
+  // A conversation deleted from History, unless its turn is running on this page, which refuses it. Each delete is told;
+  // a store that failed is reported, and the refusal or the failure leaves the conversation where it was.
   async deleteConversation(thread) {
-    if (this.running?.lease.turn.thread.equals(thread)) return false;
-    const outcome = await this.host.runnerOn(this.replica).run(new DeleteConversation(thread));
-    return outcome.kind !== 'refused';
+    if (this.running?.lease.turn.thread.equals(thread)) {
+      this.tells.deleted('answering');
+      throw new Error('a conversation answering here stays');
+    }
+    let outcome;
+    try { outcome = await this.host.runnerOn(this.replica).run(new DeleteConversation(thread)); }
+    catch (error) {
+      this.tells.deleted('failed');
+      this.storageFault(error);
+      throw error;
+    }
+    this.tells.deleted(outcome.kind === 'refused' ? 'refused' : 'deleted');
+    if (outcome.kind === 'refused') throw new Error('the store refused the conversation\'s delete');
   }
 
   forget(kind) { this.publish({ [kind]: null }); }
+
+  // A picture the browser could not prepare: said in the room, told, and reported when it was no picture the browser
+  // refuses to read.
+  pictureFailed(error) {
+    this.tells.picture('failed');
+    if (!(error instanceof PictureRefused)) this.tells.fault('picture', error);
+    this.publish({ fault: 'picture' });
+  }
 
   refusing(refusal) {
     this.tells.asked(refusal.state === 'offline' ? 'offline' : ['allowance', 'capacity'].includes(refusal.state) ? 'capped' : 'refused');
@@ -276,12 +351,11 @@ export class CoachTurns {
   }
 }
 
-// The account's replica as a sign-out begins: the mark, a running turn of this replica ended `interrupted` in the same
-// write, and every picture but those an unsent message names.
-export async function forgetCoachAtSignOut(engine) {
-  const host = new GymTurnHost({ engine, zone: deviceZone });
-  await host.runnerOn(engine.activeReplica()).run(new ForgetCoachAtSignOut());
-}
+const OPENING = 'gym-opening';
+const EMPTY = Object.freeze({ draft: '', turn: null, stopping: false, refusal: null, fault: null, withdrawn: null, allowance: null, live: null });
+
+// The account's replica, read and written as Coach's turns are, with no page Coach to run them.
+function replicaRunner(engine) { return new GymTurnHost({ engine, zone: deviceZone }).runnerOn(engine.activeReplica()); }
 
 // The open, refused as busy while the browser's mark names a turn its writer has not ended: one gym turn at a time
 // across a browser's tabs (gym Coach on the AI service §5).
@@ -319,15 +393,20 @@ class Witnessed {
   }
 }
 
-// The door the Share sheet calls (gym Coach on the AI service §4.3), answering as catalog/3 states each share's result.
-export function shareDoor(api = gymApi, origin = globalThis.location?.origin ?? '') {
+// The door the Share sheet calls (gym Coach on the AI service §4.3), answering as catalog/3 states each share's result. A
+// door that has not answered in fifteen seconds is a door the browser could not reach, so a sign-out never waits on one.
+export function shareDoor(api = gymApi, origin = globalThis.location?.origin ?? '', timers = globalThis, waitMs = 15_000) {
+  const bounded = (call) => new Promise((resolve, reject) => {
+    const timer = timers.setTimeout(() => reject(Object.assign(new Error('share door timed out'), { name: 'TimeoutError' })), waitMs);
+    call.then(resolve, reject).finally(() => timers.clearTimeout(timer));
+  });
   return {
     async share(sessionId) {
-      const made = await api.shareSession(sessionId);
+      const made = await bounded(api.shareSession(sessionId));
       return { url: made.url || `${origin}/${sharedHref(made.token)}`, token: made.token, expiresAt: made.expiresAt };
     },
     async revoke(sessionId) {
-      const ended = await api.revokeShare(sessionId);
+      const ended = await bounded(api.revokeShare(sessionId));
       if (ended === null) throw Object.assign(new Error('no share'), { status: 404 });
       return { revoked: true, sessionId };
     },
@@ -339,15 +418,22 @@ const pages = new WeakMap();
 export function coachTurnsOf(engine) {
   let turns = pages.get(engine);
   if (!turns) {
-    turns = new CoachTurns({ engine, ai: new AiClient({ transport: new HttpAiTransport({ base: API_BASE }) }) });
+    const tells = new GymTurnTelemetry({ catalog: new GymProfile().catalog });
+    turns = new CoachTurns({ engine, telemetry: tells, ai: new AiClient({ transport: new HttpAiTransport({ base: API_BASE }), telemetry: tells }) });
     pages.set(engine, turns);
   }
   return turns;
 }
 
-// The page's Coach as the seat changes, when one is running on it; otherwise what Coach kept goes all the same.
+// A sign-out begins: the page's Coach ends the turn it runs, or, with none running here, the turn the mark names ends as
+// its record holds it.
 export async function coachSeatWillChange(engine) {
   const turns = pages.get(engine);
-  if (turns) return turns.seatWillChange();
-  return forgetCoachAtSignOut(engine);
+  if (turns?.running) return turns.seatWillChange();
+  await replicaRunner(engine).run(new EndTurnAtSignOut());
+}
+
+// A sign-out is decided: the rows Coach keeps on the account's replica that the finished sign-out takes with it.
+export function coachRowsToForget(engine) {
+  return replicaRunner(engine).read(CoachMessage.scope, coachRowsAtSignOut);
 }

@@ -106,6 +106,17 @@ export class ProductQuestions {
     for (const product of this.products) await this.ask('begin', () => product.sync?.signOutBegins?.(engine));
   }
 
+  // The device rows each product takes from the account's replica when its sign-out finishes (`sync.signOutForgets`),
+  // read as the person decides it: `{ [product]: keys }`.
+  async signOutForgets(engine) {
+    const rows = {};
+    for (const product of this.products) {
+      const keys = await this.ask('forget', () => product.sync?.signOutForgets?.(engine));
+      if (Array.isArray(keys) && keys.length) rows[product.id] = keys;
+    }
+    return rows;
+  }
+
   // The sign-out question in the words of the product whose work it all is, where that product words its own.
   async signOutWords(engine, question) {
     for (const product of this.products) {

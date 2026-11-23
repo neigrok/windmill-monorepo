@@ -493,33 +493,37 @@ export class ForgetUnclaimedPictures {
   }
 }
 
-// Signing out takes what Coach keeps in the browser (gym Coach on the AI service §5): the mark, and every picture but
-// those a message not yet sent names, which stay with the unsent work a Keep keeps. A seat change ends this replica's
-// running turn `interrupted` (Coach engine §5), in the same write that clears the mark, so the account's record carries
-// the end. Run on the account's replica as the sign-out begins; a Discard then takes the rest with the replica. It
-// answers the picture ids removed.
-export class ForgetCoachAtSignOut {
+// A seat change ends this replica's running turn `interrupted` (Coach engine §5), in the write that clears the mark, so the
+// account's record carries the end. Run on the account's replica as the sign-out begins; it forgets nothing else, so a
+// sign-out cancelled afterwards loses no picture. It answers whether it ended a turn.
+export class EndTurnAtSignOut {
   scope = CoachMessage.scope;
   refusals = GymRefusals;
 
   /** @param {Reader} read */
   load(read) {
-    const unsent = drawnMessages(read).filter((message) => message !== null && read.confirmed(CoachMessage, message.id) === null);
     const mark = Mark.read(read);
     const named = mark.turnId === null ? null : read.repository(CoachMessage).find(new Id(mark.turnId, CoachMessage), 'drawn');
-    return { rows: Object.keys(read.devices(CoachPictureRow.prefix)), mark, markHeld: read.device(Mark.turnKey) !== null, moment: read.moment,
-      running: named !== null && writersOwn(named, read.replica, mark) ? named : null,
-      named: new Set(unsent.flatMap((message) => message?.pictures ?? []).map((picture) => CoachPictureRow.key(picture.id))) };
+    return { mark, moment: read.moment, running: named !== null && writersOwn(named, read.replica, mark) ? named : null };
   }
 
-  /** @param {ReturnType<ForgetCoachAtSignOut['load']>} loaded @param {IDSource} ids */
+  /** @param {ReturnType<EndTurnAtSignOut['load']>} loaded @param {IDSource} ids */
   decide(loaded, ids) {
-    const forgotten = loaded.rows.filter((key) => !loaded.named.has(key));
-    if (forgotten.length === 0 && !loaded.markHeld && !loaded.mark.roundRow) return Decision.unchanged(/** @type {string[]} */ ([]));
+    if (loaded.running === null) return Decision.unchanged(false);
     const plan = new Plan();
-    if (loaded.running !== null) EndTurn.write(plan, loaded.running, 'interrupted', loaded.running.text, loaded.running.truncated, loaded.moment);
-    if (loaded.markHeld || loaded.mark.roundRow) loaded.mark.clear(plan);
-    for (const key of forgotten) plan.device(key, null);
-    return Decision.write(plan, forgotten.map((key) => key.slice(CoachPictureRow.prefix.length)));
+    EndTurn.write(plan, loaded.running, 'interrupted', loaded.running.text, loaded.running.truncated, loaded.moment);
+    loaded.mark.clear(plan);
+    return Decision.write(plan, true);
   }
+}
+
+// What a finished sign-out takes from the account's replica (gym Coach on the AI service §5): the mark, and every picture
+// but those a message not yet sent names, which stay with the unsent work a Keep keeps. Read as the sign-out is decided;
+// the engine deletes these rows in the write that finishes it, so a sign-out cancelled or failed keeps them all.
+/** @param {Reader} read @returns {string[]} */
+export function coachRowsAtSignOut(read) {
+  const unsent = drawnMessages(read).filter((message) => message !== null && read.confirmed(CoachMessage, message.id) === null);
+  const named = new Set(unsent.flatMap((message) => message?.pictures ?? []).map((picture) => CoachPictureRow.key(picture.id)));
+  return [...[Mark.turnKey, Mark.roundKey].filter((key) => read.device(key) !== null),
+    ...Object.keys(read.devices(CoachPictureRow.prefix)).filter((key) => !named.has(key))];
 }

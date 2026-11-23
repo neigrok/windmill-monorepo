@@ -60,9 +60,14 @@ the Coach engine (`platform/agent`) with `GymTurnHost` and `GymProfile`, each mo
 (`platform/ai`); the host writes the text about once a second and the round's mark, runs each call through
 `RunAbility` on the turn's replica or a share through the Share door, and ends, withdraws or recovers the turn. One turn
 runs at a time in a browser across its tabs, the mark refusing a second; a tab that opens on a turn in its last round
-recovers its answer. Pictures stay in the browser's `picture:<id>` rows, their model copy uploaded once a turn. As a
-sign-out begins (`routes.sync.signOutBegins`) a running turn ends `interrupted` and the mark and the pictures go; the
-field's words live only in the page. `conversations.js` reads History and a conversation from the records, so a
+recovers its answer; a send opens under a browser-wide lock until the engine holds the turn's own, so another tab's
+recovery never meets a fresh turn. Pictures stay in the browser's `picture:<id>` rows, their model copy uploaded once a
+turn. As a sign-out begins (`routes.sync.signOutBegins`) a running turn ends `interrupted`; the mark and the pictures no
+unsent question names go in the write that finishes the sign-out (`routes.sync.signOutForgets`), so a cancelled one keeps
+them. Whenever the page's account changes, in this tab or another, `CoachTurns.leaveSeat` drops the pass, the allowance,
+the field's words and a question taken back, and the room starts Coach afresh for the new seat. The server Coach's
+storage under `windmill.gym.coach.` and its photos' database are deleted at gym boot and at sign-out
+(`coach/retiredCoach.js`). `conversations.js` reads History and a conversation from the records, so a
 phone's conversations open here as the browser's do.
 
 `TrainingHistory` composes typed domain reads into screen documents. The global seed catalogue

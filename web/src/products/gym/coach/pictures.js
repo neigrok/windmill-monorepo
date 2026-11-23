@@ -2,6 +2,11 @@ import { CoachTurnBounds } from '../domain/coach/conversation.js';
 import { PictureCopy } from '../domain/coach/turn.js';
 import { t } from '../i18n/index.js';
 
+// A file the browser cannot read as a picture, or cannot fit within a copy's bounds: the person's to choose again, no fault.
+export class PictureRefused extends Error {
+  constructor() { super(t('gym.coach.photo.unsupported')); this.name = 'PictureRefused'; }
+}
+
 // A picture chosen for Coach, as the browser keeps it (gym Coach on the AI service §5): the original within
 // `PICTURE_EDGE` and `PICTURE_BYTES`, and the model copy, the one that leaves the browser, within its own bounds.
 // Each copy is a JPEG or a PNG the canvas draws again, scaled down until it fits.
@@ -29,13 +34,13 @@ async function copyWithin(bitmap, edge, bytes) {
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
     if (blob && blob.size <= bytes) return new PictureCopy('image/jpeg', width, height, await base64(blob));
   }
-  throw new Error(t('gym.coach.photo.unsupported'));
+  throw new PictureRefused();
 }
 
 export async function prepareCoachPicture(file) {
   let bitmap;
   try { bitmap = await createImageBitmap(file); }
-  catch { throw new Error(t('gym.coach.photo.unsupported')); }
+  catch { throw new PictureRefused(); }
   try {
     return {
       original: await copyWithin(bitmap, CoachTurnBounds.pictureEdge, CoachTurnBounds.pictureBytes),

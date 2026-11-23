@@ -27,7 +27,7 @@ export function useHistoryRows(log) {
 // turn is running on this page stays.
 export function deleteConversation(log, turns, id, open) {
   log.withhold({ kind: 'thread', id, line: t('gym.threads.deleted'), detail: t('gym.threads.deleteDetail'),
-    send: async () => { if (!(await turns.deleteConversation(new Id(id, CoachThread)))) throw new Error('conversation answering'); },
+    send: () => turns.deleteConversation(new Id(id, CoachThread)),
     refused: () => log.say(t('gym.coach.history.deleteRefused')) });
   if (open) window.location.hash = COACH_HREF;
 }

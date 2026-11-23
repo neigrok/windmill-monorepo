@@ -40,6 +40,8 @@ export class GymTurn {
     this.committedText = '';
     this.committedAt = Number.NEGATIVE_INFINITY;
     this.trailing = null;
+    // Resolved once the engine holds the turn's lock and has taken this lease, or the run ended without it.
+    this.held = new Promise((resolve) => { this.hold = resolve; });
   }
 }
 
@@ -110,6 +112,7 @@ export class GymTurnHost {
     const lease = this.next?.turnId === input.turnId ? this.next : null;
     this.next = null;
     if (lease === null) throw new HostUnavailable('gone');
+    lease.hold();
     this.answering({ message: lease.turn.coach, text: '' });
     const runner = this.runnerOn(lease.replica);
     const workout = runner.read(CoachMessage.scope, (read) => new TrainingLog(read).open?.id ?? null);
@@ -141,6 +144,7 @@ export class GymTurnHost {
     const lease = this.next?.turnId === turnId ? this.next : null;
     this.next = null;
     if (lease === null) return null;
+    lease.hold();
     const runner = this.runnerOn(lease.replica);
     const read = await runner.run(new RecoverMark());
     if (read.kind === 'refused' || read.result.turnId !== turnId) return null;

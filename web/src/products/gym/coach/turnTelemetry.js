@@ -13,8 +13,12 @@ const CODES = new Set(['subject_exhausted', 'free_day_exhausted', 'free_month_ex
   'host-fault']);
 const ABILITY_OUTCOMES = new Set(['ok', 'not-offered', 'seat-required', 'invalid-input', 'invalid-arguments', 'refused', 'load-floor',
   'result-too-large', 'coach-turn-volume', 'one-proposal', 'one-note', 'stopped', 'product-refused']);
-const FAULTS = new Set(['storage', 'share', 'refusal']);
-const ASK_OUTCOMES = new Set(['answered', 'cancelled', 'refused', 'failed', 'capped', 'offline', 'absent']);
+const FAULTS = new Set(['storage', 'share', 'refusal', 'settle', 'picture']);
+const ASK_OUTCOMES = new Set(['answered', 'cancelled', 'refused', 'failed', 'interrupted', 'gone', 'capped', 'offline', 'absent']);
+// The kinds of error a report may name, as the beacon's are; anything else reads `other`.
+const ERROR_KINDS = new Set(['Error', 'TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'URIError', 'EvalError', 'AggregateError',
+  'DOMException', 'HostUnavailable', 'TurnRecordRefused', 'TransportFailure', 'TimeoutError', 'AbortError']);
+const kindOf = (error) => (ERROR_KINDS.has(error?.name) ? error.name : OTHER);
 
 // The stack of an error the turn met, with its message struck wherever it stands, so the frames reach Sentry and nothing
 // said does.
@@ -45,19 +49,26 @@ export class GymTurnTelemetry {
 
   // `ai-call`, `ai-pass` and `agent-host`, each a static operation, with the error that raised it where there is one.
   failure(operation, error) {
-    this.report(error?.name ?? 'Error', operation, frames(error), ROUTE, { operation });
+    this.report(kindOf(error), operation, frames(error), ROUTE, { operation });
   }
 
   // A fault of gym's own around the turn: its store, a record that refused its own write, or the Share door.
   fault(kind, error) {
     const label = FAULTS.has(kind) ? kind : OTHER;
-    this.report(error?.name ?? 'Error', 'gym-coach-turn', frames(error), ROUTE, { failure_kind: label });
+    this.report(kindOf(error), 'gym-coach-turn', frames(error), ROUTE, { failure_kind: label });
   }
 
   started() { this.event('gym_ask_started', { screen: 'coach' }); }
 
-  // How a send settled, as the lifter met it: `answered`, `cancelled`, `refused`, `failed`, `capped` (the allowance or
-  // the shared capacity), `offline` or `absent` (no Coach on this server).
+  // A conversation deleted from History: `deleted`, `answering` (its turn runs here), `refused` or `failed`.
+  deleted(outcome) { this.event('coach_conversation_delete', { outcome: ['deleted', 'answering', 'refused', 'failed'].includes(outcome) ? outcome : OTHER }); }
+
+  // A picture chosen for a question: `attached`, or `failed` when the browser could not prepare it.
+  picture(outcome) { this.event('coach_picture', { outcome: outcome === 'attached' ? 'attached' : 'failed' }); }
+
+  // How a send settled, as the lifter met it: `answered`, `cancelled`, `refused`, `failed`, `interrupted` (the seat changed
+  // under it), `gone` (its conversation was deleted elsewhere), `capped` (the allowance or the shared capacity), `offline`
+  // or `absent` (no Coach on this server).
   asked(outcome, durationMs = null) {
     this.event('gym_ask_outcome', { screen: 'coach', outcome: ASK_OUTCOMES.has(outcome) ? outcome : OTHER,
       ...(durationMs === null ? {} : { duration_ms: Math.round(durationMs) }) });

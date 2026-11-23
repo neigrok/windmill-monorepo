@@ -26,9 +26,10 @@ async function untilStopped(signal, operation) {
 export class AiClient {
   constructor({ transport, telemetry, now = () => performance.now(), wait = waitFor, connected = () => globalThis.navigator?.onLine !== false, client = 'web' }) {
     Object.assign(this, { transport, now, wait, connected, client });
-    this.telemetry = { failure: (operation) => {
+    // A failure carries the error that raised it, where there is one, for the reporter to scrub and keep.
+    this.telemetry = { failure: (operation, error) => {
       try {
-        if (telemetry) telemetry.failure(operation);
+        if (telemetry) telemetry.failure(operation, error);
         else captureError('ai', operation, '', '/coach');
       } catch { /* Reporting cannot interrupt the call. */ }
     } };
@@ -54,7 +55,7 @@ export class AiClient {
         if (signal?.aborted || error?.code === 'stopped') throw new TransportFailure('stopped');
         if (error instanceof TransportFailure && ['offline', 'lost'].includes(error.code))
           return { failure: { source: 'transport', code: null, admission: 'none', allowance: null } };
-        this.telemetry.failure('ai-pass');
+        this.telemetry.failure('ai-pass', error);
         return { failure: { source: 'pass', code: null, admission: 'none', allowance: null } };
       }
       if (generation !== this.generation) throw new TransportFailure('seat-changed');
@@ -104,8 +105,8 @@ export class AiClient {
     }
   }
 
-  failure(source, code, admission, allowance = null) {
-    if (DEFECTS.has(code) || code?.startsWith('pass_') || code === 'picture_gone' || (source === 'transport' && code !== null)) this.telemetry.failure('ai-call');
+  failure(source, code, admission, allowance = null, error = undefined) {
+    if (DEFECTS.has(code) || code?.startsWith('pass_') || code === 'picture_gone' || (source === 'transport' && code !== null)) this.telemetry.failure('ai-call', error);
     return { failure: { source, code, admission, allowance } };
   }
 
@@ -124,8 +125,8 @@ export class AiClient {
     let retryDeadline = null;
     let callbackFailure;
     const promote = (value) => { if (['none', 'possible', 'admitted'].indexOf(value) > ['none', 'possible', 'admitted'].indexOf(admission)) admission = value; };
-    const failed = (source, code, allowance = null) => recover && code === 'call_unknown'
-      ? { failure: { source, code, admission, allowance } } : this.failure(source, code, admission, allowance);
+    const failed = (source, code, allowance = null, error = undefined) => recover && code === 'call_unknown'
+      ? { failure: { source, code, admission, allowance } } : this.failure(source, code, admission, allowance, error);
     const deadlineFailure = () => {
       const now = this.now();
       if (started !== null && now >= started + 1_200_000) return failed('result', 'answer-timeout');
@@ -172,7 +173,7 @@ export class AiClient {
         catch (error) {
           if (error instanceof TransportFailure && error.code === 'stopped') throw error;
           promote('possible'); uncertainDispatch = true;
-          if (!(error instanceof TransportFailure) || !['offline', 'lost'].includes(error.code)) return failed(error?.code === 'invalid-answer' ? 'wire' : 'transport', 'invalid-answer');
+          if (!(error instanceof TransportFailure) || !['offline', 'lost'].includes(error.code)) return failed(error?.code === 'invalid-answer' ? 'wire' : 'transport', 'invalid-answer', null, error);
           throw error;
         }
         if (generation !== this.generation) return { failure: { source: 'pass', code: null, admission, allowance: null } };
@@ -226,7 +227,7 @@ export class AiClient {
           const expired = deadlineFailure();
           if (expired) return expired;
         }
-        if (!(error instanceof TransportFailure) || !['offline', 'lost'].includes(error.code)) return failed('wire', 'invalid-answer');
+        if (!(error instanceof TransportFailure) || !['offline', 'lost'].includes(error.code)) return failed('wire', 'invalid-answer', null, error);
         if (admission === 'none') return failed('transport', null);
         uncertainDispatch = true;
         retryDeadline = started + 1_200_000;

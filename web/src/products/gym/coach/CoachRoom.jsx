@@ -24,7 +24,8 @@ export function useCoachTurns() {
   const turns = useMemo(() => (engine ? coachTurnsOf(engine) : null), [engine]);
   const listen = useMemo(() => turns?.listen ?? (() => () => {}), [turns]);
   const snapshot = useSyncExternalStore(listen, () => turns?.getSnapshot() ?? null, () => null);
-  useEffect(() => { turns?.start(); }, [turns]);
+  // Coach starts for the seat in hand, and again for each seat that replaces it while the room is open.
+  useEffect(() => { turns?.start(); }, [turns, snapshot?.seat]);
   return { turns, snapshot };
 }
 
@@ -129,7 +130,7 @@ function Greeting({ turns }) {
           event.target.value = '';
           if (!file || !turns) return;
           try { await sendPicture(turns, file, null); }
-          catch { turns.publish({ fault: 'picture' }); }
+          catch (error) { turns.pictureFailed(error); }
         }} />
       <button type="button" className="gym-coach-pill" onClick={() => picker.current?.click()}><ImagePlus size={18} aria-hidden="true" />{t('gym.coach.greeting.addScreenshot')}</button>
       <a className="gym-coach-pill" href={routineHref(NEW_ROUTINE_ID)}><Plus size={18} aria-hidden="true" />{t('gym.coach.greeting.buildMyOwn')}</a>
@@ -139,6 +140,7 @@ function Greeting({ turns }) {
 
 async function sendPicture(turns, file, threadId) {
   const picture = await prepareCoachPicture(file);
+  turns.tells.picture('attached');
   const turn = await turns.send({ question: '', picture, thread: threadId ? new Id(threadId, CoachThread) : null });
   if (turn && !threadId) window.location.hash = threadHref(turn.thread.record);
 }
@@ -286,8 +288,10 @@ function Composer({ turns, snapshot, threadId, resend }) {
           event.target.value = '';
           if (!file) return;
           setPreparing(true);
-          try { setPicture(await prepareCoachPicture(file)); }
-          catch { turns?.publish({ fault: 'picture' }); }
+          try {
+            setPicture(await prepareCoachPicture(file));
+            turns?.tells.picture('attached');
+          } catch (error) { turns?.pictureFailed(error); }
           finally { setPreparing(false); }
         }} />
       <button type="button" className="gym-coach-add-photo" aria-label={t('gym.coach.photo.add')} disabled={closed || preparing || Boolean(picture)}

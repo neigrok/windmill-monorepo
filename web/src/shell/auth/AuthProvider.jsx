@@ -151,7 +151,8 @@ export default function AuthProvider({ children }) {
     const engine = syncSession.engine;
     const captured = dataScope.read.getSnapshot();
     let ticket = roomOwnership.current.scopeTicket;
-    const result = await engine.finishSignOut({ ...options, deviceCleanup: true, beforeSignOutCommit: () => {
+    const forgetDeviceRows = await productQuestions.signOutForgets(engine);
+    const result = await engine.finishSignOut({ ...options, deviceCleanup: true, forgetDeviceRows, beforeSignOutCommit: () => {
       const current = dataScope.read.getSnapshot();
       if (current !== captured && !(current.phase === 'changing' && dataScope.ticket === ticket && current.epoch === ticket?.epoch))
         throw new Error('stale document data transition');
@@ -162,7 +163,7 @@ export default function AuthProvider({ children }) {
     } });
     if (result.complete) await cleanupDevice(engine, next, navigation);
     return result;
-  }, [cleanupDevice, dataScope]);
+  }, [cleanupDevice, dataScope, productQuestions]);
   const finishClosure = useCallback(async () => {
     const engine = syncSession.engine;
     const { account, sessionId } = engine.device.meta.closingAccount;
