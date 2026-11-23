@@ -60,7 +60,7 @@ const notApplicable = {
     .map((path) => [path, 'catalog/2: the web executor runs catalog/3 alone'])),
   ...Object.fromEntries(Contract.files('gym').filter((path) => path.startsWith('gym/turns/')).map((path) => [path, 'the server turn wire, which the web never speaks'])),
   ...Object.fromEntries(Contract.files('gym').filter((path) => path.startsWith('gym/coach/'))
-    .map((path) => [path, 'the words Coach\'s model reads are no vectors: coach/words.test.js reads them'])),
+    .map((path) => [path, 'the words Coach\'s model reads are no vectors: coach/profile.test.js reads them'])),
 };
 
 /**

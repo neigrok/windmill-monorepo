@@ -8,7 +8,7 @@ import { Fault } from '../../../../../src/platform/domain-kit/values.js';
 import { Instant } from '../../../../../src/platform/domain-kit/time.js';
 import { registry } from '../../../../../src/platform/sync/schema.js';
 import { AbilityCall, CoachBook, CoachMessage, CoachMessageValue, CoachThread, CoachThreadValue, Conversation, Picture } from '../../../../../src/products/gym/domain/coach/conversation.js';
-import { BeginRound, CoachPictureRow, DeleteConversation, EndTurn, ForgetCoachAtSignOut, ForgetUnclaimedPictures, KeepPicture, Mark, OpenTurn,
+import { BeginRound, CoachPictureRow, coachRowsAtSignOut, DeleteConversation, EndTurn, EndTurnAtSignOut, ForgetUnclaimedPictures, InterruptStaleTurn, KeepPicture, Mark, OpenTurn,
   PictureCopy, RecoverMark, StreamTurnText, WithdrawTurn } from '../../../../../src/products/gym/domain/coach/turn.js';
 import { RegistryCheck } from '../../../../platform/domain-kit/checks.js';
 import { Harness } from '../../../../platform/domain-kit/harness.js';
@@ -130,6 +130,35 @@ test('a writer goes on answering a turn another device marked interrupted, and i
   }
 });
 
+test('a writer that ended its own turn interrupted writes no more text, rounds or calls on it', async (t) => {
+  const { a } = await phones(t);
+  const turn = await open(a);
+  await committed(a, new StreamTurnText(turn.coach, 'Half'));
+  await committed(a, new EndTurn(turn.coach, 'interrupted'));
+  assert.equal((await a.runner.run(new StreamTurnText(turn.coach, 'Half and more'))).kind, 'unchanged');
+  const round = await a.runner.run(new BeginRound(turn.coach, callId, 4));
+  assert.equal(round.kind === 'refused' && /** @type {any} */ (round.refusal).refused?.code, 'message-final');
+  const message = a.drawn(CoachMessage).find((each) => each.id.equals(turn.coach));
+  assert.deepEqual([message?.state, message?.text], ['interrupted', 'Half']);
+});
+
+test('a turn no write has reached for thirty minutes by the server\'s clock is ended interrupted by another device, state alone', async (t) => {
+  const { a, b } = await phones(t);
+  const turn = await open(a);
+  await committed(a, new StreamTurnText(turn.coach, 'Half'));
+  await a.sync();
+  const changedAt = /** @type {any} */ (b.runner.read(CoachMessage.scope, (read) => read.confirmed(CoachMessage, turn.coach))).ru;
+  assert.equal(typeof changedAt, 'number');
+  assert.equal((await b.runner.run(new InterruptStaleTurn(turn.coach, changedAt + 1_799_999))).kind, 'unchanged');
+  assert.equal((await a.runner.run(new InterruptStaleTurn(turn.coach, changedAt + 1_800_000))).kind, 'unchanged', 'the writer\'s own mark names it');
+  assert.equal(await committed(b, new InterruptStaleTurn(turn.coach, changedAt + 1_800_000)), true);
+  await b.sync();
+  for (const phone of [a, b]) {
+    const message = phone.drawn(CoachMessage).find((each) => each.id.equals(turn.coach));
+    assert.deepEqual([message?.state, message?.text], ['interrupted', 'Half']);
+  }
+});
+
 test('a withdrawn turn and a deleted conversation take their messages, pictures and the whole mark', async (t) => {
   const { a } = await phones(t);
   await committed(a, new KeepPicture(picture));
@@ -160,6 +189,9 @@ test('a picture no message claims goes once the replica is caught up with its lo
 /** @param {Harness} phone */
 async function persisted(phone) { return JSON.stringify((await phone.engine.store.read()).device.toJSON()); }
 
+/** @param {Harness} phone */
+const forgottenAtSignOut = (phone) => ({ gym: phone.runner.read(CoachMessage.scope, coachRowsAtSignOut) });
+
 for (const choice of /** @type {const} */ (['keep', 'discard'])) {
   test(`after a sign-out with ${choice}, nothing of Coach is left in the browser's storage`, async (t) => {
     const { a } = await phones(t);
@@ -169,11 +201,12 @@ for (const choice of /** @type {const} */ (['keep', 'discard'])) {
     await committed(a, new StreamTurnText(turn.coach, 'Add 5 kg.'));
     await a.sync();
     assert.match(await persisted(a), /runningRound/);
-    assert.deepEqual(await committed(a, new ForgetCoachAtSignOut()), [picture.id]);
+    assert.equal(await committed(a, new EndTurnAtSignOut()), true);
     await a.sync(); // the sign-out's flush sends the turn's end before the replica goes
     a.engine.online = false;
     await a.engine.beginSignOut();
-    assert.equal((await a.engine.finishSignOut({ choice })).complete, true);
+    assert.deepEqual(forgottenAtSignOut(a), { gym: [CoachPictureRow.key(picture.id)] });
+    assert.equal((await a.engine.finishSignOut({ choice, forgetDeviceRows: forgottenAtSignOut(a) })).complete, true);
     const stored = await persisted(a);
     for (const residue of ['runningTurn', 'runningRound', 'picture:', picture.model.data + '"', 'How heavy today?', 'Add 5 kg.', String(turn.coach.record)]) {
       assert.equal(stored.includes(residue), false, `${residue} stayed in the browser`);
@@ -181,18 +214,32 @@ for (const choice of /** @type {const} */ (['keep', 'discard'])) {
   });
 }
 
+test('a sign-out cancelled after its turn ended keeps every picture and the conversation', async (t) => {
+  const { a } = await phones(t);
+  await committed(a, new KeepPicture(picture));
+  const turn = await open(a, 'What is this?', [new Picture(picture.id, 'image/jpeg', true)]);
+  await committed(a, new EndTurn(turn.coach, 'completed', 'A rack.'));
+  await a.sync();
+  assert.equal((await a.runner.run(new EndTurnAtSignOut())).kind, 'unchanged', 'no turn runs to end');
+  a.engine.online = false;
+  await a.engine.beginSignOut();
+  await a.engine.cancelSignOut();
+  assert.deepEqual(Object.keys(rows(a, 'picture:')), [CoachPictureRow.key(picture.id)]);
+});
+
 test('a picture an unsent question names stays with the unsent work a Keep keeps', async (t) => {
   const { a } = await phones(t);
   await committed(a, new KeepPicture(picture));
   await committed(a, new KeepPicture(new CoachPictureRow('picture00000002', picture.original, picture.model)));
   a.engine.online = false;
   const turn = await open(a, 'This one?', [new Picture(picture.id, 'image/jpeg', true)]);
-  assert.deepEqual(await committed(a, new ForgetCoachAtSignOut()), ['picture00000002']);
-  assert.deepEqual(Object.keys(rows(a)), [CoachPictureRow.key(picture.id)]);
+  assert.equal(await committed(a, new EndTurnAtSignOut()), true);
   assert.equal((await a.engine.beginSignOut()).unsent, 2, 'the question and the end its turn took at sign-out');
-  assert.equal((await a.engine.finishSignOut({ choice: 'keep' })).complete, true);
+  assert.deepEqual(forgottenAtSignOut(a), { gym: ['picture:picture00000002'] });
+  assert.equal((await a.engine.finishSignOut({ choice: 'keep', forgetDeviceRows: forgottenAtSignOut(a) })).complete, true);
   const stored = await persisted(a);
   assert.equal(stored.includes(CoachPictureRow.key(picture.id)), true);
+  assert.equal(stored.includes('picture:picture00000002'), false);
   assert.equal(stored.includes('runningTurn'), false);
   assert.equal(stored.includes(String(turn.coach.record)), true, 'the unsent turn waits for the next sign-in');
 });
@@ -202,14 +249,13 @@ test('signing out ends this replica\'s running turn interrupted in the write tha
   const turn = await open(a);
   await committed(a, new BeginRound(turn.coach, callId, 0));
   await committed(a, new StreamTurnText(turn.coach, 'Add 5'));
-  const outcome = await a.runner.run(new ForgetCoachAtSignOut());
-  assert.equal(outcome.kind, 'committed');
+  assert.equal(await committed(a, new EndTurnAtSignOut()), true);
   assert.deepEqual(rows(a), {});
   const message = a.drawn(CoachMessage).find((each) => each.id.equals(turn.coach));
   assert.deepEqual([message?.state, message?.text, message?.receipt], ['interrupted', 'Add 5', AbilityCall.receipt([])]);
   await a.sync();
   assert.equal(b.drawn(CoachMessage).find((each) => each.id.equals(turn.coach))?.state, 'interrupted');
-  assert.equal((await b.runner.run(new ForgetCoachAtSignOut())).kind, 'unchanged', 'another replica ends no turn it does not run');
+  assert.equal((await b.runner.run(new EndTurnAtSignOut())).kind, 'unchanged', 'another replica ends no turn it does not run');
 });
 
 test('a picture id the registry refuses never reaches a message or a row, and both copies keep their bounds', async (t) => {

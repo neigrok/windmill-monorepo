@@ -6,7 +6,7 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified, and approved by the owner on 2026-11-15. Of what it changes, the words of §3 and the `catalog/3` file are written, and the server is on `catalog/3`: MCP lists its schemas, a `catalog/3` turn opens beside `catalog/1` and `catalog/2`, and the server executor claims `abilities-3/`. The web's Coach records and replica executor (`web/src/products/gym/domain/coach/`) are written. Nothing else is built. Gym Coach runs on the server in two forms.
+**Status:** Specified, and approved by the owner on 2026-11-15. Of what it changes, the words of §3 and the `catalog/3` file are written, and the server is on `catalog/3`: MCP lists its schemas, a `catalog/3` turn opens beside `catalog/1` and `catalog/2`, and the server executor claims `abilities-3/`. The web's Coach records and replica executor (`web/src/products/gym/domain/coach/`) are written, and the web's room runs its turn in the browser on them (`web/src/products/gym/coach/`); the server's web Coach is no longer called from the web. Gym Coach runs on the server in two forms.
 [Phone-hosted Coach abilities](mobile/gym_coach.md) is what the iPhone and Android speak: the server
 runs the loop and the phone runs the abilities. The [Coach conversation contract](../gym-coach-contract.md)
 is what the web speaks: the server runs everything. Both are metered by the backend's ledger

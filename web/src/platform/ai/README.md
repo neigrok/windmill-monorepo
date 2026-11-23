@@ -40,8 +40,8 @@ following them. Picture uploads carry raw PNG/JPEG bytes; requests reference the
 The SSE decoder validates complete event shapes and handles split UTF-8 and CRLF frames.
 
 The default failure reporter uses `telemetry/sentry.js` under static `ai-pass` or `ai-call`.
-Injected telemetry sees only that operation; it never receives an exception, credential, request,
-call ID, content or service error text. Expected actionable refusals return to the caller and do not
+Injected telemetry receives that operation and, where one was caught, the error that raised it, for the
+reporter to scrub; it never receives a credential, request, call ID, content or service error text. Expected actionable refusals return to the caller and do not
 produce Issues. Temporary pass unavailability and ambiguous HTTP errors are quiet. Product turn
 events are the runner's telemetry port, not named by this client.
 
