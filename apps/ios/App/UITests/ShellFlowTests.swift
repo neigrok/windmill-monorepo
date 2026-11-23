@@ -131,8 +131,7 @@ import XCTest
     let done = app.buttons["roadmap-group-done"]
     app.swipeUp(velocity: .slow)
     XCTAssertTrue(done.waitForHittable(timeout: 5))
-    done.tap()
-    XCTAssertTrue(done.waitForValue("Expanded", timeout: 5))
+    XCTAssertTrue(app.tap({ done.tap() }, until: { done.waitForValue("Expanded", timeout: 5) }), "Done must expand")
     // Done is newest completed first, and the list draws only the rows on screen: the step completed last leads it.
     XCTAssertTrue(app.roadmapStep("Rig the boat").waitForExistence(timeout: 5))
     app.terminate()
@@ -234,9 +233,14 @@ import XCTest
   }
 
   // The labels of the step rows on screen, in order.
+  // Read from one snapshot of the screen, not one query a row: a test reads them under a band whose Undo lasts six
+  // seconds, and a slow runner spent three of them on two rows queried one by one.
   func stepRows(_ app: XCUIApplication) -> [String] {
-    let rows = app.descendants(matching: .any).matching(identifier: "roadmap-step")
-    return (0..<rows.count).map { rows.element(boundBy: $0).label }
+    func rows(_ element: any XCUIElementSnapshot) -> [String] {
+      (element.identifier == "roadmap-step" ? [element.label] : []) + element.children.flatMap(rows)
+    }
+    guard let screen = try? app.snapshot() else { return [] }
+    return rows(screen)
   }
 
   // Roadmap · iOS 01.1, 03.1 and 03.5: a Board row opens its step's page, read whole from the phone's copy, whose rows
