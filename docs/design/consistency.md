@@ -1933,9 +1933,8 @@ Android. It and the product differ in these places.
   board draws either. No board draws the way back from 08.72's Sign in: the sheets close and sign-in stands over the rack, and
   after the code a new account lands on the rack with the proposal still waiting, and an account with training first asks *Add to
   your account?*. A refused write that is neither training nor a named record says *That change could not be saved.* over its
-  reason, words the log's other refusals already use; no board draws it. A Stop refused for another
-  reason (`stopUnheard`) says the first sentence of 08.69's band, *Coach is stopped on this phone.*, since the turn has
-  already ended. No board draws an interruption with no words, and the build says the first sentence of 08.50's line,
+  reason, words the log's other refusals already use; no board draws it. Stop is the phone's own, so no
+  band says a Stop went unheard, and 08.69's band draws a state Android no longer has. No board draws an interruption with no words, and the build says the first sentence of 08.50's line,
   *Interrupted.*
 - **6z · The Android boards after the phone Coach (designer).** Once it ships, delete the originals it replaced, with their
   Daylight pairs: 08.5 `1253:28654`, 08.8 `1253:28820`, 08.9 `1253:28915`, 08.26 `1254:37761`, 08.61 `1442:18583`, 01.5
