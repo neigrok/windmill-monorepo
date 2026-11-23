@@ -94,13 +94,17 @@ requests use passes; neither internal bearer works as a public pass.
 2. Read `GET /internal/v1/calls/<id>` using the service's numeric ID. It reports the pinned tier,
    model, price version, reservation, usage, state and charge. Find the completion log by this ID.
 3. Read `GET /internal/v1/principals/<kind>/<id>` for that principal's budgets, grants, bindings and
-   calls. Use `GET /internal/v1/budgets` for the free pools and provider fuses.
+   calls. Use `GET /internal/v1/budgets` for the free and background pools and provider fuses.
 
 A refused call has no ledger row. Investigate its bounded refusal code and time window instead.
 `subject_exhausted` names the principal's own allowance; `free_day_exhausted` and
 `free_month_exhausted` name shared budgets; `funding_required` means the effective tier lacks the
 capability. `paused` names an open provider fuse. A positive allowance does not mean a particular
-request's reservation fits.
+request's reservation fits. A `paused` line names its `ceiling`, `fuse` or `background_hour`. A
+background call's refusal line carries `tier: background`: there `subject_exhausted` names the
+account's background month and `background_exhausted` the shared background month or day. The
+budgets door shows the background hour's trailing spend, what open background calls hold and its
+limit.
 
 `reserved` has not been sent. `dispatched` may have reached the provider. `settled` uses measured
 usage; `unconsumed` costs zero; `assumed` spends the reservation. A null charge in a streamed answer
@@ -149,6 +153,15 @@ An empty provider key leaves its capability unavailable. Azure is selected by a 
 there is no automatic failover. Changing the carry key makes earlier carry unreadable; callers'
 visible message parts remain usable, subject to the provider accepting rebuilt history.
 
+## Roll back
+
+The migrator refuses to start a binary when the database holds a migration the binary does not
+carry: it reports `ledger.connect` and exits with `database_unavailable`. Once
+`0002_background.sql` has run, an image built before it does not start, so the oldest image a
+rollback can return to is the one that added that migration. Roll back to that image or a
+later one, and never loosen the migrator or delete a row from `_sqlx_migrations` to start an
+older image.
+
 ## Shutdown, recovery and acceptance
 
 SIGTERM closes admission, cuts live sessions through their normal accounting close, and allows text
@@ -168,10 +181,11 @@ logs and Sentry; and delivery of the owner's alert rules. The price book records
 transcription billing rule has been checked against a real bill. Local simulated-provider tests
 establish no claim about that bill or production alert delivery.
 
-Configure alerts for `budget.threshold`, `provider.fuse`, assumed accounting, reservation excess,
-owner funding refusal, provider credential refusal and `provider.busy`. The last reports a
-three-minute busy streak with gaps no longer than a minute, and resets after recovery or a longer
-gap. Database errors use static `ledger.*` operations and are reported at most once per operation
-per minute. Test each with harmless controlled fixtures
-and confirm delivery with the owner. Never include a prompt, pass, principal ID or provider key in
+Configure alerts for `budget.threshold`, `background.hour`, `provider.fuse`, assumed accounting,
+reservation excess, owner funding refusal, provider credential refusal and `provider.busy`. The
+last reports a three-minute busy streak with gaps no longer than a minute, and resets after
+recovery or a longer gap. `background.hour` reports at most once an hour while background work
+meets its hourly ceiling. Database errors use static `ledger.*` operations and are reported at most
+once per operation per minute. Test each with harmless controlled fixtures and confirm delivery
+with the owner. Never include a prompt, pass, principal ID or provider key in
 the acceptance record.

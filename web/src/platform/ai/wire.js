@@ -5,8 +5,9 @@ export class TransportFailure extends Error {
 const refusalStatus = { invalid_request: 400, provider_rejected: 400, pass_missing: 401, pass_signature: 401,
   pass_audience: 401, pass_malformed: 401, pass_expired: 401, funding_required: 403, device_bound: 403,
   call_unknown: 404, conflict: 409, result_gone: 410, picture_gone: 410, too_large: 413,
-  subject_exhausted: 429, free_month_exhausted: 429, free_day_exhausted: 429, concurrency_exhausted: 429,
-  rate_limited: 429, busy: 503, paused: 503, accounting_unavailable: 503, provider_unavailable: 503 };
+  subject_exhausted: 429, free_month_exhausted: 429, free_day_exhausted: 429, background_exhausted: 429,
+  concurrency_exhausted: 429, rate_limited: 429, busy: 503, paused: 503, accounting_unavailable: 503,
+  provider_unavailable: 503 };
 const passRefusalStatus = { invalid_request: 400, unauthenticated: 401, invalid_installation: 401, device_bound: 409,
   'client-update-required': 426, anonymous_ai_unavailable: 503, rate_limited: 429, unavailable: 503,
   'untrusted-origin': 403, 'unsupported-media-type': 415 };

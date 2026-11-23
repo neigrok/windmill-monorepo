@@ -2,8 +2,11 @@ use ai_domain::*;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-pub fn allowance(value: &Allowance) -> Value {
-    json!({
+pub fn allowance(value: &Allowance) -> Option<Value> {
+    if value.tier == Tier::Background {
+        return None;
+    }
+    Some(json!({
         "tier":value.tier.as_str(),
         "period":value.period.as_str(),
         "limit":value.limit.usd(),
@@ -17,7 +20,7 @@ pub fn allowance(value: &Allowance) -> Value {
         "medium":value.text[1].as_str(),
         "small":value.text[2].as_str()},
         "transcription":value.transcription}
-    })
+    }))
 }
 
 pub fn status(call: &Call) -> Value {
@@ -74,7 +77,7 @@ pub fn call(call: &Call) -> Value {
 pub fn budget(budget: &Budget) -> Value {
     json!({
         "id":budget.id,
-        "kind":budget.kind,
+        "kind":budget.kind.as_str(),
         "period":budget.period.map(|period|json!({
         "start":period.start,
         "end":period.end})),
@@ -118,7 +121,10 @@ pub fn shared(ledger: SharedLedger) -> Value {
         "provider":fuse.provider.as_str(),
         "spent":fuse.spent.usd(),
         "limit":fuse.limit.usd(),
-        "paused":fuse.paused})).collect::<Vec<_>>()
+        "paused":fuse.paused})).collect::<Vec<_>>(),
+        "backgroundHour":{"spent":ledger.background_hour.spent.usd(),
+        "held":ledger.background_hour.held.usd(),
+        "limit":ledger.background_hour.limit.usd()}
     })
 }
 

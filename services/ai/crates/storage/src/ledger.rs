@@ -102,7 +102,9 @@ impl Ledger {
 
     pub async fn prepare(&self, identity: &Identity, now: i64) -> Result<Preparation, StaticCode> {
         let mut result = Preparation::default();
-        if let Principal::Account(account) = &identity.principal {
+        if !identity.background()
+            && let Principal::Account(account) = &identity.principal
+        {
             if let Some(installation) = &identity.installation {
                 Principal::new("installation", installation.clone())?;
                 let mut writer = self.writer.lock().await;
@@ -216,12 +218,22 @@ impl Ledger {
         } else if scope.in_flight >= i64::from(row.in_flight) {
             code = StaticCode::ConcurrencyExhausted;
         } else {
-            for (budget, refusal) in scope.budgets() {
+            for budget in scope.budgets() {
                 if budget.limit.remaining(budget.spent, budget.held)? == NanoUsd::ZERO {
-                    code = refusal;
+                    code = budget.kind.refusal();
                     budget_resets_at = budget.period.map(|period| period.end);
                     break;
                 }
+            }
+            if code == StaticCode::Ok
+                && scope
+                    .hour
+                    .as_ref()
+                    .map(BackgroundCeiling::remaining)
+                    .transpose()?
+                    == Some(NanoUsd::ZERO)
+            {
+                code = StaticCode::BackgroundHour;
             }
         }
         let result = Allowance {
@@ -289,16 +301,10 @@ impl Ledger {
             return Err(StaticCode::Paused);
         }
         let price = self.prices.model(route.provider, &route.model)?;
-        let budgets = scope
-            .budgets()
-            .into_iter()
-            .map(|(budget, refusal)| {
-                Ok((budget.limit.remaining(budget.spent, budget.held)?, refusal))
-            })
-            .collect::<Result<Vec<_>, StaticCode>>()?;
+        let limits = scope.limits()?;
         let (max_tokens, reservation, slices) = match request.reservation {
             Reservation::Text(text) => {
-                let (cap, cost) = price.reserve_text(text, rule.output_ceiling, &budgets)?;
+                let (cap, cost) = price.reserve_text(text, rule.output_ceiling, &limits)?;
                 (
                     Some(i32::try_from(cap).map_err(|_| StaticCode::InvalidRequest)?),
                     cost,
@@ -307,7 +313,7 @@ impl Ledger {
             }
             Reservation::Transcription => {
                 let cost = price.audio_rate()?;
-                for (remaining, refusal) in &budgets {
+                for (remaining, refusal) in &limits {
                     if cost > *remaining {
                         return Err(*refusal);
                     }
@@ -319,7 +325,7 @@ impl Ledger {
         let row = sqlx::query("INSERT INTO ai_calls(principal_kind,principal_id,caller_id,capability,tier,requested,provider,model,served,price_version,label,client,state,reservation,held,max_tokens,slices,month_start,instance,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'reserved',$13,$13,$14,$15,$16,$17,$18) RETURNING *")
             .bind(request.identity.principal.kind()).bind(request.identity.principal.id()).bind(request.caller_id.as_str()).bind(capability.as_str()).bind(scope.tier.as_str()).bind(request.requested.as_str()).bind(route.provider.as_str()).bind(&route.model).bind(route.served.as_str()).bind(&self.prices.version).bind(self.tiers.label(&request.label)).bind(request.identity.client.as_str()).bind(reservation.nanos()).bind(max_tokens).bind(slices).bind(month.start).bind(self.instance.as_str()).bind(now).fetch_one(&mut *tx).await.map_err(|_| StaticCode::AccountingUnavailable)?;
         let call = rows::call(&row)?;
-        for (budget, _) in scope.budgets() {
+        for budget in scope.budgets() {
             sqlx::query("INSERT INTO ai_call_budgets(call_id,budget_id) VALUES($1,$2)")
                 .bind(call.id)
                 .bind(budget.id)
@@ -617,36 +623,48 @@ impl Ledger {
     }
 
     pub async fn shared(&self, now: i64) -> Result<SharedLedger, StaticCode> {
-        let rows = sqlx::query(
-            "SELECT * FROM ai_budgets WHERE kind IN ('free_month','free_day') ORDER BY id",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|_| StaticCode::AccountingUnavailable)?;
+        let rows = sqlx::query("SELECT * FROM ai_budgets WHERE kind=ANY($1) ORDER BY id")
+            .bind(BudgetKind::SHARED.map(BudgetKind::as_str))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| StaticCode::AccountingUnavailable)?;
         let budgets = rows.iter().map(rows::budget).collect::<Result<_, _>>()?;
         let mut fuses = Vec::new();
         for provider in [Provider::Anthropic, Provider::OpenAi, Provider::Azure] {
             fuses.push(self.fuse(provider, now).await?);
         }
-        Ok(SharedLedger { budgets, fuses })
+        let mut connection = self
+            .pool
+            .acquire()
+            .await
+            .map_err(|_| StaticCode::AccountingUnavailable)?;
+        Ok(SharedLedger {
+            budgets,
+            fuses,
+            background_hour: background_hour(&mut connection, self.tiers.background_hour, now)
+                .await?,
+        })
     }
 
     pub async fn drain_events(&self) -> Result<Vec<LedgerEvent>, StaticCode> {
         let mut writer = self.writer.lock().await;
         let connection = writer.as_mut().ok_or(StaticCode::AccountingUnavailable)?;
-        let rows = sqlx::query("DELETE FROM ai_threshold_outbox RETURNING budget_id,percent")
+        let rows = sqlx::query("DELETE FROM ai_threshold_outbox o USING ai_budgets b WHERE b.id=o.budget_id RETURNING o.budget_id,b.kind,o.percent")
             .fetch_all(&mut **connection)
             .await
             .map_err(|_| StaticCode::AccountingUnavailable)?;
-        rows.iter()
-            .map(|row| {
-                Ok(LedgerEvent::Threshold {
-                    budget_id: rows::value(row, "budget_id")?,
-                    percent: u8::try_from(rows::value::<i16>(row, "percent")?)
-                        .map_err(|_| StaticCode::AccountingUnavailable)?,
-                })
+        let threshold = |row: &PgRow| -> Result<LedgerEvent, StaticCode> {
+            Ok(LedgerEvent::Threshold {
+                budget_id: rows::value(row, "budget_id")?,
+                kind: BudgetKind::parse(rows::value(row, "kind")?)?,
+                percent: u8::try_from(rows::value::<i16>(row, "percent")?)
+                    .map_err(|_| StaticCode::AccountingUnavailable)?,
             })
-            .collect()
+        };
+        Ok(rows
+            .iter()
+            .map(|row| threshold(row).unwrap_or(LedgerEvent::ThresholdUnreadable))
+            .collect())
     }
 
     pub async fn sweep(&self, active: &[i64], now: i64) -> Result<SweepOutcome, StaticCode> {
@@ -706,20 +724,34 @@ struct Scope {
     own: Budget,
     month: Option<Budget>,
     day: Option<Budget>,
+    hour: Option<BackgroundCeiling>,
     in_flight: i64,
     bound: bool,
 }
 
 impl Scope {
-    fn budgets(&self) -> Vec<(&Budget, StaticCode)> {
-        let mut result = vec![(&self.own, StaticCode::SubjectExhausted)];
-        if let Some(month) = &self.month {
-            result.push((month, StaticCode::FreeMonthExhausted));
+    fn budgets(&self) -> Vec<&Budget> {
+        [Some(&self.own), self.month.as_ref(), self.day.as_ref()]
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+
+    fn limits(&self) -> Result<Vec<(NanoUsd, StaticCode)>, StaticCode> {
+        let mut limits = self
+            .budgets()
+            .into_iter()
+            .map(|budget| {
+                Ok((
+                    budget.limit.remaining(budget.spent, budget.held)?,
+                    budget.kind.refusal(),
+                ))
+            })
+            .collect::<Result<Vec<_>, StaticCode>>()?;
+        if let Some(hour) = &self.hour {
+            limits.push((hour.remaining()?, StaticCode::BackgroundHour));
         }
-        if let Some(day) = &self.day {
-            result.push((day, StaticCode::FreeDayExhausted));
-        }
-        result
+        Ok(limits)
     }
 }
 
@@ -729,10 +761,13 @@ async fn scope(
     identity: &Identity,
     now: i64,
 ) -> Result<Scope, StaticCode> {
+    if identity.background() {
+        return background_scope(connection, tiers, &identity.principal, now).await;
+    }
     let month = Period::month(now)?;
     let day = Period::day(now)?;
     let principal = &identity.principal;
-    let in_flight: i64 = sqlx::query_scalar("SELECT count(*) FROM ai_calls c WHERE c.state IN ('reserved','dispatched') AND ((c.principal_kind=$1 AND c.principal_id=$2) OR ($1='account' AND c.principal_kind='installation' AND EXISTS(SELECT 1 FROM ai_bindings b WHERE b.installation_id=c.principal_id AND b.account_id=$2)))").bind(principal.kind()).bind(principal.id()).fetch_one(&mut *connection).await.map_err(|_| StaticCode::AccountingUnavailable)?;
+    let in_flight = in_flight(connection, principal, false).await?;
     if let Principal::Account(account) = principal
         && identity.plan == Plan::One
         && let Some(row) = active_grant(connection, account, now).await?
@@ -749,6 +784,7 @@ async fn scope(
             own,
             month: None,
             day: None,
+            hour: None,
             in_flight,
             bound: false,
         });
@@ -756,19 +792,19 @@ async fn scope(
     let (tier, own_kind, own_period, period) = match principal {
         Principal::Installation(_) => (
             Tier::Anonymous,
-            "installation",
+            BudgetKind::Installation,
             None,
             AllowancePeriod::Lifetime,
         ),
         Principal::Account(_) => (
             Tier::Free,
-            "account_month",
+            BudgetKind::AccountMonth,
             Some(month),
             AllowancePeriod::CalendarMonthUtc,
         ),
     };
     let rule = tiers.row(tier)?;
-    let mut own = ensure_budget(
+    let mut own = configured_budget(
         connection,
         own_kind,
         principal.id(),
@@ -782,36 +818,15 @@ async fn scope(
         own.spent = own.spent.checked_add(rows::money(&row, "spent")?)?;
         own.held = own.held.checked_add(rows::money(&row, "held")?)?;
     }
-    let month_budget = if let Some(pool) = &rule.month_pool {
-        Some(
-            ensure_budget(
-                connection,
-                "free_month",
-                &pool.name,
-                None,
-                Some(month),
-                pool.limit,
-            )
-            .await?,
-        )
-    } else {
-        None
-    };
-    let day_budget = if let Some(pool) = &rule.day_pool {
-        Some(
-            ensure_budget(
-                connection,
-                "free_day",
-                &pool.name,
-                None,
-                Some(day),
-                pool.limit,
-            )
-            .await?,
-        )
-    } else {
-        None
-    };
+    let month_budget = pool_budget(
+        connection,
+        BudgetKind::FreeMonth,
+        rule.month_pool.as_ref(),
+        month,
+    )
+    .await?;
+    let day_budget =
+        pool_budget(connection, BudgetKind::FreeDay, rule.day_pool.as_ref(), day).await?;
     let bound = if tier == Tier::Anonymous {
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM ai_bindings WHERE installation_id=$1)")
             .bind(principal.id())
@@ -827,25 +842,108 @@ async fn scope(
         own,
         month: month_budget,
         day: day_budget,
+        hour: None,
         in_flight,
         bound,
     })
 }
 
-async fn ensure_budget(
+async fn background_scope(
     connection: &mut PgConnection,
-    kind: &str,
+    tiers: &TierTable,
+    principal: &Principal,
+    now: i64,
+) -> Result<Scope, StaticCode> {
+    let month = Period::month(now)?;
+    let rule = tiers.row(Tier::Background)?;
+    let own = configured_budget(
+        connection,
+        BudgetKind::BackgroundAccountMonth,
+        principal.id(),
+        Some(principal),
+        Some(month),
+        rule.amount,
+    )
+    .await?;
+    let month_budget = pool_budget(
+        connection,
+        BudgetKind::BackgroundMonth,
+        rule.month_pool.as_ref(),
+        month,
+    )
+    .await?;
+    let day_budget = pool_budget(
+        connection,
+        BudgetKind::BackgroundDay,
+        rule.day_pool.as_ref(),
+        Period::day(now)?,
+    )
+    .await?;
+    Ok(Scope {
+        tier: Tier::Background,
+        period: AllowancePeriod::CalendarMonthUtc,
+        own,
+        month: month_budget,
+        day: day_budget,
+        hour: Some(background_hour(connection, tiers.background_hour, now).await?),
+        in_flight: in_flight(connection, principal, true).await?,
+        bound: false,
+    })
+}
+
+async fn background_hour(
+    connection: &mut PgConnection,
+    limit: NanoUsd,
+    now: i64,
+) -> Result<BackgroundCeiling, StaticCode> {
+    let row = sqlx::query("SELECT (SELECT GREATEST(COALESCE(sum(e.delta),0),0) FROM ai_spend_events e JOIN ai_calls c ON c.id=e.call_id WHERE c.tier='background' AND e.at>$1 AND e.at<=$2)::bigint AS spent,(SELECT COALESCE(sum(held),0) FROM ai_calls WHERE tier='background' AND state IN ('reserved','dispatched'))::bigint AS held").bind(now.saturating_sub(3_600_000)).bind(now).fetch_one(connection).await.map_err(|_| StaticCode::AccountingUnavailable)?;
+    Ok(BackgroundCeiling {
+        spent: rows::money(&row, "spent")?,
+        held: rows::money(&row, "held")?,
+        limit,
+    })
+}
+
+async fn in_flight(
+    connection: &mut PgConnection,
+    principal: &Principal,
+    background: bool,
+) -> Result<i64, StaticCode> {
+    sqlx::query_scalar("SELECT count(*) FROM ai_calls c WHERE c.state IN ('reserved','dispatched') AND (c.tier='background')=$3 AND ((c.principal_kind=$1 AND c.principal_id=$2) OR ($1='account' AND c.principal_kind='installation' AND EXISTS(SELECT 1 FROM ai_bindings b WHERE b.installation_id=c.principal_id AND b.account_id=$2)))").bind(principal.kind()).bind(principal.id()).bind(background).fetch_one(connection).await.map_err(|_| StaticCode::AccountingUnavailable)
+}
+
+async fn pool_budget(
+    connection: &mut PgConnection,
+    kind: BudgetKind,
+    pool: Option<&PoolRule>,
+    period: Period,
+) -> Result<Option<Budget>, StaticCode> {
+    let Some(pool) = pool else {
+        return Ok(None);
+    };
+    Ok(Some(
+        configured_budget(connection, kind, &pool.name, None, Some(period), pool.limit).await?,
+    ))
+}
+
+fn budget_key(kind: BudgetKind, owner: &str, period: Option<Period>) -> String {
+    format!(
+        "{}:{}:{owner}:{}",
+        kind.as_str(),
+        owner.len(),
+        period.map_or(0, |period| period.start)
+    )
+}
+
+async fn configured_budget(
+    connection: &mut PgConnection,
+    kind: BudgetKind,
     owner: &str,
     principal: Option<&Principal>,
     period: Option<Period>,
     limit: NanoUsd,
 ) -> Result<Budget, StaticCode> {
-    let key = format!(
-        "{kind}:{}:{owner}:{}",
-        owner.len(),
-        period.map_or(0, |period| period.start)
-    );
-    let row = sqlx::query("INSERT INTO ai_budgets(budget_key,kind,principal_kind,principal_id,period_start,period_end,limit_nanos) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(budget_key) DO UPDATE SET budget_key=EXCLUDED.budget_key RETURNING *").bind(key).bind(kind).bind(principal.map(Principal::kind)).bind(principal.map(Principal::id)).bind(period.map(|period| period.start)).bind(period.map(|period| period.end)).bind(limit.nanos()).fetch_one(&mut *connection).await.map_err(|_| StaticCode::AccountingUnavailable)?;
+    let row = sqlx::query("INSERT INTO ai_budgets(budget_key,kind,principal_kind,principal_id,period_start,period_end,limit_nanos) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(budget_key) DO UPDATE SET limit_nanos=EXCLUDED.limit_nanos RETURNING *").bind(budget_key(kind, owner, period)).bind(kind.as_str()).bind(principal.map(Principal::kind)).bind(principal.map(Principal::id)).bind(period.map(|period| period.start)).bind(period.map(|period| period.end)).bind(limit.nanos()).fetch_one(&mut *connection).await.map_err(|_| StaticCode::AccountingUnavailable)?;
     rows::budget(&row)
 }
 
@@ -875,17 +973,8 @@ async fn create_grant(
     amount: NanoUsd,
 ) -> Result<(), StaticCode> {
     let owner = format!("{}:{}:{reference}", source.as_str(), reference.len());
-    let principal = Principal::Account(account.to_owned());
-    let budget = ensure_budget(
-        connection,
-        "grant",
-        &owner,
-        Some(&principal),
-        Some(period),
-        amount,
-    )
-    .await?;
-    sqlx::query("INSERT INTO ai_grants(reference,account_id,source,plan,period_start,period_end,budget_id) VALUES($1,$2,$3,'one',$4,$5,$6)").bind(reference).bind(account).bind(source.as_str()).bind(period.start).bind(period.end).bind(budget.id).execute(connection).await.map_err(|_| StaticCode::AccountingUnavailable)?;
+    let budget_id: i64 = sqlx::query_scalar("INSERT INTO ai_budgets(budget_key,kind,principal_kind,principal_id,period_start,period_end,limit_nanos) VALUES($1,$2,'account',$3,$4,$5,$6) RETURNING id").bind(budget_key(BudgetKind::Grant, &owner, Some(period))).bind(BudgetKind::Grant.as_str()).bind(account).bind(period.start).bind(period.end).bind(amount.nanos()).fetch_one(&mut *connection).await.map_err(|_| StaticCode::AccountingUnavailable)?;
+    sqlx::query("INSERT INTO ai_grants(reference,account_id,source,plan,period_start,period_end,budget_id) VALUES($1,$2,$3,'one',$4,$5,$6)").bind(reference).bind(account).bind(source.as_str()).bind(period.start).bind(period.end).bind(budget_id).execute(connection).await.map_err(|_| StaticCode::AccountingUnavailable)?;
     Ok(())
 }
 
@@ -940,7 +1029,7 @@ async fn move_money(
             .await
             .map_err(|_| StaticCode::AccountingUnavailable)?;
     }
-    sqlx::query("WITH crossed AS (INSERT INTO ai_thresholds(budget_id,percent) SELECT b.id,p.percent FROM ai_budgets b CROSS JOIN (VALUES(50),(80),(95)) p(percent) WHERE b.id IN (SELECT budget_id FROM ai_call_budgets WHERE call_id=$1) AND b.kind IN ('free_month','free_day') AND (b.spent::numeric+b.held::numeric)*100>=b.limit_nanos::numeric*p.percent ON CONFLICT DO NOTHING RETURNING budget_id,percent) INSERT INTO ai_threshold_outbox(budget_id,percent) SELECT budget_id,percent FROM crossed").bind(call.id).execute(connection).await.map_err(|_| StaticCode::AccountingUnavailable)?;
+    sqlx::query("WITH crossed AS (INSERT INTO ai_thresholds(budget_id,percent) SELECT b.id,p.percent FROM ai_budgets b CROSS JOIN (VALUES(50),(80),(95)) p(percent) WHERE b.id IN (SELECT budget_id FROM ai_call_budgets WHERE call_id=$1) AND b.kind=ANY($2) AND (b.spent::numeric+b.held::numeric)*100>=b.limit_nanos::numeric*p.percent ON CONFLICT DO NOTHING RETURNING budget_id,percent) INSERT INTO ai_threshold_outbox(budget_id,percent) SELECT budget_id,percent FROM crossed").bind(call.id).bind(BudgetKind::SHARED.map(BudgetKind::as_str)).execute(connection).await.map_err(|_| StaticCode::AccountingUnavailable)?;
     Ok(())
 }
 

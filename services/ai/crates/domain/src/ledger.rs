@@ -13,9 +13,11 @@ pub enum StaticCode {
     SubjectExhausted,
     FreeMonthExhausted,
     FreeDayExhausted,
+    BackgroundExhausted,
     RateLimited,
     Busy,
     Paused,
+    BackgroundHour,
     AccountingUnavailable,
     ProviderRejected,
     ProviderUnavailable,
@@ -45,9 +47,11 @@ impl StaticCode {
             Self::SubjectExhausted,
             Self::FreeMonthExhausted,
             Self::FreeDayExhausted,
+            Self::BackgroundExhausted,
             Self::RateLimited,
             Self::Busy,
             Self::Paused,
+            Self::BackgroundHour,
             Self::AccountingUnavailable,
             Self::ProviderRejected,
             Self::ProviderUnavailable,
@@ -79,9 +83,11 @@ impl StaticCode {
             Self::SubjectExhausted => "subject_exhausted",
             Self::FreeMonthExhausted => "free_month_exhausted",
             Self::FreeDayExhausted => "free_day_exhausted",
+            Self::BackgroundExhausted => "background_exhausted",
             Self::RateLimited => "rate_limited",
             Self::Busy => "busy",
             Self::Paused => "paused",
+            Self::BackgroundHour => "background_hour",
             Self::AccountingUnavailable => "accounting_unavailable",
             Self::ProviderRejected => "provider_rejected",
             Self::ProviderUnavailable => "provider_unavailable",
@@ -95,6 +101,21 @@ impl StaticCode {
             Self::WentAway => "went_away",
             Self::Restarting => "restarting",
             Self::TooLarge => "too_large",
+        }
+    }
+
+    pub fn wire(self) -> Self {
+        match self {
+            Self::BackgroundHour => Self::Paused,
+            code => code,
+        }
+    }
+
+    pub fn ceiling(self) -> Option<&'static str> {
+        match self {
+            Self::Paused => Some("fuse"),
+            Self::BackgroundHour => Some("background_hour"),
+            _ => None,
         }
     }
 }
@@ -159,6 +180,7 @@ pub enum Tier {
     Anonymous,
     Free,
     One,
+    Background,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Capability {
@@ -218,6 +240,17 @@ pub enum AllowancePeriod {
     CalendarMonthUtc,
     BillingPeriod,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BudgetKind {
+    Installation,
+    AccountMonth,
+    FreeMonth,
+    FreeDay,
+    Grant,
+    BackgroundAccountMonth,
+    BackgroundMonth,
+    BackgroundDay,
+}
 
 macro_rules! labels {
     ($kind:ty, $($variant:path => $label:literal),+ $(,)?) => {
@@ -228,7 +261,7 @@ macro_rules! labels {
     };
 }
 labels!(Plan, Plan::None => "none", Plan::One => "one");
-labels!(Tier, Tier::Anonymous => "anonymous", Tier::Free => "free", Tier::One => "one");
+labels!(Tier, Tier::Anonymous => "anonymous", Tier::Free => "free", Tier::One => "one", Tier::Background => "background");
 labels!(Capability, Capability::Text => "text", Capability::Transcription => "transcription");
 labels!(ModelClass, ModelClass::Large => "large", ModelClass::Medium => "medium", ModelClass::Small => "small");
 labels!(Provider, Provider::Anthropic => "anthropic", Provider::OpenAi => "openai", Provider::Azure => "azure");
@@ -238,10 +271,32 @@ labels!(Stop, Stop::Completed => "completed", Stop::ToolCalls => "tool_calls", S
 labels!(GrantSource, GrantSource::Subscription => "subscription", GrantSource::Owner => "owner");
 labels!(GrantOutcome, GrantOutcome::Ok => "ok", GrantOutcome::Replay => "replay", GrantOutcome::Conflict => "conflict", GrantOutcome::NotFound => "not_found");
 labels!(AllowancePeriod, AllowancePeriod::Lifetime => "lifetime", AllowancePeriod::CalendarMonthUtc => "calendar_month_utc", AllowancePeriod::BillingPeriod => "billing_period");
+labels!(BudgetKind, BudgetKind::Installation => "installation", BudgetKind::AccountMonth => "account_month", BudgetKind::FreeMonth => "free_month", BudgetKind::FreeDay => "free_day", BudgetKind::Grant => "grant", BudgetKind::BackgroundAccountMonth => "background_account_month", BudgetKind::BackgroundMonth => "background_month", BudgetKind::BackgroundDay => "background_day");
 
 impl CallState {
     pub fn is_open(self) -> bool {
         matches!(self, Self::Reserved | Self::Dispatched)
+    }
+}
+
+impl BudgetKind {
+    pub const SHARED: [Self; 4] = [
+        Self::FreeMonth,
+        Self::FreeDay,
+        Self::BackgroundMonth,
+        Self::BackgroundDay,
+    ];
+
+    pub fn refusal(self) -> StaticCode {
+        match self {
+            Self::FreeMonth => StaticCode::FreeMonthExhausted,
+            Self::FreeDay => StaticCode::FreeDayExhausted,
+            Self::BackgroundMonth | Self::BackgroundDay => StaticCode::BackgroundExhausted,
+            Self::Installation
+            | Self::AccountMonth
+            | Self::Grant
+            | Self::BackgroundAccountMonth => StaticCode::SubjectExhausted,
+        }
     }
 }
 
@@ -252,6 +307,12 @@ pub struct Identity {
     pub owner_grant: bool,
     pub installation: Option<String>,
     pub client: Client,
+}
+
+impl Identity {
+    pub fn background(&self) -> bool {
+        self.client == Client::Server
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -419,10 +480,22 @@ impl Grant {
 
 #[derive(Clone, Debug)]
 pub enum LedgerEvent {
-    Threshold { budget_id: i64, percent: u8 },
-    OwnerGrant { outcome: &'static str },
-    InstallationBind { outcome: &'static str },
-    SweepEnd { call_id: i64, state: CallState },
+    Threshold {
+        budget_id: i64,
+        kind: BudgetKind,
+        percent: u8,
+    },
+    OwnerGrant {
+        outcome: &'static str,
+    },
+    InstallationBind {
+        outcome: &'static str,
+    },
+    SweepEnd {
+        call_id: i64,
+        state: CallState,
+    },
+    ThresholdUnreadable,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -433,7 +506,7 @@ pub struct Preparation {
 #[derive(Clone, Debug)]
 pub struct Budget {
     pub id: i64,
-    pub kind: String,
+    pub kind: BudgetKind,
     pub period: Option<Period>,
     pub limit: NanoUsd,
     pub spent: NanoUsd,
@@ -455,9 +528,21 @@ pub struct ProviderFuse {
     pub paused: bool,
 }
 #[derive(Clone, Debug)]
+pub struct BackgroundCeiling {
+    pub spent: NanoUsd,
+    pub held: NanoUsd,
+    pub limit: NanoUsd,
+}
+impl BackgroundCeiling {
+    pub fn remaining(&self) -> Result<NanoUsd, StaticCode> {
+        self.limit.remaining(self.spent, self.held)
+    }
+}
+#[derive(Clone, Debug)]
 pub struct SharedLedger {
     pub budgets: Vec<Budget>,
     pub fuses: Vec<ProviderFuse>,
+    pub background_hour: BackgroundCeiling,
 }
 #[derive(Clone, Debug, Default)]
 pub struct SweepOutcome {
