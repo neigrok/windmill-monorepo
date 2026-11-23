@@ -7,8 +7,7 @@ and roadmap nodes can cite them.
 ## §0 Status and scope
 
 **Status:** Implemented in [services/ai](../../services/ai/ARCHITECTURE.md), with product integrations
-still outside the build. Background work (§3) is specified and not built: the service believes a
-pass whose `client` is `server` as it believes any other. The C++ backend continues to hold its AI allowance ledger
+still outside the build. The C++ backend continues to hold its AI allowance ledger
 ([USD AI allowances](../../backend/AI_ALLOWANCES.md)), provider keys and existing product calls.
 The service's default deployment has no pinned pass key and admits nobody. Production acceptance
 and provider-billing evidence are tracked in the AI service roadmap tree, which the dogfood tree
@@ -97,12 +96,12 @@ The tier table holds its values in a section of its own:
 
 | | Background |
 |---|---|
-| Own budget | `BACKGROUND_MONTH` for each account, a UTC calendar month. Windmill's own cost |
-| Shared budgets | a background month and a background day, across all accounts. Windmill's own cost |
-| Hourly ceiling | `BACKGROUND_HOUR`, below `HOURLY_FUSE`, so background work never opens the fuse people's calls depend on |
+| Own budget | `BACKGROUND_MONTH`: $2 for each account, a UTC calendar month. Windmill's own cost |
+| Shared budgets | background month $30, background day $3, across all accounts. Windmill's own cost |
+| Hourly ceiling | `BACKGROUND_HOUR`: $1, below `HOURLY_FUSE`, so background work never opens the fuse people's calls depend on (§5.7) |
 | Calls in flight | 1 an account, counted apart from the person's |
-| Calls started and reads a minute | its own counters, apart from the person's |
-| Text classes served | `medium`, `small` |
+| Calls started and reads a minute | 30 and `READS_PER_MINUTE`, on counters of its own, apart from the person's |
+| Text classes served | `medium` (also for `large`), `small` |
 | Output ceiling of a text call | 16,000 tokens |
 | Transcription | no |
 
@@ -111,8 +110,9 @@ The tier table holds its values in a section of its own:
 - A server pass states `sub` as an account, `plan` `none`, and no `ownerGrant` or `installation`. Any
   other pass whose `client` is `server` is `pass_malformed`. The service decides background before it
   reads the plan, so such a call funds no owner grant and records no binding.
-- Its refusals carry a null `allowance`, and `GET /v1/allowance` under a server pass is
-  `invalid_request`. A person's own `GET /v1/allowance` says nothing of background work.
+- Its refusals, and the `ended` and `failed` events of its answer, carry a null `allowance`, and
+  `GET /v1/allowance` under a server pass is `invalid_request`. A person's own `GET /v1/allowance`
+  says nothing of background work.
 - An exhausted background budget refuses as `subject_exhausted`, a shared one as
   `background_exhausted`, and the hourly ceiling as `paused`.
 - The shared background budgets report their crossings as the free budgets do (§5.7), and the
@@ -206,6 +206,7 @@ A call draws on budgets, each with a limit and a period, and each holding two su
 | `anonymous` | the installation's allowance, the free month, the free day |
 | `free` | the account's allowance for the month, the free month, the free day |
 | `one` | the grant in force |
+| `background` | the account's background month, the background month, the background day |
 
 - **INV-4.** A call is pinned to the tier, budgets and grant it was admitted under. Its cost lands in
   those budgets whenever it ends; a later period or grant never funds it.
@@ -248,9 +249,9 @@ A call's reservation (D-12) is computed before admission:
   that size.
 - A text request states `maxTokens` and MAY state `minTokens`, which defaults to `maxTokens`. A
   `maxTokens` above the tier's ceiling is taken as the ceiling. Admission picks the largest output
-  cap between the two that every budget of the call can hold, sends that cap to the provider, and
-  refuses when `minTokens` does not fit. A `minTokens` above `maxTokens` or above the ceiling is
-  `invalid_request`.
+  cap between the two that every budget of the call, and for background work the background hour,
+  can hold, sends that cap to the provider, and refuses when `minTokens` does not fit. A `minTokens`
+  above `maxTokens` or above the ceiling is `invalid_request`.
 - **Transcription.** A live session reserves one `LIVE_SLICE` of audio at the model's rate, and one
   more before it forwards audio beyond what it has reserved. Each further slice passes checks 5 to 7
   below against the budgets the call is pinned to; one that does not fit ends the session (§6.6).
@@ -263,10 +264,11 @@ call draws on. It refuses with the first code that applies:
 | 1 | The principal has used this `callId`: answer as §6.4 says | the existing call, or `conflict` |
 | 2 | The installation is known as bound to an account (§5.6) | `device_bound` |
 | 3 | The tier lacks the capability | `funding_required` |
-| 4 | The principal's calls in flight are at the tier's limit | `concurrency_exhausted` |
+| 4 | The principal's calls in flight are at the tier's limit, background work's and a person's counted apart | `concurrency_exhausted` |
 | 5 | The reservation fits the principal's own budget | `subject_exhausted` |
-| 6 | It fits the free month | `free_month_exhausted` |
-| 7 | It fits the free day | `free_day_exhausted` |
+| 6 | It fits the free month, or for background work the background month | `free_month_exhausted`, `background_exhausted` |
+| 7 | It fits the free day, or for background work the background day | `free_day_exhausted`, `background_exhausted` |
+| 8 | For background work, it fits the background hour (§5.7) | `paused` |
 
 Admission writes the call as `reserved` with its pins, its reservation and the price book's version,
 and adds the reservation to `held` in each budget. A second transaction marks it `dispatched`; only
@@ -349,13 +351,18 @@ Binding mints no allowance and moves no cost into a grant.
 - **Fuse.** For each provider the service keeps the sum of what its calls settled and assumed over
   the trailing hour, computed from the ledger so that a restart forgets nothing. Above `HOURLY_FUSE`
   it refuses that provider's calls as `paused` until the sum falls, and reports while it stays open.
+- **Background hour.** A background call is admitted only while its reservation fits under
+  `BACKGROUND_HOUR` less what background calls settled and assumed over the trailing hour and what
+  background calls in flight hold, computed from the ledger as the fuse is. Otherwise it is refused
+  as `paused`.
 - **Rate.** Each principal may start at most its tier's calls a minute (§3), and make at most
-  `READS_PER_MINUTE` other requests, a call asked for again among them. Beyond either a request is
-  refused as `rate_limited` before its body is read.
+  `READS_PER_MINUTE` other requests, a call asked for again among them. Background work counts on
+  counters of its own. Beyond either a request is refused as `rate_limited` before its body is read.
 - **Load.** The process carries at most `CALLS_IN_FLIGHT_MAX` calls. Beyond that a new call is
   refused as `busy` before its body is read.
-- **Thresholds.** When a free pool's `spent + held` first crosses 50%, 80% and 95% of its limit in a
-  period, the crossing is written in the transaction that caused it and reported once (§10). (R-2)
+- **Thresholds.** When a free or background pool's `spent + held` first crosses 50%, 80% and 95% of
+  its limit in a period, the crossing is written in the transaction that caused it and reported once,
+  naming the pool's kind (§10). (R-2)
 
 ### §5.8 The sweep
 
@@ -475,7 +482,8 @@ one thing to a caller: ask for the same `callId` again (§6.4).
 
 A request refused before dispatch answers a status and `{code, allowance}`; a live session's
 refusals arrive as §6.6 says. `allowance` is null when
-the service cannot know it: on a 401 and on `accounting_unavailable`. A caller branches on `code`,
+the service cannot know it, on a 401 and on `accounting_unavailable`, and on every refusal of
+background work (§3), which has none. A caller branches on `code`,
 never on the status.
 
 | Status | Codes |
@@ -856,14 +864,14 @@ Configuration, with the values the service ships with:
 - Every call logs one structured line when it ends, and so does every request refused after the
   pass verified, but for the two counted below: operation `call.text` or `call.transcription`, the
   service's call `id` when the call was admitted, the caller's `label`, `client`, the deployment,
-  tier, class asked and served, end state or refusal code, `stop`, duration, the reservation, the
-  provider's counts or the seconds of audio forwarded, its HTTP status, its error type mapped to a
-  fixed list, the provider's request id, and the cost. A request the provider refused
-  (`provider_rejected`, at the count or the call) adds `refusal`: the reason read from the
-  provider's error body and mapped to a fixed list (`schema_too_complex`, `too_many_strict_tools`,
-  `too_many_optional_parameters`, `too_many_union_parameters`, `schema_unsupported`,
-  `prompt_too_long`, `max_tokens`, `invalid_request_other`, `request_too_large`, `unparsed`). The
-  provider's error text is never kept.
+  tier (`background` for background work), class asked and served, end state or refusal code,
+  `stop`, duration, the reservation, the provider's counts or the seconds of audio forwarded, its
+  HTTP status, its error type mapped to a fixed list, the provider's request id, and the cost. A
+  request the provider refused (`provider_rejected`, at the count or the call) adds `refusal`: the
+  reason read from the provider's error body and mapped to a fixed list (`schema_too_complex`,
+  `too_many_strict_tools`, `too_many_optional_parameters`, `too_many_union_parameters`,
+  `schema_unsupported`, `prompt_too_long`, `max_tokens`, `invalid_request_other`,
+  `request_too_large`, `unparsed`). The provider's error text is never kept.
 - A request refused before or at the pass, and one refused as `rate_limited` or `busy`, is counted by
   code; a line with the counts is written at most once a second.
 - The internal doors log `grant.fund`, `grant.close`, `grant.reopen` and `call.correct` with their
@@ -971,7 +979,7 @@ The owner's rulings. All are settled.
 | R-15 | What raises the provider-trouble alert | The share of calls that failed in a short window, not a run of failures a single success resets. (2026-11-17) |
 | R-16 | Which ledger a paid period funds while two live | Both, until the backend's ledger retires. (2026-11-17) |
 | R-17 | The order of the moves onto this service | Coach first; Talk on the iPhone and Echoes before the iOS release; the web's Talk after it. (2026-11-15, completed 2026-11-17) |
-| R-18 | Whose budget pays for work nobody waits on | Budgets of Windmill's own: one for each account, and shared ones across all accounts, apart from the person's allowance, a grant and the free budgets. Their amounts are the tier table's and are set from a measurement of Echoes' spend. (2026-11-17) |
+| R-18 | Whose budget pays for work nobody waits on | Budgets of Windmill's own: one for each account, and shared ones across all accounts, apart from the person's allowance, a grant and the free budgets. Their amounts are the tier table's: $2 an account a month, $30 a month and $3 a day across all accounts, under a $1 hourly ceiling. (2026-11-17; amounts 2026-11-23) |
 | R-19 | Whether background work shares a person's calls in flight | It does not: one background call in flight an account, counted apart, with rate counters of its own. (2026-11-17) |
 
 What this service does differently from the backend's ledger, beyond moving it:

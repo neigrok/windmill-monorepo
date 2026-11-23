@@ -177,7 +177,7 @@ impl PassVerifier {
         let valid_id =
             |id: &str| !id.is_empty() && id.len() <= 256 && !id.chars().any(char::is_control);
         match (&claims.sub.installation, &claims.sub.account) {
-            (Some(id), None) if valid_id(id) => {
+            (Some(id), None) if valid_id(id) && claims.client != Client::Server => {
                 if claims.plan.is_some()
                     || claims.owner_grant.is_some()
                     || claims.installation.is_some()
@@ -186,6 +186,13 @@ impl PassVerifier {
                 }
             }
             (None, Some(id)) if valid_id(id) => {
+                if claims.client == Client::Server
+                    && (claims.plan != Some(Plan::None)
+                        || claims.owner_grant.is_some()
+                        || claims.installation.is_some())
+                {
+                    return Err("pass_malformed");
+                }
                 if claims.plan.is_none()
                     || claims
                         .owner_grant

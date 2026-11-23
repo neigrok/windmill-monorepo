@@ -131,6 +131,23 @@ fn tiers() -> TierTable {
                 text: [ModelClass::Large, ModelClass::Medium, ModelClass::Small],
                 transcription: true,
             },
+            TierRule {
+                tier: Tier::Background,
+                amount: NanoUsd::new(2_000_000_000).expect("fixed money"),
+                month_pool: Some(PoolRule {
+                    name: "background".to_owned(),
+                    limit: NanoUsd::new(30_000_000_000).expect("fixed money"),
+                }),
+                day_pool: Some(PoolRule {
+                    name: "background".to_owned(),
+                    limit: NanoUsd::new(3_000_000_000).expect("fixed money"),
+                }),
+                in_flight: 1,
+                calls_per_minute: 30,
+                output_ceiling: 16000,
+                text: [ModelClass::Medium, ModelClass::Medium, ModelClass::Small],
+                transcription: false,
+            },
         ],
         models: vec![
             TextModel {
@@ -157,6 +174,7 @@ fn tiers() -> TierTable {
         labels: vec!["other".to_owned()],
         owner_grants_max: 25,
         hourly_fuse: NanoUsd::new(20_000_000_000).expect("fixed money"),
+        background_hour: NanoUsd::new(1_000_000_000).expect("fixed money"),
     }
 }
 
@@ -832,6 +850,7 @@ async fn corrections_keep_original_charge_and_cannot_clear_a_new_hour_fuse() {
     let database = Database::new().await;
     let mut table = tiers();
     table.hourly_fuse = NanoUsd::new(50_000).unwrap();
+    table.background_hour = NanoUsd::new(10_000).unwrap();
     let ledger = Ledger::connect(&database.url, table, prices())
         .await
         .unwrap();
@@ -902,6 +921,217 @@ async fn corrections_keep_original_charge_and_cannot_clear_a_new_hour_fuse() {
             .used
             .nanos(),
         69_000
+    );
+    database.finish(ledger).await;
+}
+
+#[tokio::test]
+async fn background_work_draws_only_on_windmills_budgets_with_a_slot_of_its_own() {
+    let database = Database::new().await;
+    let mut table = tiers();
+    table.background_hour = NanoUsd::new(150_000).unwrap();
+    let row = table
+        .rows
+        .iter_mut()
+        .find(|row| row.tier == Tier::Background)
+        .unwrap();
+    row.amount = NanoUsd::new(100_000).unwrap();
+    row.day_pool.as_mut().unwrap().limit = NanoUsd::new(210_000).unwrap();
+    let ledger = Ledger::connect(&database.url, table, prices())
+        .await
+        .unwrap();
+    assert!(ledger.acquire_lock().await.unwrap());
+    let now = 1_794_700_800_000;
+    let work = |name: &str| Identity {
+        client: Client::Server,
+        ..account(name, Plan::None)
+    };
+    let person = account("first", Plan::None);
+    let first = Identity {
+        plan: Plan::One,
+        owner_grant: true,
+        installation: Some("first-device".to_owned()),
+        ..work("first")
+    };
+    assert!(ledger.prepare(&first, now).await.unwrap().events.is_empty());
+    let persons_call = admitted(
+        ledger
+            .admit(text(&person, "person", 0, 1), now)
+            .await
+            .unwrap(),
+    );
+    let first_call = admitted(
+        ledger
+            .admit(text(&first, "first", 0, 1), now)
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        (
+            first_call.tier,
+            first_call.client,
+            first_call.reservation.nanos()
+        ),
+        (Tier::Background, Client::Server, 69_000)
+    );
+    assert!(matches!(
+        ledger.admit(text(&first, "again", 0, 1), now).await,
+        Err(StaticCode::ConcurrencyExhausted)
+    ));
+    assert!(matches!(
+        ledger.admit(text(&person, "again", 0, 1), now).await,
+        Err(StaticCode::ConcurrencyExhausted)
+    ));
+    let second_call = admitted(
+        ledger
+            .admit(text(&work("second"), "second", 0, 1), now)
+            .await
+            .unwrap(),
+    );
+    assert!(matches!(
+        ledger.admit(text(&work("third"), "third", 0, 1), now).await,
+        Err(StaticCode::Paused)
+    ));
+    assert!(matches!(
+        ledger.drain_events().await.unwrap().as_slice(),
+        [LedgerEvent::Threshold {
+            kind: BudgetKind::BackgroundDay,
+            percent: 50,
+            ..
+        }]
+    ));
+    ledger
+        .settle(persons_call.id, settlement(Charge::Unconsumed), now + 1)
+        .await
+        .unwrap();
+    let persons_next = admitted(
+        ledger
+            .admit(text(&person, "next", 0, 1), now + 1)
+            .await
+            .unwrap(),
+    );
+    ledger
+        .settle(persons_next.id, settlement(Charge::Unconsumed), now + 1)
+        .await
+        .unwrap();
+    for call in [&first_call, &second_call] {
+        ledger.dispatch(call.id, now).await.unwrap();
+        ledger
+            .settle(call.id, settlement(Charge::Assumed), now + 1)
+            .await
+            .unwrap();
+    }
+    assert!(matches!(
+        ledger.admit(text(&first, "spent", 0, 1), now + 2).await,
+        Err(StaticCode::SubjectExhausted)
+    ));
+    let persons = ledger.allowance(&person, now + 2).await.unwrap();
+    let firsts = ledger.allowance(&first, now + 2).await.unwrap();
+    assert_eq!(
+        (
+            (persons.tier, persons.code, persons.limit.nanos()),
+            (persons.used.nanos(), persons.reserved.nanos()),
+            (firsts.tier, firsts.code, firsts.limit.nanos()),
+            (firsts.used.nanos(), firsts.reserved.nanos()),
+        ),
+        (
+            (Tier::Free, StaticCode::Ok, 500_000_000),
+            (0, 0),
+            (Tier::Background, StaticCode::Ok, 100_000),
+            (69_000, 0),
+        )
+    );
+    assert_eq!(
+        ledger
+            .fuse(Provider::Anthropic, now + 2)
+            .await
+            .unwrap()
+            .spent
+            .nanos(),
+        138_000
+    );
+    let later = now + 3_600_002;
+    let third_call = admitted(
+        ledger
+            .admit(text(&work("third"), "third", 0, 1), later)
+            .await
+            .unwrap(),
+    );
+    ledger.dispatch(third_call.id, later).await.unwrap();
+    ledger
+        .settle(third_call.id, settlement(Charge::Assumed), later + 1)
+        .await
+        .unwrap();
+    let mut crossings = ledger
+        .drain_events()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|event| match event {
+            LedgerEvent::Threshold { kind, percent, .. } => (kind, percent),
+            _ => panic!("threshold only"),
+        })
+        .collect::<Vec<_>>();
+    crossings.sort_by_key(|(_, percent)| *percent);
+    assert_eq!(
+        crossings,
+        vec![
+            (BudgetKind::BackgroundDay, 80),
+            (BudgetKind::BackgroundDay, 95)
+        ]
+    );
+    assert!(matches!(
+        ledger
+            .admit(text(&work("fourth"), "fourth", 0, 1), later + 2)
+            .await,
+        Err(StaticCode::BackgroundExhausted)
+    ));
+    let tomorrow = Period::day(now).unwrap().end;
+    admitted(
+        ledger
+            .admit(text(&work("fourth"), "fourth", 0, 1), tomorrow)
+            .await
+            .unwrap(),
+    );
+    let firsts = ledger
+        .principal(&first.principal, tomorrow, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        (
+            firsts
+                .budgets
+                .iter()
+                .map(|budget| (budget.kind, budget.spent.nanos()))
+                .collect::<Vec<_>>(),
+            firsts.grants.len(),
+            firsts.installations.len(),
+        ),
+        (
+            vec![
+                (BudgetKind::AccountMonth, 0),
+                (BudgetKind::BackgroundAccountMonth, 69_000)
+            ],
+            0,
+            0,
+        )
+    );
+    assert_eq!(
+        ledger
+            .shared(tomorrow)
+            .await
+            .unwrap()
+            .budgets
+            .iter()
+            .map(|budget| (budget.kind, budget.spent.nanos(), budget.held.nanos()))
+            .collect::<Vec<_>>(),
+        vec![
+            (BudgetKind::FreeMonth, 0, 0),
+            (BudgetKind::FreeDay, 0, 0),
+            (BudgetKind::BackgroundMonth, 207_000, 69_000),
+            (BudgetKind::BackgroundDay, 207_000, 0),
+            (BudgetKind::BackgroundDay, 0, 69_000),
+        ]
     );
     database.finish(ledger).await;
 }

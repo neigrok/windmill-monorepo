@@ -325,7 +325,7 @@ async fn first_failure(
             "refused"
         );
     }
-    let message = json!({"type":"failed","code":code.as_str(),"text":"","seconds":0,"charged":null,"allowance":allowance.as_ref().map(wire::allowance)});
+    let message = json!({"type":"failed","code":code.as_str(),"text":"","seconds":0,"charged":null,"allowance":allowance.as_ref().and_then(wire::allowance)});
     let _ = tokio::time::timeout(
         Duration::from_secs(2),
         socket.send(Message::Text(message.to_string().into())),
@@ -401,7 +401,7 @@ async fn session(
         .await?;
         let row = service.policy.tiers.row(allowance.tier)?;
         if !service.rates.allow(
-            principal_key(&identity.principal),
+            crate::rate_key(&identity),
             true,
             row.calls_per_minute as usize,
         ) {
@@ -537,7 +537,7 @@ async fn session(
             )
             .await
             .ok()
-            .map(|value| wire::allowance(&value));
+            .and_then(|value| wire::allowance(&value));
             let message = json!({"type":"failed","code":"provider_unavailable","text":"","seconds":0,"charged":charged.map(NanoUsd::usd),"allowance":allowance});
             service
                 .results
@@ -743,7 +743,7 @@ async fn session(
     )
     .await
     .ok()
-    .map(|value| wire::allowance(&value));
+    .and_then(|value| wire::allowance(&value));
     let message = if final_failed {
         json!({"type":"failed","code":final_code.map(StaticCode::as_str),"text":transcript.text(),"seconds":transcript.seconds(),"charged":charged.map(NanoUsd::usd),"allowance":allowance})
     } else {

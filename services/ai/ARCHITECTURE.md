@@ -54,6 +54,15 @@ Installation bindings are permanent. Separate monthly aggregates retain the inst
 and spent amounts independently of call-row retention. A free account counts its bound installations'
 current month and every bound call still in flight. Those costs never move into a paid grant.
 
+A pass whose client is `server` is background work, decided before the plan is read. The tier
+table's `[background]` section is parsed into a row of the `background` tier, and every call row
+records that tier. Such a call pins the account's background month and the shared background month
+and day, never an allowance, a grant or a free pool. Its calls in flight are counted apart from the
+person's by that tier, and its rate counters are keyed apart. Admission also fits its reservation
+under the background hour: the configured amount less what background calls spent over the trailing
+hour and what open background calls hold. Its standing has no wire form, so its refusals and answers
+carry a null allowance.
+
 Live transcription reserves another slice before forwarding audio that would exceed its reserved
 billable duration. Billable seconds are the sum of each turn rounded upward, including the current
 turn; rounding only the total byte count would underreserve many short turns. Incremental charges
@@ -105,8 +114,9 @@ The service emits no product events. Calling surfaces own those events; accounti
 the ledger. Logs and Sentry carry fixed operation names, bounded policy labels, technical outcomes,
 durations, counts, amounts and the service's numeric call ID. They never carry caller IDs, principal
 IDs, passes, keys, prompt text, transcripts, tools, images, audio, provider error text or request URLs.
-Write lines identify `product: ai` and their static public, internal or background door. Terminal
-call lines use the state actually settled, including a usage calculation that became assumed.
+Write lines identify `product: ai` and their static door: `public` for every call, background
+work's included, `internal` for the internal doors and `background` for the sweep. Terminal call
+lines use the state actually settled, including a usage calculation that became assumed.
 
 The tracing subscriber allows service targets only. Dependency tracing cannot expose HTTP headers
 or WebSocket frames. Panic reports contain location and stack, without the panic payload. Container
@@ -118,11 +128,12 @@ core dumps are disabled.
 | Assumed call or reservation excess | Error |
 | Provider key or account refusal | Error |
 | Contradictory installation binding or owner funding cap | Error |
-| Free-pool threshold, open provider fuse, conflicting Fund or Reopen | Warning |
+| Free or background pool threshold, open provider fuse, conflicting Fund or Reopen | Warning |
 | Provider busy for three minutes, with no gap longer than a minute | Warning once per continuous streak |
-| Ordinary budget, capability, concurrency and request refusals | Structured log only |
+| Ordinary budget, capability, concurrency and request refusals, background work's included | Structured log only |
 
-Free-pool crossings are recorded transactionally with an outbox. Pre-authentication refusals,
+Shared-pool crossings are recorded transactionally with an outbox and reported with the pool's kind.
+A background call's lines carry `tier: background` and `client: server`. Pre-authentication refusals,
 rate refusals and process-cap refusals are aggregated by code. The public listener never mounts an
 internal route, and funding and operating use distinct bearer secrets.
 Database Issues are limited to one per static operation per minute. Storage refusals still reach

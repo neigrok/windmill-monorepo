@@ -94,13 +94,15 @@ requests use passes; neither internal bearer works as a public pass.
 2. Read `GET /internal/v1/calls/<id>` using the service's numeric ID. It reports the pinned tier,
    model, price version, reservation, usage, state and charge. Find the completion log by this ID.
 3. Read `GET /internal/v1/principals/<kind>/<id>` for that principal's budgets, grants, bindings and
-   calls. Use `GET /internal/v1/budgets` for the free pools and provider fuses.
+   calls. Use `GET /internal/v1/budgets` for the free and background pools and provider fuses.
 
 A refused call has no ledger row. Investigate its bounded refusal code and time window instead.
 `subject_exhausted` names the principal's own allowance; `free_day_exhausted` and
 `free_month_exhausted` name shared budgets; `funding_required` means the effective tier lacks the
 capability. `paused` names an open provider fuse. A positive allowance does not mean a particular
-request's reservation fits.
+request's reservation fits. A background call's refusal line carries `tier: background`: there
+`subject_exhausted` names the account's background month, `background_exhausted` the shared
+background month or day, and `paused` also the background hour.
 
 `reserved` has not been sent. `dispatched` may have reached the provider. `settled` uses measured
 usage; `unconsumed` costs zero; `assumed` spends the reservation. A null charge in a streamed answer

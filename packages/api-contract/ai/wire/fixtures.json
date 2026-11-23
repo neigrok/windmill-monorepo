@@ -530,6 +530,13 @@
     {
       "status": 429,
       "body": {
+        "code": "background_exhausted",
+        "allowance": null
+      }
+    },
+    {
+      "status": 429,
+      "body": {
         "code": "concurrency_exhausted",
         "allowance": {
           "tier": "free",
@@ -1905,6 +1912,44 @@
       "code": null,
       "createdAt": 1800000000000,
       "endedAt": 1800000001000
+    },
+    "background": {
+      "id": 43,
+      "principal": {
+        "kind": "account",
+        "id": "account-vector"
+      },
+      "callId": "backgroundcallvector00",
+      "capability": "text",
+      "tier": "background",
+      "requested": "medium",
+      "served": "medium",
+      "provider": "anthropic",
+      "model": "claude-sonnet-5",
+      "priceVersion": "2026-11-15",
+      "label": "echoes",
+      "client": "server",
+      "state": "settled",
+      "reservation": "0.002",
+      "charged": "0.0002325",
+      "originalCharge": null,
+      "maxTokens": 100,
+      "usage": {
+        "input": 10,
+        "output": 20,
+        "cacheWrite": 30,
+        "cacheWrite1h": 40,
+        "cacheRead": 50
+      },
+      "audioBytes": 0,
+      "audioSeconds": 0,
+      "turns": 0,
+      "slices": 0,
+      "providerRequestId": "req_vector",
+      "stop": "completed",
+      "code": null,
+      "createdAt": 1800000000000,
+      "endedAt": 1800000001000
     }
   },
   "internalPrincipal": {
@@ -2147,6 +2192,28 @@
         "limit": "100",
         "spent": "50",
         "held": "1"
+      },
+      {
+        "id": 4,
+        "kind": "background_month",
+        "period": {
+          "start": 1798761600000,
+          "end": 1801440000000
+        },
+        "limit": "30",
+        "spent": "1.5",
+        "held": "0.25"
+      },
+      {
+        "id": 5,
+        "kind": "background_day",
+        "period": {
+          "start": 1799971200000,
+          "end": 1800057600000
+        },
+        "limit": "3",
+        "spent": "0.5",
+        "held": "0.25"
       }
     ],
     "fuses": [

@@ -61,11 +61,11 @@ def generate():
         401: ['pass_missing', 'pass_signature', 'pass_audience', 'pass_malformed', 'pass_expired'],
         403: ['funding_required', 'device_bound'], 404: ['call_unknown'], 409: ['conflict'],
         410: ['result_gone', 'picture_gone'], 413: ['too_large'],
-        429: ['subject_exhausted', 'free_month_exhausted', 'free_day_exhausted', 'concurrency_exhausted', 'rate_limited'],
+        429: ['subject_exhausted', 'free_month_exhausted', 'free_day_exhausted', 'background_exhausted', 'concurrency_exhausted', 'rate_limited'],
         503: ['busy', 'paused', 'accounting_unavailable', 'provider_unavailable'],
     }
     refusals = [
-        {'status': status, 'body': {'code': code, 'allowance': None if status == 401 or code == 'accounting_unavailable' else free}}
+        {'status': status, 'body': {'code': code, 'allowance': None if status == 401 or code in ('accounting_unavailable', 'background_exhausted') else free}}
         for status, codes in statuses.items() for code in codes
     ]
     text_request = {
@@ -120,6 +120,7 @@ def generate():
     }
     metadata = internal_call()
     corrected = dict(metadata, state='assumed', charged='0.001', originalCharge='0.002', usage=None, stop=None, code='provider_failed')
+    background_call = dict(metadata, id=43, callId='backgroundcallvector00', tier='background', requested='medium', served='medium', model='claude-sonnet-5', label='echoes', client='server')
     live_call = dict(metadata, id=42, capability='transcription', tier='one', provider='openai', model='gpt-live-transcribe', reservation='0.017', charged='0.000283334', maxTokens=None, usage=None, audioBytes=48000, audioSeconds=1, turns=1, slices=1)
     budget = {'id': 1, 'kind': 'account_month', 'period': {'start': 1798761600000, 'end': 1801440000000}, 'limit': '0.5', 'spent': '0.01', 'held': '0.02'}
     grant = {'id': 2, 'reference': 'period-vector', 'accountId': 'account-vector', 'source': 'subscription', 'period': {'start': 1800000000000, 'end': 1802592000000}, 'closedAt': None, 'amount': '7', 'spent': '0.1', 'held': '0.2'}
@@ -157,7 +158,7 @@ def generate():
             'fund': {'accountId': 'account-vector', 'plan': 'one', 'period': {'start': 1800000000000, 'end': 1802592000000}},
             'close': {'closedAt': 1800000001000}, 'reopen': None, 'correct': {'charged': '0.001'},
         },
-        'internalCalls': {'settled': metadata, 'corrected': corrected, 'transcription': live_call},
+        'internalCalls': {'settled': metadata, 'corrected': corrected, 'transcription': live_call, 'background': background_call},
         'internalPrincipal': principal,
         'internalPages': {'first': first_page, 'last': last_page, 'empty': {'calls': [], 'nextBeforeId': None}},
         'corrections': {
@@ -165,7 +166,11 @@ def generate():
             'replayed': {'state': 'assumed', 'charged': '0.001', 'replay': True},
         },
         'shared': {
-            'budgets': [dict(budget, id=3, kind='free_month', limit='100', spent='50', held='1')],
+            'budgets': [
+                dict(budget, id=3, kind='free_month', limit='100', spent='50', held='1'),
+                dict(budget, id=4, kind='background_month', limit='30', spent='1.5', held='0.25'),
+                dict(budget, id=5, kind='background_day', period={'start': 1799971200000, 'end': 1800057600000}, limit='3', spent='0.5', held='0.25'),
+            ],
             'fuses': [{'provider': 'anthropic', 'spent': '20.000000001', 'limit': '20', 'paused': True}, {'provider': 'openai', 'spent': '0', 'limit': '20', 'paused': False}, {'provider': 'azure', 'spent': '0', 'limit': '20', 'paused': False}],
         },
     }

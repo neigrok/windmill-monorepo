@@ -518,7 +518,7 @@ fn ten_thousand_reservations_are_maximal_and_never_exceed_any_budget() {
 }
 
 #[test]
-fn one_shared_pool_name_has_one_limit() {
+fn a_persons_pool_name_has_one_limit_and_background_work_stays_below_the_fuse() {
     let row = TierRule {
         tier: Tier::Anonymous,
         amount: NanoUsd::new(1_000_000).unwrap(),
@@ -548,6 +548,14 @@ fn one_shared_pool_name_has_one_limit() {
                 month_pool: None,
                 day_pool: None,
                 transcription: true,
+                ..row.clone()
+            },
+            TierRule {
+                tier: Tier::Background,
+                month_pool: Some(PoolRule {
+                    name: "shared".to_owned(),
+                    limit: NanoUsd::new(5_000_000).unwrap(),
+                }),
                 ..row
             },
         ],
@@ -567,6 +575,7 @@ fn one_shared_pool_name_has_one_limit() {
         labels: vec!["other".to_owned()],
         owner_grants_max: 25,
         hourly_fuse: NanoUsd::new(1_000_000).unwrap(),
+        background_hour: NanoUsd::new(500_000).unwrap(),
     };
     let book = PriceBook {
         version: "test".to_owned(),
@@ -577,4 +586,11 @@ fn one_shared_pool_name_has_one_limit() {
     assert_eq!(table.validate(&book), Err(StaticCode::InvalidRequest));
     table.rows[1].month_pool.as_mut().unwrap().name = "independent".to_owned();
     assert_eq!(table.validate(&book), Ok(()));
+    table.background_hour = table.hourly_fuse;
+    assert_eq!(table.validate(&book), Err(StaticCode::InvalidRequest));
+    table.background_hour = NanoUsd::ZERO;
+    assert_eq!(table.validate(&book), Err(StaticCode::InvalidRequest));
+    table.background_hour = NanoUsd::new(500_000).unwrap();
+    table.rows.pop();
+    assert_eq!(table.validate(&book), Err(StaticCode::InvalidRequest));
 }
