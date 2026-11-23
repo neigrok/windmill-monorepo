@@ -96,8 +96,8 @@ fuzz's seeds at that size, whatever the first seed; `coverage-survey.sh [fuzzes]
 list or the simulator's rates change.
 
 **Benchmarks.** `bench.sh` runs `SyncBenchmarks` in release, on the Mac or inside an iOS simulator it makes and
-deletes (`SIM=<udid>` uses a booted one), in about five minutes, most of them making the history. Each measure prints one
-`bench` line beside its budget; `SYNC_BENCH_REPORT=<path>` also appends each as a JSON line, and
+deletes (`SIM=<udid>` uses a booted one), in about six minutes on the Mac, two of them the ACK of a thousand entries of
+one birth and one making the history. Each measure prints one `bench` line beside its budget; `SYNC_BENCH_REPORT=<path>` also appends each as a JSON line, and
 `SYNC_BENCH_PROBE_URL=http://127.0.0.1:<port>` adds the boot from a probe server (`backend/RUNNING.md`) on a throwaway
 database:
 
