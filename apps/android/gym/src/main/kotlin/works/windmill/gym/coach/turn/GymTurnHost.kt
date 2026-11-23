@@ -168,7 +168,7 @@ class GymTurnHost(
         val (mark, message, replica) = found
         // The lease the recovery was prepared with, so a seat change releases it; a recovered turn is never withdrawn and opens nothing, so its lifter's message is never read, and the Coach message stands for it.
         val lease = (held ?: GymTurn(OpenTurn.Turn(message.threadId, message.id, message.id), pin)).also { it.textCommitted = message.text }
-        val state = if (message.writersOwn(replica)) MessageState.running.name else message.state.name
+        val state = if (message.writersOwn(replica, mark)) MessageState.running.name else message.state.name
         if (state == MessageState.running.name) live.value = LiveAnswer(message.id, message.text)
         return Recovery(lease, state, message.text, Mark(turnId, mark.callId, mark.textBytesBeforeRound))
     }

@@ -53,6 +53,7 @@ import works.windmill.gym.domain.coach.ForgetPicture
 import works.windmill.gym.domain.coach.ForgetRunningTurn
 import works.windmill.gym.domain.coach.ForgetUnclaimedPictures
 import works.windmill.gym.domain.coach.KeepPicture
+import works.windmill.gym.domain.coach.Mark
 import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.OpenTurn
 import works.windmill.gym.domain.coach.OpenTurnOnce
@@ -440,7 +441,7 @@ class CoachTurns(
                 val replica = runner.read(CoachMessage.scope) { it.replica }
                 when {
                     message == null -> { if (runner.read(CoachMessage.scope) { it.caughtUpWithItsLog }) runner.run(ForgetRunningTurn(named)); null }
-                    message.writersOwn(replica) -> message
+                    message.writersOwn(replica, runner.read(CoachMessage.scope) { Mark.read(it) }) -> message
                     else -> { runner.run(ForgetRunningTurn(named)); null }
                 }
             } ?: return@onSeatInHand
@@ -461,7 +462,7 @@ class CoachTurns(
             if (pin != lease.pin || !training.mayWriteOn(pin)) return@onSeatInHand
             training.pinnedOn(pin) { runner ->
                 val message = runner.read(CoachMessage.scope) { it.repository(CoachMessage).find(lease.turn.coach, ViewMode.drawn) }
-                if (message == null || !message.writersOwn(runner.read(CoachMessage.scope) { it.replica })) runner.run(ForgetRunningTurn(lease.turn.coach))
+                if (message == null || !runner.read(CoachMessage.scope) { message.writersOwn(it.replica, Mark.read(it)) }) runner.run(ForgetRunningTurn(lease.turn.coach))
             }
         }
     }

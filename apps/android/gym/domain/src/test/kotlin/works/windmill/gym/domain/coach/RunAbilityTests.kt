@@ -208,6 +208,21 @@ class RunAbilityTests {
         assertTrue(a.call(turn, "save_note", """{"id":"x"}""", "call-2") is Outcome.Unchanged)
     }
 
+    // The writer's own interrupted end is its end: it lets go of the mark, so a late text commit and a late call land nowhere, and the whole answer stands (gym Coach on the AI service §4.2).
+    @Test fun aWriterThatEndedItsTurnInterruptedTakesNoLateWrite() = phones { a, _ ->
+        val turn = a.open()
+        assertTrue(a.runner.run(StreamTurnText(turn.coach, "Hello")) is Outcome.Committed)
+        assertTrue(a.runner.run(EndTurn(turn.coach, MessageState.interrupted, "Hello world, the whole answer")) is Outcome.Committed)
+        assertEquals(Outcome.Unchanged(Unit), a.runner.run(StreamTurnText(turn.coach, "Hello")))
+        val theirs = GymRefusal.Other(Refused(RefusalCode(Gym.Codes.messageFinal), turn.coach.ref, path = Refused.Path.predicted))
+        assertEquals(theirs, (a.call(turn, "list_notes", "{}", "late-call") as Outcome.Refused).refusal)
+        assertEquals(theirs, (a.runner.run(RecordShareCall(AbilityRequest("late-share", "share_session", Json.parse("""{"sessionId":"sesAAAAAAAAAAAA1"}""")), turn.coach,
+            AbilityOutcome.Result("{}".encodeToByteArray()))) as Outcome.Refused).refusal)
+        val after = a.message(turn.coach)
+        assertEquals(MessageState.interrupted to "Hello world, the whole answer", after.state to after.text)
+        assertEquals(emptyList<AbilityCall>(), after.calls)
+    }
+
     // A call runs on a turn another device marked interrupted, which is still its writer's to answer, and on no message its writer ended or another replica wrote (gym Coach on the AI service §4.2).
     @Test fun aCallRunsOnATurnAnotherDeviceMarkedInterrupted() = phones { a, b ->
         val turn = a.open()

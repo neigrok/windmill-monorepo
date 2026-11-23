@@ -72,7 +72,7 @@ class RunAbility(val request: AbilityRequest, val message: Id<CoachMessage>, sea
 
     override fun load(read: Reader): Loaded {
         val coach = read.repository(CoachMessage).find(message, ViewMode.drawn)
-        val own = coach?.writersOwn(read.replica) == true
+        val own = coach?.writersOwn(read.replica, Mark.read(read)) == true
         val gate = if (own && admission == null) gate(coach!!) else null
         return Loaded(coach, own, gate, (gate as? Gate.Run)?.ability?.load(read), read.moment)
     }
@@ -229,19 +229,19 @@ internal fun recording(call: AbilityCall, outcome: AbilityOutcome, plan: Plan, c
 
 // A share the host ran through the Share door (gym Coach on the AI service §4.3), recorded on the Coach message as the executor records a call: the door made the server's record, so the call creates none here.
 class RecordShareCall(val request: AbilityRequest, val message: Id<CoachMessage>, val outcome: AbilityOutcome) : Action<RecordShareCall.Loaded, AbilityOutcome, GymRefusal> {
-    data class Loaded(val message: CoachMessage?, val replica: String, val moment: Moment)
+    data class Loaded(val message: CoachMessage?, val replica: String, val moment: Moment, val mark: Mark)
 
     init { require(request.name in RunAbility.serverRun) { "only a share runs through the door" } }
 
     override val scope = CoachMessage.scope
     override val refusals = GymRefusal
 
-    override fun load(read: Reader) = Loaded(read.repository(CoachMessage).find(message, ViewMode.drawn), read.replica, read.moment)
+    override fun load(read: Reader) = Loaded(read.repository(CoachMessage).find(message, ViewMode.drawn), read.replica, read.moment, Mark.read(read))
 
     override fun decide(loaded: Loaded, ids: IDSource): Decision<AbilityOutcome, GymRefusal> {
         val coach = loaded.message?.takeIf { it.role == CoachMessage.Role.coach }
             ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, message.ref, path = Refused.Path.predicted)))
-        if (!coach.writersOwn(loaded.replica)) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.messageFinal, message.ref))
+        if (!coach.writersOwn(loaded.replica, loaded.mark)) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.messageFinal, message.ref))
         val ended = when (outcome) {
             is AbilityOutcome.Result -> AbilityCall.Outcome.Ok
             is AbilityOutcome.Refused -> AbilityCall.Outcome.Refused(outcome.code)

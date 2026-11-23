@@ -24,7 +24,7 @@ import { ProposeWorkout, WorkoutProposal } from '../workoutProposals.js';
 import { BodyweightRead, CatalogueRead, LogRead, NotesRead, ProgramRead } from './abilityReads.js';
 import { CreateExerciseCall, CreateRoutineCall, ProposeRoutineCall, ProposeWorkoutCall, SaveNoteAbility } from './abilityWrites.js';
 import { AbilityCall, AbilityRefusals, CoachMessage, CoachRules } from './conversation.js';
-import { writersOwn } from './turn.js';
+import { Mark, writersOwn } from './turn.js';
 
 /** @typedef {import('../../../../platform/domain-kit/values.js').Json} Json */
 /** @typedef {import('../../../../platform/domain-kit/reading.js').Reader} Reader */
@@ -204,7 +204,7 @@ export class RunAbility {
   /** @param {Reader} read */
   load(read) {
     const coach = read.repository(CoachMessage).find(this.message, 'drawn');
-    const own = coach !== null && writersOwn(coach, read.replica);
+    const own = coach !== null && writersOwn(coach, read.replica, Mark.read(read));
     const gate = own && this.admission === null ? this.gate(this.request, /** @type {CoachMessageValue} */ (coach)) : null;
     return { message: coach, own, gate, deciding: gate !== null && 'run' in gate ? gate.run.load(read) : null, moment: read.moment };
   }

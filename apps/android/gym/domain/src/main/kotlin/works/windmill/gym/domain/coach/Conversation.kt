@@ -88,8 +88,12 @@ data class CoachMessage(override val id: Id<CoachMessage>, val threadId: Id<Coac
         (call.read as? RecordedRead.Ids)?.let { held.saw(it.served) } ?: held
     }
 
-    // This replica's Coach message, while its writer has not ended it: a message another device marked `interrupted` is still the writer's to answer (gym Coach on the AI service §4.2).
-    fun writersOwn(replica: String): Boolean = role == Role.coach && this.replica == replica && !state.isWritersTerminal
+    // This replica's Coach message, while its writer has not ended it (gym Coach on the AI service §4.2). A message another device marked `interrupted` is still the writer's to answer while this device's mark names it; the writer's own end, `interrupted` included, lets go of the mark.
+    fun writersOwn(replica: String, mark: Mark): Boolean = role == Role.coach && this.replica == replica && when (state) {
+        MessageState.running -> true
+        MessageState.interrupted -> mark.names(id)
+        else -> false
+    }
 
     // Coach §9.2: the first form the calls bound holds: whole, less the rows earlier calls hold; without input; as counts alone; refused `coach-turn-volume`; or none.
     fun recorded(call: AbilityCall): AbilityCall? {
@@ -426,7 +430,7 @@ class BeginRound(val message: Id<CoachMessage>, val callId: String, val bytesBef
     override fun decide(loaded: Loaded, ids: IDSource): Decision<Unit, GymRefusal> {
         val running = loaded.message?.takeIf { it.role == CoachMessage.Role.coach }
             ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, message.ref, path = Refused.Path.predicted)))
-        if (!running.writersOwn(loaded.replica) || !loaded.mark.names(message)) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.messageFinal, message.ref))
+        if (!running.writersOwn(loaded.replica, loaded.mark) || !loaded.mark.names(message)) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.messageFinal, message.ref))
         if (loaded.mark.callId == callId && loaded.mark.textBytesBeforeRound == bytesBefore) return Decision.Unchanged(Unit)
         val plan = Plan()
         plan.device(Mark.roundKey, Json.objectOf("message" to message.json, "callId" to Json.of(callId), "bytesBefore" to Json.of(bytesBefore)))
@@ -557,17 +561,17 @@ val Reader.caughtUpWithItsLog: Boolean get() = isAnonymous || firstPullComplete(
 
 // The answer as it streams: this replica's Coach message takes the text so far until its writer ends it, `interrupted` by another device included; a message its writer ended, or another replica's, takes nothing.
 class StreamTurnText(val message: Id<CoachMessage>, val text: String) : Action<StreamTurnText.Loaded, Unit, GymRefusal> {
-    data class Loaded(val message: CoachMessage?, val replica: String, val moment: Moment)
+    data class Loaded(val message: CoachMessage?, val replica: String, val moment: Moment, val mark: Mark)
 
     override val scope = CoachMessage.scope
     override val refusals = GymRefusal
 
-    override fun load(read: Reader) = Loaded(read.repository(CoachMessage).find(message, ViewMode.drawn), read.replica, read.moment)
+    override fun load(read: Reader) = Loaded(read.repository(CoachMessage).find(message, ViewMode.drawn), read.replica, read.moment, Mark.read(read))
 
     override fun decide(loaded: Loaded, ids: IDSource): Decision<Unit, GymRefusal> {
         val streaming = loaded.message?.takeIf { it.role == CoachMessage.Role.coach }
             ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, message.ref, path = Refused.Path.predicted)))
-        if (!streaming.writersOwn(loaded.replica) || streaming.text == text) return Decision.Unchanged(Unit)
+        if (!streaming.writersOwn(loaded.replica, loaded.mark) || streaming.text == text) return Decision.Unchanged(Unit)
         val written = listOf("text")
         val plan = Plan()
         plan.update(Valid(streaming.copy(text = text), CoachMessage, written, loaded.moment), written)

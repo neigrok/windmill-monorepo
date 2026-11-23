@@ -447,6 +447,15 @@ class CorpusTests {
             "EndTurn" -> corpus.decision(EndTurn(f.ref("message", CoachMessage), MessageState.valueOf(f.string("state")), f.optionalString("text"), f.bool("truncated", false)), vector,
                 { Json.Null }, ::refusalForm)
             "BeginRound" -> corpus.decision(BeginRound(f.ref("message", CoachMessage), f.string("callId"), f.int("bytesBefore")), vector, { Json.Null }, ::refusalForm)
+            "StreamTurnText" -> corpus.decision(StreamTurnText(f.ref("message", CoachMessage), f.string("text")), vector, { Json.Null }, ::refusalForm)
+            "RunAbility" -> {
+                val call = Fields(input.member("call"))
+                corpus.decision(RunAbility(AbilityRequest(call.string("callId"), call.string("name"), input.member("call").member("input")), f.ref("message", CoachMessage),
+                    Seat.valueOf(f.string("seat")), catalog, "https://windmill.works"), vector, { outcome -> when (outcome) {
+                        is AbilityOutcome.Result -> Json.objectOf("result" to Json.parse(outcome.jcs), "sha256" to Json.of(outcome.sha256))
+                        is AbilityOutcome.Refused -> Json.objectOf("refused" to Json.of(outcome.code.code))
+                    } }, ::refusalForm)
+            }
             "RecoverMark" -> corpus.decision(RecoverMark(), vector, { mark ->
                 Json.objectOf("turnId" to (mark.turnId?.let(Json::of) ?: Json.Null), "callId" to (mark.callId?.let(Json::of) ?: Json.Null),
                     "textBytesBeforeRound" to Json.of(mark.textBytesBeforeRound)) }, ::refusalForm)

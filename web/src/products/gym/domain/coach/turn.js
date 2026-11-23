@@ -130,11 +130,14 @@ export class OpenTurn {
   }
 }
 
-// This replica's Coach message, while its writer has not ended it: a message another device marked `interrupted` is
-// still the writer's to answer (gym Coach on the AI service §4.2).
-/** @param {CoachMessageValue | null} message @param {string} replica */
-export function writersOwn(message, replica) {
-  return message !== null && message.isCoach && message.replica === replica && !MessageStates.isWritersTerminal(message.state);
+// This replica's Coach message, while its writer has not ended it (gym Coach on the AI service §4.2). A message another
+// device marked `interrupted` is still the writer's to answer while this browser's mark names it; the writer's own end,
+// `interrupted` included, lets go of the mark.
+/** @param {CoachMessageValue | null} message @param {string} replica @param {Mark} mark */
+export function writersOwn(message, replica, mark) {
+  if (message === null || !message.isCoach || message.replica !== replica) return false;
+  if (message.state === 'running') return true;
+  return message.state === 'interrupted' && mark.names(message.id);
 }
 
 // The answer as it streams: this replica's Coach message takes the text so far, until its writer ends it.
@@ -149,13 +152,13 @@ export class StreamTurnText {
   }
 
   /** @param {Reader} read */
-  load(read) { return { message: read.repository(CoachMessage).find(this.message, 'drawn'), replica: read.replica, moment: read.moment }; }
+  load(read) { return { message: read.repository(CoachMessage).find(this.message, 'drawn'), replica: read.replica, moment: read.moment, mark: Mark.read(read) }; }
 
   /** @param {ReturnType<StreamTurnText['load']>} loaded @param {IDSource} ids */
   decide(loaded, ids) {
     const streaming = loaded.message?.isCoach ? loaded.message : null;
     if (streaming === null) return Decision.refuse(gone(this.message));
-    if (!writersOwn(streaming, loaded.replica) || streaming.text === this.text) return Decision.unchanged(null);
+    if (!writersOwn(streaming, loaded.replica, loaded.mark) || streaming.text === this.text) return Decision.unchanged(null);
     const plan = new Plan();
     plan.update(new Valid(streaming.with({ text: this.text }), loaded.moment, ['text']), { fields: ['text'] });
     return Decision.write(plan, null);
@@ -182,7 +185,7 @@ export class BeginRound {
   /** @param {ReturnType<BeginRound['load']>} loaded @param {IDSource} ids */
   decide(loaded, ids) {
     if (!loaded.message?.isCoach) return Decision.refuse(gone(this.message));
-    if (!writersOwn(loaded.message, loaded.replica) || !loaded.mark.names(this.message)) return Decision.refuse(predicted('message-final', this.message));
+    if (!writersOwn(loaded.message, loaded.replica, loaded.mark) || !loaded.mark.names(this.message)) return Decision.refuse(predicted('message-final', this.message));
     if (loaded.mark.callId === this.callId && loaded.mark.textBytesBeforeRound === this.bytesBefore) return Decision.unchanged(null);
     const plan = new Plan();
     plan.device(Mark.roundKey, { message: this.message.record, callId: this.callId, bytesBefore: this.bytesBefore });
@@ -471,7 +474,7 @@ export class ForgetCoachAtSignOut {
     const mark = Mark.read(read);
     const named = mark.turnId === null ? null : read.repository(CoachMessage).find(new Id(mark.turnId, CoachMessage), 'drawn');
     return { rows: Object.keys(read.devices(CoachPictureRow.prefix)), mark, markHeld: read.device(Mark.turnKey) !== null, moment: read.moment,
-      running: named !== null && writersOwn(named, read.replica) ? named : null,
+      running: named !== null && writersOwn(named, read.replica, mark) ? named : null,
       named: new Set(unsent.flatMap((message) => message?.pictures ?? []).map((picture) => CoachPictureRow.key(picture.id))) };
   }
 

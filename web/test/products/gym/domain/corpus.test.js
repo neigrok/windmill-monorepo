@@ -25,7 +25,7 @@ import { GymUnits, WeightLadder } from '../../../../src/products/gym/domain/unit
 import { PlanChanges, PlanOperations, ReviseWorkoutPlan } from '../../../../src/products/gym/domain/workoutPlan.js';
 import { ApplyWorkoutProposal, DismissWorkoutProposal, ProposeWorkout, WorkoutProposal, WorkoutProposalState } from '../../../../src/products/gym/domain/workoutProposals.js';
 import { AbilityCall, CoachMessage, CoachThread, Picture, ReadServed } from '../../../../src/products/gym/domain/coach/conversation.js';
-import { BeginRound, DeleteConversation, EndTurn, ForgetRunningTurn, OpenTurn, RecoverMark, WithdrawTurn } from '../../../../src/products/gym/domain/coach/turn.js';
+import { BeginRound, DeleteConversation, EndTurn, ForgetRunningTurn, OpenTurn, RecoverMark, StreamTurnText, WithdrawTurn } from '../../../../src/products/gym/domain/coach/turn.js';
 import { Instant } from '../../../../src/platform/domain-kit/time.js';
 import { Catalog } from '../../../../src/platform/domain-kit/abilities.js';
 import { Collation } from '../../../../src/platform/domain-kit/collation.js';
@@ -567,6 +567,10 @@ const handlers = {
       case 'EndTurn': return corpus.decision(new EndTurn(f.ref('message', CoachMessage), input.state, f.optionalString('text'), f.bool('truncated', false)),
         vector, () => null, refusalForm);
       case 'BeginRound': return corpus.decision(new BeginRound(f.ref('message', CoachMessage), f.string('callId'), f.int('bytesBefore')), vector, () => null, refusalForm);
+      case 'StreamTurnText': return corpus.decision(new StreamTurnText(f.ref('message', CoachMessage), f.string('text')), vector, () => null, refusalForm);
+      case 'RunAbility': return corpus.decision(new RunAbility(new AbilityRequest(input.call.callId, input.call.name, input.call.input), f.ref('message', CoachMessage),
+        input.seat, catalog, 'https://windmill.works'), vector, (outcome) => outcome.kind === 'result'
+        ? { result: JSON.parse(new TextDecoder().decode(outcome.jcs)), sha256: outcome.sha256 } : { refused: outcome.code }, refusalForm);
       case 'RecoverMark': return corpus.decision(new RecoverMark(), vector,
         (mark) => ({ turnId: mark.turnId, callId: mark.callId, textBytesBeforeRound: mark.textBytesBeforeRound }), refusalForm);
       case 'ForgetRunningTurn': return corpus.decision(new ForgetRunningTurn(f.ref('message', CoachMessage)), vector, () => null, refusalForm);
