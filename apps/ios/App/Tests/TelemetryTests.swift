@@ -107,8 +107,12 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     for outcome in ["ok", "pending", "unavailable", "failed"] {
       #expect(TelemetryPrivacy.properties(["outcome": outcome, "requestId": "g_private0001"]) == ["outcome": .label(outcome)])
     }
-    let settled: [String: EventValue] = ["outcome": .label("settled"), "applied": .number(2), "skipped": .number(1)]
-    #expect(TelemetryPrivacy.properties(["outcome": "settled", "applied": "2", "skipped": "1", "inverseActId": "g_private0002"]) == settled)
+    let settled: [String: EventValue] = ["outcome": .label("settled"), "applied": .number(2), "skipped": .number(1), "skip_reason": .label("history-changed")]
+    #expect(TelemetryPrivacy.properties(["outcome": "settled", "applied": "2", "skipped": "1", "skip_reason": "history-changed",
+                                         "inverseActId": "g_private0002"]) == settled)
+    #expect(TelemetryPrivacy.labels["skip_reason"] == ["none", "history-changed", "epoch-changed", "reference-unbound", "version-changed",
+                                                       "record-changed", "record-present", "scope-changed", "other"])
+    #expect(TelemetryPrivacy.properties(["skip_reason": "stale"]).isEmpty && TelemetryPrivacy.properties(["skip_reason": "g_private0003"]).isEmpty)
     let waiting: [String: EventValue] = ["outcome": .label("pending"), "waiting": .number(3), "age_ms": .number(10_000_000)]
     #expect(TelemetryPrivacy.properties(["outcome": "pending", "waiting": "3", "age_ms": "86400000", "actId": "card0001"]) == waiting)
     #expect(TelemetryPrivacy.properties(["outcome": "settled", "applied": "card0001"]) == ["outcome": .label("settled")])

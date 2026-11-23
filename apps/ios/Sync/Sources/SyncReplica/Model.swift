@@ -629,9 +629,9 @@ public enum EngineEvent: Sendable, Hashable {
   case pushMalformed
   // `activeReplica()` answers `replica` where it answered `previous`; not durable.
   case activeReplicaChanged(previous: String, replica: String)
-  // An inverse request the device sent settled, with its operation counts; the engine reports it as a product event, which
-  // the shared contract does not describe.
-  case inverseSettled(applied: Int, skipped: Int)
+  // An inverse request the device sent settled, with its operation counts and why any were skipped; the engine reports it
+  // as a product event, which the shared contract does not describe.
+  case inverseSettled(applied: Int, skipped: Int, reason: InverseSkipReason)
 
   public var json: JSON {
     switch self {
@@ -643,8 +643,8 @@ public enum EngineEvent: Sendable, Hashable {
     case .pushMalformed: return ["event": "sync-push-malformed"]
     case .activeReplicaChanged(let previous, let replica):
       return ["event": "activeReplicaChanged", "previous": .string(previous), "replica": .string(replica)]
-    case .inverseSettled(let applied, let skipped):
-      return ["event": "sync-inverse", "outcome": "settled", "applied": JSON(applied), "skipped": JSON(skipped)]
+    case .inverseSettled(let applied, let skipped, let reason):
+      return ["event": "sync-inverse", "outcome": "settled", "applied": JSON(applied), "skipped": JSON(skipped), "reason": .string(reason.rawValue)]
     }
   }
 

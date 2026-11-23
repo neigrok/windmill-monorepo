@@ -561,10 +561,47 @@ struct TelemetryTests {
     await drain(relaunched.core.telemetry)
     let requested = Recorded(name: "sync_inverse", kind: nil, properties: ["outcome": "pending"], durationMs: nil)
     let waiting = Recorded(name: "sync_inverse", kind: nil, properties: ["outcome": "pending", "waiting": "1", "age_ms": "5000"], durationMs: nil)
-    let settled = Recorded(name: "sync_inverse", kind: nil, properties: ["outcome": "settled", "applied": "0", "skipped": "0"], durationMs: nil)
+    let settled = Recorded(name: "sync_inverse", kind: nil, properties: ["outcome": "settled", "applied": "0", "skipped": "0", "skip_reason": "none"],
+                           durationMs: nil)
     let reported: [Recorded] = recorder.events.filter { $0.name == "sync_inverse" }
     #expect(reported == [requested, waiting, settled])
     #expect(try rig.outbox() == [])
+  }
+
+  // §7.3 Materialize: an Undo whose act's receipt shows a write the device had not seen before its own skips the restore,
+  // and its settlement names why from the engine's closed list, still with no id or value.
+  @Test func anInverseRequestThatSkipsARestoreSaysWhyWhenItSettles() async throws {
+    let recorder = Recorder()
+    let rig = try Rig(account: "A", telemetry: recorder)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Rig.cardRow("card0001", "private", seq: 1)], seq: 1)]))
+    _ = await rig.engine.puller.step()
+    let target = Target(RecordAddress(scope: Rig.scope, key: RecordKey("card", "card0001")), .field("title"))
+    let undo = ActUndo(segments: [ActUndo.Segment(index: 0, recipes: [.fields(restoreCommand: "probe.restore", targets: [RestoreTarget(target: target)])])])
+    let act = try rig.engine.commitAct({ _ in (ActRequest(scopes: [Rig.scope], undo: undo), ()) }, segment: { _, _, _ in
+      Gesture(changes: [.update("card", "card0001", ["title": "secret"])])
+    })
+    guard case .committed(let receipt)? = act.outcome else { Issue.record("the act did not commit"); return }
+    guard case .pending = try rig.engine.requestInverse(receipt.gestureId) else { Issue.record("the Undo is not pending"); return }
+    let row: JSON = ["t": "card", "id": "card0001", "beforeRowSeq": 2, "rowSeq": 3,
+                     "slots": [["slot": ["kind": "field", "name": "title"], "version": ["kind": "stamp", "stamp": "2000:0:r_server00001"]]]]
+    let effects: JSON = ["windmillKit": ["v": 1, "effects": [["scope": "self/probe", "beforeSeq": 2, "seq": 3, "rows": [row]]]]]
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [["n": 1, "s": "ok", "seq": 3, "write": [], "detail": effects]]))
+    #expect(await rig.engine.sender.step() == .again)
+    #expect(await rig.engine.sender.step() == .idle)
+    await drain(rig.engine.core.telemetry)
+    let requested = Recorded(name: "sync_inverse", kind: nil, properties: ["outcome": "pending"], durationMs: nil)
+    let settled = Recorded(name: "sync_inverse", kind: nil,
+                           properties: ["outcome": "settled", "applied": "0", "skipped": "1", "skip_reason": "history-changed"], durationMs: nil)
+    #expect(recorder.events.filter { $0.name == "sync_inverse" } == [requested, settled])
+  }
+
+  // A request skipped for several reasons is named by the first in the engine's order, the device's own refusals to send
+  // before the server's conditions; a code outside the list, a refusal's or a discard's, is `other`.
+  @Test func aSkipReasonNamesTheFirstReasonInItsOrder() {
+    let named = { (codes: [String]) -> String in InverseSkipReason(codes: codes).rawValue }
+    #expect([named([]), named(["version-changed", "history-changed"]), named(["record-present", "epoch-changed"]),
+             named(["stale", "scope-changed"]), named(["stale", "discarded"]), named(["reference-unbound", "other"])] ==
+            ["none", "history-changed", "epoch-changed", "scope-changed", "other", "reference-unbound"])
   }
 
   @Test func corruptStoreReadEnqueuesAStaticDiagnosticAndPropagatesTheFailure() async throws {

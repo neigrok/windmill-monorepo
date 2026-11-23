@@ -651,6 +651,37 @@ public struct InverseRequest: Sendable, Hashable {
   public var current: InverseResult {
     result ?? .pending(requestId: requestId, inverseActId: inverseActId, localChanged: localChanged ?? false)
   }
+
+  // Why its operations were skipped, from the codes its slots keep: those materialization skipped before sending and
+  // those its outcomes carry.
+  public var skipReason: InverseSkipReason {
+    InverseSkipReason(codes: slots.flatMap { (slot: InverseSlot) -> [String] in (slot.skipped ?? []) + (slot.outcomes ?? []).compactMap(\.code) })
+  }
+}
+
+// Why an inverse request's operations were skipped, as its settled report names it: the device's own refusals to send
+// (engine.md §7.3 Materialize) before the server's conditions (§6.4), any other code (a refusal, an unreadable answer, a
+// discard, an ended scope) as `other`, and `none` when nothing was skipped. A request skipped for several reasons is named
+// by the first of them in this order.
+public enum InverseSkipReason: String, Sendable, Hashable, CaseIterable {
+  case historyChanged = "history-changed"
+  case epochChanged = "epoch-changed"
+  case referenceUnbound = "reference-unbound"
+  case versionChanged = "version-changed"
+  case recordChanged = "record-changed"
+  case recordPresent = "record-present"
+  case scopeChanged = "scope-changed"
+  case other
+  case nothingSkipped = "none"
+
+  public init(codes: [String]) {
+    guard !codes.isEmpty else {
+      self = .nothingSkipped
+      return
+    }
+    let named = InverseSkipReason.allCases.filter { $0 != .other && $0 != .nothingSkipped }
+    self = named.first { (reason: InverseSkipReason) -> Bool in codes.contains { $0.isSameID(as: reason.rawValue) } } ?? .other
+  }
 }
 
 // MARK: - The journal
