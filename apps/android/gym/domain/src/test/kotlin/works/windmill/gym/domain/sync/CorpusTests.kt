@@ -441,6 +441,14 @@ class CorpusTests {
                 { Json.objectOf("thread" to it.thread.json, "lifter" to it.lifter.json, "coach" to it.coach.json) }, ::refusalForm)
             "EndTurn" -> corpus.decision(EndTurn(f.ref("message", CoachMessage), MessageState.valueOf(f.string("state")), f.optionalString("text"), f.bool("truncated", false)), vector,
                 { Json.Null }, ::refusalForm)
+            "BeginRound" -> corpus.decision(BeginRound(f.ref("message", CoachMessage), f.string("callId"), f.int("bytesBefore")), vector, { Json.Null }, ::refusalForm)
+            "RecoverMark" -> corpus.decision(RecoverMark(), vector, { mark ->
+                Json.objectOf("turnId" to (mark.turnId?.let(Json::of) ?: Json.Null), "callId" to (mark.callId?.let(Json::of) ?: Json.Null),
+                    "textBytesBeforeRound" to Json.of(mark.textBytesBeforeRound)) }, ::refusalForm)
+            "ForgetRunningTurn" -> corpus.decision(ForgetRunningTurn(f.ref("message", CoachMessage)), vector, { Json.Null }, ::refusalForm)
+            "WithdrawTurn" -> corpus.decision(WithdrawTurn(OpenTurn.Turn(f.ref("thread", CoachThread), f.ref("lifter", CoachMessage), f.ref("coach", CoachMessage))), vector,
+                { pictures -> Json.Arr(pictures.map(Json::of)) }, ::refusalForm)
+            "DeleteConversation" -> corpus.decision(DeleteConversation(f.ref("thread", CoachThread)), vector, { pictures -> Json.Arr(pictures.map(Json::of)) }, ::refusalForm)
             "AbilityCall.recorded" -> {
                 val message = CoachMessage.fromForm(input.member("message"))
                 val recorded = message.recorded(AbilityCall.decode(input.member("call")))

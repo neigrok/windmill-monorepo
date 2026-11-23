@@ -25,7 +25,7 @@ import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
 import works.windmill.sync.testing.SteppedEngine
 
-// A Coach conversation on the real engine, over a model server shared by every phone, and the pure reads over its messages. The shared vectors hold OpenTurn, EndTurn, a call's record and a read's week.
+// A Coach conversation on the real engine, over a model server shared by every phone, and the pure reads over its messages. The shared vectors hold OpenTurn, the round, EndTurn and every other clear of the mark, a call's record and a read's week.
 class ConversationTests {
     private class Phone(val engine: SteppedEngine, context: ActionContext) {
         val runner = ActionRunner(engine.replica, SyncSchema.registry, FixedZone(0), context)
@@ -64,6 +64,21 @@ class ConversationTests {
     private fun picture(n: Int, localOnly: Boolean = true) = Picture("picture0000000$n", "image/jpeg", localOnly)
     private fun row(picture: Picture) = CoachPictureRow(picture.id, picture.mediaType, 1200, 900, 345_678)
     private fun gone(type: String, id: Id<*>) = GymRefusal.Gone(RecordRef(type, id.record), Refused.Path.predicted)
+
+    // The round rides the real engine's device rows: it recovers while it names the running turn, a stale one clears, and the end takes both rows in one write.
+    @Test fun aRoundRecoversWhileItNamesTheTurnAndTheEndClearsBothRows() = twoPhones { a, _ ->
+        val first = a.open("First")
+        val callId = "callAAAAAAAAAAAAAAAAAA"
+        assertTrue(a.runner.run(BeginRound(first.coach, callId, 12)) is Outcome.Committed)
+        assertEquals(Outcome.Unchanged(Mark(first.coach.record.string, callId, 12, roundRow = true)), a.runner.run(RecoverMark()))
+        val second = a.open("Second", first.thread)
+        val stale = a.runner.run(RecoverMark()) as Outcome.Committed
+        assertEquals(Mark(second.coach.record.string, null, 0, roundRow = false), stale.result)
+        assertNull(a.device(Mark.roundKey))
+        assertTrue(a.runner.run(BeginRound(second.coach, callId, 0)) is Outcome.Committed)
+        assertTrue(a.runner.run(EndTurn(second.coach, MessageState.completed, "Add 5 kg.")) is Outcome.Committed)
+        assertEquals(listOf(null, null), listOf(a.device(EndTurn.runningTurnKey), a.device(Mark.roundKey)))
+    }
 
     // A merge can leave the row naming another turn: an end lets go of its own alone, and a gone turn the same way.
     @Test fun anEndClearsTheRunningTurnOnlyWhenItNamesThatMessage() = twoPhones { a, _ ->

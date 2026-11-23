@@ -348,16 +348,88 @@ class OpenTurnOnce(private val once: String, private val opening: OpenTurn) : Ac
     }
 }
 
-// Coach §4.4, §4.5: the terminal state, the answer and the receipt in one transaction, and `runningTurn` cleared unless it names another turn, as a merge's row can. A turn a writer already ended is final.
+// The mark (Coach engine D-6, gym Coach on the AI service §4.4): `runningTurn`, the Coach message this phone's turn writes, and `runningRound`, `{message, callId, bytesBefore}`, the round in flight. A round counts only when it names the running turn's message and holds its shape; any other round row is stale, and a reader that meets one clears it.
+data class Mark(val turnId: String?, val callId: String?, val textBytesBeforeRound: Int, val roundRow: Boolean) {
+    // A round row the device holds that names no round of the running turn.
+    val roundIsStale: Boolean get() = roundRow && callId == null
+
+    fun names(message: Id<CoachMessage>): Boolean = turnId != null && turnId == message.record.string
+
+    // Every write that clears `runningTurn` clears `runningRound` in the same write.
+    fun clear(plan: Plan) {
+        plan.device(EndTurn.runningTurnKey, null)
+        plan.device(roundKey, null)
+    }
+
+    companion object {
+        const val roundKey = "runningRound"
+        const val maxBytesBefore = 131_072
+        private val messageId = Regex("^[A-Za-z0-9_-]{8,58}$")
+        val callIdPattern = Regex("^[A-Za-z0-9_-]{22}$")
+
+        fun read(read: Reader): Mark {
+            val turnId = (read.device(EndTurn.runningTurnKey) as? Json.Str)?.value?.takeIf { messageId.matches(it) }
+            val row = read.device(roundKey) ?: return Mark(turnId, null, 0, roundRow = false)
+            val round = (row as? Json.Obj)?.members.orEmpty()
+            val callId = (round["callId"] as? Json.Str)?.value?.takeIf { callIdPattern.matches(it) }
+            val bytesBefore = (round["bytesBefore"] as? Json.Num)?.value?.takeIf { it >= 0 && it <= maxBytesBefore && it == it.toInt().toDouble() }?.toInt()
+            val named = turnId != null && (round["message"] as? Json.Str)?.value == turnId
+            if (round.size != 3 || !named || callId == null || bytesBefore == null) return Mark(turnId, null, 0, roundRow = true)
+            return Mark(turnId, callId, bytesBefore, roundRow = true)
+        }
+    }
+}
+
+// The mark as a turn host recovers from it (Coach engine §5): read, with a stale or malformed round row cleared.
+class RecoverMark : Action<Mark, Mark, GymRefusal> {
+    override val scope = CoachMessage.scope
+    override val refusals = GymRefusal
+
+    override fun load(read: Reader) = Mark.read(read)
+
+    override fun decide(loaded: Mark, ids: IDSource): Decision<Mark, GymRefusal> {
+        if (!loaded.roundIsStale) return Decision.Unchanged(loaded)
+        val plan = Plan()
+        plan.device(Mark.roundKey, null)
+        return Decision.Write(plan, loaded.copy(roundRow = false))
+    }
+}
+
+// A round begins (Coach engine D-6): `runningRound` names it and the bytes of text before it, beside the running turn.
+class BeginRound(val message: Id<CoachMessage>, val callId: String, val bytesBefore: Int) : Action<BeginRound.Loaded, Unit, GymRefusal> {
+    data class Loaded(val message: CoachMessage?, val replica: String, val mark: Mark)
+
+    init {
+        require(Mark.callIdPattern.matches(callId)) { "a round is named by a call id of 22 characters" }
+        require(bytesBefore in 0..Mark.maxBytesBefore) { "a round starts within the text bound" }
+    }
+
+    override val scope = CoachMessage.scope
+    override val refusals = GymRefusal
+
+    override fun load(read: Reader) = Loaded(read.repository(CoachMessage).find(message, ViewMode.drawn), read.replica, Mark.read(read))
+
+    override fun decide(loaded: Loaded, ids: IDSource): Decision<Unit, GymRefusal> {
+        val running = loaded.message?.takeIf { it.role == CoachMessage.Role.coach }
+            ?: return Decision.Refuse(GymRefusal.of(Refused(RefusalCode.unknownRecord, message.ref, path = Refused.Path.predicted)))
+        if (running.replica != loaded.replica || running.state.isWritersTerminal || !loaded.mark.names(message)) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.messageFinal, message.ref))
+        if (loaded.mark.callId == callId && loaded.mark.textBytesBeforeRound == bytesBefore) return Decision.Unchanged(Unit)
+        val plan = Plan()
+        plan.device(Mark.roundKey, Json.objectOf("message" to message.json, "callId" to Json.of(callId), "bytesBefore" to Json.of(bytesBefore)))
+        return Decision.Write(plan, Unit)
+    }
+}
+
+// Coach §4.4, §4.5: the terminal state, the answer and the receipt in one transaction, and the mark cleared unless it names another turn, as a merge's row can. A turn a writer already ended is final.
 class EndTurn(val message: Id<CoachMessage>, val state: MessageState, val text: String? = null, val truncated: Boolean = false) : Action<EndTurn.Loaded, Unit, GymRefusal> {
-    data class Loaded(val message: CoachMessage?, val moment: Moment, val named: Json?)
+    data class Loaded(val message: CoachMessage?, val moment: Moment, val mark: Mark)
 
     init { require(state.isTerminal) { "a turn ends in a terminal state" } }
 
     override val scope = CoachMessage.scope
     override val refusals = GymRefusal
 
-    override fun load(read: Reader) = Loaded(read.repository(CoachMessage).find(message, ViewMode.drawn), read.moment, read.device(runningTurnKey))
+    override fun load(read: Reader) = Loaded(read.repository(CoachMessage).find(message, ViewMode.drawn), read.moment, Mark.read(read))
 
     override fun decide(loaded: Loaded, ids: IDSource): Decision<Unit, GymRefusal> {
         val running = loaded.message?.takeIf { it.role == CoachMessage.Role.coach }
@@ -367,7 +439,7 @@ class EndTurn(val message: Id<CoachMessage>, val state: MessageState, val text: 
         val written = listOf("state", "text", "receipt", "truncated")
         val plan = Plan()
         plan.update(Valid(ended, CoachMessage, written, loaded.moment), written)
-        if (loaded.named == null || loaded.named == message.json) plan.device(runningTurnKey, null)
+        if (loaded.mark.turnId == null || loaded.mark.names(message)) loaded.mark.clear(plan)
         return Decision.Write(plan, Unit)
     }
 
@@ -376,17 +448,17 @@ class EndTurn(val message: Id<CoachMessage>, val state: MessageState, val text: 
     }
 }
 
-// A turn whose message is gone, as a conversation deleted on another phone takes it: `runningTurn` lets go of it, and of no other.
-class ForgetRunningTurn(val message: Id<CoachMessage>) : Action<Json?, Unit, GymRefusal> {
+// A turn whose message is gone, as a conversation deleted on another phone takes it: the mark lets go of it, and of no other.
+class ForgetRunningTurn(val message: Id<CoachMessage>) : Action<Mark, Unit, GymRefusal> {
     override val scope = CoachMessage.scope
     override val refusals = GymRefusal
 
-    override fun load(read: Reader) = read.device(EndTurn.runningTurnKey)
+    override fun load(read: Reader) = Mark.read(read)
 
-    override fun decide(loaded: Json?, ids: IDSource): Decision<Unit, GymRefusal> {
-        if (loaded != message.json) return Decision.Unchanged(Unit)
+    override fun decide(loaded: Mark, ids: IDSource): Decision<Unit, GymRefusal> {
+        if (!loaded.names(message)) return Decision.Unchanged(Unit)
         val plan = Plan()
-        plan.device(EndTurn.runningTurnKey, null)
+        loaded.clear(plan)
         return Decision.Write(plan, Unit)
     }
 }
@@ -489,15 +561,15 @@ class StreamTurnText(val message: Id<CoachMessage>, val text: String) : Action<S
     }
 }
 
-// A turn the server refused before its stream never happened: its messages, its pictures, the thread when it stands and held nothing else, and `runningTurn` go. It answers the picture ids removed, for the caller to delete their files.
+// A turn the server refused before its stream never happened: its messages, its pictures, the thread when it stands and held nothing else, and the mark go. It answers the picture ids removed, for the caller to delete their files.
 class WithdrawTurn(val turn: OpenTurn.Turn) : Action<WithdrawTurn.Loaded, List<String>, GymRefusal> {
-    data class Loaded(val thread: CoachThread?, val messages: List<CoachMessage>)
+    data class Loaded(val thread: CoachThread?, val messages: List<CoachMessage>, val mark: Mark)
 
     override val scope = CoachMessage.scope
     override val refusals = GymRefusal
 
     override fun load(read: Reader) = Loaded(read.repository(CoachThread).find(turn.thread, ViewMode.drawn),
-        read.repository(CoachMessage).children(turn.thread, "threadId", ViewMode.stored))
+        read.repository(CoachMessage).children(turn.thread, "threadId", ViewMode.stored), Mark.read(read))
 
     override fun decide(loaded: Loaded, ids: IDSource): Decision<List<String>, GymRefusal> {
         val withdrawn = loaded.messages.filter { it.id == turn.lifter || it.id == turn.coach }
@@ -505,20 +577,20 @@ class WithdrawTurn(val turn: OpenTurn.Turn) : Action<WithdrawTurn.Loaded, List<S
         withdrawn.forEach { plan.remove(it.id) }
         val pictures = plan.forgetPictures(withdrawn)
         if (loaded.thread != null && withdrawn.size == loaded.messages.size) plan.remove(turn.thread)
-        plan.device(EndTurn.runningTurnKey, null)
+        loaded.mark.clear(plan)
         return Decision.Write(plan, pictures)
     }
 }
 
-// A conversation deleted from History: the thread, its messages, their pictures, and `runningTurn` when it names one of them. It answers the picture ids removed, for the caller to delete their files.
+// A conversation deleted from History: the thread, its messages, their pictures, and the mark when it names one of them. It answers the picture ids removed, for the caller to delete their files.
 class DeleteConversation(val thread: Id<CoachThread>) : Action<DeleteConversation.Loaded, List<String>, GymRefusal> {
-    data class Loaded(val thread: CoachThread?, val messages: List<CoachMessage>, val running: Json?)
+    data class Loaded(val thread: CoachThread?, val messages: List<CoachMessage>, val mark: Mark)
 
     override val scope = CoachMessage.scope
     override val refusals = GymRefusal
 
     override fun load(read: Reader) = Loaded(read.repository(CoachThread).find(thread, ViewMode.drawn),
-        read.repository(CoachMessage).children(thread, "threadId", ViewMode.stored), read.device(EndTurn.runningTurnKey))
+        read.repository(CoachMessage).children(thread, "threadId", ViewMode.stored), Mark.read(read))
 
     override fun decide(loaded: Loaded, ids: IDSource): Decision<List<String>, GymRefusal> {
         if (loaded.thread == null) return Decision.Unchanged(emptyList())
@@ -526,7 +598,7 @@ class DeleteConversation(val thread: Id<CoachThread>) : Action<DeleteConversatio
         plan.remove(thread)
         loaded.messages.forEach { plan.remove(it.id) }
         val pictures = plan.forgetPictures(loaded.messages)
-        if (loaded.messages.any { it.id.json == loaded.running }) plan.device(EndTurn.runningTurnKey, null)
+        if (loaded.messages.any { loaded.mark.names(it.id) }) loaded.mark.clear(plan)
         return Decision.Write(plan, pictures)
     }
 }
