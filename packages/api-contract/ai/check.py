@@ -183,7 +183,8 @@ def text_request(value):
     require(value['effort'] in {'low', 'medium', 'high', 'xhigh', 'max'}, 'unknown effort')
     require(type(value['cache']) is bool and all(isinstance(item, str) for item in value['system']), 'invalid text options')
     for tool in value['tools']:
-        fields(tool, 'name description input')
+        fields(tool, 'name description input strict' if 'strict' in tool else 'name description input')
+        require(type(tool.get('strict', True)) is bool, 'invalid tool strictness')
         require(isinstance(tool['description'], str), 'invalid tool description')
         require(isinstance(tool['input'], dict) and tool['input'].get('type') == 'object', 'invalid tool schema')
     pending = set()
@@ -385,6 +386,7 @@ def negative_probes(fixture):
         ('completed with cut code', lambda f: f['liveTerminals']['completed'].update(code='idle')),
         ('unknown control field', lambda f: f['liveFrames'][1].update(language='en')),
         ('missing tool answer', lambda f: f['textRequest']['messages'][2].update(results=[])),
+        ('strictness not a boolean', lambda f: f['textRequest']['tools'][0].update(strict='yes')),
     ]
     for name, mutate in probes:
         invalid = copy.deepcopy(fixture)

@@ -19,7 +19,8 @@ export function validateProfile(profile) {
   const names = new Set();
   for (const tool of profile.tools) {
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(tool.name) || names.has(tool.name) || typeof tool.description !== 'string'
-      || tool.input?.type !== 'object' || typeof tool.countsAsWrite !== 'boolean') throw new TypeError('invalid profile tool');
+      || tool.input?.type !== 'object' || typeof tool.countsAsWrite !== 'boolean'
+      || (tool.strict !== undefined && typeof tool.strict !== 'boolean')) throw new TypeError('invalid profile tool');
     names.add(tool.name);
   }
   const groups = new Set();
@@ -119,7 +120,7 @@ export class TurnRunner {
           if (turn.stop) return await this.finish(turn, 'stopped');
           turn.rounds++;
           const answer = await this.ai.text({ callId, request: { model: profile.model, system: profile.system,
-            tools: profile.tools.map(({ name, description, input }) => ({ name, description, input })), messages,
+            tools: profile.tools.map(({ name, description, input, strict }) => ({ name, description, input, ...(strict === undefined ? {} : { strict }) })), messages,
             output: { ...profile.output, schema: null }, effort: profile.effort, cache: true }, pictures: opened.pictures,
             label: profile.label, use: profile.name, version: profile.version, signal: turn.wait.signal,
             onText: (delta) => this.append(turn, delta) });

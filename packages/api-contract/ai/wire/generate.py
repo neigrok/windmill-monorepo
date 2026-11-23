@@ -70,7 +70,7 @@ def generate():
     ]
     text_request = {
         'model': 'large', 'system': ['Help me plan a small next step.'],
-        'tools': [{'name': 'read', 'description': 'Read the current item.', 'input': {'type': 'object', 'properties': {'id': {'type': 'string'}}, 'required': ['id'], 'additionalProperties': False}}],
+        'tools': [{'name': 'read', 'description': 'Read the current item.', 'input': {'type': 'object', 'properties': {'id': {'type': 'string'}}, 'required': ['id'], 'additionalProperties': False}, 'strict': False}],
         'messages': [
             {'role': 'user', 'parts': [{'text': 'What can I do next?'}, {'image': {'mediaType': 'image/png', 'data': 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aSh0AAAAASUVORK5CYII='}}]},
             {'role': 'assistant', 'parts': [{'text': 'I will read the item.'}, {'toolCall': {'id': 'tool-1', 'name': 'read', 'input': {'id': 'item-1'}}}], 'carry': 'wm-carry.v1.opaque'},

@@ -58,19 +58,18 @@ export class AbilityRequest {
 
 // The bounds a provider's strict mode cannot state (gym Coach on the AI service §3, R-11), held by each ability's rule
 // and refused `invalid-arguments` before any rule reads the store: the shapes `catalog/2` stated, in its own words.
-/** @param {boolean} positioned */
-const lineBounds = (positioned) => ({ maxItems: 50, items: { properties: { ...(positioned ? { position: { minimum: 1, maximum: 10_000 } } : {}),
-  restSeconds: { minimum: 15, maximum: 900 }, sets: { maxItems: 20, items: { properties: { reps: { minimum: 1, maximum: 100 } } } } } } });
+const lineBounds = { maxItems: 50, items: { properties: {
+  restSeconds: { minimum: 15, maximum: 900 }, sets: { maxItems: 20, items: { properties: { reps: { minimum: 1, maximum: 100 } } } } } } };
 const idListBounds = { maxItems: 50, uniqueItems: true, items: { maxLength: 128 } };
 const ArgumentBounds = Object.freeze(/** @type {Record<string, JsonSchema>} */ ({
   list_sessions: new JsonSchema({ properties: { before: { minimum: 1, maximum: SessionRules.maxInstantMs }, limit: { minimum: 1, maximum: LogRead.maxPage } } }),
   get_sessions: new JsonSchema({ properties: { sessionIds: idListBounds } }),
   get_last_times: new JsonSchema({ properties: { exerciseIds: idListBounds } }),
   create_exercise: new JsonSchema({ properties: { name: { maxLength: 240 } } }),
-  create_routine: new JsonSchema({ properties: { entries: lineBounds(true), name: { maxLength: 240 }, position: { minimum: RoutineRules.position.min, maximum: RoutineRules.position.max } } }),
-  propose_routine_change: new JsonSchema({ properties: { entries: lineBounds(true), name: { maxLength: 240 }, summary: { maxLength: 400 } } }),
+  create_routine: new JsonSchema({ properties: { entries: lineBounds, name: { maxLength: 240 }, position: { minimum: RoutineRules.position.min, maximum: RoutineRules.position.max } } }),
+  propose_routine_change: new JsonSchema({ properties: { entries: lineBounds, name: { maxLength: 240 }, summary: { maxLength: 400 } } }),
   propose_routine_removal: new JsonSchema({ properties: { summary: { maxLength: 400 } } }),
-  propose_workout_change: new JsonSchema({ properties: { entries: lineBounds(false), summary: { maxLength: 400 } } }),
+  propose_workout_change: new JsonSchema({ properties: { entries: lineBounds, summary: { maxLength: 400 } } }),
 }));
 
 // Shares are server records: the host calls the Share door for them, and never sends one here (§4.3).

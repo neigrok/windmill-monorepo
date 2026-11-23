@@ -169,6 +169,7 @@
       "class": "read",
       "agent": "runs",
       "seats": "any",
+      "strict": false,
       "phrase": "read your program",
       "ui": "Routines"
     },
@@ -255,6 +256,7 @@
       "class": "read",
       "agent": "runs",
       "seats": "any",
+      "strict": false,
       "phrase": "read your movement list",
       "ui": "movement picker"
     },
@@ -449,6 +451,7 @@
       "class": "read",
       "agent": "runs",
       "seats": "any",
+      "strict": false,
       "phrase": "read your recent workouts",
       "ui": "Log, history filters"
     },
@@ -796,6 +799,7 @@
       "class": "read",
       "agent": "runs",
       "seats": "any",
+      "strict": false,
       "phrase": "read one workout",
       "ui": "workout detail"
     },
@@ -1166,6 +1170,7 @@
       "class": "read",
       "agent": "runs",
       "seats": "any",
+      "strict": false,
       "phrase": "read your workouts",
       "ui": "none"
     },
@@ -1337,6 +1342,7 @@
       "class": "read",
       "agent": "runs",
       "seats": "any",
+      "strict": false,
       "phrase": "read the last time you trained a movement",
       "ui": "logger prefill"
     },
@@ -1533,6 +1539,7 @@
       "class": "read",
       "agent": "runs",
       "seats": "any",
+      "strict": false,
       "phrase": "read the last time you trained each movement",
       "ui": "logger prefill"
     },
@@ -1712,6 +1719,7 @@
       "class": "read",
       "agent": "runs",
       "seats": "any",
+      "strict": false,
       "phrase": "read your movement history",
       "ui": "Progress"
     },
@@ -1991,6 +1999,7 @@
       "class": "read",
       "agent": "runs",
       "seats": "any",
+      "strict": false,
       "phrase": "read a movement's record",
       "ui": "movement record"
     },
@@ -2038,6 +2047,7 @@
       "class": "read",
       "agent": "runs",
       "seats": "any",
+      "strict": false,
       "phrase": "read your notes",
       "ui": "Notes"
     },
@@ -2099,6 +2109,7 @@
       "class": "read",
       "agent": "runs",
       "seats": "any",
+      "strict": false,
       "phrase": "read your bodyweight",
       "ui": "Bodyweight"
     },
@@ -2146,6 +2157,7 @@
       "class": "read",
       "agent": "runs",
       "seats": "any",
+      "strict": false,
       "phrase": "read your settings",
       "ui": "Settings"
     },
@@ -2163,10 +2175,6 @@
                 "exerciseId": {
                   "description": "The movement's id — list_exercises answers with it.",
                   "type": "string"
-                },
-                "position": {
-                  "description": "Ignored — the order these arrive in IS the order.",
-                  "type": "integer"
                 },
                 "restSeconds": {
                   "description": "Rest between sets, 15–900. Omit to fall back to the global rest target they set in the app, and to no timer at all when they have set none.",
@@ -2205,89 +2213,12 @@
             "description": "The id YOU mint for this NEW routine (`rt_` + hex is the house shape).",
             "type": "string"
           },
-          "lastTrainedAt": {
-            "description": "Ignored — the log decides when a routine was last trained.",
-            "type": "integer"
-          },
           "name": {
             "description": "What this day of the program is called, at most 240 characters.",
             "type": "string"
           },
-          "pendingProposal": {
-            "description": "Ignored — a proposal belongs to the routine it was minted against and is never carried onto a new one.",
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "routineId": {
-                "type": "string"
-              },
-              "intent": {
-                "type": "string",
-                "enum": [
-                  "revise",
-                  "remove"
-                ]
-              },
-              "state": {
-                "type": "string",
-                "enum": [
-                  "pending",
-                  "applied",
-                  "dismissed",
-                  "superseded"
-                ]
-              },
-              "summary": {
-                "type": "string"
-              },
-              "changeCount": {
-                "type": "integer"
-              },
-              "source": {
-                "type": "object",
-                "properties": {
-                  "door": {
-                    "type": "string",
-                    "enum": [
-                      "ask",
-                      "mcp"
-                    ]
-                  },
-                  "connection": {
-                    "type": "string"
-                  },
-                  "agent": {
-                    "type": "string"
-                  },
-                  "thread": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "door"
-                ],
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "id",
-              "routineId",
-              "intent",
-              "state",
-              "summary",
-              "changeCount",
-              "source"
-            ],
-            "additionalProperties": false
-          },
           "position": {
             "description": "Where it sits in the program, from 0 to 2147483647.",
-            "type": "integer"
-          },
-          "revision": {
-            "description": "Ignored — the store moves a routine's revision; a client reads it, never sends it.",
             "type": "integer"
           }
         },
@@ -2368,6 +2299,7 @@
       "class": "add",
       "agent": "runs",
       "seats": "any",
+      "strict": true,
       "phrase": "created a routine",
       "ui": "routine editor"
     },
@@ -2490,6 +2422,7 @@
       "class": "add",
       "agent": "runs",
       "seats": "any",
+      "strict": true,
       "phrase": "created a movement",
       "ui": "movement editor"
     },
@@ -2560,6 +2493,7 @@
       "class": "add",
       "agent": "runs",
       "seats": "bound",
+      "strict": false,
       "phrase": "saved a note",
       "ui": "Notes, new note"
     },
@@ -2602,6 +2536,7 @@
       "class": "add",
       "agent": "runs",
       "seats": "bound",
+      "strict": false,
       "phrase": "shared a workout",
       "ui": "Share"
     },
@@ -2661,6 +2596,7 @@
       "class": "add",
       "agent": "runs",
       "seats": "bound",
+      "strict": false,
       "phrase": "shared your log",
       "ui": "Share log"
     },
@@ -2678,10 +2614,6 @@
                 "exerciseId": {
                   "description": "The movement's id — list_exercises answers with it.",
                   "type": "string"
-                },
-                "position": {
-                  "description": "Ignored — the order these arrive in IS the order.",
-                  "type": "integer"
                 },
                 "restSeconds": {
                   "description": "Rest between sets, 15–900. Omit to fall back to the global rest target they set in the app, and to no timer at all when they have set none.",
@@ -2936,6 +2868,7 @@
       "class": "change",
       "agent": "proposes",
       "seats": "any",
+      "strict": true,
       "phrase": "wrote a proposal for one of your routines",
       "ui": "routine editor"
     },
@@ -3156,6 +3089,7 @@
       "class": "remove",
       "agent": "proposes",
       "seats": "any",
+      "strict": true,
       "phrase": "wrote a proposal to remove a routine",
       "ui": "routine delete"
     },
@@ -3396,6 +3330,7 @@
       "class": "change",
       "agent": "proposes",
       "seats": "any",
+      "strict": true,
       "phrase": "wrote a change to this workout",
       "ui": "This workout, Edit sets",
       "since": "catalog/2"
@@ -3436,6 +3371,7 @@
       "class": "remove",
       "agent": "runs",
       "seats": "bound",
+      "strict": false,
       "phrase": "ended a workout link",
       "ui": "Share"
     },
@@ -3543,6 +3479,7 @@
       "class": "add",
       "agent": "withheld",
       "seats": "any",
+      "strict": false,
       "phrase": "started a workout",
       "ui": "Start workout"
     },
@@ -3637,6 +3574,7 @@
       "class": "add",
       "agent": "withheld",
       "seats": "any",
+      "strict": false,
       "phrase": "logged a set",
       "ui": "logger"
     },
@@ -3760,6 +3698,7 @@
       "class": "add",
       "agent": "withheld",
       "seats": "any",
+      "strict": false,
       "phrase": "logged sets",
       "ui": "backfill"
     },
@@ -3901,6 +3840,7 @@
       "class": "add",
       "agent": "withheld",
       "seats": "any",
+      "strict": false,
       "phrase": "added a past workout",
       "ui": "backfill"
     },
@@ -3945,6 +3885,7 @@
       "class": "add",
       "agent": "withheld",
       "seats": "any",
+      "strict": false,
       "phrase": "logged a weigh-in",
       "ui": "Bodyweight"
     },
@@ -4044,6 +3985,7 @@
       "class": "change",
       "agent": "withheld",
       "seats": "any",
+      "strict": false,
       "phrase": "finished a workout",
       "ui": "Finish"
     },
@@ -4118,6 +4060,7 @@
       "class": "change",
       "agent": "withheld",
       "seats": "any",
+      "strict": false,
       "phrase": "fixed a set",
       "ui": "set editor"
     },
@@ -4326,6 +4269,7 @@
       "class": "change",
       "agent": "withheld",
       "seats": "any",
+      "strict": false,
       "phrase": "corrected a workout",
       "ui": "workout correction"
     },
@@ -4432,6 +4376,7 @@
       "class": "change",
       "agent": "withheld",
       "seats": "any",
+      "strict": false,
       "phrase": "updated a movement",
       "ui": "movement editor"
     },
@@ -4485,6 +4430,7 @@
       "class": "change",
       "agent": "withheld",
       "seats": "any",
+      "strict": false,
       "phrase": "edited a note",
       "ui": "Notes"
     },
@@ -4548,6 +4494,7 @@
       "class": "change",
       "agent": "withheld",
       "seats": "any",
+      "strict": false,
       "phrase": "reordered your notes",
       "ui": "Notes"
     },
@@ -4618,6 +4565,7 @@
       "class": "change",
       "agent": "withheld",
       "seats": "any",
+      "strict": false,
       "phrase": "changed your settings",
       "ui": "Settings"
     },
@@ -4658,6 +4606,7 @@
       "class": "remove",
       "agent": "withheld",
       "seats": "any",
+      "strict": false,
       "phrase": "deleted a set",
       "ui": "set delete"
     },
@@ -4697,6 +4646,7 @@
       "class": "remove",
       "agent": "withheld",
       "seats": "any",
+      "strict": false,
       "phrase": "discarded a workout",
       "ui": "Discard"
     },
@@ -4737,6 +4687,7 @@
       "class": "remove",
       "agent": "withheld",
       "seats": "any",
+      "strict": false,
       "phrase": "deleted a note",
       "ui": "Notes"
     },
@@ -4777,6 +4728,7 @@
       "class": "remove",
       "agent": "withheld",
       "seats": "any",
+      "strict": false,
       "phrase": "deleted a weigh-in",
       "ui": "Bodyweight"
     }

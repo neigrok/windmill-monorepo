@@ -54,8 +54,9 @@ the pass door and no turn; its move is designed apart (AI service I-5).
   - its name and version, as `gym.coach` and 1;
   - its words: the system prompt, the words of the first content (§5), and the sentence the model
     reads beside each refusal code (§6);
-  - its tools: for each ability offered, the name, the description, the input schema, and whether a
-    call counts toward the write cap;
+  - its tools: for each ability offered, the name, the description, the input schema, whether a
+    call counts toward the write cap, and, where the product says, whether the tool is strict
+    ([AI service §6.2](ai-service.md#62-the-wire));
   - the model class, the effort, the output cap and floor, and the label;
   - the limits and the groups of §6.
 - **D-4 Pass.** The statement the backend signs for a principal

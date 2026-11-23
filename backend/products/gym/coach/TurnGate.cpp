@@ -25,7 +25,10 @@ GateVerdict TurnGate::admit(const std::string& name, const Json::Value& input, b
     return refuse(gate::notOffered, name, words.refusal(gate::notOffered));
   if (ability->seats == AbilitySeats::bound && seat_ != Seat::bound)
     return refuse(gate::seatRequired, name, words.refusal(gate::seatRequired));
-  if (const auto broken = schemaViolation(ability->declaration.descriptor["inputSchema"], input))
+  // The server sends no tool strict, so a model may echo what list_routines read; that is dropped, never refused.
+  Json::Value stripped;
+  const Json::Value& taken = withoutReadBack(ability->declaration, input, stripped);
+  if (const auto broken = schemaViolation(ability->declaration.descriptor["inputSchema"], taken))
     return refuse(gate::invalidInput, name, *broken + ".");
   if (ability->agent == AgentRule::proposes && proposalsHeld_.contains(ability->target))
     return refuse(gate::oneProposal, name,
@@ -43,7 +46,7 @@ GateVerdict TurnGate::admit(const std::string& name, const Json::Value& input, b
   GateVerdict verdict;
   verdict.admitted = true;
   verdict.ability = ability;
-  verdict.input = input;
+  verdict.input = taken;
   if (ability->mintsId()) verdict.input["id"] = sync::SeededId{turnId_, ++ordinal_}.text();
   return verdict;
 }

@@ -14,17 +14,20 @@ function fields(value, required, optional = []) {
 export class Ability {
   /** @param {unknown} entry */
   constructor(entry) {
-    fields(entry, ['name', 'description', 'input', 'result', 'class', 'agent', 'seats', 'phrase', 'ui'], ['declared', 'since']);
+    fields(entry, ['name', 'description', 'input', 'result', 'class', 'agent', 'seats', 'phrase', 'ui'], ['declared', 'since', 'strict']);
     if (typeof entry.name !== 'string' || typeof entry.class !== 'string' || !['read', 'add', 'change', 'remove'].includes(entry.class)
       || typeof entry.agent !== 'string' || !['runs', 'proposes', 'withheld'].includes(entry.agent)
       || typeof entry.seats !== 'string' || !['any', 'bound'].includes(entry.seats)
       || typeof entry.phrase !== 'string' || (entry.declared !== undefined && typeof entry.declared !== 'boolean')
+      || (entry.strict !== undefined && typeof entry.strict !== 'boolean')
       || (entry.since !== undefined && (typeof entry.since !== 'string' || !entry.since.startsWith('catalog/')))) throw new TypeError('invalid ability');
     this.name = entry.name;
     this.kind = entry.class;
     this.agent = entry.agent;
     this.seats = entry.seats;
     this.declared = entry.declared ?? true;
+    // Whether a turn declares the tool strict to the provider; a catalog that does not say holds every tool strict.
+    this.strict = entry.strict ?? true;
     this.phrase = entry.phrase;
     this.input = structuredClone(entry.input);
     this.result = structuredClone(entry.result);

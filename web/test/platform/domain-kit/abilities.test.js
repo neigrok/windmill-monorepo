@@ -20,6 +20,15 @@ test('shared gym catalog is data consumed without any platform product import', 
   for (const invalid of [[], {}, { ...document, extra: 1 }, { ...document, catalog: 1 }, { ...document, abilities: {} }]) assert.throws(() => new Catalog(invalid));
 });
 
+test('each ability is strict as its catalog says, and strict where the catalog is silent', () => {
+  const third = JSON.parse(readFileSync(new URL('../../../../packages/api-contract/gym/catalog-3.json', import.meta.url)));
+  assert.deepEqual(new Catalog(third).abilities.filter((ability) => ability.strict).map((ability) => ability.name),
+    ['create_routine', 'create_exercise', 'propose_routine_change', 'propose_routine_removal', 'propose_workout_change']);
+  const second = JSON.parse(readFileSync(new URL('../../../../packages/api-contract/gym/catalog.json', import.meta.url)));
+  assert.ok(new Catalog(second).abilities.every((ability) => ability.strict));
+  assert.throws(() => new Catalog({ ...third, abilities: [{ ...third.abilities[0], strict: 'yes' }] }), /invalid ability/);
+});
+
 test('schema faults recurse at every depth and use canonical member order', () => {
   const schema = new JsonSchema({ properties: { a: { properties: { b: { items: { properties: { c: { items: { properties: { d: { type: 'integer' } } } } } } } } } } });
   assert.deepEqual(schema.fault({ a: { b: [{}, { c: [{}, { d: 1 }, { d: 'x' }] }] } }), { path: 'a.b.1.c.2.d', reason: 'not "integer"' });
