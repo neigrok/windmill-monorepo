@@ -983,7 +983,7 @@ function releasedBirth() {
   together.flush();
   together.pull([TREE]);
   together.local(requestStep('g2'));
-  const onePush = restored('an Undo of a removal brings back a record whose birth, by an act that keeps no journal, went up in the same push', together);
+  const unsentBoth = restored('an Undo of a removal brings back a record whose birth, by an act that keeps no journal, was still unsent when it was removed', together);
 
   const unsent = new Session(world()).local(birth, released, removal, requestStep('g2'), viewStep(TREE));
   const pending = restored('an Undo of a removal asked before the record\'s birth or removal was sent draws it at once and brings it back once both went up', unsent);
@@ -1040,7 +1040,7 @@ function releasedBirth() {
     .vector('a preimage never steps over an earlier segment of its own act, which the act read it before');
   assert.deepEqual(journalOf(ownSegment)[0].sourceEntries[1].preimages.map(({ rowSeq }) => rowSeq), [2]);
   assert.deepEqual(ownSegment.expect.returns.at(-1), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: true, appliedCount: 1, skippedCount: 0 });
-  return [onePush, pending, birthAlone, unpulled, eachAlone, unseen, ordinary, ownSegment];
+  return [unsentBoth, pending, birthAlone, unpulled, eachAlone, unseen, ordinary, ownSegment];
 }
 
 export function files() {

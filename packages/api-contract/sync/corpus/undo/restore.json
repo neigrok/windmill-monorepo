@@ -43658,7 +43658,7 @@
     }
   },
   {
-    "name": "an Undo of a removal brings back a record whose birth, by an act that keeps no journal, went up in the same push",
+    "name": "an Undo of a removal brings back a record whose birth, by an act that keeps no journal, was still unsent when it was removed",
     "input": {
       "device": {
         "active": "rp_00000000000000000000000000000001",
