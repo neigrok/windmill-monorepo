@@ -35,7 +35,7 @@ the whole web product to iOS under the [rendering contract](ios-redesign.md). Ho
 |---|---|---|
 | Start here · the Roadmap room | [`1435:6376`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1435-6376) | The four screens the room is made of: Board, Graph, step page, New step |
 | 00 · Read me and map | [`1469:38785`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1469-38785) | How to read the page, the room in twelve lines, what was rejected before, the flow map |
-| 01 · The room and its roadmaps | [`1447:8090`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1447-8090) | The room menu, the title menu, All Roadmaps, no roadmap yet, New Roadmap (blank, a quest, a copied plan, a file), rename, delete held with Undo, every step done, Activity |
+| 01 · The room and its roadmaps | [`1447:8090`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1447-8090) | The room menu, the title menu, All Roadmaps, no roadmap yet, New Roadmap (blank, a copied plan, a file), rename, delete held with Undo, every step done, Activity |
 | 02 · Board | [`1448:16119`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1448-16119) | Swipe to Complete and to Delete, the long-press menu, Find, sort and filter, a branch, several selected, recolor, 5,000 steps, an empty roadmap, pasted steps |
 | 03 · Step page | [`1447:9390`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1447-9390) | Up next, Locked, Done; the workspace; Complete and Reset in place; the … menu; delete held with Undo; Note; a link; History |
 | 04 · Graph | [`1450:31039`](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1450-31039) | The canvas, Next, a step selected, pinch, Fit, a step that opens a roadmap, an empty roadmap |
@@ -226,5 +226,5 @@ Done newest completed first. A full swipe never commits. The two-line descriptio
 row. No Complete on a Locked step, and none on a step that opens a roadmap. Subtasks never complete a
 step. Kind names travel with colour; a kind filter never moves progress. At most six kinds, one per hue;
 a worn hue cannot be taken and a worn kind cannot be removed. A roadmap keeps one starting step. The
-nested rule lines, the guide's 5,000 characters with its counter from 4,500, the fork sentence and the
-quests' names and sizes are the web's. Owners land on the Board, readers on the Graph.
+nested rule lines, the guide's 5,000 characters with its counter from 4,500, and the fork sentence
+are the web's. The iPhone offers no quests (Roadmap on iOS R-13). Owners land on the Board, readers on the Graph.

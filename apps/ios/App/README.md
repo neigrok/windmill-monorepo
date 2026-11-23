@@ -186,7 +186,7 @@ commits by a full swipe, and leaves the list on screen under the band; past eigh
 by name; and + names a new one. Its last row on the board, the gallery, is left out. `Roadmaps/NewRoadmap.swift` is the
 sheet the title menu, All Roadmaps and *No roadmaps yet* all open: a name, held to the length the
 domain takes, *Cancel* and *Create*, which plants a blank roadmap with its one starting step and opens it. Its *Start
-from* section (a quest, a copied plan, a file) is left out. All of it works on the phone's copy, signed in or out.
+from* section (a copied plan, a file) is left out. All of it works on the phone's copy, signed in or out.
 
 `Board/RoadmapBoard.swift` is the Board's list, its groups under headers that fold them, as the Board's reading keeps
 them. A row opens its step's page. An Up next row that opens no roadmap slides right for *Complete*; every row but the

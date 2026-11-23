@@ -8,15 +8,15 @@ them.
 
 **Status:** Specified and in build; §13 lists what is not built yet, and the Roadmap on iOS
 roadmap tree records each landing. The owner approved it on 2026-11-17; what it says of
-quests, plans, Export, Share, the gallery and Activity follows the boards and has not been before
+plans, Export, Share, the gallery and Activity follows the boards and has not been before
 the owner. The iPhone app carries journal and gym. Roadmap's design for it is
 [Roadmap · iOS](../design/ios/roadmap.md), with its boards in the Roadmap Figma file, every one
 ✅ Ready for dev since the owner's approval of 2026-11-21. The build order lives in the Roadmap on
 iOS roadmap tree, which the dogfood tree (`t_9362d9bc883e0a1e`) opens from the node `roadmap-ios`.
 
 **Scope:** How the Roadmap room is built in the iPhone app: where its code lives, what it reads and
-writes, links that open it, the Graph, nested roadmaps and guides, starting a roadmap from a quest
-or a plan, pasted steps, Export and Share, the public gallery and Activity, Coach in the room, and
+writes, links that open it, the Graph, nested roadmaps and guides, starting a roadmap from a
+plan, pasted steps, Export and Share, the public gallery and Activity, Coach in the room, and
 how it is tested.
 
 **Out of scope:** What a person sees, which the design holds. Roadmap's records and rules, which
@@ -51,7 +51,7 @@ Activity and the web demo.
 
 | Part | Where | May import |
 |---|---|---|
-| Entities, actions and reads; the plan grammar and the quests (§7.1) | `apps/ios/Domain/Sources/RoadmapDomain` | the domain kit and the sync engine's API, as gym's and journal's domains |
+| Entities, actions and reads; the plan grammar (§7.1) | `apps/ios/Domain/Sources/RoadmapDomain` | the domain kit and the sync engine's API, as gym's and journal's domains |
 | The picture: layout, caption placement, edge curves, framing | `apps/ios/Domain/Sources/RoadmapLayout` | nothing |
 | The schema | generated into `apps/ios/Sync/Sources/SyncSchema` from roadmap's registry | |
 | The model server's roadmap rules | `apps/ios/Sync/Sources/SyncModelServer` | |
@@ -108,7 +108,7 @@ Activity and the web demo.
 - **INV-1.** The room reads no roadmap from the backend and sends no change to it except through
   the sync engine. The exceptions are exactly the three requests below, all of them sharing, named as the backend's
   [HTTP surface](../../backend/SPEC.md#http-surface) names them. Each carries the account's token
-  where the phone is signed in. A quest, a plan, pasted steps and Export read and write the
+  where the phone is signed in. A plan, pasted steps and Export read and write the
   phone's copy alone, Activity and History read it alone, and Share's switch is a change through
   the engine (§7.1 to §7.4). Whether the three move into synchronization is decided when links and
   readers are built (R-12).
@@ -206,15 +206,11 @@ sections 01 and 06.
 
 ### §7.1 Starting a roadmap
 
-New Roadmap makes a roadmap blank, from a quest, from a plan on the clipboard, or from a plan in a
-`.md` or `.txt` file (boards 01.6 to 01.8b). Each is the domain's `CreateRoadmap` on the phone's
-copy. None makes a request, and none needs a connection or an account.
+New Roadmap makes a roadmap blank, from a plan on the clipboard, or from a plan in a `.md` or
+`.txt` file (section 01's boards). Each is the domain's `CreateRoadmap` on the phone's copy. None
+makes a request, and none needs a connection or an account. The iPhone offers no quest (R-13).
 
 - **Blank** plants one starting step, named as the roadmap.
-- **A quest** is one of the roster's nine. `packages/api-contract/roadmap/quests/` holds the
-  roster: the quests in their order, each with its id, group and estimate and the `CreateRoadmap`
-  input it plants, which carries its name, kinds, steps and links. The web's shelf reads that
-  file and the app's quests come from it. The size shown beside a quest is counted from its steps.
 - **A plan** is text read by the web's plan grammar, ported to `RoadmapDomain`: the same text
   gives the same name, steps, links, kinds, done marks and counts on the iPhone as on the web.
   It is read on the phone, and reading cannot fail: a line the grammar cannot place is kept as a
@@ -296,7 +292,7 @@ step page and the step form, and a sheet for its answers.
 ## §10 Testing
 
 - **The domain** runs every file under `packages/api-contract/roadmap/domain/` and the kit's
-  harness, and the plan and quest cases of §7.1. Coach's executor runs roadmap's ability vectors,
+  harness, and the plan cases of §7.1. Coach's executor runs roadmap's ability vectors,
   and the Coach engine's turn stories with roadmap's profile.
 - **The model server** runs the engine corpus's roadmap cases.
 - **The picture** runs the fixtures of §5.
@@ -306,7 +302,7 @@ step page and the step form, and a sheet for its answers.
 - **End to end**, on the simulator against a local stack: a roadmap made signed out and joined at
   sign-in; one edited in a browser and on the phone at once; one edited offline against a delete
   made elsewhere; a delete held while the app goes to the background; a shared link opened signed
-  out; a quest planted signed out; a plan pasted into New Roadmap and planted; steps pasted into
+  out; a plan pasted into New Roadmap and planted; steps pasted into
   a roadmap and taken back by Undo; a roadmap made public on the phone and opened by its link in
   a browser signed out; the gallery read, a row forked and the copy opened; Activity showing a
   change made in a browser once it has synced; Coach making a direct write and its Undo, applying a proposal
@@ -326,8 +322,7 @@ step page and the step form, and a sheet for its answers.
   opened, by kind of address and whether the roadmap was the person's; the Graph opened, with the
   step count as a bucket.
 - **Events of making, sharing and Activity**, under the same rule: New Roadmap opened; a creation
-  by its door (blank, a quest, a copied plan, a file), with its step count as a bucket and, for a
-  quest, which of the roster's nine; a plan read back, by its source, and cleared; Paste Steps
+  by its door (blank, a copied plan, a file), with its step count as a bucket; a plan read back, by its source, and cleared; Paste Steps
   read back, added with the count as a bucket, cancelled and undone; Share opened, its switch
   turned on and off, the link shared and copied, and sign-in opened from it; a roadmap exported,
   and whether the file was saved; the gallery opened and each page read, with what the read came
@@ -338,7 +333,7 @@ step page and the step form, and a sheet for its answers.
   progress, the gallery and a fork that failed for a reason other than no connection, and an
   answer of theirs the room cannot read; a shared roadmap that could not be subscribed for a
   reason other than access; a view the room depends on that failed to read; an action whose
-  commit failed; a creation from a quest or a plan that failed where no limit refused it, and
+  commit failed; a creation from a plan that failed where no limit refused it, and
   done steps that could not be marked after it; a chosen file that could not be opened; an export
   the system could not write; a layout that fell back; a canvas that missed its budget on a
   roadmap within the cap. A claimed address that names no roadmap is expected and reports nothing. No report carries an address,
@@ -367,7 +362,7 @@ makes it false.
   it, subtasks, a note and links read live from their overlay on the phone's copy, each written by an act of the
   domain, and has no History or *Open Roadmap*, and its menu has no *Attach a Roadmap* or *Copy Link*; the note's field
   sets bold and italic alone, from the system's Format menu on iOS 26; the title menu has no *Guide*, *Activity*,
-  *Share…* or *Export*, New Roadmap starts a blank roadmap alone, from no quest, plan or file, and All Roadmaps has no
+  *Share…* or *Export*, New Roadmap starts a blank roadmap alone, from no plan or file, and All Roadmaps has no
   gallery. The Graph draws the picture, pans and zooms it, selects a step and opens its page, lists the Up next steps
   under *Next*, brings the one chosen there or by *Open in Graph* into view, and shows the whole roadmap alone under
   *Fit*; it has no Find, no mark on a step that opens a roadmap, and draws no proposal and no reader's cover; no link
@@ -375,7 +370,7 @@ makes it false.
   roadmap is on the web.
 - `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
   room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once: no Undo scene,
-  plan grammar, quest or Coach executor.
+  plan grammar or Coach executor.
 - Activity and History have no read (§3): no case states one, and neither the web's domain nor Swift's gives it.
 - One SwiftUI `Canvas` in the room's Graph draws `RoadmapLayout`'s picture (`apps/ios/App/Sources/Roadmap/Graph/`).
   The budget of §5 is measured at 5,000 steps on a Mac's simulator alone, by `apps/ios/App/Tools/graph_bench.sh` on a
@@ -432,3 +427,4 @@ makes it false.
 | R-10 | What the server is for | Synchronization and sharing, whether a person shares or Coach does it for them. Every read and change of a person's own roadmap, and every other ability of Coach, works on the device's copy. (2026-11-21) |
 | R-11 | Where Activity and History come from | The device's copy, by a read of the domain; no request to the backend. (2026-11-21) |
 | R-12 | Whether sharing's requests move into synchronization | Decided when links and readers are built; until then the gallery, Fork and the owner's progress on a cover stay requests. (2026-11-21) |
+| R-13 | Quests on the iPhone | Not offered: New Roadmap starts a roadmap blank, from a copied plan or from a file. Quests return with a design of their own. (2026-11-23) |
