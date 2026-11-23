@@ -49,7 +49,8 @@ by side with catalog/2.
 `catalog3Text()`), and declares its tools from them: each tool's name, description and input schema
 are the file's, and its grant level is its `class`'s. `CatalogContractTest.cpp` holds both files to
 this shape, pins what MCP lists to `catalog-3.json` byte for byte, and checks that the two differ
-only in their inputs and in `list_sessions`' row; a change that breaks either fails `ctest -R mcp`.
+only in their inputs, in `strict` and in `list_sessions`' row (its plan, its movement lines and its top
+set's `exerciseId`); a change that breaks either fails `ctest -R mcp`.
 
 ## `gym/abilities/`
 

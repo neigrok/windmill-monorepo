@@ -579,8 +579,9 @@ four hours of the last activity, staying at that activity when the tap came late
   record is derived from them in the domain (`progressSessions`, `MovementSeries`), so no part of the
   rule is in SQL.
 - **`PerformedFact::heavierThan` is the one heaviest-set rule within a session**: more load, then more
-  reps, then the lower set id. Each movement's heaviest set is chosen by it, and so is a session's
-  (`ProgressSession::heaviestMovement`), over every movement it held.
+  reps, then the lower set id. Each movement's heaviest set is chosen by it, and so are a session's
+  (`ProgressSession::heaviestMovement`, over every movement it held), the record rules' top set and
+  the review's (`topSetOf`).
 - `SessionHistory` is a **domain** type although the port returns it: nothing under `domain/` may
   depend on `ports/`.
 
