@@ -949,7 +949,8 @@ function typedValues() {
 // by an act opted into Undo: the removal's preimage was read over the birth's write, so its Undo walks from the row that
 // birth left, whichever pushes the two reach the server in. Another device's write between them still breaks the walk,
 // and so does a birth the device wrote as an ordinary entry, whose answer carries no receipt. A preimage steps over
-// writes made before its act only, never over an earlier segment of the act itself.
+// writes made before its act only, never over an earlier segment of the act itself. Signed out, a day born and removed
+// and its removal undone comes back once sign-in adds the work and sends it.
 function releasedBirth() {
   const elm = { scope: TREE, t: 'tag', id: 'elm' };
   const birth = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: TREE, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'Elm' } }] }],
@@ -1040,7 +1041,28 @@ function releasedBirth() {
     .vector('a preimage never steps over an earlier segment of its own act, which the act read it before');
   assert.deepEqual(journalOf(ownSegment)[0].sourceEntries[1].preimages.map(({ rowSeq }) => rowSeq), [2]);
   assert.deepEqual(ownSegment.expect.returns.at(-1), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: true, appliedCount: 1, skippedCount: 0 });
-  return [unsentBoth, pending, birthAlone, unpulled, eachAlone, unseen, ordinary, ownSegment];
+
+  const anon = 'rp_00000000000000000000000000000009';
+  const day = { scope: 'self/probe', t: 'day', id: '2026-11-23' };
+  const dayOf = (returned) => returned.records.some((record) => record.t === 'day' && record.id === day.id && record.life?.[0] === 'alive');
+  const signedOut = new Session({ device: settle({ active: anon, replicas: [{ meta: freshMeta(anon, 'anon') }] }),
+    state: new ServerState(serverState({ scopes: { 'acct:A/probe': productScope('A') }, rows: {} })) }, { ids: ['rp_00000000000000000000000000000002'] }).local(
+    { op: 'commitAct', deviceNow: 5000, segments: [{ scope: 'self/probe', changes: [{ op: 'put', t: 'day', id: day.id, f: { score: 7 } }] }],
+      opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restore', record: day }] }] } } },
+    { op: 'releaseReversibleAct', actId: 'g1' },
+    { op: 'commitAct', deviceNow: 5100, segments: [{ scope: 'self/probe', changes: [{ op: 'delete', t: 'day', id: day.id }] }],
+      opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: target('self/probe', 'day', day.id, 'life') }] }] }] } } },
+    requestStep('g2', 5200), viewStep('self/probe'),
+    { op: 'signIn', account: 'A', holdsRecords: { probe: true }, decisions: { probe: 'add' } });
+  signedOut.flush();
+  signedOut.pull(['self/probe']);
+  const added = signedOut.local({ op: 'readInverseResult', requestId: 'g4' }, viewStep('self/probe'))
+    .vector('an Undo asked signed out of a removal whose record was born there brings it back once sign-in adds the work and sends it');
+  assert.deepEqual(added.expect.returns[3], { kind: 'pending', requestId: 'g4', inverseActId: 'g3', localChanged: true });
+  assert.ok(dayOf(added.expect.returns[4]) && dayOf(added.expect.returns.at(-1)));
+  assert.deepEqual(added.expect.returns.at(-2), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(signedOut.state.rows['acct:A/probe'][recordKeyOf('day', day.id)].life[0], 'alive');
+  return [unsentBoth, pending, birthAlone, unpulled, eachAlone, unseen, ordinary, ownSegment, added];
 }
 
 export function files() {

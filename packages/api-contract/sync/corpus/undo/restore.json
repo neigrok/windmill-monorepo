@@ -52149,5 +52149,921 @@
         }
       ]
     }
+  },
+  {
+    "name": "an Undo asked signed out of a removal whose record was born there brings it back once sign-in adds the work and sends it",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000009",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000009",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            }
+          }
+        ]
+      },
+      "ids": [
+        "rp_00000000000000000000000000000002"
+      ],
+      "steps": [
+        {
+          "op": "commitAct",
+          "deviceNow": 5000,
+          "segments": [
+            {
+              "scope": "self/probe",
+              "changes": [
+                {
+                  "op": "put",
+                  "t": "day",
+                  "id": "2026-11-23",
+                  "f": {
+                    "score": 7
+                  }
+                }
+              ]
+            }
+          ],
+          "opts": {
+            "undo": {
+              "version": 1,
+              "segments": [
+                {
+                  "index": 0,
+                  "recipes": [
+                    {
+                      "kind": "createdRecord",
+                      "restoreCommand": "probe.restore",
+                      "record": {
+                        "scope": "self/probe",
+                        "t": "day",
+                        "id": "2026-11-23"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "releaseReversibleAct",
+          "actId": "g1"
+        },
+        {
+          "op": "commitAct",
+          "deviceNow": 5100,
+          "segments": [
+            {
+              "scope": "self/probe",
+              "changes": [
+                {
+                  "op": "delete",
+                  "t": "day",
+                  "id": "2026-11-23"
+                }
+              ]
+            }
+          ],
+          "opts": {
+            "undo": {
+              "version": 1,
+              "segments": [
+                {
+                  "index": 0,
+                  "recipes": [
+                    {
+                      "kind": "fields",
+                      "restoreCommand": "probe.restore",
+                      "targets": [
+                        {
+                          "target": {
+                            "scope": "self/probe",
+                            "t": "day",
+                            "id": "2026-11-23",
+                            "slot": {
+                              "kind": "life"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "requestInverse",
+          "actId": "g2",
+          "deviceNow": 5200
+        },
+        {
+          "op": "view",
+          "scope": "self/probe",
+          "withHeld": true
+        },
+        {
+          "op": "signIn",
+          "account": "A",
+          "holdsRecords": {
+            "probe": true
+          },
+          "decisions": {
+            "probe": "add"
+          }
+        },
+        {
+          "op": "push",
+          "deviceNow": 6000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 7000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "self/probe",
+                          "beforeSeq": 0,
+                          "seq": 1,
+                          "rows": [
+                            {
+                              "t": "day",
+                              "id": "2026-11-23",
+                              "beforeRowSeq": null,
+                              "rowSeq": 1,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "life"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "5000:0:r_aaaaaaaaaaaa"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "score"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "5000:0:r_aaaaaaaaaaaa"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 6000
+        },
+        {
+          "op": "push",
+          "deviceNow": 7000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 8000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 2,
+                  "write": [],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "self/probe",
+                          "beforeSeq": 1,
+                          "seq": 2,
+                          "rows": [
+                            {
+                              "t": "day",
+                              "id": "2026-11-23",
+                              "beforeRowSeq": 1,
+                              "rowSeq": 2,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "life"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "7000:0:r_aaaaaaaaaaaa"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 7000
+        },
+        {
+          "op": "push",
+          "deviceNow": 8000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 9000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 3,
+              "results": [
+                {
+                  "n": 3,
+                  "s": "ok",
+                  "seq": 3,
+                  "write": [],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "self/probe",
+                          "beforeSeq": 2,
+                          "seq": 3,
+                          "rows": [
+                            {
+                              "t": "day",
+                              "id": "2026-11-23",
+                              "beforeRowSeq": 2,
+                              "rowSeq": 3,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "life"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "9000:0:srv"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "command": {
+                      "inverse": {
+                        "outcomes": [
+                          {
+                            "index": 0,
+                            "s": "applied"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 8000
+        },
+        {
+          "op": "push",
+          "deviceNow": 9000
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 9000
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 10000,
+              "epoch": "ep-1",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "day",
+                      "id": "2026-11-23",
+                      "life": [
+                        "alive",
+                        "9000:0:srv"
+                      ],
+                      "seq": 3,
+                      "rc": 9000,
+                      "ru": 9000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6M30",
+                  "more": false,
+                  "seq": 3,
+                  "digest": "0f091674200bdc9c28f3c73e6f66836dbbdf183f14ce6c0e88dc8746a0d36d90",
+                  "total": 1
+                }
+              ]
+            }
+          },
+          "deviceNow": 9000
+        },
+        {
+          "op": "readInverseResult",
+          "requestId": "g4"
+        },
+        {
+          "op": "view",
+          "scope": "self/probe",
+          "withHeld": true
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "gestureId": "g1",
+          "segments": [
+            {
+              "scope": "self/probe",
+              "stamp": "5000:0:r_aaaaaaaaaaaa",
+              "localIds": [
+                "g1/0"
+              ],
+              "ids": [
+                "2026-11-23"
+              ]
+            }
+          ],
+          "retired": [],
+          "superseded": [],
+          "releaseAt": null
+        },
+        true,
+        {
+          "gestureId": "g2",
+          "segments": [
+            {
+              "scope": "self/probe",
+              "stamp": "5100:0:r_aaaaaaaaaaaa",
+              "localIds": [
+                "g2/0"
+              ],
+              "ids": [
+                "2026-11-23"
+              ]
+            }
+          ],
+          "retired": [],
+          "superseded": [],
+          "releaseAt": null
+        },
+        {
+          "kind": "pending",
+          "requestId": "g4",
+          "inverseActId": "g3",
+          "localChanged": true
+        },
+        {
+          "records": [
+            {
+              "t": "day",
+              "id": "2026-11-23",
+              "life": [
+                "alive",
+                "5200:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "score": [
+                  7,
+                  "5000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {
+            "card": 0
+          }
+        },
+        {
+          "complete": true,
+          "due": [
+            {
+              "kind": "signed-out",
+              "product": "probe",
+              "count": {
+                "day": 1
+              },
+              "counted": [
+                "g1/0",
+                "g2/0",
+                "g3/0"
+              ]
+            }
+          ]
+        },
+        {
+          "replica": "rp_00000000000000000000000000000009",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "day",
+                  "id": "2026-11-23",
+                  "life": [
+                    "alive",
+                    "5000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "f": {
+                    "score": [
+                      7,
+                      "5000:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "cmd": {
+                "name": "probe.capture",
+                "args": {}
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000009",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "day",
+                  "id": "2026-11-23",
+                  "life": [
+                    "dead",
+                    "7000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "cmd": {
+                "name": "probe.capture",
+                "args": {}
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000009",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.restore",
+                "args": {
+                  "expectedEpoch": "ep-1",
+                  "operations": [
+                    {
+                      "kind": "field",
+                      "t": "day",
+                      "id": "2026-11-23",
+                      "slot": {
+                        "kind": "life"
+                      },
+                      "expected": {
+                        "kind": "stamp",
+                        "stamp": "7000:0:r_aaaaaaaaaaaa"
+                      },
+                      "before": "alive"
+                    }
+                  ]
+                }
+              },
+              "gestureId": "g3",
+              "n": 3
+            }
+          ]
+        },
+        null,
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "kind": "settled",
+          "requestId": "g4",
+          "inverseActId": "g3",
+          "changed": true,
+          "appliedCount": 1,
+          "skippedCount": 0
+        },
+        {
+          "records": [
+            {
+              "t": "day",
+              "id": "2026-11-23",
+              "life": [
+                "alive",
+                "9000:0:srv"
+              ]
+            }
+          ],
+          "capCount": {
+            "card": 0
+          }
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000009",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000009",
+              "state": "bound",
+              "nextN": 4,
+              "hlc": {
+                "ms": 9000,
+                "counter": 0
+              },
+              "hlcHigh": "9000:0:srv",
+              "admittedHigh": "9000:0:srv",
+              "serverOffsetMs": 1000,
+              "offsetSamples": [
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 3,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 9000,
+                "mono": 9000,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "day",
+                  "id": "2026-11-23",
+                  "life": [
+                    "alive",
+                    "9000:0:srv"
+                  ],
+                  "seq": 3,
+                  "rc": 9000,
+                  "ru": 9000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6M30",
+                "digest": "0f091674200bdc9c28f3c73e6f66836dbbdf183f14ce6c0e88dc8746a0d36d90",
+                "booted": true
+              }
+            },
+            "journal": [
+              {
+                "version": 1,
+                "actId": "g2",
+                "retained": true,
+                "sourceEntries": [
+                  {
+                    "localId": "g2/0",
+                    "originScope": "self/probe",
+                    "recipes": [
+                      {
+                        "kind": "fields",
+                        "restoreCommand": "probe.restore",
+                        "targets": [
+                          {
+                            "target": {
+                              "scope": "self/probe",
+                              "t": "day",
+                              "id": "2026-11-23",
+                              "slot": {
+                                "kind": "life"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "preimages": [
+                      {
+                        "target": {
+                          "scope": "self/probe",
+                          "t": "day",
+                          "id": "2026-11-23",
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "alive",
+                        "rowSeq": 1,
+                        "epoch": "ep-1",
+                        "record": {
+                          "f": {
+                            "score": [
+                              7,
+                              "5000:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        }
+                      }
+                    ],
+                    "written": [
+                      {
+                        "target": {
+                          "scope": "self/probe",
+                          "t": "day",
+                          "id": "2026-11-23",
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "dead"
+                      }
+                    ],
+                    "attempts": [
+                      {
+                        "epoch": "ep-1",
+                        "n": 2,
+                        "outcome": "ok",
+                        "acceptedEffects": [
+                          {
+                            "scope": "self/probe",
+                            "beforeSeq": 1,
+                            "seq": 2,
+                            "rows": [
+                              {
+                                "t": "day",
+                                "id": "2026-11-23",
+                                "beforeRowSeq": 1,
+                                "rowSeq": 2,
+                                "slots": [
+                                  {
+                                    "slot": {
+                                      "kind": "life"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "7000:0:r_aaaaaaaaaaaa"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "version": 1,
+                "actId": "g3",
+                "retained": true,
+                "sourceEntries": [
+                  {
+                    "localId": "g3/0",
+                    "originScope": "self/probe",
+                    "recipes": [
+                      {
+                        "kind": "fields",
+                        "restoreCommand": "probe.restore",
+                        "targets": [
+                          {
+                            "target": {
+                              "scope": "self/probe",
+                              "t": "day",
+                              "id": "2026-11-23",
+                              "slot": {
+                                "kind": "life"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "preimages": [
+                      {
+                        "target": {
+                          "scope": "self/probe",
+                          "t": "day",
+                          "id": "2026-11-23",
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "dead",
+                        "rowSeq": 2,
+                        "epoch": "ep-1"
+                      }
+                    ],
+                    "written": [
+                      {
+                        "target": {
+                          "scope": "self/probe",
+                          "t": "day",
+                          "id": "2026-11-23",
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "alive"
+                      }
+                    ],
+                    "attempts": [
+                      {
+                        "epoch": "ep-1",
+                        "n": 3,
+                        "outcome": "ok",
+                        "acceptedEffects": [
+                          {
+                            "scope": "self/probe",
+                            "beforeSeq": 2,
+                            "seq": 3,
+                            "rows": [
+                              {
+                                "t": "day",
+                                "id": "2026-11-23",
+                                "beforeRowSeq": 2,
+                                "rowSeq": 3,
+                                "slots": [
+                                  {
+                                    "slot": {
+                                      "kind": "life"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "9000:0:srv"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "inverses": [
+              {
+                "version": 1,
+                "requestId": "g4",
+                "sourceActId": "g2",
+                "inverseActId": "g3",
+                "state": "settled",
+                "requestedAt": 5200,
+                "localChanged": true,
+                "slots": [
+                  {
+                    "localId": "g3/0",
+                    "commitOrder": 3,
+                    "originScope": "self/probe",
+                    "recipe": {
+                      "kind": "withdrawn",
+                      "command": "probe.restore"
+                    },
+                    "state": "settled",
+                    "skipped": [],
+                    "changed": true,
+                    "outcomes": [
+                      {
+                        "index": 0,
+                        "s": "applied"
+                      }
+                    ]
+                  }
+                ],
+                "result": {
+                  "kind": "settled",
+                  "requestId": "g4",
+                  "inverseActId": "g3",
+                  "changed": true,
+                  "appliedCount": 1,
+                  "skippedCount": 0
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g2/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g3/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ]
+    }
   }
 ]
