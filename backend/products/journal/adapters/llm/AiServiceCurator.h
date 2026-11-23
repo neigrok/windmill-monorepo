@@ -1,6 +1,6 @@
 #pragma once
 
-#include "platform/adapters/llm/AnthropicClient.h"
+#include "platform/ai_service/AiText.h"
 #include "products/journal/ports/Curator.h"
 
 #include <memory>
@@ -22,17 +22,14 @@ CurationPrompt curationPrompt(const std::vector<Vectored>& tonight,
                               const std::vector<Vectored>& candidates,
                               const std::vector<Pairing>& proposed);
 
-// One call per changed page, judging same-subject and whose voice the older passage is. Nothing it
-// returns is shown to a reader: the sweep stores flags and the page shows the writer's own passages.
-class AnthropicCurator : public Curator {
+// One call per changed page to a model the AI service serves, as the writer's background work, judging same-subject and
+// whose voice the older passage is. Nothing it returns is shown to a reader: the sweep stores flags and the page shows
+// the writer's own passages.
+class AiServiceCurator : public Curator {
 public:
-  // The fuse and the sink default to null, the no-op. `floor` is the least `relation` a pairing may
-  // carry and still be shown, on the absolute scale the prompt defines: move one and move both.
-  explicit AnthropicCurator(std::shared_ptr<MessagesApi> transport,
-                            std::string model = "claude-sonnet-5", std::string effort = "low",
-                            std::shared_ptr<AiFuse> fuse = nullptr,
-                            std::shared_ptr<UsageSink> usage = nullptr, float floor = 0.6f,
-                            std::shared_ptr<AiCallBudget> budget = nullptr);
+  // `floor` is the least `relation` a pairing may carry and still be shown, on the absolute scale the prompt defines:
+  // move one and move both.
+  explicit AiServiceCurator(std::shared_ptr<AiText> ai, float floor = 0.6f);
 
   bool configured() const override;
 
@@ -44,13 +41,8 @@ public:
                   const std::vector<Pairing>& proposed) override;
 
 private:
-  std::shared_ptr<MessagesApi> transport_;
-  std::string model_;
-  std::string effort_;
+  std::shared_ptr<AiText> ai_;
   float floor_ = 0.6f;
-  std::shared_ptr<AiFuse> fuse_;
-  std::shared_ptr<UsageSink> usage_;
-  std::shared_ptr<AiCallBudget> budget_;
 };
 
 }

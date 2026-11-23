@@ -62,6 +62,10 @@ public key under every kid, and rejects every `test-` kid.
 
 The pass lasts 600,000 ms. Account claims come from `Entitlements::aiPrincipalFor` without grant
 funding. An account pass names a presented installation only when it is bound to that account.
+
+With the seed set, `AI_SERVICE_URL` (the service's public listener, `http://127.0.0.1:8084` locally) arms journal
+echoes: their two model calls go to the service as the writer's background work, under a server pass the backend
+signs for itself. Without either, echoes stay dark.
 An installation alone must be unbound and anonymous admission enabled. Its pass consumes the same
 durable address bucket as legacy generations, 30/hour by default; installation issuance remains
 10/day. A separate principal token bucket allows 30 passes/minute, with burst 30. The route strictly

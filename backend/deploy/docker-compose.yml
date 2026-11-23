@@ -116,7 +116,7 @@ services:
       # which is an outage that passes every check the owner can run. Empty fails for everyone or not at
       # all; the deploy guard keeps it from ever rendering empty here.
       RESEND_FROM: ${RESEND_FROM:-}
-      # Roadmap tending, gym Coach and journal echoes call Anthropic with this key.
+      # Roadmap tending and gym Coach call Anthropic with this key.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       COACH_MAX_OUTPUT_TOKENS: ${COACH_MAX_OUTPUT_TOKENS:-2000}
       AI_ALLOWANCES_ENABLED: ${AI_ALLOWANCES_ENABLED:-false}
@@ -124,6 +124,10 @@ services:
       AI_PASS_KID: ${AI_PASS_KID:-}
       AI_PASS_MIN_VERSIONS: ${AI_PASS_MIN_VERSIONS:-}
       AI_PASS_ENVIRONMENT: production
+      # The AI service's public listener inside the deployment, never through Caddy. Journal echoes ask it as the
+      # writer's background work under a pass the backend signs with AI_PASS_PRIVATE_SEED; without that seed, echoes
+      # stay dark.
+      AI_SERVICE_URL: http://ai:8084
       AI_INSTALLATIONS_ENABLED: ${AI_INSTALLATIONS_ENABLED:-false}
       AI_INSTALLATION_IP_HMAC_KEY: ${AI_INSTALLATION_IP_HMAC_KEY:-}
       AI_INSTALLATION_PROXY_MODE: cloudflare
@@ -139,9 +143,8 @@ services:
       # answers 503 and the client hides Talk. Set it to arm voice for Windmill One subscribers.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Journal echoes. BOTH boundaries must be wired or the nightly pass is a quiet no-op: the
-      # embedder sidecar below, and ANTHROPIC_API_KEY above (shared with Coach and tending — one account,
-      # several products asking it different questions). Unset URL → echoes stay dark, and nothing is
-      # written, so arming later costs a re-derivation and never a wrong row.
+      # embedder sidecar below, and the AI service above (AI_SERVICE_URL with the pass seed). Unset URL →
+      # echoes stay dark, and nothing is written, so arming later costs a re-derivation and never a wrong row.
       JOURNAL_EMBEDDER_URL: ${JOURNAL_EMBEDDER_URL:-http://embedder:8081}
       # The operator's rehearsal door for one nightly pass. Unset → the route 403s, its resting state.
       JOURNAL_ECHO_ADMIN_TOKEN: ${JOURNAL_ECHO_ADMIN_TOKEN:-}

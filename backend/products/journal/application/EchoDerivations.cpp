@@ -27,7 +27,7 @@ void EchoDerivations::start() {
     if (report.derived > 0 || report.failed > 0 || report.refused > 0)
       LOG_INFO << "journal echo live: " << report.derived << " derived, " << report.failed
                << " failed, " << report.refused << " refused, " << report.deferred
-               << " deferred to the repair pass, " << report.skippedOverBudget << " over AI budget, "
+               << " deferred to the repair pass, " << report.aiDeferred << " deferred by the AI service, "
                << report.queueFull << " saves past the queue bound";
   });
   LOG_INFO << "journal echo: live derivations armed, quiet time " << rules_.quietMs << "ms";
@@ -123,10 +123,10 @@ EchoLiveReport EchoDerivations::drain(std::uint64_t nowMs) {
     report.derived += outcome.pagesDerived;
     report.failed += outcome.pagesFailed;
     report.refused += outcome.pagesRefused;
-    report.skippedOverBudget += outcome.usersOverAiBudget;
-    if (answered == 0 && outcome.usersOverAiBudget == 0) ++report.alreadyDerived;
+    report.aiDeferred += outcome.pagesDeferred;
+    if (answered == 0 && outcome.pagesDeferred == 0) ++report.alreadyDerived;
 
-    // The cap counts what was bought; an over-budget skip and a page not due both spent nothing.
+    // The cap counts what was bought; a page the AI service deferred and a page not due both spent nothing.
     if (answered == 0) continue;
     std::lock_guard<std::mutex> guard{lock_};
     ++spent_.try_emplace(key, Spent{0, nowMs}).first->second.derivations;

@@ -30,28 +30,15 @@ void armReachingBack(FakeEchoRepository& echoes, FakeEmbedder& embedder) {
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);
 }
 
-// The background AI bucket. Empty means every account is under its ceiling; `spend` plants a journal bill big enough to close it.
-struct SweepLedger {
-  FakeEntitlementCopy subscriptions;
-  FakeClock clock;
-  FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, clock, usage};
-
-  void spend(long long nanos) { usage.spentByProduct["journal"] = nanos; }
-};
-
 // The rule segmenter by default; `sweepCutBy` is the overload for tests that hand the sweep a segmenter of their own.
-EchoSweep sweepOver(FakeEchoRepository& echoes, FakeEmbedder& embedder, FakeCurator& curator,
-                    FakeClock& clock, SweepLedger& ledger) {
+EchoSweep sweepOver(FakeEchoRepository& echoes, FakeEmbedder& embedder, FakeCurator& curator, FakeClock& clock) {
   static FakeSegmenter rule;
-  return EchoSweep{echoes,  rule,                embedder,         curator,
-                   clock,   ledger.entitlements, SelectionRules{}, SweepBudget{}};
+  return EchoSweep{echoes, rule, embedder, curator, clock, SelectionRules{}, SweepBudget{}};
 }
 
 EchoSweep sweepOver(FakeEchoRepository& echoes, FakeSegmenter& segmenter, FakeEmbedder& embedder,
-                    FakeCurator& curator, FakeClock& clock, SweepLedger& ledger) {
-  return EchoSweep{echoes,  segmenter,           embedder,         curator,
-                   clock,   ledger.entitlements, SelectionRules{}, SweepBudget{}};
+                    FakeCurator& curator, FakeClock& clock) {
+  return EchoSweep{echoes, segmenter, embedder, curator, clock, SelectionRules{}, SweepBudget{}};
 }
 
 }
@@ -63,8 +50,7 @@ TEST(a_page_that_reaches_back_writes_an_echo_pointing_at_the_older_passage) {
   FakeClock clock;
   armReachingBack(echoes, embedder);
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.usersScanned, 1);
@@ -87,8 +73,7 @@ TEST(an_unwired_embedder_makes_the_whole_pass_a_no_op) {
   armReachingBack(echoes, embedder);
   embedder.isConfigured = false;
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.usersScanned, 0);
@@ -109,8 +94,7 @@ TEST(echo_background_noops_are_silent_and_committed_curation_is_observed) {
   FakeEmbedder embedder;
   FakeCurator curator;
   FakeClock clock;
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
   std::vector<WriteCompletion> completions;
   installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
   sweep.run(kNow - kDay);
@@ -118,9 +102,6 @@ TEST(echo_background_noops_are_silent_and_committed_curation_is_observed) {
   embedder.isConfigured = false;
   sweep.derivePage(uid("u1"), ld(kNewDay));
   embedder.isConfigured = true;
-  ledger.spend(1'000'000'000'000LL);
-  sweep.derivePage(uid("u1"), ld(kNewDay));
-  ledger.spend(0);
   const bool noopsSilent = completions.empty();
   sweep.derivePage(uid("u1"), ld(kNewDay));
   const auto wrote = completions.size();
@@ -145,8 +126,7 @@ TEST(an_unwired_curator_makes_the_whole_pass_a_no_op) {
   armReachingBack(echoes, embedder);
   curator.isConfigured = false;
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.usersScanned, 0);
@@ -161,17 +141,16 @@ TEST(a_failed_curate_is_recorded_as_a_failure_and_never_as_an_empty_page) {
   FakeClock clock;
   armReachingBack(echoes, embedder);
   curator.callSucceeds = false;
-  curator.failure = "rate_limited";
+  curator.failure = "provider_failed";
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesFailed, 1);
   CHECK_EQ(report.pagesDerived, 0);
   CHECK_EQ(report.echoesWritten, 0);
   REQUIRE_EQ(echoes.outcomes.size(), std::size_t{1});
-  CHECK(echoes.outcomes[0].status == CurationStatus::rateLimited);
+  CHECK(echoes.outcomes[0].status == CurationStatus::transport);
   CHECK(!isSuccess(echoes.outcomes[0].status));
 }
 
@@ -182,10 +161,9 @@ TEST(a_refused_page_is_finished_rather_than_asked_again_every_night) {
   FakeClock clock;
   armReachingBack(echoes, embedder);
   curator.callSucceeds = false;
-  curator.failure = "refused";
+  curator.failure = "declined";
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesRefused, 1);
@@ -210,13 +188,12 @@ TEST(a_refusal_leaves_the_page_carrying_no_echoes_at_all) {
   FakeClock clock;
   armReachingBack(echoes, embedder);
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   sweep.run(kNow - kDay);
   REQUIRE_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{1});
 
   curator.callSucceeds = false;
-  curator.failure = "refused";
+  curator.failure = "declined";
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);
   sweep.run(kNow - kDay);
 
@@ -231,8 +208,7 @@ TEST(a_curator_that_finds_nothing_finishes_the_page_rather_than_failing_it) {
   armReachingBack(echoes, embedder);
   curator.keepEverything = false;
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesFailed, 0);
@@ -250,8 +226,7 @@ TEST(a_short_embedder_result_is_a_failed_call_not_a_page_with_fewer_passages) {
   armReachingBack(echoes, embedder);
   embedder.failNext = true;
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesFailed, 1);
@@ -266,8 +241,7 @@ TEST(re_deriving_the_older_page_keeps_the_identity_the_echo_points_at) {
   FakeClock clock;
   armReachingBack(echoes, embedder);
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   sweep.run(kNow - kDay);
   CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay))[0].matchSpanId, std::int64_t{11});
 
@@ -287,8 +261,7 @@ TEST(a_pairing_the_reader_waved_away_is_never_proposed_again) {
   FakeClock clock;
   armReachingBack(echoes, embedder);
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   sweep.run(kNow - kDay);
   const std::vector<EchoRow> first = echoes.rowsOn(uid("u1"), ld(kNewDay));
   REQUIRE_EQ(first.size(), std::size_t{1});
@@ -315,8 +288,7 @@ TEST(a_page_within_the_gap_is_too_near_to_echo) {
   echoes.plantSpan(uid("u1"), ld("2026-04-28"), 11, kOldLine, embedder.embed({kOldLine})[0]);
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesDerived, 1);
@@ -332,8 +304,7 @@ TEST(an_empty_page_is_finished_without_spending_anything) {
   echoes.addUser(uid("u1"));
   echoes.addDuePage(uid("u1"), ld(kNewDay), "   \n  ");
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesDerived, 1);
@@ -353,60 +324,13 @@ TEST(a_night_stops_at_the_page_budget_and_says_how_much_it_left) {
     echoes.addDuePage(uid("u1"), ld(day), kNewLine);
   }
 
-  SweepLedger ledger;
   FakeSegmenter segmenter;
   EchoSweep sweep{echoes,  segmenter,           embedder,         curator,
-                  clock,   ledger.entitlements, SelectionRules{}, SweepBudget{5, 20}};
+                  clock,   SelectionRules{}, SweepBudget{5, 20}};
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.pagesDerived, 5);
   CHECK_EQ(report.pagesOverBudget, 7);
-}
-
-// --- The background AI bucket -----------------------------------------------------------------
-
-TEST(a_user_whose_background_bucket_is_dry_is_skipped_not_failed) {
-  FakeEchoRepository echoes;
-  FakeEmbedder embedder;
-  FakeCurator curator;
-  FakeClock clock;
-  armReachingBack(echoes, embedder);
-
-  SweepLedger ledger;
-  ledger.spend(kSweepMonthlyAiNanos);
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
-  const EchoSweepReport report = sweep.run(kNow - kDay);
-
-  CHECK_EQ(report.usersScanned, 1);
-  CHECK_EQ(report.usersOverAiBudget, 1);
-  CHECK_EQ(curator.calls, 0);
-  CHECK_EQ(report.pagesDerived, 0);
-  // SKIPPED, not failed: nothing was written, no stamp advanced, so the page is still owed.
-  CHECK_EQ(report.pagesFailed, 0);
-  CHECK_EQ(echoes.outcomes.size(), std::size_t{0});
-  CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{0});
-}
-
-TEST(a_user_with_room_in_the_background_bucket_sweeps_and_is_billed_by_name) {
-  FakeEchoRepository echoes;
-  FakeEmbedder embedder;
-  FakeCurator curator;
-  FakeClock clock;
-  armReachingBack(echoes, embedder);
-
-  SweepLedger ledger;
-  ledger.spend(kSweepMonthlyAiNanos - 1);
-  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock, ledger);
-  const EchoSweepReport report = sweep.run(kNow - kDay);
-
-  CHECK_EQ(report.usersOverAiBudget, 0);
-  CHECK_EQ(report.pagesDerived, 1);
-  CHECK_EQ(curator.calls, 1);
-  REQUIRE_EQ(curator.billed.size(), std::size_t{1});
-  CHECK(curator.billed[0] == uid("u1"));
-  REQUIRE_EQ(ledger.usage.asked.size(), std::size_t{1});
-  CHECK_EQ(ledger.usage.asked[0].product, std::string("journal"));
-  CHECK(ledger.usage.asked[0].user == uid("u1"));
 }
 
 // A page whose passages moved is chased back through every page holding an echo INTO it, so those pages re-derive against text that still exists.
@@ -430,8 +354,7 @@ TEST(the_reverse_edge_re_derives_the_page_pointing_at_the_one_that_moved) {
   echoes.replaceEchoes(uid("u1"), ld(february), standing);
   echoes.inbound[FakeEchoRepository::pageKey(uid("u1"), ld(kOldDay))] = {ld(february)};
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.inboundEnqueued, 1);
@@ -451,10 +374,9 @@ TEST(a_segmenter_that_fails_leaves_the_page_owed_and_its_passages_alone) {
   FakeClock clock;
   armReachingBack(echoes, embedder);
   segmenter.callSucceeds = false;
-  segmenter.failure = "rate_limited";
+  segmenter.failure = "provider_failed";
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   // A failed CUT is a failed call: nothing is written, the page's stamps never move, and the next pass owes it.
@@ -463,7 +385,7 @@ TEST(a_segmenter_that_fails_leaves_the_page_owed_and_its_passages_alone) {
   CHECK_EQ(echoes.spansOf(uid("u1"), ld(kNewDay)).empty(), true);
   CHECK_EQ(curator.calls, 0);
   REQUIRE_EQ(echoes.outcomes.size(), std::size_t{1});
-  CHECK_EQ(echoes.outcomes[0].error, std::string{"segmenter: rate_limited"});
+  CHECK_EQ(echoes.outcomes[0].error, std::string{"segmenter: provider_failed"});
 }
 
 TEST(a_unit_the_model_invented_never_becomes_a_passage_of_the_writers) {
@@ -475,8 +397,7 @@ TEST(a_unit_the_model_invented_never_becomes_a_passage_of_the_writers) {
   armReachingBack(echoes, embedder);
   segmenter.units = {kNewLine, "and i have never been happier about it"};
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(report.unitsDiscarded, 1);
@@ -492,8 +413,7 @@ TEST(a_pairing_the_curator_now_refuses_is_taken_off_the_page) {
   FakeClock clock;
   armReachingBack(echoes, embedder);
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
   sweep.run(kNow - kDay);
   REQUIRE_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{1});
 
@@ -514,8 +434,7 @@ TEST(a_pairing_this_pass_never_asked_about_survives_it) {
   FakeClock clock;
   armReachingBack(echoes, embedder);
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
   sweep.run(kNow - kDay);
   const std::vector<EchoRow> first = echoes.rowsOn(uid("u1"), ld(kNewDay));
   REQUIRE_EQ(first.size(), std::size_t{1});
@@ -551,8 +470,7 @@ TEST(a_rejudge_takes_every_page_and_re_cuts_none_of_them) {
   // older page has to exist as a page for this to be the two-page account it describes.
   echoes.plantPage(uid("u1"), ld(kOldDay), kOldLine);
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
   sweep.run(kNow - kDay);
   REQUIRE_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{1});
 
@@ -584,8 +502,7 @@ TEST(a_pairing_selection_itself_now_refuses_is_taken_off_the_page) {
   armReachingBack(echoes, embedder);
   echoes.plantPage(uid("u1"), ld(kOldDay), kOldLine);
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
   sweep.run(kNow - kDay);
   REQUIRE_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{1});
 
@@ -626,8 +543,7 @@ TEST(a_second_echo_into_the_same_past_day_is_taken_off_the_page) {
                    static_cast<int>(first.size()) + 1);
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine);
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
   sweep.run(kNow - kDay);
 
   const std::vector<EchoRow> rows = echoes.rowsOn(uid("u1"), ld(kNewDay));
@@ -659,8 +575,7 @@ TEST(a_save_that_moved_no_bytes_buys_neither_a_cut_nor_an_embedding) {
   echoes.plantSpan(uid("u1"), ld(kNewDay), 21, kNewLine, marker(), 0, kNewLine);
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine, /*bodyMoved=*/false);
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(segmenter.calls, 0);
@@ -695,8 +610,7 @@ TEST(a_save_that_moved_no_bytes_still_pays_the_curator_on_a_page_that_reaches_ba
   embedder.asked.clear();
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine, /*bodyMoved=*/false);
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(segmenter.calls, 0);
@@ -723,8 +637,7 @@ TEST(a_carried_passage_is_not_embedded_again_and_only_the_new_one_is) {
   echoes.plantSpan(uid("u1"), ld(kNewDay), 21, kept, marker(), 0, kept);
   echoes.addDuePage(uid("u1"), ld(kNewDay), kept + "\n" + added);   // the writer appended a line
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(segmenter.calls, 1);   // the bytes DID move, so the cut is bought — that is unavoidable
@@ -753,8 +666,7 @@ TEST(a_vector_held_under_another_embedding_version_is_never_reused) {
   echoes.plantSpan(uid("u1"), ld(kNewDay), 21, kNewLine, marker(), 0, kNewLine, "fake-embedder-v0");
   echoes.addDuePage(uid("u1"), ld(kNewDay), kNewLine, /*bodyMoved=*/false);
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   CHECK_EQ(segmenter.calls, 0);   // the BYTES still did not move, so the cut is still not bought
@@ -799,8 +711,7 @@ TEST(the_reverse_edge_re_cuts_a_page_whose_body_moved_instead_of_settling_the_ol
   embedder.asked.clear();   // planting a vector is not something the sweep bought
   embedder.calls = 0;
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
   const EchoSweepReport report = sweep.run(kNow - kDay);
 
   REQUIRE_EQ(report.inboundEnqueued, 1);   // the walk did reach the edited page
@@ -839,8 +750,7 @@ TEST(a_rejudge_re_cuts_only_the_page_whose_stored_cut_is_of_other_bytes) {
   echoes.plantSpan(uid("u1"), ld(kNewDay), 21, settled, embedder.embed({settled})[0], 0, settled);
   echoes.plantPage(uid("u1"), ld(kNewDay), moved);            // cut does NOT match the body
 
-  SweepLedger ledger;
-  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
   sweep.run(kNow - kDay, /*rejudgeAll=*/true);
 
   CHECK_EQ(segmenter.calls, 1);   // the moved page only, never the settled one
@@ -848,7 +758,10 @@ TEST(a_rejudge_re_cuts_only_the_page_whose_stored_cut_is_of_other_bytes) {
   CHECK(echoes.cutFromTheseBytes(uid("u1"), ld(kOldDay), settled));
 }
 
-TEST(ai_cost_refusals_defer_echoes_without_issues_and_resume_when_capacity_returns) {
+// Every way the AI service can end one of Echoes' two calls, and what it does to the page (echoes-on-ai-service.md §5):
+// how the pass counts it, the status and the attempts storage holds, the outcome of the page's line, and whether Sentry
+// is told. Either step failing reads the same.
+TEST(every_answer_the_ai_service_gives_a_step_lands_the_page_where_section_five_says) {
   struct Failures : FailureReporter {
     int issues = 0;
     void report(const std::string&, const std::string&, const std::string&) override { ++issues; }
@@ -858,42 +771,95 @@ TEST(ai_cost_refusals_defer_echoes_without_issues_and_resume_when_capacity_retur
     ReporterScope() { installWriteReporter(failures); }
     ~ReporterScope() { installWriteReporter(nullptr); }
   } reporter;
-  for (const bool segmentRefused : {false, true}) {
-    FakeEchoRepository echoes;
-    FakeSegmenter segmenter;
-    FakeEmbedder embedder;
-    FakeCurator curator;
-    FakeClock clock;
-    const auto user = UserId{"budget-account"};
-    const auto oldDay = LocalDate{"2026-01-01"};
-    const auto newDay = LocalDate{"2026-05-01"};
-    const std::string oldText = "i want to learn kotlin properly this time, not just skimming it.";
-    const std::string newText = "i like kotlin now and the work is finally fun to sit down with.";
-    echoes.addUser(user);
-    echoes.plantSpan(user, oldDay, 11, oldText, embedder.embed({oldText})[0]);
-    echoes.addDuePage(user, newDay, newText);
-    FakeEntitlementCopy subscriptions;
-    FakeAiUsageRepository usage;
-    Entitlements entitlements{subscriptions, clock, usage};
-    EchoSweep sweep{echoes, segmenter, embedder, curator, clock, entitlements, {}, {}};
-    segmenter.callSucceeds = !segmentRefused;
-    segmenter.failure = "subject_exhausted";
-    curator.callSucceeds = segmentRefused;
-    curator.failure = "free_month_exhausted";
-    const auto report = sweep.derivePage(user, newDay);
-    CHECK_EQ(report.pagesDeferred, 1);
-    CHECK_EQ(report.pagesFailed, 0);
-    CHECK_EQ(report.pagesDerived, 0);
-    CHECK_EQ(report.pagesRefused, 0);
-    REQUIRE_EQ(echoes.outcomes.size(), 1u);
-    CHECK(echoes.outcomes[0].status == CurationStatus::budgetLimited);
-    CHECK_FALSE(isSettled(echoes.outcomes[0].status));
-    CHECK_EQ(reporter.failures->issues, 0);
-    segmenter.callSucceeds = true;
-    curator.callSucceeds = true;
-    const auto resumed = sweep.derivePage(user, newDay);
-    CHECK_EQ(resumed.pagesDerived, 1);
-    CHECK_EQ(resumed.pagesDeferred, 0);
-    CHECK_EQ(reporter.failures->issues, 0);
-  }
+  const auto word = [](CurationStatus status) {
+    switch (status) {
+      case CurationStatus::ok: return "ok";
+      case CurationStatus::emptyOk: return "empty_ok";
+      case CurationStatus::transport: return "transport";
+      case CurationStatus::budgetLimited: return "budget_limited";
+      case CurationStatus::truncated: return "truncated";
+      case CurationStatus::schemaInvalid: return "schema_invalid";
+      case CurationStatus::refused: return "refused";
+    }
+    return "?";
+  };
+  const auto table = [&](bool segmentFails) {
+    std::string landed;
+    for (const std::string code : {"declined", "truncated", "provider_failed", "provider_rejected", "invalid_request",
+                                   "too_large", "conflict", "result_gone", "tool_calls", "unreadable",
+                                   "subject_exhausted", "concurrency_exhausted", "rate_limited", "background_exhausted",
+                                   "busy", "paused", "accounting_unavailable", "provider_unavailable", "unreachable",
+                                   "pass_expired", "pass_malformed", "pass_signature", "free_month_exhausted"}) {
+      FakeEchoRepository echoes;
+      FakeSegmenter segmenter;
+      FakeEmbedder embedder;
+      FakeCurator curator;
+      FakeClock clock;
+      armReachingBack(echoes, embedder);
+      segmenter.callSucceeds = !segmentFails;
+      segmenter.failure = code;
+      curator.callSucceeds = segmentFails;
+      curator.failure = code;
+      EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock);
+      std::string line;
+      installWriteSink([&](const WriteCompletion& completion) {
+        if (completion.operation == "journal.echo.derive") line = completion.outcome;
+      });
+      const int issuesBefore = reporter.failures->issues;
+      const EchoSweepReport report = sweep.derivePage(uid("u1"), ld(kNewDay));
+      installWriteSink({});
+      const auto& stored = echoes.curations[FakeEchoRepository::pageKey(uid("u1"), ld(kNewDay))];
+      const char* counted = report.pagesRefused ? "refused" : report.pagesFailed ? "failed" : report.pagesDeferred ? "deferred" : "derived";
+      landed += code + " " + counted + " " + word(stored.status) + " attempts=" + std::to_string(stored.attempts) + " " +
+          line + (reporter.failures->issues > issuesBefore ? " told" : "") + "\n";
+    }
+    return landed;
+  };
+
+  const std::string expected = "declined refused refused attempts=0 refused\n"
+                               "truncated failed truncated attempts=1 failed told\n"
+                               "provider_failed failed transport attempts=1 failed told\n"
+                               "provider_rejected failed transport attempts=1 failed told\n"
+                               "invalid_request failed transport attempts=1 failed told\n"
+                               "too_large failed transport attempts=1 failed told\n"
+                               "conflict failed transport attempts=1 failed told\n"
+                               "result_gone failed transport attempts=1 failed told\n"
+                               "tool_calls failed schema_invalid attempts=1 failed told\n"
+                               "unreadable failed schema_invalid attempts=1 failed told\n"
+                               "subject_exhausted deferred budget_limited attempts=0 budget_limited\n"
+                               "concurrency_exhausted deferred budget_limited attempts=0 budget_limited\n"
+                               "rate_limited deferred budget_limited attempts=0 budget_limited\n"
+                               "background_exhausted deferred budget_limited attempts=0 budget_limited\n"
+                               "busy deferred budget_limited attempts=0 budget_limited\n"
+                               "paused deferred budget_limited attempts=0 budget_limited\n"
+                               "accounting_unavailable deferred budget_limited attempts=0 budget_limited\n"
+                               "provider_unavailable deferred budget_limited attempts=0 budget_limited\n"
+                               "unreachable deferred budget_limited attempts=0 budget_limited\n"
+                               "pass_expired deferred budget_limited attempts=0 budget_limited told\n"
+                               "pass_malformed deferred budget_limited attempts=0 budget_limited told\n"
+                               "pass_signature deferred budget_limited attempts=0 budget_limited told\n"
+                               "free_month_exhausted deferred budget_limited attempts=0 budget_limited told\n";
+  CHECK_EQ(table(true), expected);
+  CHECK_EQ(table(false), expected);
+}
+
+TEST(a_deferred_page_stays_due_and_is_derived_once_the_service_answers) {
+  FakeEchoRepository echoes;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  armReachingBack(echoes, embedder);
+  curator.callSucceeds = false;
+  curator.failure = "background_exhausted";
+  EchoSweep sweep = sweepOver(echoes, embedder, curator, clock);
+
+  const EchoSweepReport deferred = sweep.run(kNow - kDay);
+  curator.callSucceeds = true;
+  const EchoSweepReport resumed = sweep.run(kNow - kDay);
+
+  CHECK_EQ(deferred.pagesDeferred, 1);
+  CHECK_EQ(deferred.pagesDerived, 0);
+  CHECK_EQ(resumed.pagesDeferred, 0);
+  CHECK_EQ(resumed.pagesDerived, 1);
+  CHECK_EQ(echoes.rowsOn(uid("u1"), ld(kNewDay)).size(), std::size_t{1});
 }

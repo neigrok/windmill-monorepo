@@ -63,7 +63,4 @@ struct AiAllowance {
 constexpr long long kFreeMonthlyAiNanos = 25'000'000'000;   // $25.00 over the rolling 30 days
 constexpr long long kProMonthlyAiNanos = 50'000'000'000;    // $50.00
 
-// Background work gets its own bucket, keyed by product, so a sweep cannot eat a user's allowance.
-constexpr long long kSweepMonthlyAiNanos = 2'000'000'000;   // $2.00
-
 }

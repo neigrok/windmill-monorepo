@@ -55,7 +55,7 @@ struct PassFixture {
   std::shared_ptr<AiBudgetService> budgets = std::make_shared<AiBudgetService>(budgetRows, [] { return AiBudgetLimits{}; }, [this] { return clock.now; });
   FakeEntitlementCopy subscriptions;
   FakeAiUsageRepository usage;
-  std::shared_ptr<Entitlements> entitlements = std::make_shared<Entitlements>(subscriptions, clock, usage, Allowlists{}, std::vector<std::string>{}, budgets);
+  std::shared_ptr<Entitlements> entitlements = std::make_shared<Entitlements>(subscriptions, clock, usage, Allowlists{}, budgets);
   PassRows rows;
   std::shared_ptr<AiInstallations> installations = std::make_shared<AiInstallations>(rows, budgets, tokens, clock, std::string(32, 'k'));
   std::shared_ptr<AiPasses> passes = std::make_shared<AiPasses>("nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A", "test-rfc8032", "development", R"({"gym.coach":2})");
@@ -67,7 +67,7 @@ struct PassFixture {
   const User account{UserId{"44444444-4444-4444-4444-444444444444"}, Email{"private@example.test"}, "Private name", {}};
 
   explicit PassFixture(Allowlists lists = {})
-      : entitlements(std::make_shared<Entitlements>(subscriptions, clock, usage, std::move(lists), std::vector<std::string>{}, budgets)) {
+      : entitlements(std::make_shared<Entitlements>(subscriptions, clock, usage, std::move(lists), budgets)) {
     clock.now = 1'800'000'000'000;
     accounts.usersById[account.id.str()] = account;
     accounts.insertSession(authTokens.digestOf("session"), account.id, clock.now + 1'000'000, "", "", clock.now);

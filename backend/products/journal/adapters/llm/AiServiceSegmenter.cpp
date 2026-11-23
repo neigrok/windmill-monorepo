@@ -1,5 +1,6 @@
-#include "products/journal/adapters/llm/AnthropicSegmenter.h"
-#include "platform/adapters/llm/AiCallBudget.h"
+#include "products/journal/adapters/llm/AiServiceSegmenter.h"
+
+#include "products/journal/adapters/llm/EchoModel.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -9,7 +10,7 @@ namespace wm {
 
 namespace {
 
-// The cached block: a literal that never gains a byte from any page. It asks for numbers, so there
+// The system text: a literal that never gains a byte from any page. It asks for numbers, so there
 // is no returned text to check against the body — the writer's bytes never leave the atom grid.
 constexpr const char* kSystemPrompt =
     "You are given one page of somebody's private journal, split into numbered pieces — one "
@@ -88,34 +89,20 @@ std::string numbered(const std::vector<Passage>& atoms) {
 
 }
 
-AnthropicSegmenter::AnthropicSegmenter(std::shared_ptr<MessagesApi> transport, std::string model,
-                                       std::string effort, std::shared_ptr<AiFuse> fuse,
-                                       std::shared_ptr<UsageSink> usage, std::shared_ptr<AiCallBudget> budget)
-    : transport_(std::move(transport)),
-      model_(std::move(model)),
-      effort_(std::move(effort)),
-      fuse_(std::move(fuse)),
-      usage_(std::move(usage)), budget_(std::move(budget)) {}
+AiServiceSegmenter::AiServiceSegmenter(std::shared_ptr<AiText> ai) : ai_(std::move(ai)) {}
 
-bool AnthropicSegmenter::configured() const { return transport_ && transport_->configured(); }
+bool AiServiceSegmenter::configured() const { return ai_ != nullptr; }
 
-std::string AnthropicSegmenter::version() const {
+std::string AiServiceSegmenter::version() const {
   static const std::string tag = promptTag();
   // The grammar is named rather than folded in, so a bump is legible in the stored row instead of
   // hiding inside a digest. Both halves decide where a unit may begin, and `bodyMoved` keys on this
   // whole string: a grid change nobody stamps re-cuts nothing already written.
-  return model_ + "/" + effort_ + "/" + kAtomGrammarVersion + "/" + tag;
+  return std::string(kEchoServedModel) + "/" + kEchoEffort + "/" + kAtomGrammarVersion + "/" + tag;
 }
 
-Segmentation AnthropicSegmenter::unitsOf(const UserId& user, const std::string& body) {
+Segmentation AiServiceSegmenter::unitsOf(const UserId& user, const std::string& body) {
   Segmentation cut;
-
-  // Unconfigured is the sweep's mistake rather than the page's, and the page is still owed the
-  // work — so it fails rather than reporting a page with nothing written on it.
-  if (!configured()) {
-    cut.failure = MessagesFailure::transport;
-    return cut;
-  }
 
   const std::vector<Passage> atoms = atomsOf(body);
   if (atoms.empty()) {
@@ -123,71 +110,27 @@ Segmentation AnthropicSegmenter::unitsOf(const UserId& user, const std::string& 
     return cut;
   }
 
-  // The vendor is skipped only where there is nothing to decide, and that is ONE SHORT atom: the
-  // answer is already known, and buying it costs the writer a second and the account a call. (A
-  // measurement that used to sit here — "one page in six is a single line" — was counted before this
-  // grammar existed, when a line was an atom; a line is routinely several now, so it no longer
-  // measures this branch and is gone rather than left to be believed.) One LONG atom is not that
-  // page: the
-  // grammar found no seam in a breath long enough to carry three topics, which is the page least
-  // safe to settle unread, so it is asked. What comes back can still only be [1] while the grid
-  // holds the line in one piece — a unit boundary falls where the grammar drew one, and the grammar
-  // is what has to get finer to change that.
+  // The model is skipped only where there is nothing to decide, and that is ONE SHORT atom: the
+  // answer is already known, and buying it costs the writer a second and the account a call. One
+  // LONG atom is not that page: the grammar found no seam in a breath long enough to carry three
+  // topics, which is the page least safe to settle unread, so it is asked. What comes back can
+  // still only be [1] while the grid holds the line in one piece — a unit boundary falls where the
+  // grammar drew one, and the grammar is what has to get finer to change that.
   if (atoms.size() == 1 && wordsIn(atoms.front().text) <= kLongAtomWords) {
     cut.ok = true;
     cut.passages = atoms;
     return cut;
   }
 
-  // Over the process fuse, the page is not cut and not lost either: the same failed-call shape an
-  // unreachable vendor has, so the next pass picks the page up exactly as it would have.
-  if (fuse_ && !fuse_->allows(nowMs())) {
-    cut.failure = MessagesFailure::transport;
-    return cut;
-  }
-
-  MessagesRequest request;
-  request.model = model_;
-  request.system = kSystemPrompt;
-  request.user = numbered(atoms);
-  request.schema = unitsSchema();
-  request.effort = effort_;
-
-  AiSpend spend;
-  spend.user = user;
-  spend.product = "journal";
-  spend.operation = "echo.segment";
-  spend.runId = newRunId("segment");
-  spend.model = model_;
-  std::optional<AiBudgetReservation> reservation;
-  if (budget_) {
-    const auto admission = budget_->begin(spend, messagesBody(request));
-    if (!admission.reservation) {
-      cut.failure = admission.refusal;
-      return cut;
-    }
-    reservation = admission.reservation;
-  }
-  MessagesReply reply;
-  try {
-    reply = transport_->send(request);
-  } catch (...) {
-    if (reservation) budget_->finish(*reservation, model_, {}, AiCallEnd::uncertain);
-    throw;
-  }
-  if (reservation) budget_->finish(*reservation, model_, reply.usage, reply.usageComplete ? AiCallEnd::settled : AiCallEnd::uncertain);
-  spend.outcome = reply.outcome;
-  spend.tokens = reply.tokens;
-  meterSpend(spend, fuse_, usage_);
-
-  if (!reply.ok) {
+  const EchoAnswer reply = askEchoStep(*ai_, user, "echo.segment", kSystemPrompt, numbered(atoms), unitsSchema());
+  if (!reply.output) {
     cut.failure = reply.failure;
     return cut;
   }
 
-  const Json::Value& starts = reply.output["starts"];
+  const Json::Value& starts = (*reply.output)["starts"];
   if (!starts.isArray()) {
-    cut.failure = MessagesFailure::schemaInvalid;
+    cut.failure = "unreadable";
     return cut;
   }
 
@@ -201,7 +144,7 @@ Segmentation AnthropicSegmenter::unitsOf(const UserId& user, const std::string& 
   // that HAD boundaries to decide, that is a call which decided nothing — so it fails, and the page
   // stays owed rather than settling diluted for good.
   if (opens.empty() && atoms.size() > 1) {
-    cut.failure = MessagesFailure::schemaInvalid;
+    cut.failure = "unreadable";
     return cut;
   }
 

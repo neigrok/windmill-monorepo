@@ -1,6 +1,5 @@
 #pragma once
 
-#include "platform/application/Entitlements.h"
 #include "platform/ports/Clock.h"
 #include "products/journal/domain/EchoSelection.h"
 #include "products/journal/ports/Curator.h"
@@ -34,7 +33,6 @@ struct EchoSweepReport {
   int pagesRefused = 0;
   int inboundEnqueued = 0;
   int pagesOverBudget = 0;
-  int usersOverAiBudget = 0;
 };
 
 // What one night is allowed to cost a single user.
@@ -51,12 +49,12 @@ struct SweepBudget {
 // Runs on its own trantor thread, never a request loop. Segmenting is a vendor call, asked only when
 // the page's body moved; a corpus that moved under unchanged text reads its units back out of
 // storage. Derivation stamps advance only when the pass settled, and a refusal settles the page
-// though it failed, so only an edit to the body reopens it. Entitlement decides only spend: the
-// account's background bucket is asked once per user, and over it the user is skipped, not failed.
+// though it failed, so only an edit to the body reopens it. A call the AI service defers leaves the
+// page due with no attempt counted (echoes-on-ai-service.md §5).
 class EchoSweep {
 public:
   EchoSweep(EchoRepository& echoes, Segmenter& segmenter, Embedder& embedder, Curator& curator,
-            Clock& clock, Entitlements& entitlements, SelectionRules rules, SweepBudget budget);
+            Clock& clock, SelectionRules rules, SweepBudget budget);
 
   void start();
   void stop() { heartbeat_.stop(); }
@@ -74,9 +72,15 @@ public:
   EchoSweepReport derivePage(const UserId& user, const LocalDate& day);
 
 private:
-  // Returns the outcome to record; the caller owns the report counters.
-  CurationOutcome derive(const UserId& user, const DuePage& page, std::uint64_t corpusStamp,
-                         EchoSweepReport& report);
+  // What derive() leaves for settlePage(): the outcome to record, and whether the step that ended it met a fault to
+  // tell Sentry rather than an end the pass expects.
+  struct Derivation {
+    CurationOutcome outcome;
+    bool told = false;
+  };
+
+  // The caller owns the report counters.
+  Derivation derive(const UserId& user, const DuePage& page, std::uint64_t corpusStamp, EchoSweepReport& report);
 
   CurationOutcome settlePage(const UserId& user, const DuePage& page,
                             std::uint64_t corpusStamp, EchoSweepReport& report);
@@ -87,7 +91,6 @@ private:
   Embedder& embedder_;
   Curator& curator_;
   Clock& clock_;
-  Entitlements& entitlements_;
   SelectionRules rules_;
   SweepBudget budget_;
   Heartbeat heartbeat_;   // declared last: destructs first, before the deps a running pass holds

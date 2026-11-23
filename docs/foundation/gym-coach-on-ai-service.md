@@ -331,8 +331,8 @@ twice: a day's and a month's in each ledger. The AI service's ledger starts empt
 An old build and a new one write the same `thread` and `message` records, each by its own loop, and
 a conversation begun on one continues on the other.
 
-The backend's ledger and its provider clients outlive this move: Talk, Echoes, and roadmap's tending
-and compose still use them.
+The backend's ledger and its provider clients outlive this move: Talk and roadmap's tending and
+compose still use them. Echoes' calls go to the AI service ([Echoes on the AI service](echoes-on-ai-service.md)).
 
 ## §9 What retires
 

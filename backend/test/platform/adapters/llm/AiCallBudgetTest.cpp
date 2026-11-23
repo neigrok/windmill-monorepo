@@ -58,7 +58,7 @@ TEST(ai_call_output_cap_matches_reservation_and_changes_with_next_round_context_
   FakeEntitlementCopy subscriptions;
   FakeClock clock;
   FakeAiUsageRepository ledger;
-  Entitlements entitlements{subscriptions, clock, ledger, {}, {}, service};
+  Entitlements entitlements{subscriptions, clock, ledger, {}, service};
   Failures failures;
   auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, failures);
   AiSpend spend;
@@ -139,7 +139,7 @@ TEST(ai_call_adaptive_truncation_settles_without_tools_and_transport_retains_hol
     FakeEntitlementCopy subscriptions;
     FakeClock clock;
     FakeAiUsageRepository ledger;
-    Entitlements entitlements{subscriptions, clock, ledger, {}, {}, service};
+    Entitlements entitlements{subscriptions, clock, ledger, {}, service};
     Failures failures;
     auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, failures);
     AiSpend spend;
@@ -323,7 +323,7 @@ TEST(ai_call_budget_resolves_account_tier_and_never_dispatches_anonymous_or_exha
   FakeEntitlementCopy subscriptions;
   FakeClock clock;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, clock, usage, {.owners = EmailList{"owner@example.com"}}, {}, service};
+  Entitlements entitlements{subscriptions, clock, usage, {.owners = EmailList{"owner@example.com"}}, service};
   Failures failures;
   auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, failures);
   AiSpend spend;
@@ -449,13 +449,13 @@ TEST(ai_call_budget_admits_small_free_requests_refuses_large_ones_and_keeps_unfu
   FakeEntitlementCopy subscriptions;
   FakeClock clock;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, clock, usage, {}, {}, service};
+  Entitlements entitlements{subscriptions, clock, usage, {}, service};
   Failures failures;
   AiCallBudget budget{service, entitlements, accounts, failures};
   AiSpend spend;
   spend.user = account.id;
   spend.model = "claude-sonnet-5";
-  spend.operation = "echo.segment";
+  spend.operation = "turn";
   Json::Value request;
   request["model"] = spend.model;
   request["max_tokens"] = 16'000;
@@ -564,7 +564,7 @@ TEST(ai_call_budget_a_cancelled_round_settles_at_once_at_its_input_estimate_or_i
   FakeEntitlementCopy subscriptions;
   FakeClock clock;
   FakeAiUsageRepository ledger;
-  Entitlements entitlements{subscriptions, clock, ledger, {}, {}, service};
+  Entitlements entitlements{subscriptions, clock, ledger, {}, service};
   Failures failures;
   auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, failures);
   AiSpend spend;

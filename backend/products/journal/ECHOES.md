@@ -1,9 +1,10 @@
 # Echoes
 
 An echo pairs a saved journal page with older passages from the same writer. It shows the original
-text and the time between the two pages. Echoes are automatic for signed-in writers. In production,
-where AI allowances are on, each model call draws on the writer's own AI allowance, and a free
-account's on the shared free budgets too.
+text and the time between the two pages. Echoes are automatic for signed-in writers. Their two model
+calls go to the [AI service](../../../docs/foundation/ai-service.md) as the writer's background work,
+paid from Windmill's own background budgets and never from the writer's AI allowance
+([Echoes on the AI service](../../../docs/foundation/echoes-on-ai-service.md)).
 
 ## Product contract
 
@@ -32,9 +33,13 @@ account's on the shared free budgets too.
 The ports are `Segmenter`, `Embedder`, `Curator` and `EchoRepository`. The domain owns passage
 boundaries, identity reconciliation and selection. Adapters own vendor calls and Postgres.
 
-`AnthropicSegmenter` and `AnthropicCurator` use the model and effort configured by the composition
-root. Without a vendor key, the root supplies `RuleSegmenter` and an unconfigured curator; no echo
-pass runs. The embedder is the self-hosted multilingual sidecar described in
+`AiServiceSegmenter` and `AiServiceCurator` ask the AI service's text door through
+`platform/ai_service/AiServiceClient`, under a pass the backend signs for the writer's account: the
+class `medium` at effort `low`, up to 16,000 output tokens, uncached, labelled `echoes`
+(`adapters/llm/EchoModel.h`). Each step sends its prompt as the system text and the page as the one
+user message, and reads its answer against the step's JSON schema. Without the pass signer
+(`AI_PASS_PRIVATE_SEED`, `AI_PASS_KID`) or `AI_SERVICE_URL`, the root supplies `RuleSegmenter` and an
+unconfigured curator; no echo pass runs. The embedder is the self-hosted multilingual sidecar described in
 [its runbook](../../../services/embedder/README.md). Browser search maintains a separate index.
 All three ports must be configured for a pass to run.
 
@@ -81,12 +86,14 @@ member, recency quota, month quota, outranked, dismissed, same day or page cap.
 The curator sees candidates chronologically without their cosine scores. It returns a relation
 score and `speaker: self | other`, never display copy. Its floor is 0.6: shared themes or generic
 states alone do not qualify. Model, effort, prompt digest and relation floor are part of its version.
+The model is the one the AI service serves `medium` from, `claude-sonnet-5`, named by hand in
+`EchoModel.h`; both steps' versions are pinned by their tests.
 
 ### Re-derivation and deletion
 
 `replaceEchoes` removes pairings with missing spans and pairings actively rejected by the curator,
 `no_anchor` or `restatement`. Losing a quota, family selection or page cap does not retract a
-previously accepted echo. A vendor refusal clears all echoes for that trigger page.
+previously accepted echo. A declined call clears all echoes for that trigger page.
 
 The repair pass follows inbound references when a matched page changes, bounded by
 `SweepBudget::inboundPerPage`. A fingerprint of the writer's span corpus also reopens stale pages
@@ -104,12 +111,24 @@ when passages change or disappear. A page with unchanged body bytes reuses its u
 not represented by those values, the admin sweep accepts `rejudge=1`. Rejudging reuses stored cuts
 and matching vectors; changed bodies or absent spans still require segmentation.
 
-Only `ok`, `empty_ok` and `refused` settle a page and advance its derivation stamps. Transport,
-rate-limit, truncation and schema failures leave it due. A refusal reopens only on a body edit or
-pipeline version change, not corpus movement. Version claims are recorded after the corresponding
-spans are stored. `attempts` counts unsettled passes in a row, and a budget refusal counts none. Six of them stop only
-a page whose stamps and versions already matched; a page that never settled, or that a save, a moved
-corpus or a changed version reopened, stays due however many it has.
+Only `ok`, `empty_ok` and `refused` settle a page and advance its derivation stamps. A step that
+fails leaves it due, as `EchoSweep::fateOf` maps the AI service's answer
+([Echoes on the AI service §5](../../../docs/foundation/echoes-on-ai-service.md#5-what-an-answer-does-to-the-work)):
+
+| The AI service says | The page | Told to Sentry |
+|---|---|---|
+| `ended` `declined` | `refused`, settled | |
+| `ended` `truncated` | `truncated`, an attempt counted | yes |
+| `failed` `provider_failed` or `provider_rejected`; `invalid_request`, `too_large`, `conflict`, `result_gone` | `transport`, an attempt counted | yes |
+| an answer that cannot be read, or `ended` `tool_calls` | `schema_invalid`, an attempt counted | yes |
+| `subject_exhausted`, `concurrency_exhausted`, `rate_limited`, `background_exhausted`, `busy`, `paused`, `accounting_unavailable`, `provider_unavailable`; no answer at all | `budget_limited`: deferred, no attempt counted | |
+| a `pass_` code (a `pass_expired` the client met twice) or any other code | `budget_limited`: deferred, no attempt counted | yes |
+
+A refusal reopens only on a body edit or pipeline version change, not corpus movement. Version claims
+are recorded after the corresponding spans are stored. `attempts` counts unsettled passes in a row,
+and a deferral counts none. Six of them stop only a page whose stamps and versions already matched; a
+page that never settled, or that a save, a moved corpus or a changed version reopened, stays due
+however many it has.
 
 ## Scheduling and limits
 
@@ -128,14 +147,12 @@ accounts. The queue drains every second. `LiveDerivationRules` defaults are:
 Deferred and unqueued pages remain due. A six-hour repair heartbeat scans accounts active in the
 last 24 hours, with 40 pages per account, 20 inbound pages per changed page and ten echoes per page.
 
-With AI allowances on, as in production, `echo.segment` and `echo.curate` are admitted against the
-writer's own allowance and one of its calls in flight, as [USD AI allowances](../../AI_ALLOWANCES.md)
-says of every hosted call; a refused call leaves the page due with no attempt counted. With them
-off, `Entitlements::sweepAllowanceFor` limits that spend to an internal $2 per account per rolling 30
-days, and over-budget work is skipped without advancing stamps.
-[Echoes on the AI service](../../../docs/foundation/echoes-on-ai-service.md) specifies the move of
-both calls onto the AI service, where a budget of Windmill's own pays. `ai_usage` records vendor usage and outcomes;
-use it to measure cost and cache use.
+The AI service admits each call as background work: it draws on the account's background month and
+the shared background month and day, under an hourly ceiling, with one call in flight an account and
+nothing from the writer's allowance ([AI service §3](../../../docs/foundation/ai-service.md#3-tiers)).
+A spent budget, a second call in flight or the service being down defers the page with no attempt
+counted, and nothing is shown to the writer. The AI service's call rows under the label `echoes` hold
+what Echoes costs.
 
 `WarmEchoRepository` caches a corpus per account and embedding version for 15 minutes. Span writes
 update the cache; a different embedding version evicts it, and a load that races a write is not

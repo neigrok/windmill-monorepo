@@ -45,7 +45,7 @@ TEST(ai_allowance_reads_fixed_point_account_month_and_refuses_ambiguous_credenti
   repository.totals.subject = {25'000'000, 50'000'000, 0};
   AiBudgetLimits limits;
   auto service = std::make_shared<AiBudgetService>(repository, [&] { return limits; }, [&] { return clock.now; });
-  auto entitlements = std::make_shared<Entitlements>(subscriptions, clock, usage, Allowlists{}, std::vector<std::string>{}, service);
+  auto entitlements = std::make_shared<Entitlements>(subscriptions, clock, usage, Allowlists{}, service);
   auto failures = std::make_shared<ReadFailures>();
   struct ReportScope {
     explicit ReportScope(const std::shared_ptr<ReadFailures>& reports) { installWriteReporter(reports); }

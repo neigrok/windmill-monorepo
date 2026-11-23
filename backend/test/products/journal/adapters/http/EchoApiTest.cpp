@@ -44,8 +44,8 @@ struct Harness {
   std::shared_ptr<EchoApi> api;
 
   explicit Harness(std::string adminToken = "")
-      : sweep(std::make_shared<EchoSweep>(*echoes, segmenter, embedder, curator, *clock,
-                                          entitlements, SelectionRules{}, SweepBudget{})),
+      : sweep(std::make_shared<EchoSweep>(*echoes, segmenter, embedder, curator, *clock, SelectionRules{},
+                                          SweepBudget{})),
         explainer(std::make_shared<EchoExplainer>(*echoes, segmenter, embedder, curator,
                                                   pages)),
         api(std::make_shared<EchoApi>(echoes, sweep, explainer, auth,

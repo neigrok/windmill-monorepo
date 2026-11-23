@@ -66,7 +66,7 @@ struct AskHarness {
   AskApi api{askService, h.auth};
   UserId lifter = h.signIn("s-live");
 
-  explicit AskHarness(bool monthly = false) : entitlements{subs, h.clock, usage, {}, {}, monthly ? budgets : nullptr} {}
+  explicit AskHarness(bool monthly = false) : entitlements{subs, h.clock, usage, {}, monthly ? budgets : nullptr} {}
 
   // A stream still on one of the service's loops, or on the app's timer, co-owns the service: its loops are stopped
   // here, as the server's lifetime stops them, while everything they read still stands.
@@ -774,7 +774,7 @@ TEST(gym_setup_http_retains_multiple_routine_drafts_after_later_usd_refusal) {
   FakeAiUsageRepository usage;
   FakeAiBudgetRepository allowance;
   auto budgets = std::make_shared<AiBudgetService>(allowance, [] { return AiBudgetLimits{}; }, [&] { return static_cast<long long>(h.clock.now); });
-  Entitlements entitlements{subs, h.clock, usage, {}, {}, budgets};
+  Entitlements entitlements{subs, h.clock, usage, {}, budgets};
   struct PartialModel : FakeAsk {
     AskAnswer answer(const std::vector<AskTurn>& turns, const ToolCaller& caller, ToolHost& tools) override {
       auto result = FakeAsk::answer(turns, caller, tools);

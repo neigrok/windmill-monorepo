@@ -520,8 +520,8 @@ target_sources(windmill_journal PRIVATE
   products/journal/adapters/http/EchoApi.cpp
   products/journal/adapters/http/VoiceApi.cpp
   products/journal/adapters/llm/OpenAiTranscriber.cpp
-  products/journal/adapters/llm/AnthropicCurator.cpp
-  products/journal/adapters/llm/AnthropicSegmenter.cpp
+  products/journal/adapters/llm/AiServiceCurator.cpp
+  products/journal/adapters/llm/AiServiceSegmenter.cpp
   products/journal/adapters/llm/HttpEmbedder.cpp
   products/journal/routes.cpp)
 
@@ -777,8 +777,8 @@ add_executable(windmill_adapters_tests
   test/products/journal/adapters/http/NudgeApiTest.cpp
   test/products/journal/adapters/http/EchoApiTest.cpp
   test/products/journal/adapters/http/VoiceApiTest.cpp
-  test/products/journal/adapters/llm/AnthropicCuratorTest.cpp
-  test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
+  test/products/journal/adapters/llm/AiServiceCuratorTest.cpp
+  test/products/journal/adapters/llm/AiServiceSegmenterTest.cpp
   test/products/journal/adapters/llm/OpenAiTranscriberTest.cpp
   test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp
   test/products/journal/adapters/postgres/PgEchoRepositoryTest.cpp

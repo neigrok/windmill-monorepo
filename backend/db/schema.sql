@@ -1549,7 +1549,7 @@ create table if not exists journal_echo_offer_dismissal (
 -- body_stamp_ms across those spans, which is monotone only while a corpus grows: emptying a page
 -- could LOWER it, and `corpus_stamp < stored` then reopened nothing at all.
 -- These stamps are the "am I done" record: never advance them on a failed curate. status is
--- ok | empty_ok | transport | rate_limited | budget_limited | truncated | schema_invalid | refused; ok, empty_ok and
+-- ok | empty_ok | transport | budget_limited | truncated | schema_invalid | refused; ok, empty_ok and
 -- refused advance them, the rest do not. The due queries skip a refused row on corpus movement, so
 -- only an edit to that body makes it due again. attempts counts consecutive unsettled failures, and
 -- the due queries stop reopening a page past kCurationRetries of them — an unsettled page is due on

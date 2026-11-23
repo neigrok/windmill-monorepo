@@ -432,7 +432,7 @@ TEST(pg_echo_a_failed_pass_keeps_the_cut_it_paid_for_and_is_still_owed) {
 
   // The curator died on a pass that had already stored its cut and its vectors.
   repo.recordCuration(UserId{kMine}, LocalDate{day},
-                      CurationOutcome{CurationStatus::rateLimited, 0, 9, "rate_limited",
+                      CurationOutcome{CurationStatus::transport, 0, 9, "provider_failed",
                                       PipelineVersions{kPipeline.segment, kPipeline.embed, ""}});
 
   // Owed on its status alone — every version matches now and neither stamp moved.
@@ -488,7 +488,7 @@ TEST(pg_echo_a_failed_curate_leaves_the_named_page_owed) {
   PgEchoRepository repo{pgTestPool()};
 
   repo.recordCuration(UserId{kMine}, LocalDate{day},
-                      CurationOutcome{CurationStatus::rateLimited, 500, 9, "rate_limited", kPipeline});
+                      CurationOutcome{CurationStatus::transport, 500, 9, "provider_failed", kPipeline});
   std::optional<DuePage> owed = repo.duePage(UserId{kMine}, LocalDate{day}, 9, kPipeline);
   REQUIRE(owed.has_value());
   CHECK_EQ(owed->attempts, 1);

@@ -112,7 +112,7 @@ The deploy job creates `~/windmill/` and everything under it.
 | `SSH_KEY` | CI deploy **private** key (whole PEM) |
 | `POSTGRES_PASSWORD` | Postgres password |
 | `AI_DB_PASSWORD` | AI database role password, 64 lowercase hex characters |
-| `AI_PASS_PRIVATE_SEED` | Optional backend-only Ed25519 32-byte private seed as unpadded base64url; empty leaves its pass door unmounted |
+| `AI_PASS_PRIVATE_SEED` | Optional backend-only Ed25519 32-byte private seed as unpadded base64url; empty leaves its pass door unmounted and journal echoes dark, since the backend signs its own background passes to the AI service with it (`AI_SERVICE_URL` is `http://ai:8084` in the compose file) |
 | `AI_CARRY_KEY` | 32 random bytes encoded as unpadded base64url |
 | `AI_FUNDING_SECRET`, `AI_OPERATOR_SECRET` | Distinct 32–256 character bearer secrets; ASCII letters, digits, `_`, `-` |
 | `SUBSCRIPTIONS_DB_PASSWORD` | The subscription database role's password, 64 lowercase hex characters ([below](#the-subscription-database)) |

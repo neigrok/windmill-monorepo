@@ -718,17 +718,6 @@ TEST(a_subscriber_over_the_free_ceiling_but_under_their_own_still_gets_an_answer
   CHECK_EQ(h.agent.runs, 1);
 }
 
-TEST(a_maxed_journal_sweep_never_stops_ask_answering) {
-  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
-  Coach h;
-  // The background bucket is its own: a sweep the lifter did not ask for cannot take Ask from them.
-  h.usage.spentByProduct["journal"] = kSweepMonthlyAiNanos;
-  h.usage.spentByProduct[""] = kSweepMonthlyAiNanos;
-
-  CHECK(h.question("how did the squats go?").refusal == AskRefusal::none);
-  CHECK_EQ(h.agent.runs, 1);
-}
-
 TEST(the_reply_carries_the_servers_own_read_line_and_the_proposals_the_run_minted) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Coach h;

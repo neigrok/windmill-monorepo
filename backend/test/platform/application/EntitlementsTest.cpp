@@ -172,48 +172,20 @@ TEST(windmill_one_raises_the_ceiling_to_the_pro_one) {
   CHECK_EQ(entitlements.aiAllowanceFor(UserId{"u"}, "u@example.com").allows(), false);
 }
 
-TEST(the_sweep_bucket_is_its_own_and_a_maxed_one_leaves_the_account_free_to_ask) {
+TEST(the_legacy_allowance_reads_every_product_over_the_trailing_thirty_days) {
   FakeEntitlementCopy copy;
   FakeClock clock;
   FakeAiUsageRepository usage;
   Entitlements entitlements{copy, clock, usage};
 
-  usage.spentByProduct["journal"] = kSweepMonthlyAiNanos;
-  usage.spentByProduct[""] = 0;
-
-  const AiAllowance sweep = entitlements.sweepAllowanceFor(UserId{"u"}, "journal");
-  CHECK_EQ(sweep.limitNanos, kSweepMonthlyAiNanos);
-  CHECK_EQ(sweep.spentNanos, kSweepMonthlyAiNanos);
-  CHECK_EQ(sweep.allows(), false);
-
-  const AiAllowance account = entitlements.aiAllowanceFor(UserId{"u"}, "u@example.com");
-  CHECK_EQ(account.limitNanos, kFreeMonthlyAiNanos);
-  CHECK_EQ(account.spentNanos, 0);
-  CHECK_EQ(account.allows(), true);
-}
-
-TEST(both_ceilings_select_separate_operations_over_the_trailing_thirty_days) {
-  FakeEntitlementCopy copy;
-  FakeClock clock;
-  FakeAiUsageRepository usage;
-  Entitlements entitlements{copy, clock, usage, {}, {"passive.segment", "passive.curate"}};
-
   const long long before = nowMs();
   entitlements.aiAllowanceFor(UserId{"u"}, "u@example.com");
-  entitlements.sweepAllowanceFor(UserId{"u"}, "journal");
   const long long after = nowMs();
 
-  CHECK_EQ(usage.asked.size(), std::size_t{2});
+  REQUIRE_EQ(usage.asked.size(), std::size_t{1});
   CHECK_EQ(usage.asked[0].user.str(), std::string{"u"});
   CHECK_EQ(usage.asked[0].product, std::string{""});
-  CHECK_EQ(usage.asked[1].product, std::string{"journal"});
-  CHECK(usage.asked[0].filter.match == AiOperationMatch::Exclude);
-  CHECK(usage.asked[1].filter.match == AiOperationMatch::Include);
-  CHECK(usage.asked[0].filter.operations == std::vector<std::string>({"passive.segment", "passive.curate"}));
-  CHECK(usage.asked[1].filter.operations == usage.asked[0].filter.operations);
-  for (const FakeAiUsageRepository::Query& query : usage.asked) {
-    CHECK_EQ(query.sinceMs >= before - kAiWindowMs, true);
-    CHECK_EQ(query.sinceMs <= after - kAiWindowMs, true);
-  }
+  CHECK_EQ(usage.asked[0].sinceMs >= before - kAiWindowMs, true);
+  CHECK_EQ(usage.asked[0].sinceMs <= after - kAiWindowMs, true);
   CHECK_EQ(kAiWindowMs, 2'592'000'000LL);
 }

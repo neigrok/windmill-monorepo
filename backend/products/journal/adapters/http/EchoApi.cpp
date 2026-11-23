@@ -36,7 +36,6 @@ Json::Value toJson(const EchoSweepReport& report) {
   body["pagesOverBudget"] = report.pagesOverBudget;
   body["pagesRefused"] = report.pagesRefused;
   body["unitsDiscarded"] = report.unitsDiscarded;
-  body["usersOverAiBudget"] = report.usersOverAiBudget;
   return body;
 }
 
