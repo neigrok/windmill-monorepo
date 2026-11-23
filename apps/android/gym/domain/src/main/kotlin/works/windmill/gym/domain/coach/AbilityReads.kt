@@ -8,6 +8,8 @@ import works.windmill.gym.domain.sync.GymEstimate
 import works.windmill.gym.domain.sync.GymRefusal
 import works.windmill.gym.domain.sync.LastTime
 import works.windmill.gym.domain.sync.Note
+import works.windmill.gym.domain.sync.PerformedFact
+import works.windmill.gym.domain.sync.ProgressSession
 import works.windmill.gym.domain.sync.Proposal
 import works.windmill.gym.domain.sync.Routine
 import works.windmill.gym.domain.sync.RoutineChange
@@ -173,7 +175,21 @@ class LogRead(val query: Query) : Decider<TrainingHistory, AbilityAnswer, GymRef
         val page = newestFirst(history.log)
             .filter { it.startedAt < query.before || (it.startedAt == query.before && it.id.record < RecordID(query.beforeId)) }
             .take(query.limit)
-        return AbilityAnswer(Json.objectOf("sessions" to CoachDocuments.stated(Json.Arr(page.map(history::summary)))),
+        // A row: the workout's summary by the name it went by, without its plan, its top set naming its movement, with a line per movement it held.
+        val rows = page.map { session ->
+            val lines = ProgressSession(session, history.log.sets(session.id)).movements
+            val top = lines.sortedWith(compareBy(PerformedFact.heavierFirst) { it.heaviest }).firstOrNull()
+            Json.Obj((history.summary(session).obj() - listOf("plan", "routineName", "topSet")).toList() + listOfNotNull(
+                session.name?.takeIf { it.isNotEmpty() }?.let { "routineName" to Json.of(it) },
+                top?.let { "topSet" to Json.objectOf("exerciseId" to it.exerciseId.json, "weightKg" to Json.of(it.heaviest.weightKg), "reps" to Json.of(it.heaviest.reps)) },
+                "movements" to Json.Arr(lines.map { line ->
+                    Json.objectOf("exerciseId" to line.exerciseId.json,
+                        "topSet" to Json.objectOf("weightKg" to Json.of(line.heaviest.weightKg), "reps" to Json.of(line.heaviest.reps)),
+                        "topE1rm" to (line.estimate?.e1rm?.let(Json::of) ?: Json.Null))
+                }),
+            ))
+        }
+        return AbilityAnswer(Json.objectOf("sessions" to CoachDocuments.stated(Json.Arr(rows))),
             page.fold(ReadServed.none) { served, session -> served.saw(session) })
     }
 

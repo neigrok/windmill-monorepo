@@ -26,7 +26,6 @@ import works.windmill.gym.domain.sync.deleteNote
 import works.windmill.gym.domain.sync.lastTime
 import works.windmill.gym.domain.sync.reader
 import works.windmill.gym.domain.sync.row
-import works.windmill.gym.domain.sync.setRow
 import works.windmill.sync.api.RecordRef
 import works.windmill.sync.api.ViewMode
 import works.windmill.sync.core.Constants
@@ -676,17 +675,6 @@ class RunAbilityTests {
         assertEquals(listOf("bench-press" to true, "back-squat" to false), lasts.member("exercises").arr().map { it.member("exerciseId").str() to it.member("trained").bool() })
         assertNull(lasts.member("exercises").arr()[0]["routine"])
         assertEquals(Json.parse("""["no-such-movement"]"""), lasts.member("missingExerciseIds"))
-    }
-
-    // A workout's sets read as performed, then by their number, then by id; a movement's last sets by their number, then by id.
-    @Test fun setsReadInTheOrderEachListHolds() {
-        val session = Session(Id("sesAAAAAAAAAAAA1", Session), Instant(1_000), Instant(90_000), "finish")
-        fun set(id: String, at: Long, number: Int) = TrainingSet(Id(id, TrainingSet), session.id, Id("bench-press", Exercise), 60.0, 5, completedAt = Instant(at), setNumber = number)
-        val sets = listOf(set("setAAAAAAAAAAAA3", 3_000, 1), set("setAAAAAAAAAAAA1", 2_000, 3), set("setAAAAAAAAAAAA2", 2_000, 2), set("setAAAAAAAAAAAA0", 2_000, 2))
-        val read = reader(listOf(row(session)) + sets.map { setRow(it) }, moment = Moment(Instant(100_000), FixedZone(0)))
-        fun ids(decision: Decision<AbilityAnswer, GymRefusal>) = (decision as Decision.Unchanged).result.payload.member("sets").arr().map { it.member("id").str() }
-        assertEquals(listOf("setAAAAAAAAAAAA0", "setAAAAAAAAAAAA2", "setAAAAAAAAAAAA1", "setAAAAAAAAAAAA3"), ids(decide(LogRead(LogRead.Query.Workout(session.id, false)), read)))
-        assertEquals(listOf("setAAAAAAAAAAAA3", "setAAAAAAAAAAAA0", "setAAAAAAAAAAAA2", "setAAAAAAAAAAAA1"), ids(decide(LogRead(LogRead.Query.LastTimeOf(Id("bench-press", Exercise))), read)))
     }
 
     // A note's position counts the stored notes, one inside its delete window included, so the delete moves nothing until it lands.

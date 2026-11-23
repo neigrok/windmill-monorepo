@@ -62,7 +62,7 @@ class CatalogTests {
             assertNull("$path · ${case.member("case").str()}", JsonSchema(ability.result).fault(result))
             answers++
         }
-        assertEquals(50, answers)
+        assertEquals(53, answers)
     }
 
     @Test fun theSchemaCheckReadsARealInputAtDepth() {
@@ -70,7 +70,7 @@ class CatalogTests {
         assertEquals(SchemaFault(Path("entries.0.sets.1.reps"), "not \"integer\""), JsonSchema(catalog.ability("create_routine")!!.input)
             .fault(Json.parse("""{"id": "x", "name": "Push", "position": 0, "entries": [{"exerciseId": "bench-press", "sets": [{"reps": 5}, {"reps": "five"}]}]}""")))
         val metrics = listOf("list_sessions", "get_session", "get_sessions", "get_stats", "get_record").flatMap { metrics(catalog.ability(it)!!.result) }
-        assertEquals(11, metrics.size)
+        assertEquals(12, metrics.size)
         for (schema in metrics) {
             assertEquals(Json.parse("""{"type": ["number", "null"]}"""), schema)
             assertNull(JsonSchema(schema).fault(Json.Null))
