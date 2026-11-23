@@ -26,7 +26,14 @@ request lifetime. It does not introduce a shared runtime crate between the servi
 
 Money is a checked, nonnegative integer number of nano-USD. HTTP amounts are exact decimal strings.
 Neither parsing, reservation nor settlement uses floating point. The tier and price files are
-startup inputs; a missing rate or unsupported model configuration prevents startup.
+startup inputs; a missing rate or unsupported model configuration prevents startup and is reported
+as `policy.load`.
+
+A budget whose limit comes from the tier table, an own budget or a shared pool, takes the configured
+limit whenever a call or allowance read draws on it, inside the transaction that decides; a refusal
+decided under the new limit rolls back with its transaction, so the stored limit the budgets door
+shows follows at the next committed call or read. A grant's budget keeps the amount it was funded
+with.
 
 PostgreSQL holds only accounting metadata. A call records its provider, model, price version and
 rate snapshot, budget pins, usage counts, state and charge. Changing a price file does not reprice
@@ -60,8 +67,8 @@ records that tier. Such a call pins the account's background month and the share
 and day, never an allowance, a grant or a free pool. Its calls in flight are counted apart from the
 person's by that tier, and its rate counters are keyed apart. Admission also fits its reservation
 under the background hour: the configured amount less what background calls spent over the trailing
-hour and what open background calls hold. Its standing has no wire form, so its refusals and answers
-carry a null allowance.
+hour and what open background calls hold. That refusal is the internal code `background_hour`, sent
+as `paused`. Its standing has no wire form, so its refusals and answers carry a null allowance.
 
 Live transcription reserves another slice before forwarding audio that would exceed its reserved
 billable duration. Billable seconds are the sum of each turn rounded upward, including the current
@@ -128,13 +135,20 @@ core dumps are disabled.
 | Assumed call or reservation excess | Error |
 | Provider key or account refusal | Error |
 | Contradictory installation binding or owner funding cap | Error |
-| Free or background pool threshold, open provider fuse, conflicting Fund or Reopen | Warning |
+| Free or background pool threshold, one Issue per pool kind | Warning |
+| Open provider fuse, conflicting Fund or Reopen | Warning |
+| Background hour refusing, `background.hour` | Warning at most once an hour |
+| Unreadable threshold crossing, `ledger.drain_events` | Error |
+| Invalid or unreadable tier or price file at start, `policy.load` | Error |
 | Provider busy for three minutes, with no gap longer than a minute | Warning once per continuous streak |
 | Ordinary budget, capability, concurrency and request refusals, background work's included | Structured log only |
 
-Shared-pool crossings are recorded transactionally with an outbox and reported with the pool's kind.
-A background call's lines carry `tier: background` and `client: server`. Pre-authentication refusals,
-rate refusals and process-cap refusals are aggregated by code. The public listener never mounts an
+Shared-pool crossings are recorded transactionally with an outbox and reported with the pool's kind;
+a crossing that does not read is reported and the others still are. A `paused` refusal line names
+its `ceiling`: `fuse` or `background_hour`. A background call's terminal line and its refusal lines
+carry `client: server` and `tier: background`, except an `accounting_unavailable` refusal, whose
+line has no tier. Pre-authentication refusals, rate refusals and process-cap refusals, background
+work's included, are aggregated by code with no tier or client. The public listener never mounts an
 internal route, and funding and operating use distinct bearer secrets.
 Database Issues are limited to one per static operation per minute. Storage refusals still reach
 their callers, and settlement keeps retrying after its response deadline.

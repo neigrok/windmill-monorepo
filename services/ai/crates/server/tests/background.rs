@@ -39,6 +39,7 @@ use tracing_subscriber::{
 
 const NOW: i64 = 1_800_000_000_000;
 const ACCOUNT: &str = "PRIVATE_ACCOUNT_5d1c0b7e";
+const OTHER: &str = "PRIVATE_ACCOUNT_0e7f42a9";
 
 #[derive(Clone)]
 struct Captured(Arc<Mutex<Vec<u8>>>);
@@ -58,12 +59,12 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Captured {
     }
 }
 
-fn pass(client: &str) -> String {
+fn pass(account: &str, client: &str) -> String {
     let seed = URL_SAFE_NO_PAD
         .decode("nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A")
         .unwrap();
     let key = SigningKey::from_bytes(&seed.try_into().unwrap());
-    let payload = json!({"aud":"ai","env":"development","iat":NOW,"exp":NOW+600_000,"sub":{"account":ACCOUNT},"plan":"none","client":client});
+    let payload = json!({"aud":"ai","env":"development","iat":NOW,"exp":NOW+600_000,"sub":{"account":account},"plan":"none","client":client});
     let signed = format!(
         "wm-pass.v1.test-rfc8032.{}",
         URL_SAFE_NO_PAD.encode(payload.to_string())
@@ -78,11 +79,14 @@ async fn send(router: &Router, request: Request<Body>) -> Response {
     router.clone().oneshot(request).await.unwrap()
 }
 
-async fn put(router: &Router, call: &str, client: &str, body: &Value) -> Response {
+async fn put(router: &Router, call: &str, account: &str, client: &str, body: &Value) -> Response {
     send(
         router,
         Request::put(format!("/v1/calls/{call}/text?label=echoes"))
-            .header(header::AUTHORIZATION, format!("Bearer {}", pass(client)))
+            .header(
+                header::AUTHORIZATION,
+                format!("Bearer {}", pass(account, client)),
+            )
             .body(Body::from(body.to_string()))
             .unwrap(),
     )
@@ -206,7 +210,7 @@ async fn background_beside_a_person(source: &str) {
     let config = Arc::new(Config::from_environment(|key| variables.get(key).cloned()).unwrap());
     let policy = Arc::new(
         Policy::parse(
-            include_str!("../../../config/tiers.toml"),
+            &include_str!("../../../config/tiers.toml").replace("hour = \"1\"", "hour = \"0.2\""),
             include_str!("../../../config/prices.toml"),
         )
         .unwrap(),
@@ -244,9 +248,9 @@ async fn background_beside_a_person(source: &str) {
     let echo = json!({"model":"medium","system":["Cut the page into passages."],"messages":[{"role":"user","parts":[{"text":"A page."}]}],"output":{"maxTokens":16000,"schema":{"type":"object","properties":{"passages":{"type":"array","items":{"type":"string"}}},"required":["passages"],"additionalProperties":false}},"effort":"low","cache":false});
     let coach = json!({"model":"small","messages":[{"role":"user","parts":[{"text":"Hello"}]}],"output":{"maxTokens":20},"cache":false});
 
-    let background = put(&router, "backgroundcall00000001", "server", &echo).await;
+    let background = put(&router, "backgroundcall00000001", ACCOUNT, "server", &echo).await;
     assert_eq!(background.status(), 200);
-    let person = put(&router, "personcall000000000001", "web", &coach).await;
+    let person = put(&router, "personcall000000000001", ACCOUNT, "web", &coach).await;
     let (event, ended) = last_event(person).await;
     assert_eq!(
         (
@@ -265,17 +269,31 @@ async fn background_beside_a_person(source: &str) {
         )
     );
     assert_eq!(
-        answer(put(&router, "backgroundcall00000002", "server", &echo).await).await,
+        answer(put(&router, "backgroundcall00000002", ACCOUNT, "server", &echo).await).await,
         (
             429,
             json!({"code":"concurrency_exhausted","allowance":null})
         )
     );
+    for call in ["backgroundhour00000001", "backgroundhour00000002"] {
+        assert_eq!(
+            answer(put(&router, call, OTHER, "server", &echo).await).await,
+            (503, json!({"code":"paused","allowance":null}))
+        );
+    }
+    let internal = internal_router(service.clone());
+    let (status, shared) =
+        answer(get(&internal, "/internal/v1/budgets", &"o".repeat(32)).await).await;
     assert_eq!(
-        answer(get(&router, "/v1/allowance", &pass("server")).await).await,
+        (status, &shared["backgroundHour"]),
+        (200, &json!({"spent":"0","held":"0.16015","limit":"0.2"}))
+    );
+    assert_eq!(
+        answer(get(&router, "/v1/allowance", &pass(ACCOUNT, "server")).await).await,
         (400, json!({"code":"invalid_request","allowance":null}))
     );
-    let (status, persons) = answer(get(&router, "/v1/allowance", &pass("web")).await).await;
+    let (status, persons) =
+        answer(get(&router, "/v1/allowance", &pass(ACCOUNT, "web")).await).await;
     assert_eq!(
         (
             status,
@@ -294,12 +312,10 @@ async fn background_beside_a_person(source: &str) {
     );
     assert!(ended["charged"].is_string());
     let (status, calls) = answer(
-        send(
-            &internal_router(service.clone()),
-            Request::get("/internal/v1/calls?callId=backgroundcall00000001")
-                .header(header::AUTHORIZATION, format!("Bearer {}", "o".repeat(32)))
-                .body(Body::empty())
-                .unwrap(),
+        get(
+            &internal,
+            "/internal/v1/calls?callId=backgroundcall00000001",
+            &"o".repeat(32),
         )
         .await,
     )
@@ -334,6 +350,7 @@ async fn background_beside_a_person(source: &str) {
             put(
                 &router,
                 &format!("personstart{index:0>11}"),
+                ACCOUNT,
                 "web",
                 &json!({}),
             )
@@ -342,14 +359,33 @@ async fn background_beside_a_person(source: &str) {
         .await;
         assert_eq!(status, 400);
     }
-    let (status, refused) =
-        answer(put(&router, "personstart00000000099", "web", &json!({})).await).await;
+    let (status, refused) = answer(
+        put(
+            &router,
+            "personstart00000000099",
+            ACCOUNT,
+            "web",
+            &json!({}),
+        )
+        .await,
+    )
+    .await;
     assert_eq!(
         (status, &refused["code"], &refused["allowance"]["tier"]),
         (429, &json!("rate_limited"), &json!("free"))
     );
     assert_eq!(
-        answer(put(&router, "backgroundcall00000099", "server", &json!({})).await).await,
+        answer(
+            put(
+                &router,
+                "backgroundcall00000099",
+                ACCOUNT,
+                "server",
+                &json!({})
+            )
+            .await
+        )
+        .await,
         (400, json!({"code":"invalid_request","allowance":null}))
     );
 
@@ -383,17 +419,31 @@ fn a_server_pass_is_background_work_beside_the_persons_own_call() {
                 .with_targets(telemetry::SERVICE_CRATES.map(|name| (name, LevelFilter::TRACE))),
         )
         .with(telemetry::json_lines(logs.clone()));
-    tracing::subscriber::with_default(subscriber, || {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                tokio::time::timeout(Duration::from_secs(60), background_beside_a_person(&source))
+    let events = sentry::test::with_captured_events(|| {
+        tracing::subscriber::with_default(subscriber, || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(async {
+                    tokio::time::timeout(
+                        Duration::from_secs(60),
+                        background_beside_a_person(&source),
+                    )
                     .await
                     .expect("the background story exceeded 60 seconds");
-            });
+                });
+        });
     });
+    let hours = events
+        .iter()
+        .filter(|event| event.message.as_deref() == Some("background.hour"))
+        .map(|event| (event.level, event.fingerprint.to_vec()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        hours,
+        vec![(sentry::Level::Warning, vec!["background.hour".into()])]
+    );
     let logs = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
     let lines = logs
         .lines()
@@ -419,6 +469,30 @@ fn a_server_pass_is_background_work_beside_the_persons_own_call() {
             &json!("refused"),
         )
     );
+    let paused = lines
+        .iter()
+        .filter(|line| line["code"] == "paused")
+        .map(|line| {
+            (
+                line["operation"].clone(),
+                line["ceiling"].clone(),
+                line["tier"].clone(),
+                line["client"].clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        paused,
+        vec![
+            (
+                json!("call.text"),
+                json!("background_hour"),
+                json!("background"),
+                json!("server")
+            );
+            2
+        ]
+    );
     let ended = lines
         .iter()
         .find(|line| line["message"] == "call ended" && line["client"] == "server")
@@ -428,6 +502,7 @@ fn a_server_pass_is_background_work_beside_the_persons_own_call() {
         (&json!("background"), &json!("settled"), &json!("echoes"))
     );
     assert!(!logs.contains(ACCOUNT));
-    assert!(!logs.contains(&pass("server")));
+    assert!(!logs.contains(OTHER));
+    assert!(!logs.contains(&pass(ACCOUNT, "server")));
     assert!(!logs.contains("backgroundcall"));
 }

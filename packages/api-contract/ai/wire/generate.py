@@ -172,6 +172,7 @@ def generate():
                 dict(budget, id=5, kind='background_day', period={'start': 1799971200000, 'end': 1800057600000}, limit='3', spent='0.5', held='0.25'),
             ],
             'fuses': [{'provider': 'anthropic', 'spent': '20.000000001', 'limit': '20', 'paused': True}, {'provider': 'openai', 'spent': '0', 'limit': '20', 'paused': False}, {'provider': 'azure', 'spent': '0', 'limit': '20', 'paused': False}],
+            'backgroundHour': {'spent': '0.4', 'held': '0.16015', 'limit': '1'},
         },
     }
 

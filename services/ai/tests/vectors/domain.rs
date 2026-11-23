@@ -556,6 +556,7 @@ fn a_persons_pool_name_has_one_limit_and_background_work_stays_below_the_fuse() 
                     name: "shared".to_owned(),
                     limit: NanoUsd::new(5_000_000).unwrap(),
                 }),
+                text: [ModelClass::Medium, ModelClass::Medium, ModelClass::Small],
                 ..row
             },
         ],

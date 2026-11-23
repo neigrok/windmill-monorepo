@@ -354,7 +354,10 @@ def check(fixture):
         require(value['state'] == 'assumed' and type(value['replay']) is bool and value['replay'] == (name == 'replayed'), 'invalid correction')
         money(value['charged'])
     require(set(fixture['internalCalls']) == {'settled', 'corrected', 'transcription', 'background'}, 'internal call coverage differs')
-    fields(fixture['shared'], 'budgets fuses')
+    fields(fixture['shared'], 'budgets fuses backgroundHour')
+    fields(fixture['shared']['backgroundHour'], 'spent held limit')
+    for value in fixture['shared']['backgroundHour'].values():
+        money(value)
     for value in fixture['shared']['budgets']:
         budget(value)
         require(value['kind'] in {'free_month', 'free_day', 'background_month', 'background_day'}, 'shared budget kind differs')
@@ -377,6 +380,7 @@ def negative_probes(fixture):
         ('background refusal with an allowance', lambda f: next(item for item in f['refusals'] if item['body']['code'] == 'background_exhausted')['body'].update(allowance=f['allowance'])),
         ('background call from a device', lambda f: f['internalCalls']['background'].update(client='web')),
         ('account budget listed as shared', lambda f: f['shared']['budgets'][1].update(kind='background_account_month')),
+        ('floating background hour', lambda f: f['shared']['backgroundHour'].update(spent=0.4)),
         ('missing charged', lambda f: f['textTerminals']['completed']['data'].pop('charged')),
         ('floating money', lambda f: f['calls'][2].update(charged=0.001)),
         ('boolean money', lambda f: f['internalCalls']['settled'].update(charged=False)),

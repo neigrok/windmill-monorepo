@@ -195,6 +195,7 @@ struct RefusalCode(&'static str);
 struct RefusalLine {
     operation: &'static str,
     code: &'static str,
+    ceiling: Option<&'static str>,
     client: &'static str,
     tier: Option<&'static str>,
     refusal: Option<ai_providers::RefusalReason>,
@@ -266,6 +267,7 @@ async fn no_store(State(service): State<Arc<Service>>, request: Request, next: N
             product = "ai",
             door = "public",
             code = line.code,
+            ceiling = line.ceiling,
             client = line.client,
             tier = line.tier,
             refusal = line.refusal.map(ai_providers::RefusalReason::as_str),
@@ -381,6 +383,7 @@ pub fn report_events(events: Vec<LedgerEvent>, duration: Duration) {
                         scope.set_tag("budget_id", budget_id.to_string());
                         scope.set_tag("kind", kind.as_str());
                         scope.set_tag("percent", percent.to_string());
+                        scope.set_fingerprint(Some(&["budget.threshold", kind.as_str()]));
                     },
                     || sentry::capture_message("budget.threshold", sentry::Level::Warning),
                 );
@@ -425,6 +428,9 @@ pub fn report_events(events: Vec<LedgerEvent>, duration: Duration) {
                     telemetry::report_failure("sweep.end", "assumed", None);
                 }
             }
+            LedgerEvent::ThresholdUnreadable => {
+                telemetry::report_failure("ledger.drain_events", "threshold_unreadable", None);
+            }
         }
     }
 }
@@ -465,6 +471,9 @@ pub async fn reject(
     if counted {
         service.refusals.count(code.as_str());
     }
+    if code == StaticCode::BackgroundHour {
+        telemetry::report_background_hour();
+    }
     let allowance = if code == StaticCode::AccountingUnavailable {
         None
     } else {
@@ -475,11 +484,15 @@ pub async fn reject(
         .await
         .ok()
     };
-    let mut response = refusal(code.as_str(), allowance.as_ref().and_then(wire::allowance));
+    let mut response = refusal(
+        code.wire().as_str(),
+        allowance.as_ref().and_then(wire::allowance),
+    );
     if !counted {
         response.extensions_mut().insert(RefusalLine {
             operation,
-            code: code.as_str(),
+            code: code.wire().as_str(),
+            ceiling: code.ceiling(),
             client: identity.client.as_str(),
             tier: allowance.map(|value| value.tier.as_str()),
             refusal: None,

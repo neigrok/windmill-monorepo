@@ -17,6 +17,7 @@ pub enum StaticCode {
     RateLimited,
     Busy,
     Paused,
+    BackgroundHour,
     AccountingUnavailable,
     ProviderRejected,
     ProviderUnavailable,
@@ -50,6 +51,7 @@ impl StaticCode {
             Self::RateLimited,
             Self::Busy,
             Self::Paused,
+            Self::BackgroundHour,
             Self::AccountingUnavailable,
             Self::ProviderRejected,
             Self::ProviderUnavailable,
@@ -85,6 +87,7 @@ impl StaticCode {
             Self::RateLimited => "rate_limited",
             Self::Busy => "busy",
             Self::Paused => "paused",
+            Self::BackgroundHour => "background_hour",
             Self::AccountingUnavailable => "accounting_unavailable",
             Self::ProviderRejected => "provider_rejected",
             Self::ProviderUnavailable => "provider_unavailable",
@@ -98,6 +101,21 @@ impl StaticCode {
             Self::WentAway => "went_away",
             Self::Restarting => "restarting",
             Self::TooLarge => "too_large",
+        }
+    }
+
+    pub fn wire(self) -> Self {
+        match self {
+            Self::BackgroundHour => Self::Paused,
+            code => code,
+        }
+    }
+
+    pub fn ceiling(self) -> Option<&'static str> {
+        match self {
+            Self::Paused => Some("fuse"),
+            Self::BackgroundHour => Some("background_hour"),
+            _ => None,
         }
     }
 }
@@ -477,6 +495,7 @@ pub enum LedgerEvent {
         call_id: i64,
         state: CallState,
     },
+    ThresholdUnreadable,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -509,9 +528,21 @@ pub struct ProviderFuse {
     pub paused: bool,
 }
 #[derive(Clone, Debug)]
+pub struct BackgroundCeiling {
+    pub spent: NanoUsd,
+    pub held: NanoUsd,
+    pub limit: NanoUsd,
+}
+impl BackgroundCeiling {
+    pub fn remaining(&self) -> Result<NanoUsd, StaticCode> {
+        self.limit.remaining(self.spent, self.held)
+    }
+}
+#[derive(Clone, Debug)]
 pub struct SharedLedger {
     pub budgets: Vec<Budget>,
     pub fuses: Vec<ProviderFuse>,
+    pub background_hour: BackgroundCeiling,
 }
 #[derive(Clone, Debug, Default)]
 pub struct SweepOutcome {

@@ -316,7 +316,8 @@ async fn first_failure(
             operation = "call.transcription",
             product = "ai",
             door = "public",
-            code = code.as_str(),
+            code = code.wire().as_str(),
+            ceiling = code.ceiling(),
             client = identity.client.as_str(),
             tier = allowance.as_ref().map(|value| value.tier.as_str()),
             label,
@@ -325,7 +326,7 @@ async fn first_failure(
             "refused"
         );
     }
-    let message = json!({"type":"failed","code":code.as_str(),"text":"","seconds":0,"charged":null,"allowance":allowance.as_ref().and_then(wire::allowance)});
+    let message = json!({"type":"failed","code":code.wire().as_str(),"text":"","seconds":0,"charged":null,"allowance":allowance.as_ref().and_then(wire::allowance)});
     let _ = tokio::time::timeout(
         Duration::from_secs(2),
         socket.send(Message::Text(message.to_string().into())),

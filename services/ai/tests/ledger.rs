@@ -990,7 +990,7 @@ async fn background_work_draws_only_on_windmills_budgets_with_a_slot_of_its_own(
     );
     assert!(matches!(
         ledger.admit(text(&work("third"), "third", 0, 1), now).await,
-        Err(StaticCode::Paused)
+        Err(StaticCode::BackgroundHour)
     ));
     assert!(matches!(
         ledger.drain_events().await.unwrap().as_slice(),
@@ -1133,6 +1133,198 @@ async fn background_work_draws_only_on_windmills_budgets_with_a_slot_of_its_own(
             (BudgetKind::BackgroundDay, 0, 69_000),
         ]
     );
+    database.finish(ledger).await;
+}
+
+#[tokio::test]
+async fn a_changed_limit_reaches_the_current_periods_budgets_but_never_a_grant() {
+    let database = Database::new().await;
+    let control = sqlx::PgPool::connect(&database.url).await.unwrap();
+    let now = 1_794_700_800_000;
+    let work = |name: &str| Identity {
+        client: Client::Server,
+        ..account(name, Plan::None)
+    };
+    let ledger = Ledger::connect(&database.url, tiers(), prices())
+        .await
+        .unwrap();
+    assert!(ledger.acquire_lock().await.unwrap());
+    ledger
+        .fund(
+            Fund {
+                reference: "kept".to_owned(),
+                account_id: "paid".to_owned(),
+                plan: Plan::One,
+                period: Period::month(now).unwrap(),
+            },
+            now,
+        )
+        .await
+        .unwrap();
+    for identity in [work("first"), account("person", Plan::None)] {
+        let call = admitted(
+            ledger
+                .admit(text(&identity, "spent", 0, 1), now)
+                .await
+                .unwrap(),
+        );
+        ledger.dispatch(call.id, now).await.unwrap();
+        ledger
+            .settle(call.id, settlement(Charge::Assumed), now + 1)
+            .await
+            .unwrap();
+    }
+    let mut lowered = tiers();
+    for row in &mut lowered.rows {
+        match row.tier {
+            Tier::Background => {
+                row.amount = NanoUsd::new(69_000).unwrap();
+                row.month_pool.as_mut().unwrap().limit = NanoUsd::new(100_000).unwrap();
+            }
+            Tier::Anonymous | Tier::Free => {
+                row.month_pool.as_mut().unwrap().limit = NanoUsd::new(100_000).unwrap();
+            }
+            Tier::One => row.amount = NanoUsd::new(1_000_000_000).unwrap(),
+        }
+    }
+    let mut day = tiers();
+    day.rows
+        .iter_mut()
+        .find(|row| row.tier == Tier::Background)
+        .unwrap()
+        .day_pool
+        .as_mut()
+        .unwrap()
+        .limit = NanoUsd::new(100_000).unwrap();
+    let mut ledger = ledger;
+    for (table, refusals, own, pools) in [
+        (
+            lowered,
+            vec![
+                ("first", StaticCode::SubjectExhausted),
+                ("second", StaticCode::BackgroundExhausted),
+                ("other", StaticCode::FreeMonthExhausted),
+            ],
+            vec![(69_000, 0), (69_000, 69_000), (500_000_000, 500_000_000)],
+            vec![
+                (BudgetKind::BackgroundMonth, 100_000),
+                (BudgetKind::BackgroundDay, 3_000_000_000),
+                (BudgetKind::FreeMonth, 100_000),
+                (BudgetKind::FreeDay, 5_000_000_000),
+            ],
+        ),
+        (
+            day,
+            vec![("second", StaticCode::BackgroundExhausted)],
+            vec![
+                (2_000_000_000, 1_999_931_000),
+                (2_000_000_000, 2_000_000_000),
+                (500_000_000, 500_000_000),
+            ],
+            vec![
+                (BudgetKind::BackgroundMonth, 30_000_000_000),
+                (BudgetKind::BackgroundDay, 100_000),
+                (BudgetKind::FreeMonth, 100_000_000_000),
+                (BudgetKind::FreeDay, 5_000_000_000),
+            ],
+        ),
+    ] {
+        sqlx::query("SELECT pg_terminate_backend(pid) FROM pg_locks WHERE locktype='advisory' AND database=(SELECT oid FROM pg_database WHERE datname=current_database())").execute(&control).await.unwrap();
+        drop(ledger);
+        ledger = Ledger::connect(&database.url, table, prices())
+            .await
+            .unwrap();
+        assert!(ledger.acquire_lock().await.unwrap());
+        let identity = |name: &str| {
+            if name == "other" {
+                return account(name, Plan::None);
+            }
+            work(name)
+        };
+        for (name, refusal) in refusals {
+            assert_eq!(
+                ledger
+                    .admit(text(&identity(name), "again", 0, 1), now + 2)
+                    .await
+                    .err(),
+                Some(refusal),
+                "{name}"
+            );
+        }
+        let mut standing = vec![];
+        for name in ["first", "second", "other"] {
+            let allowance = ledger.allowance(&identity(name), now + 2).await.unwrap();
+            standing.push((allowance.limit.nanos(), allowance.remaining.nanos()));
+        }
+        assert_eq!(standing, own);
+        assert_eq!(
+            ledger
+                .shared(now + 2)
+                .await
+                .unwrap()
+                .budgets
+                .iter()
+                .map(|budget| (budget.kind, budget.limit.nanos()))
+                .collect::<Vec<_>>(),
+            pools
+        );
+        let paid = ledger.allowance(&account("paid", Plan::One), now + 2).await;
+        assert_eq!(
+            paid.map(|value| (value.tier, value.limit.nanos())),
+            Ok((Tier::One, 7_000_000_000))
+        );
+    }
+    control.close().await;
+    database.finish(ledger).await;
+}
+
+#[tokio::test]
+async fn an_unreadable_crossing_reports_without_losing_the_others() {
+    let database = Database::new().await;
+    let mut table = tiers();
+    for row in &mut table.rows {
+        if row.tier == Tier::Anonymous || row.tier == Tier::Free {
+            row.month_pool.as_mut().unwrap().limit = NanoUsd::new(100_000).unwrap();
+            row.day_pool.as_mut().unwrap().limit = NanoUsd::new(100_000).unwrap();
+        }
+    }
+    let ledger = Ledger::connect(&database.url, table, prices())
+        .await
+        .unwrap();
+    assert!(ledger.acquire_lock().await.unwrap());
+    admitted(
+        ledger
+            .admit(
+                text(&account("reader", Plan::None), "crossing", 0, 1),
+                1_794_700_800_000,
+            )
+            .await
+            .unwrap(),
+    );
+    let control = sqlx::PgPool::connect(&database.url).await.unwrap();
+    sqlx::query("INSERT INTO ai_threshold_outbox(budget_id,percent) SELECT id,300 FROM ai_budgets WHERE kind='free_month'").execute(&control).await.unwrap();
+    let mut events = ledger
+        .drain_events()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|event| match event {
+            LedgerEvent::Threshold { kind, percent, .. } => (Some(kind), percent),
+            LedgerEvent::ThresholdUnreadable => (None, 0),
+            _ => panic!("threshold only"),
+        })
+        .collect::<Vec<_>>();
+    events.sort_by_key(|(kind, _)| kind.map(BudgetKind::as_str));
+    assert_eq!(
+        events,
+        vec![
+            (None, 0),
+            (Some(BudgetKind::FreeDay), 50),
+            (Some(BudgetKind::FreeMonth), 50)
+        ]
+    );
+    assert!(ledger.drain_events().await.unwrap().is_empty());
+    control.close().await;
     database.finish(ledger).await;
 }
 

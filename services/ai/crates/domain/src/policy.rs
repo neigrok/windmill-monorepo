@@ -107,6 +107,9 @@ impl TierTable {
             } else if row.transcription || row.month_pool.is_none() || row.day_pool.is_none() {
                 return Err(StaticCode::InvalidRequest);
             }
+            if tier == Tier::Background && row.text.contains(&ModelClass::Large) {
+                return Err(StaticCode::InvalidRequest);
+            }
             for pool in [&row.month_pool, &row.day_pool].into_iter().flatten() {
                 if pool.name.is_empty() || pool.name.len() > 64 || pool.limit == NanoUsd::ZERO {
                     return Err(StaticCode::InvalidRequest);

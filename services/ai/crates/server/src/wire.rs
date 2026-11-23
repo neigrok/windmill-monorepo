@@ -121,7 +121,10 @@ pub fn shared(ledger: SharedLedger) -> Value {
         "provider":fuse.provider.as_str(),
         "spent":fuse.spent.usd(),
         "limit":fuse.limit.usd(),
-        "paused":fuse.paused})).collect::<Vec<_>>()
+        "paused":fuse.paused})).collect::<Vec<_>>(),
+        "backgroundHour":{"spent":ledger.background_hour.spent.usd(),
+        "held":ledger.background_hour.held.usd(),
+        "limit":ledger.background_hour.limit.usd()}
     })
 }
 

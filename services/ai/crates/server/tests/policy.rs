@@ -60,6 +60,8 @@ fn background_work_has_its_own_section_with_an_hour_below_the_fuse() {
     for invalid in [
         section.replace("hour = \"1\"", "hour = \"20\""),
         section.replace("\"small\"]", "\"tiny\"]"),
+        section.replace("[\"medium\", \"medium\"", "[\"large\", \"medium\""),
+        section.replace("\"medium\", \"small\"]", "\"large\", \"small\"]"),
         format!("{section}transcription = false\n"),
     ] {
         assert!(Policy::parse(&format!("{rows}[background]{invalid}"), prices).is_err());

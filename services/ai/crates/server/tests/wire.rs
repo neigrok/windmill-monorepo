@@ -458,6 +458,11 @@ fn every_call_state_and_operator_metadata_matches_the_complete_contract() {
                 paused: false,
             },
         ],
+        background_hour: BackgroundCeiling {
+            spent: usd("0.4"),
+            held: usd("0.16015"),
+            limit: usd("1"),
+        },
     };
     assert_eq!(wire::shared(shared), fixture["shared"]);
 }
@@ -816,10 +821,12 @@ async fn internal_metadata_and_thousand_row_cursors_match_complete_http_contract
             .await,
         (200, fixture["internalCalls"]["settled"].clone())
     );
+    let mut shared = fixture["shared"].clone();
+    shared["backgroundHour"] = json!({ "spent":"0","held":"0","limit":"1" } );
     assert_eq!(
         test.internal("GET", "/internal/v1/budgets", None, false)
             .await,
-        (200, fixture["shared"].clone())
+        (200, shared)
     );
     let expected_calls = (2..=1001)
         .rev()

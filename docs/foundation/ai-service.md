@@ -116,7 +116,7 @@ The tier table holds its values in a section of its own:
 - An exhausted background budget refuses as `subject_exhausted`, a shared one as
   `background_exhausted`, and the hourly ceiling as `paused`.
 - The shared background budgets report their crossings as the free budgets do (§5.7), and the
-  operator's budgets door lists them.
+  operator's budgets door lists them with the background hour.
 - The backend's pass door signs that `client` for no outside caller; the backend signs it for itself
   by a path the door cannot reach.
 
@@ -354,7 +354,7 @@ Binding mints no allowance and moves no cost into a grant.
 - **Background hour.** A background call is admitted only while its reservation fits under
   `BACKGROUND_HOUR` less what background calls settled and assumed over the trailing hour and what
   background calls in flight hold, computed from the ledger as the fuse is. Otherwise it is refused
-  as `paused`.
+  as `paused`, and reported at most once an hour while it refuses.
 - **Rate.** Each principal may start at most its tier's calls a minute (§3), and make at most
   `READS_PER_MINUTE` other requests, a call asked for again among them. Background work counts on
   counters of its own. Beyond either a request is refused as `rate_limited` before its body is read.
@@ -553,7 +553,7 @@ whatever funds grants cannot correct a call.
 | `GET /internal/v1/principals/{kind}/{id}` | operator | The principal's budgets, grants, bindings and calls. |
 | `GET /internal/v1/calls/{id}` | operator | One call by the service's own `id`, with its principal. |
 | `GET /internal/v1/calls?state=&since=&callId=&before=` | operator | The calls that ended in a state since an instant, or that carry a caller's `callId`. |
-| `GET /internal/v1/budgets` | operator | The shared budgets and each provider's fuse. |
+| `GET /internal/v1/budgets` | operator | The shared budgets, each provider's fuse and the background hour. |
 | `POST /internal/v1/calls/{id}/correct` | operator | State what an `assumed` call really cost, up or down. The budgets it was pinned to move by the difference. |
 
 Fund takes `{"accountId":"…","plan":"one","period":{"start":0,"end":1}}`, with epoch
@@ -871,7 +871,8 @@ Configuration, with the values the service ships with:
   reason read from the provider's error body and mapped to a fixed list (`schema_too_complex`,
   `too_many_strict_tools`, `too_many_optional_parameters`, `too_many_union_parameters`,
   `schema_unsupported`, `prompt_too_long`, `max_tokens`, `invalid_request_other`,
-  `request_too_large`, `unparsed`). The provider's error text is never kept.
+  `request_too_large`, `unparsed`). The provider's error text is never kept. A `paused` refusal
+  adds `ceiling`: `fuse` or `background_hour`.
 - A request refused before or at the pass, and one refused as `rate_limited` or `busy`, is counted by
   code; a line with the counts is written at most once a second.
 - The internal doors log `grant.fund`, `grant.close`, `grant.reopen` and `call.correct` with their
@@ -879,9 +880,11 @@ Configuration, with the values the service ships with:
   `installation.bind` when it records a binding. The sweep logs `sweep.end` for each call it ends.
 - Reported to Sentry under a static name, as errors: a failed admission or settlement transaction, a
   settlement's excess, a call that ended `assumed`, a provider that refused the service's key or
-  account, a binding the issuer contradicted and an owner grant refused at the cap. As warnings: a
-  threshold crossing, a fuse while it is open, a provider answering busy for minutes on end, and a
-  Fund or Reopen that answered `conflict`, since a paid period is then left unfunded.
+  account, a binding the issuer contradicted, an owner grant refused at the cap, a threshold crossing
+  that cannot be read, and a tier table or price book that does not load at start. As warnings: a
+  threshold crossing, one Issue for each kind of pool, a fuse while it is open, the background hour
+  while it refuses, at most once an hour, a provider answering busy for minutes on end, and a Fund or
+  Reopen that answered `conflict`, since a paid period is then left unfunded.
 - An expected refusal is a log line and never an Issue.
 - Nothing logs or reports content (INV-13), a pass, a principal's id, a caller's `callId`, a
   provider key, the internal doors' secrets, the key that seals `carry`, or a provider's error text,

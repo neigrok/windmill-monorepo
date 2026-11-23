@@ -2235,6 +2235,11 @@
         "limit": "20",
         "paused": false
       }
-    ]
+    ],
+    "backgroundHour": {
+      "spent": "0.4",
+      "held": "0.16015",
+      "limit": "1"
+    }
   }
 }
