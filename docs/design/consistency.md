@@ -2111,10 +2111,6 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   says Paddle runs the checkout. [Marketing strategy](../marketing/strategy.md#when-money-enters-the-plan)
   says One is sold first as an App Store subscription inside the iOS app and the web sells nothing. Make
   the page name the store a person will buy through.
-- **Echoes and the AI allowance.** `journal.landing.echoes.free`, `shell.landingHead.faq.costAnswer` and
-  `web/public/pricing.html` say echoes never use the AI allowance. `backend/AI_ALLOWANCES.md` says every hosted AI call debits the
-  allowance, including background Journal processing. Check whether echo derivation calls a hosted
-  model, then make the copy or the allowance document name what is true.
 
 ## Marketing and email
 

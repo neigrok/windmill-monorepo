@@ -153,7 +153,6 @@ These are false or unproven today, whatever the design becomes.
 | `/gym` | Coach is "ten questions a day" | Pricing says allowance amounts are not announced; the allowance document describes dollar budgets | Remove the number until checked |
 | `/gym` structured data | "Web browser" | The room also runs on Android | Name the true platforms |
 | `/journal`, `/` | "kept only for you", "Nothing you write teaches anything" | The privacy page says pages go to a hosted model for echoes | Replace with the "No share button" lines above; keep the second only if a no-training term is verified |
-| Landings, pricing | Echoes "never use your AI allowance" | Unresolved against the allowance document ([ledger](consistency.md#windmill-one)) | Resolve in code, then state what is true |
 | Pricing, refunds, terms, privacy | Paddle is the seller | One sells first in the App Store; the web sells nothing | Name the store a person will buy through |
 | `404` page | A private tree link "now 404s" | The backend answers 200 with the front page | Make the answer a real 404 |
 | Status badges | "Now in public beta", "Now open", none, and Terms' "public beta" | Four vocabularies | One true status per room, same words everywhere |
