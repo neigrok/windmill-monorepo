@@ -83,7 +83,6 @@ The existing deployment behavior remains available while the feature is off:
 | Control | Rule |
 | --- | --- |
 | Active account AI | Internal $25 Free / $50 One ceiling over a trailing 30 days. |
-| Passive Journal AI | Separate $2 trailing-30-day operational ceiling. |
 | Roadmap requests | 30 Free / 300 One per UTC calendar month. |
 | Coach questions | Three-question capacity, refilled continuously at ten per day; zero-model-turn failures return the question. |
 | Process safeguard | $20 over a trailing hour, held in memory. |

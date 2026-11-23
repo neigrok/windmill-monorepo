@@ -84,6 +84,10 @@ refuses.
   nothing, is asked once more under the same `callId` and body; a second break is no answer.
 - **One at a time.** The service's background slot holds one Echoes call in flight an account,
   across processes; a second is refused `concurrency_exhausted` and its page is deferred.
+- **Stopping.** In the repair pass, a refusal of the account's own budget, slot or rate ends that
+  account's part of the pass; a refusal that is the service's own, no answer, a refused pass or an
+  answer no background call should get ends the whole pass (§5). A page the pass did not ask stays due
+  with no attempt counted. A live derivation is one saved page and stops nothing past it.
 - **A call in flight when the process ends** is lost with the process. Its page stays due and is
   asked again under a new `callId` on a later pass (R-5).
 - **The operator's explain route** signs for the account of the operator who calls it and draws on
@@ -96,19 +100,21 @@ refuses.
 
 ## §5 What an answer does to the work
 
-| The service says | The page | Told to Sentry |
-|---|---|---|
-| `ended` `completed` | the answer is parsed and validated | |
-| `ended` `declined` | refused: settled, and only an edit or a version change reopens it | |
-| `ended` `truncated`; `failed` `provider_failed` or `provider_rejected`; `invalid_request`, `too_large`, `conflict`; an answer the backend cannot read | unsettled; an attempt is counted | yes |
-| `subject_exhausted`, `concurrency_exhausted`, `rate_limited`, `background_exhausted`, `busy`, `paused`, `accounting_unavailable`, `provider_unavailable`; no answer from the service | deferred | |
-| `result_gone` or `call_unknown`, when a stream that broke is asked again: the service restarted, or the answer outlived its linger | deferred; the next pass asks under a new `callId` | |
-| any `pass_` code, `pass_expired` once it has been signed for again; a code no background call should meet | deferred | yes |
+| The service says | The page | The pass | Told to Sentry |
+|---|---|---|---|
+| `ended` `completed` | the answer is parsed and validated | goes on | |
+| `ended` `declined` | refused: settled, and only an edit or a version change reopens it | goes on | |
+| `ended` `truncated`; `failed` `provider_failed` or `provider_rejected`; `invalid_request`, `too_large`, `conflict`; an answer the backend cannot read | unsettled; an attempt is counted | goes on | yes |
+| `result_gone` or `call_unknown`, when a stream that broke is asked again: the service restarted, or the answer outlived its linger | deferred; the next pass asks under a new `callId` | goes on | |
+| `subject_exhausted`, `concurrency_exhausted`, `rate_limited`: the account's | deferred | the account's part ends | |
+| `background_exhausted`, `busy`, `paused`, `accounting_unavailable`, `provider_unavailable`; no answer from the service | deferred | ends | |
+| any `pass_` code, `pass_expired` once it has been signed for again | deferred | ends | yes, as a refused pass |
+| a code no background call should meet: a person's free pool, `funding_required`, any other | deferred | ends | yes, as an unexpected answer |
 
 - *Deferred* leaves the page due and counts no attempt; the queue records it as `budget_limited`.
 - The background hour counts what calls in flight hold as well as what they spent, so with about six
-  background calls in flight across all accounts a further call is refused `paused`, and its page is
-  deferred.
+  background calls in flight across all accounts a further call is refused `paused`: its page is
+  deferred and the repair pass ends.
 - **The bound on attempts.** Six unsettled passes in a row stop a page being due when its stamps
   already matched; a page that never settled stays due however many it has.
 - Nothing here is told to the person.
@@ -159,9 +165,15 @@ that version names the model and effort. The service answers with a class, not a
 
 - The backend logs one `ai_text_call` line a call: the operation, `echo.segment` or `echo.curate`,
   the label, the outcome or refusal code, how many times it was asked, and the duration. The page's
-  `journal.echo.derive` line carries what the answer did, and Sentry is told, under that static name,
-  what §5's table marks. A deferred page is a log line, never an Issue, unless its cause is the
-  backend's own fault.
+  `journal.echo.derive` line carries what the answer did and the code, and the pass's
+  `journal.echo.sweep` line the code that stopped it, if one did.
+- Sentry is told what §5's table marks, once per request: an unsettled page as
+  `journal.echo.derive`, a refused pass as `journal.echo.pass_refused`, an unexpected answer as
+  `journal.echo.unexpected_answer`. The repair pass is one request; each live derivation is one. A
+  deferred page is a log line, never an Issue, unless its cause is the backend's own fault.
+- Calls the service has given no answer to for 15 minutes, with none answered between, are reported
+  as `ai_service.unreachable`, at most once in five minutes: the service is down or its address is
+  wrong. One unanswered call, or a deploy restarting the service, is a log line.
 - Nothing logs or reports a page's text, a passage, a pass or a `callId`.
 - The AI service's own rows and reports cover cost: its ledger, its ceiling and fuse, and the
   crossings of the shared background budgets.
@@ -179,6 +191,7 @@ that version names the model and effort. The service answers with a class, not a
 | Cache | off for both steps | Echoes' |
 | A server pass kept | 5 min, half its lifetime | the backend's client |
 | Connect, silence, deadline | 5 s, 60 s, 660 s | the backend's client |
+| Unanswered before it is reported | 15 min | the backend's client |
 | Attempts before a page rests | 6 | Echoes' |
 
 ## §12 Gaps
