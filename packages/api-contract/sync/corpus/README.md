@@ -1433,7 +1433,10 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   sign-in adds the work and sends it; an act made signed out gives up at sign-in each target the account's dormant replica
   holds a write of, an unsent one, one acknowledged after sign-out and not yet pulled, or a receipt its journal keeps, so
   its Undo restores nothing there, while a target of another record, or one no dormant write touches, stays and restores;
-  and an Undo waiting signed out withdraws its operation on such a target and counts it skipped.
+  an Undo waiting signed out withdraws its operation on such a target and counts it skipped, while a waiting Redo keeps
+  its operation, which the version it expects guards on the server; and a preimage does not
+  step over an own write whose receipt starts at a row another device wrote, one answered in another epoch, a command's
+  receipt row of a record it did not predict, or a write committed after the act that went up first.
 
 ### refusal/*.json
 

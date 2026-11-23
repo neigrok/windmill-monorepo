@@ -1164,7 +1164,104 @@ function adoptedAct() {
   assert.deepEqual([scoreIn(waiting.expect.returns[5]), scoreIn(waiting.expect.returns[7])], [0, 9]);
   assert.deepEqual(waiting.expect.returns.at(-1), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: false, appliedCount: 0, skippedCount: 1 });
   assert.equal(scoreOf(asked), 9);
-  return [released, journaled, receipt, acked, control, other, waiting];
+
+  const plain = (value, deviceNow) => ({ op: 'commit', scope: 'self/probe', deviceNow, changes: [{ op: 'put', t: 'day', id, f: { score: value } }] });
+  const held = { op: 'commitAct', deviceNow: 5200, segments: [{ scope: 'self/probe', changes: [{ op: 'put', t: 'day', id, f: { score: 5 } }], opts: { hold: true } }],
+    opts: { undo: scored } };
+  const redone = new Session(world(), anon).local(plain(3, 5000), signOut, plain(9, 5100), held, requestStep('g3', 5300), requestStep('g4', 5400), signIn);
+  redone.flush();
+  redone.pull(['self/probe']);
+  const redo = redone.local({ op: 'readInverseResult', requestId: 'g7' })
+    .vector('a Redo waiting signed out keeps at sign-in its operation over a dormant write, which the version it expects guards on the server');
+  assert.deepEqual(redo.expect.returns.at(-1), { kind: 'settled', requestId: 'g7', inverseActId: 'g6', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(scoreOf(redone), 5);
+  return [released, journaled, receipt, acked, control, other, waiting, redo];
+}
+
+// What a step needs, each pinned on its own: the own write's receipt row starts where the preimage stands, the write was
+// answered in the preimage's epoch, the entry's stored effects write the record, and the entry was committed before the
+// act's own. Each Undo below would otherwise walk over a write its act never read.
+function stepConditions() {
+  const oak = { t: 'tag', id: 'oak', born: st(1300) };
+  const life = target(TREE, 'tag', 'oak', 'life');
+  const removal = { op: 'commitAct', deviceNow: 5100, segments: [{ scope: TREE, changes: [{ op: 'delete', t: 'tag', id: 'oak' }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: life }] }] }] } } };
+  const preimagesOf = (sample, actId) => journalOf(sample).find((act) => act.actId === actId).sourceEntries[0].preimages.map(({ rowSeq, epoch }) => [rowSeq, epoch]);
+  const settledAs = (sample, requestId, inverseActId, applied, skipped) =>
+    assert.deepEqual(sample.expect.returns.at(-1), { kind: 'settled', requestId, inverseActId, changed: applied > 0, appliedCount: applied, skippedCount: skipped });
+  const codesOf = (sample, requestId) => activeOf(sample).inverses.find((request) => request.requestId === requestId).slots
+    .flatMap((slot) => [...(slot.skipped ?? []), ...(slot.outcomes ?? [])]).map(({ code, s }) => code ?? s);
+
+  const unseen = new Session(world());
+  unseen.elsewhere({ scope: TREE, d: [{ ...oak, f: { label: ['Theirs', st(4500, 0, OTHER)] } }] });
+  unseen.local({ op: 'commitAct', deviceNow: 5000, segments: [{ scope: TREE, changes: [{ op: 'update', t: 'tag', id: 'oak', f: { label: 'Mine' } }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: target(TREE, 'tag', 'oak', 'field', 'label') }] }] }] } } },
+  { op: 'releaseReversibleAct', actId: 'g1' });
+  unseen.flush();
+  unseen.local(removal);
+  unseen.flush();
+  unseen.local(requestStep('g2'));
+  unseen.flush();
+  unseen.pull([TREE]);
+  const startsElsewhere = unseen.local({ op: 'readInverseResult', requestId: 'g4' })
+    .vector('a preimage does not step over an own write whose receipt starts at a row another device wrote after the one it read');
+  assert.deepEqual(preimagesOf(startsElsewhere, 'g2'), [[2, 'ep-1']]);
+  settledAs(startsElsewhere, 'g4', 'g3', 0, 1);
+
+  const birth = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: TREE, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'Elm' } }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restoreTree', record: { scope: TREE, t: 'tag', id: 'elm' } }] }] } } };
+  const elmRemoval = { ...removal, segments: [{ scope: TREE, changes: [{ op: 'delete', t: 'tag', id: 'elm' }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: target(TREE, 'tag', 'elm', 'life') }] }] }] } } };
+  const restored = new Session(world(), { ids: ['rp_00000000000000000000000000000002'], actors: ['r_cccccccccccc'] })
+    .local(birth, { op: 'releaseReversibleAct', actId: 'g1' }, elmRemoval);
+  restored.state = new ServerState({ ...restored.state.toJSON(), epoch: 'ep-2' });
+  restored.flush();
+  restored.pull([TREE]);
+  restored.local(requestStep('g2'));
+  restored.flush();
+  restored.pull([TREE]);
+  const otherEpoch = restored.local({ op: 'readInverseResult', requestId: 'g4' })
+    .vector('a preimage does not step over an own write answered in another epoch than the one it was read in, and its Undo skips the epoch');
+  assert.deepEqual(preimagesOf(otherEpoch, 'g2'), [[null, 'ep-1']]);
+  settledAs(otherEpoch, 'g4', 'g3', 0, 1);
+  assert.deepEqual(codesOf(otherEpoch, 'g4'), ['epoch-changed']);
+
+  const child = 'b_00000002';
+  const metaTitle = target(TREE, 'meta', 'meta', 'field', 'title');
+  const discovered = new Session(world()).local(
+    { op: 'commit', scope: 'self/probe', deviceNow: 5000, changes: [], opts: { cmd: { name: 'probe.branch', args: { parent: BOARD, child, title: 'Branch' } },
+      scopedPredict: [{ scope: 'self/probe', changes: [{ op: 'create', t: 'board', id: child }] }] } },
+    { op: 'commitAct', deviceNow: 5100, segments: [{ scope: TREE, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Grown' } }] }],
+      opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: metaTitle }] }] }] } } });
+  discovered.flush();
+  discovered.pull([TREE]);
+  discovered.local(requestStep('g2'));
+  discovered.flush();
+  discovered.pull([TREE]);
+  const unpredicted = discovered.local({ op: 'readInverseResult', requestId: 'g4' })
+    .vector('a preimage does not step over an own command\'s receipt row of a record the command did not predict, which the act never drew');
+  assert.deepEqual(preimagesOf(unpredicted, 'g2'), [[1, 'ep-1']]);
+  settledAs(unpredicted, 'g4', 'g3', 0, 1);
+
+  const cardTitle = target('self/probe', 'card', CARD, 'field', 'title');
+  const heldFirst = new Session(world()).local(
+    { op: 'commitAct', deviceNow: 5000, segments: [{ scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: CARD, f: { title: 'New' } }], opts: { hold: true } }],
+      opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: cardTitle }] }] }] } } },
+    { op: 'commitAct', deviceNow: 5100, segments: [{ scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: CARD, f: { body: 'later' } }] }],
+      opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: target('self/probe', 'card', CARD, 'field', 'body'), defaultValue: '' }] }] }] } } },
+    { op: 'releaseReversibleAct', actId: 'g2' });
+  heldFirst.flush();
+  heldFirst.local({ op: 'release', localId: 'g1/0' });
+  heldFirst.flush();
+  heldFirst.pull(['self/probe']);
+  heldFirst.local(requestStep('g1'));
+  heldFirst.flush();
+  heldFirst.pull(['self/probe']);
+  const committedAfter = heldFirst.local({ op: 'readInverseResult', requestId: 'g4' })
+    .vector('a held act\'s preimage does not step over a write committed after it that went up first, which its drawn never read');
+  assert.deepEqual(preimagesOf(committedAfter, 'g1'), [[2, 'ep-1']]);
+  settledAs(committedAfter, 'g4', 'g3', 0, 1);
+  return [startsElsewhere, otherEpoch, unpredicted, committedAfter];
 }
 
 export function files() {
@@ -1172,6 +1269,6 @@ export function files() {
     'undo/journal.json': [...capture(), ...retention(), ...epochs(), ...retire(), ...release(), ...lifecycle(), ...remapped(),
       ...cancellationLifecycle(), ...deadScope(), ...startRelease()],
     'undo/restore.json': [...settledUndo(), ...mixed(), ...barrier(), ...laterEdit(), ...aba(), ...masked(), ...epochReplay(), ...strictCreation(), ...productInverse(), ...replacement(), ...requests(), ...heldRedo(), ...discarded(),
-      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival(), ...spentRevival(), ...redirected(), ...typedValues(), ...releasedBirth(), ...adoptedAct()],
+      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival(), ...spentRevival(), ...redirected(), ...typedValues(), ...releasedBirth(), ...adoptedAct(), ...stepConditions()],
   };
 }
