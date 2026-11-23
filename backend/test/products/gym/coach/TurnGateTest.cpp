@@ -54,6 +54,25 @@ TEST(gym_turn_gate_refuses_in_rule_order_and_counts_each_refusal_by_code) {
   CHECK_EQ(gate.admittedCalls(), 0);
 }
 
+// The server sends no tool strict, so a catalog/3 turn's model may echo what list_routines read: the gate drops the
+// read's own fields and admits the rest, and a key no read answers with is still refused.
+TEST(gym_turn_gate_admits_a_catalog_3_routine_sent_with_what_list_routines_reads_back) {
+  TurnGate gate(gymCatalogs().at(3), Seat::bound, "tn_gate_0000006");
+  const GateVerdict created = gate.admit("create_routine", parse(
+      R"({"id":"rt_a","name":"Day","position":0,"revision":1,"lastTrainedAt":1700000000000,"pendingProposal":{"id":"p"},)"
+      R"("entries":[{"exerciseId":"bench-press","position":1}]})"), false);
+  REQUIRE(created.admitted);
+  CHECK_EQ(dump(created.input),
+           std::string(R"({"entries":[{"exerciseId":"bench-press"}],"id":"tn_gate_0000006-1","name":"Day","position":0})"));
+  const GateVerdict proposed = gate.admit("propose_routine_change", parse(
+      R"({"id":"prop_a","routineId":"rt_00000001","name":null,"summary":null,"entries":[{"exerciseId":"bench-press","position":1}]})"), false);
+  REQUIRE(proposed.admitted);
+  CHECK_EQ(dump(proposed.input["entries"]), std::string(R"([{"exerciseId":"bench-press"}])"));
+  const GateVerdict stray = gate.admit("create_routine", parse(
+      R"({"id":"rt_b","name":"Day","position":0,"entries":[{"exerciseId":"bench-press","rank":1}]})"), false);
+  CHECK_EQ(stray.code, std::string("invalid-input"));
+}
+
 TEST(gym_turn_gate_holds_one_proposal_and_one_note_until_a_failed_result_frees_the_slot) {
   TurnGate gate(gymCatalogs().at(2), Seat::bound, "tn_gate_0000003");
   const Json::Value change = parse(R"({"id":"prop_a","routineId":"rt_00000001","entries":[{"exerciseId":"bench-press"}]})");

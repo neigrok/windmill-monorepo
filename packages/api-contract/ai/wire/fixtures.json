@@ -732,7 +732,8 @@
             "id"
           ],
           "additionalProperties": false
-        }
+        },
+        "strict": false
       }
     ],
     "messages": [
@@ -818,7 +819,8 @@
             "id"
           ],
           "additionalProperties": false
-        }
+        },
+        "strict": false
       }
     ],
     "messages": [

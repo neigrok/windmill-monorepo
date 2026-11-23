@@ -21,8 +21,9 @@ struct ToolModule {
 // name outside the caller's scope is refused here, naming the level that was not granted, and the
 // same scope filters the catalog through ToolHost::listTools.
 // Canonical names carry the product prefix; unambiguous local names remain compatibility aliases.
-// A duplicate canonical name is a construction failure. A key no schema declares is
-// refused before dispatch by `undeclaredArgument`, the one check every dispatching host runs.
+// A duplicate canonical name is a construction failure. A field a declaration names as read back
+// is dropped, and then a key no schema declares is refused before dispatch by `undeclaredArgument`,
+// the one check every dispatching host runs.
 class CompositeToolHost : public ToolHost {
 public:
   explicit CompositeToolHost(const std::vector<ToolModule>& modules);
