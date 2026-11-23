@@ -602,6 +602,15 @@ public struct EntrySelection: Sendable, Hashable {
   public static let every = EntrySelection(all: true)
 }
 
+// What a planner reads of one replica's journal (§7.3 Undo of an act): none of it, as a reader's load, whose cost does not
+// follow what the journal holds; every act, request and cancellation, with the entries it names; or its requests, and the
+// rest only where one is unsettled, which is all a commit settles.
+public enum JournalSelection: Sendable, Hashable {
+  case unread
+  case whole
+  case whereUnsettled
+}
+
 // §7.5 step 2 the acked entries with an uncovered effect in `scope` that a cursor live at `cleanSeq` covers in `epoch`,
 // the first `limit` of them.
 public struct CoveredEntries: Sendable, Hashable {

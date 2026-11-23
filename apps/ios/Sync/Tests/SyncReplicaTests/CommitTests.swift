@@ -5,22 +5,23 @@ import SyncTesting
 import Testing
 
 // Properties of §7.1–§7.3 over random gestures on the probe: Undo leaves the store as the commit found it, and a commit
-// over the rows its read set names decides exactly as one over every row.
+// over the rows its read set names, and what its plans find unread, decides exactly as one over every row.
 
 struct CommitTests {
   static let probe = try! Corpus.probeRegistry()
   static let product = ScopeRef.product("probe")
   static let overlay = ScopeRef.overlay("b_00000001")
 
-  // A bound replica holding three cards, a day, and a board whose overlay holds a mark.
+  // A bound replica holding three live cards, as many as the probe's cap, and a dead one, a day, and a board whose
+  // overlay holds a mark.
   static func replica() throws -> LoadedReplica {
     let stamp = try Stamp("1000:0:r_aaaaaaaaaaaa")
-    let card = { (id: String, seq: Int64) in
-      Row(key: RecordKey("card", RecordID(id)), lattice: Lattice(life: Life(.alive, stamp), born: stamp, fields: [
+    let card = { (id: String, seq: Int64, life: Life.State) in
+      Row(key: RecordKey("card", RecordID(id)), lattice: Lattice(life: Life(life, stamp), born: stamp, fields: [
         "title": Register(.string(id), stamp), "tier": Register("draft", stamp),
       ]), seq: seq, rc: seq, ru: seq)
     }
-    let rows = [card("card0001", 1), card("card0002", 2), card("card0003", 3),
+    let rows = [card("card0001", 1, .alive), card("card0002", 2, .alive), card("card0003", 3, .alive), card("card0004", 6, .dead),
                 Row(key: RecordKey("day", "2026-09-01"), lattice: Lattice(life: Life(.alive, stamp), fields: ["score": Register(1, stamp)]), seq: 4, rc: 4, ru: 4),
                 Row(key: RecordKey("board", "b_00000001"), lattice: Lattice(life: Life(.alive, stamp), born: stamp), seq: 5, rc: 5, ru: 5)]
     let mark = Row(key: RecordKey("mark", "oak"), lattice: Lattice(fields: ["done": Register(false, stamp)]),
@@ -40,7 +41,7 @@ struct CommitTests {
       return (overlay, Gesture(changes: [change]))
     }
     let changes = (0..<Int.random(in: 1...3, using: &random)).map { _ -> Change in
-      let card = RecordID(random.pick(["card0001", "card0002", "card0003"]))
+      let card = RecordID(random.pick(["card0001", "card0002", "card0003", "card0004"]))
       switch Int.random(in: 0..<7, using: &random) {
       case 0: return .delete("card", card)
       case 6: return .revive("card", card)
@@ -115,21 +116,77 @@ struct CommitTests {
     }
   }
 
-  // The store loads only what `reads(of:)` names; any row it left out would change the decision, or trap.
+  // The store loads only what `reads(of:)` names, and what a plan then finds unread; any row it left out would change the
+  // decision, or trap. A revive that shows one more card reads the capped type, which may refuse it.
   @Test func aCommitOverItsReadSetDecidesAsOneOverEveryRow() throws {
     var random = SeededRandom.fromEnvironment()
     let planner = CommitPlanner(registry: Self.probe)
     var whole = try Self.replica()
+    var refusals = 0
     for step in 0..<150 {
       var (scope, gesture) = Self.gesture(&random)
       gesture.gestureId = "step\(step)"
-      var partial = try Self.partial(whole, reads: planner.reads(of: gesture, in: scope))
       let instance = Self.instance(4000 + Int64(step))
+      let (partial, partialOutcome) = try Self.planned(gesture, in: scope, over: whole, by: planner, as: instance)
       let wholeOutcome = try planner.commit(gesture, in: scope, to: &whole, as: instance, identities: try QueuedIdentities([:]), gestureIdTaken: false)
-      let partialOutcome = try planner.commit(gesture, in: scope, to: &partial, as: instance, identities: try QueuedIdentities([:]), gestureIdTaken: false)
+      if case .refused(.cap, _, _) = wholeOutcome { refusals += 1 }
       #expect(partialOutcome == wholeOutcome, "seed \(random.seed), step \(step)")
       #expect(partial.writes == Array(whole.writes.suffix(partial.writes.count)), "seed \(random.seed), step \(step)")
     }
+    #expect(refusals > 0, "seed \(random.seed): no gesture met the cap")
+  }
+
+  // A commit as the store's Action plans it: over the rows its read set names, then again over each it finds unread.
+  static func planned(_ gesture: Gesture, in scope: ScopeRef, over whole: LoadedReplica, by planner: CommitPlanner,
+                      as instance: Instance) throws -> (replica: LoadedReplica, outcome: CommitOutcome) {
+    var reads = planner.reads(of: gesture, in: scope)
+    var draws: [Draw] = []
+    while true {
+      var partial = try Self.partial(whole, reads: reads)
+      do {
+        let outcome = try planner.commit(gesture, in: scope, to: &partial, as: instance, identities: try QueuedIdentities([:]),
+                                         gestureIdTaken: false, draws: draws)
+        return (partial, outcome)
+      } catch let unread as UnreadRows {
+        reads[scope, default: RowSelection()].keys.formUnion(unread.keys)
+        reads[scope, default: RowSelection()].types.formUnion(unread.types)
+        draws = unread.draws
+      }
+    }
+  }
+
+  // A change of one record of a capped type reads that record alone, so its commit loads the same rows however many the
+  // type holds; a create reads the whole type, which the cap counts, and any other change reads it only once its delta
+  // shows one more record than `stored` does. A revive of a live card commits over its one row; one of the dead card,
+  // which the three live ones fill the cap without, stops for the type and is refused once it is read.
+  @Test func aCappedTypeIsReadWholeOnlyByAChangeThatShowsOneMoreRecord() throws {
+    let planner = CommitPlanner(registry: Self.probe)
+    let card = RecordKey("card", "card0001"), dead = RecordKey("card", "card0004")
+    let reads = { (change: Change) -> [ScopeRef: RowSelection] in planner.reads(of: Gesture(changes: [change]), in: Self.product) }
+    #expect(reads(.update("card", card.id, ["title": "One"])) == [Self.product: RowSelection(keys: [card])])
+    #expect(reads(.delete("card", card.id)) == [Self.product: RowSelection(keys: [card])])
+    #expect(reads(.revive("card", card.id)) == [Self.product: RowSelection(keys: [card])])
+    #expect(reads(.put("day", "2026-09-01", present: false)) == [Self.product: RowSelection(keys: [RecordKey("day", "2026-09-01")])])
+    #expect(reads(.create("card")) == [Self.product: RowSelection(types: ["card"])])
+
+    let whole = try Self.replica()
+    let live = Gesture(changes: [.revive("card", card.id, ["title": "Again"])], gestureId: "live")
+    var partial = try Self.partial(whole, reads: planner.reads(of: live, in: Self.product))
+    #expect(partial.rows(Self.product).loaded.count == 1)
+    let outcome = try planner.commit(live, in: Self.product, to: &partial, as: Self.instance(6000), identities: try QueuedIdentities([:]),
+                                     gestureIdTaken: false)
+    guard case .committed = outcome else {
+      Issue.record("a revive of a live card at the cap was refused: \(outcome)")
+      return
+    }
+
+    let revival = Gesture(changes: [.revive("card", dead.id)], gestureId: "revival")
+    var narrow = try Self.partial(whole, reads: planner.reads(of: revival, in: Self.product))
+    #expect(throws: UnreadRows.self) {
+      try planner.commit(revival, in: Self.product, to: &narrow, as: Self.instance(6000), identities: try QueuedIdentities([:]), gestureIdTaken: false)
+    }
+    let planned = try Self.planned(revival, in: Self.product, over: whole, by: planner, as: Self.instance(6000))
+    #expect(planned.outcome == .refused(.cap, detail: ["type": "card", "cap": 3]))
   }
 
   // The same replica as a store would load it: every table whole but the rows, which only `reads` names.

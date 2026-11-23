@@ -778,6 +778,23 @@ public struct Journal: Sendable, Hashable {
   }
 }
 
+// What a load read of one replica's journal: none of it; only that no inverse request is unsettled, for a commit, which
+// reads the journal only to settle the slots of the entries it ends; or every act, request and cancellation, with the
+// entries it names.
+public enum LoadedJournal: Sendable {
+  case unread
+  case settled
+  case whole(Journal)
+
+  var whole: Journal? {
+    guard case .whole(let journal) = self else { return nil }
+    return journal
+  }
+
+  // The entries the load reads with it.
+  public var namedLocalIds: Set<String> { whole?.namedLocalIds ?? [] }
+}
+
 extension SlotRecipe {
   var pendingLocalIds: [String] {
     guard case .restore(_, let operations) = self else { return [] }
@@ -918,8 +935,9 @@ extension LoadedReplica {
   }
 
   // The slots whose entries ended without a result (a fold, a refusal of another entry, a Discard) settle skipped by
-  // `code`.
+  // `code`; with every request settled there is none.
   public mutating func settleEnded(code: String) {
+    guard holdsUnsettledRequest else { return }
     let ended: [(request: Int, slot: Int)] = journal.inverses.indices.flatMap { (request: Int) -> [(request: Int, slot: Int)] in
       guard journal.inverses[request].state != .settled else { return [] }
       return journal.inverses[request].slots.indices.compactMap { (slot: Int) -> (request: Int, slot: Int)? in
@@ -1171,12 +1189,15 @@ extension CommitPlanner {
     guard let undo else { return nil }
     var segments: [Int: UndoPlan.Segment] = [:]
     let acknowledged = replica.acknowledgedWrites()
+    // One view a scope, read once for every segment of the act there.
+    var views: [ScopeRef: ScopeView] = [:]
     for segment in undo.segments {
       guard scopes.indices.contains(segment.index), segments[segment.index] == nil else {
         throw CommitFailure.malformed("an undo segment names one act segment and its recipes")
       }
       let scope = scopes[segment.index]
-      let view = try ScopeView(replica, scope, .drawn, registry: registry)
+      let view = try views[scope] ?? ScopeView(replica, scope, .drawn, registry: registry)
+      views[scope] = view
       var preimages: [Preimage] = []
       for recipe in segment.recipes {
         if let fault = registry.recipeFault(recipe, in: scope) { throw CommitFailure.malformed("an undo recipe is malformed: \(fault)") }
@@ -1222,11 +1243,14 @@ extension CommitPlanner {
   public func record(act actId: String, plan: UndoPlan?, receipts: [ActSegmentReceipt], in replica: inout LoadedReplica) throws {
     guard let plan else { return }
     var sources: [JournalSource] = []
+    // One view a scope, read once for every segment the act wrote there.
+    var views: [ScopeRef: ScopeView] = [:]
     for (index, segment) in plan.segments.sorted(by: { $0.key < $1.key }) {
       let localIds = receipts[index].localIds
       if localIds.isEmpty { continue }
       guard localIds.count == 1 else { throw CommitFailure.malformed("an opted segment commits one intent") }
-      let view = try ScopeView(replica, segment.scope, .drawn, registry: registry)
+      let view = try views[segment.scope] ?? ScopeView(replica, segment.scope, .drawn, registry: registry)
+      views[segment.scope] = view
       let written: [WrittenValue] = segment.preimages.compactMap { (preimage: Preimage) -> WrittenValue? in
         view.record(preimage.target.key)?.value(of: preimage.target.slot).map { WrittenValue(target: preimage.target, value: $0) }
       }
