@@ -418,11 +418,12 @@ TEST(a_service_that_stays_unanswering_is_reported_and_a_blip_is_not) {
     seen += client.ask(UserId{"account-vector"}, question()).code + " reported " + std::to_string(reports.told.size()) + "\n";
   }
 
-  CHECK_EQ(seen, std::string("unreachable reported 0\n"
-                             "unreachable reported 0\n"
-                             "unreachable reported 1\n"
-                             "completed reported 1\n"
-                             "unreachable reported 1\n"));
+  const std::string expected = "unreachable reported 0\n"
+                               "unreachable reported 0\n"
+                               "unreachable reported 1\n"
+                               "completed reported 1\n"
+                               "unreachable reported 1\n";
+  if (seen != expected) testing::fail(("seen:\n" + seen + "requests: " + std::to_string(service.requests().size())).c_str(), __FILE__, __LINE__);
   CHECK(reports.told == std::vector<std::string>{"ai_service.unreachable unanswered_minutes=15"});
 }
 
