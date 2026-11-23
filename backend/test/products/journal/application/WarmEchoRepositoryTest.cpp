@@ -164,9 +164,6 @@ TEST(two_derivations_for_one_user_cost_one_corpus_load) {
   FakeEmbedder embedder;
   FakeCurator curator;
   FakeClock clock;
-  FakeEntitlementCopy subscriptions;
-  FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, clock, usage};
 
   storage.addUser(uid("u1"));
   storage.plantSpan(uid("u1"), ld(kJanuary), 11, kJanuaryLine, embedder.embed({kJanuaryLine})[0]);
@@ -175,8 +172,7 @@ TEST(two_derivations_for_one_user_cost_one_corpus_load) {
 
   WarmEchoRepository warm{storage, clock, kTtlMs};
   FakeSegmenter segmenter;
-  EchoSweep sweep{warm,    segmenter,    embedder,         curator,
-                  clock,   entitlements, SelectionRules{}, SweepBudget{}};
+  EchoSweep sweep{warm, segmenter, embedder, curator, clock, SelectionRules{}, SweepBudget{}};
 
   CHECK_EQ(sweep.derivePage(uid("u1"), ld(kMay)).pagesDerived, 1);
   CHECK_EQ(sweep.derivePage(uid("u1"), ld("2026-06-01")).pagesDerived, 1);

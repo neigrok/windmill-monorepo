@@ -14,7 +14,7 @@ are not guaranteed to preserve identity. Customer USD screens remain work.
 | Roadmap AI assistance | `tend` / `claude-sonnet-5` | Individual and applicable free/funded budgets; no separate customer request quota. |
 | Gym Coach | `ask` / `claude-opus-5` | Individual and applicable free/funded budgets; technical question burst protection remains. |
 | Anonymous Gym onboarding | `coach.preview` / `claude-sonnet-5` | Lifetime installation and shared free budgets; one bounded call, public exercises only. |
-| Journal Echoes | `echo.segment`, `echo.curate` / `claude-sonnet-5` | Debits the same individual allowance, including automatic background work. |
+| Journal Echoes | `echo.segment`, `echo.curate` / the AI service's `medium` class | Never the person's allowance: the AI service's background budgets of Windmill's own ([Echoes on the AI service](foundation/echoes-on-ai-service.md)). |
 | Journal Talk | `transcribe` / `gpt-4o-transcribe` | Windmill One grants only: holds the model's $0.06 token ceiling before audio leaves and settles at the tokens the vendor billed, or at that ceiling when a transcript comes back without usage. |
 
 Adapters record supported token counts, product, operation, run/iteration, model and outcome. Failed
@@ -83,7 +83,6 @@ The existing deployment behavior remains available while the feature is off:
 | Control | Rule |
 | --- | --- |
 | Active account AI | Internal $25 Free / $50 One ceiling over a trailing 30 days. |
-| Passive Journal AI | Separate $2 trailing-30-day operational ceiling. |
 | Roadmap requests | 30 Free / 300 One per UTC calendar month. |
 | Coach questions | Three-question capacity, refilled continuously at ten per day; zero-model-turn failures return the question. |
 | Process safeguard | $20 over a trailing hour, held in memory. |

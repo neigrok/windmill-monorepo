@@ -43,7 +43,7 @@ struct Allowlists {
 class Entitlements {
 public:
   Entitlements(subscriptions::EntitlementReader& copy, Clock& clock, AiUsageRepository& usage, Allowlists lists = {},
-               std::vector<std::string> passiveOperations = {}, std::shared_ptr<AiBudgetService> budgets = nullptr);
+               std::shared_ptr<AiBudgetService> budgets = nullptr);
 
   bool aiAllowancesEnabled() const { return bool(budgets_); }
   AiBudgetPrincipal aiPrincipalFor(const UserId& user, const std::string& email) const;
@@ -56,18 +56,14 @@ public:
   // Asked apart from the plan: a surface can need this without inheriting anything about payment.
   bool isOwner(const std::string& email) const;
 
-  // Every enabled-mode call debits the principal; legacy mode uses active usage.
+  // Every enabled-mode call debits the principal; legacy mode reads the account's usage over the trailing window.
   AiAllowance aiAllowanceFor(const UserId& user, const std::string& email) const;
-
-  // Passive work has a separate operational ceiling for each product.
-  AiAllowance sweepAllowanceFor(const UserId& user, const std::string& product) const;
 
 private:
   std::shared_ptr<AiBudgetService> budgets_;
   subscriptions::EntitlementReader& copy_;
   Clock& clock_;
   AiUsageRepository& usage_;
-  std::vector<std::string> passiveOperations_;
   Allowlists lists_;
 };
 

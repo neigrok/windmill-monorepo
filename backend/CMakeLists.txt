@@ -57,6 +57,7 @@ target_compile_definitions(utf8proc PUBLIC UTF8PROC_STATIC)
 add_library(windmill_platform
   platform/ai_passes/AiPasses.cpp
   platform/ai_passes/AiPassApi.cpp
+  platform/ai_service/AiServiceClient.cpp
   platform/ai_installations/AiInstallations.cpp
   platform/ai_installations/PgAiInstallations.cpp
   platform/ai_installations/AiInstallationApi.cpp
@@ -519,8 +520,8 @@ target_sources(windmill_journal PRIVATE
   products/journal/adapters/http/EchoApi.cpp
   products/journal/adapters/http/VoiceApi.cpp
   products/journal/adapters/llm/OpenAiTranscriber.cpp
-  products/journal/adapters/llm/AnthropicCurator.cpp
-  products/journal/adapters/llm/AnthropicSegmenter.cpp
+  products/journal/adapters/llm/AiServiceCurator.cpp
+  products/journal/adapters/llm/AiServiceSegmenter.cpp
   products/journal/adapters/llm/HttpEmbedder.cpp
   products/journal/routes.cpp)
 
@@ -713,6 +714,7 @@ add_executable(windmill_adapters_tests
   test/platform/adapters/http/McpKeyApiTest.cpp
   test/platform/ai_passes/AiPassesTest.cpp
   test/platform/ai_passes/AiPassApiTest.cpp
+  test/platform/ai_service/AiServiceClientTest.cpp
   test/platform/ai_installations/AiInstallationApiTest.cpp
   test/platform/ai_installations/PgAiInstallationsTest.cpp
   test/platform/subscriptions/FeedFollowerTest.cpp
@@ -775,8 +777,8 @@ add_executable(windmill_adapters_tests
   test/products/journal/adapters/http/NudgeApiTest.cpp
   test/products/journal/adapters/http/EchoApiTest.cpp
   test/products/journal/adapters/http/VoiceApiTest.cpp
-  test/products/journal/adapters/llm/AnthropicCuratorTest.cpp
-  test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
+  test/products/journal/adapters/llm/AiServiceCuratorTest.cpp
+  test/products/journal/adapters/llm/AiServiceSegmenterTest.cpp
   test/products/journal/adapters/llm/OpenAiTranscriberTest.cpp
   test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp
   test/products/journal/adapters/postgres/PgEchoRepositoryTest.cpp

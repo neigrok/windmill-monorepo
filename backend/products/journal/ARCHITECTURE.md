@@ -42,7 +42,7 @@ backend/products/journal/
     http/        JournalApi · NudgeApi · EchoApi · VoiceApi
     json/        PageJson — the REST page read shape
     postgres/    PgJournalRepository · PgEchoRepository · PgNudgeRepository
-    llm/         HttpEmbedder · AnthropicSegmenter · AnthropicCurator · OpenAiTranscriber ·
+    llm/         HttpEmbedder · AiServiceSegmenter · AiServiceCurator · EchoModel · OpenAiTranscriber ·
                  UnconfiguredModels (NullCurator, NullEmbedder, NullTranscriber)
     email/       ResendNudgeSender
   sync/          JournalRules · JournalProduct (registry + binding) · JournalState ·
@@ -194,8 +194,9 @@ has no port.
 [ECHOES.md](ECHOES.md) owns the derivation pipeline, selection rules, persistence, scheduling and
 budgets. `JournalFeed` hands each committed page to `EchoDerivations`, the `PageWatcher`, which
 debounces derivation; `EchoSweep` repairs the corpus every six hours. Embedding stays on the
-self-hosted sidecar; curation sends passages to Anthropic under its standard API terms, which the
-privacy copy names along with the processor; no zero-retention agreement is in place. Echoes are
+self-hosted sidecar; segmentation and curation send passages through the AI service to Anthropic,
+its text provider, under Anthropic's standard API terms, which the privacy copy names along with the
+processor; no zero-retention agreement is in place. Echoes are
 available to every signed-in writer.
 
 ## Entitlement
@@ -209,7 +210,7 @@ const bool subscribed = entitlements.hasWindmillOne(caller, email);
 `Entitlements` (`platform/application/Entitlements.h`) reads it from the backend's copy of each account's
 entitlement ([subscriptions.md](../../../docs/foundation/subscriptions.md) §6.1). **Voice** asks for a subscription before any audio is touched and consumes
 the active AI allowance. **Echoes** are automatic for every signed-in writer, serve full passages,
-and consume only an internal passive-work budget.
+and are paid from Windmill's background budgets in the AI service, never the writer's allowance.
 
 ## HTTP surface
 
@@ -287,7 +288,7 @@ refused while nudges are enabled`; a nonzero admitted `asOfMs` forces a dry run.
 `{ran,due,claimed,sent,failed,held,wouldSend,skipped,errors}`. Echo sweep preserves 400 `sinceMs must
 be a millisecond timestamp`, its `sinceMs` account window and `rejudge=1|true`; its 200 report is
 `{usersScanned,pagesDerived,triggersSkippedRefrain,passagesEmbedded,echoesWritten,pagesFailed,
-inboundEnqueued,pagesOverBudget,pagesRefused,unitsDiscarded,usersOverAiBudget}`. Echo explain
+inboundEnqueued,pagesOverBudget,pagesRefused,unitsDiscarded,accountsStopped,passStoppedBy}`. Echo explain
 additionally requires the caller's owner session (401 `sign in as the owner of the page`), rejects
 invalid dates with 400 `bad date`, and keeps the diagnostic 200 response described in `ECHOES.md`.
 
@@ -372,10 +373,11 @@ Two obligations fall out of on-device search:
 - Journal arms three threads in `main.cpp` — `journalNudgeSweep->start()`,
   `journalEchoSweep->start()`, `journalEchoDerivations->start()` — each its own trantor loop.
 - Every vendor edge is chosen there and nowhere else, on the presence of an environment variable:
-  `HttpEmbedder` (`JOURNAL_EMBEDDER_URL`) or `NullEmbedder`, `AnthropicCurator` or `NullCurator`,
-  `AnthropicSegmenter` or `RuleSegmenter`, `OpenAiTranscriber` (`OPENAI_API_KEY`; `OPENAI_BASE_URL`
+  `HttpEmbedder` (`JOURNAL_EMBEDDER_URL`) or `NullEmbedder`, `AiServiceCurator` or `NullCurator`,
+  `AiServiceSegmenter` or `RuleSegmenter`, `OpenAiTranscriber` (`OPENAI_API_KEY`; `OPENAI_BASE_URL`
   points it at another origin speaking the same protocol) or `NullTranscriber`. The curator and
-  the segmenter share `ANTHROPIC_API_KEY`. Without the required echo boundaries the echo pass writes
+  the segmenter share one `AiServiceClient`, built where the pass signer (`AI_PASS_PRIVATE_SEED`) and
+  `AI_SERVICE_URL` are both set. Without the required echo boundaries the echo pass writes
   nothing; an unconfigured transcription boundary answers `POST /transcribe` with 503.
 - `JOURNAL_NUDGE_ADMIN_TOKEN` guards the nudge sweep door and `JOURNAL_ECHO_ADMIN_TOKEN` the echo
   sweep and explain doors. Unset means 403 to everyone.

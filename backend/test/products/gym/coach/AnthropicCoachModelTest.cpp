@@ -27,7 +27,7 @@ TEST(a_stopped_phone_turn_settles_its_round_at_once_at_the_input_and_the_output_
   fake::FakeEntitlementCopy subscriptions;
   fake::FakeClock clock;
   fake::FakeAiUsageRepository ledger;
-  Entitlements entitlements{subscriptions, clock, ledger, {}, {}, budgets};
+  Entitlements entitlements{subscriptions, clock, ledger, {}, budgets};
   struct Failures : FailureReporter {
     int reports = 0;
     void report(const std::string&, const std::string&, const std::string&) override { ++reports; }

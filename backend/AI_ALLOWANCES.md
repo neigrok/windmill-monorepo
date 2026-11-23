@@ -14,7 +14,9 @@ amounts are exact decimal USD strings.
 | Verified logged-in | $0.50 per account, including associated anonymous usage | UTC calendar month | The same free monthly and daily pools | 1 |
 | Windmill One | $7 per funded account period | Paid subscription billing period; owner grants use UTC calendar months | The funded grant itself | 2 |
 
-Every hosted AI call debits the individual allowance, including background Journal processing.
+Every hosted AI call the backend makes debits the individual allowance. Journal Echoes' calls are
+not among them: they go to the AI service as background work, paid from Windmill's own budgets
+([Echoes on the AI service](../docs/foundation/echoes-on-ai-service.md)).
 Account balances are shared across devices and products. Paid calls draw only from a funded grant;
 they cannot drain either free pool. A Windmill One account with no funded grant in force (in grace,
 in the renewal slack, after a refund or a refused funding) is admitted under the verified logged-in
@@ -109,7 +111,7 @@ Only the first successful durable dispatch claim authorizes sending it. Replayin
 returns its original subject, period, grant and selected cap. The original cost offer is persisted;
 a different offer conflicts even when it could produce the same amount. Replaying dispatch cannot
 authorize another send.
-All provider spending, including background calls, uses this admission path.
+All provider spending the backend does uses this admission path.
 
 Complete supported usage settles once at actual cost. A lower actual cost releases the unused
 reservation. For a higher actual cost, the settlement transaction checks whether the extra cost
@@ -165,9 +167,8 @@ at least once; the provider receives a stable idempotency key.
 
 ## Provider coverage and rollout limits
 
-Enabled mode covers each Claude round in gym Coach, roadmap tending and Journal segmentation and
-curation, and each Journal Talk transcription. Expected background budget refusals leave work due and report a bounded deferred outcome,
-without a Sentry Issue. Roadmap's customer request-count quota is disabled in this mode; its read
+Enabled mode covers each Claude round in gym Coach and roadmap tending, and each Journal Talk
+transcription. Roadmap's customer request-count quota is disabled in this mode; its read
 contract names USD and links the shared allowance endpoint.
 
 Anonymous Gym Coach previews use the authenticated installation path described below, and so does
@@ -321,8 +322,8 @@ snapshot and close. Both paths invoke the same admission and generation service;
 admission refusal sends no provider call.
 
 The `ai_usage` table and existing Amplitude mirror remain reporting surfaces, not the enabled
-admission authority. Disabled mode retains the legacy trailing account/passive windows and product
-request quotas. Enabling the durable ledger does not invent reservations for earlier usage rows.
+admission authority. Disabled mode retains the legacy trailing account window and product request
+quotas. Enabling the durable ledger does not invent reservations for earlier usage rows.
 
 ## Structure observations and remaining work
 

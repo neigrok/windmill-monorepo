@@ -51,8 +51,7 @@ struct Harness {
 
   // `ledger` turns the durable USD allowances on, the mode Windmill One is funded in.
   explicit Harness(bool ledger = false)
-      : entitlements(std::make_shared<Entitlements>(*subs, *clock, usage, Allowlists{}, std::vector<std::string>{},
-                                                    ledger ? budgets : nullptr)),
+      : entitlements(std::make_shared<Entitlements>(*subs, *clock, usage, Allowlists{}, ledger ? budgets : nullptr)),
         api(transcriber, entitlements, auth, clock) {}
 
   UserId signIn(const std::string& sessionSecret) {

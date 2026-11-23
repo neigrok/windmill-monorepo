@@ -1,5 +1,6 @@
-#include "products/journal/adapters/llm/AnthropicCurator.h"
-#include "platform/adapters/llm/AiCallBudget.h"
+#include "products/journal/adapters/llm/AiServiceCurator.h"
+
+#include "products/journal/adapters/llm/EchoModel.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,7 +14,7 @@ namespace wm {
 
 namespace {
 
-// The cached block: a literal that never gains a byte from any page, hashed into version(), so
+// The system text: a literal that never gains a byte from any page, hashed into version(), so
 // changing it moves every stored echo's stamp.
 constexpr const char* kSystemPrompt =
     "You judge whether two passages from one person's private journal are about the same thing.\n"
@@ -208,41 +209,27 @@ CurationPrompt curationPrompt(const std::vector<Vectored>& tonight,
   return prompt;
 }
 
-AnthropicCurator::AnthropicCurator(std::shared_ptr<MessagesApi> transport, std::string model,
-                                   std::string effort, std::shared_ptr<AiFuse> fuse,
-                                   std::shared_ptr<UsageSink> usage, float floor, std::shared_ptr<AiCallBudget> budget)
-    : transport_(std::move(transport)),
-      model_(std::move(model)),
-      effort_(std::move(effort)),
-      floor_(floor),
-      fuse_(std::move(fuse)),
-      usage_(std::move(usage)), budget_(std::move(budget)) {}
+AiServiceCurator::AiServiceCurator(std::shared_ptr<AiText> ai, float floor) : ai_(std::move(ai)), floor_(floor) {}
 
-bool AnthropicCurator::configured() const { return transport_ && transport_->configured(); }
+bool AiServiceCurator::configured() const { return ai_ != nullptr; }
 
-std::string AnthropicCurator::version() const {
+std::string AiServiceCurator::version() const {
   static const std::string tag = promptTag();
   // The floor belongs here as much as the model, the effort and the wording do: it decides which
   // pairings come back `related`, and it lives on this adapter rather than in `SelectionRules`, so
-  // `rulesTag` does not cover it. Left out, moving the floor reopened no page — every already
-  // settled page kept verdicts judged under the old threshold, forever.
+  // `rulesTag` does not cover it. Left out, moving the floor would reopen no page — every settled
+  // page would keep verdicts judged under the old threshold.
   // Written in THOUSANDTHS as an integer: a formatted float carries the decimal point of whatever
   // locale the process is in, and a version string is a stored key that must not move under it.
   char floorTag[16];
   std::snprintf(floorTag, sizeof(floorTag), "f%d", static_cast<int>(std::lround(floor_ * 1000.0f)));
-  return model_ + "/" + effort_ + "/" + tag + "/" + floorTag;
+  return std::string(kEchoServedModel) + "/" + kEchoEffort + "/" + tag + "/" + floorTag;
 }
 
-Curation AnthropicCurator::curate(const UserId& user, const std::vector<Vectored>& tonight,
+Curation AiServiceCurator::curate(const UserId& user, const std::vector<Vectored>& tonight,
                                   const std::vector<Vectored>& candidates,
                                   const std::vector<Pairing>& proposed) {
   Curation curation;
-
-  // Unconfigured fails rather than reporting a night with nothing in it: the work is still owed.
-  if (!configured()) {
-    curation.failure = MessagesFailure::transport;
-    return curation;
-  }
 
   const CurationPrompt prompt = curationPrompt(tonight, candidates, proposed);
   // Retrieval offered no pairing, so the page is done and does not come back tomorrow.
@@ -251,55 +238,15 @@ Curation AnthropicCurator::curate(const UserId& user, const std::vector<Vectored
     return curation;
   }
 
-  // Over the process fuse: the same failed-call shape as an unreachable vendor, so tomorrow's pass
-  // picks the page up unchanged.
-  if (fuse_ && !fuse_->allows(nowMs())) {
-    curation.failure = MessagesFailure::transport;
-    return curation;
-  }
-
-  MessagesRequest request;
-  request.model = model_;
-  request.system = kSystemPrompt;
-  request.user = prompt.text;
-  request.schema = verdictSchema();
-  request.effort = effort_;
-
-  AiSpend spend;
-  spend.user = user;
-  spend.product = "journal";
-  spend.operation = "echo.curate";
-  spend.runId = newRunId("curate");
-  spend.model = model_;
-  std::optional<AiBudgetReservation> reservation;
-  if (budget_) {
-    const auto admission = budget_->begin(spend, messagesBody(request));
-    if (!admission.reservation) {
-      curation.failure = admission.refusal;
-      return curation;
-    }
-    reservation = admission.reservation;
-  }
-  MessagesReply reply;
-  try {
-    reply = transport_->send(request);
-  } catch (...) {
-    if (reservation) budget_->finish(*reservation, model_, {}, AiCallEnd::uncertain);
-    throw;
-  }
-  if (reservation) budget_->finish(*reservation, model_, reply.usage, reply.usageComplete ? AiCallEnd::settled : AiCallEnd::uncertain);
-  spend.outcome = reply.outcome;
-  spend.tokens = reply.tokens;
-  meterSpend(spend, fuse_, usage_);
-
-  if (!reply.ok) {
+  const EchoAnswer reply = askEchoStep(*ai_, user, "echo.curate", kSystemPrompt, prompt.text, verdictSchema());
+  if (!reply.output) {
     curation.failure = reply.failure;
     return curation;
   }
 
-  const Json::Value& verdicts = reply.output["verdicts"];
+  const Json::Value& verdicts = (*reply.output)["verdicts"];
   if (!verdicts.isArray()) {
-    curation.failure = MessagesFailure::schemaInvalid;
+    curation.failure = "unreadable";
     return curation;
   }
 

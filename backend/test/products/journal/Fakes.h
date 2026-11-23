@@ -216,7 +216,7 @@ struct FakeNudgeMail : NudgeMailSender {
 struct FakeSegmenter : Segmenter {
   bool isConfigured = true;
   bool callSucceeds = true;
-  std::string failure = "transport";
+  std::string failure = "provider_failed";
   std::vector<std::string> units;   // empty: fall back to the rule
   int calls = 0;
 
@@ -238,7 +238,7 @@ struct FakeSegmenter : Segmenter {
     cut.passages = locateUnits(body, units);
     cut.discarded = static_cast<int>(units.size()) - static_cast<int>(cut.passages.size());
     cut.ok = !cut.passages.empty();
-    if (!cut.ok) cut.failure = "schema_invalid";
+    if (!cut.ok) cut.failure = "unreadable";
     return cut;
   }
 };
@@ -279,7 +279,7 @@ struct FakeEmbedder : Embedder {
 struct FakeCurator : Curator {
   bool isConfigured = true;
   bool callSucceeds = true;
-  std::string failure = "transport";
+  std::string failure = "provider_failed";
   bool keepEverything = true;
   bool speakerIsSelf = true;
   int calls = 0;

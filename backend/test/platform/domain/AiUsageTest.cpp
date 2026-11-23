@@ -161,7 +161,6 @@ TEST(ai_usage_the_allowance_answers_under_at_and_over_the_limit) {
 
   CHECK_EQ(kFreeMonthlyAiNanos, 25'000'000'000);
   CHECK_EQ(kProMonthlyAiNanos, 50'000'000'000);
-  CHECK_EQ(kSweepMonthlyAiNanos, 2'000'000'000);
   CHECK_EQ(kHourlyFuseNanos, 20'000'000'000);
 }
 

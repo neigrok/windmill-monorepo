@@ -10,8 +10,8 @@ Optional AI use draws on existing funded capacity. The plan allocates $0 increme
 | Shared free pool | $5 per UTC day and $100 per UTC month |
 | Funded One period | $7 for its billing period, isolated from the free pool |
 
-Roadmap Tend uses the applicable USD allowance. Journal Echoes debits the same individual allowance,
-including automatic background work. Talk draws only on a Windmill One grant, never on the free pool.
+Roadmap Tend uses the applicable USD allowance. Journal Echoes draws on no person's allowance: Windmill
+pays for it from background budgets of its own in the AI service. Talk draws only on a Windmill One grant, never on the free pool.
 Ordinary Roadmap or Gym MCP actions performed by an external assistant incur no Windmill-hosted model cost.
 Grants determine which products and levels it can access. [AI usage policy](../../AI_USAGE_REVIEW.md) ·
 [MCP product boundary](../../../STRUCTURE.md)

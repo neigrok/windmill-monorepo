@@ -850,7 +850,7 @@ TEST(pg_ai_budget_estimated_provider_calls_settle_actuals_without_freezing_funde
   wm::fake::FakeClock clock;
   clock.now = at;
   wm::fake::FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, clock, usage, {}, {}, service};
+  Entitlements entitlements{subscriptions, clock, usage, {}, service};
   auto budget = std::make_shared<AiCallBudget>(service, entitlements, accounts, *observation.reporter);
   const auto principal = entitlements.aiPrincipalFor(account.id, account.email.value);
   AiSpend spend;

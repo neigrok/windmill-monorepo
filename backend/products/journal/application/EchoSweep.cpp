@@ -24,17 +24,61 @@ constexpr double kEchoTickSeconds = 6.0 * 60.0 * 60.0;
 constexpr double kEchoFirstTickSeconds = 60.0;
 constexpr std::uint64_t kEchoLookbackMs = 24ull * 60 * 60 * 1000;
 
-CurationStatus statusFor(const std::string& failure) {
-  if (failure == "rate_limited") return CurationStatus::rateLimited;
-  for (const auto* code : {"unconfigured", "free_month_exhausted", "free_day_exhausted",
-                           "concurrency_exhausted", "funding_required", "device_bound", "subject_exhausted",
-                           "debt_outstanding", "unsupported_ai_pricing", "unauthenticated",
-                           "device_verification_required"})
-    if (failure == code) return CurationStatus::budgetLimited;
-  if (failure == "truncated") return CurationStatus::truncated;
-  if (failure == "schema_invalid") return CurationStatus::schemaInvalid;
-  if (failure == "refused") return CurationStatus::refused;
-  return CurationStatus::transport;
+// The static names Sentry is told a page's fault under: an unsettled step, a pass the AI service would not take, and an
+// answer no background call should get. Each is an Issue of its own.
+constexpr std::string_view kDeriveIssue = "journal.echo.derive";
+constexpr std::string_view kPassIssue = "journal.echo.pass_refused";
+constexpr std::string_view kUnexpectedIssue = "journal.echo.unexpected_answer";
+
+// What a step's failure does to the page and the pass (echoes-on-ai-service.md §4, §5): the word the step failed with —
+// the AI service's stop or code, its client's `unreachable` or `unreadable`, or the adapter's `unreadable` — onto the
+// queue's outcome, how much of the pass it stops, and the name Sentry is told it under, empty for a log line alone. An
+// unsettled page counts an attempt; a deferred one (`budgetLimited`) counts none and stays due. A call whose answer the
+// service no longer holds when a broken stream is asked again (`result_gone`, `call_unknown`) defers its page alone, and
+// the next pass asks under a new callId.
+struct StepFate {
+  CurationStatus status;
+  EchoHalt halt;
+  std::string_view toldAs;
+};
+
+StepFate fateOf(const std::string& failure) {
+  static const std::map<std::string, StepFate, std::less<>> fates{
+      {"declined", {CurationStatus::refused, EchoHalt::page, {}}},
+      {"truncated", {CurationStatus::truncated, EchoHalt::page, kDeriveIssue}},
+      {"unreadable", {CurationStatus::schemaInvalid, EchoHalt::page, kDeriveIssue}},
+      {"tool_calls", {CurationStatus::schemaInvalid, EchoHalt::page, kDeriveIssue}},
+      {"provider_failed", {CurationStatus::transport, EchoHalt::page, kDeriveIssue}},
+      {"provider_rejected", {CurationStatus::transport, EchoHalt::page, kDeriveIssue}},
+      {"invalid_request", {CurationStatus::transport, EchoHalt::page, kDeriveIssue}},
+      {"too_large", {CurationStatus::transport, EchoHalt::page, kDeriveIssue}},
+      {"conflict", {CurationStatus::transport, EchoHalt::page, kDeriveIssue}},
+      {"result_gone", {CurationStatus::budgetLimited, EchoHalt::page, {}}},
+      {"call_unknown", {CurationStatus::budgetLimited, EchoHalt::page, {}}},
+      {"subject_exhausted", {CurationStatus::budgetLimited, EchoHalt::account, {}}},
+      {"concurrency_exhausted", {CurationStatus::budgetLimited, EchoHalt::account, {}}},
+      {"rate_limited", {CurationStatus::budgetLimited, EchoHalt::account, {}}},
+      {"background_exhausted", {CurationStatus::budgetLimited, EchoHalt::pass, {}}},
+      {"busy", {CurationStatus::budgetLimited, EchoHalt::pass, {}}},
+      {"paused", {CurationStatus::budgetLimited, EchoHalt::pass, {}}},
+      {"accounting_unavailable", {CurationStatus::budgetLimited, EchoHalt::pass, {}}},
+      {"provider_unavailable", {CurationStatus::budgetLimited, EchoHalt::pass, {}}},
+      {"unreachable", {CurationStatus::budgetLimited, EchoHalt::pass, {}}},
+      // A person's free pools: a server pass never draws on them, so meeting one means the service took it for a person's.
+      {"free_month_exhausted", {CurationStatus::budgetLimited, EchoHalt::pass, kUnexpectedIssue}},
+      {"free_day_exhausted", {CurationStatus::budgetLimited, EchoHalt::pass, kUnexpectedIssue}},
+  };
+  const auto fate = fates.find(failure);
+  if (fate != fates.end()) return fate->second;
+  if (failure.starts_with("pass_")) return {CurationStatus::budgetLimited, EchoHalt::pass, kPassIssue};
+  return {CurationStatus::budgetLimited, EchoHalt::pass, kUnexpectedIssue};
+}
+
+// A page that did not succeed, on its line: settled by a refusal, deferred, or failed with an attempt counted.
+std::string lineOutcome(CurationStatus status) {
+  if (status == CurationStatus::refused) return "refused";
+  if (status == CurationStatus::budgetLimited) return "budget_limited";
+  return "failed";
 }
 
 // Three disjoint counters: work delivered, work still owed, work that never will be.
@@ -47,10 +91,9 @@ void countPage(EchoSweepReport& report, CurationStatus status) {
 }
 
 EchoSweep::EchoSweep(EchoRepository& echoes, Segmenter& segmenter, Embedder& embedder,
-                     Curator& curator, Clock& clock, Entitlements& entitlements,
-                     SelectionRules rules, SweepBudget budget)
+                     Curator& curator, Clock& clock, SelectionRules rules, SweepBudget budget)
     : echoes_(echoes), segmenter_(segmenter), embedder_(embedder), curator_(curator), clock_(clock),
-      entitlements_(entitlements), rules_(std::move(rules)), budget_(budget),
+      rules_(std::move(rules)), budget_(budget),
       heartbeat_("journal-echo", "journal") {}
 
 void EchoSweep::start() {
@@ -63,8 +106,8 @@ void EchoSweep::start() {
                << " echoes, " << report.triggersSkippedRefrain << " refrains, "
                << report.inboundEnqueued << " inbound, " << report.pagesFailed << " failed, "
                << report.pagesRefused << " refused, " << report.pagesDeferred << " deferred, " << report.unitsDiscarded
-               << " units discarded, " << report.pagesOverBudget << " over budget, "
-               << report.usersOverAiBudget << " users out of AI budget";
+               << " units discarded, " << report.pagesOverBudget << " over budget, " << report.accountsStopped
+               << " accounts stopped" << (report.passStoppedBy.empty() ? "" : ", pass stopped by " + report.passStoppedBy);
   });
   const bool armed =
       segmenter_.configured() && embedder_.configured() && curator_.configured();
@@ -108,18 +151,14 @@ EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) 
     }
     ++report.usersScanned;
 
-    if (!entitlements_.aiAllowancesEnabled() && !entitlements_.sweepAllowanceFor(user, "journal").allows()) {
-      ++report.usersOverAiBudget;
-      observation.skip();
-      return report;
-    }
-
     const std::uint64_t corpusStamp = echoes_.corpusStamp(user);
     const std::optional<DuePage> page = echoes_.duePage(user, day, corpusStamp, versions());
     if (!page) { observation.skip(); return report; }
 
-    CurationOutcome outcome = settlePage(user, *page, corpusStamp, report);
-    countPage(report, outcome.status);
+    const Derivation settled = settlePage(user, *page, corpusStamp, report);
+    countPage(report, settled.outcome.status);
+    if (settled.halt == EchoHalt::account) ++report.accountsStopped;
+    if (settled.halt == EchoHalt::pass) report.passStoppedBy = settled.failure;
     if (report.pagesFailed > 0) observation.finish("failed");
     else if (report.pagesDeferred > 0) observation.finish("budget_limited");
     else if (observation.writeCount() == writes) observation.skip();
@@ -150,13 +189,6 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs, bool rejudgeAll) {
       ++report.usersScanned;
       const UserId& user = due.user;
 
-      // The background bucket, asked once per user. Dry means skipped, not failed: no stamp advances
-      // and every page is still owed next pass.
-      if (!entitlements_.aiAllowancesEnabled() && !entitlements_.sweepAllowanceFor(user, "journal").allows()) {
-        ++report.usersOverAiBudget;
-        continue;
-      }
-
       // Read once and carried through the user's whole pass.
       const std::uint64_t corpusStamp = echoes_.corpusStamp(user);
 
@@ -174,11 +206,21 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs, bool rejudgeAll) {
 
       for (std::size_t i = 0; i < pages.size(); ++i) {
         const DuePage page = pages[i];
-        CurationOutcome outcome = settlePage(user, page, corpusStamp, report);
-        countPage(report, outcome.status);
+        const Derivation settled = settlePage(user, page, corpusStamp, report);
+        countPage(report, settled.outcome.status);
+        // The account's own refusal ends its part of the pass, and the service's ends all of it; every page not yet
+        // asked stays due, with no attempt counted.
+        if (settled.halt == EchoHalt::account) {
+          ++report.accountsStopped;
+          break;
+        }
+        if (settled.halt == EchoHalt::pass) {
+          report.passStoppedBy = settled.failure;
+          break;
+        }
         // Walked on settled, not on success: a refused page replaced its own spans before the
         // curator was ever asked.
-        if (!isSettled(outcome.status)) continue;
+        if (!isSettled(settled.outcome.status)) continue;
 
         int enqueued = 0;
         for (const LocalDate& inbound : echoes_.inboundPages(user, page.day)) {
@@ -193,7 +235,9 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs, bool rejudgeAll) {
           ++report.inboundEnqueued;
         }
       }
+      if (!report.passStoppedBy.empty()) break;
     }
+    if (!report.passStoppedBy.empty()) observation.code(report.passStoppedBy);
     if (report.pagesFailed > 0) observation.finish("failed");
     else if (report.pagesDeferred > 0) observation.finish("budget_limited");
     else if (observation.writeCount() == writes) observation.skip();
@@ -208,20 +252,25 @@ EchoSweepReport EchoSweep::run(std::uint64_t sinceMs, bool rejudgeAll) {
   }
 }
 
-CurationOutcome EchoSweep::settlePage(const UserId& user, const DuePage& page,
-                                     std::uint64_t corpusStamp, EchoSweepReport& report) {
+EchoSweep::Derivation EchoSweep::settlePage(const UserId& user, const DuePage& page, std::uint64_t corpusStamp,
+                                            EchoSweepReport& report) {
   WriteObservation observation{"journal.echo.derive", "journal", "background"};
   WriteContext context{observation};
   try {
-    CurationOutcome outcome = derive(user, page, corpusStamp, report);
+    Derivation derived = derive(user, page, corpusStamp, report);
+    CurationOutcome& outcome = derived.outcome;
     if (isSettled(outcome.status)) outcome.versions = versions();
     echoes_.recordCuration(user, page.day, outcome);
-    if (isSuccess(outcome.status)) observation.finish();
-    else if (outcome.status == CurationStatus::rateLimited) observation.finish("rate_limited");
-    else if (outcome.status == CurationStatus::refused) observation.finish("refused");
-    else if (outcome.status == CurationStatus::budgetLimited) observation.finish("budget_limited");
-    else observation.fail(std::runtime_error("echo derivation failed"));
-    return outcome;
+    if (!derived.failure.empty()) observation.code(derived.failure);
+    if (isSuccess(outcome.status)) {
+      observation.finish();
+    } else if (derived.toldAs.empty()) {
+      observation.finish(lineOutcome(outcome.status));
+    } else {
+      if (derived.toldAs != kDeriveIssue) observation.failureOperation(std::string(derived.toldAs));
+      observation.fail(std::runtime_error("echo derivation failed"), lineOutcome(outcome.status));
+    }
+    return derived;
   } catch (const std::exception& error) {
     observation.fail(error);
     throw;
@@ -231,8 +280,8 @@ CurationOutcome EchoSweep::settlePage(const UserId& user, const DuePage& page,
   }
 }
 
-CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
-                                  std::uint64_t corpusStamp, EchoSweepReport& report) {
+EchoSweep::Derivation EchoSweep::derive(const UserId& user, const DuePage& page, std::uint64_t corpusStamp,
+                                        EchoSweepReport& report) {
   CurationOutcome outcome;
   outcome.bodyStampMs = page.bodyStampMs;
   outcome.corpusStamp = corpusStamp;
@@ -259,11 +308,12 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
     report.unitsDiscarded += cut.discarded;
     // A failed cut is a failed call, never a page with nothing on it.
     if (!cut.ok) {
-      outcome.status = statusFor(cut.failure);
+      const StepFate fate = fateOf(cut.failure);
+      outcome.status = fate.status;
       outcome.error = "segmenter: " + cut.failure;
       // A refusal settles the page, so it ends carrying nothing. The spans are left alone.
       if (outcome.status == CurationStatus::refused) echoes_.clearEchoes(user, page.day);
-      return outcome;
+      return {outcome, cut.failure, fate.halt, fate.toldAs};
     }
     fresh = cut.passages;
   }
@@ -273,7 +323,7 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
     echoes_.replaceSpans(user, page.day, {}, embedder_.version(), page.body, page.bodyStampMs);
     echoes_.replaceEchoes(user, page.day, CuratedEchoes{curator_.version(), {}});
     outcome.status = CurationStatus::emptyOk;
-    return outcome;
+    return {outcome};
   }
 
   // 2 — reconcile, so unchanged text keeps its identity however far down the page it moved. It runs
@@ -315,7 +365,7 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
       outcome.status = CurationStatus::transport;
       outcome.error = "embedder returned " + std::to_string(fetched.size()) + " of " +
                       std::to_string(texts.size());
-      return outcome;
+      return {outcome, "embedder_short", EchoHalt::page, kDeriveIssue};
     }
     for (std::size_t i = 0; i < fetched.size(); ++i) vectors[asked[i]] = fetched[i];
     // What was BOUGHT, not what the page holds: the two differ now, and the gap is the saving.
@@ -375,7 +425,7 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   if (proposed.empty()) {
     echoes_.replaceEchoes(user, page.day, CuratedEchoes{curator_.version(), {}, structural});
     outcome.status = CurationStatus::emptyOk;
-    return outcome;
+    return {outcome};
   }
 
   // 6 — curate. `ok == false` is a failed call, not the same as finding nothing.
@@ -384,11 +434,12 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   for (const auto& [spanId, span] : offered) candidates.push_back(span);
   const Curation curation = curator_.curate(user, tonight, candidates, proposed);
   if (!curation.ok) {
-    outcome.status = statusFor(curation.failure);
+    const StepFate fate = fateOf(curation.failure);
+    outcome.status = fate.status;
     outcome.error = curation.failure;
     // A refusal settles the page; this page's spans were replaced before the curator was asked.
     if (outcome.status == CurationStatus::refused) echoes_.clearEchoes(user, page.day);
-    return outcome;
+    return {outcome, curation.failure, fate.halt, fate.toldAs};
   }
 
   // 7 — persist what the curator kept.
@@ -428,7 +479,7 @@ CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,
   echoes_.replaceEchoes(user, page.day, curated);
   report.echoesWritten += static_cast<int>(curated.rows.size());
   outcome.status = curated.rows.empty() ? CurationStatus::emptyOk : CurationStatus::ok;
-  return outcome;
+  return {outcome};
 }
 
 }

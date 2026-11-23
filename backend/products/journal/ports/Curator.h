@@ -23,7 +23,7 @@ struct Verdict {
 // `ok` false means the call failed, not that nothing was found: retry the page.
 struct Curation {
   bool ok = false;
-  std::string failure;         // Provider outcome or bounded AI budget refusal.
+  std::string failure;         // why the call failed, in one word the sweep reads (EchoSweep.cpp)
   std::vector<Verdict> verdicts;
 };
 
@@ -35,7 +35,7 @@ struct Curator {
   // Stamped on every echo row.
   virtual std::string version() const = 0;
 
-  // `user` attributes the call's spend to an account.
+  // The call is `user`'s background work, paid from Windmill's budgets for that account.
   virtual Curation curate(const UserId& user, const std::vector<Vectored>& tonight,
                           const std::vector<Vectored>& candidates,
                           const std::vector<Pairing>& proposed) = 0;

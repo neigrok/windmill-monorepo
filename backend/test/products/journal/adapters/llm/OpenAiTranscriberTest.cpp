@@ -122,7 +122,7 @@ struct Allowances {
   FakeEntitlementCopy subscriptions;
   FakeClock clock;
   FakeAiUsageRepository usage;
-  Entitlements entitlements{subscriptions, clock, usage, {.owners = EmailList{"owner@example.com"}}, {}, budgets};
+  Entitlements entitlements{subscriptions, clock, usage, {.owners = EmailList{"owner@example.com"}}, budgets};
   Failures failures;
   std::shared_ptr<AiCallBudget> calls = std::make_shared<AiCallBudget>(budgets, entitlements, accounts, failures);
   User owner = accounts.createUser(Email{"owner@example.com"}, "Owner");
