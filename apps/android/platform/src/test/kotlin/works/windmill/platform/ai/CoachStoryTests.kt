@@ -84,7 +84,7 @@ class CoachStoryTests(private val file: File) {
             override suspend fun withdraw(lease: HostLease) { guard(lease); exists = false; hostCalls += Json.objectOf("op" to Json.of("withdraw")); marks += Json.Null }
         }
         val telemetry = object : Telemetry {
-            override fun failure(operation: FailureOperation) { events += Json.objectOf("kind" to Json.of("failure"), "operation" to Json.of(operation.label)) }
+            override fun failure(operation: FailureOperation, cause: Throwable?, code: String?) { events += Json.objectOf("kind" to Json.of("failure"), "operation" to Json.of(operation.label)) }
             override fun turn(report: TurnReport) { events += Json.Obj(report.json.obj().toList() + ("kind" to Json.of("turn"))) }
             override fun ability(report: AbilityReport) { events += Json.Obj(report.json.obj().toList() + ("kind" to Json.of("ability"))) }
         }

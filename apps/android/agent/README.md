@@ -52,7 +52,7 @@ the existing Android Sentry boundary. Lost connections and expected refusals do 
 Gym's `GymTurnTelemetry` is the port, and names the first-party events. No IDs, seats' keys, content,
 credentials, raw errors or amounts enter these outcomes. Telemetry observers cannot fail a turn.
 Recovery `call_unknown` is an interrupted turn without an Issue; the same refusal during a live
-turn is a call defect. Non-service HTTP error bodies and expected temporary pass refusals are quiet.
+turn is a call defect. AI service error bodies that are no service refusal and expected temporary pass refusals are quiet; a pass-door 5xx that names no refusal is reported, as `proxy-5xx`, and read as not answering. Each report carries the throwable that failed, or a bounded code where none did.
 See [Android observability](../../../docs/ANDROID_OBSERVABILITY.md).
 
 From `apps/android`, `:platform:testDebugUnitTest --tests '*Coach*Tests'` runs every shared story in

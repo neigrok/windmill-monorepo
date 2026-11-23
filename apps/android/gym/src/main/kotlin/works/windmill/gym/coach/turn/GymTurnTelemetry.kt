@@ -35,9 +35,10 @@ class GymTurnTelemetry(private val telemetry: PlatformTelemetry, private val cat
         })
     }
 
-    // `ai-call`, `ai-pass` and `agent-host`, each a static operation with no message of anything said.
-    override fun failure(operation: FailureOperation) {
-        telemetry.failure(operation.label, CoachTurnFailure(operation.label))
+    // `ai-call`, `ai-pass` and `agent-host`, each a static operation: the throwable that failed goes as it is, its message scrubbed by the reporter, so two causes never share one fingerprint; a failure no throwable stands for names its bounded code.
+    override fun failure(operation: FailureOperation, cause: Throwable?, code: String?) {
+        val kind = code?.takeIf { it in codes || it in failureKinds }
+        telemetry.failure(operation.label, cause ?: CoachTurnFailure(operation.label), kind?.let { mapOf("failure_kind" to it) }.orEmpty())
     }
 
     // A failure of gym's own around the turn: its store, a record that refused its own write, or the Share door.
@@ -102,13 +103,15 @@ class GymTurnTelemetry(private val telemetry: PlatformTelemetry, private val cat
     companion object {
         const val other = "other"
         const val processEndedCode = "process_ended"
+        // What a failure no throwable stands for is named by, beside the turn's codes: a door's 5xx that named no refusal.
+        val failureKinds = setOf("proxy-5xx")
         val abilityOutcomes = setOf("ok", other) + AbilityRefusal.entries.map { it.code } + listOf("one-proposal", "one-note", "stopped", "product-refused")
         // A turn's code: what the engine, the pass door or the AI service answered (Coach engine §7), or the seat changing under it.
         val codes = setOf("subject_exhausted", "free_day_exhausted", "free_month_exhausted", "concurrency_exhausted", "rate_limited", "busy", "paused",
             "unauthenticated", "invalid_installation", "device_bound", "client-update-required", "anonymous_ai_unavailable", "unavailable",
             "provider_unavailable", "provider_failed", "provider_rejected", "accounting_unavailable", "result_gone", "answer-timeout", "model-call-limit",
             "invalid_request", "invalid-answer", "untrusted-origin", "unsupported-media-type", "too_large", "funding_required", "conflict",
-            "call_unknown", "picture_gone", "pass_expired", "pass_missing", "pass_signature", "pass_audience", "pass_malformed", "stopped", processEndedCode)
+            "call_unknown", "picture_gone", "pass_expired", "pass_missing", "pass_signature", "pass_audience", "pass_malformed", "stopped", "host", processEndedCode)
     }
 }
 

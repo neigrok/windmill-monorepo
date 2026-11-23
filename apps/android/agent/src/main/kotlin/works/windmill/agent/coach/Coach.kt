@@ -147,10 +147,11 @@ data class AbilityReport(val name: String, val outcome: String, val code: String
     val json get() = Json.objectOf("name" to Json.of(name), "outcome" to Json.of(outcome), "code" to (code?.let(Json::of) ?: Json.Null))
 }
 enum class FailureOperation(val label: String) { aiCall("ai-call"), aiPass("ai-pass"), host("agent-host") }
+// `cause` is the throwable that failed, where one did; `code` a bounded word for a failure no throwable stands for: a defect's code, or what a door answered.
 interface Telemetry {
     fun turn(report: TurnReport)
     fun ability(report: AbilityReport)
-    fun failure(operation: FailureOperation)
+    fun failure(operation: FailureOperation, cause: Throwable? = null, code: String? = null)
 }
 
 fun isStaleTurn(state: String, serverUpdatedAt: Long?, syncLive: Boolean, serverNow: Long?): Boolean =

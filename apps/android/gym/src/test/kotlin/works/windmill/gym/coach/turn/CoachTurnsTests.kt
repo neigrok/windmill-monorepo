@@ -2,6 +2,7 @@ package works.windmill.gym.coach.turn
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -671,6 +672,69 @@ class CoachTurnsTests {
             assertNull(phone.device(EndTurn.runningTurnKey))
             assertNull(phone.turns.turn.value)
             assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
+        }
+    }
+
+    // A host fault before the engine holds the turn: the question returns to the field with its picture, nothing stays running, Coach says it did not answer, and the fault is reported once, as itself.
+    @Test fun aPictureUnreadableAtTheOpenReturnsTheQuestionAndReportsOnce() = runTest {
+        TurnPhone(this, folder.newFolder(), script("""[{"event":"text","data":{"delta":"Hi"}}]""")).use { phone ->
+            val bitmap = Bitmap.createBitmap(40, 30, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
+            val bytes = java.io.ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
+            val picture = ChosenPicture(CoachAttachment("thr_0123456789abcdef", "image/jpeg", 40, 30, bytes.size.toLong()), bytes)
+            checkNotNull(phone.turns.send("Private question about my knee", picture, null, anonymous = true))
+            phone.pictureFolder.listFiles()!!.filter { it.name.endsWith("model") }.forEach { it.delete(); it.mkdirs() }
+            advanceUntilIdle()
+            assertEquals(emptyList<CoachMessage>(), phone.messages())
+            assertNull(phone.device(EndTurn.runningTurnKey))
+            assertNull(phone.turns.turn.value)
+            assertEquals(WithdrawnTurn("Private question about my knee", picture, null), phone.turns.withdrawn.value)
+            assertEquals(CoachTurnFault.noAnswer, phone.turns.fault.value)
+            assertEquals(listOf("agent-host"), phone.telling.failures.map { it["operation"] })
+            assertTrue(phone.telling.errors.single() is java.io.IOException)
+            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "failed", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))
+            assertTrue(phone.telling.events.none { (_, properties) -> properties.values.any { "knee" in it } })
+        }
+    }
+
+    // A picture whose model copy cannot be read at the send is no send: the room says so before any record.
+    @Test fun aPictureUnreadableAtTheSendIsHeldBack() = runTest {
+        TurnPhone(this, folder.newFolder(), script("[]")).use { phone ->
+            val picture = ChosenPicture(CoachAttachment("thr_0123456789abcdef", "image/jpeg", 40, 30, 3), byteArrayOf(1, 2, 3))
+            phone.pictureFolder.mkdirs()
+            File(phone.pictureFolder, "thr_0123456789abcdef.model").mkdirs()
+            assertNull(phone.turns.send("Look", picture, null, anonymous = true))
+            assertEquals(CoachTurnFault.pictureUnavailable, phone.turns.fault.value)
+            assertEquals(emptyList<CoachMessage>(), phone.messages())
+        }
+    }
+
+    // A host fault mid-turn ends the turn failed on its own code, reported once with the throwable that failed, whose class sets it apart from every other cause.
+    @Test fun aHostFaultMidTurnEndsOnItsOwnCodeAndReportsItsCause() = runTest {
+        val server = script("""[
+            {"event":"text","data":{"delta":"Sharing"}},
+            {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"share_session","input":{"sessionId":"sesAAAAAAAAAAAA1"}}]}},
+            {"await":"results","batch":1},
+            {"event":"done","data":{"state":"completed"}}]""")
+        TurnPhone(this, folder.newFolder(), server, shares = { throw IllegalStateException("Heavy Squat Day") }).use { phone ->
+            phone.signIn()
+            val turn = checkNotNull(phone.turns.send("Share my workout", null, null, anonymous = false))
+            advanceUntilIdle()
+            assertEquals(MessageState.failed to "Sharing", phone.message(turn.coach)?.let { it.state to it.text })
+            assertEquals("host", phone.telling.named("coach_turn").single()["code"])
+            assertEquals(listOf("agent-host"), phone.telling.failures.map { it["operation"] })
+            assertTrue(phone.telling.errors.single() is IllegalStateException)
+        }
+    }
+
+    // A pass door answering a 5xx that names no refusal did not answer: never "no connection", and reported once by its status class.
+    @Test fun aPassDoorFailingIsNoLostConnection() = runTest {
+        val server = script("[]").apply { passAnswer = works.windmill.platform.ai.AiResponse(500) }
+        TurnPhone(this, folder.newFolder(), server).use { phone ->
+            checkNotNull(phone.turns.send("Private question", null, null, anonymous = true))
+            advanceUntilIdle()
+            assertEquals(CoachTurnRefusal.Unanswered, phone.turns.refusal.value)
+            assertEquals("Private question", phone.turns.withdrawn.value?.question)
+            assertEquals(listOf(mapOf("failure_kind" to "proxy-5xx", "operation" to "ai-pass")), phone.telling.failures)
         }
     }
 

@@ -96,8 +96,12 @@ internal class ScriptedTurns(private val events: List<Json>) : AiTransport {
     // What each round answered the calls of the one before it, in order.
     val results: List<Json> get() = rounds.flatMap { round -> round.member("messages").arr().lastOrNull()?.takeIf { it["role"]?.str() == "tool" }?.member("results")?.arr().orEmpty() }
 
+    // What the pass door answers in place of a pass, when a test says.
+    var passAnswer: AiResponse? = null
+
     override suspend fun pass(body: Json): AiResponse {
         beforePass()
+        passAnswer?.let { passes += 1; return it }
         if (unreachable) throw AiTransportFailure("offline")
         passes += 1
         refuseOpen?.takeIf { it.atPassDoor }?.let { return AiResponse(it.status, Json.objectOf("error" to Json.of(it.code), "code" to Json.of(it.code))) }
@@ -226,8 +230,12 @@ internal class TellingRecorder : Telemetry {
         onEvent(name, properties)
     }
 
+    // The throwable each failure carried, in order with `failures`.
+    val errors: MutableList<Throwable> = Collections.synchronizedList(mutableListOf())
+
     override fun failure(operation: String, error: Throwable, properties: Map<String, String>) {
         failures += properties + ("operation" to operation)
+        errors += error
     }
 
     fun named(name: String) = events.filter { it.first == name }.map { it.second }

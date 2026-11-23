@@ -38,7 +38,7 @@ class TurnRunner(private val host: ToolHost, private val ai: AiClient, private v
             }
         } catch (_: HostUnavailable) { abandon(turn) }
         catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) { observe { failure(FailureOperation.host) }; throw failure }
+        catch (failure: Exception) { observe { failure(FailureOperation.host, failure) }; throw failure }
         finally { synchronized(admission) { if (active === turn) active = null } }
     }
 
@@ -95,7 +95,7 @@ class TurnRunner(private val host: ToolHost, private val ai: AiClient, private v
                     val message = answer.data.member("message")
                     val calls = message.member("parts").arr().mapNotNull { it["toolCall"]?.let(::ToolCall) }
                     if (calls.map { it.id }.distinct().size != calls.size) {
-                        observe { failure(FailureOperation.aiCall) }
+                        observe { failure(FailureOperation.aiCall, code = "invalid-answer") }
                         return@withLease finish(turn, EndState.failed, code = "invalid-answer")
                     }
                     messages += message
@@ -143,8 +143,8 @@ class TurnRunner(private val host: ToolHost, private val ai: AiClient, private v
         }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) {
-            observe { failure(FailureOperation.host) }
-            if (turn.lease != null && !turn.done) return finish(turn, EndState.failed, code = "invalid-answer")
+            observe { failure(FailureOperation.host, failure) }
+            if (turn.lease != null && !turn.done) return finish(turn, EndState.failed, code = "host")
             throw failure
         } finally { synchronized(admission) { if (active === turn) active = null } }
     }

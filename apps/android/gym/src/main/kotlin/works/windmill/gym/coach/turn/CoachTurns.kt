@@ -59,6 +59,7 @@ import works.windmill.gym.domain.coach.MessageState
 import works.windmill.gym.domain.coach.OpenTurn
 import works.windmill.gym.domain.coach.OpenTurnOnce
 import works.windmill.gym.domain.coach.Picture
+import works.windmill.gym.domain.coach.WithdrawTurn
 import works.windmill.gym.domain.coach.caughtUpWithItsLog
 import works.windmill.gym.net.GymRest
 import works.windmill.gym.store.EngineTraining
@@ -227,11 +228,15 @@ class CoachTurns(
 
     // The engine hears of the change before the host lets go, so a write the host stops waiting on leaves the turn's end to the engine, which writes it through the lease's writer when it has one.
     private suspend fun letGo(live: LiveTurn) {
-        attempted(Unit) {
+        try {
             coroutineScope {
                 launch(start = CoroutineStart.UNDISPATCHED) { runner.seatWillChange() }
                 live.lease.released = true
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (reported: Exception) {
+            // The engine reported its host's fault under `agent-host`; the record left running is the sweep's to end.
         }
     }
 
@@ -310,6 +315,8 @@ class CoachTurns(
         try {
             profile.value
             row = picture?.let(pictures::keep)
+            // The model copy is what a turn sends; one this phone cannot read now never reaches the engine.
+            row?.let { pictures.model(it.id) ?: throw IOException("A picture's model copy is missing.") }
         } catch (failure: IOException) {
             tells.failure(TurnFault.storage)
             return said(CoachTurnFault.pictureUnavailable)
@@ -359,7 +366,14 @@ class CoachTurns(
         val question = if (TextSpec.isBlank(live.question)) "" else live.question
         live.work = scope.launch(storage) {
             try {
-                val end = runner.run(TurnInput(live.lease.turnId, TurnSeat(live.seat, live.lease.pin.replica), question, emptyList()), profile.value.of(seat), recover)
+                val end = try {
+                    runner.run(TurnInput(live.lease.turnId, TurnSeat(live.seat, live.lease.pin.replica), question, emptyList()), profile.value.of(seat), recover)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (fault: Exception) {
+                    // The engine reported the fault under `agent-host`, and a turn it could not begin leaves its records here.
+                    return@launch unbegun(live, recover)
+                }
                 if (!live.lease.released) settled(end, live, recover)
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -395,6 +409,29 @@ class CoachTurns(
             return
         }
         refused.value = refusal.takeUnless { it == CoachTurnRefusal.Unanswered }
+    }
+
+    // A turn the host failed before the engine held it: a send goes back to the field, its records with it, and says Coach did not answer; a recovery ends interrupted.
+    private suspend fun unbegun(live: LiveTurn, recover: Boolean) {
+        val turn = live.lease.turn
+        attempted(Unit) {
+            withContext(NonCancellable) {
+                training.pinnedOn(live.lease.pin) { runner ->
+                    if (recover) runner.run(EndTurn(turn.coach, MessageState.interrupted))
+                    else {
+                        when (val withdrawn = runner.run(WithdrawTurn(turn))) {
+                            is Outcome.Committed -> pictures.delete(withdrawn.result)
+                            else -> Unit
+                        }
+                        live.lease.threadStands = runner.read(CoachMessage.scope) { it.repository(CoachThread).find(turn.thread, ViewMode.drawn) != null }
+                    }
+                }
+            }
+        }
+        if (recover) return
+        tells.settled(EndState.failed, null, elapsedMs() - live.started)
+        faulted.value = CoachTurnFault.noAnswer
+        takenBack.value = WithdrawnTurn(live.question, live.picture, turn.thread.takeIf { live.lease.threadStands })
     }
 
     // What the pass door or the AI service says of this installation stands across launches. `AiInstallation` reports a store that could not keep it.
