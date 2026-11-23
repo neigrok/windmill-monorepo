@@ -3,9 +3,11 @@ import XCTest
 @MainActor final class ShellFlowTests: XCTestCase {
   override func setUp() { continueAfterFailure = false }
 
-  func launch(_ board: String) -> XCUIApplication {
+  // A flow that takes a band's Undo launches with every band standing ten minutes (`-band-stands`), so a slow runner
+  // cannot outlast one; a flow that watches a band leave launches without it, on the six seconds and the hold's nine.
+  func launch(_ board: String, takingUndo: Bool = false) -> XCUIApplication {
     let app = XCUIApplication()
-    app.launchArguments = ["-model-server", "-board", board]
+    app.launchArguments = ["-model-server", "-board", board] + (takingUndo ? ["-band-stands", "600"] : [])
     app.launch()
     return app
   }
@@ -140,10 +142,10 @@ import XCTest
     assertLearnToSailBoard(app)
   }
 
-  // Roadmap · iOS 02.1 and 02.2: only an Up next row slides right to Complete, a full swipe stops at the button, the
-  // band's Undo takes the completion back, and a completion left alone regroups the Board.
-  func testCompletingAStepRegroupsTheBoardAndUndoTakesItBack() {
-    let app = launch("roadmap-learn-to-sail")
+  // Roadmap · iOS 02.1 and 02.2: only an Up next row slides right to Complete, a full swipe stops at the button, and the
+  // band's Undo takes the completion back.
+  func testOnlyAnUpNextRowSlidesToCompleteAndUndoTakesTheCompletionBack() {
+    let app = launch("roadmap-learn-to-sail", takingUndo: true)
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
     let complete = app.buttons["Complete"]
     let undo = app.buttons["roadmap-undo"]
@@ -157,14 +159,22 @@ import XCTest
     app.roadmapStep("Read the wind").swipeRight()
     XCTAssertTrue(complete.waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["3 of 8 done"].exists, "A full swipe stops at the button and completes nothing")
-    // The band keeps Undo six seconds: it is taken as soon as it shows.
     complete.tap()
     XCTAssertTrue(undo.waitForExistence(timeout: 10))
     undo.tap()
     XCTAssertTrue(app.staticTexts["3 of 8 done"].waitForExistence(timeout: 10))
     XCTAssertTrue(undo.waitForNonExistence(timeout: 5))
     XCTAssertTrue(rows.firstMatch.waitForLabel(atRest, timeout: 5))
+  }
 
+  // Roadmap · iOS 02.2: a completion left alone regroups the Board, what it unlocked arriving first in Up next, and its
+  // band leaves when its six seconds are over.
+  func testACompletionLeftAloneRegroupsTheBoardAndItsBandLeaves() {
+    let app = launch("roadmap-learn-to-sail")
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    let complete = app.buttons["Complete"]
+    let undo = app.buttons["roadmap-undo"]
+    let rows = app.descendants(matching: .any).matching(identifier: "roadmap-step")
     app.roadmapStep("Read the wind").swipeRight()
     XCTAssertTrue(complete.waitForExistence(timeout: 5))
     complete.tap()
@@ -178,10 +188,10 @@ import XCTest
     XCTAssertTrue(app.staticTexts["4 of 8 done"].exists)
   }
 
-  // Roadmap · iOS 02.3, 02.4, 03.8 and 03.9: Delete asks once on the row with what it costs, then holds the step with
-  // Undo; the long-press menu asks the same question, and a delete left alone stands at the next launch.
-  func testDeletingAStepAsksOnceHoldsItWithUndoAndStands() {
-    let app = launch("roadmap-learn-to-sail")
+  // Roadmap · iOS 02.3, 03.8 and 03.9: Delete asks once on the row with what it costs, then holds the step with Undo,
+  // which brings it back.
+  func testDeletingAStepAsksOnceOnItsRowAndUndoBringsItBack() {
+    let app = launch("roadmap-learn-to-sail", takingUndo: true)
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
     let tie = app.roadmapStep("Tie a bowline")
     let undo = app.buttons["roadmap-undo"]
@@ -202,14 +212,21 @@ import XCTest
     XCTAssertTrue(delete.waitForExistence(timeout: 5))
     delete.tap()
     XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-    // The band keeps Undo for the hold's nine seconds: it is taken as soon as the step is seen gone.
     confirm.tap()
     XCTAssertTrue(undo.waitForExistence(timeout: 10))
     XCTAssertTrue(app.staticTexts["3 of 7 done"].waitForExistence(timeout: 5))
     undo.tap()
     XCTAssertTrue(app.staticTexts["3 of 8 done"].waitForExistence(timeout: 10))
     XCTAssertTrue(tie.waitForExistence(timeout: 5))
+  }
 
+  // Roadmap · iOS 02.4, 03.8 and 03.9: the long-press menu asks the same question as the row, and a delete left alone
+  // stands: its band leaves when the hold's nine seconds are over, and the step is gone at the next launch.
+  func testTheMenusDeleteAsksTheSameAndADeleteLeftAloneStands() {
+    let app = launch("roadmap-learn-to-sail")
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    let tie = app.roadmapStep("Tie a bowline")
+    let confirm = app.buttons["Delete Step"], undo = app.buttons["roadmap-undo"]
     // The menu lists what this build can do to the step: a Locked step has no Complete.
     app.roadmapStep("Leave the dock").press(forDuration: 1)
     XCTAssertTrue(confirm.waitForExistence(timeout: 5))
@@ -233,8 +250,8 @@ import XCTest
   }
 
   // The labels of the step rows on screen, in order.
-  // Read from one snapshot of the screen, not one query a row: a test reads them under a band whose Undo lasts six
-  // seconds, and a slow runner spent three of them on two rows queried one by one.
+  // Read from one snapshot of the screen, not one query a row: a slow runner spent three seconds on two rows queried one
+  // by one.
   func stepRows(_ app: XCUIApplication) -> [String] {
     func rows(_ element: any XCUIElementSnapshot) -> [String] {
       (element.identifier == "roadmap-step" ? [element.label] : []) + element.children.flatMap(rows)
@@ -282,14 +299,13 @@ import XCTest
   // Roadmap · iOS 03.4, 03.6 and 03.6b: Complete on a step's page keeps the page and says what opened; a Done step
   // says what Reset would lock before it is pressed, and Reset asks nothing; the band's Undo takes each back.
   func testCompletingAndResettingAStepOnItsPageKeepThePageAndUndoTakesEachBack() {
-    let app = launch("roadmap-learn-to-sail")
+    let app = launch("roadmap-learn-to-sail", takingUndo: true)
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
     let status = app.descendants(matching: .any)["roadmap-step-status"]
     let complete = app.buttons["roadmap-complete"], reset = app.buttons["roadmap-reset"], undo = app.buttons["roadmap-undo"]
     app.roadmapStep("Read the wind").tap()
     XCTAssertTrue(app.roadmapStepPage("Read the wind"))
     XCTAssertFalse(reset.exists)
-    // The band keeps Undo six seconds: it is taken once the page has turned.
     complete.tap()
     XCTAssertTrue(undo.waitForExistence(timeout: 10))
     XCTAssertTrue(app.staticTexts["Leave the dock is up next"].exists)
@@ -322,7 +338,7 @@ import XCTest
   // with what the delete costs; answered, the room stands on the Board without the step, and the band's Undo brings it
   // back. The roadmap's one starting step's menu has no Delete Step.
   func testDeletingAStepFromItsPageAsksThereAndReturnsToTheBoard() {
-    let app = launch("roadmap-learn-to-sail")
+    let app = launch("roadmap-learn-to-sail", takingUndo: true)
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
     let more = app.buttons["roadmap-step-more"], confirm = app.buttons["Delete Step"], undo = app.buttons["roadmap-undo"]
     app.roadmapStep("Read the wind").tap()
@@ -344,7 +360,6 @@ import XCTest
     XCTAssertTrue(confirm.waitForExistence(timeout: 5))
     confirm.tap()
     XCTAssertTrue(app.staticTexts["Delete Read the wind?"].waitForExistence(timeout: 5))
-    // The band keeps Undo for the hold's nine seconds: it is taken as soon as the Board is seen without the step.
     confirm.tap()
     XCTAssertTrue(app.staticTexts["3 of 7 done"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.staticTexts["Read the wind deleted"].exists)
@@ -479,7 +494,7 @@ import XCTest
   // asks once, a tap outside keeps editing and Discard writes nothing; and Create shows the step on the Board, where
   // Undo takes it back.
   func testTheStepFormRefusesWhereItStandsAsksBeforeDiscardingAndCreatesWithUndo() {
-    let app = launch("roadmap-learn-to-sail")
+    let app = launch("roadmap-learn-to-sail", takingUndo: true)
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
     let commit = app.buttons["roadmap-form-commit"], cancel = app.buttons["roadmap-form-cancel"], undo = app.buttons["roadmap-undo"]
     let refusal = app.staticTexts["roadmap-form-refusal"]
@@ -545,7 +560,6 @@ import XCTest
     again.typeText("Reefing basics\n")
     choose("Read the wind", in: "Requires", of: app)
     commit.tap()
-    // The band keeps Undo for six seconds: the Board is read, and Undo taken, as soon as the step is seen.
     XCTAssertTrue(app.roadmapStep("Reefing basics").waitForExistence(timeout: 10))
     XCTAssertEqual(app.roadmapStep("Reefing basics").label, "Sky, Reefing basics, Needs Read the wind · 1 to go")
     XCTAssertTrue(app.staticTexts["Reefing basics added · Locked"].exists && app.staticTexts["3 of 9 done"].exists)
@@ -559,7 +573,7 @@ import XCTest
   // back; Delete Step in the form asks there with what the delete costs and leaves the room on the Board; and the
   // roadmap's one starting step has no Delete Step.
   func testEditSavesAStepsChangeWithUndoAndDeleteStepAsksInTheForm() {
-    let app = launch("roadmap-learn-to-sail")
+    let app = launch("roadmap-learn-to-sail", takingUndo: true)
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
     let commit = app.buttons["roadmap-form-commit"], undo = app.buttons["roadmap-undo"], delete = app.buttons["roadmap-form-delete"]
     let status = app.descendants(matching: .any)["roadmap-step-status"]
@@ -624,7 +638,7 @@ import XCTest
   // commits; a relaunch opens the roadmap again; and Delete Roadmap asks once, leaves the room with no roadmap and Undo
   // in the band, which brings it back.
   func testARoadmapIsMadeRenamedReopenedAndDeletedWithUndoSignedOut() {
-    let app = launch("roadmap-empty")
+    let app = launch("roadmap-empty", takingUndo: true)
     let new = app.buttons["roadmap-new"], name = app.textFields["roadmap-new-name"], create = app.buttons["roadmap-new-create"]
     XCTAssertTrue(new.waitForExistence(timeout: 30))
     new.tap()
@@ -674,7 +688,6 @@ import XCTest
     openTitleMenu("Cook at home", in: app)
     confirm.tap()
     XCTAssertTrue(app.staticTexts["Delete Cook at home?"].waitForExistence(timeout: 5))
-    // The band keeps Undo for the hold's nine seconds: it is taken as soon as the room is seen without the roadmap.
     confirm.tap()
     XCTAssertTrue(app.staticTexts["No roadmaps yet"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.staticTexts["Cook at home deleted"].exists)
@@ -732,14 +745,13 @@ import XCTest
   // roadmap again. A row of All Roadmaps slides to Delete and stops there, asks on the row, and the list stays under the
   // band, whose Undo brings the row back.
   func testDeletingARoadmapAsksOnceMovesTheRoomOnAndUndoBringsItBack() {
-    let app = launch("roadmap-several")
+    let app = launch("roadmap-several", takingUndo: true)
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
     let confirm = app.buttons["Delete Roadmap"], undo = app.buttons["roadmap-undo"]
     openTitleMenu("Learn to sail", in: app)
     confirm.tap()
     XCTAssertTrue(app.staticTexts["Delete Learn to sail?"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Also removes the step that opens it in Become a day skipper"].exists)
-    // The band keeps Undo for the hold's nine seconds: it is taken as soon as the next roadmap's Board is seen.
     confirm.tap()
     XCTAssertTrue(app.navigationBars["Spanish B1"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.staticTexts["Learn to sail deleted"].exists && app.staticTexts["2 of 7 done"].exists)

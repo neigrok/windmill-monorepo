@@ -13,9 +13,11 @@ import XCTest
 @MainActor final class RoadmapFlowTests: XCTestCase {
   override func setUp() { continueAfterFailure = false }
 
-  func launch(_ board: String, asking more: [String] = []) -> XCUIApplication {
+  // A flow that takes a band's Undo launches with every band standing ten minutes (`-band-stands`), so a slow runner
+  // cannot outlast one.
+  func launch(_ board: String, takingUndo: Bool = false, asking more: [String] = []) -> XCUIApplication {
     let app = XCUIApplication()
-    app.launchArguments = ["-model-server", "-board", board] + more
+    app.launchArguments = ["-model-server", "-board", board] + (takingUndo ? ["-band-stands", "600"] : []) + more
     app.launch()
     return app
   }
@@ -121,7 +123,7 @@ import XCTest
   // done and leaves the step Up next; a subtask and a link slide left for Delete, each held with Undo in the band, and
   // Undo brings it back.
   func testEverySubtaskDoneCompletesNothingAndADeletedSubtaskOrLinkComesBackByUndo() {
-    let app = launch("roadmap-workspace")
+    let app = launch("roadmap-workspace", takingUndo: true)
     let undo = app.buttons["roadmap-undo"], done = app.staticTexts["roadmap-subtasks-done"]
     page(of: "Read the wind", in: app)
     XCTAssertEqual(subtasks(app).label, "Subtasks, 1 of 2, Only you")
@@ -168,7 +170,7 @@ import XCTest
   // Link takes another through the same two fields, both part of the draft; Save writes them in its one gesture, and
   // its Undo brings the step's links back.
   func testTheFormsLinksAreRemovedAndAddedInItsDraftAndSavedWithUndo() {
-    let app = launch("roadmap-learn-to-sail")
+    let app = launch("roadmap-learn-to-sail", takingUndo: true)
     let commit = app.buttons["roadmap-form-commit"], beaufort = link("Beaufort wind scale, metoffice.gov.uk", in: app)
     let held = link("Beaufort wind scale, metoffice.gov.uk", in: app, form: true)
     page(of: "Read the wind", in: app)
@@ -293,7 +295,7 @@ import XCTest
   // question with what it costs and held with one Undo; and Select All, which takes the starting step, dims Delete while
   // the band says why.
   func testABranchOpenInGraphAndSeveralStepsDeletedWithOneUndo() {
-    let app = launch("roadmap-learn-to-sail")
+    let app = launch("roadmap-learn-to-sail", takingUndo: true)
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
     page(of: "Read the wind", in: app)
     app.buttons["roadmap-step-more"].tap()
@@ -324,7 +326,6 @@ import XCTest
     XCTAssertTrue(app.staticTexts["Delete 2 steps?"].waitForExistence(timeout: 5) && app.staticTexts["Removes 2 steps · 1 branch resplices"].exists)
     let answer = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "Delete 2 Steps", "roadmap-delete-steps")).firstMatch
     answer.tap()
-    // The band keeps Undo for the hold's nine seconds: it is taken as soon as the Board is seen without the steps.
     XCTAssertTrue(app.staticTexts["3 of 6 done"].waitForExistence(timeout: 10) && app.staticTexts["2 steps deleted"].exists)
     XCTAssertTrue(app.buttons["roadmap-new-step"].exists && !delete.exists)
     undo.tap()
@@ -347,7 +348,7 @@ import XCTest
   // dimmed and cannot be chosen; a kind no step wears is removed at once in edit mode, with Undo in the band at the
   // sheet's foot; and the step created stands on the Board, the kind filter that hid it cleared and Find's words kept.
   func testFindOffersANewStepOfItsWordsAndAKindNoStepWearsIsRemovedWithUndo() {
-    let app = launch("roadmap-learn-to-sail")
+    let app = launch("roadmap-learn-to-sail", takingUndo: true)
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
     boardTool(app)
     app.buttons["Build"].firstMatch.tap()
@@ -639,7 +640,7 @@ import XCTest
   // 02.10d: an Undo of a delete the engine keeps no Undo of by the time it is tapped brings nothing back; the band says so
   // in the receipt's place with no Undo, and the step stays deleted.
   func testAnUndoThatFindsNothingSaysWhatCouldNotComeBack() {
-    let app = launch("roadmap-undo-finds-nothing")
+    let app = launch("roadmap-undo-finds-nothing", takingUndo: true)
     let undo = app.buttons["roadmap-undo"]
     XCTAssertTrue(app.roadmapStep("Tie a bowline").waitForExistence(timeout: 30))
     app.roadmapStep("Tie a bowline").swipeLeft()

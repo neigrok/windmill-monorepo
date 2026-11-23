@@ -419,7 +419,10 @@ behind it; and `-board roadmap-unreadable` opens the room over views it cannot m
 `-graph-measures <path>` appends what the Graph measures of itself to that file, and with `-board-measures <path>` what
 the Board measures, one JSON line a measure; with
 `-graph-pinch <way>` it keeps a pinch's frames that way, and with `-graph-crowd <count>` it does so from that many
-steps in view, so a way can act on a board of eight steps. The roadmaps under *Learn to sail* hold a few steps
+steps in view, so a way can act on a board of eight steps. With `-band-stands <seconds>` every band stands that long
+in place of its six seconds or the hold's nine (`RoadmapFixture.wait()`): the flows that take a band's Undo launch with
+it, so a slow runner cannot outlast the band, and the flows that watch a band leave launch without it. The roadmaps
+under *Learn to sail* hold a few steps
 each, not the counts the boards draw, and the account's board holds three roadmaps, not nine: it is planted by a
 second engine on the model server, which takes about half a second longer for every roadmap the account already
 holds. A board's clock stands still, so the engine's release timer never ends a hold there: a held delete is sent once

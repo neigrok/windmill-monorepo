@@ -16,7 +16,7 @@ import SyncSchema
 // the engine keeps no Undo of a band's act by the time it is tapped (`undoFindsNothing(in:)`); and roadmap-empty, which
 // holds none.
 // roadmap-unreadable cannot make its views. A launch can also name where the Graph's measures go and how it keeps a
-// pinch's frames (`graph(telemetry:)`), and where the Board's go (`boardFrames()`).
+// pinch's frames (`graph(telemetry:)`), where the Board's go (`boardFrames()`), and how long a band stands (`wait()`).
 enum RoadmapFixture {
   // The engine's views of every record of a type in a scope, visible or not, as the room's model takes them.
   static func records(_ runtime: AppRuntime) -> RoadmapModel.Records {
@@ -82,6 +82,18 @@ enum RoadmapFixture {
     #else
     return BoardFrames()
     #endif
+  }
+
+  // How the room waits out a band's time. A simulator launch with `-band-stands` has every band stand that many seconds
+  // in place of its six or the hold's nine, so a flow that takes a band's Undo cannot be outlasted by a slow runner.
+  static func wait() -> RoadmapModel.Wait {
+    #if DEBUG && targetEnvironment(simulator)
+    let arguments = ProcessInfo.processInfo.arguments
+    if let named = arguments.firstIndex(of: "-band-stands"), named + 1 < arguments.count, let seconds = Int(arguments[named + 1]) {
+      return { _ in try await Task.sleep(for: .seconds(seconds)) }
+    }
+    #endif
+    return { try await Task.sleep(for: $0) }
   }
 
   static func prepare(_ board: String, model: AppModel) async -> Bool {
