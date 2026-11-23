@@ -265,8 +265,8 @@ final class RoadmapModel {
       // A subtask or a link of a step's workspace deleted, by its words or its title.
       case deletedFromWorkspace(String)
       case refused(Limit)
-      // An Undo that brought back nothing of what its receipt said, or, `partly`, not all of it.
-      indirect case unrestored(Says, partly: Bool)
+      // An Undo that brought back nothing of what its receipt said.
+      indirect case unrestored(Says)
     }
 
     // A receipt's Undo: the gesture its act wrote, whether the engine holds that act, and the act it takes back.
@@ -277,12 +277,13 @@ final class RoadmapModel {
         case step(String)
         case workspace(String)
         case roadmapDelete(reopens: String?)
-      }
 
-      // What the Undo brought back: everything the act did, part of it where the engine settled it with some restores
-      // skipped, or nothing.
-      enum Restored {
-        case all, part, nothing
+        // An act on steps or kinds keeps the kit's Undo of it past the engine's hold, so a step's delete is restored once
+        // its hold has ended too; a roadmap's delete and a removal from a workspace are undone by their hold alone.
+        var outlivesHold: Bool {
+          guard case .step = self else { return false }
+          return true
+        }
       }
 
       let gesture: String
@@ -311,10 +312,10 @@ final class RoadmapModel {
       says = .refused(limit); undo = nil; arrived = []; lasts = RoadmapModel.bandLasts
     }
 
-    // An Undo that did not bring back all its receipt said: those words give way to what could not come back, with no
-    // Undo, for six seconds.
-    init(unrestored receipt: Says, partly: Bool) {
-      says = .unrestored(receipt, partly: partly); undo = nil; arrived = []; lasts = RoadmapModel.bandLasts
+    // An Undo that brought nothing back: the receipt's words give way to what could not come back, with no Undo, for six
+    // seconds.
+    init(unrestored receipt: Says) {
+      says = .unrestored(receipt); undo = nil; arrived = []; lasts = RoadmapModel.bandLasts
     }
   }
 
@@ -896,31 +897,27 @@ final class RoadmapModel {
     show(Band(.deletedRoadmap(roadmap.title), of: written.receipt, act: .roadmapDelete(reopens: wasOpen ? roadmap.id : nil)))
   }
 
-  // The band's Undo: a removal the engine holds is cancelled while it is held, and any other act is taken back by the
-  // kit's Undo of it. The engine then keeps nothing more of the act, nor of its Undo, which the room never redoes. A
-  // roadmap brought back is the open one again where it was. An Undo that brought back nothing, the hold over or the act
-  // beyond its Undo, or only part of it, says so in the band's place, with a warning (02.10d, 06.5c).
+  // The band's Undo: a removal the engine holds is cancelled while it is held, and any other act, or a step's delete whose
+  // hold has ended, is taken back by the kit's Undo of it. The engine then keeps nothing more of the act, nor of its Undo,
+  // which the room never redoes. A roadmap brought back is the open one again where it was. An Undo that brought nothing
+  // back, a roadmap's delete or a workspace removal past its hold, an act the engine keeps no Undo of, or one whose every
+  // restore a write elsewhere stood in the way of, says so in the band's place, with a warning (02.10d, 06.5c).
   func undo() {
     guard let receipt = band, let undo = receipt.undo else { return }
     bandTime?.cancel()
     band = nil
     do {
-      let restored: Band.Undo.Restored
-      if undo.held {
-        restored = try runner.cancelHeld(undo.gesture) ? .all : .nothing
-      } else {
+      var taken = false
+      if undo.held { taken = try runner.cancelHeld(undo.gesture) }
+      if !taken && (!undo.held || undo.act.outlivesHold) {
         switch try runner.undo(undo.gesture) {
-        case .cancelled(_, let inverse, let changed), .pending(_, let inverse, let changed):
+        case .cancelled(_, let inverse, let changed), .pending(_, let inverse, let changed), .settled(_, let inverse, let changed, _, _):
+          taken = changed
           try runner.release(inverse)
-          restored = changed ? .all : .nothing
-        case .settled(_, let inverse, let changed, _, let skipped):
-          try runner.release(inverse)
-          restored = !changed ? .nothing : skipped > 0 ? .part : .all
-        case .unavailable: restored = .nothing
+        case .unavailable: break
         }
       }
       try runner.release(undo.gesture)
-      let taken = restored != .nothing
       if taken { removedKinds = removedKinds.filter { $0.value != undo.gesture } }
       switch undo.act {
       case .step(let act): telemetry.event("roadmap_board_undo", properties: ["act": act, "outcome": taken ? "ok" : "unavailable"])
@@ -930,7 +927,7 @@ final class RoadmapModel {
         telemetry.event("roadmap_deletion", properties: ["step": "undo", "outcome": taken ? "cancelled" : "released"])
         if taken, let reopens { arriving = reopens }
       }
-      if restored != .all { show(Band(unrestored: receipt.says, partly: restored == .part)) }
+      if !taken { show(Band(unrestored: receipt.says)) }
     } catch {
       report(error, write: "undo")
     }

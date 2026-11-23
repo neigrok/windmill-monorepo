@@ -13,7 +13,8 @@ import SyncSchema
 // room's first read runs long). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no
 // order a server gave them; roadmap-handbook, the 5,000 steps the Graph's and the Board's budget is measured at;
 // roadmap-full, a roadmap at the steps the registry lets it hold; roadmap-undo-finds-nothing, *Learn to sail*, where
-// every band's Undo finds nothing to take back (`undoFindsNothing(in:)`); and roadmap-empty, which holds none.
+// the engine keeps no Undo of a band's act by the time it is tapped (`undoFindsNothing(in:)`); and roadmap-empty, which
+// holds none.
 // roadmap-unreadable cannot make its views. A launch can also name where the Graph's measures go and how it keeps a
 // pinch's frames (`graph(telemetry:)`), and where the Board's go (`boardFrames()`).
 enum RoadmapFixture {
@@ -210,9 +211,9 @@ enum RoadmapFixture {
     }
   }
 
-  // roadmap-undo-finds-nothing (02.10d, 06.5c): once a band stands with its Undo, the engine keeps nothing for it, as when
-  // the hold has ended or the act's Undo is gone by the time it is tapped: a held removal is let go into the queue, as
-  // leaving the app lets it go, and any other act's Undo is released. The band is read again after each change to it.
+  // roadmap-undo-finds-nothing (02.10d, 06.5c): once a band stands with its Undo, the engine keeps no Undo of its act, as
+  // when the act's Undo is gone by the time it is tapped, so the Undo truly restores nothing: a held removal is let go into
+  // the queue, as leaving the app lets it go, and the act's Undo is released. The band is read again after each change.
   static func undoFindsNothing(in model: AppModel) async {
     guard let room = model.roadmap, let runtime = model.runtime else { return }
     while true {
@@ -220,9 +221,8 @@ enum RoadmapFixture {
         if undo.held {
           try? runtime.engine.leave()
           runtime.engine.foreground()
-        } else {
-          try? runtime.roadmapRunner.release(undo.gesture)
         }
+        try? runtime.roadmapRunner.release(undo.gesture)
       }
       await withCheckedContinuation { (changed: CheckedContinuation<Void, Never>) in
         withObservationTracking { _ = room.band } onChange: { changed.resume() }

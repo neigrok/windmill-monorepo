@@ -142,15 +142,17 @@ roadmap holds against the registry's cap, through the kit's `Capacity`, and at t
 made, in the band, with no form. Each receipt is the room's one band
 (`RoadmapModel.Band`), which a newer one replaces. Its Undo cancels a removal while the engine holds it
 (`ActionRunner.cancelHeld`, for the engine's nine seconds) and takes any other act back by the kit's Undo of it
-(`ActionRunner.undo`, for six seconds); when the band leaves, the engine keeps no Undo of the act (`ActionRunner.release`). An
+(`ActionRunner.undo`, for six seconds); a step's delete keeps the kit's Undo past its hold (`Band.Undo.Act.outlivesHold`),
+so the band's Undo brings the step back after the hold has ended too, where a roadmap's delete and a removal from a
+workspace keep none past it. When the band leaves, the engine keeps no Undo of the act (`ActionRunner.release`). An
 Undo of Reset marks the step done anew, so it leads Done, and an Undo of a roadmap's delete opens the roadmap again where
-the room had it open. An Undo that brings nothing back, the hold ended or the act's Undo gone or settled with every
-restore skipped, puts in the receipt's place what could not come back (`Band.Says.unrestored`, boards 02.10d and 06.5c):
-*Couldn’t bring back* a step, a roadmap, a kind, a subtask or a link by its name, or several steps by their count, and
-*Couldn’t undo* any other act; one the engine settled with some restores skipped says *Couldn’t undo every change*. It
-has no Undo, stands six seconds, and the room plays a warning haptic and VoiceOver announces it; its event keeps outcome
-unavailable, and a part undone outcome ok. The band says a refusal only where it is a limit the boards word, and any other refusal shows
-nothing. Facts the model reads or settles itself, as the web's room does. From the domain's graph: the one starting step a
+the room had it open. An Undo that brings nothing back, a roadmap's delete or a workspace removal past its hold, an act
+the engine keeps no Undo of, or one whose every restore a write made elsewhere stood in the way of, such as another
+phone's delete of the same step, puts in the receipt's place what could not come back (`Band.Says.unrestored`, boards
+02.10d and 06.5c): *Couldn’t bring back* a step, a roadmap, a kind, a subtask or a link by its name, or several steps by
+their count, and *Couldn’t undo* any other act. It has no Undo, stands six seconds, and the room plays a warning haptic
+and VoiceOver announces it; its event keeps outcome unavailable. The band says a refusal only where it is a limit the
+boards word, and any other refusal shows nothing. Facts the model reads or settles itself, as the web's room does. From the domain's graph: the one starting step a
 roadmap keeps, which offers no Delete; the steps that follow a step (`OpenRoadmap.followers`, the web's `childrenOf`),
 which a step's page lists under *Opens* and the delete question counts; and what Reset would return to Locked
 (`OpenStep.relocks`, the web's `resetRelocks`), the steps a Done step opened that stand Up next. From the domain's read of

@@ -636,8 +636,8 @@ import XCTest
     XCTAssertFalse(spinner.exists)
   }
 
-  // 02.10d: an Undo that finds the delete no longer held brings nothing back; the band says so in the receipt's place with
-  // no Undo, and the step stays deleted.
+  // 02.10d: an Undo of a delete the engine keeps no Undo of by the time it is tapped brings nothing back; the band says so
+  // in the receipt's place with no Undo, and the step stays deleted.
   func testAnUndoThatFindsNothingSaysWhatCouldNotComeBack() {
     let app = launch("roadmap-undo-finds-nothing")
     let undo = app.buttons["roadmap-undo"]

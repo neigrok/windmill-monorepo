@@ -131,23 +131,35 @@ import SyncTesting
     ])
   }
 
-  // 02.10d: the steps' Undo asked once the hold has ended finds nothing held; they stay deleted, and the band counts what
-  // could not come back, with no Undo of its own.
-  @Test func anUndoOfSeveralStepsAfterTheHoldSaysHowManyCouldNotComeBack() async throws {
+  // 02.10d: two steps the account's other phone recolored, with their kind, while this phone held their delete cannot come
+  // back; they stay deleted, and the band counts what could not come back, with no Undo of its own.
+  @Test func stepsAnotherPhoneRecoloredWhileTheirDeleteWasHeldCannotComeBackAndTheBandCountsThem() async throws {
     let (engine, runner, memory, suite) = phone()
     defer { memory.removePersistentDomain(forName: suite) }
     let telemetry = TelemetryRecorder()
     let model = room(engine, runner, memory, telemetry: telemetry)
     try await learnToSail(model, on: engine, runner)
+    let other = engine.device()
+    let elsewhere = ActionRunner(replica: other.replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
+    engine.sync()
+    let (tie, triangle) = (try step("Tie a bowline", in: model), try step("Sail a triangle", in: model))
     model.startSelecting(nil, from: .tool)
     let selection = try #require(model.selection)
-    selection.steps = [try step("Sail a triangle", in: model), try step("Tie a bowline", in: model)]
+    selection.steps = [triangle, tie]
     selection.askDelete()
     model.answer(delete: true)
+    let tree = try #require(model.shown?.id)
+    guard case .committed = try elsewhere.runAct(RecolourKind(tree: tree, kind: DomainKit.ID(RecordID("learn")), hue: "brick")) else {
+      Issue.record("Learn, which both steps wear, was not recolored on the other phone")
+      return
+    }
+    engine.sync()
     engine.advance(ms: Constants.holdMs)
+    engine.sync()
     model.undo()
-    #expect(model.band?.says == .unrestored(.deletedSteps(count: 2), partly: false) && model.band?.undo == nil && model.band?.lasts == .seconds(6))
+    #expect(model.band?.says == .unrestored(.deletedSteps(count: 2)) && model.band?.undo == nil && model.band?.lasts == .seconds(6))
     #expect(model.band?.says.words == "Couldn’t bring back 2 steps")
+    engine.sync()
     await reads(model, on: engine) { $0.shown?.board.overall.total == 6 }
     #expect(told(telemetry).last == "roadmap_board_undo act=delete outcome=unavailable")
   }

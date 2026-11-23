@@ -152,10 +152,11 @@ import SyncTesting
     ])
   }
 
-  // 06.5c: a kind's removal whose Undo the engine keeps nothing of by the time it is asked stays removed, and the band at
-  // the sheet's foot names the kind that could not come back, with no Undo of its own.
-  @Test func aKindsUndoThatFindsNothingNamesTheKindThatCouldNotComeBack() async throws {
-    let (engine, runner, memory, suite) = phone()
+  // 06.5c: a kind the account's other phone recolored after this phone removed it, the recolor reaching the account first,
+  // cannot come back: the engine writes nothing back over a change between what the removal read and the removal. The
+  // band at the sheet's foot names the kind, with no Undo, and the kind stays removed.
+  @Test func aKindAnotherPhoneRecoloredBeforeItsRemovalLandedCannotComeBackAndTheBandNamesIt() async throws {
+    let (engine, runner, memory, suite) = phone(account: "acct-1")
     defer { memory.removePersistentDomain(forName: suite) }
     let telemetry = TelemetryRecorder()
     let model = try await learnToSail(engine, runner, memory, telemetry: telemetry)
@@ -163,11 +164,26 @@ import SyncTesting
     await reads(model, on: engine) { $0.shown?.legend.entry(practice) != nil }
     _ = model.name(practice, "Practice")
     await reads(model, on: engine) { $0.shown?.legend.entry(practice)?.name == "Practice" }
+    guard case .kind(let kind) = practice, let tree = model.shown?.id else {
+      Issue.record("Practice is no kind of an open roadmap")
+      return
+    }
+    engine.sync()
+    let other = engine.device()
+    let elsewhere = ActionRunner(replica: other.replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
+    engine.sync()
+
     #expect(model.remove(practice))
-    try runner.release(try #require(model.band?.undo?.gesture))
+    guard case .committed = try elsewhere.runAct(RecolourKind(tree: tree, kind: ID(RecordID(kind)), hue: "plum")) else {
+      Issue.record("Practice was not recolored on the other phone")
+      return
+    }
+    other.leave()
+    engine.sync()
     model.undo()
-    #expect(model.band?.says == .unrestored(.removedKind("Practice"), partly: false) && model.band?.undo == nil)
+    #expect(model.band?.says == .unrestored(.removedKind("Practice")) && model.band?.undo == nil)
     #expect(model.band?.says.words == "Couldn’t bring back Practice")
+    engine.sync()
     await reads(model, on: engine) { $0.shown?.legend.entry(practice) == nil }
     #expect(model.removedKinds.isEmpty)
     #expect(told(telemetry).last == "roadmap_board_undo act=removeKind outcome=unavailable")

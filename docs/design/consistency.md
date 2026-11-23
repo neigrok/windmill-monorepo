@@ -640,9 +640,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   board draws it in the accent, and opened it indents the folded rows, which no board draws; the fold's plus is
   `roadmap/ink-dim` whatever kinds its steps wear; steps made in one moment share their time and stand in the roadmap's
   authored order reversed, which for a planted roadmap follows the ids the phone minted, where 01.13 draws the plan's
-  order reversed; Activity and History stand on the room's band like every screen of the room, where their boards draw
-  no foot; and no board draws an Undo that brought back part of what its act did, built as *Couldn’t undo every change*
-  in the band's pattern, six seconds with no Undo.
+  order reversed; and Activity and History stand on the room's band like every screen of the room, where their boards
+  draw no foot.
 - **Roadmap · iOS · what the Board's writes leave for the boards.** Complete, Delete, their *Undo* and the long-press
   menu are built in Debug builds from 02.1 to 02.4, 02.13, 02.15, 01.12 and the question of 03.8. To draw or rule:
   a slid row is drawn as its own rounded card on `roadmap/raised` (02.1, 02.3), and SwiftUI shapes it so only where

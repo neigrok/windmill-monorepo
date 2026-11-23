@@ -748,8 +748,8 @@ final class RoadmapCaptures: DesignCapture {
     }
   }
 
-  // 02.10d: the two steps deleted, and their Undo taken once the engine no longer held them: the band says how many could
-  // not come back, with no Undo.
+  // 02.10d: the two steps deleted, and their Undo taken once the engine kept no Undo of their delete: the band says how
+  // many could not come back, with no Undo.
   func testStepsUndoBroughtNothingBack() {
     captureBoard("02.10d-roadmap-undo-brought-nothing-back") { look in
       let app = selecting(["Tie a bowline", "Sail a triangle"], look, board: "roadmap-undo-finds-nothing")
