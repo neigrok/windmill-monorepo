@@ -51161,5 +51161,993 @@
         }
       ]
     }
+  },
+  {
+    "name": "a preimage never steps over an earlier segment of its own act, which the act read it before",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "cardAAAA0001",
+                  "life": [
+                    "alive",
+                    "1100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Old",
+                      "1100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ],
+              "tree/b_00000001": [
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Root",
+                      "1200:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "1300:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1300:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Oak",
+                      "1300:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "b5597fbc5da727c9b4f133f2943370c4837ff00e431d70eafaf8d632bad4464d",
+                "booted": true
+              },
+              "tree/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "5049be7243ed15ccd6f806bd3dc89a276c5a7a42f076d4b7020c70861c7ad11c",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commitAct",
+          "deviceNow": 5000,
+          "segments": [
+            {
+              "scope": "tree/b_00000001",
+              "changes": [
+                {
+                  "op": "update",
+                  "t": "tag",
+                  "id": "oak",
+                  "f": {
+                    "label": "Pine"
+                  }
+                }
+              ]
+            },
+            {
+              "scope": "tree/b_00000001",
+              "changes": [
+                {
+                  "op": "delete",
+                  "t": "tag",
+                  "id": "oak"
+                }
+              ]
+            }
+          ],
+          "opts": {
+            "undo": {
+              "version": 1,
+              "segments": [
+                {
+                  "index": 0,
+                  "recipes": []
+                },
+                {
+                  "index": 1,
+                  "recipes": [
+                    {
+                      "kind": "fields",
+                      "restoreCommand": "probe.restoreTree",
+                      "targets": [
+                        {
+                          "target": {
+                            "scope": "tree/b_00000001",
+                            "t": "tag",
+                            "id": "oak",
+                            "slot": {
+                              "kind": "life"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "push",
+          "deviceNow": 6000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 7000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 3,
+                  "write": [],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "tree/b_00000001",
+                          "beforeSeq": 2,
+                          "seq": 3,
+                          "rows": [
+                            {
+                              "t": "tag",
+                              "id": "oak",
+                              "beforeRowSeq": 2,
+                              "rowSeq": 3,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "label"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "5000:0:r_aaaaaaaaaaaa"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 6000
+        },
+        {
+          "op": "push",
+          "deviceNow": 7000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 8000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 4,
+                  "write": [],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "tree/b_00000001",
+                          "beforeSeq": 3,
+                          "seq": 4,
+                          "rows": [
+                            {
+                              "t": "tag",
+                              "id": "oak",
+                              "beforeRowSeq": 3,
+                              "rowSeq": 4,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "life"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "5000:1:r_aaaaaaaaaaaa"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 7000
+        },
+        {
+          "op": "push",
+          "deviceNow": 8000
+        },
+        {
+          "op": "requestInverse",
+          "actId": "g1",
+          "deviceNow": 9000
+        },
+        {
+          "op": "push",
+          "deviceNow": 8000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 9000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 3,
+              "results": [
+                {
+                  "n": 3,
+                  "s": "ok",
+                  "seq": 5,
+                  "write": [],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "tree/b_00000001",
+                          "beforeSeq": 4,
+                          "seq": 5,
+                          "rows": [
+                            {
+                              "t": "tag",
+                              "id": "oak",
+                              "beforeRowSeq": 4,
+                              "rowSeq": 5,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "life"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "9000:0:srv"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "command": {
+                      "inverse": {
+                        "outcomes": [
+                          {
+                            "index": 0,
+                            "s": "applied"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 8000
+        },
+        {
+          "op": "push",
+          "deviceNow": 9000
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "tree/b_00000001"
+          ],
+          "deviceNow": 9000
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 10000,
+              "epoch": "ep-1",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "tag",
+                      "id": "oak",
+                      "life": [
+                        "alive",
+                        "9000:0:srv"
+                      ],
+                      "born": "1300:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "label": [
+                          "Pine",
+                          "5000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 5,
+                      "rc": 2000,
+                      "ru": 9000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
+                  "more": false,
+                  "seq": 5,
+                  "digest": "f67cafd03226dcf635d5060c1aa71a37d3d905d27f409c812bc757d7dd3c758a",
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 9000
+        },
+        {
+          "op": "readInverseResult",
+          "requestId": "g3"
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "gestureId": "g1",
+          "segments": [
+            {
+              "scope": "tree/b_00000001",
+              "stamp": "5000:0:r_aaaaaaaaaaaa",
+              "localIds": [
+                "g1/0"
+              ],
+              "ids": [
+                "oak"
+              ]
+            },
+            {
+              "scope": "tree/b_00000001",
+              "stamp": "5000:1:r_aaaaaaaaaaaa",
+              "localIds": [
+                "g1/1"
+              ],
+              "ids": [
+                "oak"
+              ]
+            }
+          ],
+          "retired": [],
+          "superseded": [],
+          "releaseAt": null
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "tree/b_00000001",
+              "d": [
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "born": "1300:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Pine",
+                      "5000:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "cmd": {
+                "name": "probe.captureTree",
+                "args": {}
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "tree/b_00000001",
+              "d": [
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "born": "1300:0:r_aaaaaaaaaaaa",
+                  "life": [
+                    "dead",
+                    "5000:1:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "cmd": {
+                "name": "probe.captureTree",
+                "args": {}
+              },
+              "gestureId": "g1",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        null,
+        {
+          "kind": "pending",
+          "requestId": "g3",
+          "inverseActId": "g2",
+          "localChanged": true
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "tree/b_00000001",
+              "cmd": {
+                "name": "probe.restoreTree",
+                "args": {
+                  "expectedEpoch": "ep-1",
+                  "operations": [
+                    {
+                      "kind": "field",
+                      "t": "tag",
+                      "id": "oak",
+                      "slot": {
+                        "kind": "life"
+                      },
+                      "expected": {
+                        "kind": "stamp",
+                        "stamp": "5000:1:r_aaaaaaaaaaaa"
+                      },
+                      "before": "alive"
+                    }
+                  ]
+                }
+              },
+              "gestureId": "g2",
+              "n": 3
+            }
+          ]
+        },
+        null,
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "tree/b_00000001",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0"
+            }
+          ]
+        },
+        [
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "kind": "settled",
+          "requestId": "g3",
+          "inverseActId": "g2",
+          "changed": true,
+          "appliedCount": 1,
+          "skippedCount": 0
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 4,
+              "hlc": {
+                "ms": 10000,
+                "counter": 0
+              },
+              "hlcHigh": "10000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "9000:0:srv",
+              "serverOffsetMs": 1000,
+              "offsetSamples": [
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 3,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 9000,
+                "mono": 9000,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "cardAAAA0001",
+                  "life": [
+                    "alive",
+                    "1100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Old",
+                      "1100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ],
+              "tree/b_00000001": [
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Root",
+                      "1200:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "9000:0:srv"
+                  ],
+                  "born": "1300:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Pine",
+                      "5000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 5,
+                  "rc": 2000,
+                  "ru": 9000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "b5597fbc5da727c9b4f133f2943370c4837ff00e431d70eafaf8d632bad4464d",
+                "booted": true
+              },
+              "tree/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
+                "digest": "f67cafd03226dcf635d5060c1aa71a37d3d905d27f409c812bc757d7dd3c758a",
+                "booted": true
+              }
+            },
+            "journal": [
+              {
+                "version": 1,
+                "actId": "g1",
+                "retained": true,
+                "sourceEntries": [
+                  {
+                    "localId": "g1/0",
+                    "originScope": "tree/b_00000001",
+                    "recipes": [],
+                    "preimages": [],
+                    "written": [],
+                    "attempts": [
+                      {
+                        "epoch": "ep-1",
+                        "n": 1,
+                        "outcome": "ok",
+                        "acceptedEffects": [
+                          {
+                            "scope": "tree/b_00000001",
+                            "beforeSeq": 2,
+                            "seq": 3,
+                            "rows": [
+                              {
+                                "t": "tag",
+                                "id": "oak",
+                                "beforeRowSeq": 2,
+                                "rowSeq": 3,
+                                "slots": [
+                                  {
+                                    "slot": {
+                                      "kind": "field",
+                                      "name": "label"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "5000:0:r_aaaaaaaaaaaa"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "localId": "g1/1",
+                    "originScope": "tree/b_00000001",
+                    "recipes": [
+                      {
+                        "kind": "fields",
+                        "restoreCommand": "probe.restoreTree",
+                        "targets": [
+                          {
+                            "target": {
+                              "scope": "tree/b_00000001",
+                              "t": "tag",
+                              "id": "oak",
+                              "slot": {
+                                "kind": "life"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "preimages": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000001",
+                          "t": "tag",
+                          "id": "oak",
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "alive",
+                        "rowSeq": 2,
+                        "epoch": "ep-1",
+                        "record": {
+                          "born": "1300:0:r_aaaaaaaaaaaa",
+                          "f": {
+                            "label": [
+                              "Oak",
+                              "1300:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        }
+                      }
+                    ],
+                    "written": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000001",
+                          "t": "tag",
+                          "id": "oak",
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "dead"
+                      }
+                    ],
+                    "attempts": [
+                      {
+                        "epoch": "ep-1",
+                        "n": 2,
+                        "outcome": "ok",
+                        "acceptedEffects": [
+                          {
+                            "scope": "tree/b_00000001",
+                            "beforeSeq": 3,
+                            "seq": 4,
+                            "rows": [
+                              {
+                                "t": "tag",
+                                "id": "oak",
+                                "beforeRowSeq": 3,
+                                "rowSeq": 4,
+                                "slots": [
+                                  {
+                                    "slot": {
+                                      "kind": "life"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "5000:1:r_aaaaaaaaaaaa"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "version": 1,
+                "actId": "g2",
+                "retained": true,
+                "sourceEntries": [
+                  {
+                    "localId": "g2/0",
+                    "originScope": "tree/b_00000001",
+                    "recipes": [
+                      {
+                        "kind": "fields",
+                        "restoreCommand": "probe.restoreTree",
+                        "targets": [
+                          {
+                            "target": {
+                              "scope": "tree/b_00000001",
+                              "t": "tag",
+                              "id": "oak",
+                              "slot": {
+                                "kind": "life"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "preimages": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000001",
+                          "t": "tag",
+                          "id": "oak",
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "dead",
+                        "rowSeq": 4,
+                        "epoch": "ep-1"
+                      }
+                    ],
+                    "written": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000001",
+                          "t": "tag",
+                          "id": "oak",
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "alive"
+                      }
+                    ],
+                    "attempts": [
+                      {
+                        "epoch": "ep-1",
+                        "n": 3,
+                        "outcome": "ok",
+                        "acceptedEffects": [
+                          {
+                            "scope": "tree/b_00000001",
+                            "beforeSeq": 4,
+                            "seq": 5,
+                            "rows": [
+                              {
+                                "t": "tag",
+                                "id": "oak",
+                                "beforeRowSeq": 4,
+                                "rowSeq": 5,
+                                "slots": [
+                                  {
+                                    "slot": {
+                                      "kind": "life"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "9000:0:srv"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "inverses": [
+              {
+                "version": 1,
+                "requestId": "g3",
+                "sourceActId": "g1",
+                "inverseActId": "g2",
+                "state": "settled",
+                "requestedAt": 9000,
+                "localChanged": true,
+                "slots": [
+                  {
+                    "localId": "g2/0",
+                    "commitOrder": 3,
+                    "originScope": "tree/b_00000001",
+                    "recipe": {
+                      "kind": "withdrawn",
+                      "command": "probe.restoreTree"
+                    },
+                    "state": "settled",
+                    "skipped": [],
+                    "changed": true,
+                    "outcomes": [
+                      {
+                        "index": 0,
+                        "s": "applied"
+                      }
+                    ]
+                  }
+                ],
+                "result": {
+                  "kind": "settled",
+                  "requestId": "g3",
+                  "inverseActId": "g2",
+                  "changed": true,
+                  "appliedCount": 1,
+                  "skippedCount": 0
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g1/1",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g2/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ]
+    }
   }
 ]

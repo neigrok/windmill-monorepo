@@ -948,7 +948,8 @@ function typedValues() {
 // A tag born by an act whose journal the product releases at once, as roadmap's Add Kind keeps no Undo, then removed
 // by an act opted into Undo: the removal's preimage was read over the birth's write, so its Undo walks from the row that
 // birth left, whichever pushes the two reach the server in. Another device's write between them still breaks the walk,
-// and so does a birth the device wrote as an ordinary entry, whose answer carries no receipt.
+// and so does a birth the device wrote as an ordinary entry, whose answer carries no receipt. A preimage steps over
+// writes made before its act only, never over an earlier segment of the act itself.
 function releasedBirth() {
   const elm = { scope: TREE, t: 'tag', id: 'elm' };
   const birth = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: TREE, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'Elm' } }] }],
@@ -1024,7 +1025,22 @@ function releasedBirth() {
   plain.pull([TREE]);
   plain.local(requestStep('g2'));
   const ordinary = skipped('an Undo of a removal skips when the record\'s birth was an ordinary entry, whose answer proves nothing of the row it wrote', plain);
-  return [onePush, pending, birthAlone, unpulled, eachAlone, unseen, ordinary];
+
+  const oak = target(TREE, 'tag', 'oak', 'life');
+  const renamedAndRemoved = new Session(world()).local({ op: 'commitAct', deviceNow: 5000, segments: [
+    { scope: TREE, changes: [{ op: 'update', t: 'tag', id: 'oak', f: { label: 'Pine' } }] },
+    { scope: TREE, changes: [{ op: 'delete', t: 'tag', id: 'oak' }] },
+  ], opts: { undo: { version: 1, segments: [{ index: 0, recipes: [] },
+    { index: 1, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: oak }] }] }] } } });
+  renamedAndRemoved.flush();
+  renamedAndRemoved.local(requestStep('g1'));
+  renamedAndRemoved.flush();
+  renamedAndRemoved.pull([TREE]);
+  const ownSegment = renamedAndRemoved.local({ op: 'readInverseResult', requestId: 'g3' })
+    .vector('a preimage never steps over an earlier segment of its own act, which the act read it before');
+  assert.deepEqual(journalOf(ownSegment)[0].sourceEntries[1].preimages.map(({ rowSeq }) => rowSeq), [2]);
+  assert.deepEqual(ownSegment.expect.returns.at(-1), { kind: 'settled', requestId: 'g3', inverseActId: 'g2', changed: true, appliedCount: 1, skippedCount: 0 });
+  return [onePush, pending, birthAlone, unpulled, eachAlone, unseen, ordinary, ownSegment];
 }
 
 export function files() {

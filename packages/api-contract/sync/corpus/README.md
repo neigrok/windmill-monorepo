@@ -1427,7 +1427,8 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   joined; an Undo of a removal brings back a tag whose birth, by an act that keeps no journal, went up before
   it, with it in one push, unpulled or still unsent when the Undo was asked, the removal's preimage stepping
   over the birth's receipt row, while another device's write between the two, or a birth written as an
-  ordinary entry, whose answer carries no receipt, skips it.
+  ordinary entry, whose answer carries no receipt, skips it; and a preimage never steps over an earlier segment
+  of its own act.
 
 ### refusal/*.json
 

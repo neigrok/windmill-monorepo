@@ -45,12 +45,16 @@ export function stepOver(preimage, entry) {
   if (writes && row && row.beforeRowSeq === preimage.rowSeq) Object.assign(preimage, { rowSeq: row.rowSeq, epoch });
 }
 
-// §7.4 the ACK transaction's retention point, after the source's own: each preimage of a source entry still in the
-// outbox after this entry in commit order was read over its write, and steps over it.
+// §7.4 the ACK transaction's retention point, after the source's own: each preimage of another act's source entry
+// still in the outbox after this entry in commit order was read over its write, and steps over it. An act's own
+// segments come after its preimages were read.
 export function stepPreimagesOver(replica, entry) {
-  for (const source of replica.journal.flatMap((act) => act.sourceEntries)) {
-    if (!(replica.entry(source.localId)?.commitOrder > entry.commitOrder)) continue;
-    for (const preimage of source.preimages) stepOver(preimage, entry);
+  for (const act of replica.journal) {
+    if (act.actId === entry.gestureId) continue;
+    for (const source of act.sourceEntries) {
+      if (!(replica.entry(source.localId)?.commitOrder > entry.commitOrder)) continue;
+      for (const preimage of source.preimages) stepOver(preimage, entry);
+    }
   }
 }
 

@@ -764,11 +764,13 @@ extension LoadedReplica {
     updateJournal { $0.retain(attempt, of: localId) }
   }
 
-  // §7.4 the ACK transaction's retention point, after the source's own: each preimage of a source entry still in the
-  // outbox after this entry in commit order was read over its write, and steps over it.
+  // §7.4 the ACK transaction's retention point, after the source's own: each preimage of another act's source entry still
+  // in the outbox after this entry in commit order was read over its write, and steps over it. An act's own segments come
+  // after its preimages were read.
   public mutating func stepPreimages(over entry: OutboxEntry) {
     guard entry.acceptedEffects != nil else { return }
-    let later = Set(journal.acts.flatMap(\.sourceEntries).map(\.localId).filter { (named($0)?.commitOrder ?? 0) > entry.commitOrder })
+    let others = journal.acts.filter { !$0.actId.isSameID(as: entry.gestureId) }
+    let later = Set(others.flatMap(\.sourceEntries).map(\.localId).filter { (named($0)?.commitOrder ?? 0) > entry.commitOrder })
     guard !later.isEmpty else { return }
     updateJournal { journal in
       for act in journal.acts.indices {
