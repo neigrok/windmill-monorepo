@@ -58,7 +58,7 @@ nonisolated enum TelemetryPrivacy {
     "action": ["rename", "equipment", "drafts_rejected", "save_routines", "sign_in", "shown", "screenshot", "describe", "goal", "just_log", "build_manually", "open_routine", "routines_saved", "keep_routines", "photo_selected", "photo_removed", "create", "update", "share", "apply", "reject", "open_gym", "open_journal", "open_roadmap", "dismiss_ink", "write", "done_writing", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "use_account", "create_account", "remove_apple", "retry", "inspect", "fix", "open", "connect", "manage", "hide", "select", "menu", "stage", "new_chat", "view_answer", "open_conversation", "delete_conversation", "retarget", "add_set", "remove_set", "swap", "add_movement", "remove_movement", "rest", "land", "complete", "reset", "delete", "editNote",
                "subtaskAdd", "subtaskToggle", "subtaskDelete", "linkOpen", "linkCancel", "linkAdd", "linkDelete", "noteSave", "undo",
                "openInGraph", "viewBranch", "clear"],
-    "outcome": ["answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked", "started", "saved", "not-offered", "seat-required", "invalid-input", "invalid-arguments", "load-floor", "result-too-large", "coach-turn-volume", "pending", "unavailable", "settled", "released"],
+    "outcome": ["answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked", "started", "saved", "not-offered", "seat-required", "invalid-input", "invalid-arguments", "load-floor", "result-too-large", "coach-turn-volume", "pending", "unavailable", "settled", "released", "adopted"],
     "reason": ["invalid", "too_large", "claim_conflict", "session-open", "session-overlap", "id-taken", "bad-instant", "too-many-sets", "invalid-set", "unknown-exercise", "session-finished", "unsent", "other", "last_root"],
     "cap": ["daily", "ceiling", "allowance"],
     "state": ["shown", "opened", "completed", "declined", "failed", "stopped", "interrupted"],
@@ -118,9 +118,9 @@ nonisolated enum TelemetryPrivacy {
     "operation": ["ai_installation", "gym_coach_turn", "gym_activity_request", "gym_activity_update", "gym_control_update", "gym_read", "gym_action", "gym_flush", "gym_rest", "gym_import_fix", "gym_import_keep", "gym_import_retry", "gym_import_discard", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "journal_echoes", "roadmap_read", "roadmap_write", "roadmap_layout", "roadmap_canvas", "auth_sign_in", "auth_sign_out", "auth_adopt", "account_delete", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
   ]
 
-  // The counts a Coach turn carries (Coach §10.2) and an Undo of an act's operations, requests and wait (`sync_inverse`):
-  // bounded numbers, never a word.
-  static let counts: Set<String> = ["ability_calls", "refusals", "answer_bytes", "applied", "skipped", "waiting", "age_ms"]
+  // The counts a Coach turn carries (Coach §10.2) and an Undo of an act's operations, requests, wait and the targets a
+  // sign-in's Add gave up (`sync_inverse`): bounded numbers, never a word.
+  static let counts: Set<String> = ["ability_calls", "refusals", "answer_bytes", "applied", "skipped", "waiting", "age_ms", "given_up"]
 
   static func properties(_ input: [String: String], durationMs: Int64? = nil) -> [String: EventValue] {
     var result: [String: EventValue] = [:]

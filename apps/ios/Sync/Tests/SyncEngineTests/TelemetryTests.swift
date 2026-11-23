@@ -595,6 +595,34 @@ struct TelemetryTests {
     #expect(recorder.events.filter { $0.name == "sync_inverse" } == [requested, settled])
   }
 
+  // §7.10 Add: an act made signed out gives up at sign-in each target the account's dormant replica holds a write of,
+  // and the Add reports how many, with no id or value; an act whose records the dormant replica never wrote gives up
+  // nothing, and the Add then reports nothing.
+  @Test func anAddReportsHowManyUndoTargetsTheActsItAdoptedGaveUp() async throws {
+    let recorder = Recorder()
+    let rig = try Rig(account: "A", telemetry: recorder)
+    rig.connectivity.set(online: false)
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "Kept")]))
+    try await rig.engine.signOut().finish(.keep)
+    let titles = ["card0001", "card0002"].map { (id: String) -> RestoreTarget in
+      RestoreTarget(target: Target(RecordAddress(scope: Rig.scope, key: RecordKey("card", RecordID(id))), .field("title")), defaultValue: "Untitled")
+    }
+    for (index, id) in ["card0001", "card0002"].enumerated() {
+      let undo = ActUndo(segments: [ActUndo.Segment(index: 0, recipes: [.fields(restoreCommand: "probe.restore", targets: [titles[index]])])])
+      let act = try rig.engine.commitAct({ _ in (ActRequest(scopes: [Rig.scope], undo: undo), ()) }, segment: { _, _, _ in
+        Gesture(changes: [Rig.card(id, "private")])
+      })
+      guard case .committed? = act.outcome else { Issue.record("the act did not commit"); return }
+    }
+    rig.connectivity.set(online: true)
+    try await rig.signIn("A", holds: ["probe": true]).complete(["probe": .add])
+    await drain(rig.engine.core.telemetry)
+    #expect(recorder.events.filter { $0.name == "sync_inverse" } ==
+            [Recorded(name: "sync_inverse", kind: nil, properties: ["outcome": "adopted", "given_up": "1"], durationMs: nil)])
+    let adopted = try rig.store.read { tx in try tx.replica(tx.activeReplica()) }?.journal.acts.flatMap(\.sourceEntries).flatMap(\.preimages)
+    #expect(adopted?.map(\.target) == [titles[1].target])
+  }
+
   // A request skipped for several reasons is named by the first in the engine's order, the device's own refusals to send
   // before the server's conditions; a code outside the list, a refusal's or a discard's, is `other`.
   @Test func aSkipReasonNamesTheFirstReasonInItsOrder() {
