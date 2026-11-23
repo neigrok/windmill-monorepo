@@ -415,7 +415,8 @@ TEST(a_service_that_stays_unanswering_is_reported_and_a_blip_is_not) {
                                  first + AiServiceClient::kUnansweredReportMs + 1,
                                  first + 2 * AiServiceClient::kUnansweredReportMs}) {
     clock.now = at;
-    seen += client.ask(UserId{"account-vector"}, question()).code + " reported " + std::to_string(reports.told.size()) + "\n";
+    const std::string code = client.ask(UserId{"account-vector"}, question()).code;
+    seen += code + " reported " + std::to_string(reports.told.size()) + "\n";
   }
 
   const std::string expected = "unreachable reported 0\n"
