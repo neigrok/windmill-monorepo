@@ -189,8 +189,10 @@ public struct CommitPlanner: Sendable {
     // throws, before step 8's caps; predictions and device rows are never sent.
     let sent = Intent(scope: scope, deltas: deltas, guards: guards, command: command, gestureId: gesture.gestureId)
     guard !sent.json.holdsNul else { throw CommitFailure.malformed("a string of the intents holds U+0000") }
-    if let capped = try cappedType(deltas, stored: builder.stored, draws: builder.draws), let cap = registry.type(capped)?.cap {
-      return .refused(.cap, detail: ["type": .string(capped), "cap": JSON(cap)])
+    switch try capCount(deltas, stored: builder.stored) {
+    case .uncounted(let types): throw UnreadRows(types: types, draws: builder.draws)
+    case .over(let type, let cap): return .refused(.cap, detail: ["type": .string(type), "cap": JSON(cap)])
+    case .within: break
     }
     let gestureId = try gesture.gestureId ?? identities.gestureID()
     let intents = group(deltas, guards: guards, command: command, gesture: gesture, scope: scope, gestureId: gestureId)
@@ -353,26 +355,37 @@ public struct CommitPlanner: Sendable {
     return intents
   }
 
-  // Step 8: the capped type the deltas, applied to `stored`, grow past its cap by the growth rule; a held delete still
-  // occupies its slot. A type grows only where a delta shows a record `stored` does not, so only such a type is counted:
-  // the count of one the load did not read whole is unread, and the plan stops for it (`UnreadRows`) with `draws`.
-  func cappedType(_ deltas: [Delta], stored: ScopeView, draws: [Draw]) throws -> String? {
+  // Step 8 as the deltas, applied to `stored`, meet each cap by the growth rule; a held delete still occupies its slot.
+  enum CapCount {
+    case within
+    // The first capped type, in the order the deltas name them, grown past its cap.
+    case over(String, cap: Int)
+    // The capped types whose count the load did not read.
+    case uncounted([String])
+  }
+
+  // A type grows only where a delta shows a record `stored` does not, so only such a type is counted; one the load did not
+  // read whole is uncounted.
+  func capCount(_ deltas: [Delta], stored: ScopeView) throws -> CapCount {
     var after = stored
     for delta in deltas { try after.fold(delta) }
     var types: [String] = []
     for delta in deltas where !types.contains(delta.key.type) { types.append(delta.key.type) }
-    let grown = types.filter { (type: String) -> Bool in
-      registry.type(type)?.cap != nil && deltas.contains { (delta: Delta) -> Bool in
+    let grown = types.compactMap { (type: String) -> (name: String, cap: Int)? in
+      guard let cap = registry.type(type)?.cap else { return nil }
+      let shows = deltas.contains { (delta: Delta) -> Bool in
         delta.key.type.utf8.elementsEqual(type.utf8) && after.record(delta.key).map(after.isVisible) == true
           && stored.record(delta.key).map(stored.isVisible) != true
       }
+      return shows ? (type, cap) : nil
     }
-    let uncounted = grown.filter { !stored.covers(type: $0) }
-    guard uncounted.isEmpty else { throw UnreadRows(keys: [], types: uncounted, draws: draws) }
-    return grown.first { (type: String) -> Bool in
-      let count = after.visibleCount(type)
-      return registry.type(type).flatMap(\.cap).map { count > $0 } == true && count > stored.visibleCount(type)
+    let uncounted = grown.map(\.name).filter { !stored.covers(type: $0) }
+    guard uncounted.isEmpty else { return .uncounted(uncounted) }
+    let over = grown.first { (type: (name: String, cap: Int)) -> Bool in
+      let count = after.visibleCount(type.name)
+      return count > type.cap && count > stored.visibleCount(type.name)
     }
+    return over.map { .over($0.name, cap: $0.cap) } ?? .within
   }
 }
 

@@ -54,7 +54,7 @@ public struct LoadedReplica: Sendable {
     loadedNotices = notices
     self.deviceRows = deviceRows
     loadedJournal = journal
-    loadedUnsettledRequests = (journal.whole?.inverses ?? []).filter { $0.state != .settled }.map(\.requestId)
+    loadedUnsettledRequests = (journal.wholeJournal?.inverses ?? []).filter { $0.state != .settled }.map(\.requestId)
     self.wholeScopes = wholeScopes
     self.isActive = isActive
   }
@@ -224,7 +224,7 @@ public struct LoadedReplica: Sendable {
   // Reading or writing a journal a load did not cover is a loader bug, and traps.
   public private(set) var journal: Journal {
     get {
-      guard let journal = loadedJournal.whole else { preconditionFailure("the journal of \(meta.replica) was read but not loaded") }
+      guard let journal = loadedJournal.wholeJournal else { preconditionFailure("the journal of \(meta.replica) was read but not loaded") }
       return journal
     }
     set { loadedJournal = .whole(newValue) }

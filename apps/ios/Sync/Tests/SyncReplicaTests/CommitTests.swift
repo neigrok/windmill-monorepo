@@ -126,16 +126,17 @@ struct CommitTests {
       var (scope, gesture) = Self.gesture(&random)
       gesture.gestureId = "step\(step)"
       let instance = Self.instance(4000 + Int64(step))
-      let (partial, partialOutcome) = try Self.planned(gesture, in: scope, over: whole, by: planner, as: instance)
+      let (partial, partialOutcome) = try Self.planOverReads(gesture, in: scope, over: whole, by: planner, as: instance)
       let wholeOutcome = try planner.commit(gesture, in: scope, to: &whole, as: instance, identities: try QueuedIdentities([:]), gestureIdTaken: false)
       #expect(partialOutcome == wholeOutcome, "seed \(random.seed), step \(step)")
       #expect(partial.writes == Array(whole.writes.suffix(partial.writes.count)), "seed \(random.seed), step \(step)")
     }
   }
 
-  // A commit as the store's Action plans it: over the rows its read set names, then again over each it finds unread.
-  static func planned(_ gesture: Gesture, in scope: ScopeRef, over whole: LoadedReplica, by planner: CommitPlanner,
-                      as instance: Instance) throws -> (replica: LoadedReplica, outcome: CommitOutcome) {
+  // A commit as the store's Action plans it (`planOverReads`): over the rows its read set names, then again over each it
+  // finds unread.
+  static func planOverReads(_ gesture: Gesture, in scope: ScopeRef, over whole: LoadedReplica, by planner: CommitPlanner,
+                            as instance: Instance) throws -> (replica: LoadedReplica, outcome: CommitOutcome) {
     var reads = planner.reads(of: gesture, in: scope)
     var draws: [Draw] = []
     while true {
@@ -155,8 +156,8 @@ struct CommitTests {
   // A change of one record of a capped type reads that record alone, so its commit loads the same rows however many the
   // type holds; a create reads the whole type, which the cap counts, and any other change reads it only once its delta
   // shows one more record than `stored` does. A command's predicted create reads its record alone: the cap counts no
-  // prediction. A revive of a live card commits over its one row; one of the dead card,
-  // which the three live ones fill the cap without, stops for the type and is refused once it is read.
+  // prediction. A revive of a live card commits over its one row; one of the dead card, which the three live ones fill
+  // the cap without, stops for the type and is refused once it is read.
   @Test func aCappedTypeIsReadWholeOnlyByAChangeThatShowsOneMoreRecord() throws {
     let planner = CommitPlanner(registry: Self.probe)
     let card = RecordKey("card", "card0001"), dead = RecordKey("card", "card0004")
@@ -186,7 +187,7 @@ struct CommitTests {
     #expect(throws: UnreadRows.self) {
       try planner.commit(revival, in: Self.product, to: &narrow, as: Self.instance(6000), identities: try QueuedIdentities([:]), gestureIdTaken: false)
     }
-    let planned = try Self.planned(revival, in: Self.product, over: whole, by: planner, as: Self.instance(6000))
+    let planned = try Self.planOverReads(revival, in: Self.product, over: whole, by: planner, as: Self.instance(6000))
     #expect(planned.outcome == .refused(.cap, detail: ["type": "card", "cap": 3]))
   }
 

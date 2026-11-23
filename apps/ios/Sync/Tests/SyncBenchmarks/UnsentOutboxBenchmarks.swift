@@ -23,7 +23,7 @@ import Testing
 // 5,000 records or as 1,000 entries of one, then one Delete of all N opted into Undo, which journals N preimages, and the
 // push that acknowledges them all. Each of the ACK's transactions holds the store's writer; the longest is reported
 // against WRITER_SLICE_MS (§2.5). Every result transaction of the entries of one reads each queued entry, whose guards no
-// index names, and the act whole, so that shape grows with the outbox times the act until the store keeps both apart.
+// index names, and the act whole, so that shape costs the outbox and the act once a result.
 extension Benchmarks {
   @Suite struct UnsentOutbox {
     static let tree = ScopeRef.tree("b_00000001")

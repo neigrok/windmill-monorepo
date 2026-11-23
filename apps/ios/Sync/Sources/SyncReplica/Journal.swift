@@ -807,13 +807,14 @@ public enum LoadedJournal: Sendable {
   case settled
   case whole(Journal)
 
-  var whole: Journal? {
+  // The journal, where the load read it whole.
+  var wholeJournal: Journal? {
     guard case .whole(let journal) = self else { return nil }
     return journal
   }
 
   // The entries the load reads with it.
-  public var namedLocalIds: Set<String> { whole?.namedLocalIds ?? [] }
+  public var namedLocalIds: Set<String> { wholeJournal?.namedLocalIds ?? [] }
 }
 
 extension SlotRecipe {

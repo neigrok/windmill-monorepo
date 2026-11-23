@@ -54,7 +54,7 @@ extension Store {
   }
 
   // §7.1 read-and-commit: step 1, then `decide` through this transaction, then steps 2–11 over the rows the decided
-  // gesture reads and the entries that touch them (`planned`), and a gesture id it mints is drawn again while the device
+  // gesture reads and the entries that touch them (`planOverReads`), and a gesture id it mints is drawn again while the device
   // carries it. A nil gesture writes nothing and ticks no clock.
   public func commit<T>(in scope: ScopeRef, instance: Instance, identities: IdentitySource,
                         _ decide: (StoreTransaction) throws -> (Gesture?, T)) throws -> Written<(outcome: CommitOutcome?, value: T)> {
@@ -66,7 +66,7 @@ extension Store {
       guard let gesture else { return Planned((nil, value), ReplicaBatch()) }
       let gestureIdTaken = try gesture.gestureId.map(tx.carries(gestureId:)) ?? false
       let identities = UniqueGestureIDs(identities, carries: tx.carries(gestureId:))
-      let (outcome, batch) = try planned(gesture, in: scope, of: active, tx: tx) { (replica: inout LoadedReplica, draws: [Draw]) in
+      let (outcome, batch) = try planOverReads(gesture, in: scope, of: active, tx: tx) { (replica: inout LoadedReplica, draws: [Draw]) in
         try planners.commits.commit(gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: gestureIdTaken,
                                     draws: draws)
       }
@@ -158,10 +158,10 @@ extension Store {
     }
   }
 
-  // One gesture as the act's segment at `offset` (`planned`).
+  // One gesture as the act's segment at `offset` (`planOverReads`).
   func commitSegment(_ gesture: Gesture, in scope: ScopeRef, of active: String, tx: StoreTransaction, instance: Instance,
                      identities: IdentitySource, offset: Int, firstOrder: Int64, capture: String?) throws -> (outcome: CommitOutcome, batch: ReplicaBatch) {
-    try planned(gesture, in: scope, of: active, tx: tx) { (replica: inout LoadedReplica, draws: [Draw]) in
+    try planOverReads(gesture, in: scope, of: active, tx: tx) { (replica: inout LoadedReplica, draws: [Draw]) in
       try planners.commits.commit(gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: false, draws: draws,
                                   actOffset: offset, actFirstOrder: firstOrder, capture: capture)
     }
@@ -172,8 +172,8 @@ extension Store {
   // grow, every entry a silent fold may reach) is planned again over the same draws with those read too. Each plan reads
   // more than the one before, or the planner asked again for what it read, which traps. Its outcome, and the batch it
   // would write.
-  func planned(_ gesture: Gesture, in scope: ScopeRef, of active: String, tx: StoreTransaction,
-               _ commit: (inout LoadedReplica, [Draw]) throws -> CommitOutcome) throws -> (outcome: CommitOutcome, batch: ReplicaBatch) {
+  func planOverReads(_ gesture: Gesture, in scope: ScopeRef, of active: String, tx: StoreTransaction,
+                     _ commit: (inout LoadedReplica, [Draw]) throws -> CommitOutcome) throws -> (outcome: CommitOutcome, batch: ReplicaBatch) {
     var reads = planners.commits.reads(of: gesture, in: scope)
     var entries = planners.commits.entryReads(of: gesture)
     var draws: [Draw] = []
@@ -288,10 +288,8 @@ extension Store {
 
   // A hello's offset sample (§10.4), which reads the replica's meta alone.
   public func sample(serverTime: Int64, timing: Timing) throws -> Written<Void> {
-    try write(.offset) { tx in
-      var replica = try loaded(try tx.activeReplica(), in: tx, entries: EntrySelection(), journal: .unread)
+    try onActive(.offset, entries: EntrySelection(), journal: .unread) { replica in
       replica.update { $0.sample(serverTime: serverTime, send: timing.send, recv: timing.recv) }
-      return Planned((), replica.batch)
     }
   }
 
@@ -474,10 +472,12 @@ extension Store {
     return replica
   }
 
-  // A planner over the active replica, which reads no rows; `notices` loads its notices.
-  func onActive<Value>(_ tx: TxName, notices: Bool = false, _ plan: (inout LoadedReplica) throws -> Value) throws -> Written<Value> {
+  // A planner over the active replica, which reads no rows: every entry and the whole journal, or what `entries` and
+  // `journal` name; `notices` loads its notices.
+  func onActive<Value>(_ tx: TxName, entries: EntrySelection = .every, notices: Bool = false, journal: JournalSelection = .whole,
+                       _ plan: (inout LoadedReplica) throws -> Value) throws -> Written<Value> {
     try write(tx) { transaction in
-      var replica = try loaded(try transaction.activeReplica(), in: transaction, notices: notices)
+      var replica = try loaded(try transaction.activeReplica(), in: transaction, entries: entries, notices: notices, journal: journal)
       let value = try plan(&replica)
       return Planned(value, replica.batch)
     }
