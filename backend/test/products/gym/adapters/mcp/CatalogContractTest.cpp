@@ -73,6 +73,12 @@ TEST(gym_catalog_files_name_their_version_and_every_ability_carries_exactly_the_
         CHECK(ability["since"] == Json::Value("catalog/2"));
         carried.erase("since");
       }
+      // Whether a device turn declares the tool strict to the provider: catalog/3's word, every ability's.
+      CHECK_EQ(ability.isMember("strict"), version == "catalog/3");
+      if (ability.isMember("strict")) {
+        CHECK(ability["strict"].isBool());
+        carried.erase("strict");
+      }
       CHECK(carried == fields);
       CHECK(names.insert(ability["name"].asString()).second);
       CHECK((std::set<std::string>{"read", "add", "change", "remove"}.contains(ability["class"].asString())));
@@ -137,7 +143,7 @@ TEST(gym_catalog_3_is_what_mcp_lists_byte_for_byte) {
 }
 
 // The two files hold one set of abilities, each of one class, agent rule and seats, and say the same of what each
-// returns: catalog/3 moved only inputs.
+// returns: catalog/3 moved only inputs, and says which tools a device turn declares strict.
 TEST(gym_catalog_2_and_catalog_3_differ_only_in_what_they_take) {
   const Json::Value second = sync::parseJson(catalog2Text());
   REQUIRE_EQ(second["abilities"].size(), catalog()["abilities"].size());
@@ -148,6 +154,7 @@ TEST(gym_catalog_2_and_catalog_3_differ_only_in_what_they_take) {
       older.removeMember(moved);
       newer.removeMember(moved);
     }
+    newer.removeMember("strict");
     CHECK_EQ(sync::jcs(older), sync::jcs(newer));
   }
 }

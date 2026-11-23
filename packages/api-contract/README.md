@@ -100,17 +100,22 @@ WM_PG_TEST=1 WM_GENERATE_ABILITIES=1 DATABASE_URL="postgresql:///wm_rest_test?ho
 
 `catalog/3` ([Gym Coach on the AI service](../../docs/foundation/gym-coach-on-ai-service.md) §3), the
 catalog written to the provider's strict mode. It has `catalog.json`'s shape and abilities, and
-differs only in its inputs: no keyword strict mode refuses, every object lists `required`, and a
-bound strict mode cannot state is in the description of the parameter it bounds. The server reads it:
+differs only in its inputs and in `strict`: no keyword strict mode refuses, every object lists
+`required`, and a bound strict mode cannot state is in the description of the parameter it bounds.
+Each ability's `strict` says whether a device turn declares its tool strict to the provider:
+`create_routine`, `create_exercise` and the three `propose_*` writes are, and the model's own
+adherence holds the rest, so the grammar the provider compiles stays one it accepts. MCP and the
+server Coach never send `strict`. The server reads it:
 `gymToolCatalog()` declares its tools, so MCP lists its schemas, the server Coach offers them, and a
 `catalog/3` turn is offered and gated by them. The web's replica executor reads it too
 (`web/src/products/gym/domain/coach/`). `catalog.json` and `abilities/` are deleted when no
 released build opens a `catalog/2` turn.
 
-- `strict.py` checks it in the Coach contracts workflow: every ability's input holds only keywords
-  and shapes strict mode accepts, each seat's tools (`agent` `runs` or `proposes`, declared,
-  admitting the seat) stay within 20 strict tools, 24 optional parameters and 16 union-typed
-  parameters, counted at every depth, and every `abilities-3/` input stands inside its schema.
+- `strict.py` checks it in the Coach contracts workflow: every ability says `strict` as a boolean,
+  every ability's input holds only keywords and shapes strict mode accepts, strict or not, each
+  seat's strict tools (`agent` `runs` or `proposes`, declared, admitting the seat, `strict`) stay
+  within 20 strict tools, 24 optional parameters and 16 union-typed parameters, counted at every
+  depth, and every `abilities-3/` input stands inside its schema.
   These are the limits the provider publishes, and it checks those only: the provider can still
   refuse a seat's tools together, which only a real round proves (the spec's §3 and §10).
   `python3 packages/api-contract/gym/strict.py` runs both and prints the counts; given a catalog

@@ -6,7 +6,9 @@ from pathlib import Path
 
 # Anthropic's strict tool use, read at platform.claude.com/docs/en/build-with-claude/structured-outputs on 2026-11-22.
 # These are the limits the provider publishes. Within them a request can still be refused, by the size of the grammar
-# its tools compile to together, which nothing published states: acceptance is proven only by the hand round.
+# its tools compile to together, which nothing published states: acceptance is proven only by the hand round. So each
+# ability says whether it is declared strict, the limits count the strict ones only, and every input stays one strict
+# mode accepts, so that declaring another one strict is one word.
 STRICT_TOOLS = 20
 OPTIONAL_PARAMETERS = 24
 UNION_PARAMETERS = 16
@@ -66,12 +68,14 @@ def parameters(schema, where):
 def counts(catalog):
     counted = {}
     for ability in catalog['abilities']:
+        if type(ability.get('strict')) is not bool: refuse(ability['name'], '`strict` that is not a boolean')
         if ability['input'].get('type') != 'object': refuse(ability['name'], 'an input that is not `type: object`')
         counted[ability['name']] = list(parameters(ability['input'], ability['name']))
     seats = {}
     for seat, admits in SEATS.items():
-        tools = [a['name'] for a in catalog['abilities'] if a['agent'] != 'withheld' and a.get('declared', True) and admits(a)]
-        seats[seat] = {'tools': len(tools),
+        offered = [a for a in catalog['abilities'] if a['agent'] != 'withheld' and a.get('declared', True) and admits(a)]
+        tools = [a['name'] for a in offered if a['strict']]
+        seats[seat] = {'offered': len(offered), 'tools': len(tools),
                        'optional': sum(1 for name in tools for _, optional, _ in counted[name] if optional),
                        'union': sum(1 for name in tools for _, _, is_union in counted[name] if is_union)}
     return seats
@@ -79,7 +83,7 @@ def counts(catalog):
 def check(catalog):
     lines = []
     for seat, count in counts(catalog).items():
-        lines.append(f'{seat}: {count["tools"]} strict tools (of {STRICT_TOOLS}), {count["optional"]} optional parameters (of {OPTIONAL_PARAMETERS}), {count["union"]} union-typed parameters (of {UNION_PARAMETERS})')
+        lines.append(f'{seat}: {count["tools"]} of {count["offered"]} tools strict (of {STRICT_TOOLS}), {count["optional"]} optional parameters (of {OPTIONAL_PARAMETERS}), {count["union"]} union-typed parameters (of {UNION_PARAMETERS})')
         if count['tools'] > STRICT_TOOLS: refuse(seat, f'{count["tools"]} strict tools')
         if count['optional'] > OPTIONAL_PARAMETERS: refuse(seat, f'{count["optional"]} optional parameters')
         if count['union'] > UNION_PARAMETERS: refuse(seat, f'{count["union"]} union-typed parameters')

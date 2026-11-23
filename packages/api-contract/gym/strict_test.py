@@ -9,7 +9,8 @@ def array(items, **extra):
 
 NULLABLE = [{'type': 'string'}, {'type': 'null'}]
 
-# Each schema is one ability's input: a rule strict.py refuses, by the words it refuses with, or the counts it takes.
+# Each schema is one ability's input, declared strict unless the fixture says otherwise: a rule strict.py refuses, by the
+# words it refuses with, or the optional and union-typed parameters it counts.
 FIXTURES = [
     ('a number bound is refused', obj({'n': {'type': 'integer', 'maximum': 200}}), 'strict mode refuses `maximum`'),
     ('a string bound is refused', obj({'s': {'type': 'string', 'maxLength': 240}}), 'strict mode refuses `maxLength`'),
@@ -36,16 +37,21 @@ FIXTURES = [
     ('a union-typed items counts as a union', obj({'ids': array({'type': ['string', 'null']})}), (0, 1)),
     ('anyOf counts as a union', obj({'a': {'description': 'either', 'anyOf': [{'type': 'string'}, {'type': 'integer'}]}}), (0, 1)),
     ('optional parameters count at every depth', obj({'lines': array(obj({'a': {'type': 'integer'}, 'b': {'type': 'string'}}, [])), 'top': {'type': 'boolean'}}, ['lines']), (3, 0)),
+    ('a tool not declared strict counts nothing', obj({'s': {'type': ['string', 'null']}, 'n': {'type': 'integer'}}, ['s']), (0, 0), {'strict': False}),
+    ('a tool not declared strict is still refused what strict mode refuses', obj({'n': {'type': 'integer', 'maximum': 200}}), 'strict mode refuses `maximum`', {'strict': False}),
+    ('an ability that does not say whether it is strict is refused', obj({}), '`strict` that is not a boolean', {'strict': None}),
+    ('a strict that is not a boolean is refused', obj({}), '`strict` that is not a boolean', {'strict': 1}),
 ]
 
-def run(case, schema, expected):
-    catalog = {'abilities': [{'name': 'fixture', 'agent': 'runs', 'seats': 'any', 'input': schema}]}
+def run(case, schema, expected, ability=None):
+    declared = {'name': 'fixture', 'agent': 'runs', 'seats': 'any', 'strict': True, 'input': schema, **(ability or {})}
+    catalog = {'abilities': [{key: value for key, value in declared.items() if value is not None}]}
     try: found = strict.counts(catalog)['bound']
     except ValueError as error:
         assert isinstance(expected, str) and expected in str(error), f'{case}: refused as {error}'
         return
     assert not isinstance(expected, str), f'{case}: not refused, wanted {expected}'
-    assert (found['optional'], found['union']) == expected, f'{case}: counted {found}'
+    assert (found['tools'], found['optional'], found['union']) == (int(declared['strict']), *expected), f'{case}: counted {found}'
 
 if __name__ == '__main__':
     for fixture in FIXTURES: run(*fixture)

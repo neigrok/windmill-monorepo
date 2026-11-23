@@ -1112,7 +1112,7 @@ in-process).
   hosts drops exactly those, unread and unlogged, before it checks the arguments: `CompositeToolHost`
   for MCP, `AskTools` for the server's own Coach and `TurnGate` for a `catalog/3` turn, none of which
   holds its model to the schema. A document gym itself emitted is therefore never refused. A device
-  turn's model, which the AI service holds strict, never sends them. A routine's own `position`
+  turn declares both tools strict (`"strict": true` in `catalog-3.json`), so its model never sends them. A routine's own `position`
   (0–2147483647, the registry's bound on every door) is required and stored.
 - **`delete` is never merged into `write`.** Two tools may merge where a parameter does the job
   (`list_routines`, `get_stats`) but never across levels, and no read is reachable through a
