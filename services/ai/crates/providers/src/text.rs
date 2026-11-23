@@ -65,6 +65,12 @@ pub struct Tool {
     pub name: String,
     pub description: String,
     pub input: Value,
+    #[serde(default = "strict_default")]
+    pub strict: bool,
+}
+
+fn strict_default() -> bool {
+    true
 }
 
 #[derive(Deserialize, Serialize)]

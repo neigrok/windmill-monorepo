@@ -23,7 +23,9 @@ platform/adapters/mcp/
                            (named by JSON path: `nodes[3].deleted`) — that last check is
                            `undeclaredArgument` on the ToolHost port itself, so a tend's
                            `ScopedToolHost`, which never passes through the composite, refuses with
-                           the same sentence. A retired name answers with the sentence
+                           the same sentence. Before that check it drops the fields a
+                           declaration names as `readBack` (`withoutReadBack`, gym's routine
+                           writes; gym's Ask and turn gate drop them too). A retired name answers with the sentence
                            naming its replacement, consulted only after a catalog miss;
                            construction refuses a retirement that shadows a live tool or names a
                            replacement no product declares. `windmillServerInfo()` frames the

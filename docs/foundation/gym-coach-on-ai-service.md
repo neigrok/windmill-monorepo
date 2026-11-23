@@ -101,9 +101,9 @@ What gym gives the engine, for each seat. Its name is `gym.coach` and its versio
 - The web offers no `propose_workout_change`: its room is closed while a workout is open, and no
   board draws a workout proposal there.
 
-**The catalog and the provider's strict mode.** The AI service sends every tool to the provider in
-strict mode ([AI service §6.2](ai-service.md#62-the-wire)); the backend sends none so. `catalog/2`
-cannot be sent that way. Read on Anthropic's documentation (structured outputs, its JSON Schema
+**The catalog and the provider's strict mode.** The AI service sends a tool to the provider in
+strict mode unless the caller says it is not strict ([AI service §6.2](ai-service.md#62-the-wire));
+the backend sends none so. `catalog/2` cannot be sent that way. Read on Anthropic's documentation (structured outputs, its JSON Schema
 limitations and schema complexity limits) on 2026-11-15 and again on 2026-11-22: strict mode refuses
 the bounds the catalog states on numbers, strings and lists (`minimum`, `maximum`, `multipleOf`,
 `minLength`, `maxLength`, `maxItems`, `uniqueItems`, and `minItems` other than 0 or 1) and an object
@@ -114,19 +114,34 @@ that take more than one type, a type list such as `["string", "null"]` included.
 The catalog is therefore rewritten as `catalog/3`, for every door: Coach on each surface, the apps'
 own executors and MCP. (R-11)
 
-- Every input schema of `catalog/3` is one strict mode accepts, and the tools a seat is offered fit
-  its limits together. `packages/api-contract/gym/strict.py` counts both from the file in the Coach
-  contracts workflow, refuses a keyword or shape strict mode refuses in any ability's input, and
-  checks every corpus input against its schema.
+- Every input schema of `catalog/3` is one strict mode accepts. Within the published limits a
+  request can still be refused whole: the provider refuses a set of tools whose schemas together
+  pass a complexity limit no published number states, and advises declaring only the critical tools
+  strict. By measurement on 2026-11-23 a seat's five big writes are accepted together, and adding one
+  more tool to them is refused. So each ability of `catalog-3.json` says `strict`: `create_routine`,
+  `create_exercise`, `propose_routine_change`, `propose_routine_removal` and
+  `propose_workout_change` are declared strict, and the model's own adherence holds the rest, whose
+  calls the executor checks against the schema as it checks every call. A device turn sends each
+  tool's `strict` to the AI service. Declaring another tool strict is one word, since every input
+  stays one strict mode accepts. `packages/api-contract/gym/strict.py` counts the published limits
+  over a seat's strict tools in the Coach contracts workflow, refuses a keyword or shape strict mode
+  refuses in any ability's input, strict or not, and checks every corpus input against its schema.
+  It does not measure the complexity limit, so a seat's acceptance is proven only by the real round
+  of §10.
 - A bound strict mode cannot state moves into the ability's rule, which refuses a value outside it
   as `invalid-arguments` before any rule reads the store, and into the description of the
   parameter it bounds, which tells the model. What an ability does and returns is unchanged.
 - Fewer inputs may be left out. A parameter whose usual value the model can state is required:
   `limit`, `review`. One whose absence means something no value says (every routine, the first
   page, keep the name, no summary, the equipment's step) is required and takes `null`. A field of a
-  routine's or a workout's line stays optional, and so do the fields `list_routines` returns that a
-  write ignores (a line's `position`; a new routine's `revision`, `lastTrainedAt` and
-  `pendingProposal`), so a day read back is a day sent.
+  routine's or a workout's line stays optional.
+- The fields `list_routines` returns that a write ignores (a line's `position`; a new routine's
+  `revision`, `lastTrainedAt` and `pendingProposal`) are not declared on `create_routine` and
+  `propose_routine_change`, where they would spend strict mode's room on nothing. Every door the
+  server hosts — MCP, the server's own Coach and the `catalog/3` turn gate — drops exactly those from
+  the two tools' arguments before it checks them, so a day a model reads back is a day sent wherever
+  the model is not held to the schema. A device turn declares both tools strict, so its model never
+  sends them.
 - The corpora are written again for `catalog/3` in `abilities-3/`, and every executor will claim
   them: the server's, Swift's, Kotlin's and the web's. The server's and the web's claim them; their
   refusals are the contract each other executor is held to when it moves. The withheld abilities whose bounds moved
@@ -351,8 +366,9 @@ every proposal door.
 - Each engine replays the engine's vectors; each executor claims `abilities-3/` and `rules/`, the
   web's included (§5).
 - Every tool of the profile is sent to the provider in a real round, once by hand with the AI
-  service's own key, on each seat. The provider counts tokens without compiling a schema, so a
-  count proves nothing here.
+  service's own key, on each seat, whole: the seat's every tool in one request, since the provider
+  refuses on what the tools compile to together (§3). The provider counts tokens without compiling a
+  schema, so a count proves nothing here, and neither does strict.py.
 - Each surface drives a turn end to end against a local stack: the backend signing passes, the AI
   service, and a provider the test plays. The stories are a question answered, an ability that
   writes, a proposal applied, a share, a picture, Stop, an allowance used up, a connection lost
@@ -377,7 +393,7 @@ every proposal door.
 Reading the backend, the two phone apps, the web and the AI service as built against this document
 on 2026-11-15 found these gaps. Each is work of this build.
 
-- `catalog/2` breaks the provider's strict mode, which the AI service sends every tool in (§3).
+- `catalog/2` breaks the provider's strict mode, which the AI service sends a tool in unless told otherwise (§3).
 - The AI service has no door that holds a picture between calls (R-12).
 - The iPhone's generated catalog drops each ability's `description`, and the iPhone does not carry
   the words the model reads (§3).
@@ -416,5 +432,5 @@ by any of the account's replicas, which a stale turn's end needs.
 | R-8 | Where the prompt lives | In each app's bundle, from shared files. A change to it reaches a phone with a release, and a person can read it. A build whose Coach is found broken is retired by its profile's version (Coach engine §4.1). (2026-11-15) |
 | R-9 | Coach's shares | The two share abilities call the Share door, the one exception to R-3 gym has. (2026-11-15) |
 | R-10 | Effort and output cap | As the backend sets them today, in §3's table. (2026-11-15) |
-| R-11 | Tool schemas the provider's strict mode refuses | The catalog is rewritten as `catalog/3` to strict mode's limits, for every door, MCP included. The AI service goes on sending every tool in strict mode. (2026-11-15) |
+| R-11 | Tool schemas the provider's strict mode refuses | The catalog is rewritten as `catalog/3` to strict mode's limits, for every door, MCP included. The AI service sends a tool in strict mode unless the caller says otherwise, and each `catalog/3` ability says whether it is declared strict (2026-11-15; per-tool `strict` 2026-11-23) |
 | R-12 | A picture in a turn of several rounds | The device uploads it once to the AI service, which holds it in memory for a short time; each round names it ([AI service §6.7](ai-service.md#67-pictures-a-caller-uploads)). It is not sent again with every round. (2026-11-15) |
