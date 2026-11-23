@@ -578,6 +578,9 @@ four hours of the last activity, staying at that activity when the tap came late
   start**, never its own `completed_at`. The store selects and orders the rows; every estimate, best and
   record is derived from them in the domain (`progressSessions`, `MovementSeries`), so no part of the
   rule is in SQL.
+- **`PerformedFact::heavierThan` is the one heaviest-set rule within a session**: more load, then more
+  reps, then the lower set id. Each movement's heaviest set is chosen by it, and so is a session's
+  (`ProgressSession::heaviestMovement`), over every movement it held.
 - `SessionHistory` is a **domain** type although the port returns it: nothing under `domain/` may
   depend on `ports/`.
 
@@ -672,12 +675,13 @@ aggregate boundaries are listed in [Layout](#2-layout).
 - `LastTimeOutcome` exists because `lastTime` has two empty answers — never trained, and no such
   movement — and only the store can tell them apart.
 - `SessionSummary` carries both set counts (`setCount` and `workingSetCount` are the same number, every
-  row, kept apart because the wire names both), the clamped `tonnageKg`, the movement names, the session's
-  `topSet`, its `worked` sets dated by the session's start, and `closedItself`. `LogPage` adds `standing` — the sets
+  row, kept apart because the wire names both), the clamped `tonnageKg`, the movement names, its `worked`
+  sets dated by the session's start, and `closedItself`. `LogPage` adds `standing` — the sets
   of everything FINISHED before the page's oldest row, narrowed to its movements, because a record is
   judged against the history before its session and page two has history page two cannot see. The
-  application puts `topE1rm` and `record` on the row afterwards: those are RULES, not aggregations, and
-  the store computes no estimate.
+  application puts the session's per-movement facts (`ProgressSession::of`), `topE1rm` and `record` on
+  the row afterwards: those are RULES, not aggregations, and the store computes no estimate and picks
+  no heaviest set.
 - `historyFor` returns a **domain** value, one read in one transaction, loading the comparison session
   only for a session that named a routine.
 - The **share's DTOs name no account and hold no id at any depth**.
@@ -692,9 +696,15 @@ aggregate boundaries are listed in [Layout](#2-layout).
 `(started_at, id)` (`?before=<ms>&beforeId=<id>&limit=`, default 50, cap 200). Detail is per-exercise
 grouping in first-performed order, assembled client-side from numbered sets.
 
-- The row's derived facts ride the same statement, so the list never loads a session's sets. `topSet`
-  is a lateral over the session's sets — heaviest, ties to more reps, never volume, absent
-  for a session holding none.
+- The page's statements hand over the rows, their counts and names, and every set of the page in the
+  fact projection, so the list never loads a session's set rows. `topSet` is the heaviest set over the
+  session's movements (`ProgressSession::heaviestMovement`), never volume, absent for a session
+  holding none.
+- **`list_sessions` answers `catalog/3`'s row**, drawn from the same row: no frozen plan; `routineName`
+  is the name the workout went by (`Session::routineName`: the display override, else the frozen plan's
+  routine, absent when neither names one); `topSet` names its `exerciseId`; and `movements` is one line
+  per movement in id order, its heaviest set and its best estimate stated to a tenth, null where none
+  earned one. REST's row keeps the plan and carries the display override alone as `routineName`.
 - **`tonnageKg` sums nonnegative entered kg × reps × dumbbell count over every row.**
   Dumbbell values are per dumbbell; count is one or two. Other equipment has multiplier one.
   Barbell values include the bar. Bodyweight values are added load only; assistance contributes zero. **A session or week whose tonnage is zero shows nothing where the tonnage would
@@ -1040,7 +1050,7 @@ gate reads, so a tool cannot be described as one thing and gated as another.
 | `gym:read` | `gym:write` | `gym:delete` |
 |---|---|---|
 | `list_exercises` | `start_session` | `discard_session` |
-| `list_sessions` — the log, paged, 1–200 a page | `log_set` — one set into an open workout | `propose_routine_removal` — **deletes nothing** |
+| `list_sessions` — the log, paged, 1–200 a page; a row names its lifts and holds no plan | `log_set` — one set into an open workout | `propose_routine_removal` — **deletes nothing** |
 | `get_session` — one workout + its sets (`review: true` adds the finish readout) | `finish_session` | `revoke_share` |
 | `last_time` — the prefill | `create_routine` — external MCP creates immediately; Coach prepares a draft for Save | |
 | `list_routines` — all, or one by `routineId`; carries `pendingProposal` | `propose_routine_change` — **changes nothing** | |

@@ -60,6 +60,10 @@ double Estimate::stated(double e1rm) { return sync::Quantum{0.1}.round(e1rm); }
 
 std::optional<Estimate> PerformedFact::estimate() const { return Estimate::of(weightKg, reps, rpe); }
 
+bool PerformedFact::heavierThan(const PerformedFact& other) const {
+  return std::tuple(weightKg, reps, other.set.str()) > std::tuple(other.weightKg, other.reps, set.str());
+}
+
 ProgressSet ProgressSet::of(const Session& session, const Set& set) {
   return ProgressSet{session.id, session.startedAtMs, set.exercise,
                      PerformedFact{set.id, set.weightKg, set.reps, set.rpe}};
@@ -78,9 +82,7 @@ std::vector<ProgressSession> progressSessions(const std::vector<ProgressSet>& se
     ++movement->workingSetCount;
 
     const PerformedFact& set = row.performed;
-    if (std::tuple(set.weightKg, set.reps, movement->heaviest.set.str()) >
-        std::tuple(movement->heaviest.weightKg, movement->heaviest.reps, set.set.str()))
-      movement->heaviest = set;
+    if (set.heavierThan(movement->heaviest)) movement->heaviest = set;
     if (set.weightKg == 0 && (!movement->mostReps || std::pair(set.reps, movement->mostReps->set.str()) >
                                                          std::pair(movement->mostReps->reps, set.set.str())))
       movement->mostReps = set;
@@ -97,6 +99,19 @@ std::vector<ProgressSession> progressSessions(const std::vector<ProgressSet>& se
     return std::pair(session.startedAtMs, session.session.str());
   });
   return sessions;
+}
+
+ProgressSession ProgressSession::of(const Session& session, const std::vector<ProgressSet>& sets) {
+  for (const ProgressSession& grouped : progressSessions(sets))
+    if (grouped.session == session.id) return ProgressSession{session.id, session.startedAtMs, grouped.movements};
+  return ProgressSession{session.id, session.startedAtMs, {}};
+}
+
+std::optional<MovementSessionFact> ProgressSession::heaviestMovement() const {
+  std::optional<MovementSessionFact> heaviest;
+  for (const MovementSessionFact& movement : movements)
+    if (!heaviest || movement.heaviest.heavierThan(heaviest->heaviest)) heaviest = movement;
+  return heaviest;
 }
 
 StatsProgress statsProgress(const std::vector<ProgressSet>& history, std::uint64_t asOfMs) {

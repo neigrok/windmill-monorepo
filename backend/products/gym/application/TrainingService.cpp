@@ -27,11 +27,12 @@ std::vector<LogRow> TrainingService::log(const UserId& user, const LogCursor& cu
 
   std::vector<LogRow> rows;
   for (SessionSummary& summary : page.sessions) {
+    ProgressSession progress = ProgressSession::of(summary.session, summary.worked);
     std::optional<double> estimate = topE1rmOf(summary.worked);
     bool record = false;
     for (const SessionId& id : earned)
       if (id == summary.session.id) record = true;
-    rows.push_back(LogRow{std::move(summary), estimate, record});
+    rows.push_back(LogRow{std::move(summary), std::move(progress), estimate, record});
   }
   return rows;
 }

@@ -480,8 +480,8 @@ TEST(pg_gym_log_walks_a_tied_start_instant_across_a_page_boundary) {
   CHECK(third.empty());
 }
 
-// topSet is a lateral over the session's sets; closedItself is the four-hour rule's signature — finished_at at the last set's instant, or at started_at.
-TEST(pg_gym_log_carries_the_top_set_and_says_which_row_closed_itself) {
+// closedItself is the four-hour rule's signature — finished_at at the last set's instant, or at started_at.
+TEST(pg_gym_log_says_which_row_closed_itself) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   const std::uint64_t t1 = 1'700'000'000'123;
@@ -509,16 +509,12 @@ TEST(pg_gym_log_carries_the_top_set_and_says_which_row_closed_itself) {
 
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(4));
   CHECK_EQ(listed[0].session.id.str(), std::string("ses_pg000004"));
-  CHECK_EQ(listed[0].topSet, std::optional<HeaviestSet>());   // no sets at all
   CHECK(listed[0].closedItself);                                // ended when it began
   CHECK_EQ(listed[1].session.id.str(), std::string("ses_pg000003"));
-  CHECK_EQ(listed[1].topSet, std::optional<HeaviestSet>(HeaviestSet{60, 10}));
   CHECK_FALSE(listed[1].closedItself);                          // still running
   CHECK_EQ(listed[2].session.id.str(), std::string("ses_pg000002"));
-  CHECK_EQ(listed[2].topSet, std::optional<HeaviestSet>(HeaviestSet{90, 5}));
   CHECK(listed[2].closedItself);
   CHECK_EQ(listed[3].session.id.str(), std::string("ses_pg000001"));
-  CHECK_EQ(listed[3].topSet, std::optional<HeaviestSet>(HeaviestSet{140, 1}));   // never 100 × 8
   CHECK_FALSE(listed[3].closedItself);
 
   // A row closed before closed_by existed reads the four-hour rule's own signature.
@@ -579,9 +575,11 @@ TEST(pg_gym_log_hands_back_every_set_of_a_row) {
                                                        fact("ses_pg000001", t1, "set_pg000004", "back-squat", 95, 10),
                                                        fact("ses_pg000001", t1, "set_pg000005", "back-squat", 95, 8),
                                                        fact("ses_pg000001", t1, "set_pg000006", "back-squat", -20, 12)}));
-  // And what the application makes of it: the session's number, not its heaviest set's.
+  // And what the domain makes of it: the session's number, not its heaviest set's.
+  const std::optional<MovementSessionFact> heaviest = ProgressSession::of(listed[0].session, listed[0].worked).heaviestMovement();
+  REQUIRE(heaviest.has_value());
   CHECK_EQ(topE1rmOf(listed[0].worked), Estimate::of(95.0, 10, std::nullopt)->e1rm);
-  CHECK_EQ(listed[0].topSet, std::optional<HeaviestSet>(HeaviestSet{100.0, 5}));
+  CHECK_EQ(heaviest->heaviest, listed[0].worked[1].performed);   // 100 × 5
 }
 
 // The movements are framed by the rows they come back in, so a name holding a separator is still ONE movement.
@@ -724,7 +722,7 @@ TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
   CHECK_EQ(summaries[0].setCount, 1);
   CHECK_EQ(summaries[0].workingSetCount, 1);
   CHECK_EQ(summaries[0].tonnageKg, std::optional<double>{142.5 * 8});
-  CHECK_EQ(summaries[0].topSet, (std::optional<HeaviestSet>{HeaviestSet{142.5, 8}}));
+  CHECK_EQ(summaries[0].worked, (std::vector<ProgressSet>{fact("ses_pg000001", t1, "set_pg000001", "bench-press", 142.5, 8)}));
 }
 
 // Against real jsonb, with the blob written STRAIGHT INTO the column: only a string is a routine name.
@@ -1205,7 +1203,7 @@ TEST(pg_gym_fixing_and_deleting_a_set_leave_the_frozen_plan_and_the_routine_unto
   REQUIRE_EQ(rows.size(), static_cast<std::size_t>(1));
   CHECK_EQ(rows[0].setCount, 1);
   CHECK_EQ(rows[0].tonnageKg, 180.0);
-  CHECK_EQ(rows[0].topSet, std::optional<HeaviestSet>(HeaviestSet{60, 3}));
+  CHECK_EQ(rows[0].worked, (std::vector<ProgressSet>{fact("ses_pg000001", t1, "set_pg000001", "bench-press", 60, 3)}));
 }
 
 // The discard reaches the revisions too: session_id carries a cascading foreign key and set_id carries none.

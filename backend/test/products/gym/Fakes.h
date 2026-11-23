@@ -242,7 +242,6 @@ public:
       int working = 0;
       double tonnage = 0;
       std::set<std::string> names;   // iterates sorted, exactly like the SQL's ORDER BY the name
-      std::optional<HeaviestSet> top;
       std::optional<std::uint64_t> lastSetAtMs;
       for (const Set& set : db.sets) {
         if (!(set.session == session.id)) continue;
@@ -252,10 +251,6 @@ public:
         ++working;
         // `greatest(weight_kg, 0) * reps`: an assisted set moved no external weight, so it adds nothing.
         tonnage += std::max(set.weightKg, 0.0) * set.reps;
-        // Heaviest set, ties to more reps, never volume (HeaviestSet).
-        if (top && std::pair(set.weightKg, set.reps) <= std::pair(top->weightKg, top->reps))
-          continue;
-        top = HeaviestSet{set.weightKg, set.reps};
       }
       // The fact statement: this session's sets, dated by the SESSION (domain/Progress.h).
       std::vector<ProgressSet> worked =
@@ -267,7 +262,7 @@ public:
                                  *session.finishedAtMs == lastSetAtMs.value_or(session.startedAtMs);
       out.sessions.push_back(SessionSummary{session, count, working, tonnage,
                                             std::vector<std::string>(names.begin(), names.end()),
-                                            top, std::move(worked), closedItself});
+                                            std::move(worked), closedItself});
     }
     if (out.sessions.empty()) return out;
 
