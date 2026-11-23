@@ -41,6 +41,7 @@ pub struct TierTable {
     pub labels: Vec<String>,
     pub owner_grants_max: u32,
     pub hourly_fuse: NanoUsd,
+    pub background_hour: NanoUsd,
 }
 
 impl TierTable {
@@ -80,11 +81,13 @@ impl TierTable {
     pub fn validate(&self, prices: &PriceBook) -> Result<(), StaticCode> {
         if self.owner_grants_max == 0
             || self.hourly_fuse == NanoUsd::ZERO
+            || self.background_hour == NanoUsd::ZERO
+            || self.background_hour >= self.hourly_fuse
             || !self.labels.iter().any(|label| label == "other")
         {
             return Err(StaticCode::InvalidRequest);
         }
-        for tier in [Tier::Anonymous, Tier::Free, Tier::One] {
+        for tier in [Tier::Anonymous, Tier::Free, Tier::One, Tier::Background] {
             if self.rows.iter().filter(|row| row.tier == tier).count() != 1 {
                 return Err(StaticCode::InvalidRequest);
             }
@@ -104,12 +107,19 @@ impl TierTable {
             } else if row.transcription || row.month_pool.is_none() || row.day_pool.is_none() {
                 return Err(StaticCode::InvalidRequest);
             }
+            if tier == Tier::Background && row.text.contains(&ModelClass::Large) {
+                return Err(StaticCode::InvalidRequest);
+            }
             for pool in [&row.month_pool, &row.day_pool].into_iter().flatten() {
                 if pool.name.is_empty() || pool.name.len() > 64 || pool.limit == NanoUsd::ZERO {
                     return Err(StaticCode::InvalidRequest);
                 }
             }
-            for peer in &self.rows {
+            for peer in self
+                .rows
+                .iter()
+                .filter(|peer| (peer.tier == Tier::Background) == (tier == Tier::Background))
+            {
                 for (pool, other) in [
                     (&row.month_pool, &peer.month_pool),
                     (&row.day_pool, &peer.day_pool),

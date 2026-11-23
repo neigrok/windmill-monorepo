@@ -23,7 +23,7 @@ pub(crate) fn budget(row: &PgRow) -> Result<Budget, StaticCode> {
     };
     Ok(Budget {
         id: value(row, "id")?,
-        kind: value(row, "kind")?,
+        kind: BudgetKind::parse(value(row, "kind")?)?,
         period,
         limit: money(row, "limit_nanos")?,
         spent: money(row, "spent")?,

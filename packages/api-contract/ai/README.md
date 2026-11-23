@@ -19,8 +19,9 @@ The compact page fixtures show the two cursor states; the server's HTTP tests ex
 
 `textTerminals` and `liveTerminals` name the outcomes a caller handles. `liveFirstFailures` are
 refusals before a session dispatches, with null `charged`. `prestreamRefusals` cover the counting
-provider's rejection or unavailability before a text stream starts. An allowance may be null when
-accounting is unavailable. A terminal event's `charged` may be null while settlement retries.
+provider's rejection or unavailability before a text stream starts. An allowance is null when
+accounting is unavailable and on every refusal and terminal event of background work, whose own
+code is `background_exhausted`. A terminal event's `charged` may be null while settlement retries.
 
 An assistant's `carry` is opaque. Server tests check its versioned base64url envelope and replace its
 random ciphertext with `wm-carry.v1.<opaque>` before comparing the complete event. They preserve and

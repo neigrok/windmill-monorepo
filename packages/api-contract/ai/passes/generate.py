@@ -42,6 +42,17 @@ def generate():
         installation = dict(aud='ai',env='development',iat=1800000000000,exp=1800000600000,sub={'installation':'installation-vector'},client='ios')
         payload=json.dumps(installation,separators=(',',':'))
         cases.append(dict(name='installation',payload=payload,passValue=sign(payload),now=1800000000000,expected='ok'))
+        server = dict(aud='ai',env='development',iat=1800000000000,exp=1800000600000,sub={'account':'account-vector'},plan='none',client='server')
+        for name, changes, expected in [
+            ('server',{},'ok'),
+            ('server_plan_one',{'plan':'one'},'pass_malformed'),
+            ('server_owner_grant',{'plan':'one','ownerGrant':True},'pass_malformed'),
+            ('server_installation',{'installation':'installation-vector'},'pass_malformed'),
+            ('server_sub_installation',{'sub':{'installation':'installation-vector'},'plan':None},'pass_malformed'),
+        ]:
+            claims={key:value for key,value in {**server,**changes}.items() if value is not None}
+            payload=json.dumps(claims,separators=(',',':'))
+            cases.append(dict(name=name,payload=payload,passValue=sign(payload),now=1800000000000,expected=expected))
         cases.append(dict(name='missing',payload=None,passValue=None,now=1800000000000,expected='pass_missing'))
         add('audience',{'aud':'other'},'pass_audience')
         add('environment',{'env':'production'},'pass_audience')
