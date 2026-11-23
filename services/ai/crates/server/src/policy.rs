@@ -17,6 +17,7 @@ struct TiersIn {
     transcription: LiveIn,
     models: Vec<ModelIn>,
     rows: Vec<RowIn>,
+    background: BackgroundIn,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,6 +51,18 @@ struct RowIn {
     output_ceiling: u32,
     text: [String; 3],
     transcription: bool,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BackgroundIn {
+    amount: String,
+    month: String,
+    day: String,
+    hour: String,
+    in_flight: u32,
+    calls_per_minute: u32,
+    output_ceiling: u32,
+    text: [String; 3],
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -133,6 +146,28 @@ impl Policy {
                 transcription: row.transcription,
             });
         }
+        let background = tiers.background;
+        let background_pool = |limit: &str| {
+            Ok::<_, StaticCode>(PoolRule {
+                name: "background".to_owned(),
+                limit: NanoUsd::from_usd(limit)?,
+            })
+        };
+        rows.push(TierRule {
+            tier: Tier::Background,
+            amount: NanoUsd::from_usd(&background.amount)?,
+            month_pool: Some(background_pool(&background.month)?),
+            day_pool: Some(background_pool(&background.day)?),
+            in_flight: background.in_flight,
+            calls_per_minute: background.calls_per_minute,
+            output_ceiling: background.output_ceiling,
+            text: [
+                ModelClass::parse(&background.text[0])?,
+                ModelClass::parse(&background.text[1])?,
+                ModelClass::parse(&background.text[2])?,
+            ],
+            transcription: false,
+        });
         let mut models = vec![];
         let mut profiles = vec![];
         for model in tiers.models {
@@ -205,6 +240,7 @@ impl Policy {
             labels: tiers.labels,
             owner_grants_max: tiers.owner_grants_max,
             hourly_fuse: NanoUsd::from_usd(&tiers.hourly_fuse)?,
+            background_hour: NanoUsd::from_usd(&background.hour)?,
         };
         let mut models = vec![];
         for price in prices.models {

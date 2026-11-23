@@ -91,7 +91,8 @@ def call(value):
     integer(value['id'], 1)
     fields(value['principal'], 'kind id')
     require(value['principal']['kind'] in {'installation', 'account'} and isinstance(value['principal']['id'], str) and value['principal']['id'], 'invalid principal')
-    require(value['tier'] in {'anonymous', 'free', 'one'}, 'unknown call tier')
+    require(value['tier'] in {'anonymous', 'free', 'one', 'background'}, 'unknown call tier')
+    require((value['tier'] == 'background') == (value['client'] == 'server'), 'background differs from a server pass')
     require(value['requested'] in {'large', 'medium', 'small'}, 'unknown requested class')
     require(value['provider'] in {'anthropic', 'openai', 'azure'}, 'unknown provider')
     require(value['client'] in {'ios', 'android', 'web', 'server'}, 'unknown client')
@@ -115,7 +116,7 @@ def call(value):
 def budget(value):
     fields(value, 'id kind period limit spent held')
     integer(value['id'], 1)
-    require(value['kind'] in {'installation', 'account_month', 'free_month', 'free_day', 'grant'}, 'unknown budget kind')
+    require(value['kind'] in {'installation', 'account_month', 'free_month', 'free_day', 'grant', 'background_account_month', 'background_month', 'background_day'}, 'unknown budget kind')
     period(value['period'], nullable=True)
     for key in ['limit', 'spent', 'held']:
         money(value[key])
@@ -280,7 +281,7 @@ def check(fixture):
     for value in fixture['allowances'].values():
         allowance(value)
     require(fixture['allowances']['one_without_grant']['tier'] == 'free', 'plan grace must use free tier')
-    expected_status = {400: {'invalid_request', 'provider_rejected'}, 401: {'pass_missing', 'pass_signature', 'pass_audience', 'pass_malformed', 'pass_expired'}, 403: {'funding_required', 'device_bound'}, 404: {'call_unknown'}, 409: {'conflict'}, 410: {'result_gone', 'picture_gone'}, 413: {'too_large'}, 429: {'subject_exhausted', 'free_month_exhausted', 'free_day_exhausted', 'concurrency_exhausted', 'rate_limited'}, 503: {'busy', 'paused', 'accounting_unavailable', 'provider_unavailable'}}
+    expected_status = {400: {'invalid_request', 'provider_rejected'}, 401: {'pass_missing', 'pass_signature', 'pass_audience', 'pass_malformed', 'pass_expired'}, 403: {'funding_required', 'device_bound'}, 404: {'call_unknown'}, 409: {'conflict'}, 410: {'result_gone', 'picture_gone'}, 413: {'too_large'}, 429: {'subject_exhausted', 'free_month_exhausted', 'free_day_exhausted', 'background_exhausted', 'concurrency_exhausted', 'rate_limited'}, 503: {'busy', 'paused', 'accounting_unavailable', 'provider_unavailable'}}
     actual_status = {}
     for refusal in fixture['refusals']:
         fields(refusal, 'status body')
@@ -290,7 +291,7 @@ def check(fixture):
         require(code not in actual_status.setdefault(refusal['status'], set()), 'duplicate refusal')
         actual_status[refusal['status']].add(code)
         allowance(refusal['body']['allowance'], nullable=True)
-        require((refusal['body']['allowance'] is None) == (refusal['status'] == 401 or code == 'accounting_unavailable'), 'refusal allowance differs')
+        require((refusal['body']['allowance'] is None) == (refusal['status'] == 401 or code in {'accounting_unavailable', 'background_exhausted'}), 'refusal allowance differs')
     require(actual_status == expected_status, 'refusal coverage differs')
     require(set(fixture['prestreamRefusals']) == {'provider_rejected', 'provider_unavailable'}, 'prestream refusal coverage differs')
     for code, value in fixture['prestreamRefusals'].items():
@@ -352,9 +353,14 @@ def check(fixture):
         fields(value, 'state charged replay')
         require(value['state'] == 'assumed' and type(value['replay']) is bool and value['replay'] == (name == 'replayed'), 'invalid correction')
         money(value['charged'])
-    fields(fixture['shared'], 'budgets fuses')
+    require(set(fixture['internalCalls']) == {'settled', 'corrected', 'transcription', 'background'}, 'internal call coverage differs')
+    fields(fixture['shared'], 'budgets fuses backgroundHour')
+    fields(fixture['shared']['backgroundHour'], 'spent held limit')
+    for value in fixture['shared']['backgroundHour'].values():
+        money(value)
     for value in fixture['shared']['budgets']:
         budget(value)
+        require(value['kind'] in {'free_month', 'free_day', 'background_month', 'background_day'}, 'shared budget kind differs')
     for value in fixture['shared']['fuses']:
         fields(value, 'provider spent limit paused')
         require(value['provider'] in {'anthropic', 'openai', 'azure'}, 'unknown fuse provider')
@@ -371,6 +377,10 @@ def negative_probes(fixture):
         ('wrong picture media', lambda f: f['pictureUploads'][0].update(mediaType='image/gif')),
         ('wrong picture signature', lambda f: f['pictureUploads'][0].update(data='/9j/2Q==')),
         ('missing picture refusal', lambda f: f['refusals'].__setitem__(slice(None), [item for item in f['refusals'] if item['body']['code'] != 'picture_gone'])),
+        ('background refusal with an allowance', lambda f: next(item for item in f['refusals'] if item['body']['code'] == 'background_exhausted')['body'].update(allowance=f['allowance'])),
+        ('background call from a device', lambda f: f['internalCalls']['background'].update(client='web')),
+        ('account budget listed as shared', lambda f: f['shared']['budgets'][1].update(kind='background_account_month')),
+        ('floating background hour', lambda f: f['shared']['backgroundHour'].update(spent=0.4)),
         ('missing charged', lambda f: f['textTerminals']['completed']['data'].pop('charged')),
         ('floating money', lambda f: f['calls'][2].update(charged=0.001)),
         ('boolean money', lambda f: f['internalCalls']['settled'].update(charged=False)),

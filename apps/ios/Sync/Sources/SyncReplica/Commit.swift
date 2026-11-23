@@ -7,18 +7,16 @@ import SyncCore
 public struct CommitPlanner: Sendable {
   public let registry: Registry
   public let limits: Limits
-  let hold: Hold
 
   public init(registry: Registry, limits: Limits = Limits()) {
     self.registry = registry
     self.limits = limits
-    hold = Hold(registry: registry)
   }
 
   // §7.1 for a decided gesture. The read-and-commit form runs step 1, `checkWritable`, then its body through the
   // caller's reader, and commits here only when the body decides a gesture: a nil one writes nothing and ticks no clock.
   // `gestureIdTaken`: an outbox entry or a notice of any replica on the device carries the gesture's given id (§2.5).
-  // `draws`: the ids an earlier plan of this commit drew before it stopped at `UnreadDraws`, taken again first.
+  // `draws`: the ids an earlier plan of this commit drew before it stopped at `UnreadRows`, taken again first.
   // `capture`: an opted act segment's capture command, which joins the gesture when it writes a delta (§7.3).
   public func commit(_ gesture: Gesture, in scope: ScopeRef, to replica: inout LoadedReplica, as instance: Instance,
                      identities: IdentitySource, gestureIdTaken: Bool, draws: [Draw] = [],
@@ -30,16 +28,19 @@ public struct CommitPlanner: Sendable {
 
   // The rows a commit of `gesture` reads, for its Action to load first with the entries that touch them: the records its
   // changes, predictions, guards and retire name, an opted command's predictions in their own scopes; whole types where
-  // it derives an id from a label, places by an anchor, or may grow a capped type; and for each tree or overlay scope,
-  // the governing record the scope check reads. The ids minted creates draw are read by their keys once drawn
-  // (`UnreadDraws`).
+  // an intent's change derives an id from a label, places by an anchor, or creates a record of a capped type, which the
+  // cap counts; and for each tree or overlay scope, the governing record the scope check reads. A prediction names its
+  // record and the cap counts none (§7.1 step 8), so it reads its record alone. What a plan finds it needs beyond them is
+  // read once found (`UnreadRows`): the ids minted creates draw, by their keys; a capped type any other change shows one
+  // more record of, whole; and every entry, where a retire's or a supersede's silent fold reaches past the entries the
+  // load read. So a change of one record of a capped type reads that record alone unless it may grow the type.
   public func reads(of gesture: Gesture, in scope: ScopeRef) -> [ScopeRef: RowSelection] {
-    var origin = rows(namedBy: gesture.changes + gesture.predict)
+    var origin = RowSelection(keys: keys(namedBy: gesture.changes + gesture.predict), types: types(readBy: gesture.changes))
     origin.keys.formUnion(gesture.guards.map(\.key))
     origin.keys.formUnion(gesture.retire.map(\.key))
     var reads = [scope: origin]
     for prediction in gesture.scopedPredict {
-      reads[prediction.scope] = (reads[prediction.scope] ?? RowSelection()).union(rows(namedBy: prediction.changes))
+      reads[prediction.scope, default: RowSelection()].keys.formUnion(keys(namedBy: prediction.changes))
     }
     for read in reads.keys {
       guard let governing = registry.governingRecord(of: read) else { continue }
@@ -48,20 +49,32 @@ public struct CommitPlanner: Sendable {
     return reads
   }
 
-  func rows(namedBy changes: [Change]) -> RowSelection {
-    var selection = RowSelection()
+  // The records changes name by key: a given or seeded id, or the record a change other than a create names.
+  func keys(namedBy changes: [Change]) -> Set<RecordKey> {
+    var keys: Set<RecordKey> = []
     for change in changes {
       guard let type = registry.type(change.type) else { continue }
       switch change.operation {
-      case .create(.minted): break
-      case .create(.derived): selection.types.insert(type.name)
+      case .create(.minted), .create(.derived): break
       case .create(.seeded(let seed, let ordinal)):
-        if let id = try? SeededID(seed: seed, ordinal: ordinal, for: type).id { selection.keys.insert(RecordKey(type.name, RecordID(id))) }
-      default: if let id = change.id { selection.keys.insert(RecordKey(type.name, id)) }
+        if let id = try? SeededID(seed: seed, ordinal: ordinal, for: type).id { keys.insert(RecordKey(type.name, RecordID(id))) }
+      default: if let id = change.id { keys.insert(RecordKey(type.name, id)) }
       }
-      if change.anchor != nil || type.cap != nil { selection.types.insert(type.name) }
     }
-    return selection
+    return keys
+  }
+
+  // The types an intent's changes read whole: a derived id reads every id of its type, an anchor its type's order, and a
+  // create of a capped type the count.
+  func types(readBy changes: [Change]) -> Set<String> {
+    var types: Set<String> = []
+    for change in changes {
+      guard let type = registry.type(change.type) else { continue }
+      let creates: Bool = if case .create = change.operation { true } else { false }
+      let derives: Bool = if case .create(.derived) = change.operation { true } else { false }
+      if derives || change.anchor != nil || (type.cap != nil && creates) { types.insert(type.name) }
+    }
+    return types
   }
 
   // Retire loads held gestures; supersede loads the whole outbox to prove complete eligibility and fold dependents.
@@ -103,8 +116,10 @@ public struct CommitPlanner: Sendable {
     let superseding = try supersedingEntries(gesture.supersede, in: scope, replica: replica)
     let supersedingOnly = superseding.filter { entry in !retiring.contains { $0.commitOrder == entry.commitOrder } }
     let ending = retiring.map { (entry: $0, event: IntentEvent.retire) } + supersedingOnly.map { (entry: $0, event: IntentEvent.silentFold) }
+    let fold = SilentFold(ending, replaced: !superseding.isEmpty, over: replica, registry: registry)
+    guard !fold.reachesUnreadEntries else { throw UnreadRows(everyEntry: true, draws: draws) }
     var retired = replica
-    try hold.end(ending, replaced: !superseding.isEmpty, in: &retired)
+    try fold.apply(to: &retired)
     var builder = DeltaBuilder(
       registry: registry, replica: retired, scope: scope, stamp: stamp, physNow: physNow,
       drawn: try ScopeView(retired, scope, .drawn, registry: registry),
@@ -115,9 +130,9 @@ public struct CommitPlanner: Sendable {
       deltas = try oneDeltaPerRecord(try gesture.changes.compactMap { change in try builder.delta(change).map { (change, $0) } })
       predict = try gesture.predict.map { try builder.predicted($0) }
     } catch where !builder.unread.isEmpty {
-      throw UnreadDraws(keys: builder.unread, draws: builder.draws)
+      throw UnreadRows(keys: builder.unread, draws: builder.draws)
     }
-    guard builder.unread.isEmpty else { throw UnreadDraws(keys: builder.unread, draws: builder.draws) }
+    guard builder.unread.isEmpty else { throw UnreadRows(keys: builder.unread, draws: builder.draws) }
     let guards = try exactGuards(gesture.guards, in: scope, stored: builder.stored)
     let captured: Command? = capture.flatMap { (name: String) -> Command? in deltas.isEmpty ? nil : Command(name: name, args: [:]) }
     let command = (gesture.command ?? captured).map(registry.rounded)
@@ -174,8 +189,10 @@ public struct CommitPlanner: Sendable {
     // throws, before step 8's caps; predictions and device rows are never sent.
     let sent = Intent(scope: scope, deltas: deltas, guards: guards, command: command, gestureId: gesture.gestureId)
     guard !sent.json.holdsNul else { throw CommitFailure.malformed("a string of the intents holds U+0000") }
-    if let capped = try cappedType(deltas, stored: builder.stored), let cap = registry.type(capped)?.cap {
-      return .refused(.cap, detail: ["type": .string(capped), "cap": JSON(cap)])
+    switch try capCount(deltas, stored: builder.stored) {
+    case .uncounted(let types): throw UnreadRows(types: types, draws: builder.draws)
+    case .over(let type, let cap): return .refused(.cap, detail: ["type": .string(type), "cap": JSON(cap)])
+    case .within: break
     }
     let gestureId = try gesture.gestureId ?? identities.gestureID()
     let intents = group(deltas, guards: guards, command: command, gesture: gesture, scope: scope, gestureId: gestureId)
@@ -338,18 +355,37 @@ public struct CommitPlanner: Sendable {
     return intents
   }
 
-  // Step 8: the capped type the deltas, applied to `stored`, grow past its cap by the growth rule; a held delete still
-  // occupies its slot.
-  func cappedType(_ deltas: [Delta], stored: ScopeView) throws -> String? {
+  // Step 8 as the deltas, applied to `stored`, meet each cap by the growth rule; a held delete still occupies its slot.
+  enum CapCount {
+    case within
+    // The first capped type, in the order the deltas name them, grown past its cap.
+    case over(String, cap: Int)
+    // The capped types whose count the load did not read.
+    case uncounted([String])
+  }
+
+  // A type grows only where a delta shows a record `stored` does not, so only such a type is counted; one the load did not
+  // read whole is uncounted.
+  func capCount(_ deltas: [Delta], stored: ScopeView) throws -> CapCount {
     var after = stored
     for delta in deltas { try after.fold(delta) }
     var types: [String] = []
     for delta in deltas where !types.contains(delta.key.type) { types.append(delta.key.type) }
-    return types.first { type in
-      guard let cap = registry.type(type)?.cap else { return false }
-      let count = after.visibleCount(type)
-      return count > cap && count > stored.visibleCount(type)
+    let grown = types.compactMap { (type: String) -> (name: String, cap: Int)? in
+      guard let cap = registry.type(type)?.cap else { return nil }
+      let shows = deltas.contains { (delta: Delta) -> Bool in
+        delta.key.type.utf8.elementsEqual(type.utf8) && after.record(delta.key).map(after.isVisible) == true
+          && stored.record(delta.key).map(stored.isVisible) != true
+      }
+      return shows ? (type, cap) : nil
     }
+    let uncounted = grown.map(\.name).filter { !stored.covers(type: $0) }
+    guard uncounted.isEmpty else { return .uncounted(uncounted) }
+    let over = grown.first { (type: (name: String, cap: Int)) -> Bool in
+      let count = after.visibleCount(type.name)
+      return count > type.cap && count > stored.visibleCount(type.name)
+    }
+    return over.map { .over($0.name, cap: $0.cap) } ?? .within
   }
 }
 
@@ -359,12 +395,23 @@ public struct Draw: Sendable, Hashable {
   public let id: RecordID
 }
 
-// The minted ids a plan drew whose rows and entries its load did not read, so it decided nothing: the Action reads those
-// keys and plans the commit again, which takes `draws`, every id drawn so far in order, before it draws another, so it
-// draws as one plan over every row would.
-public struct UnreadDraws: Error, Sendable {
+// What a plan needed of the replica that its load did not read, so it decided nothing: the keys of the minted ids it drew,
+// the capped types whose count a change that shows one more of their records needs, and every entry, where a silent fold
+// reaches past the entries the load read. The Action reads them, with the entries that touch the rows, and plans the
+// commit again, which takes `draws`, every id drawn so far in order, before it draws another, so it draws and decides as
+// one plan over every row and entry would.
+public struct UnreadRows: Error, Sendable {
   public let keys: [RecordKey]
+  public let types: [String]
+  public let everyEntry: Bool
   public let draws: [Draw]
+
+  init(keys: [RecordKey] = [], types: [String] = [], everyEntry: Bool = false, draws: [Draw]) {
+    self.keys = keys
+    self.types = types
+    self.everyEntry = everyEntry
+    self.draws = draws
+  }
 }
 
 // §7.1 step 7 on a device: the identities a commit draws from, a gesture id drawn again while an outbox entry or a notice

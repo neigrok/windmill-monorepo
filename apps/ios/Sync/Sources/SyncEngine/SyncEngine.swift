@@ -558,7 +558,7 @@ final class EngineCore: Sendable {
     let lifecycle = ReplicaLifecycle(registry: registry)
     let subscriptions = subscriptions()
     guard let loaded = try tx.replica(replica, reads: lifecycle.reads(of: subscriptions), entries: EntrySelection(projectionTargets: true),
-                                      journal: false) else {
+                                      journal: .unread) else {
       throw StoreError.noReplica(replica)
     }
     return lifecycle.firstPullComplete(scope, in: loaded, subscribed: Set(try lifecycle.subscriptionSet(of: loaded, subscriptions)))
@@ -863,7 +863,7 @@ package final class Releaser: Sendable {
     do {
       let deviceNow = core.clock.wall.nowMs()
       let due = try core.storageRead { tx in
-        try tx.replica(tx.activeReplica(), journal: false)?.outbox.filter { $0.state == .held }.map(\.releaseAt).min()
+        try tx.replica(tx.activeReplica(), journal: .unread)?.outbox.filter { $0.state == .held }.map(\.releaseAt).min()
       }
       guard let due else { return .idle }
       guard due <= deviceNow else { return .wait(ms: due - deviceNow) }

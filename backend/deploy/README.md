@@ -178,7 +178,11 @@ must be public.
   account behind the internal listener's secret`) cannot read the alias compose gives it in
   `SUBSCRIPTIONS_INTERNAL_ADDRESS`: rolled back to, it exits at start with `SUBSCRIPTIONS_INTERNAL_ADDRESS is
   malformed` and restarts in a loop, the run turns red at its health check, and Caddy answers `/v1/stores/*`
-  with 502; dispatch with that commit or a newer one. Only the images go back: the run renders `.env` and ships `docker-compose.yml`, the Caddyfile and
+  with 502; dispatch with that commit or a newer one. An `ai-<sha>` built before the AI ledger's
+  `0002_background.sql` (`ai · a call under a server pass is background work, paid from Windmill's own
+  budgets`) refuses a ledger that has applied it: rolled back to, it exits at start and restarts in a loop,
+  and `/v1/calls/*` answers 502; dispatch with that commit or a newer one
+  ([services/ai/RUNBOOK.md](../../services/ai/RUNBOOK.md)). Only the images go back: the run renders `.env` and ships `docker-compose.yml`, the Caddyfile and
   `deploy-production.sh` from the branch it is dispatched on (`main` only), and `migrate` applies the
   selected image's own `db/schema.sql`.
   A lower minimum is a compatibility change too and requires exact manual acknowledgement. That

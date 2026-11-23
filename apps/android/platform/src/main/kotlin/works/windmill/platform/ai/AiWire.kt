@@ -24,8 +24,8 @@ object AiWire {
         "pass_audience" to 401, "pass_malformed" to 401, "pass_expired" to 401, "funding_required" to 403,
         "device_bound" to 403, "call_unknown" to 404, "conflict" to 409, "result_gone" to 410, "picture_gone" to 410,
         "too_large" to 413, "subject_exhausted" to 429, "free_month_exhausted" to 429, "free_day_exhausted" to 429,
-        "concurrency_exhausted" to 429, "rate_limited" to 429, "busy" to 503, "paused" to 503,
-        "accounting_unavailable" to 503, "provider_unavailable" to 503,
+        "background_exhausted" to 429, "concurrency_exhausted" to 429, "rate_limited" to 429, "busy" to 503,
+        "paused" to 503, "accounting_unavailable" to 503, "provider_unavailable" to 503,
     )
     private val passStatus = mapOf(
         "invalid_request" to 400, "unauthenticated" to 401, "invalid_installation" to 401, "device_bound" to 409,

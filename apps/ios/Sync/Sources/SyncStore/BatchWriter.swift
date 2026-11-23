@@ -8,11 +8,19 @@ import SyncReplica
 // the writer turns into the replica's handle once per batch; a re-identify changes the one `replica` row (§7.11). It is
 // the only writer of rows, so it keeps `set_ref` (ER-12) a function of `set_row`: every row it puts replaces its record's
 // ref rows, and every delete takes them along. Rows taken out of every view go with the row set that held them, which
-// the sweep deletes afterwards, a slice a transaction (§2.5 the writer).
+// the sweep deletes afterwards, a slice a transaction (§2.5 the writer). It writes for one transaction, whose decoded
+// entries it keeps true: each entry it writes is marked written there.
 
 struct BatchWriter {
   let db: Database
   let registry: Registry
+  let decoded: DecodedEntries
+
+  init(_ tx: StoreTransaction) {
+    db = tx.db
+    registry = tx.registry
+    decoded = tx.decoded
+  }
 
   func apply(_ batch: ReplicaBatch) throws {
     var handles = Handles(db: db)
@@ -48,6 +56,7 @@ struct BatchWriter {
       handles.renamed(replica, to: id)
     case .putEntry(let entry): try put(entry, in: replica)
     case .deleteEntry(let localId):
+      decoded.wrote(localId)
       try db.execute(sql: "DELETE FROM outbox WHERE local_id = ? AND replica = ?", arguments: [localId, replica.value])
     case .putRow(let scope, let row): try put(row, in: try rowSet(.confirmed, of: replica, scope, creating: true)!)
     case .deleteRow(let scope, let key):
@@ -177,6 +186,7 @@ struct BatchWriter {
   // of the same local id, is refused. Every put replaces the records the entry touches in any scope in `outbox_touch`, and
   // an opted entry's projections in `outbox_projection`; a delete takes them along.
   func put(_ entry: OutboxEntry, in replica: ReplicaHandle) throws {
+    decoded.wrote(entry.localId)
     let baseTexts = JSON.object(from: Dictionary(uniqueKeysWithValues: entry.baseTexts.map { ($0.key.text, $0.value) })) { .string($0) }
     try db.cachedStatement(sql: """
       INSERT INTO outbox (replica, local_id, gesture_id, lineage, scope, state, commit_order, release_at, stamp, intent,

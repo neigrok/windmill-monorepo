@@ -27,7 +27,7 @@ object CoachServiceProbe {
         val telemetry = object : Telemetry {
             override fun turn(report: TurnReport) { events += Json.Obj(report.json.obj().toList() + ("kind" to Json.of("turn"))) }
             override fun ability(report: AbilityReport) { events += Json.Obj(report.json.obj().toList() + ("kind" to Json.of("ability"))) }
-            override fun failure(operation: FailureOperation) { events += Json.objectOf("operation" to Json.of(operation.label)) }
+            override fun failure(operation: FailureOperation, cause: Throwable?, code: String?) { events += Json.objectOf("operation" to Json.of(operation.label)) }
         }
         val transport = AiHttp(config.member("origin").str().toHttpUrl(), {
             AiCredentials(config["session"]?.orNull()?.str(), config["installation"]?.orNull()?.str())

@@ -25,7 +25,7 @@ class CoachBoundaryTests {
         val failures = mutableListOf<FailureOperation>()
         override fun turn(report: TurnReport) { turns += report }
         override fun ability(report: AbilityReport) {}
-        override fun failure(operation: FailureOperation) { failures += operation }
+        override fun failure(operation: FailureOperation, cause: Throwable?, code: String?) { failures += operation }
     }
     private fun fixture() = Json.parse(File(System.getProperty("windmill.contract"), "ai/wire/fixtures.json").readText())
     private fun profile() = Profile(Json.parse(File(System.getProperty("windmill.contract"), "agent/turns/text.json").readText()).member("profile"))

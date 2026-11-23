@@ -5,23 +5,18 @@ import SyncAPI
 import SyncCore
 import SyncSchema
 
-// What a turn writes and reads on the replica beside the domain's OpenTurn, EndTurn and the executor: the answer's text as it
-// streams, a turn withdrawn before the server took it, a conversation deleted whole, the pictures a message keeps on this
-// phone (Coach §9.3), and the pure reads the driver and the room take over a conversation's messages.
+// What a turn keeps and reads on this phone beside the domain's turn writes and the executor: the pictures a message keeps
+// on this phone (Coach §9.3), and the pure reads the driver and the room take over a conversation's messages.
 
 // A picture as this phone keeps it, in the `picture:<id>` device row: the original the lifter chose and the model copy that
 // leaves the phone inside an open request.
 nonisolated struct CoachPictureRow: Equatable, Sendable {
-  static let prefix = "picture:"
-
   let id: String
   let mediaType: String
   let width: Int
   let height: Int
   let original: Data
   let model: Data
-
-  static func key(_ id: String) -> String { prefix + id }
 
   var json: JSON {
     ["mediaType": .string(mediaType), "width": JSON(width), "height": JSON(height),
@@ -53,78 +48,7 @@ struct KeepPicture: Action {
 
   func decide(_ loaded: Void, ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
     var plan = Plan()
-    plan.device(CoachPictureRow.key(picture.id), picture.json)
-    return .write(plan)
-  }
-}
-
-// The answer's text as it streams (Coach §4.3): the running Coach message of this replica takes the text so far, one commit
-// per coalesced chunk; a message that ended, or another replica's, takes nothing.
-struct StreamTurnText: Action {
-  let message: ID<CoachMessage>
-  let text: String
-
-  var scope: ScopeRef { Gym.scope }
-
-  func load(_ read: Reader) throws -> (message: CoachMessage?, replica: String, moment: Moment) {
-    (try read.repository(CoachMessage.self).find(message, in: .drawn), read.replica, read.moment)
-  }
-
-  func decide(_ loaded: (message: CoachMessage?, replica: String, moment: Moment), ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
-    guard var streaming = loaded.message, streaming.role == .coach else {
-      return .refuse(GymRefusal(Refused(.unknownRecord, subject: message.ref, path: .predicted)))
-    }
-    guard streaming.state == .running, streaming.replica == loaded.replica, streaming.text != text else { return .unchanged(()) }
-    streaming.text = text
-    var plan = Plan()
-    plan.update(try Valid(streaming, fields: ["text"], at: loaded.moment), fields: ["text"])
-    return .write(plan)
-  }
-}
-
-// A turn the server refused before its stream started never happened: its two messages go, with the pictures the
-// lifter's kept on this phone, the conversation too when it held nothing else, and the device's `runningTurn` row
-// clears, so the question returns to the field.
-struct WithdrawTurn: Action {
-  let turn: OpenTurn.Turn
-
-  var scope: ScopeRef { Gym.scope }
-
-  func load(_ read: Reader) throws -> [CoachMessage] {
-    try read.repository(CoachMessage.self).children(of: turn.thread, via: "threadId", in: .stored)
-  }
-
-  func decide(_ loaded: [CoachMessage], ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
-    var plan = Plan()
-    for message in loaded where message.id == turn.lifter || message.id == turn.coach {
-      plan.remove(message.id)
-      for picture in message.pictures where picture.localOnly { plan.device(CoachPictureRow.key(picture.id), nil) }
-    }
-    if loaded.allSatisfy({ $0.id == turn.lifter || $0.id == turn.coach }) { plan.remove(turn.thread) }
-    plan.device(EndTurn.runningTurnKey, nil)
-    return .write(plan)
-  }
-}
-
-// A conversation deleted from History: the thread, every message it holds and the pictures those messages kept on this phone.
-struct DeleteConversation: Action {
-  let thread: ID<CoachThread>
-
-  var scope: ScopeRef { Gym.scope }
-
-  func load(_ read: Reader) throws -> (thread: CoachThread?, messages: [CoachMessage]) {
-    (try read.repository(CoachThread.self).find(thread, in: .drawn),
-     try read.repository(CoachMessage.self).children(of: thread, via: "threadId", in: .stored))
-  }
-
-  func decide(_ loaded: (thread: CoachThread?, messages: [CoachMessage]), ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
-    guard loaded.thread != nil else { return .unchanged(()) }
-    var plan = Plan()
-    plan.remove(thread)
-    for message in loaded.messages {
-      plan.remove(message.id)
-      for picture in message.pictures where picture.localOnly { plan.device(CoachPictureRow.key(picture.id), nil) }
-    }
+    plan.device(Picture.rowKey(picture.id), picture.json)
     return .write(plan)
   }
 }

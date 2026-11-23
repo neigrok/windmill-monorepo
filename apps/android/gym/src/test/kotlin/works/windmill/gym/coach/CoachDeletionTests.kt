@@ -30,8 +30,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.spelled
-import works.windmill.agent.TurnOpen
-import works.windmill.agent.TurnRefusal
 import works.windmill.gym.coach.onboarding.CoachOnboardingRecord
 import works.windmill.gym.coach.turn.ScriptedTurns
 import works.windmill.gym.coach.turn.TellingRecorder
@@ -170,7 +168,7 @@ class CoachDeletionTests {
             assertEquals(projected, store.chat("chat-a"))
             assertEquals("chat-a", disk.selected("alice"))
             assertEquals(CoachDraft("Retained draft"), store.draft("chat-a"))
-            assertEquals(emptyList<TurnOpen>(), server.opened)
+            assertEquals(emptyList<ScriptedTurns.Opened>(), server.opened)
         }
     }
 
@@ -295,7 +293,7 @@ class CoachDeletionTests {
                 if (holdWrites) held.add(context to block) else delegate.dispatch(context, block)
             }
         }
-        val server = answers("Never said").apply { refuseOpen = TurnRefusal(429, "subject_exhausted", null) }
+        val server = answers("Never said").apply { refuseOpen = ScriptedTurns.Refusal.of("subject_exhausted") }
         val file = File(tmp.root, "late-withdrawal")
         val disk = LocalCoach(file)
         EngineRoomFixture(tmp.newFolder(), work(), coachServer = server).use { room ->

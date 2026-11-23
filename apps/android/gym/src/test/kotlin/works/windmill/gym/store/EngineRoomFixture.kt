@@ -53,8 +53,9 @@ internal class EngineRoomFixture(
     private val localCoach: LocalCoach? = null,
     private val coachImports: ((Engine) -> works.windmill.gym.coach.onboarding.CoachRoutineImports)? = null,
     private val coachAccess: suspend () -> works.windmill.gym.coach.AnonymousCoachAccess = { works.windmill.gym.coach.AnonymousCoachAccess.Unavailable },
-    coachServer: works.windmill.agent.TurnTransport? = null,
-    coachBeat: Duration = 1.seconds,
+    coachServer: works.windmill.gym.coach.turn.ScriptedTurns? = null,
+    coachTextEvery: Duration = 5.seconds,
+    coachShares: () -> works.windmill.gym.net.GymRest? = { null },
     private val coachInstallation: works.windmill.platform.ai.AiInstallation? = null,
     private val mintRoutine: () -> String = Ids::routine,
     private val mintExercise: () -> String = Ids::exercise,
@@ -108,8 +109,12 @@ internal class EngineRoomFixture(
     val training = EngineTraining(engine, writeAuthority = writeAuthority)
     val coachTurns: CoachTurns? = coachServer?.let { server ->
         val dispatcher = scope.coroutineContext[ContinuationInterceptor] as CoroutineDispatcher
+        // A test's virtual clock where the room runs on one, so a refusal retried for thirty seconds waits thirty virtual ones.
+        val elapsed = (dispatcher as? kotlinx.coroutines.test.TestDispatcher)?.scheduler?.let { scheduler -> { scheduler.currentTime } } ?: { System.nanoTime() / 1_000_000 }
         CoachTurns(training, server, coachInstallation ?: TurnPhoneInstallation.onMemory(), { "account-token".takeIf { selected != null } },
-            PictureFiles { File(directory, "coach-pictures") }, lazy { TurnPhone.catalog() }, telemetry, {}, "https://windmill.works", this.scope, dispatcher, coachBeat)
+            PictureFiles { File(directory, "coach-pictures") }, lazy { TurnPhone.catalog() }, lazy { TurnPhone.words() }, telemetry, {}, "https://windmill.works",
+            coachShares, this.scope, dispatcher, works.windmill.platform.agent.CoachRuntime(works.windmill.platform.agent.CoachBackgroundLease { AutoCloseable {} }, elapsed),
+            coachTextEvery, elapsed).also { server.stopAsked = it.stopping }
     }
     val controlsFile = File(directory, "control.json")
     val store = freshStore()

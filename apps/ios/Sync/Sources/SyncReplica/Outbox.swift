@@ -71,6 +71,13 @@ public struct Dependents: Sendable {
     references.contains { created.contains($0.record) }
   }
 
+  // Whether what the sources and their dependent parts wrote stays within the records whose entries `replica` loaded: no
+  // record created, which any later entry may name, no scope governed, and every life written on a record whose touching
+  // entries the load read.
+  func staysWithin(_ replica: LoadedReplica) -> Bool {
+    created.isEmpty && governed.isEmpty && lives.allSatisfy { replica.holdsEntries(touching: $0.record.key, in: $0.record.scope) }
+  }
+
   public func part(of entry: OutboxEntry) -> Part {
     let wholeScope = governed.contains(entry.scope)
     let removed = entry.intent.deltas.filter { wholeScope || depends($0, in: entry.scope) }
@@ -155,13 +162,22 @@ public struct Hold: Sendable {
   public func undo(_ gestureId: String, in replica: inout LoadedReplica) throws -> Bool {
     let gesture = replica.outbox.filter { $0.gestureId.utf8.elementsEqual(gestureId.utf8) }
     guard !gesture.isEmpty, gesture.allSatisfy({ $0.state == .held }) else { return false }
-    try end(gesture.map { (entry: $0, event: .undo) }, in: &replica)
+    try SilentFold(gesture.map { (entry: $0, event: .undo) }, over: replica, registry: registry).apply(to: &replica)
     return true
   }
+}
 
-  // The silent fold of an undo, a retire and a supersede (§7.1 step 4): each entry of `ending` ends by its event, and every
-  // later held or ready entry loses its dependent part without a notice, found in one pass before anything moves; one left empty ends undone.
-  func end(_ ending: [(entry: OutboxEntry, event: IntentEvent)], replaced: Bool = false, in replica: inout LoadedReplica) throws {
+// The silent fold of an undo, a retire and a supersede (§7.1 step 4), planned in one pass before anything moves: each
+// entry of `ending` ends by its event, and every later held or ready entry loses its dependent part without a notice; one
+// left empty ends undone. Over a load of part of the outbox the plan holds every dependent only while what it absorbs
+// stays within the records whose entries the load read; otherwise it reaches entries the load left unread, and the
+// commit plans again over every entry.
+struct SilentFold {
+  let ending: [(entry: OutboxEntry, event: IntentEvent)]
+  let parts: [(entry: OutboxEntry, part: Dependents.Part)]
+  let reachesUnreadEntries: Bool
+
+  init(_ ending: [(entry: OutboxEntry, event: IntentEvent)], replaced: Bool = false, over replica: LoadedReplica, registry: Registry) {
     var dependents = Dependents(registry: registry, replaced: replaced)
     var parts: [(entry: OutboxEntry, part: Dependents.Part)] = []
     for entry in replica.entriesTouchingReads {
@@ -175,6 +191,13 @@ public struct Hold: Sendable {
       dependents.absorb(part, of: entry)
       parts.append((entry, part))
     }
+    self.ending = ending
+    self.parts = parts
+    reachesUnreadEntries = !replica.holdsEveryEntry && !dependents.staysWithin(replica)
+  }
+
+  func apply(to replica: inout LoadedReplica) throws {
+    precondition(!reachesUnreadEntries, "a silent fold of \(replica.id) reaches entries its load did not read")
     for (entry, event) in ending { try replica.move(entry.localId, event) }
     for (entry, part) in parts {
       replica.update(entry: entry.localId) { _ = Dependents.remove(part, from: &$0) }

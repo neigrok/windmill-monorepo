@@ -39,6 +39,41 @@
       "expected": "ok"
     },
     {
+      "name": "server",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"none\",\"client\":\"server\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJhY2NvdW50IjoiYWNjb3VudC12ZWN0b3IifSwicGxhbiI6Im5vbmUiLCJjbGllbnQiOiJzZXJ2ZXIifQ.I3CDutFG8dnZv4IisZLz8-lxUdaHMpTw05Cf2e5el4bdu3ZKsvTSggxb5nrSrX4rK4JW_41O7ZrAQSXOptYgAA",
+      "now": 1800000000000,
+      "expected": "ok"
+    },
+    {
+      "name": "server_plan_one",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"one\",\"client\":\"server\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJhY2NvdW50IjoiYWNjb3VudC12ZWN0b3IifSwicGxhbiI6Im9uZSIsImNsaWVudCI6InNlcnZlciJ9.YhjTghwfEyX7EwNeRD4S5NtwEBiK4K0A2vIYEaAGPqWkNgK00MQcNlEckk39MZ_YFsE9W7wJX4AAzAzC0vu8Ag",
+      "now": 1800000000000,
+      "expected": "pass_malformed"
+    },
+    {
+      "name": "server_owner_grant",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"one\",\"client\":\"server\",\"ownerGrant\":true}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJhY2NvdW50IjoiYWNjb3VudC12ZWN0b3IifSwicGxhbiI6Im9uZSIsImNsaWVudCI6InNlcnZlciIsIm93bmVyR3JhbnQiOnRydWV9.zntftKqO-PnNnAATVuSbMSwOvKUWdWgP2espQjZrniKpIUF_PdWYkpCalbrNDul2SwReQFAoPlprQ9QqsqDeCw",
+      "now": 1800000000000,
+      "expected": "pass_malformed"
+    },
+    {
+      "name": "server_installation",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"account\":\"account-vector\"},\"plan\":\"none\",\"client\":\"server\",\"installation\":\"installation-vector\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJhY2NvdW50IjoiYWNjb3VudC12ZWN0b3IifSwicGxhbiI6Im5vbmUiLCJjbGllbnQiOiJzZXJ2ZXIiLCJpbnN0YWxsYXRpb24iOiJpbnN0YWxsYXRpb24tdmVjdG9yIn0.dbZD1WlQeUEv2nFq3VBIWXqMX37wrxGzT2ASpm7oNfX3eAsNvqdxmFxnSDX6xrabSaQYFIReKzyOYZER9CU2BQ",
+      "now": 1800000000000,
+      "expected": "pass_malformed"
+    },
+    {
+      "name": "server_sub_installation",
+      "payload": "{\"aud\":\"ai\",\"env\":\"development\",\"iat\":1800000000000,\"exp\":1800000600000,\"sub\":{\"installation\":\"installation-vector\"},\"client\":\"server\"}",
+      "passValue": "wm-pass.v1.test-rfc8032.eyJhdWQiOiJhaSIsImVudiI6ImRldmVsb3BtZW50IiwiaWF0IjoxODAwMDAwMDAwMDAwLCJleHAiOjE4MDAwMDA2MDAwMDAsInN1YiI6eyJpbnN0YWxsYXRpb24iOiJpbnN0YWxsYXRpb24tdmVjdG9yIn0sImNsaWVudCI6InNlcnZlciJ9.B-ebv18SuXBk4iS-pOzIsOmVP9aEVjpZkS5Kr9ge1C-njEbVjP5NZCjRVGgY9DNYNNFo3A-VB6Dn22wLWNXqDw",
+      "now": 1800000000000,
+      "expected": "pass_malformed"
+    },
+    {
       "name": "missing",
       "payload": null,
       "passValue": null,

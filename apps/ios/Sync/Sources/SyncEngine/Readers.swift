@@ -282,7 +282,7 @@ final class TransactionReader: CommitContext {
   func commands() throws -> [QueuedCommand] {
     try reading {
       guard isOpen else { throw TransactionReader.ended }
-      guard let replica = try tx.replica(meta.replica, entries: EntrySelection(scopes: [scope]), journal: false) else {
+      guard let replica = try tx.replica(meta.replica, entries: EntrySelection(scopes: [scope]), journal: .unread) else {
         throw StoreError.noReplica(meta.replica)
       }
       return replica.entries(in: scope).filter { $0.scope == scope }.compactMap { entry in
@@ -383,7 +383,7 @@ final class TransactionReader: CommitContext {
   // The rows `selection` names, with the entries that touch them, and nothing of the journal.
   func load(_ selection: RowSelection) throws -> LoadedReplica {
     guard isOpen else { throw TransactionReader.ended }
-    guard let replica = try tx.replica(meta.replica, reads: [scope: selection], entries: EntrySelection(), journal: false) else {
+    guard let replica = try tx.replica(meta.replica, reads: [scope: selection], entries: EntrySelection(), journal: .unread) else {
       throw StoreError.noReplica(meta.replica)
     }
     return replica
@@ -400,13 +400,14 @@ final class TransactionReader: CommitContext {
     var texts: Set<String> = []
   }
 
-  // Each read batch indexes its pending metadata once, including duplicate delta and prediction touches, an opted entry's
-  // only while its projection into the scope is uncovered.
+  // Each read batch indexes its pending metadata once, of the records it read, including duplicate delta and prediction
+  // touches, an opted entry's only while its projection into the scope is uncovered.
   func pendingMetadata(in replica: LoadedReplica, mode: ViewMode) -> [RecordKey: PendingMetadata] {
     var records: [RecordKey: PendingMetadata] = [:]
+    let read = replica.rows(scope)
     for entry in replica.entriesTouchingReads {
       let folded = entry.state != .held || mode == .drawn
-      for delta in entry.deltas(in: scope, active: true) {
+      for delta in entry.deltas(in: scope, active: true) where read.covers(delta.key) {
         var pending = records[delta.key, default: PendingMetadata()]
         pending.isHeld = pending.isHeld || entry.state == .held
         if folded {

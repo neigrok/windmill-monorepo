@@ -235,7 +235,7 @@ class ProcessReview(unittest.TestCase):
         signature = subprocess.run(["openssl", "pkeyutl", "-sign", "-rawin", "-inkey", str(key), "-keyform", "DER", "-in", str(source)], capture_output=True, timeout=5, check=True).stdout
         return signed + "." + b64(signature)
 
-    def start(self, changes=None, ready=True):
+    def start(self, changes=None, ready=True, folder=ROOT):
         public, internal = port(), port()
         env = {"PATH": os.environ["PATH"], "AI_ENVIRONMENT": "development", "AI_DATABASE_URL": self.database,
                "AI_PUBLIC_ADDRESS": "127.0.0.1:" + str(public), "AI_INTERNAL_ADDRESS": "127.0.0.1:" + str(internal),
@@ -246,7 +246,7 @@ class ProcessReview(unittest.TestCase):
         env.update(changes or {})
         log = self.scratch / (str(len(self.processes)) + ".log")
         with log.open("wb") as output:
-            process = subprocess.Popen([BINARY], cwd=ROOT, env=env, stdout=output, stderr=subprocess.STDOUT)
+            process = subprocess.Popen([BINARY], cwd=folder, env=env, stdout=output, stderr=subprocess.STDOUT)
         self.processes.append(process)
         self.logs.append(log)
         if ready:
@@ -401,6 +401,18 @@ class ProcessReview(unittest.TestCase):
         self.assertIn("windmill-ai: database_unavailable", self.logs[-1].read_text())
         time.sleep(1)
         self.assertTrue(self.capture.envelopes, "unexpected startup database failure delivered no Sentry envelope")
+
+    def test_startup_policy_failure_emits_an_issue(self):
+        config = self.scratch / "config"
+        config.mkdir()
+        shutil.copy(ROOT / "config" / "prices.toml", config / "prices.toml")
+        (config / "tiers.toml").write_text((ROOT / "config" / "tiers.toml").read_text().replace('hour = "1"', 'hour = "20"'))
+        process, _, _ = self.start(ready=False, folder=self.scratch)
+        self.assertEqual(process.wait(timeout=15), 1)
+        self.assertEqual(self.logs[-1].read_text().strip().splitlines()[-1], "windmill-ai: policy_invalid")
+        time.sleep(1)
+        self.assertTrue(any(b"policy.load" in envelope and b"policy_invalid" in envelope for envelope in self.capture.envelopes),
+                        "an invalid tier table delivered no Sentry envelope")
 
     def test_internal_read_failure_emits_an_issue(self):
         _, _, internal = self.start()

@@ -202,8 +202,8 @@ nonisolated struct TurnInterrupted: Error {
   func interruptAbandonedTurn() {
     guard running == nil else { return }
     do {
-      guard let named = try runner.read(Gym.scope, { try $0.device(EndTurn.runningTurnKey) }), case .string(let id) = named else { return }
-      let message = try runner.read(Gym.scope) { try $0.repository(CoachMessage.self).find(ID(RecordID(id)), in: .drawn) }
+      guard let turnId = try runner.read(Gym.scope, Mark.init).turnId else { return }
+      let message = try runner.read(Gym.scope) { try $0.repository(CoachMessage.self).find(turnId, in: .drawn) }
       guard let message, message.state == .running else { return }
       _ = try runner.run(EndTurn(message.id, state: .interrupted))
     } catch { report(TurnInterrupted.storage, error) }
@@ -370,7 +370,7 @@ nonisolated struct TurnInterrupted: Error {
     let messages = try runner.read(Gym.scope) { try $0.repository(CoachMessage.self).children(of: running.turn.thread, via: "threadId", in: .drawn) }
     let rows = try runner.read(Gym.scope) { read in
       try messages.contextPictures(sending: running.turn.lifter).compactMap { picture in
-        CoachPictureRow(id: picture.id, json: try read.device(CoachPictureRow.key(picture.id)))
+        CoachPictureRow(id: picture.id, json: try read.device(Picture.rowKey(picture.id)))
       }
     }
     return TurnOpenRequest(turnId: running.turnId, question: question,

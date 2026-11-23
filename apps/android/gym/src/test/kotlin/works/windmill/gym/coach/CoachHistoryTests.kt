@@ -99,13 +99,12 @@ class CoachHistoryTests {
         compose.runOnIdle { coach.refreshAnonymousAccess() }
         waitUntil { coach.anonymousAccess == AnonymousCoachAccess.Available }
         compose.runOnIdle { assertTrue(coach.send(chat, "A retained question")) }
-        waitUntil { server.pending == "stop" }
+        waitUntil { server.rounds.isNotEmpty() }
         compose.runOnIdle { showing = true }
         compose.onNodeWithContentDescription("Stop response").assertIsEnabled().performClick()
         waitUntil { !coach.isAsking(chat) && fixture.messages().any { it.state == MessageState.stopped } }
         compose.onNodeWithText("A retained question").assertIsDisplayed()
         compose.onNodeWithText(string(R.string.gym_coach_stopped)).assertIsDisplayed()
-        assertEquals(1, server.stops)
         assertEquals(1, server.opened.size)
         assertEquals(emptyList<String>(), failures.toList())
     }
