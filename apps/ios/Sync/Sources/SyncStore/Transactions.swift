@@ -169,8 +169,9 @@ extension Store {
 
   // A commit's plan over the rows its gesture reads and the entries that touch them, and of the journal only what settles
   // an ended entry's slot; a plan that found it needed more (`UnreadRows`: the records of ids it drew, a capped type it may
-  // grow, every entry a silent fold may reach) is planned again over the same draws with those read too. Its outcome, and
-  // the batch it would write.
+  // grow, every entry a silent fold may reach) is planned again over the same draws with those read too. Each plan reads
+  // more than the one before, or the planner asked again for what it read, which traps. Its outcome, and the batch it
+  // would write.
   func planned(_ gesture: Gesture, in scope: ScopeRef, of active: String, tx: StoreTransaction,
                _ commit: (inout LoadedReplica, [Draw]) throws -> CommitOutcome) throws -> (outcome: CommitOutcome, batch: ReplicaBatch) {
     var reads = planners.commits.reads(of: gesture, in: scope)
@@ -182,8 +183,11 @@ extension Store {
         let outcome = try commit(&replica, draws)
         return (outcome, replica.batch)
       } catch let unread as UnreadRows {
-        reads[scope, default: RowSelection()].keys.formUnion(unread.keys)
-        reads[scope, default: RowSelection()].types.formUnion(unread.types)
+        let read = reads[scope, default: RowSelection()]
+        let next = RowSelection(keys: read.keys.union(unread.keys), types: read.types.union(unread.types), all: read.all)
+        precondition(next != read || unread.everyEntry && !entries.all,
+                     "a commit's plan asked again for what it read: keys \(unread.keys), types \(unread.types), every entry \(unread.everyEntry)")
+        reads[scope] = next
         if unread.everyEntry { entries = .every }
         draws = unread.draws
       }
