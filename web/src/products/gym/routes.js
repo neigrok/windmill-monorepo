@@ -20,6 +20,13 @@ const GymLanding = lazy(importGymLanding);
 
 const GymSettingsSection = lazy(() => import('./settings/GymSettingsSection.jsx').then((m) => ({ default: m.GymSettingsSection })));
 
+// Whether Coach keeps anything on the account's replica: the mark of a turn, or a picture. A page whose Coach never
+// opened and whose replica holds none has nothing to end or forget.
+function coachKeepsAnything(engine) {
+  const rows = Object.keys(engine.device?.activeReplica?.deviceRows?.('gym') ?? {});
+  return rows.some((key) => key === 'runningTurn' || key === 'runningRound' || key.startsWith('picture:'));
+}
+
 function home() {
   return '#/gym';
 }
@@ -49,7 +56,10 @@ export const gymRoutes = {
   render,
   preloadApp: importGymApp,
   // How the gym rides the browser engine; the shell composes every product's hooks into it.
-  sync: { liveHint: gymLiveHint, onPushResult: gymCommandResult },
+  // As a sign-out begins, Coach ends its running turn and forgets what it kept in the browser (gym Coach on the AI
+  // service §5).
+  sync: { liveHint: gymLiveHint, onPushResult: gymCommandResult,
+    signOutBegins: (engine) => coachKeepsAnything(engine) ? import('./coach/coachTurns.js').then((coach) => coach.coachSeatWillChange(engine)) : null },
   // `main`: the product zone, with gym's own dials and its Notes door — not `data`, which sits
   // beside the account's close.
   settingsSections: {

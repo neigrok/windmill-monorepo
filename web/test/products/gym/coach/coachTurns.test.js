@@ -48,7 +48,7 @@ async function room(t, ai, options = {}) {
   const told = { events: [], reports: [] };
   const profile = new GymProfile();
   const turns = new CoachTurns({ engine: phone.engine, ai, runtime: runtime(), profile, appBaseUrl: 'https://windmill.works', online: () => true,
-    now: () => 0, drafts: { read: () => '', write() {} }, textEvery: 0,
+    now: () => 0, textEvery: 0,
     telemetry: new GymTurnTelemetry({ catalog: profile.catalog, event: (name, props) => told.events.push([name, props]), report: (...args) => told.reports.push(args) }),
     ...options });
   return { phone, turns, told };
@@ -199,7 +199,7 @@ test('one gym turn runs at a time across a browser\'s tabs: a second tab is refu
   const held = new Promise((resolve) => { release = resolve; });
   const { phone, turns } = await room(t, playedAi([async () => { await held; return ended('completed', [{ text: 'Done.' }]); }]));
   const other = new CoachTurns({ engine: phone.engine, ai: playedAi([]), runtime: runtime(), online: () => true, now: () => 0,
-    drafts: { read: () => '', write() {} }, telemetry: new GymTurnTelemetry({ catalog: turns.catalog, event() {}, report() {} }) });
+    telemetry: new GymTurnTelemetry({ catalog: turns.catalog, event() {}, report() {} }) });
   await turns.send({ question: 'First?' });
   assert.equal(await other.send({ question: 'Second?' }), null);
   assert.deepEqual(other.getSnapshot().refusal, { state: 'busy' });

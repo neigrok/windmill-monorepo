@@ -313,7 +313,9 @@ it plants through MCP (`scripts/roadmap-rig/planter.mjs`); it is a measuring too
 The auth provider opens the browser sync engine once for this document and owns cookie cleanup.
 Product preparations run before networking; occupied rooms pin Add/Discard, and sign-out pins
 Keep/Discard after the bounded flush. A product's `signOutNotice()` adds a line to the sign-out question, with a download
-of what signing out discards from the tab (the journal's kept Talk take), and its `forgetDevice` drops it. A product may
+of what signing out discards from the tab (the journal's kept Talk take), and its `forgetDevice` drops it. A product's
+`sync.signOutBegins(engine)` runs before the engine sends what the device holds, while the account's replica still takes
+a write: gym's Coach ends its running turn there and forgets what it kept in the browser. A product may
 word its own question (`sync.signInWords`; `sync.signOutWords` for a sign-out whose work is all its own and that no
 notice joins): the shell then asks in those words as flow 50 draws roadmap's, a dialog from 744px and a page below, where
 Escape cancels, and a cancelled sign-in signs the account out and leaves the work from before on the device. Each due

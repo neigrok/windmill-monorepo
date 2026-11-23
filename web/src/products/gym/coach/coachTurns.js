@@ -22,7 +22,6 @@ import { GymTurnTelemetry } from './turnTelemetry.js';
 // another tab, a question past its bound. `resetsAt` is when a cap the AI service named ends.
 /** @typedef {{ state: 'offline' | 'busy' | 'allowance' | 'capacity' | 'sign-in' | 'update' | 'off' | 'did-not-answer' | 'too-long', period?: 'day' | 'month', resetsAt?: number | null }} TurnRefusal */
 
-const DRAFT_KEY = 'windmill.gym.coach.draft';
 
 // What one allowance or failure says to the lifter (Coach engine §7).
 /** @param {{ source?: string, code: string | null, status?: number, allowance?: any }} failure @returns {TurnRefusal} */
@@ -33,34 +32,22 @@ export function refusalOf(failure) {
   return { state };
 }
 
-// The send as the lifter wrote it, kept while the browser holds the person's unsent work: the field's words, and the
-// picture chosen for it while the page stays.
-export const composerDrafts = {
-  read() {
-    try { return globalThis.localStorage?.getItem(DRAFT_KEY) ?? ''; } catch { return ''; }
-  },
-  write(text) {
-    try {
-      if (text) globalThis.localStorage?.setItem(DRAFT_KEY, text);
-      else globalThis.localStorage?.removeItem(DRAFT_KEY);
-    } catch { /* A browser that keeps nothing keeps the words on the screen alone. */ }
-  },
-};
-
 // The browser's gym Coach: one per page, never bound to a screen. It admits a question, records it, and runs the turn on
 // the Coach engine's `TurnRunner` with gym's host and profile, each model round a call to the AI service; it recovers or
 // ends what a closed tab left running, and ends what a sign-out cuts off. The room reads its snapshot.
 export class CoachTurns {
   constructor({ engine, ai, runtime = browserRuntime(), shares = shareDoor(), telemetry, profile = new GymProfile(),
     appBaseUrl = globalThis.location?.origin ?? '', zone = deviceZone, online = () => globalThis.navigator?.onLine !== false,
-    now = () => performance.now(), drafts = composerDrafts, textEvery = 1000, timers = globalThis }) {
+    now = () => performance.now(), textEvery = 1000, timers = globalThis }) {
     this.engine = engine;
     this.profile = profile;
     this.catalog = profile.catalog;
     this.zone = zone;
     this.online = online;
     this.now = now;
-    this.drafts = drafts;
+    // The field's words while the page stays, by the replica they were typed on: nothing of an unsent question is
+    // written to the browser's storage, so a sign-out leaves none behind.
+    this.drafts = new Map();
     this.tells = telemetry ?? new GymTurnTelemetry({ catalog: this.catalog });
     this.host = new GymTurnHost({ engine, catalog: this.catalog, profile, shares, appBaseUrl, telemetry: this.tells, zone,
       newPictureId: () => runtime.newId(), now, timers, textEvery });
@@ -69,7 +56,7 @@ export class CoachTurns {
     this.running = null;
     this.started = false;
     this.listeners = new Set();
-    this.snapshot = Object.freeze({ turn: null, stopping: false, refusal: null, fault: null, withdrawn: null, allowance: null, live: null });
+    this.snapshot = Object.freeze({ draft: '', turn: null, stopping: false, refusal: null, fault: null, withdrawn: null, allowance: null, live: null });
     this.host.subscribe(() => this.publish({ live: this.host.live }));
   }
 
@@ -82,6 +69,14 @@ export class CoachTurns {
   }
 
   get replica() { return this.engine.activeReplica(); }
+
+  draft() { return this.drafts.get(this.replica) ?? ''; }
+
+  setDraft(text) {
+    if (text) this.drafts.set(this.replica, text);
+    else this.drafts.delete(this.replica);
+    this.publish({ draft: text });
+  }
   get seat() { return { kind: 'bound', key: this.replica }; }
 
   // When the room first opens on this page: a turn a closed tab left in its last round is recovered, the pictures no
@@ -157,7 +152,7 @@ export class CoachTurns {
       return this.faulted('unsaved');
     }
     this.tells.started();
-    this.drafts.write('');
+    this.setDraft('');
     this.launch({ lease: new GymTurn(turn, replica), question, picture }, false);
     return turn;
   }
@@ -190,7 +185,7 @@ export class CoachTurns {
       const refusal = failure ? refusalOf(failure) : { state: 'offline' };
       if (!recover) this.tells.asked(['allowance', 'capacity'].includes(refusal.state) ? 'capped' : refusal.state === 'offline' ? 'offline'
         : refusal.state === 'off' ? 'absent' : 'refused', durationMs);
-      this.drafts.write(live.question);
+      this.setDraft(live.question);
       this.publish({ refusal, withdrawn: { question: live.question, picture: live.picture, thread: live.lease.threadStands ? live.lease.turn.thread : null } });
       return;
     }
@@ -212,7 +207,7 @@ export class CoachTurns {
     if (!live.lease.opened && !live.lease.withdrawn) {
       try {
         await this.host.withdraw(live.lease);
-        this.drafts.write(live.question);
+        this.setDraft(live.question);
         this.publish({ withdrawn: { question: live.question, picture: live.picture, thread: live.lease.threadStands ? live.lease.turn.thread : null } });
       } catch (withdrawing) {
         if (!(withdrawing instanceof HostUnavailable)) this.tells.fault('storage', withdrawing);
@@ -237,8 +232,8 @@ export class CoachTurns {
     try { await this.runner.seatWillChange(); }
     catch (error) { if (!(error instanceof HostUnavailable)) throw error; }
     await forgetCoachAtSignOut(this.engine);
-    this.drafts.write('');
-    this.publish({ refusal: null, fault: null, withdrawn: null, allowance: null });
+    this.drafts.clear();
+    this.publish({ draft: '', refusal: null, fault: null, withdrawn: null, allowance: null });
   }
 
   // A conversation deleted from History, unless its turn is running on this page.
@@ -336,6 +331,5 @@ export function coachTurnsOf(engine) {
 export async function coachSeatWillChange(engine) {
   const turns = pages.get(engine);
   if (turns) return turns.seatWillChange();
-  await forgetCoachAtSignOut(engine);
-  composerDrafts.write('');
+  return forgetCoachAtSignOut(engine);
 }

@@ -290,6 +290,7 @@ export default function AuthProvider({ children }) {
       enqueue(async () => {
         setBusy(true); setError(false);
         try {
+          await productQuestions.signOutBegins(syncSession.engine);
           setQuestion(await productQuestions.signOutWords(syncSession.engine, await syncSession.engine.beginSignOut()));
           track('sync_signout', { outcome: 'pending' });
         } finally { setBusy(false); }
@@ -310,14 +311,17 @@ export default function AuthProvider({ children }) {
       if (!engine.device.meta.closingAccount) {
         const current = (await listSessions()).find((session) => session.current);
         if (!current?.id) throw new Error('account-closure-session-unavailable');
-        if (!engine.releaseSignOut) await engine.beginSignOut();
+        if (!engine.releaseSignOut) {
+          await productQuestions.signOutBegins(engine);
+          await engine.beginSignOut();
+        }
         try { await engine.recordAccountClosure(account, current.id); }
         catch (error) { await engine.cancelSignOut(); throw error; }
         track('sync_signout', { outcome: 'pending' });
       }
       await finishClosure();
     } finally { setBusy(false); }
-  }), [enqueue, finishClosure]);
+  }), [enqueue, finishClosure, productQuestions]);
   const decide = async (choice) => {
     setBusy(true); setError(false);
     try {

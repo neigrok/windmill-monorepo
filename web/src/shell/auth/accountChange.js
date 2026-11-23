@@ -100,6 +100,12 @@ export class ProductQuestions {
     return this.heard(await this.ask('signin', () => this.syncOf(due.product)?.signInWords?.(engine, due)));
   }
 
+  // What each product does as a sign-out begins (`sync.signOutBegins`), before the engine sends what the device holds:
+  // gym's Coach ends its running turn there, so the account's record carries the end.
+  async signOutBegins(engine) {
+    for (const product of this.products) await this.ask('begin', () => product.sync?.signOutBegins?.(engine));
+  }
+
   // The sign-out question in the words of the product whose work it all is, where that product words its own.
   async signOutWords(engine, question) {
     for (const product of this.products) {
