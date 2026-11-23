@@ -269,8 +269,10 @@ public struct ReplicaLifecycle: Sendable {
         for entry in anon.outbox { anon.apply(.deleteEntry(entry.localId)) }
       }
       device.modify(target) { target in
+        let adopted = Inverses.givingUpUnread(anon.journal, entries: anon.outbox, into: target)
+        if adopted.givenUp > 0 { target.record(.adoptionGaveUp(targets: adopted.givenUp)) }
         var nextOrder = target.nextCommitOrder
-        for entry in anon.outbox {
+        for entry in adopted.entries {
           var moved = entry
           moved.commitOrder = nextOrder
           nextOrder += 1
@@ -283,9 +285,9 @@ public struct ReplicaLifecycle: Sendable {
         }
         for notice in anon.notices { target.apply(.moveNotice(notice)) }
         target.updateJournal { journal in
-          journal.acts += anon.journal.acts
-          journal.inverses += anon.journal.inverses
-          journal.cancellations += anon.journal.cancellations
+          journal.acts += adopted.journal.acts
+          journal.inverses += adopted.journal.inverses
+          journal.cancellations += adopted.journal.cancellations
         }
       }
       _ = try Machines.replica.transition(from: .anon, .signIn, to: .deleted)

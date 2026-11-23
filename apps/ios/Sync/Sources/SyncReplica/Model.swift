@@ -632,6 +632,9 @@ public enum EngineEvent: Sendable, Hashable {
   // An inverse request the device sent settled, with its operation counts and why any were skipped; the engine reports it
   // as a product event, which the shared contract does not describe.
   case inverseSettled(applied: Int, skipped: Int, reason: InverseSkipReason)
+  // Sign-in's Add made the acts it adopted give up targets the adopting replica holds writes of (§7.10), with how many;
+  // the engine reports it as a product event, which the shared contract does not describe.
+  case adoptionGaveUp(targets: Int)
 
   public var json: JSON {
     switch self {
@@ -645,13 +648,16 @@ public enum EngineEvent: Sendable, Hashable {
       return ["event": "activeReplicaChanged", "previous": .string(previous), "replica": .string(replica)]
     case .inverseSettled(let applied, let skipped, let reason):
       return ["event": "sync-inverse", "outcome": "settled", "applied": JSON(applied), "skipped": JSON(skipped), "reason": .string(reason.rawValue)]
+    case .adoptionGaveUp(let targets): return ["event": "sync-inverse", "outcome": "adopted", "givenUp": JSON(targets)]
     }
   }
 
   // Whether the shared corpus describes it: every event but the engine's own product reports.
   public var isContract: Bool {
-    if case .inverseSettled = self { return false }
-    return true
+    switch self {
+    case .inverseSettled, .adoptionGaveUp: false
+    case .ended, .digestMismatch, .pushMalformed, .activeReplicaChanged: true
+    }
   }
 
   public var isEnded: Bool {
@@ -661,7 +667,7 @@ public enum EngineEvent: Sendable, Hashable {
 
   public var isTelemetry: Bool {
     switch self {
-    case .digestMismatch, .pushMalformed, .inverseSettled: true
+    case .digestMismatch, .pushMalformed, .inverseSettled, .adoptionGaveUp: true
     case .ended, .activeReplicaChanged: false
     }
   }
