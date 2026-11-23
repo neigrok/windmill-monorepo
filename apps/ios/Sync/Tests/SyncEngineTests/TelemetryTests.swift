@@ -4,6 +4,7 @@ import SyncAPI
 import SyncCore
 @testable import SyncEngine
 import SyncReplica
+import SyncSchema
 @testable import SyncTesting
 @testable import SyncStore
 import Synchronization
@@ -621,6 +622,35 @@ struct TelemetryTests {
             [Recorded(name: "sync_inverse", kind: nil, properties: ["outcome": "adopted", "given_up": "1"], durationMs: nil)])
     let adopted = try rig.store.read { tx in try tx.replica(tx.activeReplica()) }?.journal.acts.flatMap(\.sourceEntries).flatMap(\.preimages)
     #expect(adopted?.map(\.target) == [titles[1].target])
+  }
+
+  // Gym and Journal journal no act: their registries give their scopes no capture or restore command, so an act there
+  // opted into Undo throws before it writes, and sign-in's Add of their signed-out work over the dormant replica's writes
+  // of the same records gives nothing up and reports nothing.
+  @Test func anAddOfGymAndJournalWorkGivesNothingUp() async throws {
+    let recorder = Recorder()
+    let rig = try Rig(account: "A", registry: SyncSchema.registry, telemetry: recorder)
+    let gym = ScopeRef.product("gym")
+    let note = { (title: String) -> Gesture in Gesture(changes: [.create("note", id: .given(RecordID("noteAAAA00000001")), ["title": .string(title)])]) }
+    let opted = [(RecordAddress(scope: gym, key: RecordKey("note", RecordID("noteAAAA00000001"))), EffectSlot.Slot.field("title"), "gym.restore"),
+                 (RecordAddress(scope: .product("journal"), key: RecordKey("page", RecordID("2026-11-24"))), EffectSlot.Slot.text("body"), "journal.restore")]
+    for (record, slot, restore) in opted {
+      let undo = ActUndo(segments: [ActUndo.Segment(index: 0, recipes: [.fields(restoreCommand: restore, targets: [RestoreTarget(target: Target(record, slot))])])])
+      let failure = #expect(throws: CommitFailure.self) {
+        try rig.engine.commitAct({ _ in (ActRequest(scopes: [record.scope], undo: undo), ()) }, segment: { _, _, _ in note("Opted") })
+      }
+      #expect(failure?.kind == .malformed && failure?.description.contains("undo recipe") == true, Comment(rawValue: restore))
+    }
+    rig.connectivity.set(online: false)
+    try rig.commit(note("Kept"), in: gym)
+    try await rig.engine.signOut().finish(.keep)
+    try rig.commit(note("Signed out"), in: gym)
+    rig.connectivity.set(online: true)
+    try await rig.signIn("A", holds: ["gym": true]).complete(["gym": .add])
+    await drain(rig.engine.core.telemetry)
+    let active = try rig.store.read { tx in try tx.replica(tx.activeReplica()) }
+    #expect(active?.journal.isEmpty == true && active?.outbox.count == 2)
+    #expect(recorder.events.filter { $0.name == "sync_inverse" } == [])
   }
 
   // A request skipped for several reasons is named by the first in the engine's order, the device's own refusals to send
