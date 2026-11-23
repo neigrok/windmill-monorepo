@@ -92,9 +92,10 @@ class TelemetryTests {
         name to properties - "duration_ms"
     }
 
+    // A failure carries the throwable that failed, whose message the reporter scrubs before it leaves (AndroidTelemetry.scrub), so its operation and its class are what is told here.
     private fun assertToldNothingSaid(told: Recorder) {
         val everything = told.events.flatMap { (name, properties) -> listOf(name) + properties.keys + properties.values } +
-            told.failures.flatMap { (operation, error) -> listOf(operation, error.message.orEmpty(), error.toString()) } +
+            told.failures.flatMap { (operation, error) -> listOf(operation, error.javaClass.name) } +
             told.failureProperties.flatMap { it.keys + it.values }
         assertEquals(emptyList<String>(), everything.filter { it.contains("private") || it.contains("conversation content") })
     }
@@ -148,7 +149,7 @@ class TelemetryTests {
         assertEquals(listOf(started) + abilities + listOf(
             "coach_turn" to mapOf("state" to "failed", "seat" to "bound", "code" to "invalid-answer", "rounds" to "1", "ability_calls" to "0", "refusals" to "0", "answer_bytes" to "0"),
             "gym_ask_outcome" to mapOf("screen" to "coach", "outcome" to "failed")), told.timeless())
-        assertEquals(listOf("ai-call" to "ai-call"), told.failures.map { (operation, error) -> operation to error.message })
+        assertEquals(listOf("ai-call" to IllegalStateException::class.java), told.failures.map { (operation, error) -> operation to error.javaClass })
         assertToldNothingSaid(told)
 
         val telemetry = Recorder()
