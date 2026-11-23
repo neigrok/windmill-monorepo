@@ -57,6 +57,7 @@ target_compile_definitions(utf8proc PUBLIC UTF8PROC_STATIC)
 add_library(windmill_platform
   platform/ai_passes/AiPasses.cpp
   platform/ai_passes/AiPassApi.cpp
+  platform/ai_service/AiServiceClient.cpp
   platform/ai_installations/AiInstallations.cpp
   platform/ai_installations/PgAiInstallations.cpp
   platform/ai_installations/AiInstallationApi.cpp
@@ -713,6 +714,7 @@ add_executable(windmill_adapters_tests
   test/platform/adapters/http/McpKeyApiTest.cpp
   test/platform/ai_passes/AiPassesTest.cpp
   test/platform/ai_passes/AiPassApiTest.cpp
+  test/platform/ai_service/AiServiceClientTest.cpp
   test/platform/ai_installations/AiInstallationApiTest.cpp
   test/platform/ai_installations/PgAiInstallationsTest.cpp
   test/platform/subscriptions/FeedFollowerTest.cpp
