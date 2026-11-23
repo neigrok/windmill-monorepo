@@ -154,8 +154,9 @@ import XCTest
     XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("Bench")
     XCTAssertTrue(app.buttons["gym-movement-bench-press"].waitForExistence(timeout: 5)); app.buttons["gym-movement-bench-press"].tap()
     if routineEditor {
-      XCTAssertTrue(app.buttons["gym-movement-editor-commit"].waitForExistence(timeout: 5))
-      app.buttons["gym-movement-editor-commit"].tap()
+      let commit = app.buttons["gym-movement-editor-commit"]
+      XCTAssertTrue(commit.waitForHittable(timeout: 5))
+      XCTAssertTrue(app.tap({ commit.tap() }, until: { commit.waitForNonExistence(timeout: 5) }), "The movement editor must close")
     }
   }
   func back(_ app: XCUIApplication) { app.navigationBars.buttons.element(boundBy: 0).tap() }

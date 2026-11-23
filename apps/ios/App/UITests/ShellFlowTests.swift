@@ -376,8 +376,8 @@ import XCTest
     XCTAssertFalse(inBar.exists)
     app.swipeUp()
     XCTAssertTrue(inBar.waitForExistence(timeout: 5))
-    app.swipeDown()
-    XCTAssertTrue(inBar.waitForNonExistence(timeout: 5))
+    // A swipe's reach depends on its speed, so one swipe down can leave the name still under the bar.
+    XCTAssertTrue(app.tap({ app.swipeDown() }, until: { inBar.waitForNonExistence(timeout: 5) }), "The page must come back to its top")
   }
 
   // The step form, raised and on screen: its name field.
