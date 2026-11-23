@@ -105,6 +105,9 @@ refuses.
 | any `pass_` code, `pass_expired` once it has been signed for again; a code no background call should meet | deferred | yes |
 
 - *Deferred* leaves the page due and counts no attempt; the queue records it as `budget_limited`.
+- The background hour counts what calls in flight hold as well as what they spent, so with about six
+  background calls in flight across all accounts a further call is refused `paused`, and its page is
+  deferred.
 - **The bound on attempts.** Six unsettled passes in a row stop a page being due when its stamps
   already matched; a page that never settled stays due however many it has.
 - Nothing here is told to the person.
@@ -177,13 +180,20 @@ that version names the model and effort. The service answers with a class, not a
 | Connect, silence, deadline | 5 s, 60 s, 660 s | the backend's client |
 | Attempts before a page rests | 6 | Echoes' |
 
-## §12 What the repoint leaves as it was
+## §12 Gaps
 
-These are the backend's as they were before the move (R-5):
+Closed by this build:
+
+- The AI service has budgets of Windmill's own for work nobody waits on: one for each account and
+  shared ones across all accounts, under an hourly ceiling below the fuse, with background work
+  counted apart from a person's call in flight and rate.
+- Echoes spends nothing of a person's allowance.
+
+Left as they were before the move (R-5):
 
 - Any save, a mood alone included, reopens every other page of the account for a new judgement.
-- A pass derives an account's due pages oldest first, and derives them for an account below the
-  floor of pages under which no echo is shown as for any other.
+- A pass derives an account's due pages oldest first, and an account below the floor of pages under
+  which no echo is shown is derived like any other.
 - The bound on attempts holds only for a page whose stamps already matched, so a page that never
   settles is paid for on every pass, within the background budgets.
 - A call in flight when the process ends is not sent again under its `callId`.

@@ -112,7 +112,7 @@ not represented by those values, the admin sweep accepts `rejudge=1`. Rejudging 
 and matching vectors; changed bodies or absent spans still require segmentation.
 
 Only `ok`, `empty_ok` and `refused` settle a page and advance its derivation stamps. A step that
-fails leaves it due, as `EchoSweep::fateOf` maps the AI service's answer
+fails lands the page where `EchoSweep::fateOf` puts the word it failed with
 ([Echoes on the AI service §5](../../../docs/foundation/echoes-on-ai-service.md#5-what-an-answer-does-to-the-work)):
 
 | The AI service says | The page | Told to Sentry |
