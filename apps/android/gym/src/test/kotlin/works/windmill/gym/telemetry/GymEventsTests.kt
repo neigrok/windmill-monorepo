@@ -30,14 +30,14 @@ class GymEventsTests {
         }
     }
 
-    // A turn ends on its §6.5 code or a failure of this phone's own. A server's 5xx goes to Sentry as `http` and the turn ends on its code, so no turn names `http`.
+    // A turn ends on a code the engine, the pass door or the AI service gave it (Coach engine §7), or on the process that ended under it; no other word, and no wire code of the server's Coach, leaves.
     @Test fun aTurnsEndKeepsTheCodesATurnCanEndOnAndNoOther() {
         val labels = mapOf("state" to "interrupted", "seat" to "bound")
-        for (code in listOf("coach-busy", "subject_exhausted", "transport", "decode", "storage", "refusal", "gone", "seat_changed", "process_ended", "other")) {
+        for (code in listOf("subject_exhausted", "free_day_exhausted", "rate_limited", "provider_failed", "answer-timeout", "model-call-limit", "invalid-answer", "process_ended", "other")) {
             val ended = labels + ("code" to code)
             assertEquals(ended, GymEvents.schemas.properties("coach_turn", ended))
         }
-        assertEquals(labels, GymEvents.schemas.properties("coach_turn", labels + ("code" to "http")))
+        for (code in listOf("http", "coach-busy", "seat_changed")) assertEquals(labels, GymEvents.schemas.properties("coach_turn", labels + ("code" to code)))
     }
 
     @Test fun aChangeToTheOpenWorkoutSaysSoAndKeepsOnlyItsBoundedLabels() {
@@ -140,7 +140,7 @@ class GymEventsTests {
     }
 
     @Test fun coachArchiveActionsAndDeletionDialogRejectContentAndUnboundedLabels() {
-        val steps = listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "copy", "jump_latest", "continue_draft", "reconnecting", "answering_elsewhere", "stop_notice", "stop_notice_closed")
+        val steps = listOf("fresh_entry", "history_open", "draft_restored", "reply_open", "read_sources", "copy", "jump_latest", "continue_draft", "reconnecting", "answering_elsewhere")
         val allowed = steps.map { mapOf("screen" to "coach", "action" to it, "outcome" to "ok") } +
             listOf(mapOf("screen" to "coach", "action" to "copy", "outcome" to "failed")) +
             listOf("available", "bound", "unavailable").map { mapOf("screen" to "coach", "action" to "access", "outcome" to it) } +

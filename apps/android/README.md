@@ -7,7 +7,7 @@ account and backend. There is no subscription surface.
 
 | Module | Responsibility |
 |---|---|
-| `:platform` | Bearer HTTP transport, the released turn transport (`platform/agent/TurnHttp.kt`), the device Coach AI client (`platform/ai`), account/session storage, sign-in, tokens and product-neutral shell. |
+| `:platform` | Bearer HTTP transport, the Coach AI client and its runtime (`platform/ai`, `platform/agent`), account/session storage, sign-in, tokens and product-neutral shell. |
 | `:gym` | Android training runtime, device storage, presentation models (`works.windmill.gym.presentation`, the screens' projection of `:gym:domain`), network/notification adapters and Compose UI. |
 | `:app` | Composition root; one auth store, gym runtime, training store and notification adapters shared by activity, receivers and the Quick Settings service. |
 | `:sync-core` | JVM JSON/JCS, registry descriptors, clocks, joins, identities, fractional order and digests. |
@@ -18,7 +18,7 @@ account and backend. There is no subscription surface.
 | `:sync-testing` | JVM strict client/server corpus, stepped memory engine, simulated network, mandatory properties, replay fuzz and layering. |
 | `:domain-kit` | JVM values, readers, plans, drafts, action runner, ordering, refusal subjects, and what an ability is: catalog, seats and schema check. |
 | `:domain-kit-testing` | JVM strict kit corpus, checks and layering. |
-| `:agent` | JVM product-neutral turn libraries: the released server-hosted driver/wire and the device-hosted Coach runner (`agent/coach`). `:gym` still uses the released driver. See [Agent turns](agent/README.md). |
+| `:agent` | The JVM product-neutral Coach engine (`agent/coach`): the loop, the gate and the mark of a turn the phone runs, each model round a call to the AI service. `:gym`'s Coach runs on it. See [Agent turns](agent/README.md). |
 | `:gym:domain` | JVM gym actions (`works.windmill.gym.domain.sync`), training reads, progress, units and rules, including signed-out workout recovery (saved-copy checks, stranded-set placement, separate-restore steps); every shared gym domain vector. `gym/store/WorkoutImports.kt` keeps the saved-workout journal's I/O and state machine. |
 
 The JVM sync and kit modules and the Android engine library contain the SyncAPI, client runtime, model
@@ -215,18 +215,22 @@ retain their movement picker and read as **Free workout**. Receipts do not creat
 The bundled movement catalogue uses backend seed identities. Only shares and connected-log credentials use REST,
 through `GymRest`.
 `coach/turn/` is the phone Coach: `CoachTurns` (one per application, handed out by
-`TrainingStore.coachTurns`) admits a question, records it and runs the turn through `:agent`'s driver;
-`GymTurnHost` runs each step under the seat the turn opened with, through `EngineTraining.pinnedOn`, which keeps
+`TrainingStore.coachTurns`) admits a question, records it and runs the turn on `:agent`'s `TurnRunner` with gym's
+profile (`GymProfile`: catalog/3's tools for the seat, each strict as the catalog states it, and the words in
+`gym-coach/`) and the AI client over the API origin, the pass asked with the session and the installation credential
+beside it, or the installation credential alone signed out; `GymTurnHost` runs each step under the seat the turn opened with, through `EngineTraining.pinnedOn`, which keeps
 `writable`'s one rule and holds to the replica and to whether it is anonymous, so a turn reads and writes nothing
 during a transition, under a sign-in's open decision, or under the seat that replaced its own: it waits out what can
-still be cancelled, and a change of the active replica or a rebind abandons it. The record takes the streamed text
-every 5 s, at each batch, when the app stops and at the end, and the room draws `CoachTurns.liveAnswer` meanwhile. `PictureFiles`
+still be cancelled, and a change of the active replica or a rebind ends it through the engine. It runs each call
+through the replica executor, a share through the Share door, writes the mark's round row at each round, and at start
+recovers a turn a process death left in its last round. The record takes the streamed text every 5 s, at each round,
+when the app stops and at the end, and the room draws `CoachTurns.liveAnswer`, the engine's text, meanwhile. `PictureFiles`
 keeps a turn's originals and model copies in `noBackupFilesDir/coach-pictures`, with one metadata row per picture on
 the replica; the engine stays in `filesDir`, and neither rides a backup or a device transfer. `TurnLease` holds an
 expedited WorkManager job for the length of a turn on API 31 and above. WorkManager starts on demand
 (`TurnLeaseHost`, the application's `Configuration.Provider`), `gym/src/main/AndroidManifest.xml` removes its startup
 initializer, its foreground service and the permissions it asks for beyond what a job on JobScheduler uses, and a job the system restarts in a
-new process finds no turn and ends. The ability catalog is the contract's own `gym/catalog.json`, copied into `:gym`'s
+new process finds no turn and ends. The ability catalog is the contract's own `gym/catalog-3.json`, copied into `:gym`'s
 generated assets by a Gradle task and parsed at the first send.
 
 `coach/` groups conversation models, storage, photos and screens. A conversation is the engine's `thread` and
@@ -243,7 +247,8 @@ stored, readable and with their drafts saveable through `CoachRoutineImports` on
 the conversations, requests and confirmations earlier versions kept at first load, keeping every draft, and removes the
 photos only they named; their conversations stay on the server and on the web, and History starts empty.
 A send goes through `CoachTurns` on both seats and its draft stays until the turn is recorded: a refusal keeps it, and a
-turn withdrawn before its stream returns the question and its photo to the field. Stop asks the driver. Nothing resumes
+turn withdrawn before the AI service admitted anything returns the question and its photo to the field. Stop asks the
+engine, which ends the turn after the round in flight. Nothing resumes
 per chat, since `CoachTurns` owns the one running turn and it survives every screen. A repeated finish share opens one
 turn: its key and its turn commit in one transaction in a `rack:` device row (`OpenTurnOnce`), so a death before the chat
 holds its thread finds the first turn again. A deliberate Coach entry or New chat creates a fresh identity; History,
@@ -316,21 +321,20 @@ refused-import recovery. Log offline, restart, reconnect and verify the server r
 Add and Discard with data on both sides, and Keep at sign-out. A same-debug-key source upgrade
 does not establish published release signing.
 
-`CoachTurnsLiveWireTests` runs turns on both seats and lost opens over the real routes, on a fresh database and a
-fresh account. Start the vendor, `python3 tools/fake_coach_vendor.py <port>`, whose output names each model round.
-Start the backend with `AI_ALLOWANCES_ENABLED=true`, `AI_INSTALLATIONS_ENABLED=true`,
-`AI_INSTALLATION_PROXY_MODE=direct`, an `AI_INSTALLATION_IP_HMAC_KEY` of at least 32 bytes, `AI_ALLOWANCE_ALERT_EMAIL`
-naming one of `WINDMILL_OWNER_EMAILS`, any `RESEND_API_KEY`, `RESEND_FROM` and `ANTHROPIC_API_KEY`, and
-`COACH_ANTHROPIC_BASE_URL` at that port. `WM_WIRE_BASE` must be a loopback host, and `WM_WIRE_EVIDENCE` is the
-folder that takes the test's stores and pictures. Without `WM_ANDROID_TURN_WIRE_TEST=1` it skips:
+`CoachTurnsLiveWireTests` runs gym Coach end to end on the real engine and AI client: a question answered, an ability
+that writes, a proposal applied, a share, a picture, Stop, a connection lost and found, a sign-in under a running turn,
+an app killed in its last round and an allowance used up. `tools/coach_turn_stack.py` stands up its stack on fresh
+`wm_gact_*` databases in the local socket Postgres: the backend signing passes, the AI service, a provider it plays
+and one origin in front of both, which the test steers. It runs the suite and removes its databases and listeners
+after. Build `windmill_server` (backend `RUNNING.md`) and `windmill-ai` (`cargo build --bin windmill-ai` in
+`services/ai`) first; without `WM_ANDROID_TURN_WIRE_TEST=1` the test skips:
 
 ```sh
-WM_ANDROID_TURN_WIRE_TEST=1 WM_WIRE_BASE=http://127.0.0.1:8096 \
-  WM_WIRE_BEARER="$WM_LOCAL_BEARER" WM_WIRE_EVIDENCE="$PWD/build/turn-wire" \
-  ./gradlew :gym:testDebugUnitTest --tests '*CoachTurnsLiveWireTests' --max-workers=4
+python3 tools/coach_turn_stack.py --backend-binary <build>/windmill_server --ai-binary <target>/debug/windmill-ai \
+  --scratch <empty folder> --ports 8475 8476 8477 8478 8479
 ```
 
-No test covers: a real vendor round; an NFC or collation case on an old device, since the JVM that runs the corpus and
+No test covers: a real provider round; an NFC or collation case on an old device, since the JVM that runs the corpus and
 the device hold different Unicode tables; a turn routed across server processes, since production runs one; whether
 the expedited job's quota holds in real use on Android 12 and later.
 

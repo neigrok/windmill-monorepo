@@ -25,12 +25,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import works.windmill.agent.TurnConnectionLost
-import works.windmill.agent.TurnEvent
-import works.windmill.agent.TurnOpen
-import works.windmill.agent.TurnRefusal
-import works.windmill.agent.TurnSeat
-import works.windmill.agent.TurnTransport
 import works.windmill.domain.kit.Catalog
 import works.windmill.domain.kit.Id
 import works.windmill.domain.kit.Outcome
@@ -144,9 +138,8 @@ class PictureFilesTests {
             assertEquals(listOf(Picture("picture-1", "image/jpeg", localOnly = true)), phone.message(first.lifter)?.pictures)
             assertEquals(CoachPictureRow("picture-1", "image/jpeg", 40, 30, small().original.size), CoachPictureRow.decode("picture-1", phone.device(CoachPictureRow.key("picture-1"))))
             val opened = phone.server.opened.single()
-            assertEquals(listOf("picture-1"), opened.pictures.map { it.id })
-            assertEquals(listOf("image/jpeg"), opened.pictures.map { it.mediaType })
-            assertArrayEquals(phone.pictures.model("picture-1"), opened.pictures.single().data)
+            assertEquals(listOf(heldAs("picture-1")), opened.pictures)
+            assertArrayEquals(phone.pictures.model("picture-1"), phone.server.uploaded.getValue(heldAs("picture-1")))
         }
         val server = script()
         TurnPhone(this, folder.newFolder(), server).use { phone ->
@@ -156,13 +149,13 @@ class PictureFilesTests {
             server.rewind()
             checkNotNull(phone.turns.send("Two", small("picture-2"), first.thread, anonymous = true))
             advanceUntilIdle()
-            assertEquals(listOf(listOf("picture-1"), listOf("picture-2", "picture-1")), server.opened.map { open -> open.pictures.map { it.id } })
+            assertEquals(listOf(listOf(heldAs("picture-1")), listOf(heldAs("picture-2"), heldAs("picture-1"))), server.opened.map { it.pictures })
         }
     }
 
     // The turn goes, its files with it, and what the lifter sent returns: the picture itself, and no conversation that went too.
     @Test fun aWithdrawnTurnTakesItsPictureFilesAndReturnsWhatWasSent() = runTest {
-        val server = script("[]").apply { refuseOpen = TurnRefusal(429, "subject_exhausted", null) }
+        val server = script("[]").apply { refuseOpen = ScriptedTurns.Refusal.of("subject_exhausted") }
         TurnPhone(this, folder.newFolder(), server).use { phone ->
             val picture = small()
             checkNotNull(phone.turns.send("Look at this", picture, null, anonymous = true))
@@ -186,12 +179,8 @@ class PictureFilesTests {
 
     // An open every attempt lost takes the picture back the same way, and asking again carries it.
     @Test fun anOpenEveryAttemptLostReturnsThePicture() = runTest {
-        val server = script("""[{"event":"done","data":{"state":"completed"}}]""")
-        var reachable = false
-        val flaky = object : TurnTransport by server {
-            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = if (reachable) server.open(open, seat) else flow { throw TurnConnectionLost(null) }
-        }
-        TurnPhone(this, folder.newFolder(), flaky).use { phone ->
+        val server = script("""[{"event":"done","data":{"state":"completed"}}]""").apply { unreachable = true }
+        TurnPhone(this, folder.newFolder(), server).use { phone ->
             val picture = small()
             checkNotNull(phone.turns.send("Look at this", picture, null, anonymous = true))
             advanceUntilIdle()
@@ -201,11 +190,11 @@ class PictureFilesTests {
             assertNull(phone.device(CoachPictureRow.key("picture-1")))
             assertEquals(emptySet<String>(), phone.pictures.held())
 
-            reachable = true
+            server.unreachable = false
             val back = checkNotNull(phone.turns.withdrawn.value)
             assertTrue(phone.turns.send(back.question, back.picture, back.thread, anonymous = true) != null)
             advanceUntilIdle()
-            assertEquals(listOf(listOf("picture-1")), server.opened.map { open -> open.pictures.map { it.id } })
+            assertEquals(listOf(listOf(heldAs("picture-1"))), server.opened.map { it.pictures })
             assertNull(phone.turns.withdrawn.value)
         }
     }
@@ -234,10 +223,9 @@ class PictureFilesTests {
             assertTrue(phone.engine.signIn("account-1", mapOf("gym" to true), mapOf("gym" to "discard"), pins).member("complete").bool())
             advanceUntilIdle()
             assertNull(phone.turns.turn.value)
-            assertEquals(1, phone.server.stops)
             assertEquals(emptyList<Any>(), phone.messages())
             assertEquals(emptySet<String>(), phone.pictures.held())
-            assertEquals(listOf("seat_changed"), phone.telling.named("coach_turn").map { it["code"] })
+            assertEquals(listOf("interrupted" to null), phone.telling.named("coach_turn").map { it["state"] to it["code"] })
             assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
         }
     }
@@ -349,7 +337,7 @@ class PictureFilesTests {
     @Test fun theCatalogLandsInTheAssetsAsTheContractsOwnFile() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val asset = context.assets.open("gym-catalog.json").use { it.readBytes() }
-        assertArrayEquals(File(System.getProperty("windmill.contract"), "gym/catalog.json").readBytes(), asset)
-        assertEquals("catalog/2", Catalog(Json.parse(asset)).version)
+        assertArrayEquals(File(System.getProperty("windmill.contract"), "gym/catalog-3.json").readBytes(), asset)
+        assertEquals("catalog/3", Catalog(Json.parse(asset)).version)
     }
 }

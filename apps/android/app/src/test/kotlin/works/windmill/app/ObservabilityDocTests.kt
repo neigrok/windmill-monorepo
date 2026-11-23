@@ -13,7 +13,7 @@ import works.windmill.platform.telemetry.LabelSchema
 class ObservabilityDocTests {
     private val android = File(checkNotNull(System.getProperty("windmill.android")))
     private val doc = File(checkNotNull(System.getProperty("windmill.observabilityDoc"))).readLines()
-    private val sources = listOf("app", "platform", "gym")
+    private val sources = listOf("app", "platform", "gym", "agent")
         .flatMap { module -> File(android, "$module/src/main/kotlin").walk().filter { it.extension == "kt" }.map { it.readText() }.toList() }
 
     // The rows of the table whose header starts with `header`: each row's cells, backticks and all.

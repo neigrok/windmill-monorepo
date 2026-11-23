@@ -109,8 +109,8 @@ class TrainingStore(
         return true
     }
 
-    // Before the account changes, confirmed starts settle, the sets they owe follow, and the
-    // workout's controls are in the replica the next account's room projects from.
+    // Before the account changes, a running Coach turn ends interrupted, confirmed starts settle, the
+    // sets they owe follow, and the workout's controls are in the replica the next account's room projects from.
     suspend fun prepareEngineTransition(transitionCurrent: () -> Boolean = { true }) {
         val owner = seat.owner
         val replica = training.engine.activeReplica()
@@ -118,6 +118,7 @@ class TrainingStore(
         val drain = EngineTraining(training.engine, writeAuthority = {
             transitionCurrent() && owner == seat.owner && training.engine.activeReplica() == replica && controls.engineReplica == controlsReplica
         }, telemetry = telemetry)
+        coachTurns?.seatWillChange(drain)
         drain.recoverAcceptedSets(controls)
         drain.reconcileImports()
         drain.persistControls(controls)

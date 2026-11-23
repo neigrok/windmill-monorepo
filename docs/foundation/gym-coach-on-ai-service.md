@@ -6,8 +6,8 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified, and approved by the owner on 2026-11-15. Of what it changes, the words of §3 and the `catalog/3` file are written, and the server is on `catalog/3`: MCP lists its schemas, a `catalog/3` turn opens beside `catalog/1` and `catalog/2`, and the server executor claims `abilities-3/`. The web's Coach records and replica executor (`web/src/products/gym/domain/coach/`) are written, and the web's room runs its turn in the browser on them (`web/src/products/gym/coach/`); the server's web Coach is no longer called from the web. Gym Coach runs on the server in two forms.
-[Phone-hosted Coach abilities](mobile/gym_coach.md) is what the iPhone and Android speak: the server
+**Status:** Specified, and approved by the owner on 2026-11-15. Of what it changes, the words of §3 and the `catalog/3` file are written, and the server is on `catalog/3`: MCP lists its schemas, a `catalog/3` turn opens beside `catalog/1` and `catalog/2`, and the server executor claims `abilities-3/`. The web's Coach records and replica executor (`web/src/products/gym/domain/coach/`) are written, and the web's room runs its turn in the browser on them (`web/src/products/gym/coach/`); the server's web Coach is no longer called from the web. Android's Coach runs on the device: its turn on the Kotlin engine with gym's host and profile (`apps/android/gym/.../coach/turn/`), its executor on `catalog/3` claiming `abilities-3/`. Elsewhere gym Coach runs on the server in two forms.
+[Phone-hosted Coach abilities](mobile/gym_coach.md) is what the iPhone, and Android builds released before its move, speak: the server
 runs the loop and the phone runs the abilities. The [Coach conversation contract](../gym-coach-contract.md)
 is what the web speaks: the server runs everything. Both are metered by the backend's ledger
 ([USD AI allowances](../../backend/AI_ALLOWANCES.md)). This document says how gym Coach's turn moves
@@ -398,18 +398,13 @@ on 2026-11-15 found these gaps. Each is work of this build.
 - The iPhone's generated catalog drops each ability's `description`, and the iPhone does not carry
   the words the model reads (§3).
 - The iPhone keeps its turn in the app target; it has no engine module that names no product.
-  Android's `:agent` is one, and holds the wire's driver, not a loop.
-- The web has no agent or AI layer and no lock a turn could hold; its executor runs no turn yet. A
-  turn there emits no event and files no report.
-- The web keeps a Coach draft and a photo in the browser under the account's name and removes
-  neither at sign-out.
-- The registry declares `runningRound`, and no host writes or clears it yet: each surface's turn
-  host writes it at every round and clears it with `runningTurn` (m2–m4). The web's domain holds the
-  writes (`coach/turn.js`: `BeginRound`, `RecoverMark`, and every clear of the mark); no web host
-  calls them yet.
-- Both phones refuse an ability call, and stop writing text, once their running Coach message reads
-  `interrupted`. A writer whose turn another device marked stale must go on (§4.2).
-- The server's gate applies rules G-4 to G-7 that no phone applies; each moves into the device.
+  Android's `:agent` is one, and gym's Coach runs its turn on it.
+- The registry declares `runningRound`: each surface's turn host writes it at every round and clears
+  it with `runningTurn` (m2–m4). Android's and the web's hosts do. The iPhone's domain holds the
+  writes (`GymDomain/Coach/Turn.swift`: `BeginRound`, `RecoverMark`, and every clear of the mark); no
+  iPhone host calls them yet.
+- The server's gate applies rules G-4 to G-7 that the iPhone does not; each moves into the device.
+  Android applies them: the engine's gate holds G-4 to G-6 and its executor seeds G-7's ids.
 - The iPhone does not handle a sign-in that rebinds the signed-out replica or one waiting on its
   decision, which Android does; the engine's rule for a seat change must hold on both.
 - A web bundle from before the cutover that a browser still holds does not read

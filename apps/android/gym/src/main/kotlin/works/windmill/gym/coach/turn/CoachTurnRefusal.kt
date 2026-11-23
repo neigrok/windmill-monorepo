@@ -5,15 +5,14 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import works.windmill.agent.AllowanceShortfall
-import works.windmill.agent.TurnLabel
-import works.windmill.agent.TurnRefusal
+import works.windmill.agent.coach.AiFailure
 import works.windmill.gym.R
 import works.windmill.gym.coach.Ask
 import works.windmill.gym.coach.asked
 import works.windmill.platform.i18n.Words
+import works.windmill.sync.core.Json
 
-// Why a send could not go: the composer's bound, the phone's own admission (Coach §4.1), or the server's refusal by §6.5 code. Each is said once, at the conversation's end, with the one door that exists.
+// Why a send could not go: the composer's bound, the phone's own admission (Coach §4.1), or what the pass door or the AI service answered, in the access states of Coach engine §7. Each is said once, at the conversation's end, with the one door that exists.
 sealed interface CoachTurnRefusal {
     data object Offline : CoachTurnRefusal
     data object LogArriving : CoachTurnRefusal
@@ -25,9 +24,9 @@ sealed interface CoachTurnRefusal {
             }
         }
     }
-    // `subject_exhausted`, by what holds the request where the refusal carried the allowance (§7.1), and the moment the seat's period ends.
+    // `subject_exhausted`, the allowance used up, by what holds the request where the refusal carried the allowance, and the moment the seat's period ends.
     data class Shortfall(val shortfall: AllowanceShortfall?, val resetsAtMs: Long? = null) : CoachTurnRefusal
-    // Every other allowance code.
+    // Shared capacity for the day used up (`free_day_exhausted`), or every call this seat may have in flight taken (`concurrency_exhausted`).
     data class Allowance(val allowance: String, val resetsAtMs: Long? = null) : CoachTurnRefusal
     data class FreeMonthExhausted(val resetsAtMs: Long?) : CoachTurnRefusal
     data object RateLimited : CoachTurnRefusal
@@ -114,21 +113,48 @@ sealed interface CoachTurnRefusal {
     }
 
     companion object {
-        fun of(code: String, status: Int? = null, resetsAtMs: Long? = null, shortfall: AllowanceShortfall? = null): CoachTurnRefusal = when {
-            code == TurnRefusal.unreachable || code == TurnLabel.notAStream -> Offline
-            code == TurnRefusal.anonymousUnavailable -> AnonymousUnavailable
-            code == "subject_exhausted" -> Shortfall(shortfall, resetsAtMs)
-            code == "free_month_exhausted" -> FreeMonthExhausted(resetsAtMs)
-            code == "invalid_installation" || code == "installation_bound" || code == "device_bound" -> Installation(code)
-            code in TurnRefusal.allowanceCodes -> Allowance(code, resetsAtMs)
-            code == TurnRefusal.rateLimited -> RateLimited
-            code == "coach-update-required" || code == "client-update-required" -> UpdateRequired
-            status == 401 -> SessionLapsed
-            status == 404 -> Absent
-            else -> Unanswered
+        // Coach engine §7: the access state a turn's failure stands for, in the words gym's boards hold. A 404 from the pass door reads as AI switched off, which signed in means this server has no Coach.
+        fun of(failure: AiFailure, anonymous: Boolean): CoachTurnRefusal {
+            val allowance = failure.allowance
+            fun moment(field: String) = allowance?.get(field)?.orNull()?.long(0)
+            return when (val code = failure.code) {
+                null -> if (failure.source == "transport") Offline else Unanswered
+                "subject_exhausted" -> Shortfall(AllowanceShortfall.of(allowance), moment("resetsAt"))
+                "free_day_exhausted" -> Allowance(code, moment("budgetResetsAt"))
+                "free_month_exhausted" -> FreeMonthExhausted(moment("budgetResetsAt"))
+                "concurrency_exhausted" -> Allowance(code)
+                "rate_limited", "busy", "paused" -> RateLimited
+                "unauthenticated" -> SessionLapsed
+                "invalid_installation", "device_bound" -> Installation(code)
+                "client-update-required" -> UpdateRequired
+                "anonymous_ai_unavailable" -> if (anonymous) AnonymousUnavailable else Absent
+                else -> Unanswered
+            }
         }
 
         private fun count(value: Int): String = "%,d".format(Locale.US, value)
+    }
+}
+
+// What holds back a request the allowance refused `subject_exhausted`, as the allowance's amounts show. `subject_exhausted` alone says none of these: a positive balance refuses a round that does not fit.
+enum class AllowanceShortfall {
+    // Nothing is left, and no earlier request whose cost is unconfirmed holds any of it.
+    spent,
+    // Nothing is left, and earlier requests whose cost is not yet confirmed hold the rest.
+    held,
+    // Something is left, less than the request needs.
+    tooLarge;
+
+    companion object {
+        // An allowance that is absent, or whose amounts cannot be read, shows nothing.
+        fun of(remaining: String?, reserved: String?): AllowanceShortfall? {
+            val left = remaining?.toBigDecimalOrNull() ?: return null
+            val holding = reserved?.toBigDecimalOrNull() ?: return null
+            if (left.signum() > 0) return tooLarge
+            return if (holding.signum() > 0) held else spent
+        }
+
+        fun of(allowance: Json?): AllowanceShortfall? = of((allowance?.get("remaining") as? Json.Str)?.value, (allowance?.get("reserved") as? Json.Str)?.value)
     }
 }
 
@@ -140,10 +166,8 @@ enum class CoachTurnFault(@StringRes val said: Int) {
     accountChanging(R.string.gym_coach_fault_account_changing),
     noAnswer(R.string.gym_coach_fault_no_answer),
     unsaved(R.string.gym_coach_message_unsaved),
-    pictureUnavailable(R.string.gym_coach_fault_picture_unavailable),
-    stoppedOffline(R.string.gym_coach_fault_stopped_offline),
-    stopUnheard(R.string.gym_coach_fault_stop_unheard);
+    pictureUnavailable(R.string.gym_coach_fault_picture_unavailable);
 
-    // The `gym_ask_outcome` a send held back by this fault ends with. A stop's fault belongs to a turn that told its own.
+    // The `gym_ask_outcome` a send held back by this fault ends with.
     val askOutcome: String get() = if (this == unsaved || this == pictureUnavailable) "failed" else "refused"
 }

@@ -204,11 +204,11 @@ import SyncTesting
     let phone = try await phone(seat: "anon")
     defer { try? FileManager.default.removeItem(at: phone.cache.directory) }
     let turn = try #require(committed(try phone.gym.runner.run(OpenTurn(question: "Still here?"))))
-    #expect(try phone.gym.runner.read(Gym.scope) { try $0.device(EndTurn.runningTurnKey) } == turn.coach.json)
+    #expect(try phone.gym.runner.read(Gym.scope) { try $0.device(Mark.turnKey) } == turn.coach.json)
     phone.driver.start()
     let ended = try #require(try messages(phone).first { $0.id == turn.coach })
     #expect(ended.state == .interrupted)
-    #expect(try phone.gym.runner.read(Gym.scope) { try $0.device(EndTurn.runningTurnKey) } == nil)
+    #expect(try phone.gym.runner.read(Gym.scope) { try $0.device(Mark.turnKey) } == nil)
     TurnFixtureProtocol.state.withLock { $0 = TurnScript(events: [["event": "text", "data": ["delta": "On it."]], ["await": "stop"], ["event": "done", "data": ["state": "stopped"]]], lostOnResume: false) }
     phone.coach.edit("Add three new days."); phone.coach.send()
     try await settle { TurnFixtureProtocol.state.withLock { $0.pending == "stop" } }
@@ -233,7 +233,7 @@ import SyncTesting
     a.sync()
     #expect(try b.stored(CoachMessage.self).first { $0.id == turn.coach }?.text == "On")
     #expect(unchanged(try b.runner.run(StreamTurnText(message: turn.coach, text: "Elsewhere"))) != nil)
-    #expect(try b.runner.read(Gym.scope) { try $0.device(EndTurn.runningTurnKey) } == nil)
+    #expect(try b.runner.read(Gym.scope) { try $0.device(Mark.turnKey) } == nil)
     b.sync()
     #expect(try a.stored(CoachMessage.self).first { $0.id == turn.coach }?.state == .running)
     #expect(committed(try a.runner.run(EndTurn(turn.coach, state: .completed, text: "On it."))) != nil)
@@ -300,7 +300,7 @@ import SyncTesting
     TurnFixtureProtocol.state.withLock { $0 = TurnScript(events: [], lostOnResume: false); $0.refuseOpen = (429, ["error": "refused", "code": "subject_exhausted"]) }
     try await send(phone, "Private question")
     #expect(try messages(phone).isEmpty)
-    #expect(try phone.gym.runner.read(Gym.scope) { try $0.device(CoachPictureRow.key(photo.id)) } == nil)
+    #expect(try phone.gym.runner.read(Gym.scope) { try $0.device(Picture.rowKey(photo.id)) } == nil)
     try await settle { phone.coach.saved.text == "Private question" }
     #expect(phone.coach.thread == nil && phone.coach.saved.conversation == nil)
     #expect(phone.driver.refusal == .shortfall(nil) && !phone.coach.canCompose)
@@ -448,7 +448,7 @@ import SyncTesting
     try await send(phone, "")
     let lifter = try #require(try messages(phone).first { $0.role == .lifter })
     #expect(lifter.pictures == [Picture(id: attachment.id, mediaType: "image/jpeg", localOnly: true)] && lifter.text == "")
-    let row = CoachPictureRow(id: attachment.id, json: try phone.gym.runner.read(Gym.scope) { try $0.device(CoachPictureRow.key(attachment.id)) })
+    let row = CoachPictureRow(id: attachment.id, json: try phone.gym.runner.read(Gym.scope) { try $0.device(Picture.rowKey(attachment.id)) })
     #expect(row?.original == copy.original && row?.model == copy.model)
     let body = try #require(TurnFixtureProtocol.state.withLock { $0.requests.first { $0.path == "/v1/gym/coach/turns" }?.body })
     #expect(try body.member("pictures").asArray().map { try $0.member("id").asString() } == [attachment.id])
@@ -494,7 +494,7 @@ import SyncTesting
     #expect(phone.coach.delete(thread.description))
     #expect(try messages(phone).isEmpty && phone.coach.thread == nil)
     #expect(try phone.gym.runner.read(Gym.scope) { try $0.repository(CoachThread.self).all(in: .drawn) }.isEmpty)
-    #expect(try phone.gym.runner.read(Gym.scope) { try $0.device(CoachPictureRow.key(photo.id)) } == nil)
+    #expect(try phone.gym.runner.read(Gym.scope) { try $0.device(Picture.rowKey(photo.id)) } == nil)
   }
 }
 

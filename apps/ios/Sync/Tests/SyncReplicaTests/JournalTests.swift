@@ -46,7 +46,7 @@ struct JournalTests {
       ],
     ])
     var replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_00000000000000000000000000000001", state: .anon),
-                                journal: Journal(acts: [act], inverses: [request], cancellations: [cancellation]), wholeScopes: true)
+                                journal: .whole(Journal(acts: [act], inverses: [request], cancellations: [cancellation])), wholeScopes: true)
     replica.remapJournal(by: RecordMap(registry: registry, mappings: [
       RecordMap.Mapping(type: "board", from: "b_00000002", to: "b_00000009", scope: .product("probe")),
       RecordMap.Mapping(type: "run", from: "run00002", to: "run00009", scope: .product("probe")),

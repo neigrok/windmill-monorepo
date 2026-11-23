@@ -37,8 +37,8 @@ public struct AbilityExecutor: Sendable {
     self.appBaseUrl = appBaseUrl
   }
 
-  // The call's outcome, committed with its record on the Coach message; a refusal here means the message is not a running
-  // Coach message of this replica, so nothing was recorded and the turn is over.
+  // The call's outcome, committed with its record on the Coach message; a refusal here means the message is not this
+  // replica's Coach message while its writer answers it, so nothing was recorded and the turn is over.
   public func run(_ request: AbilityRequest, on message: ID<CoachMessage>, seat: Seat) throws -> Outcome<AbilityOutcome, GymRefusal> {
     try runner.run(RunAbility(request, on: message, seat: seat, appBaseUrl: appBaseUrl))
   }
@@ -60,6 +60,7 @@ struct AbilityRun: Sendable {
 public struct RunAbility: Action {
   public struct Loaded {
     let message: CoachMessage?
+    let writersOwn: Bool
     let ability: Any?
     let moment: Moment
   }
@@ -83,17 +84,16 @@ public struct RunAbility: Action {
 
   public func load(_ read: Reader) throws -> Loaded {
     let message = try read.repository(CoachMessage.self).find(message, in: .drawn)
-    guard message?.role == .coach, message?.state == .running, case .run(let ability) = gate else {
-      return Loaded(message: message, ability: nil, moment: read.moment)
+    let writersOwn = try message?.writersOwn(replica: read.replica, mark: Mark(read)) == true
+    guard writersOwn, case .run(let ability) = gate else {
+      return Loaded(message: message, writersOwn: writersOwn, ability: nil, moment: read.moment)
     }
-    return Loaded(message: message, ability: try ability.load(read), moment: read.moment)
+    return Loaded(message: message, writersOwn: writersOwn, ability: try ability.load(read), moment: read.moment)
   }
 
   public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<AbilityOutcome, GymRefusal> {
-    guard let message = loaded.message, message.role == .coach else {
-      return .refuse(GymRefusal(Refused(.unknownRecord, subject: self.message.ref, path: .predicted)))
-    }
-    guard message.state == .running else { return .refuse(GymRefusal(Refused(Gym.Codes.messageFinal, subject: self.message.ref, path: .predicted))) }
+    guard let message = loaded.message, message.role == .coach else { return .refuse(.gone(self.message.ref, .predicted)) }
+    guard loaded.writersOwn else { return .refuse(.other(Refused(Gym.Codes.messageFinal, subject: self.message.ref, path: .predicted))) }
     let refusing = { (code: AbilityRefusal, input: JSON?) throws(Violation) -> Decision<AbilityOutcome, GymRefusal> in
       try recording(AbilityCall(callId: request.callId, name: request.name, input: input, outcome: .refused(code)), answering: .refused(code),
                     plan: Plan(), on: message, at: loaded.moment)

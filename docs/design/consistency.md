@@ -625,12 +625,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   seconds with *Undo*; the web shows Done as its twelve newest and *Show all N* where iOS folds each group; the web's reader on an app route sees an
   *Author's note* and iOS's cover shows none; the web's private links are *Personal links* and iOS's are *Your
   links*.
-- **Roadmap · iOS · boards that disagree with what the room reads.** [Roadmap on iOS](../foundation/roadmap-ios.md)
-  names every read and command the boards need (§3 INV-1, §7.1 to §7.4) and rules three of the differences (R-7 to
-  R-9). To redraw, the build tree's step `m0-redraw-what-the-reads-cannot-serve`: a gallery row (09.12a) without its
-  author (R-8), and its caption, which says newest first where `GET /v1/gallery` ranks by forks, then by last
-  activity; and Quests (01.7), whose nine sizes are not the roster's (*Learn to sail* 22 steps, the roster 17) and
-  whose estimates lack the roster's *~*.
 - **Roadmap · iOS · what Activity, History and an empty Undo leave for the boards.** Activity, a step's History, the
   room before its first read and its failed read, and the band of an Undo that brought nothing back are built in Debug
   builds from 01.13, 01.13b, 01.15, 03.12, 01.5b, 01.5c, 02.10d and 06.5c. To draw or rule: 01.13's caption sets a row's
@@ -1922,9 +1916,8 @@ Android. It and the product differ in these places.
   board draws either. No board draws the way back from 08.72's Sign in: the sheets close and sign-in stands over the rack, and
   after the code a new account lands on the rack with the proposal still waiting, and an account with training first asks *Add to
   your account?*. A refused write that is neither training nor a named record says *That change could not be saved.* over its
-  reason, words the log's other refusals already use; no board draws it. A Stop refused for another
-  reason (`stopUnheard`) says the first sentence of 08.69's band, *Coach is stopped on this phone.*, since the turn has
-  already ended. No board draws an interruption with no words, and the build says the first sentence of 08.50's line,
+  reason, words the log's other refusals already use; no board draws it. Stop is the phone's own, so no
+  band says a Stop went unheard, and 08.69's band draws a state Android no longer has. No board draws an interruption with no words, and the build says the first sentence of 08.50's line,
   *Interrupted.*
 - **6z · The Android boards after the phone Coach (designer).** Once it ships, delete the originals it replaced, with their
   Daylight pairs: 08.5 `1253:28654`, 08.8 `1253:28820`, 08.9 `1253:28915`, 08.26 `1254:37761`, 08.61 `1442:18583`, 01.5

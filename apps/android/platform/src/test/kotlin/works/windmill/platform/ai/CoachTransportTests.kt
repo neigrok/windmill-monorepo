@@ -22,7 +22,7 @@ class CoachTransportTests {
         override fun turn(report: TurnReport) {}
         override fun ability(report: AbilityReport) {}
         val failures = mutableListOf<FailureOperation>()
-        override fun failure(operation: FailureOperation) { failures += operation }
+        override fun failure(operation: FailureOperation, cause: Throwable?, code: String?) { failures += operation }
     }
     private fun fixture() = Json.parse(File(System.getProperty("windmill.contract"), "ai/wire/fixtures.json").readText())
     private fun terminal() = Json.Obj(fixture().member("textEvents").arr()[3].obj().toList() + ("id" to Json.of(2)))
@@ -128,7 +128,7 @@ class CoachTransportTests {
             }, reports, now = { now }, wait = { ms, _ -> now += ms; true })
             val result = client.text("AAAAAAAAAAAAAAAAAAAAAA", Json.objectOf(), emptyList(), "other", "vector.coach", 1, StopSignal()) {}
             assertTrue("Malformed pass refusal ended an uncertain call: $result", result is AiAnswer.Terminal)
-            assertEquals(emptyList<FailureOperation>(), reports.failures)
+            assertEquals("a 5xx that names no refusal is the door failing, and reported", if (badResponse.status >= 500) listOf(FailureOperation.aiPass) else emptyList(), reports.failures)
         }
     }
 

@@ -1,7 +1,7 @@
 import SyncAPI
 import SyncCore
 import SyncModelServer
-import SyncReplica
+@testable import SyncReplica
 import SyncTesting
 import Testing
 
@@ -588,6 +588,171 @@ struct OutcomesTests {
     #expect(tally.recovered > 300, "\(seed): only \(tally.recovered) entries recovered from clock-skew")
     #expect(tally.orphans > 30, "\(seed): only \(tally.orphans) orphans were refused")
     #expect(tally.orphansAdmitted > 15, "\(seed): only \(tally.orphansAdmitted) orphans were admitted")
+  }
+
+  // §7.7 a receipt's versions restamp an opted command's predictions and every later queued entry in one write an entry,
+  // exactly as moving each register and following each move through every later entry one at a time does: over random
+  // later entries that carry the command's borns and lives, write registers of their own the receipt names, and guard
+  // fields at the command's stamps or their own, beside a receipt replayed before.
+  @Test func aReceiptRestampsAsOneMoveAtATimeDoes() throws {
+    var random = SeededRandom.fromEnvironment()
+    let planner = PushPlanner(registry: Self.probe)
+    let scope = ScopeRef.product("probe")
+    let days: [RecordKey] = ["2026-09-01", "2026-09-02", "2026-09-03"].map { RecordKey("day", RecordID($0)) }
+    let stamp = { (ms: Int) in try! Stamp("\(ms):0:r_aaaaaaaaaaaa") }
+    let instance = Instance(actor: try Stamp.Actor("r_bbbbbbbbbbbb"), deviceNow: 9000, appVersion: "1")
+    var moved = 0
+    for round in 0..<300 {
+      let written = stamp(1000)
+      let delta = { (key: RecordKey, at: Stamp, born: Stamp?) -> Delta in
+        Delta(key: key, lattice: Lattice(life: Life(random.chance(0.8) ? .alive : .dead, at), born: born, fields: ["score": Register(JSON(random.below(9)), at)]))
+      }
+      let made = days.filter { _ in random.chance(0.7) }.map { delta($0, written, written) }
+      var command = OutboxEntry(localId: "c/0", gestureId: "c", lineage: "A", scope: scope, state: .acked, commitOrder: 1, releaseAt: 0, stamp: written,
+                                intent: Intent(n: 1, scope: scope, deltas: made), predictions: [Projection(scope: scope, deltas: made)])
+      command.resultSeq = 5
+      var outbox = [command]
+      for index in 1...4 {
+        let own = stamp(2000 + 100 * index)
+        let carried = [written, own] + outbox.dropFirst().map(\.stamp)
+        let deltas = days.filter { _ in random.chance(0.5) }.map { key in delta(key, random.pick(carried), random.chance(0.6) ? written : nil) }
+        let guards = days.filter { _ in random.chance(0.4) }.map { Guard(key: $0, field: "score", stamp: random.pick(carried)) }
+        var entry = OutboxEntry(localId: "l\(index)/0", gestureId: "l\(index)", lineage: "A", scope: scope,
+                                state: random.pick([.held, .ready, .ready, .sent]), commitOrder: Int64(1 + index), releaseAt: 0, stamp: own,
+                                intent: Intent(scope: scope, deltas: deltas, guards: guards))
+        if entry.state == .sent { entry.intent.n = Int64(1 + index) }
+        outbox.append(entry)
+      }
+      let slots: [EffectSlot.Slot] = [.born, .life, .field("score")]
+      let versions = days.filter { _ in random.chance(0.8) }.map { key in
+        PushPlanner.AcceptedVersion(scope: scope, key: key, slots: slots.filter { _ in random.chance(0.7) }.map { EffectSlot($0, .stamp(stamp(3000 + random.below(50)))) })
+      }
+      let previous = random.chance(0.3) ? [EffectReceipt(scope: scope, beforeSeq: nil, seq: 4, rows: days.map { key in
+        EffectRow(key: key, beforeRowSeq: nil, rowSeq: 4, slots: [EffectSlot(.life, .stamp(random.pick([written, stamp(2100)])))])
+      })] : []
+      var meta = ReplicaMeta(replica: "rp_1", state: .bound, account: "A")
+      meta.hlc = HLC(ms: 1000)
+      let start = LoadedReplica(meta: meta, outbox: outbox, wholeScopes: true)
+      var once = start, oneAtATime = start
+      planner.applyAccepted(versions, previous: previous, of: "c/0", in: &once, instance: instance)
+      Self.restampedOneAtATime(versions, previous: previous, of: "c/0", in: &oneAtATime, instance: instance)
+      #expect(once.outbox == oneAtATime.outbox && once.meta == oneAtATime.meta, "seed \(random.seed), round \(round)")
+      moved += once.outbox == start.outbox ? 0 : 1
+    }
+    #expect(moved > 200, "seed \(random.seed): only \(moved) receipts moved anything")
+  }
+
+  // The receipt's restamp one register at a time, as §7.7 states it: each move of the command's prediction and each
+  // follow reach the entries after it at once, then each later entry's own registers move in turn.
+  static func restampedOneAtATime(_ versions: [PushPlanner.AcceptedVersion], previous: [EffectReceipt], of commandId: String,
+                                  in replica: inout LoadedReplica, instance: Instance) {
+    guard let command = replica.entry(commandId) else { return }
+    let stamps = versions.flatMap { $0.slots.compactMap { if case .stamp(let stamp) = $0.version { stamp } else { nil } } }
+    replica.update { meta in
+      meta.observe(stamps)
+      meta.admit(stamps)
+    }
+    let own = replica.outbox.filter { $0.commitOrder > command.commitOrder && $0.isQueued }.map { (entry: OutboxEntry) -> (String, [Restamp.Register]) in
+      (entry.localId, Restamp.parts(of: entry).flatMap { part, scope -> [Restamp.Register] in
+        let delta = Restamp.delta(part, of: entry)
+        guard let version = versions.first(where: { $0.scope == scope && $0.key == delta.key }) else { return [] }
+        return version.slots.compactMap { slot -> Restamp.Register? in
+          switch slot.slot {
+          case .life: delta.lattice.life.flatMap { $0.stamp >= entry.stamp ? Restamp.Register(part: part, register: .life) : nil }
+          case .field(let name): delta.lattice.fields[name].flatMap { $0.stamp >= entry.stamp ? Restamp.Register(part: part, register: .field(name)) : nil }
+          case .born, .text: nil
+          }
+        }
+      })
+    }
+    for version in versions {
+      let earlier = previous.first { $0.scope == version.scope }?.rows.first { $0.key == version.key }
+        .map { PushPlanner.AcceptedVersion(scope: version.scope, key: version.key, slots: $0.slots) }
+      let ordinary = version.scope == command.scope ? command.intent.deltas.filter { $0.key == version.key } : []
+      for slot in version.slots {
+        guard case .stamp(let n) = slot.version else { continue }
+        let register: Restamp.Register.Name = if case .field(let name) = slot.slot { .field(name) } else { .life }
+        for o in ([earlier?.stamp(of: slot.slot)] + ordinary.map { $0.stamp(of: slot.slot) }).compactMap({ $0 }) {
+          follow(register, of: version.key, in: version.scope, after: commandId, from: o, to: n, createsRecord: slot.slot == .born, in: &replica)
+        }
+        let predicted = Restamp.parts(of: replica.entry(commandId)!).filter { item in
+          if case .intent = item.part { return false }
+          return item.scope == version.scope && Restamp.delta(item.part, of: replica.entry(commandId)!).key == version.key
+        }.map(\.part)
+        for part in predicted {
+          guard slot.slot == .born else {
+            move(Restamp.Register(part: part, register: register), of: commandId, to: n, in: &replica)
+            continue
+          }
+          var delta = Restamp.delta(part, of: replica.entry(commandId)!)
+          guard let old = delta.lattice.born else { continue }
+          delta.lattice.born = n
+          if let life = delta.lattice.life, life.isAlive, life.stamp == old { delta.lattice.life = Life(.alive, n) }
+          replica.update(entry: commandId) { Restamp.replace(part, of: &$0, with: delta) }
+          follow(.life, of: version.key, in: version.scope, after: commandId, from: old, to: n, createsRecord: true, in: &replica)
+        }
+      }
+    }
+    var clock = replica.meta.hlc
+    for (localId, registers) in own where !registers.isEmpty {
+      let n = clock.tick(physNow: replica.meta.physNow(deviceNow: instance.deviceNow), actor: instance.actor)
+      for register in registers { move(register, of: localId, to: n, in: &replica) }
+      replica.update { $0.hlcHigh = max($0.hlcHigh, n) }
+    }
+    replica.update { $0.hlc = clock }
+  }
+
+  static func move(_ register: Restamp.Register, of localId: String, to n: Stamp, in replica: inout LoadedReplica) {
+    guard let entry = replica.entry(localId) else { return }
+    var delta = Restamp.delta(register.part, of: entry)
+    let o: Stamp
+    var createsRecord = false
+    switch register.register {
+    case .life:
+      guard let life = delta.lattice.life, life.stamp != n else { return }
+      o = life.stamp
+      createsRecord = life.isAlive && delta.lattice.born == o
+      delta.lattice.life = Life(life.state, n)
+      if createsRecord { delta.lattice.born = n }
+    case .field(let name):
+      guard let current = delta.lattice.fields[name], current.stamp != n else { return }
+      o = current.stamp
+      delta.lattice.fields[name] = Register(current.value, n)
+    }
+    replica.update(entry: localId) { Restamp.replace(register.part, of: &$0, with: delta) }
+    follow(register.register, of: delta.key, in: Restamp.scope(of: register.part, in: entry), after: localId, from: o, to: n,
+           createsRecord: createsRecord, in: &replica)
+  }
+
+  static func follow(_ register: Restamp.Register.Name, of key: RecordKey, in scope: ScopeRef, after localId: String, from o: Stamp,
+                     to n: Stamp, createsRecord: Bool, in replica: inout LoadedReplica) {
+    guard o != n, let entry = replica.entry(localId) else { return }
+    let step = { (delta: inout Delta) in
+      guard delta.key == key else { return }
+      if createsRecord && delta.lattice.born == o { delta.lattice.born = n }
+      if let life = delta.lattice.life, life.stamp == o { delta.lattice.life = Life(life.state, n) }
+    }
+    for other in replica.outbox where other.commitOrder > entry.commitOrder && other.isQueued {
+      replica.update(entry: other.localId) { other in
+        switch register {
+        case .life:
+          if other.scope == scope {
+            for index in other.intent.deltas.indices { step(&other.intent.deltas[index]) }
+            for index in other.predict.indices { step(&other.predict[index]) }
+          }
+          for p in other.predictions?.indices ?? 0..<0 where other.predictions![p].scope == scope {
+            for index in other.predictions![p].deltas.indices { step(&other.predictions![p].deltas[index]) }
+          }
+        case .field(let name) where other.scope == scope:
+          for index in other.intent.guards.indices
+          where other.intent.guards[index].key == key && other.intent.guards[index].field == name && other.intent.guards[index].stamp == o {
+            other.intent.guards[index].stamp = n
+          }
+        case .field:
+          break
+        }
+      }
+    }
   }
 }
 

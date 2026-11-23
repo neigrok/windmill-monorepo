@@ -53,15 +53,16 @@ public final class Store: Sendable {
     try Schema.migrator.migrate(writer)
     try writer.write { db in
       let built = try Int.fetchOne(db, sql: "SELECT ref_index_version FROM device")
-      if let built, built != registry.version { try BatchWriter(db: db, registry: registry).rebuildDerivedColumns() }
+      if let built, built != registry.version { try BatchWriter(StoreTransaction(db: db, registry: registry)).rebuildDerivedColumns() }
     }
   }
 
   // One Action: load and plan inside the transaction, write the batch, and commit.
   public func write<Value>(_ tx: TxName, _ body: (StoreTransaction) throws -> Planned<Value>) throws -> Written<Value> {
     try transaction(tx) { db in
-      let planned = try body(StoreTransaction(db: db, registry: registry))
-      try BatchWriter(db: db, registry: registry).apply(planned.batch)
+      let tx = StoreTransaction(db: db, registry: registry)
+      let planned = try body(tx)
+      try BatchWriter(tx).apply(planned.batch)
       return Written(value: planned.value, events: planned.batch.events, change: planned.batch.change)
     }
   }
@@ -69,7 +70,7 @@ public final class Store: Sendable {
   // §2.5 the deferred deletion, one transaction: up to `limit` rows no view reads any more. True while any are left.
   public func sweep(limit: Int = 512) throws -> Written<Bool> {
     try transaction(.sweep) { db in
-      Written(value: try BatchWriter(db: db, registry: registry).sweep(limit: limit), events: [], change: StoreChange())
+      Written(value: try BatchWriter(StoreTransaction(db: db, registry: registry)).sweep(limit: limit), events: [], change: StoreChange())
     }
   }
 

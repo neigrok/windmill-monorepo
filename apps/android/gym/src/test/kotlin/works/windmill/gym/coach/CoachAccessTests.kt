@@ -30,12 +30,12 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.spelled
 import works.windmill.gym.string
-import works.windmill.agent.AllowanceShortfall
-import works.windmill.agent.TurnRefusal
+import works.windmill.gym.coach.turn.AllowanceShortfall
 import works.windmill.gym.R
 import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
 import works.windmill.gym.coach.turn.CoachRecovery
 import works.windmill.gym.coach.turn.CoachTurnRefusal
+import works.windmill.gym.coach.turn.scriptedAllowance
 import works.windmill.gym.coach.turn.ScriptedInstallation
 import works.windmill.gym.coach.turn.ScriptedTurns
 import works.windmill.gym.store.EngineRoomFixture
@@ -126,49 +126,48 @@ class CoachAccessTests {
             Board(CoachTurnRefusal.LogArriving, false, "Your log is still arriving on this phone. Ask again in a moment.", null),
             Board(CoachTurnRefusal.TooLong(1_400), false, "Too long by 1,400 bytes. The limit is 8,000 bytes.\nEnglish letters take 1 byte each. Other letters and emoji take more.", null),
             Board(CoachTurnRefusal.TooLong(1), false, "Too long by 1 byte. The limit is 8,000 bytes.\nEnglish letters take 1 byte each. Other letters and emoji take more.", null),
-            Board(CoachTurnRefusal.of("invalid_installation"), true, "This phone can’t ask Coach signed out any more. Sign in to continue.", CoachRecovery.signIn),
-            Board(CoachTurnRefusal.of("device_bound"), true, "This phone is linked to an account. Sign in to ask Coach.", CoachRecovery.signIn),
-            Board(CoachTurnRefusal.of("anonymous_ai_unavailable", 503), true, "Coach needs your workout log. Please sign in.", CoachRecovery.signIn),
-            Board(CoachTurnRefusal.of("anonymous_ai_unavailable", 503), false, "Coach needs your workout log. Please sign in.", CoachRecovery.signIn),
-            Board(CoachTurnRefusal.of("free_month_exhausted", 429, monthTurns), false, "Coach is paused for everyone this month. It comes back on Nov 1.", own),
-            Board(CoachTurnRefusal.of("free_month_exhausted", 429), false, "Coach is paused for everyone this month.", own),
-            Board(CoachTurnRefusal.of("coach-update-required", 426), false, "This version can’t ask Coach any more. Update Windmill to continue.", CoachRecovery.update),
-            Board(CoachTurnRefusal.of("free_day_exhausted", 429, dayTurns), false, "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.\nYou can use Coach again on Nov 4 at 3:00 AM.", own),
-            Board(CoachTurnRefusal.of("free_day_exhausted", 429, dayTurns), true, "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.\nYou can use Coach again on Nov 4 at 3:00 AM.", own),
-            Board(CoachTurnRefusal.of("free_day_exhausted", 429), false, "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.", own),
-            Board(CoachTurnRefusal.of(TurnRefusal.rateLimited, 429), false, "You can ask again later.", own),
-            Board(CoachTurnRefusal.of("subject_exhausted", 429, shortfall = AllowanceShortfall.spent), true, "You have used all of your AI allowance.\nSign in to continue.", CoachRecovery.signIn),
-            Board(CoachTurnRefusal.of("subject_exhausted", 429, shortfall = AllowanceShortfall.spent), false, "You have used all of your AI allowance.", null),
-            Board(CoachTurnRefusal.of("subject_exhausted", 429, shortfall = AllowanceShortfall.held), true, "$held\nSign in to continue.", CoachRecovery.signIn),
-            Board(CoachTurnRefusal.of("subject_exhausted", 429, shortfall = AllowanceShortfall.held), false, held, null),
-            Board(CoachTurnRefusal.of("subject_exhausted", 429, shortfall = AllowanceShortfall.tooLarge), true, "$tooLarge\nSign in to continue.", CoachRecovery.signIn),
-            Board(CoachTurnRefusal.of("subject_exhausted", 429, shortfall = AllowanceShortfall.tooLarge), false, tooLarge, null),
-            Board(CoachTurnRefusal.of("subject_exhausted", 429), true, "Your AI allowance has no room for this request.\nSign in to continue.", CoachRecovery.signIn),
-            Board(CoachTurnRefusal.of("subject_exhausted", 429), false, "Your AI allowance has no room for this request.", null),
-            Board(CoachTurnRefusal.of("debt_outstanding", 429), true, "Coach’s AI allowance is unavailable right now.", null),
-            Board(CoachTurnRefusal.of("concurrency_exhausted", 429), true, "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.", null),
-            Board(CoachTurnRefusal.of("concurrency_exhausted", 429), false, "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.", null),
-            Board(CoachTurnRefusal.of("funding_required", 503), false, "Coach didn’t answer. Try again in a moment", null),
+            Board(CoachTurnRefusal.Installation("invalid_installation"), true, "This phone can’t ask Coach signed out any more. Sign in to continue.", CoachRecovery.signIn),
+            Board(CoachTurnRefusal.Installation("device_bound"), true, "This phone is linked to an account. Sign in to ask Coach.", CoachRecovery.signIn),
+            Board(CoachTurnRefusal.AnonymousUnavailable, true, "Coach needs your workout log. Please sign in.", CoachRecovery.signIn),
+            Board(CoachTurnRefusal.AnonymousUnavailable, false, "Coach needs your workout log. Please sign in.", CoachRecovery.signIn),
+            Board(CoachTurnRefusal.FreeMonthExhausted(monthTurns), false, "Coach is paused for everyone this month. It comes back on Nov 1.", own),
+            Board(CoachTurnRefusal.FreeMonthExhausted(null), false, "Coach is paused for everyone this month.", own),
+            Board(CoachTurnRefusal.UpdateRequired, false, "This version can’t ask Coach any more. Update Windmill to continue.", CoachRecovery.update),
+            Board(CoachTurnRefusal.Allowance("free_day_exhausted", dayTurns), false, "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.\nYou can use Coach again on Nov 4 at 3:00 AM.", own),
+            Board(CoachTurnRefusal.Allowance("free_day_exhausted", dayTurns), true, "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.\nYou can use Coach again on Nov 4 at 3:00 AM.", own),
+            Board(CoachTurnRefusal.Allowance("free_day_exhausted"), false, "Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.", own),
+            Board(CoachTurnRefusal.RateLimited, false, "You can ask again later.", own),
+            Board(CoachTurnRefusal.Shortfall(AllowanceShortfall.spent), true, "You have used all of your AI allowance.\nSign in to continue.", CoachRecovery.signIn),
+            Board(CoachTurnRefusal.Shortfall(AllowanceShortfall.spent), false, "You have used all of your AI allowance.", null),
+            Board(CoachTurnRefusal.Shortfall(AllowanceShortfall.held), true, "$held\nSign in to continue.", CoachRecovery.signIn),
+            Board(CoachTurnRefusal.Shortfall(AllowanceShortfall.held), false, held, null),
+            Board(CoachTurnRefusal.Shortfall(AllowanceShortfall.tooLarge), true, "$tooLarge\nSign in to continue.", CoachRecovery.signIn),
+            Board(CoachTurnRefusal.Shortfall(AllowanceShortfall.tooLarge), false, tooLarge, null),
+            Board(CoachTurnRefusal.Shortfall(null), true, "Your AI allowance has no room for this request.\nSign in to continue.", CoachRecovery.signIn),
+            Board(CoachTurnRefusal.Shortfall(null), false, "Your AI allowance has no room for this request.", null),
+            Board(CoachTurnRefusal.Allowance("concurrency_exhausted"), true, "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.", null),
+            Board(CoachTurnRefusal.Allowance("concurrency_exhausted"), false, "Your earlier AI requests hold every slot you have. Each frees when its cost is confirmed, at most 10 minutes after it began.", null),
+            Board(CoachTurnRefusal.Unanswered, false, "Coach didn’t answer. Try again in a moment", null),
         )) {
             assertEquals(board.words, board.refusal.said(board.anonymous, clock24 = false, zone = utc).spelled())
             assertEquals(board.words, board.door, board.refusal.recovery(board.anonymous))
         }
-        assertEquals("funding_required is Talk's refusal, never Coach's", CoachTurnRefusal.Unanswered, CoachTurnRefusal.of("funding_required", 503))
+        assertEquals("funding_required is Talk's refusal, never Coach's", CoachTurnRefusal.Unanswered, CoachTurnRefusal.of(works.windmill.agent.coach.AiFailure("text", "funding_required", works.windmill.agent.coach.Admission.none), anonymous = false))
         assertEquals("Coach’s shared free AI capacity is unavailable for today. Signing in does not bypass this limit.\nYou can use Coach again on Nov 4 at 3:00.",
-            CoachTurnRefusal.of("free_day_exhausted", 429, dayTurns).said(anonymous = false, clock24 = true, zone = utc).spelled())
+            CoachTurnRefusal.Allowance("free_day_exhausted", dayTurns).said(anonymous = false, clock24 = true, zone = utc).spelled())
         // A reset brings back a spent allowance, and nothing else that holds a request.
         assertEquals(listOf("You have used all of your AI allowance. It comes back on Nov 4.", held, tooLarge, "Your AI allowance has no room for this request."),
             listOf(AllowanceShortfall.spent, AllowanceShortfall.held, AllowanceShortfall.tooLarge, null).map { shortfall ->
-                CoachTurnRefusal.of("subject_exhausted", 429, dayTurns, shortfall).said(anonymous = false, clock24 = true, zone = utc).spelled()
+                CoachTurnRefusal.Shortfall(shortfall, dayTurns).said(anonymous = false, clock24 = true, zone = utc).spelled()
             })
         assertEquals("You have used all of your AI allowance.\nSign in to continue.",
-            CoachTurnRefusal.of("subject_exhausted", 429, dayTurns, AllowanceShortfall.spent).said(anonymous = true, clock24 = true, zone = utc).spelled())
+            CoachTurnRefusal.Shortfall(AllowanceShortfall.spent, dayTurns).said(anonymous = true, clock24 = true, zone = utc).spelled())
     }
 
     // A cap's notice goes at the moment the server named, with no tap: the composition waits for that moment on the chats' own clock, and no cap ever held Send.
     @Test fun aCapNoticeGoesAtTheMomentItNamedWithNoTap() {
         val resetsAt = 1_800_000_600_000L
-        val server = ScriptedTurns(emptyList()).apply { refuseOpen = TurnRefusal(429, "free_month_exhausted", resetsAt) }
+        val server = ScriptedTurns(emptyList()).apply { refuseOpen = ScriptedTurns.Refusal.of("free_month_exhausted", scriptedAllowance("free_month_exhausted", "1", budgetResetsAt = resetsAt)) }
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val phone = EngineRoomFixture(tmp.newFolder(), scope, coachServer = server)
         try {
