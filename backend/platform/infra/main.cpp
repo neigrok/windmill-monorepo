@@ -141,6 +141,7 @@
 #include "products/probe/adapters/postgres/PgProbe.h"
 #endif
 
+#include <curl/curl.h>
 #include <drogon/drogon.h>
 
 #include <algorithm>
@@ -1324,7 +1325,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   std::shared_ptr<Curator> journalCurator = std::make_shared<NullCurator>();
   std::shared_ptr<Segmenter> journalSegmenter = std::make_shared<RuleSegmenter>();
   if (aiPasses && aiServiceUrlEnv && *aiServiceUrlEnv) {
-    auto aiService = std::make_shared<AiServiceClient>(aiServiceUrlEnv, aiPasses, *systemClock);
+    auto aiService = std::make_shared<AiServiceClient>(aiServiceUrlEnv, aiPasses, *systemClock, *sentry);
     journalCurator = std::make_shared<AiServiceCurator>(aiService);
     journalSegmenter = std::make_shared<AiServiceSegmenter>(aiService);
   }
@@ -1336,7 +1337,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto journalEchoSweep = std::make_shared<EchoSweep>(*journalEchoes, *journalSegmenter, *journalEmbedder,
                                                       *journalCurator, *systemClock, SelectionRules{}, SweepBudget{});
   lifetime.watch(journalEchoSweep, journalEchoes, journalSpans, journalSegmenter, journalEmbedder, journalCurator,
-                 systemClock);
+                 systemClock, sentry);
   journalEchoSweep->start();
   // Derives on its own thread, never a drogon request thread: a curator call is seconds long.
   auto journalEchoDerivations =
@@ -1350,7 +1351,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto journalEchoExplainer = std::make_shared<EchoExplainer>(
       *journalEchoes, *journalSegmenter, *journalEmbedder, *journalCurator, *journalPages);
   lifetime.watch(journalEchoExplainer, journalEchoes, journalSegmenter, journalEmbedder, journalCurator,
-                 journalPages);
+                 journalPages, systemClock, sentry);
   // Without OPENAI_API_KEY the transcriber is null and the endpoint answers 503. OPENAI_BASE_URL points it at another
   // origin speaking the same protocol, a local stub in tests.
   const char* openaiKeyEnv = std::getenv("OPENAI_API_KEY");
@@ -1457,6 +1458,12 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
 int main() {
   using namespace wm;
+  // libcurl's process-wide state, set up once before any thread can start a transfer (AnthropicStream, AiServiceClient):
+  // the libcurl the image carries does not set it up safely from two threads at once.
+  if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
+    std::fprintf(stderr, "refusing to start: libcurl could not be initialised\n");
+    return 1;
+  }
   std::shared_ptr<SentryClient> reporter;
   int code = 1;
   bool reportsSent = true;

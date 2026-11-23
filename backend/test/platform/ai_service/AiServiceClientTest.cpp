@@ -156,6 +156,14 @@ struct StillClock : Clock {
   std::uint64_t nowMs() override { return now; }
 };
 
+// What the client tells Sentry, by operation and detail.
+struct Reports : FailureReporter {
+  std::vector<std::string> told;
+  void report(const std::string&, const std::string& where, const std::string& detail) override {
+    told.push_back(where + " " + detail);
+  }
+};
+
 std::shared_ptr<const AiPasses> signer() {
   return std::make_shared<const AiPasses>("nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A", "test-rfc8032", "development",
                                           R"({"gym.coach":1})");
@@ -203,9 +211,10 @@ bool fieldsTheDoorReads(const Json::Value& ours, const Json::Value& theirs) {
 }
 
 TEST(the_client_puts_the_question_as_the_door_reads_it_and_takes_the_answer_the_call_ended_with) {
+  Reports reports;
   PlayedService service{{stream(everyTextEvent())}};
   StillClock clock;
-  AiServiceClient client{service.url(), signer(), clock};
+  AiServiceClient client{service.url(), signer(), clock, reports};
 
   const TextAnswer answer = client.ask(UserId{"account-vector"}, question());
 
@@ -227,12 +236,13 @@ TEST(the_client_puts_the_question_as_the_door_reads_it_and_takes_the_answer_the_
 }
 
 TEST(every_end_the_door_gives_a_text_call_is_read_as_its_stop_or_its_code) {
+  Reports reports;
   const Json::Value wire = fixtures();
   std::string read;
   for (const std::string& name : wire["textTerminals"].getMemberNames()) {
     PlayedService service{{stream(event(wire["textEvents"][0], 1) + event(wire["textTerminals"][name], 2))}};
     StillClock clock;
-    const TextAnswer answer = AiServiceClient{service.url(), signer(), clock}.ask(UserId{"account-vector"}, question());
+    const TextAnswer answer = AiServiceClient{service.url(), signer(), clock, reports}.ask(UserId{"account-vector"}, question());
     read += name + " " + answer.code + " " + answer.text + "\n";
   }
   for (const auto& [name, events] : std::vector<std::pair<std::string, std::string>>{
@@ -243,7 +253,7 @@ TEST(every_end_the_door_gives_a_text_call_is_read_as_its_stop_or_its_code) {
            {"failed_with_a_sentence", "event: failed\ndata: {\"code\":\"Not A Code\"}\n\n"}}) {
     PlayedService service{{stream(events)}};
     StillClock clock;
-    const TextAnswer answer = AiServiceClient{service.url(), signer(), clock}.ask(UserId{"account-vector"}, question());
+    const TextAnswer answer = AiServiceClient{service.url(), signer(), clock, reports}.ask(UserId{"account-vector"}, question());
     read += name + " " + answer.code + " " + answer.text + "\n";
   }
 
@@ -263,6 +273,7 @@ TEST(every_end_the_door_gives_a_text_call_is_read_as_its_stop_or_its_code) {
 }
 
 TEST(every_refusal_before_the_stream_is_read_by_its_code_whatever_its_status) {
+  Reports reports;
   const Json::Value wire = fixtures();
   std::vector<std::pair<int, Json::Value>> refusals;
   for (const Json::Value& each : wire["refusals"]) refusals.emplace_back(each["status"].asInt(), each["body"]);
@@ -278,13 +289,13 @@ TEST(every_refusal_before_the_stream_is_read_by_its_code_whatever_its_status) {
     if (body["code"].asString() == "pass_expired") continue;
     PlayedService service{{refusal(status, dump(body))}};
     StillClock clock;
-    const TextAnswer answer = AiServiceClient{service.url(), signer(), clock}.ask(UserId{"account-vector"}, question());
+    const TextAnswer answer = AiServiceClient{service.url(), signer(), clock, reports}.ask(UserId{"account-vector"}, question());
     read += std::to_string(status) + " " + answer.code + " asked " + std::to_string(service.requests().size()) + "\n";
     expected += std::to_string(status) + " " + body["code"].asString() + " asked 1\n";
   }
   PlayedService unreadable{{refusal(502, "<html>bad gateway</html>")}};
   StillClock clock;
-  read += "502 " + AiServiceClient{unreadable.url(), signer(), clock}.ask(UserId{"account-vector"}, question()).code + "\n";
+  read += "502 " + AiServiceClient{unreadable.url(), signer(), clock, reports}.ask(UserId{"account-vector"}, question()).code + "\n";
   expected += "502 unreadable\n";
 
   CHECK_EQ(read, expected);
@@ -297,10 +308,11 @@ TEST(every_refusal_before_the_stream_is_read_by_its_code_whatever_its_status) {
 }
 
 TEST(an_expired_pass_is_signed_again_and_the_call_asked_once_more) {
+  Reports reports;
   const std::string expired = refusal(401, R"({"code":"pass_expired","allowance":null})");
   SteppingClock clock;
   PlayedService renewed{{expired, stream(everyTextEvent())}};
-  AiServiceClient client{renewed.url(), signer(), clock};
+  AiServiceClient client{renewed.url(), signer(), clock, reports};
 
   const TextAnswer answer = client.ask(UserId{"account-vector"}, question());
 
@@ -313,18 +325,19 @@ TEST(an_expired_pass_is_signed_again_and_the_call_asked_once_more) {
   CHECK_EQ(asked[0].body, asked[1].body);
 
   PlayedService stillExpired{{expired, expired}};
-  AiServiceClient again{stillExpired.url(), signer(), clock};
+  AiServiceClient again{stillExpired.url(), signer(), clock, reports};
   CHECK_EQ(again.ask(UserId{"account-vector"}, question()).code, std::string("pass_expired"));
   CHECK_EQ(stillExpired.requests().size(), std::size_t{2});
 }
 
 TEST(a_stream_that_breaks_before_its_end_is_asked_once_more_under_the_same_call_and_body) {
+  Reports reports;
   const Json::Value wire = fixtures();
   const std::string broken = stream(event(wire["textEvents"][0], 1) + event(wire["textEvents"][1], 2) + "event: ended\ndata: {\"st");
   StillClock clock;
   PlayedService recovered{{broken, stream(everyTextEvent())}};
 
-  const TextAnswer answer = AiServiceClient{recovered.url(), signer(), clock}.ask(UserId{"account-vector"}, question());
+  const TextAnswer answer = AiServiceClient{recovered.url(), signer(), clock, reports}.ask(UserId{"account-vector"}, question());
 
   CHECK_EQ(answer.code, std::string("completed"));
   CHECK_EQ(answer.text, std::string("Hello"));
@@ -334,7 +347,7 @@ TEST(a_stream_that_breaks_before_its_end_is_asked_once_more_under_the_same_call_
   CHECK_EQ(asked[0].body, asked[1].body);
 
   PlayedService brokenTwice{{broken, broken}};
-  CHECK_EQ(AiServiceClient(brokenTwice.url(), signer(), clock).ask(UserId{"account-vector"}, question()).code,
+  CHECK_EQ(AiServiceClient(brokenTwice.url(), signer(), clock, reports).ask(UserId{"account-vector"}, question()).code,
            std::string("unreachable"));
   CHECK_EQ(brokenTwice.requests().size(), std::size_t{2});
 }
@@ -342,13 +355,14 @@ TEST(a_stream_that_breaks_before_its_end_is_asked_once_more_under_the_same_call_
 // Asked again, the service may no longer hold the call: it restarted, or the answer outlived its linger. The call ends
 // with the service's word for that, and the next call is asked under a callId of its own.
 TEST(a_call_the_service_no_longer_holds_when_asked_again_ends_with_its_word_and_the_next_call_is_new) {
+  Reports reports;
   const Json::Value wire = fixtures();
   const std::string broken = stream(event(wire["textEvents"][0], 1) + "event: ended\ndata: {\"st");
   std::string ended;
   for (const auto& [status, code] : std::vector<std::pair<int, std::string>>{{410, "result_gone"}, {404, "call_unknown"}}) {
     StillClock clock;
     PlayedService service{{broken, refusal(status, R"({"code":")" + code + R"(","allowance":null})"), stream(everyTextEvent())}};
-    AiServiceClient client{service.url(), signer(), clock};
+    AiServiceClient client{service.url(), signer(), clock, reports};
 
     const TextAnswer gone = client.ask(UserId{"account-vector"}, question());
     const TextAnswer next = client.ask(UserId{"account-vector"}, question());
@@ -365,6 +379,7 @@ TEST(a_call_the_service_no_longer_holds_when_asked_again_ends_with_its_word_and_
 }
 
 TEST(a_service_nobody_answers_for_is_unreachable) {
+  Reports reports;
   int port = 0;
   {
     const int listener = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -378,15 +393,44 @@ TEST(a_service_nobody_answers_for_is_unreachable) {
     ::close(listener);
   }
   StillClock clock;
-  AiServiceClient client{"http://127.0.0.1:" + std::to_string(port), signer(), clock};
+  AiServiceClient client{"http://127.0.0.1:" + std::to_string(port), signer(), clock, reports};
 
   CHECK_EQ(client.ask(UserId{"account-vector"}, question()).code, std::string("unreachable"));
+  CHECK(reports.told.empty());
+}
+
+// A call the service gave no answer to is a line. Calls it has given none to for a quarter of an hour, with none answered
+// between, are reported as `ai_service.unreachable`: the service is down, or the address is wrong.
+TEST(a_service_that_stays_unanswering_is_reported_and_a_blip_is_not) {
+  Reports reports;
+  const Json::Value wire = fixtures();
+  const std::string broken = stream(event(wire["textEvents"][0], 1));
+  StillClock clock;
+  PlayedService service{{broken, broken, broken, broken, broken, broken, stream(everyTextEvent()), broken, broken}};
+  AiServiceClient client{service.url(), signer(), clock, reports};
+  const std::uint64_t first = clock.now;
+  std::string seen;
+  for (const std::uint64_t at : {first, first + AiServiceClient::kUnansweredReportMs - 1,
+                                 first + AiServiceClient::kUnansweredReportMs,
+                                 first + AiServiceClient::kUnansweredReportMs + 1,
+                                 first + 2 * AiServiceClient::kUnansweredReportMs}) {
+    clock.now = at;
+    seen += client.ask(UserId{"account-vector"}, question()).code + " reported " + std::to_string(reports.told.size()) + "\n";
+  }
+
+  CHECK_EQ(seen, std::string("unreachable reported 0\n"
+                             "unreachable reported 0\n"
+                             "unreachable reported 1\n"
+                             "completed reported 1\n"
+                             "unreachable reported 1\n"));
+  CHECK(reports.told == std::vector<std::string>{"ai_service.unreachable unanswered_minutes=15"});
 }
 
 TEST(an_accounts_pass_is_kept_for_half_its_lifetime_and_no_longer) {
+  Reports reports;
   StillClock clock;
   PlayedService service{{stream(everyTextEvent()), stream(everyTextEvent()), stream(everyTextEvent())}};
-  AiServiceClient client{service.url(), signer(), clock};
+  AiServiceClient client{service.url(), signer(), clock, reports};
   const std::uint64_t first = clock.now;
 
   client.ask(UserId{"account-vector"}, question());
@@ -406,6 +450,7 @@ TEST(an_accounts_pass_is_kept_for_half_its_lifetime_and_no_longer) {
 }
 
 TEST(every_call_logs_one_line_of_bounded_words_and_nothing_it_carried) {
+  Reports reports;
   struct Logged {
     std::mutex mutex;
     std::string text;
@@ -427,7 +472,7 @@ TEST(every_call_logs_one_line_of_bounded_words_and_nothing_it_carried) {
   };
   StillClock clock;
   PlayedService service{{stream(everyTextEvent()), refusal(429, R"({"code":"background_exhausted","allowance":null})")}};
-  AiServiceClient client{service.url(), signer(), clock};
+  AiServiceClient client{service.url(), signer(), clock, reports};
   std::string text;
   {
     Logged logged;

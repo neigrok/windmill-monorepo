@@ -124,8 +124,6 @@ private:
 // stream broke before its end or nothing connected, which the caller may ask again.
 std::optional<TextAnswer> put(const std::string& url, const std::string& pass, const std::string& body,
                               SteadyTime deadline) {
-  static const CURLcode initialized = curl_global_init(CURL_GLOBAL_DEFAULT);
-  if (initialized != CURLE_OK) throw std::runtime_error("HTTP transport unavailable");
   const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
   if (left.count() <= 0) return std::nullopt;
   const auto handle = std::unique_ptr<CURL, decltype(&curl_easy_cleanup)>(curl_easy_init(), curl_easy_cleanup);
@@ -179,8 +177,9 @@ std::optional<TextAnswer> put(const std::string& url, const std::string& pass, c
 
 }
 
-AiServiceClient::AiServiceClient(std::string url, std::shared_ptr<const AiPasses> passes, Clock& clock)
-    : url_(std::move(url)), passes_(std::move(passes)), clock_(clock) {
+AiServiceClient::AiServiceClient(std::string url, std::shared_ptr<const AiPasses> passes, Clock& clock,
+                                 FailureReporter& reporter)
+    : url_(std::move(url)), passes_(std::move(passes)), clock_(clock), unreachable_(reporter, "ai_service.unreachable") {
   if (!url_.starts_with("http://") && !url_.starts_with("https://")) throw std::invalid_argument("AI_SERVICE_URL must be http(s)");
   while (!url_.empty() && url_.back() == '/') url_.pop_back();
 }
@@ -237,6 +236,17 @@ TextAnswer AiServiceClient::ask(const UserId& account, const TextQuestion& quest
       (requestId.empty() ? "" : " request_id=" + requestId);
   if (answer.code == "completed") LOG_INFO << line;
   else LOG_WARN << line;
+
+  const std::uint64_t now = clock_.nowMs();
+  std::optional<std::uint64_t> unansweredForMs;
+  {
+    std::lock_guard guard(lock_);
+    if (answer.code != "unreachable") unansweredSinceMs_.reset();
+    else if (!unansweredSinceMs_) unansweredSinceMs_ = now;
+    if (unansweredSinceMs_ && now - *unansweredSinceMs_ >= kUnansweredReportMs) unansweredForMs = now - *unansweredSinceMs_;
+  }
+  if (unansweredForMs && unreachable_.report("unanswered_minutes=" + std::to_string(*unansweredForMs / 60'000)))
+    LOG_ERROR << "ai_service_unreachable unanswered_minutes=" << *unansweredForMs / 60'000;
   return answer;
 }
 

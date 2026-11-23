@@ -185,8 +185,6 @@ ModelRound streamAnthropicMessage(
     const std::function<void(const std::string&)>& text,
     const std::function<bool()>& continueRun,
     const std::function<void(const Json::Value&)>& diagnostic) {
-  static const int initialized = curl_global_init(CURL_GLOBAL_DEFAULT);
-  if (initialized != CURLE_OK) throw std::runtime_error("HTTP transport unavailable");
   if (baseUrl.rfind("https://", 0) != 0 && baseUrl.rfind("http://127.0.0.1:", 0) != 0 && baseUrl.rfind("http://localhost:", 0) != 0)
     throw std::invalid_argument("Anthropic endpoint requires HTTPS or a loopback fixture");
   struct Transfer {
