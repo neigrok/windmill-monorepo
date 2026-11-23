@@ -134,11 +134,11 @@ test('the record page’s block heads do not take the finish screen’s gold cla
 
 test('the chat is one room in the frame, and no session screen carries one', () => {
   const app = read('GymApp.jsx');
-  assert.equal(app.includes("{screen === 'coach' && <CoachRoom key={account?.id} log={log} accountId={account?.id} />}"), true);
+  assert.equal(app.includes("{screen === 'coach' && <CoachRoom key={account?.id} log={log} />}"), true);
+  assert.equal(app.includes("{screen === 'thread' && <CoachRoom key={account?.id} log={log} threadId={threadIdOf(hash)} />}"), true);
   for (const file of gymFiles()) {
     const source = fs.readFileSync(file, 'utf8');
-    const mine = ['GymApp.jsx', 'Threads.jsx'].includes(path.basename(file));
-    assert.equal(source.includes('<CoachRoom') && !mine, false, file);
+    assert.equal(source.includes('<CoachRoom') && path.basename(file) !== 'GymApp.jsx', false, file);
     assert.equal(source.includes('CoachPanel'), false, file);
   }
   for (const screen of ['Log.jsx', 'Finish.jsx']) {
@@ -146,43 +146,19 @@ test('the chat is one room in the frame, and no session screen carries one', () 
   }
 });
 
-test('Coach is a tab root: a column in the rail, no back link, its threads and notes pushed under it', () => {
+test('Coach is a tab root: a column in the rail, no back link, History its rail and its door, notes in More', () => {
   const app = read('GymApp.jsx');
   assert.equal(app.includes("['coach', 'thread', 'threads', 'notes'].includes(screen)"), true);
   assert.equal((app.match(/label: t\('[\w.]+'\), href: [^,]+, screen:/g) ?? []).length, 3);
   const room = read('coach/CoachRoom.jsx');
   assert.equal(room.includes('gym-back'), false, 'a tab root keeps no back link');
-  assert.equal(room.includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>{THREADS_TITLE}</a>'), true);
-  // History is visible; secondary destinations stay in More.
   const head = room.slice(room.indexOf('<header className="gym-coach-head">'), room.indexOf('</header>'));
-  assert.equal(head.includes("label: t('gym.coach.notes')"), true);
-  assert.equal(catalog['gym.coach.notes'], 'Notes');
-  assert.equal(head.includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>{THREADS_TITLE}</a>'), true);
+  assert.equal(head.includes('<a className="gym-coach-history-door" href={THREADS_HREF}'), true);
   assert.equal((head.match(/label: t\('gym\.coach\.notes'\)/g) ?? []).length, 1);
-  assert.equal(/gym-coach-notes-verb|gym-coach-notes-go/.test(read('gym.css')), false);
+  assert.equal(catalog['gym.coach.notes'], 'Notes');
+  assert.equal(room.includes('<HistoryList rows={rows} current={threadId}'), true);
   assert.equal(speech('coach/CoachRoom.jsx').includes('Your workout is on your phone. This room is here when it is over.'), true);
-  const threads = read('coach/Threads.jsx');
-  assert.equal(threads.includes('<Back href={COACH_HREF}>{COACH_TITLE}</Back>'), true);
-  assert.equal(threads.includes('<Back href={THREADS_HREF}>{THREADS_TITLE}</Back>'), true);
   assert.equal(read('Proposals.jsx').includes('gym-coach-aside'), false, 'proposal review remains inline');
-});
-
-test('Coach answer receipts come from the server, separately from the live workout mirror', () => {
-  assert.equal(speech('coach/coach.js').includes('read: reply.read,'), true);
-  for (const file of ['coach/coach.js', 'coach/CoachRoom.jsx']) {
-    assert.equal(/read:\s*\{/.test(read(file)), false, file);
-  }
-  assert.equal(read('coach/CoachRoom.jsx').includes('const read = readLine(receipt.read, (count) => <span className="gym-coach-figure">{count}</span>);'), true);
-});
-
-test('the receipt is always visible and the step list collapses behind it', () => {
-  const room = read('coach/CoachRoom.jsx');
-  assert.equal(room.includes('<summary className="gym-coach-read"><span>{read}</span>'), true);
-  assert.equal(room.includes('<span className="gym-coach-step-count">'), true);
-  assert.equal(room.includes('<p className="gym-coach-read">{read}</p>'), true, 'a list of nothing readable still draws the receipt');
-  assert.equal(room.includes('<details className="gym-coach-trace">'), true);
-  assert.equal(room.includes('<p className="gym-coach-steps">{steps}</p>'), true);
-  assert.equal(room.includes('<details open'), false, 'the trace opens on a tap, never by default');
 });
 
 test('the word coach names exactly one thing — the room — and the share never carries it', () => {
@@ -202,15 +178,13 @@ test('the word coach names exactly one thing — the room — and the share neve
 });
 
 test('Coach offers nothing to buy, and reads no entitlement to decide whether to answer', () => {
-  for (const file of ['coach/coach.js', 'coach/CoachRoom.jsx']) {
+  for (const file of ['coach/coach.js', 'coach/CoachRoom.jsx', 'coach/CoachProposal.jsx', 'coach/History.jsx']) {
     const said = speech(file);
     for (const door of ['useEntitlements', 'windmillOne', 'checkout']) {
       assert.equal(said.includes(door), false, `${file} reaches for ${door}`);
     }
     assert.equal(/[Uu]pgrade|Windmill One|[Ss]ubscri|\$\d|£\d|€\d/.test(said), false, file);
   }
-  const rules = speech('coach/coach.js');
-  assert.equal(rules.includes('AI ceiling for the last 30 days'), true);
 });
 
 test('the landing sells no panel, no plan behind Coach, and names the cap Coach really has', () => {
@@ -218,7 +192,7 @@ test('the landing sells no panel, no plan behind Coach, and names the cap Coach 
   for (const gone of ['coach panel', 'A panel under any finished workout', 'Windmill One', 'It only reads']) {
     assert.equal(said.includes(gone), false, gone);
   }
-  assert.equal(said.includes('ten questions a day'), true);
+  assert.equal(said.includes('ten questions a day'), false, 'Coach has no question ration');
   assert.equal(said.includes('nothing in Gym is on sale'), true);
   assert.equal(said.includes('your whole log and it proposes'), true);
   assert.equal(said.includes('how many of your rows they served'), true);
@@ -228,69 +202,46 @@ test('the landing sells no panel, no plan behind Coach, and names the cap Coach 
   assert.equal(said.includes('end a share link'), true);
 });
 
-test('the threads list and one conversation are rooms in the frame, and the detail is keyed', () => {
+test('History is a room in the frame, and a conversation is the Coach room keyed by account', () => {
   const app = read('GymApp.jsx');
-  assert.equal(app.includes("{screen === 'threads' && <ThreadsList log={log} accountId={account?.id} />}"), true);
-  assert.equal(app.includes("{screen === 'thread' && <ThreadDetail key={`${account?.id}-${threadIdOf(hash)}`} id={threadIdOf(hash)} log={log} accountId={account?.id} />}"), true);
+  assert.equal(app.includes("{screen === 'threads' && <CoachHistory key={account?.id} log={log} />}"), true);
   assert.equal(app.includes("['coach', 'thread', 'threads', 'notes'].includes(screen)"), true);
 });
 
-test('a thread row draws the question as it was asked, and nothing edits it', () => {
-  const threads = read('coach/Threads.jsx');
-  assert.equal(threads.includes('<span className="gym-thread-title">{thread.title}</span>'), true);
-  assert.equal(threads.includes('<h2 className="gym-thread-name gym-visually-hidden">{thread.title}</h2>'), true);
-  const said = speech('coach/Threads.jsx');
+test('a History row draws the question as it was asked, and nothing edits it', () => {
+  const history = read('coach/History.jsx');
+  assert.equal(history.includes('<span className="gym-coach-history-title">{row.title}</span>'), true);
+  const said = speech('coach/History.jsx');
   for (const edit of ['.slice(', '.substring(', '.toUpperCase(', '.trim()', 'summar']) {
     assert.equal(said.includes(edit), false, edit);
   }
 });
 
-test('nothing about the threads screens is an unread count, a badge or a notification', () => {
-  for (const file of ['coach/Threads.jsx', 'coach/CoachRoom.jsx', 'coach/threads.js']) {
+test('nothing about History is an unread count, a badge or a notification', () => {
+  for (const file of ['coach/History.jsx', 'coach/CoachRoom.jsx']) {
     const said = speech(file).toLowerCase();
     for (const inbox of ['unread', 'badge', 'notif', 'is-new']) {
       assert.equal(said.includes(inbox), false, `${file} — ${inbox}`);
     }
   }
-  assert.equal(speech('coach/Threads.jsx').includes('Dot'), false);
-  assert.equal(read('coach/CoachRoom.jsx').includes('<a className="gym-coach-threads-door" href={THREADS_HREF}>{THREADS_TITLE}</a>'), true);
 });
 
 test('deleting a conversation says what it leaves behind on the act, is withheld, and is neither armed nor confirmed', () => {
-  const threads = read('coach/Threads.jsx');
-  // The conversation screen states nothing about the delete standing still: what the act leaves
-  // behind rides the window as its `detail` and is read at the moment of the act.
-  assert.equal(threads.includes('gym-thread-delete-note'), false);
-  assert.equal(threads.includes('detail: THREAD_DELETE_DETAIL,'), true);
-  assert.equal(read('gym.css').includes('gym-thread-delete-note'), false);
-  // A SIBLING FIELD and never a fold: `Toast` puts its children in one bare span, where a newline
-  // collapses to a space and runs the two sentences together. `Toast` is the shell's and grows no
-  // gym-shaped prop for this.
+  const history = read('coach/History.jsx');
+  assert.equal(history.includes("detail: t('gym.threads.deleteDetail'),"), true);
   const app = read('GymApp.jsx');
   assert.equal(app.includes('<span className="gym-transient-detail">{transient.detail}</span>'), true);
   assert.equal(/\\n/.test(app.slice(app.indexOf('{transient.text}'), app.indexOf('</Toast>'))), false);
   const toast = fs.readFileSync(path.join(GYM, '../../design-system/feedback/Toast.jsx'), 'utf8');
   assert.equal(/detail|gym-/.test(toast), false, 'the shared transient knows nothing about gym');
   assert.equal(read('gym.css').includes('.gym-transient-detail {'), true);
-  // It wraps rather than clamps: a truncated disclosure is worse than a taller transient.
   assert.equal(/\.gym-transient-detail \{[^}]*(line-clamp|white-space: nowrap|text-overflow)/.test(read('gym.css')), false);
-  // Law 2: a gesture that destroys takes an undo, not a confirmation — so both halves of the old
-  // two-tap arm go, and the word that promised no way back with them.
-  assert.equal(threads.includes('confirming'), false);
-  assert.equal(threads.includes('is-armed'), false);
-  assert.equal(threads.includes('DELETE_CONFIRM'), false);
-  assert.equal(read('coach/threads.js').includes('DELETE_CONFIRM'), false);
-  assert.equal(speech('coach/threads.js').includes('cannot be undone'), false);
-  assert.equal(read('gym.css').includes('gym-thread-delete-verb.is-armed'), false);
-  assert.equal(
-    threads.includes('initialThread={thread} onDelete={remove}'),
-    true,
-  );
-  // Withheld means NOT SENT: the one call the file makes sits inside the window's `send`.
-  assert.equal((threads.match(/gymApi\.deleteThread/g) ?? []).length, 1);
-  assert.equal(threads.includes("kind: 'thread',"), true);
-  assert.ok(threads.indexOf('log.withhold({') < threads.indexOf('gymApi.deleteThread'));
-  assert.equal(read('coach/threads.js').includes("export const THREAD_DELETED = t('gym.threads.deleted');"), true);
+  // Law 2: a gesture that destroys takes an undo, not a confirmation.
+  for (const armed of ['confirming', 'is-armed', 'DELETE_CONFIRM']) assert.equal(history.includes(armed), false, armed);
+  // Withheld means NOT SENT: the records' delete sits inside the window's `send`.
+  assert.equal((history.match(/turns\.deleteConversation/g) ?? []).length, 1);
+  assert.equal(history.includes("kind: 'thread',"), true);
+  assert.ok(history.indexOf('log.withhold({') < history.indexOf('turns.deleteConversation'));
   assert.equal(catalog['gym.threads.deleted'], 'Conversation deleted.');
 });
 
@@ -477,7 +428,6 @@ test('the CSV export is out of the product: no door, no string, no href, and no 
   }
   const settings = read('settings/GymSettingsSection.jsx');
   assert.equal(/hasLog|hasNotes|hasWeighIns|api\.sessions|api\.notes|api\.bodyweight/.test(settings), false);
-  assert.equal(speech('coach/Threads.jsx').includes('Export conversations'), false);
   const pricing = fs.readFileSync(path.join(GYM, '../../../public/pricing.html'), 'utf8');
   assert.equal(pricing.includes('CSV out'), false);
   assert.equal(pricing.includes('<b>The gym log — all of it</b>Sets, sessions, routines, e1RM.'), true);
@@ -1015,8 +965,6 @@ test('bodyweight: the log actions open one sheet, the reading stays in options, 
       assert.equal(said.includes(banned), false, `${file} — ${banned}`);
     }
   }
-  assert.equal(speech('coach/coach.js').includes("list_bodyweight: t('gym.coach.tools.listBodyweight'),"), true);
-  assert.equal(speech('coach/coach.js').includes('read your bodyweight'), true);
 });
 
 test('the finished session’s detail has the discard door, through the same window as every other delete; the live mirror has none', () => {

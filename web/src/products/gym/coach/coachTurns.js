@@ -60,7 +60,7 @@ export class CoachTurns {
     this.host.subscribe(() => this.publish({ live: this.host.live }));
   }
 
-  subscribe = (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
+  listen = (listener) => { this.listeners.add(listener); return () => this.listeners.delete(listener); };
   getSnapshot = () => this.snapshot;
 
   publish(patch) {
