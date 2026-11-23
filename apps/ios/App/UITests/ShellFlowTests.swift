@@ -94,8 +94,8 @@ import XCTest
     XCTAssertEqual(app.buttons["room-menu"].label, "Roadmap")
   }
 
-  // Roadmap · iOS 01.1 and 11.22a: the account's roadmap on its Board, Done folded, the switch live, New step at the
-  // foot, and what waits for its own screen disabled.
+  // Roadmap · iOS 01.1 and 11.22a: the account's roadmap on its Board, Done folded, the switch, Find and the Board's
+  // tool live, and New step at the foot.
   func assertLearnToSailBoard(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
     let locked = app.buttons["roadmap-group-locked"]
     XCTAssertTrue(locked.waitForExistence(timeout: 30), file: file, line: line)
@@ -117,8 +117,7 @@ import XCTest
     ], file: file, line: line)
     XCTAssertTrue(app.segmentedControls.firstMatch.isEnabled, file: file, line: line)
     for control in [app.buttons["Find"], app.buttons["Sort and filter"]] {
-      XCTAssertTrue(control.exists, file: file, line: line)
-      XCTAssertFalse(control.isEnabled, file: file, line: line)
+      XCTAssertTrue(control.exists && control.isEnabled, file: file, line: line)
     }
     XCTAssertTrue(app.buttons["roadmap-new-step"].isEnabled, file: file, line: line)
     XCTAssertFalse(app.tabBars.firstMatch.exists, file: file, line: line)
@@ -212,10 +211,10 @@ import XCTest
     XCTAssertTrue(app.staticTexts["3 of 8 done"].waitForExistence(timeout: 10))
     XCTAssertTrue(tie.waitForExistence(timeout: 5))
 
-    // The menu lists what this build can do to the step: a Locked step has Delete Step alone.
+    // The menu lists what this build can do to the step: a Locked step has no Complete.
     app.roadmapStep("Leave the dock").press(forDuration: 1)
     XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-    XCTAssertFalse(app.buttons["Complete"].exists)
+    XCTAssertTrue(["Edit", "Open in Graph", "Select"].allSatisfy { app.buttons[$0].exists } && !app.buttons["Complete"].exists)
     app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
     XCTAssertTrue(confirm.waitForNonExistence(timeout: 5))
     tie.press(forDuration: 1)
@@ -315,9 +314,9 @@ import XCTest
     XCTAssertTrue(reset.exists && !complete.exists)
   }
 
-  // Roadmap · iOS 03.7 to 03.9: the … menu holds Delete Step alone, which asks on the … button with what the delete
-  // costs; answered, the room stands on the Board without the step, and the band's Undo brings it back. The roadmap's
-  // one starting step has no menu.
+  // Roadmap · iOS 03.7 to 03.9: the … menu holds Open in Graph, View Branch and Delete Step, which asks on the … button
+  // with what the delete costs; answered, the room stands on the Board without the step, and the band's Undo brings it
+  // back. The roadmap's one starting step's menu has no Delete Step.
   func testDeletingAStepFromItsPageAsksThereAndReturnsToTheBoard() {
     let app = launch("roadmap-learn-to-sail")
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
@@ -327,7 +326,8 @@ import XCTest
     XCTAssertEqual(more.label, "More")
     more.tap()
     XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-    for unbuilt in ["Open in Graph", "View Branch", "Attach a Roadmap", "Copy Link"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
+    XCTAssertTrue(app.buttons["Open in Graph"].exists && app.buttons["View Branch"].exists)
+    for unbuilt in ["Attach a Roadmap", "Copy Link"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
     confirm.tap()
     XCTAssertTrue(app.staticTexts["Delete Read the wind?"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Removes this step · 1 branch resplices"].exists)
@@ -353,7 +353,13 @@ import XCTest
       app.roadmapStep(step).tap()
       XCTAssertTrue(app.roadmapStepPage(step))
     }
-    XCTAssertFalse(more.exists, "The roadmap's one starting step offers no Delete, so its page has no menu")
+    more.tap()
+    XCTAssertTrue(app.buttons["View Branch"].waitForExistence(timeout: 5))
+    XCTAssertFalse(confirm.exists, "The roadmap's one starting step offers no Delete")
+    // The menu closes on a tap beside it on the step's name, which does nothing: a tap there reaches the page too, so one
+    // lower would open the Note row, and the bar's middle is under the menu.
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.06, dy: 0.15)).tap()
+    XCTAssertTrue(app.buttons["View Branch"].waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.buttons["roadmap-reset"].exists)
   }
 
@@ -478,7 +484,7 @@ import XCTest
     XCTAssertTrue(app.staticTexts["Lands in Up next"].exists)
     // The rows whose screens are not built are left out: the form's Roadmap row would read as Kind's does.
     XCTAssertTrue(app.staticTexts["Links"].exists && app.buttons["roadmap-form-add-link"].exists)
-    for unbuilt in ["Roadmap, None", "Edit Kinds", "Delete Step"] { XCTAssertFalse(app.staticTexts[unbuilt].exists || app.buttons[unbuilt].exists) }
+    for unbuilt in ["Roadmap, None", "Delete Step"] { XCTAssertFalse(app.staticTexts[unbuilt].exists || app.buttons[unbuilt].exists) }
     name.tap()
     name.typeText("Reef")
     XCTAssertTrue(commit.wait(for: \.isEnabled, toEqual: true, timeout: 5))
@@ -640,7 +646,7 @@ import XCTest
     // The bar's field starts from the name, selected: what is typed takes its place.
     let field = app.navigationBars.textFields.firstMatch
     openTitleMenu("Learn to cook", in: app)
-    for unbuilt in ["Guide", "Kinds", "Activity", "Share…", "Export"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
+    for unbuilt in ["Guide", "Activity", "Share…", "Export"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
     app.buttons["Rename"].tap()
     XCTAssertTrue(field.waitForValue("Learn to cook"))
     field.typeText("Cook at home\n")
@@ -682,13 +688,13 @@ import XCTest
     assertLearnToSailBoard(app)
     openTitleMenu("Learn to sail", in: app)
     // The menu's items, in order, outside the bar, whose title the system may report as a button of the same name.
-    let named = NSPredicate(format: "label IN %@", ["Learn to sail", "Spanish B1", "Become a day skipper", "All Roadmaps…", "New Roadmap", "Rename", "Delete Roadmap"])
+    let listed = ["Learn to sail", "Spanish B1", "Become a day skipper", "All Roadmaps…", "New Roadmap", "Kinds", "Rename", "Delete Roadmap"]
+    let named = NSPredicate(format: "label IN %@", listed)
     let items = app.buttons.matching(named)
     let inBar = app.navigationBars.buttons.matching(named).count
-    XCTAssertEqual((inBar..<items.count).map { items.element(boundBy: $0).label },
-                   ["Learn to sail", "Spanish B1", "Become a day skipper", "All Roadmaps…", "New Roadmap", "Rename", "Delete Roadmap"])
+    XCTAssertEqual((inBar..<items.count).map { items.element(boundBy: $0).label }, listed)
     XCTAssertTrue(items.element(boundBy: inBar).isSelected && !items.element(boundBy: inBar + 1).isSelected)
-    for unbuilt in ["Guide", "Kinds", "Activity", "Share…", "Export"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
+    for unbuilt in ["Guide", "Activity", "Share…", "Export"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
     app.buttons["Spanish B1"].tap()
     XCTAssertTrue(app.navigationBars["Spanish B1"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.staticTexts["2 of 7 done"].waitForExistence(timeout: 5))

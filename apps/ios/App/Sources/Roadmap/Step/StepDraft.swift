@@ -15,10 +15,10 @@ final class StepDraft: Identifiable {
   // it `ID` alone names the draft's own identity and the kit's is written out.
   typealias StepID = DomainKit.ID<RoadmapStep>
 
-  // The gesture that raised the form, as its events name it: the foot's +, New Step on a roadmap with no step, or Edit
-  // on a step's page.
+  // The gesture that raised the form, as its events name it: the foot's +, New Step on a roadmap with no step or on a
+  // Find that matched nothing, Edit on a step's page, or Edit in a Board row's long-press menu.
   enum Door: String {
-    case foot, empty, page
+    case foot, empty, find, page, menu
   }
 
   // The two sides a step is placed from, each a list of steps: the ones it requires, and the ones it opens.
@@ -48,15 +48,6 @@ final class StepDraft: Identifiable {
     var opens: [StepID] = []
     // In the step's order: a link added joins at the end.
     var links: [SharedLink] = []
-  }
-
-  // One of the six kinds a step may wear: its hue, the name the roadmap gives it, or the hue's own, and its description.
-  struct KindChoice: Identifiable {
-    let hue: String
-    let name: String
-    let description: String
-
-    var id: String { hue }
   }
 
   // A list's steps as it groups them: the ones chosen as it opened, every other step it may take, and the ones that
@@ -94,11 +85,11 @@ final class StepDraft: Identifiable {
   }
 
   // A step's name is edited from its label without the blanks around it, so an untouched name writes nothing.
-  init(editing page: RoadmapModel.OpenStep, of tree: DomainKit.ID<RoadmapEntry>, in room: RoadmapModel) {
+  init(editing page: RoadmapModel.OpenStep, of tree: DomainKit.ID<RoadmapEntry>, by door: Door, in room: RoadmapModel) {
     self.room = room
     self.tree = tree
     step = StepID(RecordID(page.row.id))
-    door = .page
+    self.door = door
     isNew = false
     base = Fields(name: RoadmapModel.name(typed: page.row.step.label), description: page.row.step.description, kind: page.row.step.color,
                   requires: page.requires.map { StepID(RecordID($0.id)) }, opens: page.opens.map { StepID(RecordID($0.id)) },
@@ -168,19 +159,8 @@ final class StepDraft: Identifiable {
   // The write's name in the room's events and reports: the web's word for the gesture.
   var write: String { isNew ? "CreateNode" : "EditNode" }
 
-  // The six kinds, as the web lists them (`kindChoices`): the kinds the roadmap names, each the one that owns its hue,
-  // in the roadmap's order, then the hues no kind names, by the hue's own name in the rule book's order.
-  var kinds: [KindChoice] {
-    guard let open else { return [] }
-    let legend = LegendRead(open.tree)
-    let named = legend.kinds.filter { (kind: Kind) -> Bool in
-      !kind.label.isEmpty && legend.hues.contains { $0.owner.utf8.elementsEqual(kind.id.utf8) }
-    }
-    let unnamed = RoadmapRules.hues.filter { (hue: String) -> Bool in !named.contains { $0.hue.utf8.elementsEqual(hue.utf8) } }
-    let kinds = named.map { (kind: Kind) -> KindChoice in KindChoice(hue: kind.hue, name: kind.label, description: kind.description) }
-    let hues = unnamed.compactMap { (hue: String) -> KindChoice? in RoadmapModel.Row.hue(hue).map { KindChoice(hue: hue, name: $0, description: "") } }
-    return kinds + hues
-  }
+  // The six kinds, as the open roadmap's legend lists them for every step.
+  var kinds: [RoadmapLegend.Choice] { open?.legend.choices ?? [] }
 
   // The steps the draft requires that are not done, in the order chosen.
   var unmet: [RoadmapModel.Row] {
@@ -315,7 +295,8 @@ final class StepDraft: Identifiable {
   }
 
   // Create or Save: the draft's one write. Written, the form closes and the band holds its Undo; a new step's group
-  // opens on the Board, which shows the step washed. A save the roadmap already holds closes the form too. Refused, the
+  // opens on the Board, which shows the step washed, clearing what of its query hides it once the phone's copy holds
+  // the step. A save the roadmap already holds closes the form too. Refused, the
   // form stays: a loop the domain found is named in the footer by the first step chosen that closes one, and any other
   // refusal is the door's to tell. A commit that failed leaves the form as it was.
   func save() {
@@ -326,6 +307,7 @@ final class StepDraft: Identifiable {
       room.draft = nil
       if isNew {
         room.folded.remove(lands)
+        room.reading.reveal(step.description)
         room.telemetry.event("roadmap_board_create", properties: ["step": "saved", "column": lands.rawValue])
         room.show(RoadmapModel.Band(.created(step: label, in: lands), of: receipt, act: .step("create"), arrived: [step.description]))
       } else {

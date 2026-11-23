@@ -163,11 +163,17 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
   }
 
   @Test func theGraphTellsItsSwitchItsSelectionAndItsReportsAndNothingOfAStep() {
-    let events = ["roadmap_view_switch", "roadmap_graph_select", "roadmap_board_step_open", "roadmap_board_create"]
+    let events = ["roadmap_view_switch", "roadmap_graph_select", "roadmap_board_step_open", "roadmap_board_create", "roadmap_whats_next",
+                  "roadmap_graph_fit"]
     #expect(events.filter(TelemetryPrivacy.events.contains) == events)
     for view in ["board", "graph"] {
       #expect(TelemetryPrivacy.properties(["view": view, "tree": "private-id", "title": "private-marker"]) == ["view": .label(view)])
     }
+    // A Graph that comes up carries the roadmap's size as a bucket, up to the steps a roadmap may hold, never its count.
+    for steps in ["1-100", "101-1000", "1001-5000", "5001-10000"] {
+      #expect(TelemetryPrivacy.properties(["view": "graph", "steps": steps]) == ["view": .label("graph"), "steps": .label(steps)])
+    }
+    #expect(TelemetryPrivacy.properties(["view": "graph", "steps": "10000"]) == ["view": .label("graph")])
     for column in ["upNext", "locked", "done"] {
       #expect(TelemetryPrivacy.properties(["column": column, "step": "private-id", "label": "Read the wind"]) == ["column": .label(column)])
     }
@@ -175,6 +181,16 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
             ["surface": .label("document"), "door": .label("graph"), "column": .label("upNext")])
     #expect(TelemetryPrivacy.properties(["step": "open", "door": "foot", "view": "graph", "node": "private-id"]) ==
             ["step": .label("open"), "door": .label("foot"), "view": .label("graph")])
+    // *Next* tells its menu's opening and a pick with the steps Up next as a bucket, never their count or the step
+    // picked; Fit tells that it was shown and left.
+    for (step, count) in [("open", "1"), ("pick", "2-5"), ("pick", "6-20"), ("open", "21+")] {
+      #expect(TelemetryPrivacy.properties(["step": step, "count": count, "node": "private-id", "label": "Read the wind"]) ==
+              ["step": .label(step), "count": .label(count)])
+    }
+    #expect(TelemetryPrivacy.properties(["step": "pick", "count": "170"]) == ["step": .label("pick")])
+    for step in ["open", "close"] {
+      #expect(TelemetryPrivacy.properties(["step": step, "tree": "private-id", "zoom": "0.85"]) == ["step": .label(step)])
+    }
     // A report says which layout or budget, and the roadmap's size as a bucket: never its count of steps.
     for kind in ["fallback", "unseated"] {
       #expect(TelemetryPrivacy.properties(["operation": "roadmap_layout", "failure_kind": kind, "tree": "private-id", "steps": "4999"]) ==
@@ -195,7 +211,7 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
               ["step": .label(step), "door": .label(door)])
     }
     for step in ["open", "search", "rename", "confirm", "cancel"] {
-      #expect(TelemetryPrivacy.properties(["step": step, "name": "Learn to sail", "query": "private-marker", "count": "2-5"]) == ["step": .label(step)])
+      #expect(TelemetryPrivacy.properties(["step": step, "name": "Learn to sail", "query": "private-marker", "count": "9"]) == ["step": .label(step)])
     }
     #expect(TelemetryPrivacy.properties(["step": "cancel", "door": "blank", "name": "Learn to sail"]) == ["step": .label("cancel"), "door": .label("blank")])
     for openers in ["none", "some"] {
@@ -257,6 +273,30 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
       #expect(TelemetryPrivacy.properties(["write": write, "refusal": "gone", "label": "Check the harbour flag"]) == ["write": .label(write), "refusal": .label("gone")])
       #expect(TelemetryPrivacy.properties(["operation": "roadmap_write", "failure_kind": "storage", "write": write, "error": "private-marker"]) ==
               ["operation": .label("roadmap_write"), "failure_kind": .label("storage"), "write": .label(write)])
+    }
+  }
+
+  // The Board's Find, sort and filter, branch and selection, and the Kinds sheet: each step by its kind, the kinds shown
+  // and the steps chosen as buckets, and never Find's words, a kind's name or description, a step's name or an id.
+  @Test func theBoardsQueryItsSelectionAndKindsTellWhatWasDoneAndNothingWritten() {
+    let events = ["roadmap_board_menu", "roadmap_board_sort", "roadmap_board_filter", "roadmap_board_clear", "roadmap_board_branch",
+                  "roadmap_board_search", "roadmap_board_select", "roadmap_board_bulk", "roadmap_kinds", "roadmap_board_edit", "roadmap_board_undo"]
+    #expect(events.filter(TelemetryPrivacy.events.contains) == events)
+    #expect(TelemetryPrivacy.properties(["menu": "sortFilter", "sort": "newest", "query": "reef", "search": "sail"]) ==
+            ["menu": .label("sortFilter"), "sort": .label("newest")])
+    #expect(TelemetryPrivacy.properties(["count": "2-5", "kinds": "olive,sky", "what": "kinds", "from": "empty"]) ==
+            ["count": .label("2-5"), "what": .label("kinds"), "from": .label("empty")])
+    #expect(TelemetryPrivacy.properties(["count": "4", "what": "Learn", "from": "Tie a bowline"]).isEmpty)
+    #expect(TelemetryPrivacy.properties(["step": "start", "door": "tool", "steps": "private-id"]) == ["step": .label("start"), "door": .label("tool")])
+    #expect(TelemetryPrivacy.properties(["step": "end", "via": "act"]) == ["step": .label("end"), "via": .label("act")])
+    #expect(TelemetryPrivacy.properties(["step": "delete_refused", "reason": "last_root", "node": "private-id"]) ==
+            ["step": .label("delete_refused"), "reason": .label("last_root")])
+    #expect(TelemetryPrivacy.properties(["surface": "board", "action": "openInGraph"]) == ["surface": .label("board"), "action": .label("openInGraph")])
+    #expect(TelemetryPrivacy.properties(["step": "saved", "legend": "rename", "label": "Practice", "description": "Hours on the water"]) ==
+            ["step": .label("saved"), "legend": .label("rename")])
+    #expect(TelemetryPrivacy.properties(["act": "removeKind", "outcome": "ok"]) == ["act": .label("removeKind"), "outcome": .label("ok")])
+    for write in ["BulkRecolor", "BulkDelete", "AddKind", "RenameKind", "DescribeKind", "RecolorKind", "RemoveKind"] {
+      #expect(TelemetryPrivacy.properties(["write": write, "refusal": "full"]) == ["write": .label(write), "refusal": .label("full")])
     }
   }
 

@@ -6,11 +6,19 @@ import RoadmapDomain
 // what Reset would do; then the description and the step's shared links, what the step requires and opens, each row
 // opening its step, and the person's workspace of it. Complete stands at the foot of an Up next step, under the room's
 // band, and the foot is away while Add Subtask has the keyboard; Edit raises the step's form over the page, and the …
-// menu holds Delete Step.
+// menu holds Open in Graph, View Branch and Delete Step (03.7).
 struct RoadmapStepPage: View {
-  // What the page last read of its step, which it goes on showing while it leaves the stack once the step is gone.
+  typealias Read = (step: RoadmapModel.OpenStep, open: RoadmapModel.OpenRoadmap)
+
+  // What the page last read of its step, which it goes on showing while it leaves the stack once the step is gone. A
+  // generic class here crashes the Release optimizer of Swift 6.2, the compiler CI builds with.
   final class LastRead {
-    var page: (step: RoadmapModel.OpenStep, open: RoadmapModel.OpenRoadmap)?
+    private(set) var page: Read?
+
+    func read(_ now: Read?) -> Read? {
+      if let now { page = now }
+      return page
+    }
   }
 
   let roadmap: RoadmapModel
@@ -23,8 +31,8 @@ struct RoadmapStepPage: View {
   @ScaledMetric(relativeTo: .body) private var symbolColumn = 24.0
 
   var body: some View {
-    if case .open(let open) = roadmap.phase, let page = open.page(of: step) { last.page = (page, open) }
-    return last.page.map { content($0.step, in: $0.open) }
+    let read = roadmap.shown.flatMap { (open: RoadmapModel.OpenRoadmap) -> Read? in open.page(of: step).map { (step: $0, open: open) } }
+    return last.read(read).map { content($0.step, in: $0.open) }
   }
 
   func content(_ page: RoadmapModel.OpenStep, in open: RoadmapModel.OpenRoadmap) -> some View {
@@ -71,14 +79,20 @@ struct RoadmapStepPage: View {
         ToolbarItem(placement: .topBarTrailing) {
           Button("Edit") { roadmap.edit(page) }.fontWeight(.semibold).accessibilityIdentifier("roadmap-step-edit")
         }
-        // The menu lists what this build can do to the step: the kept step, which no Delete is offered on, has none.
-        if #available(iOS 26.0, *), row.deletes { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
-        if row.deletes {
-          ToolbarItem(placement: .topBarTrailing) {
-            Menu("More", systemImage: "ellipsis") {
+        // The menu lists what this build can do to the step: a Locked step is offered no View Branch, as the web offers
+        // none, and the kept step no Delete. Attach a Roadmap and Copy Link wait for their screens.
+        if #available(iOS 26.0, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
+        ToolbarItem(placement: .topBarTrailing) {
+          Menu("More", systemImage: "ellipsis") {
+            Button("Open in Graph", systemImage: "point.3.connected.trianglepath.dotted") { roadmap.openInGraph(row.id, from: .page) }
+            if row.card.column != .locked {
+              Button("View Branch", systemImage: "arrow.triangle.branch") { roadmap.viewBranch(of: row.id) }
+            }
+            if row.deletes {
+              Divider()
               Button("Delete Step", systemImage: "trash", role: .destructive) { roadmap.askDelete(row, by: .page) }
-            }.modifier(DeleteQuestion(roadmap: roadmap, step: row.id, by: [.page])).accessibilityIdentifier("roadmap-step-more")
-          }
+            }
+          }.modifier(DeleteQuestion(roadmap: roadmap, step: row.id, by: [.page])).accessibilityIdentifier("roadmap-step-more")
         }
       }.roomBar(.roadmap)
       // Cancel, or the form sent away, adds nothing; a link added closes it.

@@ -207,6 +207,9 @@
         }
       }
     },
+    "%@ removed" : {
+      "comment" : "The band after a kind no step wears is removed: the kind's name"
+    },
     "%@ reset" : {
       "comment" : "The band after a step is reset: the step's name"
     },
@@ -335,6 +338,9 @@
     },
     "%lld MO" : {
       "comment" : "How long before a passage was written, in months: 4 MO"
+    },
+    "%lld Selected" : {
+      "comment" : "The bar while several steps are selected: how many"
     },
     "%lld WK" : {
       "comment" : "How long before a passage was written, in weeks: 2 WK"
@@ -937,6 +943,29 @@
         }
       }
     },
+    "%lld steps deleted" : {
+      "comment" : "The band while a delete of several steps is held: how many",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld step deleted"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld steps deleted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld steps locked again" : {
       "comment" : "The band after a step is reset: how many steps it returned to Locked",
       "localizations" : {
@@ -953,6 +982,29 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld steps locked again"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld steps recolored" : {
+      "comment" : "The band after several steps are moved to one kind: how many",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld step recolored"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld steps recolored"
                 }
               }
             }
@@ -1004,6 +1056,9 @@
           }
         }
       }
+    },
+    "%lld up next" : {
+      "comment" : "The title of Next's menu on the Graph: how many steps are Up next"
     },
     "%lld weeks" : {
       "localizations" : {
@@ -1095,6 +1150,9 @@
     "A connected tool" : {
 
     },
+    "A kind that steps wear can’t be removed." : {
+
+    },
     "A movement is missing — fix its sets, then retry." : {
 
     },
@@ -1108,6 +1166,9 @@
 
     },
     "A page a night." : {
+
+    },
+    "A roadmap has up to six kinds." : {
 
     },
     "A roadmap keeps one starting step" : {
@@ -1156,6 +1217,9 @@
       "comment" : "A term in Coach's greeting: the person's Windmill account"
     },
     "Add" : {
+
+    },
+    "Add Kind" : {
 
     },
     "Add Link" : {
@@ -1473,10 +1537,16 @@
     "Bodyweight chart" : {
 
     },
+    "Branch · %@" : {
+      "comment" : "The Board's first row while it stays in a step's branch: the step's name"
+    },
     "Brick" : {
       "comment" : "A step's colour, said where no kind names it"
     },
     "Bringing it back" : {
+
+    },
+    "Brings the bars back." : {
 
     },
     "Build" : {
@@ -1555,6 +1625,12 @@
 
     },
     "Choose your first movement" : {
+
+    },
+    "Clear" : {
+
+    },
+    "Clear Filters" : {
 
     },
     "Clear note" : {
@@ -1639,6 +1715,9 @@
 
     },
     "Collapsed" : {
+
+    },
+    "Color" : {
 
     },
     "Comparison" : {
@@ -1801,6 +1880,52 @@
     "Delete %@?" : {
       "comment" : "The question a delete asks, with the name of the step or of the roadmap"
     },
+    "Delete %lld Steps" : {
+      "comment" : "The button that deletes the steps chosen, and the answer of its question: how many",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld Step"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld Steps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Delete %lld steps?" : {
+      "comment" : "The question a delete of several steps asks: how many",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld step?"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld steps?"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Delete Roadmap" : {
 
     },
@@ -1835,6 +1960,9 @@
 
     },
     "Deleting…" : {
+
+    },
+    "Deselect All" : {
 
     },
     "Discard" : {
@@ -1923,6 +2051,9 @@
 
     },
     "Edit" : {
+
+    },
+    "Edit Kinds" : {
 
     },
     "Edit Step" : {
@@ -2018,6 +2149,9 @@
     "Fewer reps" : {
 
     },
+    "Filter by Kind" : {
+      "comment" : "The Board's Sort and filter menu: the kinds in use, each shown or not"
+    },
     "Find" : {
 
     },
@@ -2052,6 +2186,9 @@
 
     },
     "Finishing…" : {
+
+    },
+    "Fit" : {
 
     },
     "Fix set" : {
@@ -2159,6 +2296,12 @@
     "In this app" : {
 
     },
+    "In use" : {
+      "comment" : "A hue in a kind's Color list that steps wear with no kind named for it"
+    },
+    "In use by %@" : {
+      "comment" : "A hue in a kind's Color list that another kind wears: that kind's name"
+    },
     "Interrupted" : {
 
     },
@@ -2232,6 +2375,9 @@
 
     },
     "Kind" : {
+
+    },
+    "Kinds" : {
 
     },
     "Knots & lines" : {
@@ -2547,6 +2693,9 @@
     "New Step" : {
 
     },
+    "New Step “%@”" : {
+      "comment" : "Find matched no step: a new step named as the words looked for"
+    },
     "New best" : {
 
     },
@@ -2563,6 +2712,9 @@
 
     },
     "New routine" : {
+
+    },
+    "Newest First" : {
 
     },
     "Next" : {
@@ -2628,6 +2780,12 @@
     },
     "No sets in this workout." : {
 
+    },
+    "No steps match" : {
+
+    },
+    "No steps match “%@”" : {
+      "comment" : "Find matched no step: the words looked for"
     },
     "No steps yet" : {
 
@@ -2701,6 +2859,9 @@
     "Older lines that echo what you wrote today. Only you see them; they cost nothing." : {
 
     },
+    "Oldest First" : {
+
+    },
     "Olive" : {
       "comment" : "A step's colour, said where no kind names it"
     },
@@ -2745,6 +2906,9 @@
     },
     "Open" : {
       "comment" : "A target of no sets: an open plan"
+    },
+    "Open in Graph" : {
+
     },
     "Open plan" : {
 
@@ -2885,6 +3049,9 @@
     "Read your movement history" : {
 
     },
+    "Recolor" : {
+
+    },
     "Reconnecting…" : {
 
     },
@@ -2935,6 +3102,82 @@
     },
     "Removed" : {
       "comment" : "What a proposed change does to a movement or routine"
+    },
+    "Removes %lld steps" : {
+      "comment" : "A delete of several steps: how many it removes",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Removes %lld step"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Removes %lld steps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Removes %lld steps · %lld branches resplice" : {
+      "comment" : "A delete of several steps: how many it removes, and how many steps that follow them are linked past them",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removes %1$#@steps@ · %2$#@branches@"
+          },
+          "substitutions" : {
+            "branches" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg branch resplices"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg branches resplice"
+                    }
+                  }
+                }
+              }
+            },
+            "steps" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg step"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg steps"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "Removes this step" : {
 
@@ -3027,6 +3270,9 @@
     "Roadmap" : {
 
     },
+    "Roadmap Order" : {
+
+    },
     "Room" : {
 
     },
@@ -3076,6 +3322,15 @@
 
     },
     "See what’s up next" : {
+
+    },
+    "Select" : {
+
+    },
+    "Select All" : {
+
+    },
+    "Select Steps" : {
 
     },
     "Selected" : {
@@ -3237,6 +3492,9 @@
     "Show less" : {
 
     },
+    "Showing %@" : {
+      "comment" : "The Board's first row while a kind filter narrows it: the kinds shown"
+    },
     "Sign in" : {
 
     },
@@ -3314,6 +3572,9 @@
     },
     "Something changed while you chose. Sign out again." : {
 
+    },
+    "Sort" : {
+      "comment" : "The Board's Sort and filter menu: the order of Up next and Locked"
     },
     "Sort and filter" : {
 
@@ -3794,6 +4055,9 @@
     "View" : {
 
     },
+    "View Branch" : {
+
+    },
     "View chat" : {
 
     },
@@ -3856,6 +4120,9 @@
 
     },
     "What I am training for" : {
+
+    },
+    "What belongs here?" : {
 
     },
     "What does this step cover?" : {
@@ -4355,6 +4622,18 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Done"
+          }
+        }
+      }
+    },
+    "roadmap.graph.next" : {
+      "comment" : "The Graph's bar, before the name of the first Up next step: the step to take next",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Next"
           }
         }
       }

@@ -61,6 +61,30 @@ import JournalDomain
     #expect(JournalEchoStamp.date("2025-05-29", namedYear: nil) == "29 MAY 2025")
   }
 
+  // A word with two senses has a key for one of them, with a comment that tells translators which: the Graph's *Next*,
+  // before the first Up next step's name, stands beside onboarding's *Next*, the button to the following page.
+  @Test func theGraphsNextHasAKeyOfItsOwnBesideOnboardingsButton() throws {
+    struct Catalog: Decodable {
+      struct Entry: Decodable {
+        struct Localization: Decodable {
+          struct Unit: Decodable { let value: String }
+          let stringUnit: Unit?
+        }
+
+        let comment: String?
+        let localizations: [String: Localization]?
+      }
+
+      let strings: [String: Entry]
+    }
+    let app = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let catalog = try JSONDecoder().decode(Catalog.self, from: Data(contentsOf: app.appending(path: "Resources/Localizable.xcstrings")))
+    let graph = catalog.strings["roadmap.graph.next"]
+    #expect(graph.map { "\($0.localizations?["en"]?.stringUnit?.value ?? "") · \($0.comment ?? "")" }
+            == "Next · The Graph's bar, before the name of the first Up next step: the step to take next")
+    #expect(catalog.strings["Next"] != nil)
+  }
+
   @Test func theLiveActivityPlacesTheSetInItsPlan() {
     func place(_ ordinal: Int, of planned: Int?) -> String? {
       WorkoutActivityAttributes.ContentState(title: "", movement: "Squat", load: "", reps: 5, workingSetOrdinal: ordinal,

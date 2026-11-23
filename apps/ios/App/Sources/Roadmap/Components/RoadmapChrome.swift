@@ -52,6 +52,12 @@ extension RoadmapModel.Band.Says {
                     comment: "The band after a step is reset: how many steps it returned to Locked")
     case .deleted(let step):
       return String(localized: "\(RoadmapModel.Row.name(of: step)) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title")
+    case .deletedSteps(let count):
+      return String(localized: "\(count) steps deleted", locale: .copy, comment: "The band while a delete of several steps is held: how many")
+    case .recolored(let count):
+      return String(localized: "\(count) steps recolored", locale: .copy, comment: "The band after several steps are moved to one kind: how many")
+    case .removedKind(let name):
+      return String(localized: "\(name) removed", comment: "The band after a kind no step wears is removed: the kind's name")
     case .created(let step, let group):
       return String(localized: "\(RoadmapModel.Row.name(of: step)) added · \(group.title)",
                     comment: "The band after a step is made: the step's name, and the group it landed in")
@@ -101,6 +107,44 @@ struct DeleteQuestion: ViewModifier {
     if followers == 0 { return String(localized: "Removes this step") }
     return String(localized: "Removes this step · \(followers) branches resplice", locale: .copy,
                   comment: "A step's delete question: how many steps that follow the step are linked past it")
+  }
+}
+
+// The delete question of several steps (Roadmap · iOS 02.10b), on the bottom toolbar's Delete N Steps, which stays on
+// screen: how many steps, what the delete costs, and Delete N Steps. Closed any other way, it deletes nothing.
+struct DeleteStepsQuestion: ViewModifier {
+  let roadmap: RoadmapModel
+  let asked: (steps: Int, followers: Int)?
+
+  init(roadmap: RoadmapModel) {
+    self.roadmap = roadmap
+    guard case .steps(let rows, let followers) = roadmap.question else {
+      asked = nil
+      return
+    }
+    asked = (rows.count, followers)
+  }
+
+  func body(content: Content) -> some View {
+    let steps = asked?.steps ?? 0
+    return content.confirmationDialog(String(localized: "Delete \(steps) steps?", locale: .copy, comment: "The question a delete of several steps asks: how many"),
+                                      isPresented: Binding(get: { asked != nil }, set: { if !$0 { roadmap.answer(delete: false) } }), titleVisibility: .visible) {
+      Button(Self.delete(steps), role: .destructive) { roadmap.answer(delete: true) }
+    } message: {
+      Text(Self.cost(steps: steps, followers: asked?.followers ?? 0))
+    }
+  }
+
+  // The bottom toolbar's button and the question's answer: Delete N Steps.
+  static func delete(_ steps: Int) -> String {
+    String(localized: "Delete \(steps) Steps", locale: .copy, comment: "The button that deletes the steps chosen, and the answer of its question: how many")
+  }
+
+  // What the delete takes with it: the steps, and each step outside them that follows one is read past it.
+  static func cost(steps: Int, followers: Int) -> String {
+    if followers == 0 { return String(localized: "Removes \(steps) steps", locale: .copy, comment: "A delete of several steps: how many it removes") }
+    return String(localized: "Removes \(steps) steps · \(followers) branches resplice", locale: .copy,
+                  comment: "A delete of several steps: how many it removes, and how many steps that follow them are linked past them")
   }
 }
 
