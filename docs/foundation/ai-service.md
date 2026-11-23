@@ -977,7 +977,7 @@ The owner's rulings. All are settled.
 | R-10 | Whether installations and free accounts share one daily pool | Shared. The tier table can give each its own. (2026-11-14) |
 | R-11 | Whether the transcription provider may keep what a session carried | Zero data retention is not arranged; the owner cannot arrange it. What a Talk session carried is kept at the provider for 30 days for abuse monitoring and is not used for training, as its data page said on 2026-11-14. The product says so wherever Talk is offered (I-5). (2026-11-14) |
 | R-12 | Whether the service may hold a picture between calls | Yes, in memory only and for a short time, so that a device uploads a picture once for a turn of several rounds (§6.7). (2026-11-15) |
-| R-13 | Whether a changed tier amount or pool limit reaches budgets that exist | It applies at once to every budget, an installation's lifetime budget and a pool's current period included, so a limit lowered in an emergency holds from the moment it is set. (2026-11-17) |
+| R-13 | Whether a changed tier amount or pool limit reaches budgets that exist | It applies at once to every budget the tier table sets, an installation's lifetime budget and a pool's current period included, so a limit lowered in an emergency holds from the moment it is set. (2026-11-17) |
 | R-14 | Whether a `carry` is bound to the principal that received it | It is not. Any caller may send any sealed `carry`; none can read one, and no money is at risk. (2026-11-17) |
 | R-15 | What raises the provider-trouble alert | The share of calls that failed in a short window, not a run of failures a single success resets. (2026-11-17) |
 | R-16 | Which ledger a paid period funds while two live | Both, until the backend's ledger retires. (2026-11-17) |
