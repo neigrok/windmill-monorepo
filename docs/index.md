@@ -114,6 +114,15 @@ rulings of 2026-11-08: the room is calm and private, and mood and energy are not
 | 04 · Windmill One — the honest teaser and the purchase | [`266:2808`](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=266-2808) | 🧪 the teaser, the store sheet and the second door 04.1P–04.8P |
 | 05 · No TabView — the bottom bar | [`277:3241`](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=277-3241) | Today → Write in the bottom bar → keyboard → Done. 🚀 In production (2026-11-08): today with Write alone at the bottom bar's trailing end 05.1A, reading back with nothing shrinking 05.2P, writing with Done alone in the keyboard's bar 05.3P, the bar's one state 05.4P, the largest text 05.5P, iOS 18's classic bar 05.6P, first open's ink notes at the pencil 05.8P — [note 281:3863](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=281-3863); 🧪 Search top right 05.7P; 🗄 05.1B, 05.1C |
 
+## Gym · Web
+
+Figma: Gym file, page [Web](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=466-132). Code: `web/src/products/gym/`.
+
+| Flow | Section | Entry → exit |
+|---|---|---|
+| 08W · Coach — the web room | [`2123:9861`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2123-9861) | ✅ Ready for dev (2026-11-23): one History with the phones → a turn answered here or on another device → its ends and access states; signed out, the sign-in door ([consistency.md](design/consistency.md) 12u) |
+| 08W-P · Coach — proposal card and greeting | [`2128:11609`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2128-11609) | ✅ Ready for dev (2026-11-23): no conversation yet → the greeting (onboarding); a routine proposal → Apply or Reject → applied, rejected or out of date |
+
 ## Gym · iOS
 
 Figma: Gym file, page [iOS](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=11-2).
