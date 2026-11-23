@@ -154,7 +154,8 @@ struct CommitTests {
 
   // A change of one record of a capped type reads that record alone, so its commit loads the same rows however many the
   // type holds; a create reads the whole type, which the cap counts, and any other change reads it only once its delta
-  // shows one more record than `stored` does. A revive of a live card commits over its one row; one of the dead card,
+  // shows one more record than `stored` does. A command's predicted create reads its record alone: the cap counts no
+  // prediction. A revive of a live card commits over its one row; one of the dead card,
   // which the three live ones fill the cap without, stops for the type and is refused once it is read.
   @Test func aCappedTypeIsReadWholeOnlyByAChangeThatShowsOneMoreRecord() throws {
     let planner = CommitPlanner(registry: Self.probe)
@@ -165,6 +166,9 @@ struct CommitTests {
     #expect(reads(.revive("card", card.id)) == [Self.product: RowSelection(keys: [card])])
     #expect(reads(.put("day", "2026-09-01", present: false)) == [Self.product: RowSelection(keys: [RecordKey("day", "2026-09-01")])])
     #expect(reads(.create("card")) == [Self.product: RowSelection(types: ["card"])])
+    let predicted = Gesture(changes: [], command: Command(name: "probe.copy", args: ["src": "b_00000001", "dst": "b_00000002"]),
+                            predict: [.create("card", id: .given("card0009"), ["title": "Nine"])])
+    #expect(planner.reads(of: predicted, in: Self.product) == [Self.product: RowSelection(keys: [RecordKey("card", "card0009")])])
 
     let whole = try Self.replica()
     let live = Gesture(changes: [.revive("card", card.id, ["title": "Again"])], gestureId: "live")

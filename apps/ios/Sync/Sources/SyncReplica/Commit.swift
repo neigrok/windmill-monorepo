@@ -28,18 +28,19 @@ public struct CommitPlanner: Sendable {
 
   // The rows a commit of `gesture` reads, for its Action to load first with the entries that touch them: the records its
   // changes, predictions, guards and retire name, an opted command's predictions in their own scopes; whole types where
-  // it derives an id from a label, places by an anchor, or creates a record of a capped type, which the cap counts; and
-  // for each tree or overlay scope, the governing record the scope check reads. What a plan finds it needs beyond them
-  // is read once found (`UnreadRows`): the ids minted creates draw, by their keys, and a capped type any other change
-  // shows one more record of, whole; and every entry, where a retire's or a supersede's silent fold reaches past the
-  // entries the load read. So a change of one record of a capped type reads that record alone unless it may grow the type.
+  // an intent's change derives an id from a label, places by an anchor, or creates a record of a capped type, which the
+  // cap counts; and for each tree or overlay scope, the governing record the scope check reads. A prediction names its
+  // record and the cap counts none (§7.1 step 8), so it reads its record alone. What a plan finds it needs beyond them is
+  // read once found (`UnreadRows`): the ids minted creates draw, by their keys; a capped type any other change shows one
+  // more record of, whole; and every entry, where a retire's or a supersede's silent fold reaches past the entries the
+  // load read. So a change of one record of a capped type reads that record alone unless it may grow the type.
   public func reads(of gesture: Gesture, in scope: ScopeRef) -> [ScopeRef: RowSelection] {
-    var origin = rows(namedBy: gesture.changes + gesture.predict)
+    var origin = RowSelection(keys: keys(namedBy: gesture.changes + gesture.predict), types: types(readBy: gesture.changes))
     origin.keys.formUnion(gesture.guards.map(\.key))
     origin.keys.formUnion(gesture.retire.map(\.key))
     var reads = [scope: origin]
     for prediction in gesture.scopedPredict {
-      reads[prediction.scope] = (reads[prediction.scope] ?? RowSelection()).union(rows(namedBy: prediction.changes))
+      reads[prediction.scope, default: RowSelection()].keys.formUnion(keys(namedBy: prediction.changes))
     }
     for read in reads.keys {
       guard let governing = registry.governingRecord(of: read) else { continue }
@@ -48,21 +49,32 @@ public struct CommitPlanner: Sendable {
     return reads
   }
 
-  func rows(namedBy changes: [Change]) -> RowSelection {
-    var selection = RowSelection()
+  // The records changes name by key: a given or seeded id, or the record a change other than a create names.
+  func keys(namedBy changes: [Change]) -> Set<RecordKey> {
+    var keys: Set<RecordKey> = []
     for change in changes {
       guard let type = registry.type(change.type) else { continue }
       switch change.operation {
-      case .create(.minted): break
-      case .create(.derived): selection.types.insert(type.name)
+      case .create(.minted), .create(.derived): break
       case .create(.seeded(let seed, let ordinal)):
-        if let id = try? SeededID(seed: seed, ordinal: ordinal, for: type).id { selection.keys.insert(RecordKey(type.name, RecordID(id))) }
-      default: if let id = change.id { selection.keys.insert(RecordKey(type.name, id)) }
+        if let id = try? SeededID(seed: seed, ordinal: ordinal, for: type).id { keys.insert(RecordKey(type.name, RecordID(id))) }
+      default: if let id = change.id { keys.insert(RecordKey(type.name, id)) }
       }
-      let creates: Bool = if case .create = change.operation { true } else { false }
-      if change.anchor != nil || (type.cap != nil && creates) { selection.types.insert(type.name) }
     }
-    return selection
+    return keys
+  }
+
+  // The types an intent's changes read whole: a derived id reads every id of its type, an anchor its type's order, and a
+  // create of a capped type the count.
+  func types(readBy changes: [Change]) -> Set<String> {
+    var types: Set<String> = []
+    for change in changes {
+      guard let type = registry.type(change.type) else { continue }
+      let creates: Bool = if case .create = change.operation { true } else { false }
+      let derives: Bool = if case .create(.derived) = change.operation { true } else { false }
+      if derives || change.anchor != nil || (type.cap != nil && creates) { types.insert(type.name) }
+    }
+    return types
   }
 
   // Retire loads held gestures; supersede loads the whole outbox to prove complete eligibility and fold dependents.
