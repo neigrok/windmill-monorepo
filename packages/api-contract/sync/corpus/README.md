@@ -1384,7 +1384,8 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   under its own scopedEffects command or its scope kind's capture command when it writes a delta; the
   act's `ReversibleAct` holds one source entry per named segment that left an entry, with the first
   local preimages read before any segment changed a projection, each with the confirmed row sequence and
-  epoch it was read at (an unset slot takes the target's `defaultValue`, and with none the act throws), a
+  epoch it was read at, stepped over the receipt rows of the device's own earlier writes of the record that
+  continue it (an unset slot takes the target's `defaultValue`, and with none the act throws), a
   life's with the record it read, and the value the act left in each target. A malformed recipe throws before anything changes. Each
   source's ACK records `{epoch, n, outcome, acceptedEffects?}` in the result's transaction, one attempt an
   epoch; a death before the ACK records nothing and the resend's replayed result is retained; settling
@@ -1423,7 +1424,19 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   skips; an Undo requested, and a held act's cancellation, in the tree of a child board the server redirects
   follow it into the redirected tree; a mark's `opens` restored, written back or redone after the server
   redirects the board it names takes the redirected id, and a cancelled lap's Redo takes the run the server
-  joined.
+  joined; an Undo of a removal brings back a tag whose birth, by an act that keeps no journal, was pulled
+  before the removal, acknowledged but unpulled, still unsent when it was removed, or still unsent when the
+  Undo was asked, the removal's preimage stepping over the birth's receipt row, while another device's write
+  between the two, or a birth written as an
+  ordinary entry, whose answer carries no receipt, skips it; a preimage never steps over an earlier segment
+  of its own act, and steps over two acknowledged own writes, a birth and a rename, in commit order; and an Undo asked signed out of a removal whose record was born there brings it back once
+  sign-in adds the work and sends it; an act made signed out gives up at sign-in each target the account's dormant replica
+  holds a write of, an unsent one, one acknowledged after sign-out and not yet pulled, or a receipt its journal keeps, so
+  its Undo restores nothing there, while a target of another record, or one no dormant write touches, stays and restores;
+  an Undo waiting signed out withdraws its operation on such a target and counts it skipped, while a waiting Redo keeps
+  its operation, which the version it expects guards on the server; and a preimage does not
+  step over an own write whose receipt starts at a row another device wrote, one answered in another epoch, a command's
+  receipt row of a record it did not predict, or a write committed after the act that went up first.
 
 ### refusal/*.json
 

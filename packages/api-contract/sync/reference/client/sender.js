@@ -10,7 +10,7 @@ import { stampsOf } from '../core/rows.js';
 import { bodyBytes, intentDigest } from '../core/wire.js';
 import { Dependents, scopedKey } from './dependents.js';
 import { applyInverseResult, checkInverseResult, passesBarrier, resolveReferences } from './inverse.js';
-import { retainOutcome } from './journal.js';
+import { retainOutcome, stepPreimagesOver } from './journal.js';
 import { epochChange, reidentify, renewActor } from './lifecycle.js';
 import { resolveIfCovered } from './puller.js';
 import { applyAcceptedVersions, applyWriteMap, onRefused, refuseOutgrown } from './refusal.js';
@@ -218,6 +218,7 @@ export function applyPushResult(replica, ctx, result, body, unreadable = new Set
   if (result.write) applyWriteMap(replica, ctx, entry, result.write);
   if (effects) applyReceipt(replica, ctx, entry, effects, result.write ?? []);
   retainOutcome(replica, entry.localId, { epoch: body.epoch, n: result.n, outcome: 'ok', acceptedEffects: entry.acceptedEffects });
+  stepPreimagesOver(replica, entry);
   resolveReferences(replica, entry, body.epoch);
   applyInverseResult(replica, entry, result, body.epoch);
   resolveIfCovered(replica, ctx, entry);

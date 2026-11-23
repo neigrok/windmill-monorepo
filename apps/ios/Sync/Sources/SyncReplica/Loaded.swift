@@ -184,7 +184,7 @@ public struct LoadedReplica: Sendable {
     let cancellations = LoadedReplica.changes(journal.cancellations, next.cancellations, id: \.inverseActId)
     for request in inverses.put where loadedUnsettledRequests.contains(where: { $0.isSameID(as: request.requestId) }) {
       guard case .settled(_, _, _, let applied, let skipped)? = request.result, journal.request(request.requestId)?.state != .settled else { continue }
-      record(.inverseSettled(applied: applied, skipped: skipped))
+      record(.inverseSettled(applied: applied, skipped: skipped, reason: request.skipReason))
     }
     for id in acts.gone { apply(.deleteAct(id)) }
     for act in acts.put { apply(.putAct(act)) }

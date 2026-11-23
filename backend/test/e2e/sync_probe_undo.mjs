@@ -7,6 +7,8 @@
 // - probe.branch undone by probe.unbranch over the evidence the engine builds: the board dies with its tree and the
 //   parent takes back its title.
 // - A held removal cancelled in place, then redone: the Redo removes it again under the version it found.
+// - A tag born by an act that keeps no journal and removed by an opted act before either was sent: the removal's Undo
+//   walks from the birth's row and the tag comes back.
 // - Everything converges: no entry stays pending, no notice is written, and every scope's confirmed rows match the
 //   server's digest. The output names checks only, never a record id or a title.
 //
@@ -181,6 +183,22 @@ try {
   const redone = engine.readInverseResult(redo.requestId);
   check(redone.kind === 'settled' && redone.appliedCount === 1 && !confirmed(tree, 'tag', 'oak'), 'its Redo removes the tag under the version it found',
     `answered ${redone.kind} ${redone.appliedCount ?? ''}`);
+
+  const sent = pushes.length;
+  const { outcome: birth } = await engine.commitAct([{ scope: tree, changes: [{ op: 'create', t: 'tag', id: 'ash', f: { label: 'Ash' } }] }],
+    { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'createdRecord', restoreCommand: 'probe.restoreTree', record: { scope: tree, t: 'tag', id: 'ash' } }] }] } });
+  await engine.releaseReversibleAct(birth.gestureId);
+  const { outcome: unmade } = await engine.commitAct([{ scope: tree, changes: [{ op: 'delete', t: 'tag', id: 'ash' }] }],
+    { undo: { version: 1, segments: [fields(0, 'probe.restoreTree', [target(tree, 'tag', 'ash', { kind: 'life' })])] } });
+  check(pushes.length === sent && !replica().journal.some(({ actId }) => actId === birth.gestureId),
+    'a tag is born by an act that keeps no journal and removed before either is sent', `${pushes.length - sent} pushes went first`);
+  await settle();
+  const unmake = await engine.requestInverse(unmade.gestureId);
+  await settle();
+  const remade = engine.readInverseResult(unmake.requestId);
+  check(same(remade, { kind: 'settled', requestId: unmake.requestId, inverseActId: unmake.inverseActId, changed: true, appliedCount: 1, skippedCount: 0 })
+    && confirmed(tree, 'tag', 'ash')?.f.label[0] === 'Ash', 'the removal\'s Undo walks from that birth and the server holds the tag again',
+    `answered ${remade.kind} ${remade.appliedCount ?? ''}/${remade.skippedCount ?? ''}`);
 
   check(replica().outbox.length === 0 && replica().notices.length === 0, 'every entry settles and no notice is written',
     `${replica().outbox.length} entries, ${replica().notices.length} notices`);

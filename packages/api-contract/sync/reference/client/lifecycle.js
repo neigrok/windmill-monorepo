@@ -7,7 +7,7 @@ import { hashText } from '../core/encoding.js';
 import { jcs } from '../core/jcs.js';
 import { recordKey, stampsOf } from '../core/rows.js';
 import { releaseAll } from './hold.js';
-import { bindReferences } from './inverse.js';
+import { bindReferences, giveUpUnread } from './inverse.js';
 import { adoptJournal, discardJournal, invalidateEpochs, releaseJournal } from './journal.js';
 import { Replica } from './replica.js';
 import { effectsOf } from './projections.js';
@@ -161,6 +161,7 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
   }
 
   if (hasAnonWork && anon !== target) {
+    giveUpUnread(target, anon);
     let nextOrder = target.nextCommitOrder();
     for (const entry of anon.entries()) {
       entry.commitOrder = nextOrder++;

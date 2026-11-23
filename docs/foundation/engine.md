@@ -619,7 +619,8 @@ type VersionReference = { kind: 'accepted', epoch: string | null, version: E7Ver
   namespace, never shared across replicas. Its preimages and written values are local user data and its
   ids private sync data: neither enters telemetry, logs or reports. A preimage's `rowSeq` is the row it was
   read over, the confirmed row or else the dead row the record's `SpentId` keeps (null where neither holds
-  one), counted in `epoch`; an inverse act's is the row its restore wrote over. A life's preimage keeps the
+  one), moved past each earlier write of the record in its replica whose receipt continues it (§7.3),
+  counted in `epoch`; an inverse act's is the row its restore wrote over. A life's preimage keeps the
   record it read (`record`), which a revival draws. `written` is the value the act left in each target, which
   a Redo writes back. A source with no recipes was named for
   evidence only. `unavailable`
@@ -1870,8 +1871,17 @@ type UndoRecipe =
   `drawn`: its *first local preimage*, with the sequence of the row it was read over and the epoch that
   sequence counts in: the confirmed row's, or, where no row of the record is confirmed, the dead row's its
   `SpentId` keeps (§7.5), so the Undo of a revival from a spent id walks from the death the device pulled;
-  null where neither holds one. A life's preimage also keeps the record as read (`record`: its birth, field
-  registers and texts), which a revival draws. An unset slot takes the target's
+  null where neither holds one. `drawn` also reads over the entries committed before the act in its replica,
+  and an entry committed before an act's own is one its `drawn` read: an Add (§7.10) first makes each act it
+  adopts give up every target the adopting replica holds a write of, a write that act never read.
+  Each one whose stored effects (§7.7) write the record, acknowledged in the preimage's epoch, moves the
+  sequence to its receipt row's `rowSeq` where that row starts at the sequence (its `beforeRowSeq`): in
+  commit order at the capture for an entry already acknowledged, and in the entry's ACK transaction (§7.4)
+  for one acknowledged later, while the act's source entry is still in the outbox. A preimage taken before
+  the replica held an epoch takes the receipt's. So the Undo of a removal walks from a birth the device made,
+  though the act that made it keeps no journal. An ordinary entry's answer carries no receipt and moves
+  nothing, so a row it wrote breaks the walk (Materialize). A life's preimage also keeps the record as read
+  (`record`: its birth, field registers and texts), which a revival draws. An unset slot takes the target's
   `defaultValue`, the product's value equivalent to unset (`null` is a value); without one the act throws
   malformed. A named segment runs as one
   scoped intent: a segment with its own command needs `scopedEffects`, and any other gets its scope kind's
@@ -2090,7 +2100,8 @@ re-identifies with nothing lost (§7.7).
 An opted result applies global-ID remaps first, then stores scope-qualified `acceptedEffects` and
 projection watermarks in one receipt-application step within its ACK transaction, before settlement
 or garbage collection. In that step the journal retains a source entry's receipt, and a terminal
-refusal its refusal (§7.3 Undo of an act). A null scope seq immediately covers its uncreated target. Receipt-only
+refusal its refusal, and each preimage a later act read over the entry's write moves to the row the
+receipt shows it left (§7.3 Undo of an act, Capture). A null scope seq immediately covers its uncreated target. Receipt-only
 markers are covered by the same rule as predicted ones.
 
 A null `serverEpoch` takes the answer's epoch in the first batch, so no entry is ever acked while
@@ -2671,7 +2682,16 @@ Then, in one local transaction:
 3. **Add.** When `bound(A)` is not the rebound `anon` replica and entries or pending product device
    work remain in the `anon` replica, they move, with its device rows, notices, journal, cancellations and
    inverse requests, into `bound(A)`, preserving local ids,
-   gesture ids and stamps, after `bound(A)`'s own entries in their commit order. The `anon` replica
+   gesture ids and stamps, after `bound(A)`'s own entries in their commit order. An act adopted so
+   never read `bound(A)`'s own writes, which reach the server before its own: each adopted act, an inverse
+   act among them, gives up every field target whose record `bound(A)` holds a write of, that is an entry
+   of its outbox whose stored effects (§7.7) write the record, unsent or acknowledged and not yet pulled,
+   or a receipt row of the record its journal keeps. Giving up a target removes it from the act's recipes
+   (a recipe left with none goes), with its preimage and its written value, so an entry committed before an
+   act's own in `bound(A)` is one its `drawn` read (§7.3 Undo of an act, Capture), and no walk passes over a
+   write the act never read. A waiting inverse request withdraws its operation on such a target, with its
+   projection, and counts it skipped `history-changed`; an Undo asked later plans nothing for it. A created
+   record and a `command` recipe stay: the act's own receipts alone prove them. The `anon` replica
    is then deleted. Products merge writing-bearing device-row collisions without dropping either
    document; the destination's current draft stays current and incoming writing remains available
    for recovery. If a differing pending-work collision cannot be merged, the local transaction fails
