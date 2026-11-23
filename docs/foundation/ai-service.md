@@ -858,7 +858,12 @@ Configuration, with the values the service ships with:
   service's call `id` when the call was admitted, the caller's `label`, `client`, the deployment,
   tier, class asked and served, end state or refusal code, `stop`, duration, the reservation, the
   provider's counts or the seconds of audio forwarded, its HTTP status, its error type mapped to a
-  fixed list, and the cost.
+  fixed list, the provider's request id, and the cost. A request the provider refused
+  (`provider_rejected`, at the count or the call) adds `refusal`: the reason read from the
+  provider's error body and mapped to a fixed list (`schema_too_complex`, `too_many_strict_tools`,
+  `too_many_optional_parameters`, `too_many_union_parameters`, `schema_unsupported`,
+  `prompt_too_long`, `max_tokens`, `invalid_request_other`, `request_too_large`, `unparsed`). The
+  provider's error text is never kept.
 - A request refused before or at the pass, and one refused as `rate_limited` or `busy`, is counted by
   code; a line with the counts is written at most once a second.
 - The internal doors log `grant.fund`, `grant.close`, `grant.reopen` and `call.correct` with their
