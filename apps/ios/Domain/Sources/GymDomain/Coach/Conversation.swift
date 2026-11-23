@@ -3,9 +3,8 @@ import SyncAPI
 import SyncCore
 import SyncSchema
 
-// A Coach conversation as the engine holds it (Coach §9.1): a thread and its messages, the record of every ability call a
-// turn ran on the Coach message, the receipt that derives from those calls (§9.2), and the two actions a turn's driver
-// takes around the calls: opening the turn (§4.1 step 2) and ending it (§4.4, §4.5).
+// A Coach conversation as the engine holds it (Coach §9.1): a thread and its messages, the pictures they carry, the record
+// of every ability call a turn ran on the Coach message, and the receipt that derives from those calls (§9.2).
 
 public struct CoachThread: ProductEntity, Writable, Removable, Equatable {
   public static let type = Gym.Types.thread
@@ -63,6 +62,9 @@ public struct Picture: ValueObject, Equatable {
   public init(_ f: Fields) throws(DecodeError) {
     self.init(id: try f.string("id"), mediaType: try f.string("mediaType"), localOnly: try f.bool("localOnly", default: false))
   }
+
+  // The device row a picture kept on this phone sits in.
+  public static func rowKey(_ id: String) -> String { "picture:" + id }
 
   public var json: JSON {
     .object(omittingNil: ["id": .string(id), "mediaType": .string(mediaType), "localOnly": localOnly ? true : nil])
@@ -438,96 +440,5 @@ public struct AbilityCall: Equatable, Sendable {
     }
     return .object(omittingNil: ["read": (served.tally + counted).json, "results": .array(created.map { ["t": .string($0.type), "id": $0.id.json] }),
                                  "truncated": truncated ? true : nil])
-  }
-}
-
-// MARK: - A turn's bookends
-
-// Coach §4.1 step 2: in one transaction, the lifter's message and the running Coach message, a new conversation when
-// none is named, and the device's `runningTurn` row.
-public struct OpenTurn: Action {
-  public struct Turn: Sendable, Equatable {
-    public let thread: ID<CoachThread>
-    public let lifter: ID<CoachMessage>
-    public let coach: ID<CoachMessage>
-  }
-
-  public typealias Loaded = (thread: CoachThread?, replica: String, moment: Moment)
-
-  public let thread: ID<CoachThread>?
-  public let question: String
-  public let pictures: [Picture]
-
-  public init(thread: ID<CoachThread>? = nil, question: String, pictures: [Picture] = []) {
-    self.thread = thread
-    self.question = question
-    self.pictures = pictures
-  }
-
-  public var scope: ScopeRef { Gym.scope }
-
-  public func load(_ read: Reader) throws -> Loaded {
-    (try thread.flatMap { try read.repository(CoachThread.self).find($0, in: .drawn) }, read.replica, read.moment)
-  }
-
-  public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<Turn, GymRefusal> {
-    if let thread, loaded.thread == nil { return .refuse(GymRefusal(Refused(.unknownRecord, subject: thread.ref, path: .predicted))) }
-    let bytes = question.utf8.count
-    if bytes > CoachRules.maxQuestionBytes {
-      throw Violation(rule: CoachRules.question, path: "text", reason: .tooLong(max: CoachRules.maxQuestionBytes, unit: .bytes, measured: bytes))
-    }
-    if TextSpec.isBlank(question) && pictures.isEmpty { throw Violation(rule: CoachRules.question, path: "text", reason: .blank) }
-    var plan = Plan()
-    let threadId = thread ?? ids.mint(CoachThread.self)
-    if thread == nil {
-      plan.create(try Valid(CoachThread(id: threadId, title: TextSpec.isBlank(question) ? "Photo" : question), at: loaded.moment))
-    }
-    let turn = Turn(thread: threadId, lifter: ids.mint(CoachMessage.self), coach: ids.mint(CoachMessage.self))
-    plan.create(try Valid(CoachMessage(id: turn.lifter, threadId: threadId, role: .lifter, text: question, pictures: pictures, at: loaded.moment.now),
-                          at: loaded.moment))
-    plan.create(try Valid(CoachMessage(id: turn.coach, threadId: threadId, role: .coach, replica: loaded.replica, at: loaded.moment.now),
-                          at: loaded.moment))
-    plan.device(EndTurn.runningTurnKey, turn.coach.json)
-    return .write(plan, turn)
-  }
-}
-
-// Coach §4.4 and §4.5: the Coach message's terminal state, its answer and the receipt its calls derive, in one
-// transaction, and the device's `runningTurn` row cleared. A turn a writer already ended is final.
-public struct EndTurn: Action {
-  public static let runningTurnKey = "runningTurn"
-
-  public let message: ID<CoachMessage>
-  public let state: MessageState
-  public let text: String?
-  public let truncated: Bool
-
-  public init(_ message: ID<CoachMessage>, state: MessageState, text: String? = nil, truncated: Bool = false) {
-    precondition(state.isTerminal, "a turn ends in a terminal state")
-    self.message = message
-    self.state = state
-    self.text = text
-    self.truncated = truncated
-  }
-
-  public var scope: ScopeRef { Gym.scope }
-
-  public func load(_ read: Reader) throws -> (message: CoachMessage?, moment: Moment) {
-    (try read.repository(CoachMessage.self).find(message, in: .drawn), read.moment)
-  }
-
-  public func decide(_ loaded: (message: CoachMessage?, moment: Moment), ids: IDSource) throws(Violation) -> Decision<Void, GymRefusal> {
-    guard var ended = loaded.message, ended.role == .coach else {
-      return .refuse(GymRefusal(Refused(.unknownRecord, subject: message.ref, path: .predicted)))
-    }
-    if ended.state.isWritersTerminal { return .unchanged(()) }
-    ended.state = state
-    if let text { ended.text = text }
-    ended.truncated = truncated
-    ended.receipt = AbilityCall.receipt(of: ended.calls)
-    var plan = Plan()
-    plan.update(try Valid(ended, fields: ["state", "text", "receipt", "truncated"], at: loaded.moment), fields: ["state", "text", "receipt", "truncated"])
-    plan.device(Self.runningTurnKey, nil)
-    return .write(plan)
   }
 }

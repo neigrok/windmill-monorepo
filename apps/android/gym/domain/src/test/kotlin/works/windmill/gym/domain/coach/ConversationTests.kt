@@ -25,7 +25,7 @@ import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
 import works.windmill.sync.testing.SteppedEngine
 
-// A Coach conversation on the real engine, over a model server shared by every phone, and the pure reads over its messages. The shared vectors hold OpenTurn, EndTurn, a call's record and a read's week.
+// A Coach conversation on the real engine, over a model server shared by every phone, and the pure reads over its messages. The shared vectors hold OpenTurn, the round, EndTurn and every other clear of the mark, a call's record and a read's week.
 class ConversationTests {
     private class Phone(val engine: SteppedEngine, context: ActionContext) {
         val runner = ActionRunner(engine.replica, SyncSchema.registry, FixedZone(0), context)
@@ -64,6 +64,21 @@ class ConversationTests {
     private fun picture(n: Int, localOnly: Boolean = true) = Picture("picture0000000$n", "image/jpeg", localOnly)
     private fun row(picture: Picture) = CoachPictureRow(picture.id, picture.mediaType, 1200, 900, 345_678)
     private fun gone(type: String, id: Id<*>) = GymRefusal.Gone(RecordRef(type, id.record), Refused.Path.predicted)
+
+    // The round rides the real engine's device rows: it recovers while it names the running turn, a stale one clears, and the end takes both rows in one write.
+    @Test fun aRoundRecoversWhileItNamesTheTurnAndTheEndClearsBothRows() = twoPhones { a, _ ->
+        val first = a.open("First")
+        val callId = "callAAAAAAAAAAAAAAAAAA"
+        assertTrue(a.runner.run(BeginRound(first.coach, callId, 12)) is Outcome.Committed)
+        assertEquals(Outcome.Unchanged(Mark(first.coach.record.string, callId, 12, roundRow = true)), a.runner.run(RecoverMark()))
+        val second = a.open("Second", first.thread)
+        val stale = a.runner.run(RecoverMark()) as Outcome.Committed
+        assertEquals(Mark(second.coach.record.string, null, 0, roundRow = false), stale.result)
+        assertNull(a.device(Mark.roundKey))
+        assertTrue(a.runner.run(BeginRound(second.coach, callId, 0)) is Outcome.Committed)
+        assertTrue(a.runner.run(EndTurn(second.coach, MessageState.completed, "Add 5 kg.")) is Outcome.Committed)
+        assertEquals(listOf(null, null), listOf(a.device(EndTurn.runningTurnKey), a.device(Mark.roundKey)))
+    }
 
     // A merge can leave the row naming another turn: an end lets go of its own alone, and a gone turn the same way.
     @Test fun anEndClearsTheRunningTurnOnlyWhenItNamesThatMessage() = twoPhones { a, _ ->
@@ -191,6 +206,10 @@ class ConversationTests {
         assertEquals(Violation(CoachRules.question, Path("text"), Violation.Reason.TooLong(8_000, MeasureUnit.bytes, 8_001)).json, tooLong.violation.json)
         val blank = (a.runner.run(OpenTurn(question = " ")) as Outcome.Refused).refusal as GymRefusal.Invalid
         assertEquals(Violation(CoachRules.question, Path("text"), Violation.Reason.Blank).json, blank.violation.json)
+        for (id in listOf("picture id", "picture/0001", "piçture0001")) {
+            val notAnId = (a.runner.run(OpenTurn(question = "This?", pictures = listOf(Picture(id, "image/jpeg")))) as Outcome.Refused).refusal as GymRefusal.Invalid
+            assertEquals(id, Violation(CoachRules.pictureId.path, Path("pictures.0.id"), Violation.Reason.Custom("notAnId")).json, notAnId.violation.json)
+        }
         val absent = Id("thrdAAAAAAAAAAA1", CoachThread)
         assertEquals(gone(CoachThread.type, absent), (a.runner.run(OpenTurn(absent, "And then?")) as Outcome.Refused).refusal)
         assertEquals(before, a.engine.engine.snapshot())
@@ -204,7 +223,7 @@ class ConversationTests {
         assertEquals(opened, a.engine.engine.snapshot())
     }
 
-    @Test fun theTextStreamsOnlyOntoThisReplicasRunningMessage() = twoPhones { a, b ->
+    @Test fun theTextStreamsOnlyOntoThisReplicasMessageUntilItsWriterEndsIt() = twoPhones { a, b ->
         val turn = a.open()
         assertTrue(a.runner.run(StreamTurnText(turn.coach, "Add")) is Outcome.Committed)
         assertEquals("Add", a.message(turn.coach).text)
@@ -222,6 +241,9 @@ class ConversationTests {
         assertEquals("message.text", over.violation.rule)
         assertEquals(longest, a.message(turn.coach).text)
 
+        assertTrue(b.runner.run(EndTurn(turn.coach, MessageState.interrupted)) is Outcome.Committed)
+        b.engine.sync()
+        assertEquals(MessageState.interrupted, a.message(turn.coach).state)
         assertTrue(a.runner.run(StreamTurnText(turn.coach, "Add 5")) is Outcome.Committed)
         assertTrue(a.runner.run(EndTurn(turn.coach, MessageState.stopped)) is Outcome.Committed)
         assertEquals(Outcome.Unchanged(Unit), a.runner.run(StreamTurnText(turn.coach, "Late words")))

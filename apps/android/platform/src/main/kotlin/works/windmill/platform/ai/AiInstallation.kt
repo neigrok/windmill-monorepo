@@ -121,6 +121,9 @@ class AiInstallation(
         saved.credential
     }
 
+    // The credential this phone holds, to send beside a session so the pass can name the installation it was (gym Coach on the AI service §6). A phone that holds none asks for none.
+    suspend fun held(): String? = mutex.withLock { existing()?.takeUnless { it.invalid }?.credential }
+
     suspend fun markBound() = mutex.withLock {
         existing()?.let { persist(it.copy(bound = true)) }
         currentRead = true

@@ -12,7 +12,6 @@ dependencies {
 }
 
 tasks.test {
-    inputs.dir(rootProject.file("../../packages/api-contract/gym/turns"))
     inputs.dir(rootProject.file("../../packages/api-contract/agent/turns"))
     systemProperty("windmill.contract", rootProject.file("../../packages/api-contract").absolutePath)
     testLogging { events("failed", "standardOut") }

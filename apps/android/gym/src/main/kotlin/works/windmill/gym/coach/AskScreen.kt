@@ -29,7 +29,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -194,9 +193,7 @@ fun AskScreen(
     var draftFailure by remember { mutableStateOf<Int?>(null) }
     val reconnecting = asking && coach.conversations?.reconnecting == true
     val fault = coach.fault(conversationId)
-    val stopNotice = fault?.takeIf { it in stopFaults }
     LaunchedEffect(reconnecting) { if (reconnecting) telemetry.coachAction("reconnecting") }
-    LaunchedEffect(stopNotice) { if (stopNotice != null) telemetry.coachAction("stop_notice") }
     val signInForCall = onSignIn?.let { signIn -> {
         telemetry.coachSetupStep("sign_in")
         signIn()
@@ -247,7 +244,7 @@ fun AskScreen(
                         telemetry.coachSetupStep("build_manually")
                         onBuildRoutine?.invoke()
                     })
-                (draftFailure ?: coach.failed(draftKey) ?: fault?.takeUnless { it in stopFaults }?.said)?.let { Text(stringResource(it), style = WindmillType.supporting, color = colors.onSurfaceVariant) }
+                (draftFailure ?: coach.failed(draftKey) ?: fault?.said)?.let { Text(stringResource(it), style = WindmillType.supporting, color = colors.onSurfaceVariant) }
                 thread.forEachIndexed { index, exchange ->
                     key(messageKeys[index]) {
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -312,10 +309,6 @@ fun AskScreen(
             }
         }
         if (reconnecting) Band(stringResource(R.string.gym_coach_reconnecting))
-        else if (stopNotice != null) Band(stringResource(stopNotice.said), onClose = {
-            coach.closeFault(stopNotice)
-            telemetry.coachAction("stop_notice_closed")
-        })
         Column(
             verticalArrangement = Arrangement.spacedBy(WindmillSpace.x3),
             modifier = Modifier
@@ -329,24 +322,15 @@ fun AskScreen(
     }
 }
 
-// A Stop that never reached the server, which the band says with the turn already ended on this phone.
-private val stopFaults = setOf(CoachTurnFault.stoppedOffline, CoachTurnFault.stopUnheard)
-
-// The band over the composer, on the platform's snackbar: what this phone's own turn is doing or did.
+// The band over the composer, on the platform's snackbar: what this phone's own turn is doing.
 @Composable
-private fun Band(said: String, onClose: (() -> Unit)? = null) {
+private fun Band(said: String) {
     val colors = MaterialTheme.colorScheme
-    // Material's snackbar fills its width by itself; a fixed width reaches its close button too and stands it over the words.
     Snackbar(
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp).testTag("coach-band"),
         shape = MaterialTheme.shapes.extraSmall,
         containerColor = colors.surfaceContainerHighest,
         contentColor = colors.onSurface,
-        dismissAction = onClose?.let { close -> {
-            IconButton(onClick = close, modifier = Modifier.size(48.dp)) {
-                Icon(painterResource(R.drawable.gym_coach_close), stringResource(PlatformR.string.platform_close), Modifier.size(24.dp), tint = colors.onSurfaceVariant)
-            }
-        } },
     ) { Text(said, style = GymType.coachDetail) }
 }
 

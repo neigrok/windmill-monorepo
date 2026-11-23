@@ -136,8 +136,10 @@ class WindmillApplication : Application(), WorkoutNotificationHost, WorkoutTileH
         }
         val coachImports = CoachRoutineImports(engine, anonymousSeat, scope, telemetry)
         turnLease = TurnLease(this, telemetry)
-        val coachTurns = CoachTurns.onThisDevice(this, training, baseUrl, coachClient, installation,
-            accountToken = { (sessions.localSession as? LocalSession.Owned)?.let { sessions.read() } }, turnLease, telemetry, scope)
+        val coachTurns = CoachTurns.onThisDevice(this, training, baseUrl, installation,
+            accountToken = { (sessions.localSession as? LocalSession.Owned)?.let { sessions.read() } },
+            shares = { (auth.status as? AuthStatus.SignedIn)?.let { GymHttp(auth.accountApi(it.user)) } },
+            turnLease, telemetry, scope, localHttp = BuildConfig.DEBUG)
         val store = TrainingStore(
             controls = WorkoutControls(File(filesDir, WorkoutControls.fileName), owner, telemetry = telemetry),
             training = training,

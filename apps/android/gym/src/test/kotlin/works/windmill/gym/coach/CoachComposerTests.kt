@@ -278,13 +278,12 @@ class CoachComposerTests {
         compose.waitForIdle()
         compose.onNodeWithContentDescription("Send").performTouchInput { doubleClick() }
         compose.waitForIdle()
-        assertEquals(0, server.stops)
         assertEquals(listOf("Double tapped question"), server.opened.map { it.question })
 
         compose.mainClock.advanceTimeBy(1_000)
         compose.waitForIdle()
         compose.onNodeWithContentDescription("Stop response").performClick()
-        compose.waitUntil(60_000) { compose.runOnIdle { server.stops == 1 } }
+        compose.waitUntil(60_000) { compose.runOnIdle { room.coachTurns?.stopping?.value == true || room.coachTurns?.turn?.value == null } }
         assertEquals(listOf("Double tapped question"), server.opened.map { it.question })
         scope.cancel()
     }

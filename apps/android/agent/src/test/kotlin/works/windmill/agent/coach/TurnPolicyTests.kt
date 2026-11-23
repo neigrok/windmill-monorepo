@@ -24,6 +24,14 @@ class TurnPolicyTests {
         }
     }
 
+    @Test fun aToolSaysStrictOnlyWhereItsProfileDoes() {
+        fun tool(strict: String) = Profile.Tool(Json.parse("""{"name": "read", "description": "d", "input": {"type": "object"}, "countsAsWrite": false$strict}"""))
+        assertEquals(Json.parse("""{"name": "read", "description": "d", "input": {"type": "object"}, "strict": true}"""), tool(""", "strict": true""").wire)
+        assertEquals(Json.parse("""{"name": "read", "description": "d", "input": {"type": "object"}, "strict": false}"""), tool(""", "strict": false""").wire)
+        assertEquals(Json.parse("""{"name": "read", "description": "d", "input": {"type": "object"}}"""), tool("").wire)
+        assertThrows(IllegalArgumentException::class.java) { tool(""", "strict": "yes"""") }
+    }
+
     @Test fun accessLabelsExposeNoMoneyPolicy() {
         assertEquals(listOf("allowance", "capacity", "busy", "sign-in", "update", "off", "offline", "did-not-answer"),
             listOf("subject_exhausted", "free_day_exhausted", "busy", "device_bound", "client-update-required", "anonymous_ai_unavailable", null, "provider_failed")

@@ -1,17 +1,18 @@
 package works.windmill.gym.coach.turn
 
+import android.graphics.Bitmap
+import android.graphics.Color
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlin.time.Duration.Companion.milliseconds
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -22,78 +23,49 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.spelled
-import works.windmill.gym.string
-import works.windmill.agent.AllowanceShortfall
-import works.windmill.agent.ToolCall
-import works.windmill.agent.ToolOutcome
-import works.windmill.agent.TurnEnd
-import works.windmill.agent.TurnEvent
-import works.windmill.agent.TurnLabel
-import works.windmill.agent.TurnOpen
-import works.windmill.agent.TurnRecordRefused
-import works.windmill.agent.TurnRefusal
-import works.windmill.agent.TurnSeat
-import works.windmill.agent.TurnState
-import works.windmill.agent.TurnTransport
-import works.windmill.domain.kit.Catalog
 import works.windmill.domain.kit.Id
-import works.windmill.domain.kit.Outcome
-import works.windmill.gym.R
+import works.windmill.domain.kit.Repository
+import works.windmill.domain.kit.Seat
+import works.windmill.gym.coach.CoachAttachment
 import works.windmill.gym.domain.coach.AbilityCall
 import works.windmill.gym.domain.coach.CoachMessage
-import works.windmill.gym.domain.coach.CoachPictureRow
 import works.windmill.gym.domain.coach.CoachThread
 import works.windmill.gym.domain.coach.CoachTurnBounds
-import works.windmill.gym.domain.coach.DeleteConversation
 import works.windmill.gym.domain.coach.EndTurn
+import works.windmill.gym.domain.coach.Mark
 import works.windmill.gym.domain.coach.MessageState
-import works.windmill.gym.domain.coach.OpenTurn
+import works.windmill.gym.domain.sync.Proposal
 import works.windmill.gym.domain.sync.Routine
-import works.windmill.gym.store.EngineRoomFixture
-import works.windmill.gym.store.ReplicaPin
+import works.windmill.gym.net.GymRest
+import works.windmill.gym.presentation.McpKey
+import works.windmill.gym.presentation.OAuthGrant
+import works.windmill.gym.sharing.SessionShare
 import works.windmill.gym.telemetry.GymEvents
-import works.windmill.platform.i18n.text
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApiException
-import works.windmill.platform.telemetry.EventSchemas
 import works.windmill.sync.api.RecordRef
-import works.windmill.sync.core.ClockReading
 import works.windmill.sync.core.Json
+import works.windmill.sync.core.RecordID
 import works.windmill.sync.core.ScopeRef
-import works.windmill.sync.engine.RequestTiming
-import works.windmill.sync.engine.SyncResponse
-import works.windmill.sync.engine.nextPush
-import works.windmill.sync.engine.onPushResponse
-import works.windmill.sync.modelserver.Credential
+import works.windmill.sync.core.Sha256
 import works.windmill.sync.engine.SyncRuntime
-import works.windmill.sync.engine.reidentify
 import works.windmill.sync.engine.signIn
-import works.windmill.sync.engine.signOut
 import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
 
-// The turn around the driver on a real engine: admission and what it keeps, the installation's answers, a process that died at each step of a batch, a seat that changed under a batch, an account in transition, and telemetry that says nothing of what was said.
+// A gym turn on the Coach engine, on a real replica, against a scripted AI service: admission and what it keeps, the profile and the first content each seat sends, the ids the turn seeds, the once-rules, a share through the Share door, a picture uploaded once, the mark with its round, the access states and their words, Stop, a seat that changes under a turn, a process that dies in its last round, and telemetry that says nothing of what was said.
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class CoachTurnsTests {
     @get:Rule val folder = TemporaryFolder()
 
-    private val routineCall = """{"id":"rt_00000009","name":"Day 1","position":0,"entries":[{"exerciseId":"bench-press"}]}"""
-
     private fun script(vararg frames: String) = ScriptedTurns(frames.flatMap { Json.parse(it).arr() })
 
-    private val answersOneCreate get() = script("""[
-        {"event":"text","data":{"delta":"On it."}},
-        {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"create_routine","input":$routineCall}]}},
-        {"await":"results","batch":1},
-        {"event":"text","data":{"delta":" Done."}},
-        {"event":"done","data":{"state":"completed"}}]""")
+    private val routineCall = """{"id":"the-model-names-this","name":"Day 1","position":0,"entries":[{"exerciseId":"bench-press"}]}"""
 
-    private fun TurnPhone.routines(): List<Routine> = engine.read(ScopeRef(Gym.scope)) { read ->
-        works.windmill.domain.kit.Repository.decode(Routine, read.drawn(Routine.type))
-    }
+    private fun TurnPhone.routines(): List<Routine> = engine.read(ScopeRef(Gym.scope)) { Repository.decode(Routine, it.drawn(Routine.type)) }
+    private fun TurnPhone.proposals(): List<Proposal> = engine.read(ScopeRef(Gym.scope)) { Repository.decode(Proposal, it.drawn(Proposal.type)) }
 
     private fun TurnPhone.completeSignIn(account: String) {
         val question = engine.signIn(account, mapOf("gym" to true), serverSchema = SyncSchema.registry.version)
@@ -104,17 +76,15 @@ class CoachTurnsTests {
         room.selected = account
     }
 
-    private val routineReceipt = RecordRef(Gym.Types.routine, works.windmill.sync.core.RecordID("rt_00000009"))
-
     private fun assertNothingKept(phone: TurnPhone) {
         assertEquals(emptyList<CoachMessage>(), phone.messages())
         assertEquals(emptyList<CoachThread>(), phone.threads())
         assertNull(phone.device(EndTurn.runningTurnKey))
-        assertEquals(emptyList<TurnSeat>(), phone.server.seats)
+        assertEquals(0, phone.server.passes)
         assertEquals(0, phone.server.opened.size)
     }
 
-    // Coach §4.1, each refusal in its turn: nothing is written, nothing leaves, and the reason is said once.
+    // Phone-hosted Coach abilities §4.1, each refusal in its turn: nothing is written, nothing leaves, and the reason is said once.
     @Test fun aFirstPullStillComingRefusesASignedInSend() = runTest {
         TurnPhone(this, folder.newFolder(), script("[]")).use { phone ->
             phone.room.select("account-1")
@@ -122,13 +92,6 @@ class CoachTurnsTests {
             assertEquals(CoachTurnRefusal.LogArriving, phone.turns.refusal.value)
             assertNothingKept(phone)
             assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "refused")), phone.telling.named("gym_ask_outcome"))
-        }
-    }
-
-    @Test fun aSignedOutReplicaHoldsItsFirstPullComplete() = runTest {
-        TurnPhone(this, folder.newFolder(), script("[]")).use { phone ->
-            assertTrue(phone.room.training.anonymous)
-            assertTrue(phone.room.training.firstPullComplete)
         }
     }
 
@@ -142,6 +105,7 @@ class CoachTurnsTests {
         }
     }
 
+    // Coach engine R-6: a question sent with no connection returns to the field at once, before a seat, a pass or a record.
     @Test fun noConnectionRefusesBeforeTheSeatIsAsked() = runTest {
         TurnPhone(this, folder.newFolder(), script("[]")).use { phone ->
             val runtime = SyncRuntime(phone.engine, object : works.windmill.sync.engine.SyncTransport {
@@ -175,14 +139,6 @@ class CoachTurnsTests {
         }
     }
 
-    @Test fun aSeatThatDoesNotMatchTheReplicaRefuses() = runTest {
-        TurnPhone(this, folder.newFolder(), script("[]")).use { phone ->
-            assertNull(phone.turns.send("Private question", null, null, anonymous = false))
-            assertEquals(CoachTurnFault.accountChanging, phone.turns.fault.value)
-            assertNothingKept(phone)
-        }
-    }
-
     @Test fun theSentenceAnAccountsChangeLeftGoesWhenTheSeatMayWriteAgain() = runTest {
         var writable = false
         TurnPhone(this, folder.newFolder(), script("[]"), writable = { writable }).use { phone ->
@@ -198,75 +154,11 @@ class CoachTurnsTests {
         }
     }
 
-    @Test fun anAccountNotWritableRefusesASend() = runTest {
-        TurnPhone(this, folder.newFolder(), script("[]"), writable = { false }).use { phone ->
-            assertNull(phone.turns.send("Private question", null, null, anonymous = true))
-            assertEquals(CoachTurnFault.accountChanging, phone.turns.fault.value)
-            assertNothingKept(phone)
-        }
-    }
-
     @Test fun anUnknownConversationKeepsNothing() = runTest {
         TurnPhone(this, folder.newFolder(), script("[]")).use { phone ->
             assertNull(phone.turns.send("Private question", null, Id("thrdNobody000000", CoachThread), anonymous = true))
             assertEquals(CoachTurnFault.unsaved, phone.turns.fault.value)
             assertNothingKept(phone)
-        }
-    }
-
-    @Test fun aSendWhileATurnRunsIsBusy() = runTest {
-        TurnPhone(this, folder.newFolder(), script("""[{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""")).use { phone ->
-            val turn = checkNotNull(phone.turns.send("First", null, null, anonymous = true))
-            advanceUntilIdle()
-            assertEquals(turn.coach.record.string, phone.turns.activity.value?.turnId)
-            assertNull(phone.turns.send("Second", null, null, anonymous = true))
-            assertEquals(CoachTurnFault.busy, phone.turns.fault.value)
-            assertEquals(listOf("First", ""), phone.messages().map { it.text })
-            phone.turns.requestStop()
-            advanceUntilIdle()
-            assertEquals(MessageState.stopped, phone.message(turn.coach)?.state)
-            assertNull(phone.turns.activity.value)
-            assertNull(phone.turns.turn.value)
-        }
-    }
-
-    // The installation the server refused stands: the phone keeps it, and asks nobody the next time.
-    @Test fun anInvalidInstallationAtTheOpenWithdrawsTheTurnAndStaysInvalid() = runTest {
-        val server = script("[]").apply { refuseOpen = TurnRefusal(401, "invalid_installation", null) }
-        TurnPhone(this, folder.newFolder(), server).use { phone ->
-            checkNotNull(phone.turns.send("Private question", null, null, anonymous = true))
-            advanceUntilIdle()
-            assertEquals(CoachTurnRefusal.Installation("invalid_installation"), phone.turns.refusal.value)
-            assertEquals(WithdrawnTurn("Private question", null, null), phone.turns.withdrawn.value)
-            assertEquals(emptyList<CoachMessage>(), phone.messages())
-            assertEquals(emptyList<CoachThread>(), phone.threads())
-            assertNull(phone.device(EndTurn.runningTurnKey))
-            assertEquals(listOf(mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST", "failure_kind" to "http", "status" to "401")), phone.telling.named("api_request_failed"))
-            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "refused", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.named("coach_turn"))
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-
-            val reads = phone.installationServer.reads
-            assertNull(phone.turns.send("Private question", null, null, anonymous = true))
-            assertEquals(CoachTurnRefusal.Installation("invalid_installation"), phone.turns.refusal.value)
-            assertEquals(reads, phone.installationServer.reads)
-            assertEquals(CoachRecovery.signIn, phone.turns.refusal.value?.recovery(anonymous = true))
-        }
-    }
-
-    @Test fun aBoundInstallationMidTurnEndsItFailedAndStaysBound() = runTest {
-        val server = script("""[{"event":"error","data":{"code":"device_bound"}}]""")
-        TurnPhone(this, folder.newFolder(), server).use { phone ->
-            val turn = checkNotNull(phone.turns.send("Private question", null, null, anonymous = true))
-            advanceUntilIdle()
-            assertEquals(MessageState.failed, phone.message(turn.coach)?.state)
-            assertEquals(CoachTurnRefusal.Installation("device_bound"), phone.turns.refusal.value)
-            assertNull(phone.turns.withdrawn.value)
-            val reads = phone.installationServer.reads
-            assertNull(phone.turns.send("Again", null, null, anonymous = true))
-            assertEquals(CoachTurnRefusal.Installation("device_bound"), phone.turns.refusal.value)
-            assertEquals(reads, phone.installationServer.reads)
-            assertEquals(listOf("Private question", ""), phone.messages().map { it.text })
         }
     }
 
@@ -285,209 +177,309 @@ class CoachTurnsTests {
         }
     }
 
-    // The process dies at each step of a batch: after the call's commit before the post, and after the post. The next process ends the turn `interrupted` with one record and the right receipt, and tells of it once.
-    @Test fun aProcessKilledAtEachStepOfABatchEndsInterruptedWithOneRecord() = runTest {
-        for (post in listOf(false, true)) {
-            lateinit var snapshot: Json
-            lateinit var turn: OpenTurn.Turn
-            TurnPhone(this, folder.newFolder(), script("""[
-                {"event":"text","data":{"delta":"On it."}},
-                {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"create_routine","input":$routineCall}]}},
-                {"await":"results","batch":1}]""")).use { phone ->
-                val kill: suspend () -> Unit = {
-                    snapshot = phone.engine.snapshot()
-                    awaitCancellation()
-                }
-                if (post) phone.server.afterPost = kill else phone.server.beforePost = kill
-                turn = checkNotNull(phone.turns.send("Add a day", null, null, anonymous = true))
-                advanceUntilIdle()
-                assertEquals(if (post) 1 else 0, phone.server.posted.size)
-                assertEquals(MessageState.running, phone.message(turn.coach)?.state)
-            }
-            TurnPhone(this, folder.newFolder(), script("[]"), snapshot = snapshot).use { reopened ->
-                assertEquals(MessageState.running, reopened.message(turn.coach)?.state)
-                assertEquals(turn.coach.json, reopened.device(EndTurn.runningTurnKey))
-                reopened.turns.start()
-                advanceUntilIdle()
-                val ended = checkNotNull(reopened.message(turn.coach))
-                assertEquals(MessageState.interrupted, ended.state)
-                assertEquals("On it.", ended.text)
-                assertEquals(CoachTurnBounds.contextReads + "create_routine", ended.calls.map { it.name })
-                assertEquals(listOf(routineReceipt), ended.calls.flatMap { it.created })
-                assertEquals(Json.parse("""{"read":{"sessions":0,"sets":0,"weeks":0},"results":[{"id":"rt_00000009","t":"routine"}]}""").jcs, ended.receipt?.jcs)
-                assertEquals(listOf("Day 1"), reopened.routines().map { it.name })
-                assertNull(reopened.device(EndTurn.runningTurnKey))
-                assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "failed")), reopened.telling.named("gym_ask_outcome"))
-                assertEquals(listOf(mapOf("state" to "interrupted", "seat" to "anon", "code" to "process_ended", "ability_calls" to "5", "refusals" to "0", "answer_bytes" to "6")),
-                    reopened.telling.named("coach_turn"))
-                assertEquals(emptyList<Map<String, String>>(), reopened.telling.failures)
+    // gym Coach on the AI service §3, §4.1: a question answered. Round 1 is the profile of the seat, its tools each strict as catalog/3 states, and the first content: each context read under its lead, then the question. The answer lands whole, the mark goes, and the turn tells its end in counts.
+    @Test fun aQuestionIsAnsweredWithTheProfileOfItsSeatAndTheFirstContent() = runTest {
+        TurnPhone(this, folder.newFolder(), script("""[{"event":"text","data":{"delta":"Add "}},{"event":"text","data":{"delta":"5 kg."}},{"event":"done","data":{"state":"completed"}}]""")).use { phone ->
+            phone.turns.start()
+            advanceUntilIdle()
+            val turn = checkNotNull(phone.turns.send("How heavy today?", null, null, anonymous = true))
+            advanceUntilIdle()
 
-                // A host left over from that turn can write nothing on a message a sweep ended.
-                val host = hostOf(reopened, turn)
-                assertThrowsRecordRefused { host.execute(ToolCall("toolu_1", "create_routine", Json.parse(routineCall))) }
-                assertEquals(ended, reopened.message(turn.coach))
-            }
+            val request = phone.server.opened.single().request
+            val catalog = TurnPhone.catalog()
+            val offered = catalog.offered(Seat.anon)
+            assertEquals(15, offered.size)
+            assertEquals(offered.map { Json.objectOf("name" to Json.of(it.name), "description" to Json.of(it.description), "input" to it.input, "strict" to Json.of(it.strict)) },
+                request.member("tools").arr())
+            assertEquals(listOf("create_routine", "create_exercise", "propose_routine_change", "propose_routine_removal", "propose_workout_change"),
+                offered.filter { it.strict }.map { it.name })
+            assertEquals(Json.of("large"), request.member("model"))
+            assertEquals(Json.of("low"), request.member("effort"))
+            assertEquals(Json.parse("""{"maxTokens":2000,"minTokens":1024,"schema":null}"""), request.member("output"))
+            assertEquals(Json.array(Json.of(TurnPhone.words().prompt)), request.member("system"))
+            val words = TurnPhone.words().firstContent.member("contextLeads")
+            val texts = phone.server.opened.single().texts
+            assertEquals(CoachTurnBounds.contextReads.map { words.member(it).str() }, texts.dropLast(1).map { it.substringBefore('\n') })
+            assertEquals("How heavy today?", texts.last())
+
+            val answered = checkNotNull(phone.message(turn.coach))
+            assertEquals(MessageState.completed, answered.state)
+            assertEquals("Add 5 kg.", answered.text)
+            assertEquals(CoachTurnBounds.contextReads.map { contextCallPrefix + it }, answered.calls.map { it.callId })
+            assertNull(phone.device(EndTurn.runningTurnKey))
+            assertNull(phone.device(Mark.roundKey))
+            assertNull(phone.turns.turn.value)
+            assertNull(phone.turns.liveAnswer.value)
+            assertEquals(listOf(mapOf("state" to "completed", "seat" to "anon", "rounds" to "1", "ability_calls" to "0", "refusals" to "0", "answer_bytes" to "9", "duration_ms" to "0")),
+                phone.telling.named("coach_turn"))
+            assertEquals(listOf(mapOf("screen" to "coach")), phone.telling.named("gym_ask_started"))
+            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "answered", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))
+            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
+            assertTrue(phone.telling.events.none { (_, properties) -> properties.values.any { "How heavy" in it || "5 kg" in it } })
         }
     }
 
-    // The same two kills, and the call asked again of the replica the process left: one record, no second routine, the receipt whole.
-    @Test fun aCallRunAgainAfterAKillKeepsOneRecord() = runTest {
-        for (post in listOf(false, true)) {
-            lateinit var snapshot: Json
-            lateinit var turn: OpenTurn.Turn
-            TurnPhone(this, folder.newFolder(), script("""[
-                {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"create_routine","input":$routineCall}]}},
-                {"await":"results","batch":1}]""")).use { phone ->
-                val kill: suspend () -> Unit = {
-                    snapshot = phone.engine.snapshot()
-                    awaitCancellation()
-                }
-                if (post) phone.server.afterPost = kill else phone.server.beforePost = kill
-                turn = checkNotNull(phone.turns.send("Add a day", null, null, anonymous = true))
-                advanceUntilIdle()
-            }
-            TurnPhone(this, folder.newFolder(), script("[]"), snapshot = snapshot).use { reopened ->
-                val host = hostOf(reopened, turn)
-                val first = reopened.message(turn.coach)!!.calls
-                val outcome = host.execute(ToolCall("toolu_1", "create_routine", Json.parse(routineCall)))
-                assertTrue(outcome is ToolOutcome.Ok)
-                assertEquals(first, reopened.message(turn.coach)!!.calls)
-                assertEquals(listOf("Day 1"), reopened.routines().map { it.name })
-                host.end(TurnEnd(TurnState.completed, "Done.", false, null, null))
-                val ended = reopened.message(turn.coach)!!
-                assertEquals(MessageState.completed, ended.state)
-                assertEquals(Json.parse("""{"read":{"sessions":0,"sets":0,"weeks":0},"results":[{"id":"rt_00000009","t":"routine"}]}""").jcs, ended.receipt?.jcs)
-            }
+    // The bound seat's profile: every declared ability the catalog lets Coach run or propose, the shares and the note among them, at medium effort; signed out, those an account needs are not offered, and nor is the note's once-rule.
+    @Test fun eachSeatHasItsProfile() {
+        val profile = GymProfile(TurnPhone.catalog(), TurnPhone.words())
+        val bound = profile.of(Seat.bound)
+        val anon = profile.of(Seat.anon)
+        assertEquals(18, bound.tools.size)
+        assertEquals(bound.tools.map { it.name } - listOf("save_note", "share_session", "revoke_share"), anon.tools.map { it.name })
+        assertEquals("medium" to "low", bound.effort to anon.effort)
+        assertEquals(listOf("routine-proposal", "workout-proposal", "note"), bound.groups.map { it.name })
+        assertEquals(listOf("routine-proposal", "workout-proposal"), anon.groups.map { it.name })
+        assertEquals(listOf(8L, 12L, 6L), listOf(bound.modelCalls, bound.abilityCalls, bound.writes))
+        assertEquals(listOf("create_routine", "create_exercise", "save_note", "share_session"), bound.tools.filter { it.countsAsWrite }.map { it.name })
+        assertEquals("you already wrote a routine or workout proposal this turn; fold both into one document.", bound.refusals["one-proposal"])
+        assertEquals("", bound.refusals["invalid-arguments"])
+        assertEquals("gym.coach" to 1L, bound.name to bound.version)
+    }
+
+    // The earlier conversation leads the first content, marked and oldest first, each line under its speaker's name.
+    @Test fun theHistoryIsMarkedAndNamed() = runTest {
+        TurnPhone(this, folder.newFolder(), script("""[{"event":"text","data":{"delta":"Yes."}},{"event":"done","data":{"state":"completed"}}]""")).use { phone ->
+            val first = checkNotNull(phone.turns.send("First?", null, null, anonymous = true))
+            advanceUntilIdle()
+            phone.room.now += 1_000
+            phone.server.rewind()
+            checkNotNull(phone.turns.send("Second?", null, first.thread, anonymous = true))
+            advanceUntilIdle()
+            val earlier = TurnPhone.words().firstContent.member("earlierConversation")
+            assertEquals(earlier.member("marker").str() + "\n\n" + earlier.member("lifter").str() + ": First?\n\n" + earlier.member("coach").str() + ": Yes.",
+                phone.server.opened[1].texts.first())
         }
     }
 
-    // A whole turn the server re-delivers its batch to, as a resume does: the call runs twice, the record stays one, and the answer posts twice.
-    @Test fun aBatchDeliveredAgainOnAResumeKeepsOneRecordAndOneRoutine() = runTest {
-        val calls = """{"batch":1,"calls":[{"callId":"toolu_1","name":"create_routine","input":$routineCall}]}"""
-        TurnPhone(this, folder.newFolder(), script("""[
-            {"event":"calls","data":$calls},
-            {"await":"resume"},
-            {"event":"snapshot","data":{"text":"","state":"running","calls":$calls}},
+    // §4.2: an ability that writes takes the id its turn seeds, whatever the model named, and its result returns to the model as canonical bytes; the call stands on the Coach message with what it created.
+    @Test fun anAbilityThatWritesTakesTheIdItsTurnSeeds() = runTest {
+        val server = script("""[
+            {"event":"text","data":{"delta":"On it."}},
+            {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"create_routine","input":$routineCall}]}},
             {"await":"results","batch":1},
-            {"event":"done","data":{"state":"completed"}}]""")).use { phone ->
+            {"event":"text","data":{"delta":" Done."}},
+            {"event":"done","data":{"state":"completed"}}]""")
+        TurnPhone(this, folder.newFolder(), server).use { phone ->
             val turn = checkNotNull(phone.turns.send("Add a day", null, null, anonymous = true))
             advanceUntilIdle()
-            val ended = phone.message(turn.coach)!!
-            assertEquals(MessageState.completed, ended.state)
-            assertEquals(CoachTurnBounds.contextReads + "create_routine", ended.calls.map { it.name })
-            assertEquals(listOf(routineReceipt), ended.calls.flatMap { it.created })
-            assertEquals(listOf("Day 1"), phone.routines().map { it.name })
-            assertEquals(2, phone.server.posted.size)
-            assertEquals(phone.server.posted[0].member("results").arr().map { it.member("callId") }, phone.server.posted[1].member("results").arr().map { it.member("callId") })
-        }
-    }
-
-    // §4.5 Writer: a re-identify under a batch. The call in flight landed, the next call never runs, the server hears one Stop, and the message ends `interrupted` under the new id.
-    @Test fun aReplicaThatChangesMidBatchEndsTheTurnInterruptedUnderItsNewId() = runTest {
-        TurnPhone(this, folder.newFolder(), twoCreates()).use { phone ->
-            phone.turns.start()
-            advanceUntilIdle()
-            val replica = phone.engine.activeReplica()
-            phone.telling.onEvent = { name, properties ->
-                if (name == "coach_ability" && properties["name"] == "create_routine") {
-                    phone.telling.onEvent = { _, _ -> }
-                    phone.engine.reidentify()
-                }
-            }
-            val turn = checkNotNull(phone.turns.send("Add two days", null, null, anonymous = true))
-            advanceUntilIdle()
-
-            val renamed = phone.engine.activeReplica()
-            assertFalse(replica == renamed)
+            val seeded = "${turn.coach.record.string}-1"
+            assertEquals(listOf(seeded to "Day 1"), phone.routines().map { it.id.record.string to it.name })
             val ended = checkNotNull(phone.message(turn.coach))
-            assertEquals(replica, ended.replica)
-            assertEquals(MessageState.interrupted, ended.state)
-            assertEquals(CoachTurnBounds.contextReads + "create_routine", ended.calls.map { it.name })
-            assertEquals(listOf("Day 1"), phone.routines().map { it.name })
-            assertNull(phone.device(EndTurn.runningTurnKey))
-            assertEquals(1, phone.server.stops)
-            assertEquals(emptyList<Json>(), phone.server.posted)
-            assertNull(phone.turns.activity.value)
-            assertNull(phone.turns.turn.value)
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-            assertEquals(listOf(mapOf("state" to "interrupted", "seat" to "anon", "code" to "seat_changed", "ability_calls" to "5", "refusals" to "0", "answer_bytes" to "0", "duration_ms" to "0")),
-                phone.telling.named("coach_turn"))
+            assertEquals(MessageState.completed, ended.state)
+            assertEquals("On it. Done.", ended.text)
+            val call = ended.calls.last()
+            assertEquals("toolu_1" to listOf(RecordRef(Gym.Types.routine, RecordID(seeded))), call.callId to call.created)
+            val result = server.results.single()
+            assertEquals("toolu_1" to Json.of(false), result.member("id").str() to result.member("isError"))
+            assertEquals(seeded, Json.parse(result.member("content").str()).member("id").str())
+            assertEquals(CoachTurnBounds.contextReads.map { mapOf("name" to it, "outcome" to "ok") } + mapOf("name" to "create_routine", "outcome" to "ok"),
+                phone.telling.named("coach_ability"))
+            assertEquals("2", phone.telling.named("coach_turn").single()["rounds"])
         }
     }
 
-    // A sign-out under a batch: the record stays on the replica that holds it, untouched by the next seat, and ends when that replica comes back.
-    @Test fun aSignOutMidBatchLeavesTheNextSeatCleanAndTheMessageEndsWhenItsReplicaReturns() = runTest {
-        TurnPhone(this, folder.newFolder(), twoCreates()).use { phone ->
+    // A proposal is placed by its call: the call that made it records it, and the routine a second proposal in the turn would change is refused by the once-rule, which the model reads with its sentence.
+    @Test fun aProposalIsPlacedByItsCallAndASecondIsRefusedOnce() = runTest {
+        val change = """{"id":"x","routineId":"rt_00000001","name":null,"entries":[{"exerciseId":"back-squat"}],"summary":"Squat"}"""
+        val server = script("""[
+            {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"propose_routine_change","input":$change},{"callId":"toolu_2","name":"propose_routine_removal","input":{"id":"x","routineId":"rt_00000001","summary":null}}]}},
+            {"await":"results","batch":1},
+            {"event":"done","data":{"state":"completed"}}]""")
+        TurnPhone(this, folder.newFolder(), server).use { phone ->
+            phone.seedRoutines()
+            val turn = checkNotNull(phone.turns.send("Swap bench for squat", null, null, anonymous = true))
+            advanceUntilIdle()
+            val seeded = "${turn.coach.record.string}-1"
+            assertEquals(listOf(seeded), phone.proposals().map { it.id.record.string })
+            val call = checkNotNull(phone.message(turn.coach)).calls.single { it.callId == "toolu_1" }
+            assertEquals(listOf(RecordRef(Gym.Types.proposal, RecordID(seeded))), call.created)
+            val refused = server.results.single { it.member("id").str() == "toolu_2" }
+            assertEquals(Json.of(true), refused.member("isError"))
+            assertEquals(Json.objectOf("code" to Json.of("one-proposal"), "message" to Json.of("you already wrote a routine or workout proposal this turn; fold both into one document.")),
+                Json.parse(refused.member("content").str()))
+            assertEquals(listOf(mapOf("name" to "propose_routine_change", "outcome" to "ok"), mapOf("name" to "propose_routine_removal", "outcome" to "one-proposal")),
+                phone.telling.named("coach_ability").drop(CoachTurnBounds.contextReads.size))
+        }
+    }
+
+    // §4.3: a share is made through the door the Share sheet calls, and its call stands on the message like any other.
+    @Test fun aShareRunsThroughTheShareDoor() = runTest {
+        val asked = mutableListOf<String>()
+        val door = object : GymRest {
+            override suspend fun share(sessionId: String): SessionShare { asked += "share $sessionId"; return SessionShare("tok", "https://windmill.works/s/tok", 1_900_000_000_000) }
+            override suspend fun revokeShare(sessionId: String) { asked += "revoke $sessionId"; throw WindmillApiException.Refused(404, Refusal(code = "not_found")) }
+            override suspend fun grants() = emptyList<OAuthGrant>()
+            override suspend fun mcpKeys() = emptyList<McpKey>()
+        }
+        val server = script("""[
+            {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"share_session","input":{"sessionId":"sesAAAAAAAAAAAA1"}},{"callId":"toolu_2","name":"revoke_share","input":{"sessionId":"sesAAAAAAAAAAAA2"}}]}},
+            {"await":"results","batch":1},
+            {"event":"done","data":{"state":"completed"}}]""")
+        TurnPhone(this, folder.newFolder(), server, shares = { door }).use { phone ->
             phone.signIn()
-            phone.turns.start()
+            val turn = checkNotNull(phone.turns.send("Share my last workout", null, null, anonymous = false))
             advanceUntilIdle()
-            phone.telling.onEvent = { name, properties ->
-                if (name == "coach_ability" && properties["name"] == "create_routine") {
-                    phone.telling.onEvent = { _, _ -> }
-                    assertTrue(phone.engine.signOut("keep").member("complete").bool())
-                }
-            }
-            val turn = checkNotNull(phone.turns.send("Add two days", null, null, anonymous = false))
-            advanceUntilIdle()
-
-            assertEquals(emptyList<CoachMessage>(), phone.messages())
-            assertEquals(emptyList<Routine>(), phone.routines())
-            assertNull(phone.device(EndTurn.runningTurnKey))
-            assertEquals(1, phone.server.stops)
-            assertEquals(listOf(mapOf("state" to "interrupted", "seat" to "bound", "code" to "seat_changed", "duration_ms" to "0")), phone.telling.named("coach_turn"))
-            assertNull(phone.turns.turn.value)
-
-            assertTrue(phone.engine.signIn("account-1", mapOf("gym" to true)).member("complete").bool())
-            advanceUntilIdle()
-            val back = checkNotNull(phone.message(turn.coach))
-            assertEquals(MessageState.interrupted, back.state)
-            assertEquals(listOf(routineReceipt), back.calls.flatMap { it.created })
-            assertNull(phone.device(EndTurn.runningTurnKey))
-            assertEquals(1, phone.telling.named("coach_turn").size)
+            assertEquals(listOf("share sesAAAAAAAAAAAA1", "revoke sesAAAAAAAAAAAA2"), asked)
+            val (shared, revoked) = server.results
+            assertEquals(Json.parse("""{"expiresAt":1900000000000,"token":"tok","url":"https://windmill.works/s/tok"}"""), Json.parse(shared.member("content").str()))
+            assertEquals(Json.of(true), revoked.member("isError"))
+            assertEquals("refused", Json.parse(revoked.member("content").str()).member("code").str())
+            assertEquals(listOf(AbilityCall.Outcome.Ok, AbilityCall.Outcome.Refused(works.windmill.gym.domain.coach.AbilityRefusal.refused)),
+                checkNotNull(phone.message(turn.coach)).calls.filter { it.name in setOf("share_session", "revoke_share") }.map { it.outcome })
+            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
         }
     }
 
-    // A commit can outlive the cancellation: a turn that reached its end before the seat changed keeps how it ended.
-    @Test fun aTurnThatEndedBeforeTheSeatChangedKeepsItsEnding() = runTest {
-        val server = script("""[{"event":"text","data":{"delta":"Answered."}},{"event":"done","data":{"state":"completed"}}]""")
+    // R-12: a picture's model copy is uploaded once, under its digest, and every round names it.
+    @Test fun aPictureIsUploadedOnceAndNamedInEveryRound() = runTest {
+        val server = script("""[
+            {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"list_notes","input":{}}]}},
+            {"await":"results","batch":1},
+            {"event":"done","data":{"state":"completed"}}]""")
         TurnPhone(this, folder.newFolder(), server).use { phone ->
-            phone.turns.start()
+            val bitmap = Bitmap.createBitmap(40, 30, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
+            val bytes = java.io.ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
+            val picture = ChosenPicture(CoachAttachment("thr_0123456789abcdef", "image/jpeg", 40, 30, bytes.size.toLong()), bytes)
+            checkNotNull(phone.turns.send("", picture, null, anonymous = true))
             advanceUntilIdle()
+            val named = Sha256.hex("thr_0123456789abcdef".encodeToByteArray())
+            assertEquals(listOf(named), phone.server.uploads)
+            assertEquals(2, server.rounds.size)
+            for (round in server.rounds) assertTrue(Json.objectOf("image" to Json.objectOf("picture" to Json.of(named))) in round.member("messages").arr()[0].member("parts").arr())
+            assertEquals(TurnPhone.words().firstContent.member("pictureOnlyQuestion").str(), server.opened.single().question)
+        }
+    }
+
+    // Coach engine D-6, gym §4.4: the mark is the turn and the round in flight, with the bytes of text before it; each round writes it after the text so far, and the end clears both rows.
+    @Test fun theMarkHoldsEachRound() = runTest {
+        val marks = mutableListOf<Pair<Json?, Json?>>()
+        val server = script("""[
+            {"event":"text","data":{"delta":"Reading é."}},
+            {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"list_notes","input":{}}]}},
+            {"await":"results","batch":1},
+            {"event":"done","data":{"state":"completed"}}]""")
+        TurnPhone(this, folder.newFolder(), server).use { phone ->
+            server.beforeRound = { marks += phone.device(EndTurn.runningTurnKey) to phone.device(Mark.roundKey) }
+            val turn = checkNotNull(phone.turns.send("Notes?", null, null, anonymous = true))
+            advanceUntilIdle()
+            val turnId = Json.of(turn.coach.record.string!!)
+            assertEquals(listOf(turnId, turnId), marks.map { it.first })
+            assertEquals(listOf(0L, "Reading é.".encodeToByteArray().size.toLong()), marks.map { it.second!!.member("bytesBefore").long() })
+            assertTrue(marks.all { it.second!!.member("message") == turnId })
+            assertEquals(2, marks.map { it.second!!.member("callId") }.distinct().size)
+            assertEquals("Reading é.", phone.message(turn.coach)?.text)
+            assertNull(phone.device(EndTurn.runningTurnKey))
+            assertNull(phone.device(Mark.roundKey))
+        }
+    }
+
+    // The room draws the answer from the engine's text at every delta; the record takes it every five seconds and at the end.
+    @Test fun theAnswerReachesTheRoomAtEveryDeltaAndTheRecordEveryFiveSeconds() = runTest {
+        TurnPhone(this, folder.newFolder(), script("""[{"event":"text","data":{"delta":"Four words arrived here"}},{"await":"stop"},{"event":"text","data":{"delta":" and more."}},{"event":"done","data":{"state":"completed"}}]""")).use { phone ->
+            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
+            advanceTimeBy(1_000)
+            assertEquals(LiveAnswer(turn.coach, "Four words arrived here"), phone.turns.liveAnswer.value)
+            assertEquals("", phone.message(turn.coach)?.text)
+            phone.server.release()
+            advanceUntilIdle()
+            assertEquals("Four words arrived here and more.", phone.message(turn.coach)?.text)
+            assertNull(phone.turns.liveAnswer.value)
+        }
+    }
+
+    // Coach engine §5, Stop: the round in flight is read to its end, its calls are discarded, and the turn ends stopped with what arrived.
+    @Test fun aStopEndsTheTurnAfterTheRoundInFlight() = runTest {
+        val held = mutableListOf<kotlinx.coroutines.Job>()
+        TurnPhone(this, folder.newFolder(), script("""[{"event":"text","data":{"delta":"Reading"}},{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]"""), lease = { held += it }).use { phone ->
+            val turn = checkNotNull(phone.turns.send("First", null, null, anonymous = true))
+            advanceUntilIdle()
+            assertEquals(turn.coach.record.string, phone.turns.activity.value?.turnId)
+            assertTrue(held.single().isActive)
+            assertNull(phone.turns.send("Second", null, null, anonymous = true))
+            assertEquals(CoachTurnFault.busy, phone.turns.fault.value)
+            phone.turns.requestStop()
+            advanceUntilIdle()
+            assertEquals(MessageState.stopped, phone.message(turn.coach)?.state)
+            assertEquals("Reading", phone.message(turn.coach)?.text)
+            assertTrue(held.single().isCompleted)
+            assertNull(phone.turns.activity.value)
+            assertEquals("stopped", phone.telling.named("coach_turn").single()["state"])
+            assertEquals("cancelled", phone.telling.named("gym_ask_outcome").last()["outcome"])
+        }
+    }
+
+    // Coach engine §7, an allowance used up: round 1 refused proves nothing was admitted, so the turn never began. The question returns to the field, and the words say what holds it and when it comes back.
+    @Test fun anAllowanceUsedUpWithdrawsTheTurnAndSaysWhatHoldsIt() = runTest {
+        for ((amounts, said) in listOf(
+            ("0" to "0") to CoachTurnRefusal.Shortfall(AllowanceShortfall.spent, 1_900_000_000_000),
+            ("0" to "0.1") to CoachTurnRefusal.Shortfall(AllowanceShortfall.held, 1_900_000_000_000),
+            ("0.01" to "0") to CoachTurnRefusal.Shortfall(AllowanceShortfall.tooLarge, 1_900_000_000_000),
+        )) {
+            val server = script("[]").apply { refuseOpen = ScriptedTurns.Refusal(429, "subject_exhausted", scriptedAllowance("subject_exhausted", amounts.first, amounts.second, resetsAt = 1_900_000_000_000)) }
+            TurnPhone(this, folder.newFolder(), server).use { phone ->
+                checkNotNull(phone.turns.send("Private question", null, null, anonymous = true))
+                advanceUntilIdle()
+                assertEquals(said, phone.turns.refusal.value)
+                assertEquals(WithdrawnTurn("Private question", null, null), phone.turns.withdrawn.value)
+                assertEquals(emptyList<CoachMessage>(), phone.messages())
+                assertNull(phone.device(EndTurn.runningTurnKey))
+                assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "capped", "cap" to "allowance", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))
+                assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
+            }
+        }
+    }
+
+    // Every other access state by the code that stands for it.
+    @Test fun theAccessStatesReadAsTheBoardsSayThem() {
+        fun of(code: String?, source: String = "text", anonymous: Boolean = true, allowance: Json? = null) =
+            CoachTurnRefusal.of(works.windmill.agent.coach.AiFailure(source, code, works.windmill.agent.coach.Admission.none, allowance), anonymous)
+        assertEquals(CoachTurnRefusal.Allowance("free_day_exhausted", 1_800_086_400_000), of("free_day_exhausted", allowance = scriptedAllowance("free_day_exhausted", "1", "0", budgetResetsAt = 1_800_086_400_000)))
+        assertEquals(CoachTurnRefusal.FreeMonthExhausted(null), of("free_month_exhausted"))
+        assertEquals(CoachTurnRefusal.Allowance("concurrency_exhausted"), of("concurrency_exhausted"))
+        assertEquals(listOf(CoachTurnRefusal.RateLimited), listOf("rate_limited", "busy", "paused").map { of(it) }.distinct())
+        assertEquals(CoachTurnRefusal.SessionLapsed, of("unauthenticated", "pass", anonymous = false))
+        assertEquals(CoachTurnRefusal.Installation("device_bound"), of("device_bound", "pass"))
+        assertEquals(CoachTurnRefusal.UpdateRequired, of("client-update-required", "pass"))
+        assertEquals(CoachTurnRefusal.AnonymousUnavailable, of("anonymous_ai_unavailable", "pass"))
+        assertEquals(CoachTurnRefusal.Absent, of("anonymous_ai_unavailable", "pass", anonymous = false))
+        assertEquals(CoachTurnRefusal.Offline, of(null, "transport"))
+        assertEquals(listOf(CoachTurnRefusal.Unanswered), listOf("provider_failed", "answer-timeout", "model-call-limit", "invalid-answer", "result_gone").map { of(it) }.distinct())
+    }
+
+    // A round the provider failed ends the turn failed with what arrived, and the room says Coach did not answer.
+    @Test fun aRoundTheProviderFailedEndsTheTurnFailed() = runTest {
+        TurnPhone(this, folder.newFolder(), script("""[{"event":"text","data":{"delta":"Hal"}},{"event":"error","data":{"code":"provider_failed"}}]""")).use { phone ->
             val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
             advanceUntilIdle()
-            phone.engine.reidentify()
-            advanceUntilIdle()
-            assertEquals(MessageState.completed, phone.message(turn.coach)?.state)
-            assertEquals("Answered.", phone.message(turn.coach)?.text)
-            assertEquals(0, phone.server.stops)
-            assertEquals(1, phone.telling.named("coach_turn").size)
+            assertEquals(MessageState.failed, phone.message(turn.coach)?.state)
+            assertEquals("Hal", phone.message(turn.coach)?.text)
+            assertNull(phone.turns.refusal.value)
+            assertNull(phone.turns.withdrawn.value)
+            assertEquals("provider_failed", phone.telling.named("coach_turn").single()["code"])
+            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "failed", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))
         }
     }
 
-    // The seat changes the moment the turn ends: the turn told of itself, once, and its ending stands.
-    @Test fun aSeatChangeAsTheTurnEndsTellsOfItOnce() = runTest {
-        val server = script("""[{"event":"text","data":{"delta":"Answered."}},{"event":"done","data":{"state":"completed"}}]""")
+    // A device bound to an account while signed out: the AI service refuses the round, the phone keeps that it is bound, and asks nobody the next time.
+    @Test fun aBoundInstallationIsKeptAndAskedNoMore() = runTest {
+        val server = script("[]").apply { refuseOpen = ScriptedTurns.Refusal(409, "device_bound", atPassDoor = true) }
         TurnPhone(this, folder.newFolder(), server).use { phone ->
-            phone.turns.start()
+            checkNotNull(phone.turns.send("Private question", null, null, anonymous = true))
             advanceUntilIdle()
-            phone.telling.onEvent = { name, _ ->
-                if (name == "coach_turn") {
-                    phone.telling.onEvent = { _, _ -> }
-                    phone.engine.reidentify()
-                }
-            }
-            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
-            advanceUntilIdle()
-            assertEquals(MessageState.completed, phone.message(turn.coach)?.state)
-            assertEquals(listOf("completed"), phone.telling.named("coach_turn").map { it["state"] })
-            assertEquals(listOf("answered"), phone.telling.named("gym_ask_outcome").map { it["outcome"] })
-            assertNull(phone.turns.turn.value)
+            assertEquals(CoachTurnRefusal.Installation("device_bound"), phone.turns.refusal.value)
+            assertEquals(WithdrawnTurn("Private question", null, null), phone.turns.withdrawn.value)
+            val reads = phone.installationServer.reads
+            val passes = server.passes
+            assertNull(phone.turns.send("Again", null, null, anonymous = true))
+            assertEquals(CoachTurnRefusal.Installation("device_bound"), phone.turns.refusal.value)
+            assertEquals(reads to passes, phone.installationServer.reads to server.passes)
+            assertEquals(CoachRecovery.signIn, phone.turns.refusal.value?.recovery(anonymous = true))
         }
     }
 
-    // D-10: a sign-in that rebinds the anon replica keeps its id and fires no change, and the seat is over all the same. The next batch never runs, and nothing the account holds leaves under the anon seat.
-    @Test fun aSignInThatRebindsTheReplicaEndsTheAnonTurnAndNothingCrosses() = runTest {
-        val log = EngineRoomFixture.server()
+    // Coach engine §5, the seat changes: a sign-in that rebinds the signed-out replica keeps its id, and the turn ends interrupted with what it wrote; nothing the account holds reaches a later round.
+    @Test fun aSignInThatRebindsTheReplicaEndsTheAnonTurn() = runTest {
+        val log = works.windmill.gym.store.EngineRoomFixture.server()
         TurnPhone(this, folder.newFolder(), script("[]")).use { other ->
             other.room.select("account-1")
             other.room.sync(log)
@@ -497,7 +489,7 @@ class CoachTurnsTests {
         val server = script("""[
             {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"create_routine","input":$routineCall}]}},
             {"await":"results","batch":1},
-            {"event":"calls","data":{"batch":2,"calls":[{"callId":"toolu_2","name":"list_routines","input":{}}]}},
+            {"event":"calls","data":{"batch":2,"calls":[{"callId":"toolu_2","name":"list_routines","input":{"routineId":null}}]}},
             {"await":"results","batch":2},
             {"event":"done","data":{"state":"completed"}}]""")
         TurnPhone(this, folder.newFolder(), server).use { phone ->
@@ -518,37 +510,16 @@ class CoachTurnsTests {
             assertFalse(phone.room.training.anonymous)
             val ended = checkNotNull(phone.message(turn.coach))
             assertEquals(MessageState.interrupted, ended.state)
-            assertEquals(CoachTurnBounds.contextReads + "create_routine", ended.calls.map { it.name })
-            assertEquals(listOf("rt_00000001", "rt_00000002", "rt_00000009"), phone.routines().map { it.id.record.string.orEmpty() }.sorted())
-            assertEquals(listOf(1), server.posted.map { it.member("batch").long().toInt() })
-            assertFalse(server.posted.any { "Push A" in it.jcs })
-            assertEquals(1, server.stops)
+            assertEquals(CoachTurnBounds.contextReads.map { contextCallPrefix + it } + "toolu_1", ended.calls.map { it.callId })
+            assertFalse(server.rounds.any { "Push A" in it.jcs })
             assertNull(phone.device(EndTurn.runningTurnKey))
             assertNull(phone.turns.turn.value)
             assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-            assertEquals(listOf(mapOf("state" to "interrupted", "seat" to "anon", "code" to "seat_changed", "ability_calls" to "5", "refusals" to "0", "answer_bytes" to "0", "duration_ms" to "0")),
-                phone.telling.named("coach_turn"))
+            assertEquals("interrupted", phone.telling.named("coach_turn").single()["state"])
         }
     }
 
-    // A bound turn opened on the rebound replica is not the rebind's: only a turn under the seat that ended goes.
-    @Test fun aBoundTurnSurvivesARebindItCameAfter() = runTest {
-        TurnPhone(this, folder.newFolder(), script("""[{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""")).use { phone ->
-            phone.turns.start()
-            phone.engine.commit(ScopeRef(Gym.scope), works.windmill.sync.api.Gesture(listOf(works.windmill.sync.api.Change.create(Gym.Types.routine, works.windmill.sync.api.NewID.Given(works.windmill.sync.core.RecordID("rt_00000001")),
-                mapOf("name" to Json.of("Push A"), "position" to Json.of(0), "entries" to Json.parse("""[{"exerciseId":"bench-press"}]"""))))))
-            phone.completeSignIn("account-1")
-            phone.room.sync(EngineRoomFixture.server())
-            val turn = checkNotNull(phone.turns.send("Bound", null, null, anonymous = false))
-            advanceUntilIdle()
-            assertEquals(MessageState.running, phone.message(turn.coach)?.state)
-            phone.turns.requestStop()
-            advanceUntilIdle()
-            assertEquals(MessageState.stopped, phone.message(turn.coach)?.state)
-        }
-    }
-
-    // A sign-in waiting on its decision holds the anon turn's writes, so what it counted holds still and the first Add lands; the rebind then ends the turn.
+    // A sign-in waiting on its decision holds the turn's writes, so the decision lands; the rebind then ends the turn.
     @Test fun aPendingSignInHoldsTheTurnSoTheDecisionLands() = runTest {
         TurnPhone(this, folder.newFolder(), script("""[{"event":"text","data":{"delta":"Hello"}},{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""")).use { phone ->
             phone.turns.start()
@@ -558,634 +529,219 @@ class CoachTurnsTests {
             val question = phone.engine.signIn("account-1", mapOf("gym" to true))
             assertFalse(question.member("complete").bool())
             val pins = question.member("due").arr().associate { due -> due.member("product").str() to due.member("counted").arr().map(Json::str) }
-
             testScheduler.advanceTimeBy(30_000)
             testScheduler.runCurrent()
-            assertEquals("", phone.message(turn.coach)?.text)
             assertEquals(LiveAnswer(turn.coach, "Hello"), phone.turns.liveAnswer.value)
 
-            val answered = phone.engine.signIn("account-1", mapOf("gym" to true), mapOf("gym" to "add"), pins)
-            assertTrue(answered.member("complete").bool())
+            assertTrue(phone.engine.signIn("account-1", mapOf("gym" to true), mapOf("gym" to "add"), pins).member("complete").bool())
+            phone.server.release()
             advanceUntilIdle()
             assertEquals(MessageState.interrupted, phone.message(turn.coach)?.state)
-            assertEquals(1, phone.server.stops)
-            assertEquals(listOf("seat_changed"), phone.telling.named("coach_turn").map { it["code"] })
             assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-            assertNull(phone.turns.liveAnswer.value)
-        }
-    }
-
-    // A running turn on each side of a sign-in's merge: each ends, neither clears the other's row, and no message stays running.
-    @Test fun aRunningTurnOnEachSideOfAMergeBothEnd() = runTest {
-        val server = script("""[{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""")
-        TurnPhone(this, folder.newFolder(), server).use { phone ->
-            phone.signIn("account-1")
-            phone.turns.start()
-            advanceUntilIdle()
-            val bound = checkNotNull(phone.turns.send("Bound turn", null, null, anonymous = false))
-            advanceUntilIdle()
-            assertTrue(phone.engine.signOut("keep").member("complete").bool())
-            phone.room.selected = null
-            advanceUntilIdle()
-            server.rewind()
-            val anon = checkNotNull(phone.turns.send("Anon turn", null, null, anonymous = true))
-            advanceUntilIdle()
-            phone.completeSignIn("account-1")
-            advanceUntilIdle()
-            assertEquals(MessageState.interrupted, phone.message(bound.coach)?.state)
-            assertEquals(MessageState.interrupted, phone.message(anon.coach)?.state)
-            assertNull(phone.device(EndTurn.runningTurnKey))
             assertNull(phone.turns.turn.value)
-            assertEquals(listOf("seat_changed", "seat_changed"), phone.telling.named("coach_turn").map { it["code"] })
         }
     }
 
-    // A death the first sweep cannot write, because the account was in transition, still tells when a later sweep ends it, once however often the sweep runs.
-    @Test fun aDeathASweepCouldNotEndTellsWhenALaterOneDoes() = runTest {
-        lateinit var snapshot: Json
-        lateinit var turn: OpenTurn.Turn
-        TurnPhone(this, folder.newFolder(), script("""[{"await":"stop"}]""")).use { phone ->
-            turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
-            advanceUntilIdle()
-            snapshot = phone.engine.snapshot()
+    // Coach engine §5, the process ends in the last round: a new process reads the marked round's answer, never sends it again, and places it after the bytes the mark says came before.
+    @Test fun anAppKilledInItsLastRoundRecoversTheAnswer() = runTest {
+        val first = script("""[
+            {"event":"text","data":{"delta":"Reading. "}},
+            {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"list_notes","input":{}}]}},
+            {"await":"results","batch":1},
+            {"event":"text","data":{"delta":"Partial"}},
+            {"await":"stop"}]""")
+        val (turn, snapshot, round) = TurnPhone(this, folder.newFolder(), first).use { phone ->
+            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
+            advanceTimeBy(6_000)
+            phone.turns.appStopped()
+            advanceTimeBy(1)
+            Triple(turn, phone.engine.snapshot(), checkNotNull(phone.device(Mark.roundKey)))
         }
-        var writable = false
-        TurnPhone(this, folder.newFolder(), script("[]"), snapshot = snapshot, writable = { writable }).use { reopened ->
+        assertEquals("Reading. ".encodeToByteArray().size.toLong(), round.member("bytesBefore").long())
+
+        val again = script("""[{"event":"text","data":{"delta":"All read."}},{"event":"done","data":{"state":"completed"}}]""").apply { holdsAnswers = true }
+        TurnPhone(this, folder.newFolder(), again, snapshot = snapshot).use { reopened ->
             reopened.turns.start()
             advanceUntilIdle()
-            assertEquals(MessageState.running, reopened.message(turn.coach)?.state)
-            assertEquals(emptyList<Map<String, String>>(), reopened.telling.named("coach_turn"))
-            writable = true
-            reopened.turns.sweep()
-            reopened.turns.sweep()
-            advanceUntilIdle()
-            assertEquals(MessageState.interrupted, reopened.message(turn.coach)?.state)
-            assertEquals(listOf("process_ended"), reopened.telling.named("coach_turn").map { it["code"] })
-            reopened.turns.sweep()
-            advanceUntilIdle()
-            assertEquals(1, reopened.telling.named("coach_turn").size)
+            val recovered = checkNotNull(reopened.message(turn.coach))
+            assertEquals(MessageState.completed, recovered.state)
+            assertEquals("Reading. All read.", recovered.text)
+            assertEquals(listOf("/v1/calls/${round.member("callId").str()}/result"), again.reads)
+            assertEquals(0, again.rounds.size)
+            assertNull(reopened.device(EndTurn.runningTurnKey))
+            assertNull(reopened.device(Mark.roundKey))
         }
     }
 
-    // A conversation deleted on another phone under a live turn: nobody's fault. The turn ends, the server hears a Stop, the row lets go, and no Issue is filed.
-    @Test fun aConversationDeletedElsewhereEndsTheTurnWithNoReport() = runTest {
-        val server = script("""[{"event":"text","data":{"delta":"Hello"}},{"await":"results","batch":9},{"event":"done","data":{"state":"completed"}}]""")
-        TurnPhone(this, folder.newFolder(), server).use { phone ->
+    // A process killed in a round whose answer the service no longer holds cannot carry on: the next process ends the turn interrupted with what arrived.
+    @Test fun anAppKilledWithNoAnswerToReadEndsInterrupted() = runTest {
+        val (turn, snapshot) = TurnPhone(this, folder.newFolder(), script("""[{"event":"text","data":{"delta":"Four words arrived here"}},{"await":"stop"}]""")).use { phone ->
             val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
-            testScheduler.runCurrent()
-            val replica = phone.engine.activeReplica()
-            phone.room.training.pinnedOn(ReplicaPin(replica, true)) { runner -> assertTrue(runner.run(DeleteConversation(turn.thread)) is Outcome.Committed) }
+            advanceTimeBy(1_000)
+            phone.turns.appStopped()
+            advanceTimeBy(1)
+            turn to phone.engine.snapshot()
+        }
+        TurnPhone(this, folder.newFolder(), script("[]"), snapshot = snapshot).use { reopened ->
+            reopened.turns.start()
             advanceUntilIdle()
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
+            val message = reopened.message(turn.coach)
+            assertEquals(MessageState.interrupted, message?.state)
+            assertEquals("Four words arrived here", message?.text)
+            assertEquals("Question", reopened.message(turn.lifter)?.text)
+            assertNull(reopened.device(EndTurn.runningTurnKey))
+        }
+    }
+
+    // Coach engine §5, the seat changes: a sign-out confirmed while the turn's call waits on the account ends the turn interrupted with what arrived, both rows of the mark cleared, through the training the change still lets write.
+    @Test fun aSignOutConfirmedWhileACallWaitsEndsTheTurnInterrupted() = runTest {
+        var writable = true
+        val server = script("""[
+            {"event":"text","data":{"delta":"Hello"}},
+            {"await":"stop"},
+            {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"list_notes","input":{}}]}},
+            {"await":"results","batch":1},
+            {"event":"done","data":{"state":"completed"}}]""")
+        TurnPhone(this, folder.newFolder(), server, writable = { writable }).use { phone ->
+            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
+            advanceTimeBy(1_000)
+            writable = false
+            phone.server.release()
+            advanceTimeBy(3_000)
+            val drain = works.windmill.gym.store.EngineTraining(phone.room.training.engine, writeAuthority = { true })
+            val confirming = launch { phone.turns.seatWillChange(drain) }
+            advanceUntilIdle()
+            confirming.join()
+            val message = checkNotNull(phone.message(turn.coach))
+            assertEquals(MessageState.interrupted to "Hello", message.state to message.text)
             assertNull(phone.device(EndTurn.runningTurnKey))
-            assertEquals(1, server.stops)
+            assertNull(phone.device(Mark.roundKey))
+            assertEquals(listOf("interrupted"), phone.telling.named("coach_turn").map { it["state"] })
+            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
+        }
+    }
+
+    // The same confirmation while the round streams, nothing waiting on the account.
+    @Test fun aSignOutConfirmedWhileTheRoundStreamsEndsTheTurnInterrupted() = runTest {
+        var writable = true
+        val server = script("""[{"event":"text","data":{"delta":"Hello"}},{"await":"stop"},{"event":"done","data":{"state":"completed"}}]""")
+        TurnPhone(this, folder.newFolder(), server, writable = { writable }).use { phone ->
+            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
+            advanceTimeBy(1_000)
+            writable = false
+            val drain = works.windmill.gym.store.EngineTraining(phone.room.training.engine, writeAuthority = { true })
+            val confirming = launch { phone.turns.seatWillChange(drain) }
+            advanceTimeBy(3_000)
+            phone.server.release()
+            advanceUntilIdle()
+            confirming.join()
+            val message = checkNotNull(phone.message(turn.coach))
+            assertEquals(MessageState.interrupted to "Hello", message.state to message.text)
+            assertNull(phone.device(EndTurn.runningTurnKey))
+        }
+    }
+
+    // A trailing commit that comes round after the writer ended its turn lands nowhere: the end stands, its words whole.
+    @Test fun aTrailingCommitAfterTheEndLandsNowhere() = runTest {
+        TurnPhone(this, folder.newFolder(), script("""[{"event":"text","data":{"delta":"Hel"}},{"await":"stop"},{"event":"done","data":{"state":"completed"}}]""")).use { phone ->
+            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
+            advanceTimeBy(1_000)
+            val drain = works.windmill.gym.store.EngineTraining(phone.room.training.engine, writeAuthority = { true })
+            launch { phone.turns.seatWillChange(drain) }
+            advanceTimeBy(1)
+            assertEquals(MessageState.interrupted to "Hel", phone.message(turn.coach)?.let { it.state to it.text })
+            val late = phone.room.training.pinnedOn(phone.room.training.pin()) { it.run(works.windmill.gym.domain.coach.StreamTurnText(turn.coach, "He")) }
+            assertEquals(works.windmill.domain.kit.Outcome.Unchanged(Unit), late)
+            advanceTimeBy(10_000)
+            phone.server.release()
+            advanceUntilIdle()
+            assertEquals(MessageState.interrupted to "Hel", phone.message(turn.coach)?.let { it.state to it.text })
+        }
+    }
+
+    // A conversation deleted on another device under the running turn ends it, writing nothing and reporting nothing.
+    @Test fun aConversationDeletedElsewhereEndsTheTurnWithNoReport() = runTest {
+        TurnPhone(this, folder.newFolder(), script("""[{"event":"text","data":{"delta":"Reading"}},{"await":"stop"},{"event":"done","data":{"state":"completed"}}]"""), textEvery = 1.milliseconds).use { phone ->
+            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
+            advanceTimeBy(1_000)
+            phone.engine.commit(ScopeRef(Gym.scope), works.windmill.sync.api.Gesture(phone.messages().map { works.windmill.sync.api.Change.delete(CoachMessage.type, it.id.record) } +
+                works.windmill.sync.api.Change.delete(CoachThread.type, turn.thread.record)))
+            phone.server.release()
+            advanceUntilIdle()
+            assertNull(phone.message(turn.coach))
+            assertNull(phone.device(EndTurn.runningTurnKey))
             assertNull(phone.turns.turn.value)
-            assertEquals(listOf(mapOf("state" to "interrupted", "seat" to "anon", "ability_calls" to "4", "refusals" to "0", "answer_bytes" to "5", "code" to "gone", "duration_ms" to "5000")), phone.telling.named("coach_turn"))
-        }
-    }
-
-    // A row naming a message gone, as a process death under a deletion leaves it, lets go at the sweep.
-    @Test fun aRowNamingAGoneMessageLetsGoAtTheSweep() = runTest {
-        TurnPhone(this, folder.newFolder(), script("[]")).use { phone ->
-            val replica = phone.engine.activeReplica()
-            phone.room.training.pinnedOn(ReplicaPin(replica, true)) { runner ->
-                val turn = (runner.run(OpenTurn(question = "Question")) as Outcome.Committed).result
-                assertTrue(runner.run(DeleteConversation(turn.thread)) is Outcome.Committed)
-                phone.engine.commit(ScopeRef(Gym.scope), works.windmill.sync.api.Gesture(emptyList(), local = listOf(works.windmill.sync.api.DeviceWrite(EndTurn.runningTurnKey, turn.coach.json))))
-            }
-            assertTrue(phone.device(EndTurn.runningTurnKey) != null)
-            phone.turns.sweep()
-            advanceUntilIdle()
-            assertNull(phone.device(EndTurn.runningTurnKey))
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.named("coach_turn"))
-        }
-    }
-
-    // A lapsed token at the open is a door, not a dead end: the sign-in, in the room's own words.
-    @Test fun aLapsedTokenAtTheOpenOffersTheSignIn() = runTest {
-        val server = script("[]").apply { refuseOpen = TurnRefusal(401, "unauthenticated", null) }
-        TurnPhone(this, folder.newFolder(), server).use { phone ->
-            phone.signIn()
-            advanceUntilIdle()
-            checkNotNull(phone.turns.send("Question", null, null, anonymous = false))
-            advanceUntilIdle()
-            val refused = phone.turns.refusal.value
-            assertEquals(CoachTurnRefusal.SessionLapsed, refused)
-            assertEquals(string(R.string.gym_coach_access_needs_sign_in), refused?.words.spelled())
-            assertEquals(CoachRecovery.signIn, refused?.recovery(anonymous = false))
-            assertFalse(refused!!.capped)
-            assertEquals(WithdrawnTurn("Question", null, null), phone.turns.withdrawn.value)
             assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
         }
     }
 
-    // A retired catalog is the update's door, and a blank question and a catalog that cannot be read refuse with nothing written.
-    @Test fun aRetiredCatalogOffersTheUpdate() = runTest {
-        val server = script("[]").apply { refuseOpen = TurnRefusal(426, "coach-update-required", null) }
-        TurnPhone(this, folder.newFolder(), server).use { phone ->
-            checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
+    // A host fault before the engine holds the turn: the question returns to the field with its picture, nothing stays running, Coach says it did not answer, and the fault is reported once, as itself.
+    @Test fun aPictureUnreadableAtTheOpenReturnsTheQuestionAndReportsOnce() = runTest {
+        TurnPhone(this, folder.newFolder(), script("""[{"event":"text","data":{"delta":"Hi"}}]""")).use { phone ->
+            val bitmap = Bitmap.createBitmap(40, 30, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
+            val bytes = java.io.ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
+            val picture = ChosenPicture(CoachAttachment("thr_0123456789abcdef", "image/jpeg", 40, 30, bytes.size.toLong()), bytes)
+            checkNotNull(phone.turns.send("Private question about my knee", picture, null, anonymous = true))
+            phone.pictureFolder.listFiles()!!.filter { it.name.endsWith("model") }.forEach { it.delete(); it.mkdirs() }
             advanceUntilIdle()
-            assertEquals(CoachTurnRefusal.UpdateRequired, phone.turns.refusal.value)
-            assertEquals(CoachRecovery.update, phone.turns.refusal.value?.recovery(anonymous = true))
+            assertEquals(emptyList<CoachMessage>(), phone.messages())
+            assertNull(phone.device(EndTurn.runningTurnKey))
+            assertNull(phone.turns.turn.value)
+            assertEquals(WithdrawnTurn("Private question about my knee", picture, null), phone.turns.withdrawn.value)
+            assertEquals(CoachTurnFault.noAnswer, phone.turns.fault.value)
+            assertEquals(listOf("agent-host"), phone.telling.failures.map { it["operation"] })
+            assertTrue(phone.telling.errors.single() is java.io.IOException)
+            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "failed", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))
+            assertTrue(phone.telling.events.none { (_, properties) -> properties.values.any { "knee" in it } })
+        }
+    }
+
+    // A picture whose model copy cannot be read at the send is no send: the room says so before any record.
+    @Test fun aPictureUnreadableAtTheSendIsHeldBack() = runTest {
+        TurnPhone(this, folder.newFolder(), script("[]")).use { phone ->
+            val picture = ChosenPicture(CoachAttachment("thr_0123456789abcdef", "image/jpeg", 40, 30, 3), byteArrayOf(1, 2, 3))
+            phone.pictureFolder.mkdirs()
+            File(phone.pictureFolder, "thr_0123456789abcdef.model").mkdirs()
+            assertNull(phone.turns.send("Look", picture, null, anonymous = true))
+            assertEquals(CoachTurnFault.pictureUnavailable, phone.turns.fault.value)
             assertEquals(emptyList<CoachMessage>(), phone.messages())
         }
     }
 
-    @Test fun aBlankQuestionIsNoFailure() = runTest {
-        TurnPhone(this, folder.newFolder(), script("[]")).use { phone ->
-            assertNull(phone.turns.send("   ", null, null, anonymous = true))
-            assertEquals(CoachTurnFault.unsaved, phone.turns.fault.value)
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-            assertNothingKept(phone)
+    // A host fault mid-turn ends the turn failed on its own code, reported once with the throwable that failed, whose class sets it apart from every other cause.
+    @Test fun aHostFaultMidTurnEndsOnItsOwnCodeAndReportsItsCause() = runTest {
+        val server = script("""[
+            {"event":"text","data":{"delta":"Sharing"}},
+            {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"share_session","input":{"sessionId":"sesAAAAAAAAAAAA1"}}]}},
+            {"await":"results","batch":1},
+            {"event":"done","data":{"state":"completed"}}]""")
+        TurnPhone(this, folder.newFolder(), server, shares = { throw IllegalStateException("Heavy Squat Day") }).use { phone ->
+            phone.signIn()
+            val turn = checkNotNull(phone.turns.send("Share my workout", null, null, anonymous = false))
+            advanceUntilIdle()
+            assertEquals(MessageState.failed to "Sharing", phone.message(turn.coach)?.let { it.state to it.text })
+            assertEquals("host", phone.telling.named("coach_turn").single()["code"])
+            assertEquals(listOf("agent-host"), phone.telling.failures.map { it["operation"] })
+            assertTrue(phone.telling.errors.single() is IllegalStateException)
         }
     }
 
-    @Test fun aCatalogThatCannotBeReadKeepsNothingAndReports() = runTest {
-        TurnPhone(this, folder.newFolder(), script("[]")).use { phone ->
-            val unread = CoachTurns(phone.room.training, phone.server, phone.installation, { null }, phone.pictures,
-                lazy { Catalog(Json.parse("""{"not":"a catalog"}""")) }, phone.telling, {}, "https://windmill.works", phone.scope,
-                coroutineContext[kotlin.coroutines.ContinuationInterceptor] as kotlinx.coroutines.CoroutineDispatcher)
-            assertNull(unread.send("Question", null, null, anonymous = true))
-            assertEquals(CoachTurnFault.unsaved, unread.fault.value)
-            assertEquals(listOf(mapOf("failure_kind" to "storage", "operation" to "gym.coachTurn")), phone.telling.failures)
-            assertNothingKept(phone)
-        }
-    }
-
-    // A round the allowance refuses says what holds the request, as the allowance its closing frame carries shows: nothing left, earlier requests whose cost is not yet confirmed, a request larger than what is left, whatever the read's own code, and only what is always true where the frame carries none. Signed out each offers sign-in, signed in nothing, and none takes the question back.
-    @Test fun aRoundTheAllowanceRefusesSaysWhatHoldsTheRequest() = runTest {
-        for ((allowance, shortfall, sentence) in listOf(
-            Triple(""","allowance":{"code":"subject_exhausted","remaining":"0.000000000","reserved":"0.000000000"}""", AllowanceShortfall.spent,
-                "You have used all of your AI allowance."),
-            Triple(""","allowance":{"code":"subject_exhausted","remaining":"0.000000000","reserved":"0.040775000"}""", AllowanceShortfall.held,
-                "Your earlier AI requests hold the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began."),
-            Triple(""","allowance":{"code":"ok","remaining":"0.007075000","reserved":"0.000000000"}""", AllowanceShortfall.tooLarge,
-                "This request needs more AI capacity than your remaining allowance."),
-            Triple("", null, "Your AI allowance has no room for this request."),
-        )) {
-            val server = script("""[{"event":"error","data":{"code":"subject_exhausted"$allowance}}]""")
-            TurnPhone(this, folder.newFolder(), server).use { phone ->
-                val turn = checkNotNull(phone.turns.send("Private question", null, null, anonymous = true))
-                advanceUntilIdle()
-                val refusal = checkNotNull(phone.turns.refusal.value)
-                assertEquals(CoachTurnRefusal.Shortfall(shortfall), refusal)
-                assertEquals("$sentence\nSign in to continue.", refusal.said(anonymous = true, clock24 = false).spelled())
-                assertEquals(sentence, refusal.said(anonymous = false, clock24 = false).spelled())
-                assertEquals(listOf(CoachRecovery.signIn, null), listOf(refusal.recovery(anonymous = true), refusal.recovery(anonymous = false)))
-                assertNull(phone.turns.withdrawn.value)
-                assertEquals("Private question", checkNotNull(phone.message(turn.lifter)).text)
-                assertEquals(MessageState.failed, checkNotNull(phone.message(turn.coach)).state)
-                assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "capped", "cap" to "allowance", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))
-                assertEquals(listOf("subject_exhausted"), phone.telling.named("coach_turn").map { it["code"] })
-                assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-            }
-        }
-    }
-
-    // The same words before the stream, from the allowance the refusal's body carries, and the question goes back to the field.
-    @Test fun aRefusedOpenSaysWhatHoldsTheRequest() = runTest {
-        for ((allowance, shortfall, sentence) in listOf(
-            Triple(""","allowance":{"code":"subject_exhausted","remaining":"0.000000000","reserved":"0.000000000"}""", AllowanceShortfall.spent,
-                "You have used all of your AI allowance."),
-            Triple(""","allowance":{"code":"subject_exhausted","remaining":"0.000000000","reserved":"0.040775000"}""", AllowanceShortfall.held,
-                "Your earlier AI requests hold the rest of your AI allowance until their cost is confirmed, at most 10 minutes after each began."),
-            Triple(""","allowance":{"code":"subject_exhausted","remaining":"0.007075000","reserved":"0.000000000"}""", AllowanceShortfall.tooLarge,
-                "This request needs more AI capacity than your remaining allowance."),
-            Triple("", null, "Your AI allowance has no room for this request."),
-        )) {
-            val server = script("[]").apply { refuseOpen = TurnRefusal.of(429, """{"error":"allowance","code":"subject_exhausted"$allowance}""".encodeToByteArray()) }
-            TurnPhone(this, folder.newFolder(), server).use { phone ->
-                checkNotNull(phone.turns.send("Private question", null, null, anonymous = true))
-                advanceUntilIdle()
-                val refusal = checkNotNull(phone.turns.refusal.value)
-                assertEquals(CoachTurnRefusal.Shortfall(shortfall), refusal)
-                assertEquals("$sentence\nSign in to continue.", refusal.said(anonymous = true, clock24 = false).spelled())
-                assertEquals(sentence, refusal.said(anonymous = false, clock24 = false).spelled())
-                assertEquals(listOf(CoachRecovery.signIn, null), listOf(refusal.recovery(anonymous = true), refusal.recovery(anonymous = false)))
-                assertEquals(WithdrawnTurn("Private question", null, null), phone.turns.withdrawn.value)
-                assertEquals(emptyList<CoachMessage>(), phone.messages())
-                assertEquals(listOf(
-                    "gym_ask_started" to mapOf("screen" to "coach"),
-                    "coach_ability" to mapOf("name" to "list_sessions", "outcome" to "ok"),
-                    "coach_ability" to mapOf("name" to "list_notes", "outcome" to "ok"),
-                    "coach_ability" to mapOf("name" to "list_exercises", "outcome" to "ok"),
-                    "coach_ability" to mapOf("name" to "list_routines", "outcome" to "ok"),
-                    "gym_ask_outcome" to mapOf("screen" to "coach", "outcome" to "capped", "cap" to "allowance", "duration_ms" to "0"),
-                ), phone.telling.events)
-                assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-            }
-        }
-    }
-
-    // A daily cap before the stream is as expected as an allowance: its notice and its capped outcome say it, and nothing reads it as a failed request.
-    @Test fun aDailyCapBeforeTheStreamTellsOnlyItsOutcome() = runTest {
-        val server = script("[]").apply { refuseOpen = TurnRefusal(429, TurnRefusal.rateLimited, null) }
+    // A pass door answering a 5xx that names no refusal did not answer: never "no connection", and reported once by its status class.
+    @Test fun aPassDoorFailingIsNoLostConnection() = runTest {
+        val server = script("[]").apply { passAnswer = works.windmill.platform.ai.AiResponse(500) }
         TurnPhone(this, folder.newFolder(), server).use { phone ->
             checkNotNull(phone.turns.send("Private question", null, null, anonymous = true))
             advanceUntilIdle()
-            assertEquals(CoachTurnRefusal.RateLimited, phone.turns.refusal.value)
-            assertEquals(listOf(
-                "gym_ask_started" to mapOf("screen" to "coach"),
-                "coach_ability" to mapOf("name" to "list_sessions", "outcome" to "ok"),
-                "coach_ability" to mapOf("name" to "list_notes", "outcome" to "ok"),
-                "coach_ability" to mapOf("name" to "list_exercises", "outcome" to "ok"),
-                "coach_ability" to mapOf("name" to "list_routines", "outcome" to "ok"),
-                "gym_ask_outcome" to mapOf("screen" to "coach", "outcome" to "capped", "cap" to "daily", "duration_ms" to "0"),
-            ), phone.telling.events)
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
+            assertEquals(CoachTurnRefusal.Unanswered, phone.turns.refusal.value)
+            assertEquals("Private question", phone.turns.withdrawn.value?.question)
+            assertEquals(listOf(mapOf("failure_kind" to "proxy-5xx", "operation" to "ai-pass")), phone.telling.failures)
         }
     }
 
-    // A turn withdrawn from a conversation that stands returns to it.
-    @Test fun aWithdrawnTurnInAConversationThatStandsNamesIt() = runTest {
-        val server = script("""[{"event":"done","data":{"state":"completed"}}]""")
-        TurnPhone(this, folder.newFolder(), server).use { phone ->
-            val first = checkNotNull(phone.turns.send("First", null, null, anonymous = true))
-            advanceUntilIdle()
-            phone.room.now += 1_000
-            server.refuseOpen = TurnRefusal(429, "free_day_exhausted", null)
-            checkNotNull(phone.turns.send("Second", null, first.thread, anonymous = true))
-            advanceUntilIdle()
-            assertEquals(WithdrawnTurn("Second", null, first.thread), phone.turns.withdrawn.value)
-            assertEquals(listOf(first.thread), phone.threads().map { it.id })
-        }
-    }
-
-    // The room draws every delta; the record takes the text every five seconds, at each batch and at the end. A 9.6 KB answer in 240 deltas over a minute.
-    @Test fun aStreamedAnswerReachesTheRoomAtEveryDeltaAndTheRecordEveryFiveSeconds() = runTest {
-        val log = EngineRoomFixture.server()
-        val delta = "word ".repeat(8)
-        val minute = object : TurnTransport {
-            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow {
-                repeat(240) {
-                    emit(TurnEvent.Text(delta))
-                    delay(250)
-                }
-                emit(TurnEvent.Done(TurnState.completed, false))
-            }
-            override fun resume(turnId: String, seat: TurnSeat): Flow<TurnEvent> = flow { }
-            override suspend fun answer(turnId: String, batch: Int, results: List<ToolOutcome>, seat: TurnSeat) = Unit
-            override suspend fun stop(turnId: String, seat: TurnSeat) = Unit
-        }
-        TurnPhone(this, folder.newFolder(), minute).use { phone ->
-            phone.room.select("account-1")
-            phone.room.sync(log)
-            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = false))
-            testScheduler.runCurrent()
-            assertEquals(LiveAnswer(turn.coach, delta), phone.turns.liveAnswer.value)
-            val opened = phone.room.outbox().size
-
-            testScheduler.advanceTimeBy(7_000)
-            testScheduler.runCurrent()
-            assertEquals(delta.repeat(29), phone.turns.liveAnswer.value?.text)
-            assertEquals(delta.repeat(20), phone.message(turn.coach)?.text)
-            advanceUntilIdle()
-
-            assertEquals(delta.repeat(240), phone.message(turn.coach)?.text)
-            assertEquals(MessageState.completed, phone.message(turn.coach)?.state)
-            assertNull(phone.turns.liveAnswer.value)
-            val commits = phone.room.outbox().size - opened
-            val pushedBytes = generateSequence {
-                phone.engine.nextPush()?.also { request ->
-                    val response = log.push(request, Credential.Account("account-1"), phone.room.now)
-                    val reading = ClockReading(phone.room.now, phone.room.now, "test")
-                    phone.engine.onPushResponse(request, SyncResponse(response.status, response.body), RequestTiming(reading, reading))
-                }
-            }.sumOf { it.jcs.length.toLong() }
-            println("a streamed answer of ${delta.length * 240} bytes: $commits commits after the open, $pushedBytes bytes pushed")
-            assertEquals(13, commits)
-            assertTrue("pushed $pushedBytes", pushedBytes < 70_000)
-        }
-    }
-
-    // §4.5, the sign-out sheet: a cancellable transition closes the door, so the turn waits, reports nothing and writes nothing; the sheet's Cancel lets it on.
-    @Test fun anAccountInTransitionHoldsTheTurnUntilTheSheetCloses() = runTest {
-        var writable = true
-        TurnPhone(this, folder.newFolder(), answersOneCreate, writable = { writable }).use { phone ->
-            phone.telling.onEvent = { name, _ ->
-                if (name == "gym_ask_started") writable = false
-            }
-            val turn = checkNotNull(phone.turns.send("Add a day", null, null, anonymous = true))
-            testScheduler.advanceTimeBy(30_000)
-            testScheduler.runCurrent()
-            val held = checkNotNull(phone.message(turn.coach))
-            assertEquals(emptyList<AbilityCall>(), held.calls)
-            assertEquals(MessageState.running, held.state)
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-            assertEquals(0, phone.server.opened.size)
-
-            writable = true
-            advanceUntilIdle()
-            assertEquals(MessageState.completed, phone.message(turn.coach)?.state)
-            assertEquals(listOf("Day 1"), phone.routines().map { it.name })
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-        }
-    }
-
-    // A sign-out confirmed while the turn waits on the transition: the wait ends in the abandon, and nothing lands on the anon replica.
-    @Test fun aTurnWaitingOnATransitionIsAbandonedWhenTheReplicaChanges() = runTest {
-        var writable = true
-        TurnPhone(this, folder.newFolder(), answersOneCreate, writable = { writable }).use { phone ->
-            phone.signIn()
-            phone.turns.start()
-            advanceUntilIdle()
-            phone.telling.onEvent = { name, _ -> if (name == "gym_ask_started") writable = false }
-            val turn = checkNotNull(phone.turns.send("Add a day", null, null, anonymous = false))
-            testScheduler.advanceTimeBy(5_000)
-            testScheduler.runCurrent()
-            assertTrue(phone.engine.signOut("keep").member("complete").bool())
-            writable = true
-            advanceUntilIdle()
-            assertEquals(emptyList<Routine>(), phone.routines())
-            assertEquals(null, phone.message(turn.coach))
-            assertEquals(1, phone.server.stops)
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-            assertNull(phone.turns.turn.value)
-        }
-    }
-
-    // A Stop the server cannot hear ends the turn on this phone alone, and the band says so.
-    @Test fun aStopWithNoConnectionStopsOnThisPhoneAndSaysSo() = runTest {
-        val server = object : works.windmill.agent.TurnTransport by script("""[{"event":"text","data":{"delta":"Par"}},{"await":"stop"}]""") {
-            override suspend fun stop(turnId: String, seat: TurnSeat) { throw works.windmill.agent.TurnConnectionLost(null) }
-        }
-        TurnPhone(this, folder.newFolder(), server).use { phone ->
-            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
-            testScheduler.runCurrent()
-            phone.turns.requestStop()
-            advanceUntilIdle()
-            assertEquals(MessageState.stopped, phone.message(turn.coach)?.state)
-            assertEquals(CoachTurnFault.stoppedOffline, phone.turns.fault.value)
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-        }
-    }
-
-    // §4.5: no attempt to open reached a server and no frame came, so the turn never began. Nothing of it remains, the question returns with the words that say why, and lost network files nothing.
-    @Test fun everyOpenLostTakesTheTurnBackAndSaysNoConnection() = runTest {
-        val server = object : TurnTransport by script("[]") {
-            var opens = 0
-            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow {
-                opens += 1
-                throw works.windmill.agent.TurnConnectionLost(null)
-            }
-            var stops = 0
-            override suspend fun stop(turnId: String, seat: TurnSeat) {
-                stops += 1
-                throw works.windmill.agent.TurnConnectionLost(null)
-            }
-        }
-        TurnPhone(this, folder.newFolder(), server).use { phone ->
-            checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
-            testScheduler.advanceTimeBy(1_500)
-            assertEquals(true, phone.turns.activity.value?.reconnecting)
-            assertEquals(listOf("Question", ""), phone.messages().map { it.text })
-            advanceUntilIdle()
-            assertEquals(5, server.opens)
-            assertEquals(1, server.stops)
-            assertEquals(WithdrawnTurn("Question", null, null), phone.turns.withdrawn.value)
-            assertEquals(CoachTurnRefusal.Offline, phone.turns.refusal.value)
-            assertEquals("No connection. Your question is kept here.", phone.turns.refusal.value?.words.spelled())
-            assertEquals(CoachRecovery.tryAgain, phone.turns.refusal.value?.recovery(anonymous = true))
-            assertNull(phone.turns.fault.value)
-            assertNull(phone.turns.activity.value)
-            assertNull(phone.turns.turn.value)
-            assertEquals(emptyList<CoachMessage>(), phone.messages())
-            assertEquals(emptyList<CoachThread>(), phone.threads())
-            assertNull(phone.device(EndTurn.runningTurnKey))
-            assertEquals(listOf(mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST", "failure_kind" to "offline")), phone.telling.named("api_request_failed"))
-            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "offline", "duration_ms" to "15000")), phone.telling.named("gym_ask_outcome"))
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.named("coach_turn"))
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-        }
-    }
-
-    // The attempts take seconds, and the log syncs on its own through them: a turn taken back after its records reached the server leaves none there, and no notice here.
-    @Test fun aTurnTakenBackAfterItsRecordsSyncedLeavesNothingBehind() = runTest {
-        val log = EngineRoomFixture.server()
-        val server = object : TurnTransport by script("[]") {
-            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow { throw works.windmill.agent.TurnConnectionLost(null) }
-        }
-        TurnPhone(this, folder.newFolder(), server).use { phone ->
-            phone.room.select("account-1")
-            phone.room.sync(log)
-            checkNotNull(phone.turns.send("Question", null, null, anonymous = false))
-            testScheduler.advanceTimeBy(1_500)
-            phone.room.sync(log)
-            assertEquals(emptyList<Json>(), phone.room.outbox())
-            assertEquals(listOf("Question", ""), phone.messages().map { it.text })
-
-            advanceUntilIdle()
-            assertEquals(WithdrawnTurn("Question", null, null), phone.turns.withdrawn.value)
-            assertEquals(emptyList<CoachMessage>(), phone.messages())
-            phone.room.sync(log)
-            assertEquals(emptyList<Json>(), phone.room.outbox())
-            assertEquals(emptyList<Json>(), phone.room.notices())
-            assertEquals(emptyList<CoachMessage>(), phone.messages())
-            assertEquals(emptyList<CoachThread>(), phone.threads())
-            assertNull(phone.device(EndTurn.runningTurnKey))
-        }
-    }
-
-    // A captive portal's page at every attempt: the beats of a lost connection, the same taking back, no report, and a count of its own.
-    @Test fun aPageThatIsNoStreamReconnectsLikeALostConnectionAndTakesTheTurnBackUnderItsOwnName() = runTest {
-        val server = object : TurnTransport by script("[]") {
-            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow { throw works.windmill.agent.TurnConnectionLost(null, notAStream = true) }
-        }
-        TurnPhone(this, folder.newFolder(), server).use { phone ->
-            checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
-            advanceUntilIdle()
-            assertEquals(WithdrawnTurn("Question", null, null), phone.turns.withdrawn.value)
-            assertEquals(CoachTurnRefusal.Offline, phone.turns.refusal.value)
-            assertEquals(emptyList<CoachMessage>(), phone.messages())
-            assertNull(phone.device(EndTurn.runningTurnKey))
-            assertEquals(listOf(mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST", "failure_kind" to "malformed")), phone.telling.named("api_request_failed"))
-            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "offline", "duration_ms" to "15000")), phone.telling.named("gym_ask_outcome"))
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.named("coach_turn"))
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-        }
-    }
-
-    // Anonymous AI switched off on the server is a refusal it meant: the turn comes back with the sign-in door, under `refused`, and nothing is filed.
-    @Test fun anonymousAiSwitchedOffIsARefusalTheServerMeant() = runTest {
-        val server = script("[]").apply { refuseOpen = TurnRefusal(503, TurnRefusal.anonymousUnavailable, null) }
-        TurnPhone(this, folder.newFolder(), server).use { phone ->
-            checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
-            advanceUntilIdle()
-            assertEquals(CoachTurnRefusal.AnonymousUnavailable, phone.turns.refusal.value)
-            assertEquals(WithdrawnTurn("Question", null, null), phone.turns.withdrawn.value)
-            assertEquals(listOf(mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST", "failure_kind" to "http", "status" to "503")), phone.telling.named("api_request_failed"))
-            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "refused", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-        }
-    }
-
-    // A Coach message of a shape this build cannot read, as another surface or a later build writes one: the sweep deletes no picture, files nothing and says so once per pass; once that message is gone the next sweep forgets the row no message claims.
-    @Test fun aMessageThisBuildCannotReadHoldsThePictureSweepWithNoFailure() = runTest {
-        TurnPhone(this, folder.newFolder(), script("""[{"event":"text","data":{"delta":"Hi"}},{"event":"done","data":{"state":"completed"}}]""")).use { phone ->
-            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
-            advanceUntilIdle()
-            val unclaimed = CoachPictureRow("picture-1", "image/jpeg", 40, 30, 100)
-            phone.engine.commit(ScopeRef(Gym.scope), works.windmill.sync.api.Gesture(emptyList(), local = listOf(works.windmill.sync.api.DeviceWrite(CoachPictureRow.key(unclaimed.id), unclaimed.json))))
-            val unreadable = works.windmill.sync.core.RecordID("turnUnreadable01")
-            phone.engine.commit(ScopeRef(Gym.scope), works.windmill.sync.api.Gesture(listOf(works.windmill.sync.api.Change.create(Gym.Types.message, works.windmill.sync.api.NewID.Given(unreadable),
-                mapOf("threadId" to turn.thread.record.json, "role" to Json.of("coach"), "at" to Json.of(1_800_000_000_000L), "calls" to Json.parse("""[{"callId":"c","name":"n","outcome":"ok"}]"""))))))
-            phone.turns.sweep()
-            advanceUntilIdle()
-            assertEquals(unclaimed.json, phone.device(CoachPictureRow.key(unclaimed.id)))
-            assertEquals(listOf(mapOf("screen" to "coach", "action" to "picture_sweep", "outcome" to "message_unreadable")), phone.telling.named("gym_action"))
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-            phone.engine.commit(ScopeRef(Gym.scope), works.windmill.sync.api.Gesture(listOf(works.windmill.sync.api.Change.delete(Gym.Types.message, unreadable))))
-            phone.turns.sweep()
-            advanceUntilIdle()
-            assertNull(phone.device(CoachPictureRow.key(unclaimed.id)))
-            assertEquals(1, phone.telling.named("gym_action").size)
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-        }
-    }
-
-    // A Stop nobody heard, before any frame: the turn is not left running and the question is not left on a record that never reached Coach.
-    @Test fun aStopNobodyHeardBeforeAnyFrameTakesTheTurnBack() = runTest {
-        val server = object : TurnTransport by script("""[{"await":"stop"}]""") {
-            override suspend fun stop(turnId: String, seat: TurnSeat) { throw works.windmill.agent.TurnConnectionLost(null) }
-        }
-        TurnPhone(this, folder.newFolder(), server).use { phone ->
-            checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
-            advanceUntilIdle()
-            phone.turns.requestStop()
-            advanceUntilIdle()
-            assertEquals(WithdrawnTurn("Question", null, null), phone.turns.withdrawn.value)
-            assertEquals(CoachTurnRefusal.Offline, phone.turns.refusal.value)
-            assertNull(phone.turns.fault.value)
-            assertNull(phone.turns.turn.value)
-            assertEquals(emptyList<CoachMessage>(), phone.messages())
-            assertNull(phone.device(EndTurn.runningTurnKey))
-            assertEquals(listOf(mapOf("screen" to "coach", "outcome" to "offline", "duration_ms" to "0")), phone.telling.named("gym_ask_outcome"))
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.named("coach_turn"))
-            assertEquals(emptyList<Map<String, String>>(), phone.telling.failures)
-        }
-    }
-
-    // A record the turn's own write finds gone ends the turn and reports once; a sweep never touches a live turn.
-    @Test fun aSweepNeverEndsALiveTurn() = runTest {
-        TurnPhone(this, folder.newFolder(), script("""[{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""")).use { phone ->
-            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
-            advanceUntilIdle()
-            phone.turns.sweep()
-            advanceUntilIdle()
-            assertEquals(MessageState.running, phone.message(turn.coach)?.state)
-            assertEquals(turn.coach.json, phone.device(EndTurn.runningTurnKey))
-            phone.turns.requestStop()
-            advanceUntilIdle()
-            assertEquals(MessageState.stopped, phone.message(turn.coach)?.state)
-        }
-    }
-
-    // The event schemas hold what they do not know back: a word in a code, a count that is not one, a key nobody registered.
     @Test fun theTurnsEventSchemasKeepOnlyLabelsAndCounts() {
-        val schemas = EventSchemas.platform + GymEvents.schemas
-        assertEquals(mapOf("state" to "completed"), schemas.properties("coach_turn", mapOf("state" to "completed", "code" to "a private word", "refusals" to "two", "question" to "Private")))
-        assertEquals(mapOf("state" to "stopped", "seat" to "bound", "code" to "coach-busy", "ability_calls" to "5", "refusals" to "0", "answer_bytes" to "12", "duration_ms" to "40"),
-            schemas.properties("coach_turn", mapOf("state" to "stopped", "seat" to "bound", "code" to "coach-busy", "ability_calls" to "5", "refusals" to "0", "answer_bytes" to "12", "duration_ms" to "40")))
-        assertEquals(mapOf("name" to "list_notes"), schemas.properties("coach_ability", mapOf("name" to "list_notes", "outcome" to "said something", "input" to "Private")))
-        assertEquals(mapOf("screen" to "coach"), schemas.properties("gym_ask_outcome", mapOf("screen" to "coach", "name" to "list_notes", "seat" to "bound")))
-    }
-
-    // Only what the catalog names leaves as a name, and only a known code as an outcome.
-    @Test fun anAbilityTheCatalogDoesNotNameLeavesAsOther() {
-        val telling = TellingRecorder()
-        val tells = GymTurnTelemetry(telling, lazy { TurnPhone.catalog() })
-        tells.ability(TurnLabel.of("list_notes"), TurnLabel.of("ok"))
-        tells.ability(TurnLabel.of("private_word"), TurnLabel.of("another_word"))
-        tells.ability(TurnLabel.of("A sentence with spaces"), TurnLabel.of("refused"))
-        assertEquals(listOf(mapOf("name" to "list_notes", "outcome" to "ok"), mapOf("name" to "other", "outcome" to "other"), mapOf("name" to "other", "outcome" to "refused")),
-            telling.named("coach_ability"))
-    }
-
-    @Test fun theLeaseHoldsTheTurnsWork() = runTest {
-        val held = mutableListOf<kotlinx.coroutines.Job>()
-        TurnPhone(this, folder.newFolder(), script("""[{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]"""), lease = { held += it }).use { phone ->
-            checkNotNull(phone.turns.send("Question", null, null, anonymous = true))
-            advanceUntilIdle()
-            assertTrue(held.single().isActive)
-            phone.turns.requestStop()
-            advanceUntilIdle()
-            assertTrue(held.single().isCompleted)
-        }
-    }
-
-    private fun twoCreates() = script("""[
-        {"event":"calls","data":{"batch":1,"calls":[
-            {"callId":"toolu_1","name":"create_routine","input":$routineCall},
-            {"callId":"toolu_2","name":"create_routine","input":{"id":"rt_00000010","name":"Day 2","position":1,"entries":[{"exerciseId":"bench-press"}]}}]}},
-        {"await":"results","batch":1}]""")
-
-    private fun hostOf(phone: TurnPhone, turn: OpenTurn.Turn) = GymTurnHost(turn, "Add a day", ReplicaPin(phone.engine.activeReplica(), true),
-        phone.room.training, TurnPhone.catalog(), phone.pictures, "https://windmill.works", Dispatchers.Unconfined)
-
-    private suspend fun assertThrowsRecordRefused(work: suspend () -> Unit) {
-        try {
-            work()
-        } catch (refused: TurnRecordRefused) {
-            return
-        }
-        throw AssertionError("The record took the write")
-    }
-
-    // "What arrived is kept" holds for an app that stopped before it died: the record takes the words so far when the app stops, between its coalesced commits, and takes them once.
-    @Test fun whatArrivedIsCommittedWhenTheAppStopsAndStandsOverADeath() = runTest {
-        val server = script("""[{"event":"text","data":{"delta":"Four words arrived here"}},{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""")
-        TurnPhone(this, folder.newFolder(), server).use { phone ->
-            phone.signIn()
-            phone.turns.start()
-            advanceUntilIdle()
-            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = false))
-            advanceTimeBy(1_000)
-            assertEquals("the coalesced commit has not come round", "", phone.message(turn.coach)?.text)
-            val before = phone.engine.readRevision()
-
-            phone.turns.appStopped()
-            phone.turns.appStopped()
-            advanceTimeBy(1)
-            assertEquals("Four words arrived here", phone.message(turn.coach)?.text)
-            assertEquals("asked twice, one commit", before + 1, phone.engine.readRevision())
-            val snapshot = phone.engine.snapshot()
-            phone.turns.requestStop()
-            advanceUntilIdle()
-
-            TurnPhone(this, folder.newFolder(), script("[]"), snapshot = snapshot).use { reopened ->
-                reopened.turns.start()
-                advanceUntilIdle()
-                val message = reopened.message(turn.coach)
-                assertEquals(MessageState.interrupted, message?.state)
-                assertEquals("Four words arrived here", message?.text)
-            }
-        }
-    }
-
-    // Nothing has arrived when the app stops: nothing is written, and after a death the question stands over an interrupted answer with no words.
-    @Test fun anAppThatStopsBeforeAnyWordCommitsNothingAndTheQuestionStands() = runTest {
-        val server = script("""[{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""")
-        TurnPhone(this, folder.newFolder(), server).use { phone ->
-            phone.signIn()
-            phone.turns.start()
-            advanceUntilIdle()
-            val turn = checkNotNull(phone.turns.send("Question", null, null, anonymous = false))
-            advanceTimeBy(1_000)
-            val before = phone.engine.readRevision()
-            phone.turns.appStopped()
-            advanceTimeBy(1)
-            assertEquals(before, phone.engine.readRevision())
-            val snapshot = phone.engine.snapshot()
-            phone.turns.requestStop()
-            advanceUntilIdle()
-
-            TurnPhone(this, folder.newFolder(), script("[]"), snapshot = snapshot).use { reopened ->
-                reopened.turns.start()
-                advanceUntilIdle()
-                assertEquals(MessageState.interrupted, reopened.message(turn.coach)?.state)
-                assertEquals("", reopened.message(turn.coach)?.text)
-                assertEquals("Question", reopened.message(turn.lifter)?.text)
-            }
-        }
+        val schemas = GymEvents.schemas
+        assertEquals(mapOf("state" to "completed", "seat" to "bound", "code" to "other", "rounds" to "2", "ability_calls" to "1", "refusals" to "0", "answer_bytes" to "9", "duration_ms" to "0"),
+            schemas.properties("coach_turn", mapOf("state" to "completed", "seat" to "bound", "code" to "other", "rounds" to "2", "ability_calls" to "1", "refusals" to "0",
+                "answer_bytes" to "9", "duration_ms" to "0", "question" to "How heavy today?")))
     }
 }

@@ -6,10 +6,14 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
@@ -31,7 +35,7 @@ class AiHttp(private val origin: HttpUrl, private val credentials: suspend () ->
     allowLocalHttp: Boolean = false, private val requestObserved: (String, String) -> Unit = { _, _ -> }) : AiTransport, AutoCloseable {
     init {
         require(origin.username.isEmpty() && origin.password.isEmpty() && origin.encodedPath == "/" && origin.query == null && origin.fragment == null)
-        require(origin.isHttps || allowLocalHttp && origin.scheme == "http" && origin.host in setOf("127.0.0.1", "::1"))
+        require(origin.isHttps || allowLocalHttp && origin.scheme == "http" && origin.host in setOf("127.0.0.1", "::1", "10.0.2.2"))
     }
     private val client = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
         .cookieJar(CookieJar.NO_COOKIES).cache(null).connectTimeout(10, TimeUnit.SECONDS)
@@ -82,20 +86,29 @@ class AiHttp(private val origin: HttpUrl, private val credentials: suspend () ->
                 val type = body.contentType()
                 if (type?.type != "text" || type.subtype != "event-stream") throw AiTransportFailure("invalid-answer")
                 val events = flow {
-                    try {
-                        response.use {
-                            val parser = AiSse()
-                            val bytes = ByteArray(8192)
-                            while (true) {
-                                val count = body.source().read(bytes)
-                                if (count == -1) { parser.finish(); break }
-                                for (event in parser.consume(bytes, count)) {
-                                    emit(event)
-                                    if (event.member("event").str() in setOf("ended", "failed")) return@flow
+                    coroutineScope {
+                        // A socket read is deaf to cancellation, so a watcher cancels the call the moment the collector is cancelled, which ends the read.
+                        val watcher = launch { try { awaitCancellation() } finally { call.cancel() } }
+                        try {
+                            response.use {
+                                val parser = AiSse()
+                                val bytes = ByteArray(8192)
+                                while (true) {
+                                    val count = body.source().read(bytes)
+                                    if (count == -1) { parser.finish(); break }
+                                    for (event in parser.consume(bytes, count)) {
+                                        emit(event)
+                                        if (event.member("event").str() in setOf("ended", "failed")) return@coroutineScope
+                                    }
                                 }
                             }
+                        } catch (error: IOException) {
+                            currentCoroutineContext().ensureActive()
+                            throw connectionFailure(error)
+                        } finally {
+                            watcher.cancel()
                         }
-                    } catch (error: IOException) { throw connectionFailure(error) }
+                    }
                 }.flowOn(Dispatchers.IO)
                 return AiResponse(response.code, events = events) { call.cancel(); response.close() }
             }
