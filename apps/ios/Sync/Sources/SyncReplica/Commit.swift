@@ -7,12 +7,10 @@ import SyncCore
 public struct CommitPlanner: Sendable {
   public let registry: Registry
   public let limits: Limits
-  let hold: Hold
 
   public init(registry: Registry, limits: Limits = Limits()) {
     self.registry = registry
     self.limits = limits
-    hold = Hold(registry: registry)
   }
 
   // §7.1 for a decided gesture. The read-and-commit form runs step 1, `checkWritable`, then its body through the
@@ -33,8 +31,8 @@ public struct CommitPlanner: Sendable {
   // it derives an id from a label, places by an anchor, or creates a record of a capped type, which the cap counts; and
   // for each tree or overlay scope, the governing record the scope check reads. What a plan finds it needs beyond them
   // is read once found (`UnreadRows`): the ids minted creates draw, by their keys, and a capped type any other change
-  // shows one more record of, whole, so a change of one record of a capped type reads that record alone unless it may
-  // grow the type.
+  // shows one more record of, whole; and every entry, where a retire's or a supersede's silent fold reaches past the
+  // entries the load read. So a change of one record of a capped type reads that record alone unless it may grow the type.
   public func reads(of gesture: Gesture, in scope: ScopeRef) -> [ScopeRef: RowSelection] {
     var origin = rows(namedBy: gesture.changes + gesture.predict)
     origin.keys.formUnion(gesture.guards.map(\.key))
@@ -106,8 +104,10 @@ public struct CommitPlanner: Sendable {
     let superseding = try supersedingEntries(gesture.supersede, in: scope, replica: replica)
     let supersedingOnly = superseding.filter { entry in !retiring.contains { $0.commitOrder == entry.commitOrder } }
     let ending = retiring.map { (entry: $0, event: IntentEvent.retire) } + supersedingOnly.map { (entry: $0, event: IntentEvent.silentFold) }
+    let fold = SilentFold(ending, replaced: !superseding.isEmpty, over: replica, registry: registry)
+    guard !fold.reachesUnreadEntries else { throw UnreadRows(everyEntry: true, draws: draws) }
     var retired = replica
-    try hold.end(ending, replaced: !superseding.isEmpty, in: &retired)
+    try fold.apply(to: &retired)
     var builder = DeltaBuilder(
       registry: registry, replica: retired, scope: scope, stamp: stamp, physNow: physNow,
       drawn: try ScopeView(retired, scope, .drawn, registry: registry),
@@ -370,18 +370,21 @@ public struct Draw: Sendable, Hashable {
   public let id: RecordID
 }
 
-// What a plan needed of the rows its load did not read, so it decided nothing: the keys of the minted ids it drew, and the
-// capped types whose count a change that shows one more of their records needs. The Action reads those keys and types
-// with the entries that touch them and plans the commit again, which takes `draws`, every id drawn so far in order,
-// before it draws another, so it draws and decides as one plan over every row would.
+// What a plan needed of the replica that its load did not read, so it decided nothing: the keys of the minted ids it drew,
+// the capped types whose count a change that shows one more of their records needs, and every entry, where a silent fold
+// reaches past the entries the load read. The Action reads them, with the entries that touch the rows, and plans the
+// commit again, which takes `draws`, every id drawn so far in order, before it draws another, so it draws and decides as
+// one plan over every row and entry would.
 public struct UnreadRows: Error, Sendable {
   public let keys: [RecordKey]
   public let types: [String]
+  public let everyEntry: Bool
   public let draws: [Draw]
 
-  init(keys: [RecordKey], types: [String] = [], draws: [Draw]) {
+  init(keys: [RecordKey] = [], types: [String] = [], everyEntry: Bool = false, draws: [Draw]) {
     self.keys = keys
     self.types = types
+    self.everyEntry = everyEntry
     self.draws = draws
   }
 }

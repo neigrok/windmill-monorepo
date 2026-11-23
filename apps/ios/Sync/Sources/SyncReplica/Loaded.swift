@@ -68,6 +68,14 @@ public struct LoadedReplica: Sendable {
 
   // MARK: Reading
 
+  // Whether the load read every entry, or what its entry selection names.
+  var holdsEveryEntry: Bool { entrySelection.all }
+
+  // Whether the load read every entry that touches `key` in `scope`: every entry, or those its read of the record loaded.
+  func holdsEntries(touching key: RecordKey, in scope: ScopeRef) -> Bool {
+    entrySelection.all || confirmed[scope]?.wasRead(key) == true
+  }
+
   // Every entry, in commit order; reading it after a load of part of the outbox is a loader bug, and traps.
   public var outbox: [OutboxEntry] {
     precondition(entrySelection.all, "the whole outbox of \(meta.replica) was read but not loaded")

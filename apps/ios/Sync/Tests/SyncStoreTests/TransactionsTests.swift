@@ -467,6 +467,46 @@ struct TransactionsTests {
     #expect(try store.read { tx in try tx.replica("rp_1")!.outbox.map(\.localId) } == ["made/0", "act/0"])
   }
 
+  // A retire folds every dependent of the removal it ends, as over the whole replica: here a command whose prediction
+  // carries the removal's life folds, and with it a later entry reached only through what that prediction creates, a card
+  // the entry changes or a run its lap names, which no record the retire reads touches. The commit reads every entry
+  // once its fold reaches that far, beside a change of a capped type or alone.
+  @Test(arguments: ["beside a change of a capped type", "alone", "alone, a later lap naming a predicted run"])
+  func aRetireFoldsWhatAFoldedPredictionReachesAsOverTheWholeReplica(_ shape: String) throws {
+    let scope = ScopeRef.product("probe")
+    let stamp = try Stamp("1000:0:r_aaaaaaaaaaaa")
+    let card = Row(key: RecordKey("card", "card0001"), lattice: Lattice(life: Life(.alive, stamp), born: stamp, fields: [
+      "title": Register("One", stamp), "tier": Register("draft", stamp)]), seq: 1, rc: 1, ru: 1)
+    let day = Row(key: RecordKey("day", "2026-09-01"), lattice: Lattice(life: Life(.alive, stamp), fields: ["score": Register(1, stamp)]),
+                  seq: 2, rc: 2, ru: 2)
+    var meta = ReplicaMeta(replica: "rp_1", state: .bound, account: "A")
+    meta.hlc = HLC(ms: 1000)
+    var whole = LoadedReplica(meta: meta, confirmed: [scope: Rows([card, day])], wholeScopes: true)
+    let store = try Store.inMemory(holding: LoadedDevice(meta: DeviceMeta(), active: "rp_1", replicas: [whole]), registry: Self.probe)
+    let planner = CommitPlanner(registry: Self.probe)
+    let naming = shape.hasSuffix("predicted run")
+    let created: Change = naming ? .create("run", id: .given("run00009"), ["startedAt": 5000])
+      : .create("card", id: .given("card0009"), ["title": "Nine", "tier": "draft"])
+    let later: Change = naming ? .create("lap", id: .given("lapaaaa9"), ["runId": "run00009", "weight": 5])
+      : .update("card", "card0009", ["tier": "done"])
+    let beside: [Change] = shape.hasPrefix("beside") ? [.update("card", "card0001", ["tier": "review"])] : []
+    let gestures: [Gesture] = [
+      Gesture(changes: [.put("day", "2026-09-01", present: false)], hold: true, gestureId: "removal"),
+      Gesture(changes: [], command: Command(name: "probe.copy", args: ["src": "b_00000001", "dst": "b_00000002"]),
+              predict: [.put("day", "2026-09-01", present: nil, ["score": 2]), created], gestureId: "command"),
+      Gesture(changes: [later], gestureId: "later"),
+      Gesture(changes: beside, retire: [RecordRef(type: "day", id: "2026-09-01")], gestureId: "retiring"),
+    ]
+    for (index, gesture) in gestures.enumerated() {
+      let instance = Self.instance(5000 + Int64(index))
+      let written = Result { try store.commit(gesture, in: scope, instance: instance, identities: try QueuedIdentities([:])).value }
+      let decided = Result { try planner.commit(gesture, in: scope, to: &whole, as: instance, identities: try QueuedIdentities([:]), gestureIdTaken: false) }
+      #expect(Self.agree(written, decided), "\(shape), \(gesture.gestureId!)")
+      #expect(try store.read { try $0.device(rows: true).activeReplica.json } == whole.json, "\(shape), \(gesture.gestureId!)")
+    }
+    #expect(whole.outbox.map(\.localId) == (beside.isEmpty ? [] : ["retiring/0"]))
+  }
+
   // The store's Actions, each over what it loads, decide as the planners over the whole replica and leave the same
   // replica: commits that mint, a draw now and then repeating an id the replica holds; that hold removals, carry a held
   // removal's life in a put that keeps presence, and retire a held removal while changing other records; numbering,

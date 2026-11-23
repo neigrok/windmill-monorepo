@@ -168,20 +168,23 @@ extension Store {
   }
 
   // A commit's plan over the rows its gesture reads and the entries that touch them, and of the journal only what settles
-  // an ended entry's slot; a plan that found it needed more of the rows (`UnreadRows`: the records of ids it drew, a capped
-  // type it may grow) is planned again over the same draws with those read too. Its outcome, and the batch it would write.
+  // an ended entry's slot; a plan that found it needed more (`UnreadRows`: the records of ids it drew, a capped type it may
+  // grow, every entry a silent fold may reach) is planned again over the same draws with those read too. Its outcome, and
+  // the batch it would write.
   func planned(_ gesture: Gesture, in scope: ScopeRef, of active: String, tx: StoreTransaction,
                _ commit: (inout LoadedReplica, [Draw]) throws -> CommitOutcome) throws -> (outcome: CommitOutcome, batch: ReplicaBatch) {
     var reads = planners.commits.reads(of: gesture, in: scope)
+    var entries = planners.commits.entryReads(of: gesture)
     var draws: [Draw] = []
     while true {
-      var replica = try loaded(active, in: tx, reads: reads, entries: planners.commits.entryReads(of: gesture), journal: .whereUnsettled)
+      var replica = try loaded(active, in: tx, reads: reads, entries: entries, journal: .whereUnsettled)
       do {
         let outcome = try commit(&replica, draws)
         return (outcome, replica.batch)
       } catch let unread as UnreadRows {
         reads[scope, default: RowSelection()].keys.formUnion(unread.keys)
         reads[scope, default: RowSelection()].types.formUnion(unread.types)
+        if unread.everyEntry { entries = .every }
         draws = unread.draws
       }
     }
