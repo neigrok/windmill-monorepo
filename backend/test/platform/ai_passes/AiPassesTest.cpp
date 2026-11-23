@@ -1,5 +1,6 @@
 #include "platform/ai_passes/AiPasses.h"
 #include "test/testing.h"
+#include <drogon/utils/Utilities.h>
 #include <fstream>
 #include <sstream>
 
@@ -38,6 +39,25 @@ TEST(ai_pass_claims_are_generated_from_one_principal_without_profile_or_account_
   CHECK_EQ(signer.refusal({"web", "gym.coach", 1}), "client-update-required");
   CHECK_EQ(signer.refusal({"web", "unknown", 2}), "invalid_request");
   CHECK_EQ(signer.refusal({"web", "gym.coach", 2}), "");
+}
+
+TEST(the_server_pass_states_the_account_as_background_work_and_nothing_else) {
+  AiPasses signer("nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A", "test-rfc8032", "development", R"({"gym.coach":1})");
+  const std::string pass = signer.serverPass(UserId{"account-vector"}, 1'800'000'000'000);
+
+  const std::string prefix = "wm-pass.v1.test-rfc8032.";
+  REQUIRE(pass.starts_with(prefix));
+  const std::string payload = drogon::utils::base64Decode(pass.substr(prefix.size(), pass.rfind('.') - prefix.size()));
+  CHECK_EQ(payload, std::string(R"({"aud":"ai","client":"server","env":"development","exp":1800000600000,)"
+                                R"("iat":1800000000000,"plan":"none","sub":{"account":"account-vector"}})"));
+  CHECK_EQ(pass, signer.signPayload(payload));
+
+  // The pass door reaches no server pass: its request refuses the client, and its claims throw for it.
+  CHECK_FALSE(AiPassRequest::parse(R"({"client":"server","use":"gym.coach","version":1})"));
+  bool refused = false;
+  try { signer.claims({{AiBudgetSubjectKind::Account, "account-vector"}, AiBudgetTier::LoggedIn}, std::nullopt, "server", 1'800'000'000'000); }
+  catch (const std::invalid_argument&) { refused = true; }
+  CHECK(refused);
 }
 
 TEST(ai_pass_request_and_signer_configuration_are_strict) {
