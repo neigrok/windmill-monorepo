@@ -142,7 +142,7 @@ class LargestTypeTests {
     @Test
     fun theCeilingSentenceScrollsWithTheThreadAndLeavesTheConversationReadableAtFontScaleTwo() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val refusal = CoachTurnRefusal.of("free_day_exhausted")
+        val refusal = CoachTurnRefusal.Allowance("free_day_exhausted")
         try { store(scope).use { room ->
             val ask = AskBinding(room.store)
             compose.setContent {

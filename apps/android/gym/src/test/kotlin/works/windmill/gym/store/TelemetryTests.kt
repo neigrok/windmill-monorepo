@@ -39,11 +39,6 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.agent.TurnEvent
-import works.windmill.agent.TurnOpen
-import works.windmill.agent.TurnRefusal
-import works.windmill.agent.TurnSeat
-import works.windmill.agent.TurnTransport
 import works.windmill.gym.coach.CoachDraft
 import works.windmill.gym.coach.turn.CoachTurnFault
 import works.windmill.gym.coach.turn.ScriptedTurns
@@ -76,7 +71,7 @@ class TelemetryTests {
     private fun TestScope.work() = CoroutineScope(SupervisorJob() + coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
 
     // One private question on a room of its own, and a Stop for a turn still open: everything the room told from the send on.
-    private suspend fun TestScope.asking(server: TurnTransport, account: String? = "account", pulled: Boolean = true): Recorder {
+    private suspend fun TestScope.asking(server: ScriptedTurns, account: String? = "account", pulled: Boolean = true): Recorder {
         val telemetry = Recorder()
         EngineRoomFixture(tmp.newFolder(), work(), telemetry = telemetry, coachServer = server).use { room ->
             room.select(account)
@@ -108,29 +103,25 @@ class TelemetryTests {
         val started = "gym_ask_started" to mapOf("screen" to "coach")
         val abilities = listOf("list_sessions", "list_notes", "list_exercises", "list_routines").map { "coach_ability" to mapOf("name" to it, "outcome" to "ok") }
         fun asked(outcome: String, cap: String? = null) = "gym_ask_outcome" to mapOf("screen" to "coach", "outcome" to outcome) + listOfNotNull(cap?.let { "cap" to it })
-        fun ended(state: String, seat: String = "bound", code: String? = null, calls: Int = 4, bytes: Int = 0) = "coach_turn" to mapOf("state" to state, "seat" to seat,
-            "ability_calls" to calls.toString(), "refusals" to "0", "answer_bytes" to bytes.toString()) + listOfNotNull(code?.let { "code" to it })
-        fun request(status: Int) = "api_request_failed" to mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST", "failure_kind" to "http", "status" to status.toString())
-        fun refusing(status: Int, code: String) = script("[]").apply { refuseOpen = TurnRefusal(status, code, null) }
+        fun ended(state: String, seat: String = "bound", code: String? = null, rounds: Int = 1, calls: Int = 0, bytes: Int = 0) = "coach_turn" to mapOf("state" to state, "seat" to seat,
+            "rounds" to rounds.toString(), "ability_calls" to calls.toString(), "refusals" to "0", "answer_bytes" to bytes.toString()) + listOfNotNull(code?.let { "code" to it })
+        fun refusing(code: String) = script("[]").apply { refuseOpen = ScriptedTurns.Refusal.of(code) }
 
         val cases = listOf(
             script("""[{"event":"text","data":{"delta":"private answer"}},{"event":"done","data":{"state":"completed"}}]""") to
-                listOf(started) + abilities + listOf(asked("answered"), ended("completed", bytes = 14)),
+                listOf(started) + abilities + listOf(ended("completed", bytes = 14), asked("answered")),
             script("""[{"event":"text","data":{"delta":"private answer"}},{"event":"done","data":{"state":"declined"}}]""") to
-                listOf(started) + abilities + listOf(asked("refused"), ended("declined", bytes = 14)),
+                listOf(started) + abilities + listOf(ended("declined", bytes = 14), asked("refused")),
             script("""[{"event":"text","data":{"delta":"private answer"}},{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""") to
-                listOf(started) + abilities + listOf(asked("cancelled"), ended("stopped", bytes = 14)),
-            script("""[{"event":"error","data":{"code":"subject_exhausted"}}]""") to
-                listOf(started) + abilities + listOf(asked("capped", "allowance"), ended("failed", code = "subject_exhausted")),
-            script("""[{"event":"error","data":{"code":"coach-vendor-error"}}]""") to
-                listOf(started) + abilities + listOf(asked("failed"), ended("failed", code = "coach-vendor-error")),
-            script("""[{"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"list_notes","input":{}}]}},{"await":"timeout"}]""") to
-                listOf(started) + abilities + listOf("coach_ability" to mapOf("name" to "list_notes", "outcome" to "ok"), asked("failed"), ended("interrupted", code = TurnRefusal.turnOrder, calls = 5)),
-            refusing(429, "subject_exhausted") to listOf(started) + abilities + listOf(asked("capped", "allowance")),
-            refusing(429, "free_month_exhausted") to listOf(started) + abilities + listOf(asked("capped", "allowance")),
-            refusing(429, TurnRefusal.rateLimited) to listOf(started) + abilities + listOf(asked("capped", "daily")),
-            refusing(404, "not-found") to listOf(started) + abilities + listOf(request(404), asked("absent")),
-            refusing(400, "coach-bad-request") to listOf(started) + abilities + listOf(request(400), asked("refused")),
+                listOf(started) + abilities + listOf(ended("stopped", bytes = 14), asked("cancelled")),
+            script("""[{"event":"text","data":{"delta":"private answer"}},{"event":"error","data":{"code":"provider_failed"}}]""") to
+                listOf(started) + abilities + listOf(ended("failed", code = "provider_failed", bytes = 14), asked("failed")),
+            script("""[{"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"list_notes","input":{}}]}},{"await":"results","batch":1},{"event":"done","data":{"state":"completed"}}]""") to
+                listOf(started) + abilities + listOf("coach_ability" to mapOf("name" to "list_notes", "outcome" to "ok"), ended("completed", rounds = 2, calls = 1), asked("answered")),
+            refusing("subject_exhausted") to listOf(started) + abilities + listOf(ended("failed", code = "subject_exhausted"), asked("capped", "allowance")),
+            refusing("free_month_exhausted") to listOf(started) + abilities + listOf(ended("failed", code = "free_month_exhausted"), asked("capped", "allowance")),
+            refusing("rate_limited") to listOf(started) + abilities + listOf(ended("failed", code = "rate_limited"), asked("capped", "daily")),
+            refusing("not_found") to listOf(started) + abilities + listOf(ended("failed", code = "anonymous_ai_unavailable"), asked("absent")),
         )
         for ((server, expected) in cases) {
             val told = asking(server)
@@ -139,14 +130,8 @@ class TelemetryTests {
             assertToldNothingSaid(told)
         }
 
-        val quiet = asking(refusing(503, TurnRefusal.vendorError))
-        assertEquals(listOf(started) + abilities + listOf(request(503), asked("failed")), quiet.timeless())
-        assertEquals("a server that broke is the one reported", listOf("gym.coachTurn" to "http"), quiet.failures.map { (operation, error) -> operation to error.message })
-        assertEquals(listOf(mapOf("failure_kind" to "http", "status" to "503")), quiet.failureProperties)
-        assertToldNothingSaid(quiet)
-
         val signedOut = asking(script("""[{"event":"text","data":{"delta":"private answer"}},{"event":"done","data":{"state":"completed"}}]"""), account = null)
-        assertEquals(listOf(started) + abilities + listOf(asked("answered"), ended("completed", seat = "anon", bytes = 14)), signedOut.timeless())
+        assertEquals(listOf(started) + abilities + listOf(ended("completed", seat = "anon", bytes = 14), asked("answered")), signedOut.timeless())
         assertToldNothingSaid(signedOut)
 
         val arriving = asking(script("[]"), pulled = false)
@@ -154,35 +139,17 @@ class TelemetryTests {
         assertToldNothingSaid(arriving)
     }
 
+    // A transport that broke after the round may have been admitted is the AI client's to report, under `ai-call`, and the turn ends failed with what arrived.
     @Test fun unexpectedHandledCoachFailureIsReportedButCancellationRemainsCancellation() = runTest {
         val started = "gym_ask_started" to mapOf("screen" to "coach")
         val abilities = listOf("list_sessions", "list_notes", "list_exercises", "list_routines").map { "coach_ability" to mapOf("name" to it, "outcome" to "ok") }
-        val broken = object : TurnTransport by script("[]") {
-            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow { throw IllegalStateException("do not publish conversation content") }
-            override fun resume(turnId: String, seat: TurnSeat): Flow<TurnEvent> = flow { throw IllegalStateException("do not publish conversation content") }
-        }
+        val broken = script("[]").apply { beforeRound = { throw IllegalStateException("do not publish conversation content") } }
         val told = asking(broken)
         assertEquals(listOf(started) + abilities + listOf(
-            "api_request_failed" to mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST", "failure_kind" to "offline"),
-            "gym_ask_outcome" to mapOf("screen" to "coach", "outcome" to "offline")), told.timeless())
-        assertEquals(listOf("gym.coachTurn" to "transport"), told.failures.map { (operation, error) -> operation to error.message })
-        assertEquals(listOf(mapOf("failure_kind" to "transport")), told.failureProperties)
+            "coach_turn" to mapOf("state" to "failed", "seat" to "bound", "code" to "invalid-answer", "rounds" to "1", "ability_calls" to "0", "refusals" to "0", "answer_bytes" to "0"),
+            "gym_ask_outcome" to mapOf("screen" to "coach", "outcome" to "failed")), told.timeless())
+        assertEquals(listOf("ai-call" to "ai-call"), told.failures.map { (operation, error) -> operation to error.message })
         assertToldNothingSaid(told)
-
-        val brokenLater = object : TurnTransport by script("[]") {
-            override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow {
-                emit(TurnEvent.Text("private answer"))
-                throw IllegalStateException("do not publish conversation content")
-            }
-            override fun resume(turnId: String, seat: TurnSeat): Flow<TurnEvent> = flow { throw IllegalStateException("do not publish conversation content") }
-        }
-        val toldLater = asking(brokenLater)
-        assertEquals(listOf(started) + abilities + listOf(
-            "gym_ask_outcome" to mapOf("screen" to "coach", "outcome" to "failed"),
-            "coach_turn" to mapOf("state" to "interrupted", "seat" to "bound", "ability_calls" to "4", "refusals" to "0", "answer_bytes" to "14", "code" to "transport")), toldLater.timeless())
-        assertEquals(listOf("gym.coachTurn" to "transport"), toldLater.failures.map { (operation, error) -> operation to error.message })
-        assertEquals(listOf(mapOf("failure_kind" to "transport")), toldLater.failureProperties)
-        assertToldNothingSaid(toldLater)
 
         val telemetry = Recorder()
         EngineRoomFixture(tmp.newFolder(), work(), telemetry = telemetry, coachServer = script("""[{"await":"stop"}]""")).use { room ->

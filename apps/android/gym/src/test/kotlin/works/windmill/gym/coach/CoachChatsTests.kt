@@ -41,17 +41,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import works.windmill.agent.TurnConnectionLost
-import works.windmill.agent.TurnOpen
-import works.windmill.agent.TurnRefusal
-import works.windmill.agent.TurnSeat
-import works.windmill.agent.TurnTransport
 import works.windmill.gym.coach.onboarding.CoachOnboardingSeat
 import works.windmill.gym.coach.onboarding.CoachRoutineImports
 import works.windmill.gym.coach.turn.CoachTurnFault
 import works.windmill.gym.coach.turn.CoachTurnRefusal
 import works.windmill.gym.domain.coach.OpenTurnOnce
 import works.windmill.gym.coach.turn.ScriptedTurns
+import works.windmill.gym.coach.turn.scriptedAllowance
 import works.windmill.gym.coach.turn.TellingRecorder
 import works.windmill.gym.domain.coach.AbilityCall
 import works.windmill.gym.domain.coach.CoachMessage
@@ -106,7 +102,7 @@ class CoachChatsTests {
     // Virtual time, one dispatcher: the test advances it, and closing the room ends its work.
     private fun TestScope.work() = CoroutineScope(SupervisorJob() + coroutineContext[ContinuationInterceptor] as CoroutineDispatcher)
 
-    private fun TestScope.room(server: TurnTransport, file: File = File(folder.newFolder(), LocalCoach.fileName), telling: TellingRecorder = TellingRecorder()) =
+    private fun TestScope.room(server: ScriptedTurns, file: File = File(folder.newFolder(), LocalCoach.fileName), telling: TellingRecorder = TellingRecorder()) =
         EngineRoomFixture(folder.newFolder(), work(), telemetry = telling, localCoach = LocalCoach(file), coachServer = server)
 
     private fun EngineRoomFixture.thread(chat: String): String = checkNotNull(store.coach.chat(chat)?.conversation) 
@@ -141,8 +137,8 @@ class CoachChatsTests {
             assertEquals(AbilityCall.Outcome.Ok, reply.calls.single { it.name == "create_routine" }.outcome)
             assertEquals(listOf("list_sessions", "list_notes", "list_exercises", "list_routines", "create_routine"), reply.calls.map { it.name })
             assertEquals(reply.calls.mapNotNull { works.windmill.gym.coach.turn.TurnPhone.catalog().ability(it.name)?.phrase }.joinToString(" · "), reply.stepLine)
-            assertEquals(CoachReceipt(ReadTally(), listOf(RecordRef(Gym.Types.routine, RecordID("rt_00000009")))), reply.receipt)
-            assertEquals(listOf(CreatedRoutine("rt_00000009", "Day 1", movements = 1)), reply.routines)
+            assertEquals(CoachReceipt(ReadTally(), listOf(RecordRef(Gym.Types.routine, RecordID("${reply.id}-1")))), reply.receipt)
+            assertEquals(listOf(CreatedRoutine("${reply.id}-1", "Day 1", movements = 1)), reply.routines)
             assertEquals("a real turn's context reads are the phone's own", "Read nothing from your log", reply.readLine.spelled())
             assertEquals("the program it read before making Day 1 did not hold Day 1", listOf("Read your recent workouts" to null, "Read your notes" to null, "Read your movement list" to null, "Read your program" to null, "Created a routine" to "Day 1"),
                 room.store.conversations.withDetails(reply.id, reply.calls).map { it.title.spelled() to it.detail.spelled() })
@@ -158,6 +154,7 @@ class CoachChatsTests {
             val chat = coach.freshChat()
             assertTrue(coach.send(chat, "Question"))
             advanceUntilIdle()
+            advanceTimeBy(5_001)
             room.store.conversations.read()
             val running = checkNotNull(coach.exchanges(chat).single().answer)
             assertEquals(MessageState.running, running.state)
@@ -186,7 +183,7 @@ class CoachChatsTests {
     }
 
     @Test fun aRefusalBeforeTheStreamTakesTheTurnBackAndReturnsTheQuestionAndItsPhoto() = runTest {
-        val server = script("[]").apply { refuseOpen = TurnRefusal(429, "subject_exhausted", null) }
+        val server = script("[]").apply { refuseOpen = ScriptedTurns.Refusal.of("subject_exhausted") }
         val file = File(folder.newFolder(), LocalCoach.fileName)
         room(server, file).use { room ->
             val coach = room.store.coach
@@ -272,7 +269,7 @@ class CoachChatsTests {
             assertEquals(CoachDraft("Check my last workout."), coach.draft(chat))
             assertEquals(emptyList<CoachExchange>(), coach.exchanges(chat))
             assertNull(coach.chat(chat)?.conversation)
-            assertEquals(emptyList<TurnOpen>(), server.opened)
+            assertEquals(emptyList<ScriptedTurns.Opened>(), server.opened)
             room.sync(EngineRoomFixture.server())
             assertTrue(coach.send(chat, "Check my last workout."))
             advanceUntilIdle()
@@ -318,7 +315,7 @@ class CoachChatsTests {
     }
 
     @Test fun aShareTheServerWithdrewOpensAgain() = runTest {
-        val server = answers("Looks strong").apply { refuseOpen = TurnRefusal(503, "coach-vendor-error", null) }
+        val server = answers("Looks strong").apply { refuseOpen = ScriptedTurns.Refusal.of("provider_unavailable") }
         room(server).use { room ->
             val coach = room.store.coach
             val request = "thr_withdrawn0001"
@@ -352,7 +349,7 @@ class CoachChatsTests {
             advanceUntilIdle()
             assertEquals(emptyList<CoachMessage>(), room.messages())
             assertEquals(emptyList<CoachThread>(), room.threads())
-            assertEquals(emptyList<TurnOpen>(), server.opened)
+            assertEquals(emptyList<ScriptedTurns.Opened>(), server.opened)
             assertTrue(coach.accountChanging)
             assertNull(coach.fault(chat))
             assertEquals(CoachDraft("Alice's question"), coach.draft(chat))
@@ -464,11 +461,9 @@ class CoachChatsTests {
         }
     }
 
-    // A stop that went unheard is the band of the chat that stopped, past the turn that met it. Being busy is the one turn, and stands on every chat. A second chat told it is busy leaves the turn's end with the chat that asked.
-    @Test fun aFaultStaysOnTheChatThatMetItAndBusyStandsOnEach() = runTest {
-        val server = object : TurnTransport by script("""[{"event":"text","data":{"delta":"Par"}},{"await":"stop"}]""") {
-            override suspend fun stop(turnId: String, seat: TurnSeat) { throw TurnConnectionLost(null) }
-        }
+    // Being busy is the one turn, and stands on every chat while it runs; the turn's end takes it from both.
+    @Test fun busyStandsOnEachChatWhileATurnRuns() = runTest {
+        val server = script("""[{"event":"text","data":{"delta":"Par"}},{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""")
         room(server).use { room ->
             val coach = room.store.coach
             val first = coach.freshChat()
@@ -482,7 +477,7 @@ class CoachChatsTests {
 
             coach.stop()
             advanceUntilIdle()
-            assertEquals(CoachTurnFault.stoppedOffline, coach.fault(first))
+            assertNull(coach.fault(first))
             assertNull(coach.fault(second))
             assertNull(coach.fault("a-chat-opened-from-history"))
         }
@@ -491,7 +486,7 @@ class CoachChatsTests {
     // Chat A was refused. Chat B's send never reached a server, so B says its own failure and A's refusal stays with A; B's own refusal, the same one, is B's.
     @Test fun aRefusalStaysOnTheChatThatMetIt() = runTest {
         val server = answers("Hi")
-        server.refuseOpen = TurnRefusal(503, "coach-busy", null)
+        server.refuseOpen = ScriptedTurns.Refusal.of("provider_unavailable")
         room(server).use { room ->
             room.select("alice")
             room.sync(EngineRoomFixture.server())
@@ -831,7 +826,7 @@ class CoachChatsTests {
             val coach = room.store.coach
             val chat = coach.freshChat()
             coach.saveDraft(chat, CoachDraft("Refused question"))
-            server.refuseOpen = TurnRefusal(429, "coach-rate-limited", null)
+            server.refuseOpen = ScriptedTurns.Refusal.of("rate_limited")
             failNext = true
             assertTrue(coach.send(chat, "Refused question"))
             advanceUntilIdle()
@@ -859,7 +854,7 @@ class CoachChatsTests {
             val coach = room.store.coach
             val chat = coach.freshChat()
             coach.saveDraft(chat, CoachDraft("Refused question"))
-            server.refuseOpen = TurnRefusal(429, "coach-rate-limited", null)
+            server.refuseOpen = ScriptedTurns.Refusal.of("rate_limited")
             failing = true
             assertTrue(coach.send(chat, "Refused question"))
             advanceUntilIdle()
@@ -906,7 +901,7 @@ class CoachChatsTests {
     // A notice never names a moment gone by: a cap stands until the moment it named, on every chat, and then says nothing. A cap that named none stands.
     @Test fun aCapNoticeGoesOnceTheMomentItNamedHasPassed() = runTest {
         for ((code, said) in listOf("free_month_exhausted" to CoachTurnRefusal.FreeMonthExhausted(1_800_000_600_000), "free_day_exhausted" to CoachTurnRefusal.Allowance("free_day_exhausted", 1_800_000_600_000))) {
-            val server = script("[]").apply { refuseOpen = TurnRefusal(429, code, 1_800_000_600_000) }
+            val server = script("[]").apply { refuseOpen = ScriptedTurns.Refusal.of(code, scriptedAllowance(code, "1", budgetResetsAt = 1_800_000_600_000)) }
             room(server).use { room ->
                 val coach = room.store.coach
                 val chat = coach.freshChat()
@@ -922,7 +917,7 @@ class CoachChatsTests {
                 assertNull(coach.refusal(other))
             }
         }
-        val noMoment = script("[]").apply { refuseOpen = TurnRefusal(429, "subject_exhausted", null) }
+        val noMoment = script("[]").apply { refuseOpen = ScriptedTurns.Refusal.of("subject_exhausted") }
         room(noMoment).use { room ->
             val coach = room.store.coach
             val chat = coach.freshChat()

@@ -1,72 +1,66 @@
 package works.windmill.gym.coach.turn
 
-import works.windmill.agent.SeatKind
-import works.windmill.agent.TurnFailure
-import works.windmill.agent.TurnLabel
-import works.windmill.agent.TurnState
-import works.windmill.agent.TurnRefusal
-import works.windmill.agent.TurnTally
-import works.windmill.agent.TurnTelemetry
+import works.windmill.agent.coach.AbilityReport
+import works.windmill.agent.coach.EndState
+import works.windmill.agent.coach.FailureOperation
+import works.windmill.agent.coach.SeatKind
+import works.windmill.agent.coach.Telemetry
+import works.windmill.agent.coach.TurnReport
 import works.windmill.domain.kit.Catalog
 import works.windmill.gym.domain.coach.AbilityCall
 import works.windmill.gym.domain.coach.AbilityRefusal
 import works.windmill.gym.domain.coach.CoachMessage
 import works.windmill.gym.telemetry.coachAction
-import works.windmill.platform.telemetry.Telemetry
+import works.windmill.platform.telemetry.Telemetry as PlatformTelemetry
 
-// What a turn tells (Coach §10.2), in labels and counts: every value is a catalog name, a known code or a number, so no question, answer, input, result or id can leave through here.
-class GymTurnTelemetry(private val telemetry: Telemetry, private val catalog: Lazy<Catalog>) : TurnTelemetry {
-    override fun ability(name: TurnLabel, outcome: TurnLabel) {
+// What a turn tells (gym Coach on the AI service §11), from the engine's telemetry port and from the host, in labels and counts: every value is a catalog name, a known code or a number, so no question, answer, input, result, pass or id can leave through here.
+class GymTurnTelemetry(private val telemetry: PlatformTelemetry, private val catalog: Lazy<Catalog>) : Telemetry {
+    override fun ability(report: AbilityReport) {
         telemetry.event("coach_ability", mapOf(
-            "name" to if (catalog.value.ability(name.value) != null) name.value else other,
-            "outcome" to if (outcome.value in abilityOutcomes) outcome.value else other,
+            "name" to if (catalog.value.ability(report.name) != null) report.name else other,
+            "outcome" to if (report.outcome == "ok") "ok" else report.code?.takeIf { it in abilityOutcomes } ?: other,
         ))
     }
 
-    override fun ended(state: TurnState, seat: SeatKind, code: TurnLabel?, tally: TurnTally, durationMs: Long) {
-        val allowance = if (state == TurnState.failed) code?.let { CoachTurnRefusal.of(it.value).askOutcome.second == "allowance" } == true else false
-        val outcome = if (allowance) "capped" else when (state) {
-            TurnState.completed -> "answered"
-            TurnState.stopped -> "cancelled"
-            TurnState.declined -> "refused"
-            TurnState.failed, TurnState.interrupted, TurnState.running -> "failed"
-        }
-        asked(outcome, if (allowance) "allowance" else null, durationMs)
+    override fun turn(report: TurnReport) {
         telemetry.event("coach_turn", buildMap {
-            put("state", state.name)
-            put("seat", seat.name)
-            put("ability_calls", tally.calls.toString())
-            put("refusals", tally.refusals.toString())
-            put("answer_bytes", tally.answerBytes.toString())
-            code?.let { put("code", it.value) }
-            put("duration_ms", durationMs.toString())
+            put("state", report.state.name)
+            put("seat", report.seat.name)
+            report.code?.let { put("code", if (it in codes) it else other) }
+            put("rounds", report.rounds.toString())
+            put("ability_calls", report.abilityCalls.toString())
+            put("refusals", report.refusals.toString())
+            put("answer_bytes", report.answerBytes.toString())
+            put("duration_ms", report.durationMs.toString())
         })
     }
 
-    // A cap the notice says is a refusal this phone expects, told by its capped outcome alone; every other withdrawal is a failed request too.
-    override fun withdrawn(status: Int, code: TurnLabel, durationMs: Long) {
-        val refusal = CoachTurnRefusal.of(code.value, status)
-        val (outcome, cap) = refusal.askOutcome
-        val failed = when {
-            outcome == "capped" -> null
-            code.value == TurnLabel.notAStream -> mapOf("failure_kind" to "malformed")
-            refusal == CoachTurnRefusal.Offline -> mapOf("failure_kind" to "offline")
-            else -> mapOf("failure_kind" to "http", "status" to status.toString())
-        }
-        failed?.let { telemetry.event("api_request_failed", mapOf("operation" to "gym_coach_turn", "route" to "/v1/gym", "method" to "POST") + it) }
-        asked(if (outcome == "refused" && TurnRefusal(status, code.value, null).serverFault) "failed" else outcome, cap, durationMs)
+    // `ai-call`, `ai-pass` and `agent-host`, each a static operation with no message of anything said.
+    override fun failure(operation: FailureOperation) {
+        telemetry.failure(operation.label, CoachTurnFailure(operation.label))
     }
 
-    // A lost connection and a cancellation never come here: the driver keeps them from its port, and expected refusals are the events above.
-    override fun failure(kind: TurnFailure, status: Int?) {
-        telemetry.failure("gym.coachTurn", CoachTurnFailure(kind), buildMap {
-            put("failure_kind", kind.name)
-            status?.let { put("status", it.toString()) }
-        })
+    // A failure of gym's own around the turn: its store, a record that refused its own write, or the Share door.
+    fun failure(kind: TurnFault) {
+        telemetry.failure("gym.coachTurn", CoachTurnFailure(kind.name), mapOf("failure_kind" to kind.name))
     }
 
     fun started() {
         telemetry.event("gym_ask_started", mapOf("screen" to "coach"))
+    }
+
+    // How a turn the engine ran settled: a refusal by what it means to the lifter, any other end by its state.
+    fun settled(end: EndState, refusal: CoachTurnRefusal?, durationMs: Long) {
+        if (refusal != null && refusal != CoachTurnRefusal.Unanswered) {
+            val (outcome, cap) = refusal.askOutcome
+            return asked(outcome, cap, durationMs)
+        }
+        asked(when (end) {
+            EndState.completed -> "answered"
+            EndState.stopped -> "cancelled"
+            EndState.declined -> "refused"
+            EndState.failed, EndState.interrupted -> "failed"
+        }, null, durationMs)
     }
 
     // A send refused before any record.
@@ -83,19 +77,16 @@ class GymTurnTelemetry(private val telemetry: Telemetry, private val catalog: La
     // A picture sweep that met a message this build cannot read: nothing was deleted, and the next sweep tries again.
     fun pictureSweepHeld() = telemetry.coachAction("picture_sweep", "message_unreadable")
 
-    // A turn that ended with no driver to say so: the seat changed under it, or the process died under it. The record tells what it held, when the record is still on this replica, and how it ended if a writer's commit outlived the cancellation.
-    fun interrupted(seat: SeatKind, cause: InterruptedCause, message: CoachMessage?, durationMs: Long?) {
-        asked("failed", null, durationMs)
+    // A turn the process died under, ended at the next send or sweep with no engine run to end it: the record tells what it held.
+    fun processEnded(seat: SeatKind, message: CoachMessage) {
+        asked("failed", null, null)
         telemetry.event("coach_turn", buildMap {
-            put("state", message?.state?.takeIf { it.isWritersTerminal }?.name ?: TurnState.interrupted.name)
+            put("state", EndState.interrupted.name)
             put("seat", seat.name)
-            put("code", cause.name)
-            message?.let { held ->
-                put("ability_calls", held.calls.size.toString())
-                put("refusals", held.calls.count { it.outcome is AbilityCall.Outcome.Refused }.toString())
-                put("answer_bytes", held.text.encodeToByteArray().size.toString())
-            }
-            durationMs?.let { put("duration_ms", it.toString()) }
+            put("code", processEndedCode)
+            put("ability_calls", message.calls.size.toString())
+            put("refusals", message.calls.count { it.outcome is AbilityCall.Outcome.Refused }.toString())
+            put("answer_bytes", message.text.encodeToByteArray().size.toString())
         })
     }
 
@@ -110,12 +101,19 @@ class GymTurnTelemetry(private val telemetry: Telemetry, private val catalog: La
 
     companion object {
         const val other = "other"
-        val abilityOutcomes = setOf("ok", other) + AbilityRefusal.entries.map { it.code }
+        const val processEndedCode = "process_ended"
+        val abilityOutcomes = setOf("ok", other) + AbilityRefusal.entries.map { it.code } + listOf("one-proposal", "one-note", "stopped", "product-refused")
+        // A turn's code: what the engine, the pass door or the AI service answered (Coach engine §7), or the seat changing under it.
+        val codes = setOf("subject_exhausted", "free_day_exhausted", "free_month_exhausted", "concurrency_exhausted", "rate_limited", "busy", "paused",
+            "unauthenticated", "invalid_installation", "device_bound", "client-update-required", "anonymous_ai_unavailable", "unavailable",
+            "provider_unavailable", "provider_failed", "provider_rejected", "accounting_unavailable", "result_gone", "answer-timeout", "model-call-limit",
+            "invalid_request", "invalid-answer", "untrusted-origin", "unsupported-media-type", "too_large", "funding_required", "conflict",
+            "call_unknown", "picture_gone", "pass_expired", "pass_missing", "pass_signature", "pass_audience", "pass_malformed", "stopped", processEndedCode)
     }
 }
 
-// How a turn ended with no driver left to end it.
-enum class InterruptedCause { seat_changed, process_ended }
+// What failed in gym's own part of a turn, under one static operation.
+enum class TurnFault { storage, refusal, share }
 
-// The one static failure of a turn; its kind is the label, and it carries no message of anything said.
-private class CoachTurnFailure(kind: TurnFailure) : Exception(kind.name)
+// The one static failure of a turn; its label is the message, and it carries nothing said.
+private class CoachTurnFailure(label: String) : Exception(label)

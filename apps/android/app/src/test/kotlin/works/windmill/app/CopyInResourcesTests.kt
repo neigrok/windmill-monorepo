@@ -15,6 +15,8 @@ class CopyInResourcesTests {
     private val allowed = mapOf(
         // The seed's movement names are the person's own data once saved, byte for byte the backend's seed.
         "gym/src/main/kotlin/works/windmill/gym/presentation/Training.kt" to listOf("Back Squat", "Bench Press", "Overhead Press", "Barbell Row", "Chin Up"),
+        // The model's words, never a person's: one once-rule code answers both proposal groups, so the contract's sentence names both targets.
+        "gym/src/main/kotlin/works/windmill/gym/coach/turn/GymProfile.kt" to listOf("routine or workout"),
         // OkHttp's own message for a stream the server dropped.
         "platform/src/main/kotlin/works/windmill/platform/telemetry/Telemetry.kt" to listOf("unexpected end of stream"),
     )

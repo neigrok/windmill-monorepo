@@ -32,11 +32,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.spelled
 import works.windmill.gym.string
-import works.windmill.agent.TurnEvent
-import works.windmill.agent.TurnOpen
-import works.windmill.agent.TurnRefusal
-import works.windmill.agent.TurnSeat
-import works.windmill.agent.TurnTransport
 import works.windmill.gym.coach.turn.ScriptedTurns
 import works.windmill.gym.coach.turn.TellingRecorder
 import works.windmill.gym.domain.coach.CoachMessage
@@ -66,13 +61,10 @@ class CoachChatTests {
 
     private val holdsOpen get() = script("""[{"event":"text","data":{"delta":"Reading"}},{"await":"stop"},{"event":"done","data":{"state":"stopped"}}]""")
 
-    // A server whose answer to the open waits for the test, so what it says arrives late.
-    private class LateOpen(private val server: ScriptedTurns) : TurnTransport by server {
+    // A service whose answer to a turn's first round waits for the test, so what it says arrives late.
+    private class LateOpen(val server: ScriptedTurns) {
         val release = CompletableDeferred<Unit>()
-        override fun open(open: TurnOpen, seat: TurnSeat): Flow<TurnEvent> = flow {
-            release.await()
-            emitAll(server.open(open, seat))
-        }
+        init { server.beforeRound = { release.await() } }
     }
 
     // Virtual time, one dispatcher: the test advances it, and closing the room ends its work.
@@ -81,7 +73,7 @@ class CoachChatTests {
     private fun TestScope.chats(disk: LocalCoach, telemetry: Telemetry = Telemetry.None, owner: () -> String? = { "alice" }) =
         CoachChats(owner, {}, null, null, disk, null, { AnonymousCoachAccess.Unavailable }, telemetry, work())
 
-    private fun TestScope.room(server: TurnTransport, disk: LocalCoach = LocalCoach(File(tmp.newFolder(), LocalCoach.fileName)), telling: Telemetry = Telemetry.None,
+    private fun TestScope.room(server: ScriptedTurns, disk: LocalCoach = LocalCoach(File(tmp.newFolder(), LocalCoach.fileName)), telling: Telemetry = Telemetry.None,
         directory: File = tmp.newFolder(), snapshot: Json? = null) =
         EngineRoomFixture(directory, work(), snapshot = snapshot, telemetry = telling, localCoach = disk, coachServer = server)
 
@@ -157,7 +149,7 @@ class CoachChatTests {
             {"event":"calls","data":{"batch":1,"calls":[{"callId":"toolu_1","name":"list_notes","input":{}}]}},
             {"await":"results","batch":1},
             {"event":"text","data":{"delta":" answer"}},
-            {"event":"done","data":{"state":"completed"}}]""").apply { beforePost = { release.await() } }
+            {"event":"done","data":{"state":"completed"}}]""").apply { beforeRound = { if (rounds.size == 2) release.await() } }
         val file = File(tmp.newFolder(), LocalCoach.fileName)
         room(server, LocalCoach(file)).use { room ->
             val coach = room.store.coach
@@ -279,7 +271,7 @@ class CoachChatTests {
             val coach = restarted.store.coach
             checkNotNull(restarted.coachTurns).start()
             advanceUntilIdle()
-            assertEquals(emptyList<TurnOpen>(), server.opened)
+            assertEquals(emptyList<ScriptedTurns.Opened>(), server.opened)
             assertFalse(coach.isAsking(origin))
             assertEquals(selected, coach.selectedChatId)
             assertEquals(CoachDraft("Keep editing"), coach.draft(selected))
@@ -293,10 +285,10 @@ class CoachChatTests {
     }
 
     @Test fun aLateRefusalCannotRestoreADraftAfterItsOwnerWasErased() = runTest {
-        val late = LateOpen(script("[]").apply { refuseOpen = TurnRefusal(429, "subject_exhausted", null) })
+        val late = LateOpen(script("[]").apply { refuseOpen = ScriptedTurns.Refusal.of("subject_exhausted") })
         val file = File(tmp.newFolder(), LocalCoach.fileName)
         val disk = LocalCoach(file)
-        room(late, disk).use { room ->
+        room(late.server, disk).use { room ->
             val coach = room.store.coach
             room.select("alice")
             room.sync(EngineRoomFixture.server())
@@ -410,7 +402,7 @@ class CoachChatTests {
             room.select("bob")
             room.sync(log)
             advanceUntilIdle()
-            assertEquals(emptyList<TurnOpen>(), server.opened)
+            assertEquals(emptyList<ScriptedTurns.Opened>(), server.opened)
             assertEquals(emptyList<CoachMessage>(), room.messages())
             assertNull(coach.chat(chat))
             assertEquals(CoachDraft(), coach.draft(chat))
@@ -448,10 +440,8 @@ class CoachChatTests {
             assertEquals(emptyList<ConversationRow>(), coach.history)
             assertNull(coach.refusal(chat))
             assertEquals(emptyList<CoachMessage>(), room.messages())
-            assertEquals("the seat change told the server once", 1, server.stops)
             coach.stop()
             advanceUntilIdle()
-            assertEquals(1, server.stops)
             room.select("alice")
             advanceUntilIdle()
             conversations.read()

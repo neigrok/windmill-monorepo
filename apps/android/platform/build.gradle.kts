@@ -32,7 +32,7 @@ kotlin {
 }
 
 dependencies {
-    // api: TurnHttp implements the turn's port.
+    // api: the AI client and the runtime implement the engine's ports.
     api(project(":agent"))
     implementation(project(":sync-core"))
     api(platform(libs.compose.bom))

@@ -41,8 +41,10 @@ class Profile(val json: Json) {
         val description = json.member("description").str()
         val input = json.member("input")
         val countsAsWrite = json.member("countsAsWrite").bool()
+        // Whether the provider holds the call to its schema; a tool that does not say leaves it to the AI service.
+        val strict: Boolean? = json["strict"]?.bool()
         init { require(Regex("[A-Za-z0-9_-]{1,64}").matches(name) && input.member("type").str() == "object") }
-        val wire get() = Json.objectOf("name" to Json.of(name), "description" to Json.of(description), "input" to input)
+        val wire get() = Json.Obj(listOf("name" to Json.of(name), "description" to Json.of(description), "input" to input) + listOfNotNull(strict?.let { "strict" to Json.of(it) }))
     }
     class Group(json: Json) {
         val name = json.member("name").str()
