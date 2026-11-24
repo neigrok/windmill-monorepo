@@ -359,16 +359,17 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
     store does not take reports `roadmap-replica-write`, its one report: the doors above it (the switcher's rename and
     delete, the share dialog's visibility) hear a `BoundaryFailure` and say their own failure without reporting it.
   - *Roadmap Coach:* its tool host (`coach/toolHost.js`, Roadmap Coach §6) writes through these doors and no other: a
-    direct write's structure act as the room's gesture (`CreateNode`, `EditNode`, which carries a step's web links, or
-    `AddEdge`), its receipt on the session's stack, and a mark through `markUndoably`, which decides and writes it as the
+    direct write's structure act as the room's gesture (`CreateNode`, `EditNode`, which carries a step's web links and
+    the labels of items it adds to the end of the step's checklist, `AddSubtask` parts of the same act, or `AddEdge`),
+    its receipt on the session's stack, and a mark through `markUndoably`, which decides and writes it as the
     owner's marks and keeps its receipt out of the stack, so ⌘Z never reaches it, until it is reverted or the room closes.
     A new step's id is drawn by `mintStepId`. A write the door refused, or wrote nothing of, is no success: the host
     answers `roadmap-not-ready` or `no-change` and lets its receipt go (`forget`), so the person's next ⌘Z reaches their own
     act. The Undo of either kind is `revert` of its receipt, which spares a later write of the same field, and a mark the
     person set since. A write that landed tells the room's Activity, which the host takes as a collaborator, the row the
-    Board tells of the same change, silently: a new name alone, as the Board tells none of a step's words, a new step or
-    a link, and a mark's rows come as the room adopts the copy's marks. It emits none of the room's gesture events. No
-    turn runs the host yet.
+    Board tells of the same change, silently: a new name alone, as the room tells none of a step's words, a new step, a
+    link or a subtask, and a mark's rows come as the room adopts the copy's marks. It emits none of the room's gesture
+    events. No turn runs the host yet.
   - Such a room draws no presence and hands its session neither to a reconnect nor to a claim of the device's trees: the
     engine reconnects, and its lineage rule takes what the device holds at sign-in.
 - **Export.** The row's Export writes the room's picture (below), here `ReplicaRoadmap.seed` and the owner's marks.

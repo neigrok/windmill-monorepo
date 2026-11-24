@@ -6,7 +6,7 @@ make, or a refusal ([Roadmap Coach](../../../../docs/foundation/roadmap-coach.md
 answer:
 
 ```json
-{"case": "…", "about": "t_…", "given": {"trees": […], "held": […], "ids": […]}, "call": {"name": "…", "input": {…}}, "expect": {…}}
+{"case": "…", "about": "t_…", "given": {"trees": […], "held": […], "subtasks": […], "ids": […]}, "call": {"name": "…", "input": {…}}, "expect": {…}}
 ```
 
 - `case` says what the case shows.
@@ -24,6 +24,10 @@ answer:
     is not; the step is `unknown` where it carries none.
 - `given.held`, which a case may leave out, lists the steps under a delete the person can still undo, as
   `{tree, step}`. Each is `present: false` in its tree (§6, rule 1).
+- `given.subtasks`, which a case may leave out, lists the subtasks of the person's own roadmaps, as `{tree, step, label,
+  done}`, each step's in its checklist's order: the person's workspace, which the standing roadmap carries beside the
+  trees, since the domain's pure reads take none of it. Every subtask the roadmap holds is listed, a removed step's
+  included, as the roadmap's count of subtasks is held to its cap (§6, rule 4).
 - `given.ids`, which a case may leave out, are the ids the tool host's random source gives, in the order it draws them:
   for `create_node`, the new step's; for a proposal, the proposal's own and then one for each ref, in the order the
   changes give them (§7).
@@ -73,27 +77,28 @@ running an ability:
 
 - the file names an ability of the catalog, and each case calls it with an input inside its schema, or expects
   `invalid-input`;
-- the given trees are spelled whole, `about` and each held step name what the case gives, and the ids minted are as
-  many as the call mints;
+- the given trees are spelled whole, `about`, each held step and each subtask's step name what the case gives, and the
+  ids minted are as many as the call mints;
 - each case expects the form its ability's kind takes, and its answer stands inside the ability's `result` schema;
 - a read's page stays inside its `maxBytes`, its `nextCursor` is of §5.2's form and names a position inside the
   read's sequence, an object in parts starts its page, a part before the last takes its page alone, and a later part carries only `id`, `part`, `parts` and long fields; a
-  step's label, description, summary and web links, whole or as a part's piece, are the given step's, and a header's
-  title and step count the given roadmap's;
+  step's label, description, summary, web links and subtasks, whole or as a part's piece, are the given step's, and a
+  header's title and step count the given roadmap's;
 - a write is an action §6 gives the ability, its input of the shape the domain's cases give that action, and
   `create_node`'s answer the id minted;
 - a proposal's record is the call's changes with each ref under the id minted for it, in order; its `removes` name the
   steps its changes remove, each as the given roadmap holds it until a change names it; and a recolour pins `folded`;
 - a refusal's code is one of §6.1, and holds to what the case gives: `unknown-roadmap` for a roadmap not given,
   `roadmap-unavailable` for one unread, `not-owner` for one the person does not own, `out-of-scope` for a write outside
-  `about`, `roadmap-not-ready` naming a held step, and `over-limit` for a call that passes a cap: a value, measured as the
-  domain stores it, or a direct write's count of the roadmap's steps or links. An input that passes a cap must be refused
-  as `over-limit`, or by a rule §6 checks before the caps, and a direct write that sends a text the domain cannot store as
-  `invalid-input`. A direct write's `over-limit` names the step whose value passes, none for a new step's text, and the
-  roadmap where its count is full. A roadmap whose count is full is too large to hold as a case: `../check_test.py` builds
-  one to hold the check to that rule, and the web's `web/test/products/roadmap/domain/abilities/writes.test.js` holds its
-  executor. `at` is on a proposal's refusal of a change alone, and where §7 fixes it, as for
-  the count of changes, the Shape rule's `changes[k]` and the first value past a cap, it is that.
+  `about`, `roadmap-not-ready` naming a held step, and `over-limit` for a call that passes a cap: a value, measured as
+  the domain stores it, or a direct write's count of the roadmap's steps, links or subtasks. An input that passes a cap
+  must be refused as `over-limit`, or by a rule §6 checks before the caps, and a direct write that sends a text the
+  domain cannot store as `invalid-input`. A direct write's `over-limit` names the step whose value passes, none for a
+  new step's text, and the roadmap where its count of steps, links or subtasks is full. A roadmap whose count is full is
+  too large to hold as a case: `../check_test.py` builds one to hold the check to that rule, and the web's
+  `web/test/products/roadmap/domain/abilities/writes.test.js` holds its executor. `at` is on a proposal's refusal of a
+  change alone, and where §7 fixes it, as for the count of changes, the Shape rule's `changes[k]` and the first value
+  past a cap, it is that.
 
 It does not run an ability, so it does not check what only running one shows: the order of a read, a step's state,
 prerequisites and unlock count, a cursor's digest or where a page is cut, a fold's colours, or which code a refusal is.

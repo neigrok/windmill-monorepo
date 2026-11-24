@@ -64,10 +64,11 @@ and *gate* mean what the [Coach engine](coach-engine.md) defines. This document 
   ([Roadmap on the sync engine](roadmap-on-the-engine.md)): its structure and the person's own marks
   and workspace, durable and usable offline.
 - **D-2 Standing roadmap.** A roadmap as the room shows it: the steps, links, kinds and marks on the
-  screen. It is the copy, less a step under a delete the person can still undo, and with the marks
-  the room shows. For a reader those are the owner's, which the room read from the backend, with what
-  the server said each subtree the roadmap's steps own has come to; Coach reads what the room holds
-  of them and asks for nothing.
+  screen, and on a roadmap of the person's own each step's checklist, its subtasks. It is the copy,
+  less a step under a delete the person can still undo, and with the marks the room shows. For a
+  reader those are the owner's, which the room read from the backend, with what the server said each
+  subtree the roadmap's steps own has come to; Coach reads what the room holds of them and asks for
+  nothing.
 - **D-3 Direct write.** A change Coach makes at once, to one step, that removes nothing (§6).
 - **D-4 Receipt.** The record of a direct write: what changed, in at most eight words.
 - **D-5 Proposal.** A set of changes to one roadmap that Coach suggests and only the person applies
@@ -137,8 +138,7 @@ phrase, ui}`, `class` is `read`, `add`, `change` or `remove`, and `agent` is `ru
 | `get_diagnostics` | read | runs | on the copy | What is wrong with the graph: cycles, links to missing steps, self links, smells, and pointer loops |
 | `list_trees` | read | runs | on the copy | One line for each roadmap the person owns. Offered only in a conversation about all roadmaps |
 | `set_progress` | change | runs | on the copy | Marks one step done or not done |
-| `rename_node` | change | runs | on the copy | Changes one step's title |
-| `annotate_node` | change | runs | on the copy | Changes one step's description or its web links |
+| `update_node` | change | runs | on the copy | Changes one step's title, description or web links, or adds items to its checklist |
 | `create_node` | add | runs | on the copy | Adds one step, after the prerequisites named |
 | `connect` | add | runs | on the copy | Adds one link between two steps |
 | `propose_roadmap_change` | change | proposes | on the copy | Mints a proposal of one or more changes to one roadmap (§7) |
@@ -146,7 +146,8 @@ phrase, ui}`, `class` is `read`, `add`, `change` or `remove`, and `agent` is `ru
 - No ability calls the backend. A signed-in device holds every roadmap its person owns, so
   `list_trees` and what a step's opened roadmap has come to are read from the copy. (R-5)
 - Withheld from Coach: creating, deleting, renaming and sharing a roadmap, its guide, the roadmaps a
-  step opens, and removing or reordering kinds.
+  step opens, removing or reordering kinds, editing, checking or removing a step's subtasks, and its
+  note and private links. Coach only adds a subtask, through `update_node` (R-16).
 - Every ability that `runs` and is not a `read` changes one step and removes nothing. That is the
   shape of the catalog and not a check at run time; the catalog's check refuses an ability that
   `runs` and is a `remove`. Removing, merging, splitting, unlinking, a new kind, and anything
@@ -231,6 +232,7 @@ step comes with, and `id` comes always; a call without `fields` is given the con
 | `summary` | The description, cut after 160 Unicode scalars with `…` added where it is longer |
 | `description` | The whole description |
 | `links` | Its web links, `{url, label}`, in order |
+| `subtasks` | Its checklist, the person's own workspace, `{label, done}`, in order; empty on a roadmap the person only reads |
 | `opens` | The id of the roadmap it opens, the subtree it owns or one it points to; null where it opens none |
 
 - `get_tree` answers `{tree?, steps, nextCursor?}`. `tree`, the roadmap's header, opens the answer:
@@ -284,11 +286,11 @@ carries every list of its read, each with the entries that fall on it, and the f
    elements of a list, allow. The page of the last part goes on taking whole objects after it.
 3. Part 1 carries every field the object answers, each long field as far as it fits and empty where
    none of it does; each later part carries the rest of the long fields that go on there. The long
-   fields are a step's `description`, `links` and `prerequisites`, the header's `guide` and a row's
-   `frontier`, filled in key order; no other object of a read can pass a page. A later part of a
-   step or a row carries its `id`; one of the header comes under `tree`, which names it. Every part
-   carries `part`, from 1, and `parts`, their number, and a reader joins the parts' texts and lists
-   in order.
+   fields are a step's `description`, `links`, `prerequisites` and `subtasks`, the header's `guide`
+   and a row's `frontier`, filled in key order; no other object of a read can pass a page. A later
+   part of a step or a row carries its `id`; one of the header comes under `tree`, which names it.
+   Every part carries `part`, from 1, and `parts`, their number, and a reader joins the parts' texts
+   and lists in order.
 4. `nextCursor` is `<index>.<part>.<digest>`: the position, from 0, of the object the next page
    starts with; the part of it to start from, 1 for a whole object; and the first 16 lower-case
    hexadecimal digits of the SHA-256 of the canonical text of `{"read": …, "continues": …}`. `read`
@@ -313,8 +315,7 @@ room's controls run, and answers as this table says:
 | Ability | The room's action | Answers |
 |---|---|---|
 | `set_progress` | `Complete` or `Reset` | `{}` |
-| `rename_node` | `ChangeStep`, its `label` | `{}` |
-| `annotate_node` | `ChangeStep`, its `description` and `links`, each replaced whole | `{}` |
+| `update_node` | `ChangeStep`, its `label`, `description` and `links`, each sent replaced whole, and `AddSubtask` for each item added to the step's checklist, the parts of one act | `{}` |
 | `create_node` | `CreateStep`, under the id the tool host mints | `{nodeId}` |
 | `connect` | `ChangePrerequisites`, one link added | `{}` |
 
@@ -344,6 +345,8 @@ The ability and the host check first:
    | `webLinks` | 32 | items | `kMaxNodeLinks` | `node.links` | `links` |
    | `webLinkLabel` | 200 | characters | `kMaxLinkLabelLength` | `node.links.label` | `linkLabel` |
    | `webLinkAddress` | 2048 | characters | `kMaxLinkUrlLength` | `node.links.url` | `linkUrl` |
+   | `subtaskLabel` | 200 | characters | | `subtask.label` | `subtask` |
+   | `subtasks` | 20000 | items | | `subtask` | |
    | `kinds` | 6 | items | `kMaxKinds` | `kind` | |
    | `kindLabel` | 24 | characters | `kMaxKindLabelLength` | `kind.label` | `kindLabel` |
    | `kindDescription` | 80 | characters | `kMaxKindDescriptionLength` | `kind.description` | `kindDescription` |
@@ -366,8 +369,8 @@ The ability and the host check first:
    roadmap no longer stands among them, as the room offers no mark on either. A locked
    step is not marked complete (`step-locked`): the room offers no Complete on it, and only an
    outside assistant's mark says it was done out of order (§14).
-8. **It changes something.** A write that sends what the step already holds, or a mark that already
-   stands, is refused as `no-change`, and nothing is sent.
+8. **It changes something.** A write that sends what the step already holds and adds no subtask, or a
+   mark that already stands, is refused as `no-change`, and nothing is sent.
 
 The check and the write run in one synchronous task, so nothing arriving from the server or from the
 person's hand comes between them. A door that answers that it wrote nothing is `roadmap-not-ready`
@@ -380,7 +383,8 @@ person's next Undo takes back their own act.
   the conversation is what says Coach made it. (R-7)
 - A direct write leaves a receipt and offers Undo in the room's band for 6 s. Undo reverts that one
   act and spares anything written since: for a change to structure, a later write of the same
-  field; for a mark, a mark the person has set on the step since, and otherwise the step's mark goes
+  field; for a subtask it added, the person's change of the item since, and otherwise the item goes
+  again; for a mark, a mark the person has set on the step since, and otherwise the step's mark goes
   back to what it was, a completion's first date not restored. An Undo a later write stood in the way
   of is skipped, and says so. The means to undo live in the process's memory.
 - A message's receipts are final once its turn has ended. What became of a write afterwards, that it
@@ -397,13 +401,13 @@ of the two that fails it. A refusal of a proposal also carries `at` (§7).
 
 | Code | Refused when |
 |---|---|
-| `invalid-input` | The input breaks the ability's schema, as the gate's Shape rule finds ([Coach engine](coach-engine.md) §6), or a rule of its input this document states: a change that breaks its op's row (§7), a cursor that is not one or points past its sequence (§5.2), an id asked twice (§5.1), an `annotate_node` that sends neither field, a text a direct write sends that the domain cannot store, one that holds U+0000 or a lone surrogate, which names the step the write names, none for a new one |
+| `invalid-input` | The input breaks the ability's schema, as the gate's Shape rule finds ([Coach engine](coach-engine.md) §6), or a rule of its input this document states: a change that breaks its op's row (§7), a cursor that is not one or points past its sequence (§5.2), an id asked twice (§5.1), an `update_node` that names no field, a text a direct write sends that the domain cannot store, one that holds U+0000 or a lone surrogate or a subtask left blank, which names the step the write names, none for a new one |
 | `roadmap-unavailable` | The device has not finished bringing the roadmap; it can be asked again once it has (§10) |
 | `unknown-roadmap` | The roadmap is neither the conversation's nor one the person owns, and the device holds the whole list of theirs (§10) |
 | `roadmap-not-ready` | A write or a proposal names a step under a delete the person can still undo; a read does not see such a step, and `get_nodes` naming one refuses it as `unknown-step` |
 | `not-owner` | The person does not own the roadmap, and a write or a proposal needs its owner |
 | `out-of-scope` | A direct write names a roadmap other than the conversation's |
-| `over-limit` | A value or a count would pass a cap of `limits.json`: a step's text or links, the roadmap's steps, links or kinds, or a proposal's changes, counted or as its record's bytes (§7). A direct write's refusal names the step whose value passes the cap, as the call names it, whether or not the roadmap holds it; none for a new step's text; and the roadmap where its count of steps or links is full, for `create_node` and `connect` alike |
+| `over-limit` | A value or a count would pass a cap of `limits.json`: a step's text, links or subtasks, the roadmap's steps, links, subtasks or kinds, or a proposal's changes, counted or as its record's bytes (§7). A direct write's refusal names the step whose value passes the cap, as the call names it, whether or not the roadmap holds it; none for a new step's text; and the roadmap where its count of steps, links or subtasks is full, for `create_node`, `connect` and `update_node` alike |
 | `unknown-step` | A step the roadmap does not hold, or a ref no earlier change gave |
 | `closes-cycle` | A link, or a merge, would close a loop |
 | `unknown-kind` | A kind the roadmap's legend does not show, one it does not have or one wearing a hue an earlier kind owns, or a ref no earlier `add_kind` gave |
@@ -637,8 +641,8 @@ The roadmap tools an outside assistant reaches over MCP stay on the server as th
     longer holds the write.
 - A direct write tells the room's Activity the row the room's own Board tells of the same change,
   the person's own (R-7) and told silently, since the person is in the conversation, not on the
-  canvas: a new name, `renamed`, as the Board's step document tells it. The Board tells no row of a
-  step's description or web links, a new step or a link, so neither does Coach, and a mark's rows,
+  canvas: a new name, `renamed`, as the Board's step document tells it. The room tells no row of a
+  step's description or web links, a new step, a link or a subtask, so neither does Coach, and a mark's rows,
   `completed` and `unlocked`, come as the room adopts the copy's marks, as any mark the room did not
   make does. The tool host takes the room's Activity as a collaborator.
 - A direct write's one product event is `roadmap_coach_ability`. The room's gesture events
@@ -657,7 +661,7 @@ The roadmap tools an outside assistant reaches over MCP stay on the server as th
 [Roadmap on the sync engine](roadmap-on-the-engine.md) builds the copy, the registry and the shared
 domain. Beyond what it lists, Coach needs of that domain:
 
-- an action that changes the web links of an existing step, for `annotate_node`;
+- an action that changes the web links of an existing step, for `update_node`;
 - one act that carries a proposal's folded changes, of different kinds, under one stamp, with
   merging and splitting steps among them, and an Undo that takes back structure and marks together
   and says whether anything was taken back (§7);
@@ -694,6 +698,7 @@ states them. This document's own:
 | R-13 | The copy Coach's abilities run on | The device's replica of the sync engine, once roadmap has moved onto it. Nothing of Coach is built on roadmap's former sync. (2026-11-17) |
 | R-14 | Coach on the iPhone | In the iPhone's first release of the Roadmap room, on the same catalog, vectors and records. (2026-11-17) |
 | R-15 | Coach for a reader on the iPhone | None: a shared roadmap's cover on the iPhone offers Fork alone, and a reader meets Coach on the web. (2026-11-24) |
+| R-16 | Coach adds subtasks | Through `update_node`, appending to a step's private checklist, never editing, checking or removing an item. (owner, 2026-11-24) |
 
 The four states the design's first boards did not draw are each drawn and ✅ Ready for dev (owner, 2026-11-24): on
 the Roadmap Coach page, section 10 (10.1 a reader's Coach on the web, 10.2 a card applied and then undone, 10.3 a

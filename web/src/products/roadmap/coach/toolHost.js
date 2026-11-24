@@ -21,12 +21,16 @@ import { StandingRoadmaps } from '../domain/abilities/standing.js';
 import { WriteAbilities } from '../domain/abilities/writes.js';
 import { inverseOutcome } from '../room/ReplicaSession.js';
 
-// The room's gesture each structure act of a direct write is, one for one (`ReplicaSession.actsOf`).
-const GESTURES = Object.freeze({
-  CreateStep: ({ step, prerequisites, id }) => ({ kind: 'CreateNode', id, ...step, prerequisites }),
-  ChangeStep: ({ step, changes }) => ({ kind: 'EditNode', id: step, ...changes }),
-  ChangePrerequisites: ({ step, add: [from] }) => ({ kind: 'AddEdge', from, to: step }),
-});
+// The room's gesture a direct write's acts are, the whole write one gesture and so one act (`ReplicaSession.actsOf`): a
+// new step, a link, or an edit of one step's fields with the items it adds to the end of the step's checklist.
+function gestureOf(writes) {
+  const [{ action, input }] = writes;
+  if (action === 'CreateStep') return { kind: 'CreateNode', id: input.id, ...input.step, prerequisites: input.prerequisites };
+  if (action === 'ChangePrerequisites') return { kind: 'AddEdge', from: input.add[0], to: input.step };
+  precondition(writes.every((write) => ['ChangeStep', 'AddSubtask'].includes(write.action) && write.input.step === input.step), 'an edit writes one step');
+  const subtasks = writes.filter((write) => write.action === 'AddSubtask').map((write) => write.input.label);
+  return { kind: 'EditNode', id: input.step, ...writes.find((write) => write.action === 'ChangeStep')?.input.changes, ...(subtasks.length ? { subtasks } : {}) };
+}
 
 // The status each mark puts on its step.
 const MARKS = Object.freeze({ Complete: 'complete', Reset: 'none' });
@@ -76,8 +80,7 @@ export class RoadmapToolHost {
     const standing = this.standing();
     const decided = this.abilities[name](standing, input, this.about, this.mint);
     if (!('writes' in decided)) return { answer: decided, receipt: null };
-    precondition(decided.writes.length === 1, 'a direct write is one act');
-    const room = this.handOver(decided.writes[0]);
+    const room = this.handOver(decided.writes);
     const landed = room === null ? 'refused' : await landing(room);
     if (landed !== 'written') {
       if (room !== null) this.session.forget(room);
@@ -90,21 +93,24 @@ export class RoadmapToolHost {
 
   // R-7: the Activity row the room's Board tells of the same change, the person's own and told silently, as the person is
   // in the conversation, not on the canvas. Of the direct writes only a new name has one, in the step's hue: the Board
-  // tells none of a step's words, a new step or a link, and a mark's rows come as the room adopts the copy's marks.
+  // tells none of a step's words, a new step, a link or a subtask, and a mark's rows come as the room adopts the copy's
+  // marks.
   tellActivity(name, input, standing) {
-    if (name !== 'rename_node') return;
-    const { roadmap } = StandingRoadmaps.of(standing).open(input.treeId, this.about);
-    this.activity({ verb: 'renamed', nodeId: input.nodeId, label: input.label, kind: roadmap.shown(input.nodeId).color }, { silent: true });
+    if (name !== 'update_node' || input.label === undefined) return;
+    const step = StandingRoadmaps.of(standing).open(input.treeId, this.about).roadmap.shown(input.nodeId);
+    if (step.label === input.label) return;
+    this.activity({ verb: 'renamed', nodeId: input.nodeId, label: input.label, kind: step.color }, { silent: true });
   }
 
-  // One act handed to the room's door at once, answering the room's receipt of it, or null where the door refused it at
-  // once: a mark through its mark door, which keeps its Undo for this receipt, and a structure act as the room's own
-  // gesture through its session, on the room's Undo stack.
-  handOver({ action, input }) {
-    precondition(input.tree === this.session.treeId, 'a direct write reaches the room open on its roadmap');
+  // A direct write handed to the room's door at once, as one act, answering the room's receipt of it, or null where the
+  // door refused it at once: a mark through its mark door, which keeps its Undo for this receipt, and any other write as
+  // the room's own gesture through its session, on the room's Undo stack.
+  handOver(writes) {
+    precondition(writes.every(({ input }) => input.tree === this.session.treeId), 'a direct write reaches the room open on its roadmap');
+    const [{ action, input }] = writes;
     const status = MARKS[action];
     if (status) return this.session.markUndoably(input.step, status);
-    return this.session.dispatch(GESTURES[action](input));
+    return this.session.dispatch(gestureOf(writes));
   }
 
   // Takes back one direct write by the room's Undo of its act, which spares anything written since: a structure act, and

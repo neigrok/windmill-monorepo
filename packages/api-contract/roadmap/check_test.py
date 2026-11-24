@@ -43,28 +43,29 @@ class CatalogTest(Rows):
 
     def test_an_ability_other_than_section_4_lists_is_refused(self):
         self.refused([
-            (lambda c: c.ability('rename_node').update(agent='withheld'), 'rename_node: `change` and `withheld`, where §4 has `change` and `runs`'),
+            (lambda c: c.ability('update_node').update(agent='withheld'), 'update_node: `change` and `withheld`, where §4 has `change` and `runs`'),
             (lambda c: c.ability('create_node').update({'class': 'change'}), 'create_node: `change` and `runs`, where §4 has `add` and `runs`'),
             (lambda c: c.ability('set_progress').update(seats='bound'), 'set_progress: seats other than `any` or a strict tool, where §4 offers every ability signed out and none strict'),
             (lambda c: c.ability('get_tree').update(strict=True), 'get_tree: seats other than `any` or a strict tool, where §4 offers every ability signed out and none strict'),
-            (lambda c: c.catalog['abilities'].remove(c.ability('annotate_node')), "the catalog: abilities ['annotate_node'] in one of the catalog and §4 alone"),
+            (lambda c: c.catalog['abilities'].remove(c.ability('update_node')), "the catalog: abilities ['update_node'] in one of the catalog and §4 alone"),
             (lambda c: c.catalog['abilities'].append({**json.loads(json.dumps(c.ability('set_progress'))), 'name': 'delete_tree'}), "the catalog: abilities ['delete_tree'] in one of the catalog and §4 alone"),
         ], 'check_catalog')
 
     def test_a_schema_outside_the_vocabulary_is_refused(self):
         def tree_id(c): return c.ability('get_tree')['input']['properties']['treeId']
-        def links(c): return c.ability('annotate_node')['input']['properties']['links']
+        def links(c): return c.ability('update_node')['input']['properties']['links']
         self.refused([
             (lambda c: c.ability('get_tree').update(input={'type': 'string'}), 'get_tree: an input schema that is not `type: object`'),
-            (lambda c: c.ability('rename_node')['input']['properties']['label'].update(maxLength=200), 'rename_node.label: `maxLength` is not in the shared vocabulary'),
+            (lambda c: c.ability('update_node')['input']['properties']['label'].update(maxLength=200), 'update_node.label: `maxLength` is not in the shared vocabulary'),
+            (lambda c: c.ability('update_node')['input']['properties']['subtasks'].pop('items'), 'update_node.subtasks: an array without `items`'),
             (lambda c: c.ability('get_tree')['input']['properties'].update(cursor={'anyOf': [{'type': 'string'}, {'type': 'null'}]}), 'get_tree.cursor: `anyOf` is not in the shared vocabulary'),
             (lambda c: c.ability('get_tree')['input']['properties'].update(cursor='a string'), 'get_tree.cursor: no schema'),
-            (lambda c: links(c)['items'].pop('additionalProperties'), 'annotate_node.links[]: an object without `additionalProperties: false`'),
-            (lambda c: links(c)['items'].pop('required'), 'annotate_node.links[]: an object without `required`'),
-            (lambda c: links(c)['items']['required'].append('title'), 'annotate_node.links[]: `title` required but not a property'),
-            (lambda c: links(c).pop('items'), 'annotate_node.links: an array without `items`'),
-            (lambda c: links(c)['items'].pop('type'), 'annotate_node.links[]: a schema without a known `type`'),
-            (lambda c: links(c).update(minItems=2), 'annotate_node.links: `minItems` other than the integer 0 or 1'),
+            (lambda c: links(c)['items'].pop('additionalProperties'), 'update_node.links[]: an object without `additionalProperties: false`'),
+            (lambda c: links(c)['items'].pop('required'), 'update_node.links[]: an object without `required`'),
+            (lambda c: links(c)['items']['required'].append('title'), 'update_node.links[]: `title` required but not a property'),
+            (lambda c: links(c).pop('items'), 'update_node.links: an array without `items`'),
+            (lambda c: links(c)['items'].pop('type'), 'update_node.links[]: a schema without a known `type`'),
+            (lambda c: links(c).update(minItems=2), 'update_node.links: `minItems` other than the integer 0 or 1'),
             (lambda c: tree_id(c).update(properties={}), 'get_tree.treeId: an object\'s keywords on a schema that is not `type: object`'),
             (lambda c: tree_id(c).update(enum=[{'a': 1}]), 'get_tree.treeId: `enum` that is not a list of scalars'),
             (lambda c: tree_id(c).update(const=['t']), 'get_tree.treeId: `const` that is not a scalar'),
@@ -95,15 +96,15 @@ class CatalogTest(Rows):
         self.refused([
             (lambda c: c.ability('get_tree').update(result={}), 'get_tree: a read whose result is not held to 16384 bytes (§5)'),
             (lambda c: c.ability('propose_roadmap_change')['result'].update(maxBytes=99), 'propose_roadmap_change: a `maxBytes` on an answer that is no read\'s'),
-            (lambda c: c.ability('rename_node').update(result=[]), 'rename_node: a result schema that is not an object'),
-            (lambda c: c.ability('rename_node').update(result={}), 'rename_node: an answer with no schema, where §4 states every ability\'s'),
+            (lambda c: c.ability('update_node').update(result=[]), 'update_node: a result schema that is not an object'),
+            (lambda c: c.ability('update_node').update(result={}), 'update_node: an answer with no schema, where §4 states every ability\'s'),
             (lambda c: c.ability('connect').update(result={'type': 'object', 'properties': {'nodeId': {'type': 'string'}}, 'required': [], 'additionalProperties': False}), "connect: an answer of ['nodeId'], where §6 answers []"),
         ], 'check_catalog')
 
     def test_a_read_other_than_section_5_states_is_refused(self):
         self.refused([
             (lambda c: c.ability('find_nodes')['input']['properties']['cursor'].update(pattern='^[0-9]{1,9}$'), f'find_nodes: a `cursor` whose pattern is not §5.2\'s, `{check.CURSOR.pattern}`'),
-            (lambda c: c.ability('get_nodes')['input']['properties']['fields']['items']['enum'].remove('opens'), "get_nodes: `fields` other than §5.1's, ['id', 'label', 'kind', 'state', 'prerequisites', 'unlockCount', 'summary', 'description', 'links', 'opens']"),
+            (lambda c: c.ability('get_nodes')['input']['properties']['fields']['items']['enum'].remove('opens'), "get_nodes: `fields` other than §5.1's, ['id', 'label', 'kind', 'state', 'prerequisites', 'unlockCount', 'summary', 'description', 'links', 'subtasks', 'opens']"),
             (lambda c: c.ability('find_nodes')['result']['properties']['steps']['items']['properties'].pop('opens'), 'find_nodes: an answered step whose fields are not §5.1\'s'),
             (lambda c: c.ability('get_tree')['result']['properties']['steps']['items']['properties']['state']['enum'].remove('unknown'), "get_tree: states other than §5.1's, ['locked', 'available', 'complete', 'unknown']"),
         ], 'check_catalog')
@@ -121,7 +122,7 @@ class CatalogTest(Rows):
             (lambda c: description(c, 'rename: required', 'rename_step: required nodeId, label; optional none.\nrename: required'), 'propose_roadmap_change: a line for `rename_step`, which is no op of §7'),
             (lambda c: change(c)['properties']['hue']['enum'].remove('plum'), "propose_roadmap_change.changes[].hue: hues ['terracotta', 'olive', 'gold', 'brick', 'sky'], where the registry has ['terracotta', 'olive', 'gold', 'brick', 'sky', 'plum']"),
             (lambda c: next(entry for entry in c.registry['types'] if entry['type'] == 'node')['fields']['color']['domain']['enum'].remove('plum'), "packages/api-contract/sync/roadmap.registry.json: step colours ['terracotta', 'olive', 'gold', 'brick', 'sky'], where its kinds' hues are ['terracotta', 'olive', 'gold', 'brick', 'sky', 'plum']"),
-            (lambda c: c.spec.actions.pop('connect'), "the catalog: direct writes ['annotate_node', 'connect', 'create_node', 'rename_node', 'set_progress'], where §6 names the actions of ['annotate_node', 'create_node', 'rename_node', 'set_progress']"),
+            (lambda c: c.spec.actions.pop('connect'), "the catalog: direct writes ['connect', 'create_node', 'set_progress', 'update_node'], where §6 names the actions of ['create_node', 'set_progress', 'update_node']"),
         ], 'check_catalog')
 
 
@@ -146,7 +147,7 @@ class VectorsTest(Rows):
             (lambda c: c.files.update(set_mark=c.files['set_progress']), 'abilities/set_mark.json: names no ability of the catalog'),
             (lambda c: c.files.update(set_progress=[]), 'abilities/set_progress.json: not a list of cases'),
             (lambda c: c.files['set_progress'][0].update(case=''), 'abilities/set_progress.json · : a case that is not named'),
-            self.vector('set_progress', 0, lambda case, c: case['call'].update(name='rename_node'), ': calls `rename_node` in the file of `set_progress`'),
+            self.vector('set_progress', 0, lambda case, c: case['call'].update(name='update_node'), ': calls `update_node` in the file of `set_progress`'),
             self.vector('set_progress', 0, lambda case, c: case.update(expect=[]), ': an expectation that is not an object'),
             self.vector('set_progress', 0, lambda case, c: case.update(expect={'refused': {'code': 'roadmap-not-ready'}, 'writes': []}), ': a refusal beside `writes`'),
             self.vector('set_progress', 0, lambda case, c: case.update(expect={'result': {}}), ': a write that expects `result` where it expects `result writes`'),
@@ -165,6 +166,8 @@ class VectorsTest(Rows):
             self.vector('set_progress', 2, lambda case, c: case['given']['trees'][0]['nodes'][2].update(present=True), ': a held step `c` that its roadmap does not hold as removed'),
             self.vector('set_progress', 2, lambda case, c: case['given'].update(held=['c']), ' · held: not an object'),
             self.vector('create_node', 0, lambda case, c: case['given'].update(ids=['x', 'x']), ': `ids` that are not distinct ids'),
+            self.vector('update_node', 9, lambda case, c: case['given']['subtasks'][0].update(step='zz'), ': a subtask of `zz`, a step its roadmap does not hold'),
+            self.vector('update_node', 9, lambda case, c: case['given']['subtasks'][0].pop('done'), ' · subtasks: no `done`'),
         ], 'check_vectors')
 
     def test_an_input_or_answer_out_of_its_schema_is_refused(self):
@@ -198,6 +201,7 @@ class VectorsTest(Rows):
             self.vector('get_tree', 3, lambda case, c: case['expect']['result']['steps'][0].update(description='x'), ': `b`\'s description in part 2, which is not that part of the step\'s'),
             self.vector('get_tree', 0, lambda case, c: case['expect']['result']['tree'].update(stepCount=99), ': a `stepCount` of 99, where the roadmap holds 6 steps'),
             self.vector('get_tree', 0, lambda case, c: case['expect']['result']['tree'].update(title='Learn to swim'), ': a header whose title is not the roadmap\'s'),
+            self.vector('get_nodes', 6, lambda case, c: case['expect']['result']['steps'][0]['subtasks'].reverse(), ': `b`\'s subtasks, which is not the step\'s'),
         ], 'check_vectors')
 
     def test_a_write_other_than_section_6_gives_is_refused(self):
@@ -207,10 +211,13 @@ class VectorsTest(Rows):
             self.vector('set_progress', 0, lambda case, c: case['expect']['writes'][0].update(action='DeleteStep'), ": writes `DeleteStep`, where §6 gives set_progress ['Complete', 'Reset']"),
             self.vector('set_progress', 0, lambda case, c: case['expect']['writes'][0].update(input={'tree': 't_0000000000000001', 'node': 'b'}), ': a `Complete` whose input is not of the shape the domain\'s cases give it'),
             self.vector('create_node', 0, lambda case, c: case['expect'].update(result={'nodeId': 'zzzzzzzzzzzzzzzz'}), ': a new step whose id is not the one id minted'),
-            self.vector('rename_node', 1, lambda case, c: case.update(expect={'writes': [{'action': 'ChangeStep', 'input': {}}], 'result': {}}), ': an input past a cap of limits.json that is not refused as `over-limit`, nor by a rule §6 checks before the caps'),
-            self.vector('rename_node', 1, lambda case, c: case['expect']['refused'].update(code='unknown-step'), ': an input past a cap of limits.json that is not refused as `over-limit`, nor by a rule §6 checks before the caps'),
-            self.vector('rename_node', 0, lambda case, c: case['call']['input'].update(label='Tie a\x00bowline'), ': a text the domain cannot store that is not refused as `invalid-input`'),
-            self.vector('annotate_node', 0, lambda case, c: case['call']['input']['links'][0].update(label='Knots \udc00'), ': a text the domain cannot store that is not refused as `invalid-input`'),
+            self.vector('update_node', 1, lambda case, c: case.update(expect={'writes': [{'action': 'ChangeStep', 'input': {}}], 'result': {}}), ': an input past a cap of limits.json that is not refused as `over-limit`, nor by a rule §6 checks before the caps'),
+            self.vector('update_node', 1, lambda case, c: case['expect']['refused'].update(code='unknown-step'), ': an input past a cap of limits.json that is not refused as `over-limit`, nor by a rule §6 checks before the caps'),
+            self.vector('update_node', 9, lambda case, c: case['call']['input']['subtasks'].append('é' * 201), ': an input past a cap of limits.json that is not refused as `over-limit`, nor by a rule §6 checks before the caps'),
+            self.vector('update_node', 0, lambda case, c: case['call']['input'].update(label='Tie a\x00bowline'), ': a text the domain cannot store that is not refused as `invalid-input`'),
+            self.vector('update_node', 4, lambda case, c: case['call']['input']['links'][0].update(label='Knots \udc00'), ': a text the domain cannot store that is not refused as `invalid-input`'),
+            self.vector('update_node', 9, lambda case, c: case['call']['input']['subtasks'].append('Coil\x00the line'), ': a text the domain cannot store that is not refused as `invalid-input`'),
+            self.vector('update_node', 9, lambda case, c: case['expect']['writes'][0].update(action='SetMark'), ': writes `SetMark`, which is no action of the domain'),
         ], 'check_vectors')
 
     # A roadmap whose count of steps or links is full, too large to hold as a vector of its own.
@@ -220,12 +227,13 @@ class VectorsTest(Rows):
         tree['nodes'] += [{**tree['nodes'][0], 'id': f's{index}'} for index in range(steps)]
         tree['edges'] += [{'from': 's0', 'to': f's{index}', 'present': True} for index in range(links)]
 
-    def test_a_full_count_of_steps_or_links_is_over_limit_naming_the_roadmap(self):
+    def test_a_full_count_of_steps_links_or_subtasks_is_over_limit_naming_the_roadmap(self):
         contract = check.Contract.read()
-        create, link = contract.files['create_node'][0], contract.files['connect'][0]
+        create, link, update = contract.files['create_node'][0], contract.files['connect'][0], contract.files['update_node'][9]
         self.full(create, steps=10_000 - 3)
         self.full(link, steps=1, links=20_000 - 2)
-        for case in (create, link): case['expect'] = {'refused': {'code': 'over-limit', 'id': 't_0000000000000001'}}
+        update['given']['subtasks'] += [{**update['given']['subtasks'][0], 'done': False} for _ in range(20_000 - 3)]
+        for case in (create, link, update): case['expect'] = {'refused': {'code': 'over-limit', 'id': 't_0000000000000001'}}
         self.assertEqual(contract.check_vectors(), sum(len(cases) for cases in contract.files.values()))
         self.refused([
             (lambda c: (self.full(c.files['create_node'][0], steps=10_000 - 3), c.files['create_node'][0].update(expect={'refused': {'code': 'over-limit'}})),
@@ -260,7 +268,7 @@ class VectorsTest(Rows):
             self.vector('set_progress', 0, lambda case, c: case.update(expect={'refused': {'code': 'out-of-scope'}}), ': `out-of-scope` for a write to the conversation\'s roadmap'),
             self.vector('set_progress', 0, lambda case, c: case.update(expect={'refused': {'code': 'roadmap-not-ready', 'id': 'b'}}), ': `roadmap-not-ready` that names no held step'),
             self.vector('set_progress', 0, lambda case, c: case.update(expect={'refused': {'code': 'over-limit'}}), ': `over-limit` for a call that passes no cap of limits.json'),
-            self.vector('rename_node', 1, lambda case, c: case['expect']['refused'].update(id='t_0000000000000001'), ': an `over-limit` that names `t_0000000000000001`, where §6.1 names `b`'),
+            self.vector('update_node', 1, lambda case, c: case['expect']['refused'].update(id='t_0000000000000001'), ': an `over-limit` that names `t_0000000000000001`, where §6.1 names `b`'),
             self.vector('set_progress', 2, lambda case, c: case['expect']['refused'].update(at=0), ': an `at` on a refusal of no proposal'),
         ], 'check_vectors')
 

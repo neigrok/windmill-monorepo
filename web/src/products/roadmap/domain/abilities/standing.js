@@ -14,6 +14,7 @@ import { readRoadmap } from '../roadmaps.js';
 import { RoadmapScopes } from '../roadmapRules.js';
 import { RoadmapStep } from '../steps.js';
 import { StepMark, StepPointer } from '../progress.js';
+import { Subtask } from '../workspace.js';
 import { AbilityCodes, refusal } from './answers.js';
 
 /** @typedef {import('../../../../platform/domain-kit/values.js').Json} Json */
@@ -31,12 +32,15 @@ import { AbilityCodes, refusal } from './answers.js';
  *   subtrees?: ReadonlyMap<string, { treeId: string, read: boolean, complete: boolean }> }} ShownMarks
  */
 /** @typedef {{ scope: string, t: string, id: import('../../../../platform/domain-kit/entities.js').RecordID, life: string | null, f: Record<string, string> }} RecordStamps */
+/** @typedef {{ tree: string, step: string, label: string, done: boolean }} ChecklistItem a subtask of the person's own workspace */
 /**
  * The standing roadmap as plain data: every roadmap the device holds that the room reads, as the domain's pure reads take
- * it; the steps under a delete the person can still undo; whether the device holds the person's whole list (a vector's
- * trees are that list, so it holds it where `listRead` is left out); and the stamps of the registers they were read from.
- * Nothing changes it once made: its reading is made once (`StandingRoadmaps.of`).
- * @typedef {{ trees: TreeInput[], held?: { tree: string, step: string }[], listRead?: boolean, stamps?: RecordStamps[] }} Standing
+ * it; the steps under a delete the person can still undo; the subtasks of the person's own roadmaps, each step's in its
+ * checklist's order; whether the device holds the person's whole list (a vector's trees are that list, so it holds it
+ * where `listRead` is left out); and the stamps of the registers they were read from. Nothing changes it once made: its
+ * reading is made once (`StandingRoadmaps.of`).
+ * @typedef {{ trees: TreeInput[], held?: { tree: string, step: string }[], subtasks?: ChecklistItem[], listRead?: boolean,
+ *   stamps?: RecordStamps[] }} Standing
  */
 
 // D-2 from the device's copy, as the room reads it: each roadmap through `readRoadmap`, a step the person deleted and can
@@ -80,7 +84,9 @@ export function readStanding(copies, { listRead = true, ownerMarks = new Map() }
     ...(overlay ? [...overlay.views.drawn.values()].filter((record) => record.t === StepMark.type || record.t === StepPointer.type)
       .map((record) => stamped(overlay.scope, record)) : []),
   ]);
-  return { trees, held, listRead, stamps };
+  const subtasks = copies.flatMap(({ id, overlay = null }) => (overlay === null ? [] : overlay.repository(Subtask).all('drawn')
+    .map((subtask) => ({ tree: id, step: subtask.step, label: subtask.label, done: subtask.done }))));
+  return { trees, held, subtasks, listRead, stamps };
 }
 
 // Each standing roadmap's reading, made the first time an ability reads it: a turn reads one standing many times, and
@@ -109,9 +115,10 @@ export class StandingRoadmaps {
   }
 
   /** @param {Standing} standing */
-  constructor({ trees, held = [], listRead = true }) {
+  constructor({ trees, held = [], subtasks = [], listRead = true }) {
     this.account = new RoadmapAccount(trees.map((tree) => new RoadmapTree(tree)));
     this.held = held;
+    this.subtasks = subtasks;
     this.listRead = listRead;
   }
 
@@ -204,7 +211,7 @@ const SUMMARY_SCALARS = 160;
 
 // One roadmap as the room shows it, read whole: its present steps in the room's order, what each follows through removed
 // steps and what finishing it alone opens, the kind that owns each hue, what each step opens, each step's state, and the
-// steps under a delete the person can still undo, which it does not show.
+// steps under a delete the person can still undo, which it does not show, and each step's checklist.
 export class StandingRoadmap {
   /** @type {number[][] | null} */
   #follows = null;
@@ -225,6 +232,16 @@ export class StandingRoadmap {
     this.openings = new Map((roadmaps.account.openings.get(tree.id) ?? []).map((opening) => [opening.node, opening]));
     this.stateAt = this.states();
     this.held = new Set(roadmaps.held.filter((each) => each.tree === tree.id).map((each) => each.step));
+    // Every subtask of the roadmap the person holds, a removed step's included, and each step's in order.
+    const subtasks = roadmaps.subtasks.filter((each) => each.tree === tree.id);
+    this.subtaskCount = subtasks.length;
+    /** @type {Map<string, { label: string, done: boolean }[]>} */
+    this.checklists = new Map();
+    for (const { step, label, done } of subtasks) {
+      const checklist = this.checklists.get(step) ?? [];
+      checklist.push({ label, done });
+      this.checklists.set(step, checklist);
+    }
   }
 
   // §5: each present step's state by slot, the one the room shows, but `unknown` for an unfinished step whose opened
@@ -331,6 +348,7 @@ export class StandingRoadmap {
       },
       description: () => node.description,
       links: () => node.links.map(({ url, label }) => ({ url, label })),
+      subtasks: () => (this.checklists.get(id) ?? []).map(({ label, done }) => ({ label, done })),
       opens: () => this.openings.get(id)?.tree ?? null,
     };
     return Object.fromEntries([['id', id], ...fields.filter((name) => name !== 'id' && field[name]).map((name) => [name, field[name]?.() ?? null])]);

@@ -116,13 +116,13 @@ test('each direct write lands through the room\'s own door, as the person\'s wou
     assert.deepEqual(created, { answer: { result: { nodeId: minted } },
       receipt: new WriteReceipt({ ability: 'create_node', treeId: tree, nodeId: minted, room: room.session.undoStack[0] }) });
     const runs = [
-      await tools.run('rename_node', { treeId: tree, nodeId: steps.knot, label: 'Tie a cleat hitch' }),
-      await tools.run('annotate_node', { treeId: tree, nodeId: steps.knot, description: 'Round the post.', links: [{ url: 'https://example.org/cleat' }] }),
+      await tools.run('update_node', { treeId: tree, nodeId: steps.knot, label: 'Tie a cleat hitch' }),
+      await tools.run('update_node', { treeId: tree, nodeId: steps.knot, description: 'Round the post.', links: [{ url: 'https://example.org/cleat' }] }),
       await tools.run('connect', { treeId: tree, nodeId: minted, prerequisiteId: steps.knot }),
       await tools.run('set_progress', { treeId: tree, nodeId: steps.dock, status: 'complete' }),
     ];
     assert.deepEqual(runs, [
-      ...[['rename_node', steps.knot], ['annotate_node', steps.knot], ['connect', minted]].map(([ability, nodeId], index) => ({ answer: { result: {} },
+      ...[['update_node', steps.knot], ['update_node', steps.knot], ['connect', minted]].map(([ability, nodeId], index) => ({ answer: { result: {} },
         receipt: new WriteReceipt({ ability, treeId: tree, nodeId, room: room.session.undoStack[index + 1] }) })),
       { answer: { result: {} }, receipt: new WriteReceipt({ ability: 'set_progress', treeId: tree, nodeId: steps.dock, room: room.session.kept[0] }) },
     ]);
@@ -151,21 +151,50 @@ test('a direct write tells the room\'s Activity the row the room\'s own Board te
       return rows.splice(0);
     };
     const coach = {
-      renamed: await told('rename_node', { nodeId: steps.knot, label: 'Tie a cleat hitch' }),
-      described: await told('annotate_node', { nodeId: steps.knot, description: 'Round the post.' }),
+      renamed: await told('update_node', { nodeId: steps.knot, label: 'Tie a cleat hitch' }),
+      described: await told('update_node', { nodeId: steps.knot, description: 'Round the post.' }),
       created: await told('create_node', { label: 'Hoist the sail', prerequisites: [steps.dock] }),
       linked: await told('connect', { nodeId: steps.knot, prerequisiteId: steps.dock }),
+      listed: await told('update_node', { nodeId: steps.knot, label: 'Tie a cleat hitch', subtasks: ['Check the shackle'] }),
     };
     assert.deepEqual(coach, {
       renamed: boardRows(steps, (acts) => acts.edit({ id: steps.knot, label: 'Tie a cleat hitch' })),
       described: boardRows(steps, (acts) => acts.edit({ id: steps.knot, description: 'Round the post.' })),
       created: boardRows(steps, (acts) => acts.create({ id: 'hoist', label: 'Hoist the sail', color: 'terracotta', prerequisites: [steps.dock] })),
       linked: boardRows(steps, (acts) => acts.edit({ id: steps.knot, prerequisites: [steps.dock] })),
+      listed: [],
     });
     assert.deepEqual(coach, { renamed: [[{ verb: 'renamed', nodeId: steps.knot, label: 'Tie a cleat hitch', kind: 'terracotta' }, { silent: true }]],
-      described: [], created: [], linked: [] }, 'the person\'s own row, which names no actor, so the room says You');
+      described: [], created: [], linked: [], listed: [] },
+    'the person\'s own row, which names no actor, so the room says You; a title the step holds is no new name, and the room tells no row of a subtask');
     await tools.run('set_progress', { treeId: tree, nodeId: steps.dock, status: 'complete' });
     assert.deepEqual(rows, [], 'a mark\'s rows come as the room adopts the copy\'s marks');
+    room.reading.close();
+  } finally {
+    a.close();
+  }
+});
+
+test('update_node writes a step\'s fields and the items it adds to its checklist as one act, read back as the person\'s own, and one Undo takes back all of it', async () => {
+  const { a, tree, steps } = await sailing();
+  try {
+    const room = await openRoom(a, tree);
+    const { tools, told } = coachOver(room, tree);
+    room.session.workspace.addSubtask(steps.knot, 'Identify the halyard');
+    await until(() => (room.reading.roadmap().workspace[steps.knot]?.subtasks.length ?? 0) === 1, 1000);
+    const checklist = () => (room.reading.roadmap().workspace[steps.knot]?.subtasks ?? []).map(({ label, done }) => ({ label, done }));
+
+    const { answer, receipt } = await tools.run('update_node', { treeId: tree, nodeId: steps.knot, label: 'Tie a cleat hitch', subtasks: ['Check the shackle', 'Coil the line'] });
+    assert.deepEqual({ answer, stacked: room.session.undoStack, kept: room.session.kept.length }, { answer: { result: {} }, stacked: [receipt.room], kept: 0 }, 'one receipt');
+    assert.equal(drawn(room.reading)['Tie a cleat hitch'].after.length, 0);
+    assert.deepEqual(checklist(), [{ label: 'Identify the halyard', done: false }, { label: 'Check the shackle', done: false }, { label: 'Coil the line', done: false }]);
+    assert.deepEqual(await tools.run('get_nodes', { treeId: tree, nodeIds: [steps.knot, steps.dock], fields: ['subtasks'] }), { answer: { result: { steps: [
+      { id: steps.knot, subtasks: checklist() }, { id: steps.dock, subtasks: [] }] } }, receipt: null }, 'Coach reads the list before adding to it');
+
+    assert.deepEqual(await undone(a, tools, receipt), ['undone']);
+    assert.deepEqual({ label: room.reading.roadmap().seed.nodes.find((step) => step.id === steps.knot).label, checklist: checklist() },
+      { label: 'Tie a bowline', checklist: [{ label: 'Identify the halyard', done: false }] }, 'the name and both items it added, and the person\'s own item stays');
+    assert.deepEqual(told, [['roadmap_coach_write_undone', { ability: 'update_node', outcome: 'undone' }]]);
     room.reading.close();
   } finally {
     a.close();
@@ -178,8 +207,8 @@ test('Undo takes back each kind of write by the room\'s Undo of its act, sparing
     const room = await openRoom(a, tree);
     const { tools, told } = coachOver(room, tree);
     const { receipt: created } = await tools.run('create_node', { treeId: tree, label: 'Hoist the sail', prerequisites: [steps.dock] });
-    const { receipt: renamed } = await tools.run('rename_node', { treeId: tree, nodeId: steps.knot, label: 'Tie a cleat hitch' });
-    const { receipt: annotated } = await tools.run('annotate_node', { treeId: tree, nodeId: steps.knot, description: 'Round the post.' });
+    const { receipt: renamed } = await tools.run('update_node', { treeId: tree, nodeId: steps.knot, label: 'Tie a cleat hitch' });
+    const { receipt: annotated } = await tools.run('update_node', { treeId: tree, nodeId: steps.knot, description: 'Round the post.' });
     const { receipt: linked } = await tools.run('connect', { treeId: tree, nodeId: steps.knot, prerequisiteId: steps.dock });
     const { receipt: completed } = await tools.run('set_progress', { treeId: tree, nodeId: steps.dock, status: 'complete' });
 
@@ -197,8 +226,8 @@ test('Undo takes back each kind of write by the room\'s Undo of its act, sparing
     const { receipt: reset } = await tools.run('set_progress', { treeId: tree, nodeId: steps.dock, status: 'none' });
     assert.deepEqual(await undone(a, tools, reset), ['undone']);
     assert.equal(drawn(room.reading)['Leave the dock'].done, true, 'a Reset taken back marks the step done again');
-    assert.deepEqual(told, [...['rename_node', 'connect', 'create_node', 'set_progress', 'annotate_node'].map((ability) => [ability, 'undone']),
-      ['rename_node', 'unavailable'], ['set_progress', 'unavailable'], ['set_progress', 'undone']]
+    assert.deepEqual(told, [...['update_node', 'connect', 'create_node', 'set_progress', 'update_node'].map((ability) => [ability, 'undone']),
+      ['update_node', 'unavailable'], ['set_progress', 'unavailable'], ['set_progress', 'undone']]
       .map(([ability, outcome]) => ['roadmap_coach_write_undone', { ability, outcome }]));
     assert.deepEqual({ stacked: room.session.undoStack.length, kept: room.session.kept.length }, { stacked: 0, kept: 1 }, 'the Complete before the Reset still keeps its Undo');
     room.reading.close();
@@ -212,7 +241,7 @@ test('an Undo a later write stands in the way of is skipped and says so: a title
   try {
     const room = await openRoom(a, tree);
     const { tools, told } = coachOver(room, tree);
-    const { receipt: renamed } = await tools.run('rename_node', { treeId: tree, nodeId: steps.knot, label: 'Coach\'s title' });
+    const { receipt: renamed } = await tools.run('update_node', { treeId: tree, nodeId: steps.knot, label: 'Coach\'s title' });
     await room.session.dispatch({ kind: 'RenameNode', id: steps.knot, label: 'The person\'s title' }).landed;
     const { receipt: completed } = await tools.run('set_progress', { treeId: tree, nodeId: steps.dock, status: 'complete' });
     assert.equal(room.session.markProgress(steps.dock, 'none'), true);
@@ -222,7 +251,7 @@ test('an Undo a later write stands in the way of is skipped and says so: a title
     assert.deepEqual(await undone(a, tools, renamed, completed), ['skipped', 'skipped']);
     const knot = room.reading.roadmap().seed.nodes.find((step) => step.id === steps.knot);
     assert.deepEqual({ label: knot.label, done: room.reading.roadmap().marks.completed.has(steps.dock) }, { label: 'The person\'s title', done: true });
-    assert.deepEqual(told, [['rename_node', 'skipped'], ['set_progress', 'skipped']].map(([ability, outcome]) => ['roadmap_coach_write_undone', { ability, outcome }]));
+    assert.deepEqual(told, [['update_node', 'skipped'], ['set_progress', 'skipped']].map(([ability, outcome]) => ['roadmap_coach_write_undone', { ability, outcome }]));
     assert.deepEqual(room.roomTold.filter(([name]) => name === 'roadmap_undo'), [['roadmap_undo', { action: 'undo', outcome: 'skipped' }], ['roadmap_undo', { action: 'undo', outcome: 'skipped' }]],
       'the room tells the same of each');
     room.reading.close();
@@ -244,7 +273,7 @@ test('a door that wrote nothing is no-change or roadmap-not-ready, never a succe
     const persons = [...room.session.undoStack];
 
     assert.deepEqual([
-      await tools.run('rename_node', { treeId: tree, nodeId: steps.knot, label: 'Tie a cleat hitch' }),
+      await tools.run('update_node', { treeId: tree, nodeId: steps.knot, label: 'Tie a cleat hitch' }),
       await tools.run('set_progress', { treeId: tree, nodeId: steps.dock, status: 'complete' }),
       await tools.run('connect', { treeId: tree, nodeId: steps.dock, prerequisiteId: steps.knot }),
     ], [
@@ -253,7 +282,7 @@ test('a door that wrote nothing is no-change or roadmap-not-ready, never a succe
       { answer: { refused: { code: 'roadmap-not-ready', id: steps.dock } }, receipt: null },
     ]);
     a.failNextCommit();
-    assert.deepEqual(await tools.run('annotate_node', { treeId: tree, nodeId: steps.sail, description: 'With a skipper.' }),
+    assert.deepEqual(await tools.run('update_node', { treeId: tree, nodeId: steps.sail, description: 'With a skipper.' }),
       { answer: { refused: { code: 'roadmap-not-ready', id: steps.sail } }, receipt: null }, 'a write the device could not store');
     assert.equal(drawn(room.reading)['Sail with an instructor'].description, '');
     assert.deepEqual({ stacked: room.session.undoStack, kept: room.session.kept }, { stacked: persons, kept: [] });
@@ -277,7 +306,7 @@ test('a refusal writes nothing: an input outside the ability\'s schema never rea
     assert.deepEqual([
       await tools.run('set_progress', { treeId: tree, nodeId: steps.dock, status: 'done' }),
       await tools.run('set_progress', { treeId: tree, nodeId: steps.sail, status: 'complete' }),
-      await tools.run('rename_node', { treeId: tree, nodeId: steps.knot, label: 'Tie a \ud800 bowline' }),
+      await tools.run('update_node', { treeId: tree, nodeId: steps.knot, label: 'Tie a \ud800 bowline' }),
       await tools.run('get_nodes', { treeId: tree, nodeIds: [steps.sail], fields: ['state'] }),
     ], [
       { answer: { refused: { code: 'invalid-input' } }, receipt: null },
@@ -290,7 +319,7 @@ test('a refusal writes nothing: an input outside the ability\'s schema never rea
     const pulling = [...roadmap.held.values()].map((held) => new HeldRoadmap({ id: held.id, record: held.record, tree: held.records, stored: held.stored,
       overlay: held.overlay, queued: held.queued, read: false }));
     const rebuilding = coachOver(room, tree, { standing: () => readStanding(pulling.map((held) => held.copy(roadmapRegistry))) });
-    assert.deepEqual(await rebuilding.tools.run('rename_node', { treeId: tree, nodeId: steps.knot, label: 'Tie a cleat hitch' }),
+    assert.deepEqual(await rebuilding.tools.run('update_node', { treeId: tree, nodeId: steps.knot, label: 'Tie a cleat hitch' }),
       { answer: { refused: { code: 'roadmap-unavailable', id: tree } }, receipt: null });
     assert.deepEqual({ entries: entries(), told: [...told, ...rebuilding.told], stacked: room.session.undoStack.length },
       { entries: queued, told: [], stacked: 0 }, 'nothing reached the engine');
@@ -333,11 +362,11 @@ test('the turn\'s engine tells each call once and reports a throw once, the abil
   const thrown = new TypeError('an input the host should never send');
   const broken = new TypeError('the door broke');
 
-  const refused = await turnOver(host({}), 'rename_node', { treeId: roadmap.id, nodeId: 'a', label: 'Leave the dock' });
-  const throwing = await turnOver(host({ abilities: { rename_node: () => { throw thrown; } } }), 'rename_node', { treeId: roadmap.id, nodeId: 'a', label: 'Cast off' });
-  const door = await turnOver(host({ session: { treeId: roadmap.id, dispatch: () => { throw broken; } } }), 'rename_node', { treeId: roadmap.id, nodeId: 'a', label: 'Cast off' });
+  const refused = await turnOver(host({}), 'update_node', { treeId: roadmap.id, nodeId: 'a', label: 'Leave the dock' });
+  const throwing = await turnOver(host({ abilities: { update_node: () => { throw thrown; } } }), 'update_node', { treeId: roadmap.id, nodeId: 'a', label: 'Cast off' });
+  const door = await turnOver(host({ session: { treeId: roadmap.id, dispatch: () => { throw broken; } } }), 'update_node', { treeId: roadmap.id, nodeId: 'a', label: 'Cast off' });
   assert.deepEqual([refused, throwing, door].map(({ end, told: engine, reported }) => ({ state: end.state, code: end.code, engine, reported })), [
-    { state: 'completed', code: null, engine: [['ability', { name: 'rename_node', outcome: 'refused', code: 'no-change' }]], reported: [] },
+    { state: 'completed', code: null, engine: [['ability', { name: 'update_node', outcome: 'refused', code: 'no-change' }]], reported: [] },
     { state: 'failed', code: 'host-fault', engine: [], reported: [['agent-host', thrown]] },
     { state: 'failed', code: 'host-fault', engine: [], reported: [['agent-host', broken]] },
   ]);

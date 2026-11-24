@@ -182,8 +182,9 @@ export class ReplicaSession {
   }
 
   // The domain's acts that make one of the room's gestures, the parts of its one act in order. A gesture that changes a
-  // step carries any of its fields (`STEP_FIELDS`); a gesture on several steps is the act on each in turn; links to remove
-  // are each step's prerequisites, one act a step; a paste's new kinds follow its steps, whose colours name their hues.
+  // step carries any of its fields (`STEP_FIELDS`), and an edit the labels of new items for the end of its checklist, the
+  // person's own (`subtasks`); a gesture on several steps is the act on each in turn; links to remove are each step's
+  // prerequisites, one act a step; a paste's new kinds follow its steps, whose colours name their hues.
   actsOf(gesture) {
     const tree = this.treeId;
     const fields = (names) => Object.fromEntries(names.filter((name) => name in gesture).map((name) => [name, gesture[name]]));
@@ -201,6 +202,7 @@ export class ReplicaSession {
         return [
           ...(Object.keys(changes).length ? [new ChangeStep(tree, gesture.id, changes)] : []),
           ...(prerequisites.add.length || prerequisites.remove.length ? [new ChangePrerequisites(tree, gesture.id, prerequisites)] : []),
+          ...(gesture.subtasks ?? []).map((label) => AddSubtask(tree, gesture.id, label)),
         ];
       }
       case 'SetNodeOrder': return [new MoveStep(tree, gesture.id, gesture.below, gesture.siblings)];

@@ -26,8 +26,8 @@ function sailing(changes = {}) {
 function everyWrite(treeId, step = 'b') {
   return /** @type {const} */ ([
     ['set_progress', { treeId, nodeId: step, status: 'complete' }],
-    ['rename_node', { treeId, nodeId: step, label: 'Tie a cleat hitch' }],
-    ['annotate_node', { treeId, nodeId: step, description: 'Through the loop.' }],
+    ['update_node', { treeId, nodeId: step, label: 'Tie a cleat hitch' }],
+    ['update_node', { treeId, nodeId: step, description: 'Through the loop.' }],
     ['create_node', { treeId, label: 'Hoist the sail', prerequisites: [step] }],
     ['connect', { treeId, nodeId: step, prerequisiteId: 'a' }],
   ]);
@@ -75,17 +75,17 @@ test('a value past a cap of limits.json is refused on the device, naming the ste
   const write = (/** @type {string} */ name, /** @type {any} */ input) => answers(standing, [[name, { treeId: 't_0000000000000001', ...input }]], 't_0000000000000001')[0];
   const link = { url: 'https://example.org/knots', label: 'Knots' };
   assert.deepEqual([
-    write('annotate_node', { nodeId: 'b', description: 'é'.repeat(16_001) }),
-    write('annotate_node', { nodeId: 'b', links: Array.from({ length: 33 }, () => link) }),
-    write('annotate_node', { nodeId: 'b', links: [{ url: `https://example.org/${'k'.repeat(2_029)}` }] }),
-    write('annotate_node', { nodeId: 'b', links: [{ ...link, label: 'k'.repeat(201) }] }),
+    write('update_node', { nodeId: 'b', description: 'é'.repeat(16_001) }),
+    write('update_node', { nodeId: 'b', links: Array.from({ length: 33 }, () => link) }),
+    write('update_node', { nodeId: 'b', links: [{ url: `https://example.org/${'k'.repeat(2_029)}` }] }),
+    write('update_node', { nodeId: 'b', links: [{ ...link, label: 'k'.repeat(201) }] }),
     write('create_node', { label: 'é'.repeat(201), prerequisites: [] }),
     write('create_node', { label: 'Hoist the sail', description: 'é'.repeat(16_001), prerequisites: [] }),
   ], [
     { refused: { code: 'over-limit', id: 'b' } }, { refused: { code: 'over-limit', id: 'b' } }, { refused: { code: 'over-limit', id: 'b' } },
     { refused: { code: 'over-limit', id: 'b' } }, { refused: { code: 'over-limit' } }, { refused: { code: 'over-limit' } },
   ]);
-  assert.deepEqual(write('annotate_node', { nodeId: 'b', description: 'é'.repeat(16_000), links: Array.from({ length: 32 }, () => link) }), { writes: [{ action: 'ChangeStep',
+  assert.deepEqual(write('update_node', { nodeId: 'b', description: 'é'.repeat(16_000), links: Array.from({ length: 32 }, () => link) }), { writes: [{ action: 'ChangeStep',
     input: { tree: 't_0000000000000001', step: 'b', changes: { description: 'é'.repeat(16_000), links: Array.from({ length: 32 }, () => link) } } }], result: {} }, 'a value at its cap');
 
   const full = { trees: [sailing({ nodes: Array.from({ length: 10_000 }, (_, index) => ({ id: `s${index}` })), edges: [], marks: [] })] };
@@ -114,8 +114,8 @@ test('a link that would close a loop among what steps follow is refused, through
 test('a write that sends what the step already holds changes nothing: its title, its words and web links as the domain stores them, a link it follows, a mark that stands', () => {
   const standing = { trees: [sailing({ edges: [{ from: 'a', to: 'x', present: true }, { from: 'x', to: 'b', present: true }, { from: 'b', to: 'c', present: true }] })] };
   assert.deepEqual(answers(standing, [
-    ['rename_node', { treeId: 't_0000000000000001', nodeId: 'b', label: 'Tie a bowline' }],
-    ['annotate_node', { treeId: 't_0000000000000001', nodeId: 'b', description: 'Round the post.', links: [{ url: '  https://example.org/bowline ', label: 'Knots' }] }],
+    ['update_node', { treeId: 't_0000000000000001', nodeId: 'b', label: 'Tie a bowline' }],
+    ['update_node', { treeId: 't_0000000000000001', nodeId: 'b', description: 'Round the post.', links: [{ url: '  https://example.org/bowline ', label: 'Knots' }] }],
     ['connect', { treeId: 't_0000000000000001', nodeId: 'b', prerequisiteId: 'a' }],
     ['connect', { treeId: 't_0000000000000001', nodeId: 'c', prerequisiteId: 'b' }],
     ['set_progress', { treeId: 't_0000000000000001', nodeId: 'c', status: 'none' }],
@@ -123,10 +123,10 @@ test('a write that sends what the step already holds changes nothing: its title,
 });
 
 test('web links are written as the domain stores them, each address trimmed and a label left out empty, and what a call leaves out stays', () => {
-  assert.deepEqual(answers({ trees: [sailing()] }, [['annotate_node', { treeId: 't_0000000000000001', nodeId: 'b',
+  assert.deepEqual(answers({ trees: [sailing()] }, [['update_node', { treeId: 't_0000000000000001', nodeId: 'b',
     links: [{ url: ' mailto:skipper@example.org ' }] }]], 't_0000000000000001'), [{ writes: [{ action: 'ChangeStep', input: { tree: 't_0000000000000001',
     step: 'b', changes: { links: [{ url: 'mailto:skipper@example.org', label: '' }] } } }], result: {} }]);
-  assert.deepEqual(answers({ trees: [sailing()] }, [['annotate_node', { treeId: 't_0000000000000001', nodeId: 'b',
+  assert.deepEqual(answers({ trees: [sailing()] }, [['update_node', { treeId: 't_0000000000000001', nodeId: 'b',
     links: [{ url: 'https://example.org/knots' }, { url: 'ftp://example.org/knots' }] }]], 't_0000000000000001'),
   [{ refused: { code: 'address-not-allowed', id: 'b' } }]);
 });
@@ -158,8 +158,8 @@ test('a step that opens a roadmap the device holds nothing of takes neither mark
 // shared vector (packages/api-contract/roadmap/abilities/README.md).
 test('a title holding a lone surrogate is one the domain cannot store, refused before its cap', () => {
   assert.deepEqual(answers({ trees: [sailing()] }, [
-    ['rename_node', { treeId: 't_0000000000000001', nodeId: 'b', label: 'Tie a \ud800 bowline' }],
-    ['rename_node', { treeId: 't_0000000000000001', nodeId: 'b', label: `${'é'.repeat(201)}\udc00` }],
+    ['update_node', { treeId: 't_0000000000000001', nodeId: 'b', label: 'Tie a \ud800 bowline' }],
+    ['update_node', { treeId: 't_0000000000000001', nodeId: 'b', label: `${'é'.repeat(201)}\udc00` }],
   ], 't_0000000000000001'), [{ refused: { code: 'invalid-input', id: 'b' } }, { refused: { code: 'invalid-input', id: 'b' } }]);
 });
 
@@ -167,13 +167,13 @@ test('a text the domain cannot store is malformed before any cap, naming the ste
   const standing = { trees: [sailing()] };
   const write = (/** @type {string} */ name, /** @type {any} */ input) => answers(standing, [[name, { treeId: 't_0000000000000001', ...input }]], 't_0000000000000001')[0];
   assert.deepEqual([
-    write('annotate_node', { nodeId: 'b', description: `${'é'.repeat(16_001)}\u0000` }),
-    write('annotate_node', { nodeId: 'b', description: 'Round the post.', links: [{ url: 'https://example.org/\udfff' }] }),
-    write('annotate_node', { nodeId: 'b', links: Array.from({ length: 33 }, () => ({ url: 'https://example.org/knots', label: '\u0000' })) }),
+    write('update_node', { nodeId: 'b', description: `${'é'.repeat(16_001)}\u0000` }),
+    write('update_node', { nodeId: 'b', description: 'Round the post.', links: [{ url: 'https://example.org/\udfff' }] }),
+    write('update_node', { nodeId: 'b', links: Array.from({ length: 33 }, () => ({ url: 'https://example.org/knots', label: '\u0000' })) }),
     write('create_node', { label: 'Hoist \ud83d', prerequisites: [] }),
     write('create_node', { label: 'Hoist the sail', description: 'Main\u0000first.', prerequisites: [] }),
-    write('rename_node', { nodeId: 'b', label: 'Tie a \ud83d\ude00 bowline' }),
-    write('annotate_node', { nodeId: 'b', links: [{ url: '   ' }] }),
+    write('update_node', { nodeId: 'b', label: 'Tie a \ud83d\ude00 bowline' }),
+    write('update_node', { nodeId: 'b', links: [{ url: '   ' }] }),
   ], [
     { refused: { code: 'invalid-input', id: 'b' } }, { refused: { code: 'invalid-input', id: 'b' } }, { refused: { code: 'invalid-input', id: 'b' } },
     { refused: { code: 'invalid-input' } }, { refused: { code: 'invalid-input' } },
@@ -181,3 +181,20 @@ test('a text the domain cannot store is malformed before any cap, naming the ste
     { refused: { code: 'address-not-allowed', id: 'b' } },
   ]);
 });
+
+test('a step\'s checklist takes new items at its end, each held to the subtask\'s rule, and the roadmap\'s count of subtasks to its cap, naming the roadmap', () => {
+  const checklist = (/** @type {number} */ count) => Array.from({ length: count }, (_, index) => ({ tree: 't_0000000000000001', step: index % 2 ? 'b' : 'x', label: `Item ${index}`, done: false }));
+  const add = (/** @type {any} */ standing, /** @type {string[]} */ subtasks) => answers(standing, [['update_node', { treeId: 't_0000000000000001', nodeId: 'b', subtasks }]], 't_0000000000000001')[0];
+  assert.deepEqual([
+    add({ trees: [sailing()], subtasks: checklist(19_999) }, ['Check the shackle']),
+    add({ trees: [sailing()], subtasks: checklist(19_999) }, ['Check the shackle', 'Coil the line']),
+    add({ trees: [sailing()] }, ['Check the shackle', ' '.repeat(3)]),
+    add({ trees: [sailing()] }, [`  ${'é'.repeat(200)}  `]),
+  ], [
+    { writes: [{ action: 'AddSubtask', input: { tree: 't_0000000000000001', step: 'b', label: 'Check the shackle' } }], result: {} },
+    { refused: { code: 'over-limit', id: 't_0000000000000001' } },
+    { refused: { code: 'invalid-input', id: 'b' } },
+    { writes: [{ action: 'AddSubtask', input: { tree: 't_0000000000000001', step: 'b', label: `  ${'é'.repeat(200)}  ` } }], result: {} },
+  ], 'a removed step\'s items count too, and a label is measured after the trim the domain applies');
+});
+

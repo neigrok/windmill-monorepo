@@ -73,6 +73,21 @@
       ],
       "web": "linkUrl"
     },
+    "subtaskLabel": {
+      "max": 200,
+      "unit": "characters",
+      "registry": [
+        "subtask.label"
+      ],
+      "web": "subtask"
+    },
+    "subtasks": {
+      "max": 20000,
+      "unit": "items",
+      "registry": [
+        "subtask"
+      ]
+    },
     "kinds": {
       "max": 6,
       "unit": "items",
