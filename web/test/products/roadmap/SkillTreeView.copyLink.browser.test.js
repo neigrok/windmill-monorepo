@@ -56,12 +56,13 @@ for (const browserName of ['chromium', 'webkit']) {
 
         const field = recovery.getByRole('textbox', { name: 'Step link', exact: true });
         const tab = browserName === 'webkit' ? 'Alt+Tab' : 'Tab';
-        const focusedControl = () => page.evaluate(() => {
+        // The focused control once it rests whole in the card: Linux WebKit can scroll a focused control into view a rendering update after focus lands.
+        const focusedControl = async () => (await page.waitForFunction(() => {
           const node = document.activeElement;
           const box = node.getBoundingClientRect();
           const card = node.closest('.st-step-copy-recovery').getBoundingClientRect();
-          return { name: node.getAttribute('aria-label') ?? node.textContent, full: box.top >= card.top + 1 && box.bottom <= card.bottom - 1 };
-        });
+          return box.top >= card.top + 1 && box.bottom <= card.bottom - 1 && { name: node.getAttribute('aria-label') ?? node.textContent, full: true };
+        })).jsonValue();
         if (input === 'keyboard') {
           await field.focus();
           await page.keyboard.press(tab);
