@@ -38,6 +38,8 @@ struct GraphSurface: View {
   let captions: [Caption]
   // The selected step, by its place.
   let selected: Int?
+  // The steps that open a roadmap, with the line under each caption.
+  var opened: [UTF16Text: String] = [:]
   let pinched: GraphCamera.Pinched?
   let pinch: GraphPinch
   let crowd: Int
@@ -46,7 +48,7 @@ struct GraphSurface: View {
 
   var body: some View {
     let drawing = picture.flatMap { (picture: GraphPicture) -> GraphDrawing? in
-      camera.map { GraphDrawing(picture: picture, camera: $0, captions: captions, selected: selected, pinched: pinched, by: pinch, crowd: crowd) }
+      camera.map { GraphDrawing(picture: picture, camera: $0, captions: captions, selected: selected, opened: opened, pinched: pinched, by: pinch, crowd: crowd) }
     }
     let canvas = Layer(drawing: drawing, drew: drew).equatable()
     switch pinch {

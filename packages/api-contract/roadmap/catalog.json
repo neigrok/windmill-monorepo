@@ -501,7 +501,7 @@
     },
     {
       "name": "get_progress",
-      "description": "The steps of one roadmap marked complete, each `{id, at}`: `at` is the date this device holds of the completion, or null where it holds none, as for a step completed through the roadmap it opens or done before dates were kept. An answer goes on at `nextCursor`.",
+      "description": "The steps of one roadmap marked complete, each `{id, at}`: `at` is the date this device holds of the completion, or null where it holds none, as for a step done before dates were kept. An answer goes on at `nextCursor`.",
       "input": {
         "type": "object",
         "properties": {

@@ -345,6 +345,7 @@ public struct TypeDef: Sendable {
       throw RegistryError("a governing type is minted and not revivable")
     }
     guard !governsTree || idSpace == .global else { throw RegistryError("a governing type's ids are global") }
+    guard revivable != true || hasBorn else { throw RegistryError("only a minted or derived type is revivable") }
     guard revivable != true || deadRows == .keep else { throw RegistryError("a revivable type keeps its dead rows") }
     guard origins.contains(.replica) else { throw RegistryError("origins always include replica") }
     guard !wholePut || (identity == .keyed && life) else { throw RegistryError("a wholePut type is keyed with life") }

@@ -76,7 +76,7 @@ struct RoadmapActivity: View {
     let step = open.step(row.step)
     let name = step?.name ?? RoadmapModel.Row.name(of: "")
     let time = days.time(of: row.at, on: day)
-    return NavigationLink(value: RoadmapModel.Visit.step(row.step, by: .activity)) {
+    return NavigationLink(value: roadmap.stacked(.step(row.step, by: .activity))) {
       HStack(spacing: 12) {
         ActivitySymbol(kind: row.kind, colour: RoadmapPalette.kind(step?.step.color ?? ""))
         Text(name).foregroundStyle(RoadmapPalette.ink).frame(maxWidth: .infinity, alignment: .leading)

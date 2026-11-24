@@ -98,6 +98,9 @@ extension RoadmapModel.Band.Says {
       return String(localized: "Added \(steps) steps", locale: .copy, comment: "The band once steps pasted into a roadmap are added: how many")
     case .noText: return String(localized: "No text to paste", comment: "The band when Paste Steps finds no text on the clipboard")
     case .pasteRefused: return String(localized: "Paste not allowed", comment: "The band when the system was not allowed to hand Paste Steps the copied text")
+    case .attached: return String(localized: "Roadmap attached")
+    case .detached(let markBack):
+      return markBack ? String(localized: "Roadmap detached · your mark is back") : String(localized: "Roadmap detached")
     case .refused(.keepsStartingStep): return String(localized: "A roadmap keeps one starting step")
     case .refused(.full): return String(localized: "This roadmap is at its limit.")
     // An Undo that brought nothing back (02.10d, 06.5c): a delete names what could not come back, one thing by its name

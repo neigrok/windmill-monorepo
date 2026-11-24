@@ -9,8 +9,8 @@ import SyncEngine
 // (`GET /v1/trees/{id}/progress`) and Fork (`POST /v1/trees/{id}/fork`). Every other read and change of a roadmap goes
 // through the sync engine.
 protocol RoadmapSharing {
-  // The owner's marks on a roadmap someone else owns, as the server shows them to a reader.
-  func progress(of tree: String) async throws(SharingFailure) -> [RoadmapTree.Mark]
+  // The owner's progress on a roadmap someone else owns, as the server shows it to a reader.
+  func progress(of tree: String) async throws(SharingFailure) -> OwnersProgress
   // A copy of the roadmap in the person's own list, which arrives by sync: the copy's id. `request` names the fork, so the
   // same fork asked again, after an answer that was lost, answers the same copy.
   func fork(_ tree: String, request: String) async throws(SharingFailure) -> String
@@ -40,14 +40,14 @@ final class SharingRequests: RoadmapSharing {
     self.baseURL = baseURL; self.credential = credential; self.online = online; self.telemetry = telemetry; self.session = session
   }
 
-  func progress(of tree: String) async throws(SharingFailure) -> [RoadmapTree.Mark] {
+  func progress(of tree: String) async throws(SharingFailure) -> OwnersProgress {
     let answer = try await request("v1/trees/\(tree)/progress", method: "GET", operation: "roadmap_progress", token: credential())
-    guard let marks = try? RoadmapTree.Mark.owners(answer) else {
+    guard let progress = try? OwnersProgress(answer: answer) else {
       telemetry.failure("roadmap_progress", kind: "decode", properties: ["method": "GET", "route": "/v1/trees"])
       throw .failed
     }
-    if marks.unread > 0 { telemetry.failure("roadmap_progress", kind: "decode", properties: ["method": "GET", "route": "/v1/trees"]) }
-    return marks.read
+    if progress.unread > 0 { telemetry.failure("roadmap_progress", kind: "decode", properties: ["method": "GET", "route": "/v1/trees"]) }
+    return progress
   }
 
   func fork(_ tree: String, request id: String) async throws(SharingFailure) -> String {
@@ -105,22 +105,45 @@ final class SharingRequests: RoadmapSharing {
   }
 }
 
-extension RoadmapTree.Mark {
-  // The owner's marks as the server's progress answer gives them, `{marks: [{node, status, at, markedAt, outOfOrder?}]}`:
-  // each dated as the phone's copy dates a mark, by its stamp's time where it was made and by the server's receipt; a mark
-  // `complete` or not. Rows that name no step or hold no stamp are left out and counted. Throws where the answer is no
-  // such object.
-  static func owners(_ answer: Data) throws -> (read: [RoadmapTree.Mark], unread: Int) {
-    let rows = try JSON(parsing: Array(answer)).member("marks").asArray()
-    var read: [RoadmapTree.Mark] = []
+// The owner's progress on a roadmap someone else owns, as the server shows it to a reader: their marks, which the phone
+// holds none of, and what each subtree the roadmap's steps own has come to, which the phone holds no copy of.
+struct OwnersProgress {
+  let marks: [RoadmapTree.Mark]
+  let subtrees: [RoadmapAccount.Told]
+  // The rows of the server's answer the room could not read, left out.
+  let unread: Int
+
+  init(marks: [RoadmapTree.Mark], subtrees: [RoadmapAccount.Told] = []) {
+    self.marks = marks
+    self.subtrees = subtrees
+    unread = 0
+  }
+
+  // The server's progress answer, `{marks: [{node, status, at, markedAt, outOfOrder?}], subtrees?: [{node, tree, done,
+  // total}]}`: each mark dated as the phone's copy dates a mark, by its stamp's time where it was made and by the server's
+  // receipt, `complete` or not; and each subtree by its id with how many of its steps are done of how many. A mark row that
+  // names no step or holds no stamp, and a subtree row that names no roadmap or holds no counts, are left out and counted.
+  // Throws where the answer is no such object.
+  init(answer: Data) throws {
+    let body = try JSON(parsing: Array(answer))
+    let rows = try body.member("marks").asArray()
+    var marks: [RoadmapTree.Mark] = []
     for row in rows {
       guard case .string(let node)? = row["node"], !node.isEmpty, case .string(let at)? = row["at"], let stamp = try? Stamp(at) else { continue }
       let complete: Bool = if case .string("complete")? = row["status"] { true } else { false }
       let received = (try? row["markedAt"]?.asInteger()).flatMap { $0 }.map(Instant.init(ms:))
       let outOfOrder: Bool = if case .bool(true)? = row["outOfOrder"] { true } else { false }
-      read.append(RoadmapTree.Mark(node: node, status: complete ? "complete" : "none", outOfOrder: outOfOrder, recordedAt: received,
-                                   deviceAt: Instant(ms: stamp.ms), stamp: stamp))
+      marks.append(RoadmapTree.Mark(node: node, status: complete ? "complete" : "none", outOfOrder: outOfOrder, recordedAt: received,
+                                    deviceAt: Instant(ms: stamp.ms), stamp: stamp))
     }
-    return (read, rows.count - read.count)
+    let counted = try body["subtrees"]?.asArray() ?? []
+    let subtrees = counted.compactMap { (row: JSON) -> RoadmapAccount.Told? in
+      guard case .string(let tree)? = row["tree"], !tree.isEmpty, let done = try? row["done"]?.asInteger(), let total = try? row["total"]?.asInteger(),
+            done >= 0, done <= total else { return nil }
+      return RoadmapAccount.Told(tree: tree, counts: Counts(done: Int(done), total: Int(total)))
+    }
+    self.marks = marks
+    self.subtrees = subtrees
+    unread = rows.count - marks.count + counted.count - subtrees.count
   }
 }

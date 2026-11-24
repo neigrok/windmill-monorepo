@@ -247,7 +247,7 @@ import SyncTesting
     #expect(try page("Tie a bowline", in: elsewhere) == asItWas)
     #expect(told(telemetry) == [
       "roadmap_room_opened ", "roadmap_board_step_open column=upNext door=card surface=document", "roadmap_step_edit door=page step=open",
-      "roadmap_board_edit description=false kind=true links=false name=true opens=true prerequisites=true step=saved",
+      "roadmap_board_edit description=false kind=true links=false name=true opens=true prerequisites=true roadmap=false step=saved",
       "roadmap_board_undo act=edit outcome=ok",
     ])
   }
@@ -331,7 +331,7 @@ import SyncTesting
       "roadmap_room_opened ", "roadmap_board_create door=foot step=open view=board", "roadmap_write_refused refusal=loop write=CreateNode",
       "roadmap_write_refused refusal=loop write=CreateNode", "roadmap_write_refused refusal=loop write=CreateNode",
       "roadmap_board_create door=foot step=discard", "roadmap_step_edit door=page step=open",
-      "roadmap_board_edit description=false kind=false links=false name=false opens=true prerequisites=true step=saved",
+      "roadmap_board_edit description=false kind=false links=false name=false opens=true prerequisites=true roadmap=false step=saved",
     ])
   }
 
@@ -631,7 +631,7 @@ import SyncTesting
     #expect(told(telemetry) == [
       "roadmap_room_opened ", "roadmap_board_create door=foot step=open view=board", "roadmap_board_create column=upNext step=saved",
       "roadmap_step_edit door=page step=open",
-      "roadmap_board_edit description=false kind=false links=true name=false opens=false prerequisites=false step=saved",
+      "roadmap_board_edit description=false kind=false links=true name=false opens=false prerequisites=false roadmap=false step=saved",
       "roadmap_board_undo act=edit outcome=ok", "roadmap_step_edit door=page step=open", "roadmap_step_edit door=page step=discard",
     ])
   }

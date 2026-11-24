@@ -286,10 +286,14 @@ extension Store {
     }
   }
 
-  // A hello's offset sample (§10.4), which reads the replica's meta alone.
-  public func sample(serverTime: Int64, timing: Timing) throws -> Written<Void> {
+  // A hello's answer to the active replica, which reads its meta alone: its offset sample (§10.4) and the server's schema it
+  // records or forgets (§9.2). Its pause is the engine's, which checks the token first.
+  public func hear(_ hello: Answer<HelloResponse>, timing: Timing) throws -> Written<Void> {
     try onActive(.offset, entries: EntrySelection(), journal: .unread) { replica in
-      replica.update { $0.sample(serverTime: serverTime, send: timing.send, recv: timing.recv) }
+      replica.update { meta in
+        if let serverTime = hello.serverTime { meta.sample(serverTime: serverTime, send: timing.send, recv: timing.recv) }
+        meta.hear(hello)
+      }
     }
   }
 

@@ -19,7 +19,9 @@ answer:
     steps that are gone, and links from a step to itself.
   - `read: "unread"` is a roadmap the device has not finished bringing (§10), and `own` says whether the person owns it
     (§6, rule 2).
-  - For a roadmap the person only reads, `marks` are the owner's, as the room shows them.
+  - For a roadmap the person only reads, `marks` are the owner's, as the room shows them. On a step that owns a subtree
+    the device does not hold, a mark says what the server told the room of that subtree: `complete`, or `none` where it
+    is not; the step is `unknown` where it carries none.
 - `given.held`, which a case may leave out, lists the steps under a delete the person can still undo, as
   `{tree, step}`. Each is `present: false` in its tree (§6, rule 1).
 - `given.ids`, which a case may leave out, are the ids the tool host's random source gives, in the order it draws them:
@@ -87,6 +89,7 @@ running an ability:
 
 It does not run an ability, so it does not check what only running one shows: the order of a read, a step's state,
 prerequisites and unlock count, a cursor's digest or where a page is cut, a fold's colours, or which code a refusal is.
-Those are the executors' to claim. `../check_test.py` holds a broken case for each refusal `check.py` makes. No executor
-claims these files yet, and the format holds no register stamps, so no case shows §7's `roadmap-changed` over a
-register.
+Those are the executors' to claim. `../check_test.py` holds a broken case for each refusal `check.py` makes. The web's
+runner, `web/test/products/roadmap/domain/abilities/corpus.test.js`, claims the read abilities' files and compares each
+answer whole by canonical text; no executor claims the direct writes' files or the proposal's yet. The format holds no
+register stamps, so no case shows §7's `roadmap-changed` over a register.

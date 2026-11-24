@@ -45,7 +45,8 @@ ID byte order.
 | `landing` | The device's own links (`edges`) whose current followed prerequisites bridge absence | no |
 | `activity` | A roadmap's Activity, or one step's History: each present step's creation and completion the copy holds a time for, newest first; null for an unread/hidden tree | no |
 | `roadmap` (`replica.json`) | One roadmap's records as a replica holds them, as the normalized tree | no |
-| `openings` (`replica.json`) | One tree's openings as `account` reads them, without reading every tree | no |
+| `openings` (`replica.json`) | One tree's openings as `account` reads them, without reading every tree, with what a read elsewhere tells (`told`) | no |
+| `progress` (`replica.json`) | `progress` with what a read elsewhere tells (`told`) | no |
 | `list` (`replica.json`) | The person's own roots that stand, newest first by `updatedAt`, none received last, ID byte ties | no |
 | `listing` (`replica.json`) | One roadmap that stands, whoever owns it, as a list shows it, null for one that does not stand | no |
 
@@ -81,6 +82,13 @@ pointer remains. `pointers` diagnostics retain the stale branch independently of
 opening. Hidden subtrees have no address/count/title. A subtree's title is its owning
 step's label. Completion is the least fixed point; empty/unread trees are incomplete. Valid and
 unknown openings set personal marks aside; dangling pointers retain the mark's meaning.
+
+`told`, which the `openings` and `progress` cases of `replica.json` give, is what a read elsewhere says roadmaps have come
+to, `{tree, done, total}`, as a reader's progress answer names the subtrees a roadmap's steps own (`GET
+/v1/trees/{id}/progress`, its `subtrees`). A roadmap the device holds no read copy of, unread or not held at all, and not
+hidden, counts as it is told and completes once it has steps and every one is done; an opening of it keeps its `unread` or
+`unknown` status and carries those counts, and a step it completes is dated by its own complete mark, stamped or not, as
+that read dated it, else as any complete opening is. A roadmap the device has read counts from its copy whatever it is told.
 
 `progress` dates an ordinary mark by when the person made it: its device time (`deviceAt`), falling back to the server's
 receipt (`recordedAt`) where the mark holds no device time, none or one at the epoch.
@@ -274,6 +282,6 @@ input names a role's result as `$role` or `$role.path`. Outcomes are a run's kin
 `{cancelHeld}`, and an inspection's visible records, each id named by the first role holding it, any other minted id
 `<new>`. A product inverse (`undoCreateRoadmap`, `undoCreateSubtree`, `redoCreateSubtree`) draws nothing until the server
 answers, so with no connection such an Undo waits and the roadmap or subtree stays drawn. Every restore draws at once:
-fields and texts written back, a created record deleted, and a record revived (the Undo of a delete, the Redo of a
-creation).
+fields and texts written back, a created record deleted, and a record revived with the fields it had (the Undo of a
+delete, a pointer's clear among them, and the Redo of a creation or of an Undo that took a record away).
 

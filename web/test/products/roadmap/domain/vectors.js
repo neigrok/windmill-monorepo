@@ -252,14 +252,11 @@ export function runRead(input) {
   if (input.operation === 'roadmap') {
     const reader = (/** @type {string} */ scope, /** @type {any[]} */ drawn) => new Reader(
       Views.ofRecords(roadmapRegistry, { drawn, stored: drawn }), scope, new Moment(new Instant(0), new FixedZone(0)));
-    const tree = readRoadmap(input.id, { listed: input.listed, tree: reader(RoadmapScopes.tree(input.id), input.tree), read: input.read,
-      overlay: input.overlay && reader(RoadmapScopes.overlay(input.id), input.overlay.drawn), queued: input.overlay?.queued ?? [] });
-    return { id: tree.id, present: tree.present, read: tree.read, own: tree.own, updatedAt: tree.updatedAt, parent: tree.parent, meta: tree.meta,
-      nodes: tree.nodes.map((step) => ({ ...step })), edges: tree.edges, kinds: tree.kinds.map((kind) => ({ ...kind })),
-      marks: [...tree.marks.values()].map((mark) => ({ ...mark })), pointers: [...tree.pointers.values()] };
+    return readRoadmap(input.id, { listed: input.listed, tree: reader(RoadmapScopes.tree(input.id), input.tree), read: input.read,
+      overlay: input.overlay && reader(RoadmapScopes.overlay(input.id), input.overlay.drawn), queued: input.overlay?.queued ?? [] }).json;
   }
   if (['account', 'activity', 'guides', 'pointers', 'progress', 'openings', 'list', 'listing'].includes(input.operation)) {
-    const account = new RoadmapAccount(input.trees.map((/** @type {any} */ tree) => new RoadmapTree(tree)));
+    const account = new RoadmapAccount(input.trees.map((/** @type {any} */ tree) => new RoadmapTree(tree)), { told: input.told ?? [] });
     if (input.operation === 'account') return account.result();
     if (input.operation === 'activity') {
       const graph = account.graph(input.tree);

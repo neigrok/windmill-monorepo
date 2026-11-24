@@ -57,6 +57,9 @@ final class RoadmapGraph {
   // changes every frame.
   private(set) var framed = false
   private(set) var captions: [Caption] = []
+  // The steps that open a roadmap, each with the line the canvas draws under its caption, empty where it draws none
+  // (04.6).
+  private(set) var marks: [UTF16Text: String] = [:]
   // The pinch under way, from its first report to the fingers' leaving or the first drag after it; and the pinch a
   // glide is, while it moves the camera.
   private(set) var pinched: GraphCamera.Pinched?
@@ -104,9 +107,12 @@ final class RoadmapGraph {
     _ = frames.end()
   }
 
-  // The Graph shows this roadmap as the phone's copy now reads it. One layout runs at a time, off the main actor; a
-  // read that arrives meanwhile waits, and only the latest is laid out next. Another roadmap starts from nothing.
-  func follow(_ read: FollowGraph, of roadmap: String) {
+  // The Graph shows this roadmap as the phone's copy now reads it, with the steps that open a roadmap and the line under
+  // each. One layout runs at a time, off the main actor; a read that arrives meanwhile waits, and only the latest is laid
+  // out next. Another roadmap starts from nothing.
+  func follow(_ read: FollowGraph, of roadmap: String, opened: [String: String] = [:]) {
+    let marked = Dictionary(opened.map { (UTF16Text($0.key), $0.value) }) { first, _ in first }
+    if marked != marks { marks = marked }
     if self.roadmap.map({ !$0.utf8.elementsEqual(roadmap.utf8) }) ?? true {
       self.roadmap = roadmap
       (picture, unseated, camera, captions, placer) = (nil, false, nil, [], CaptionPlacer())

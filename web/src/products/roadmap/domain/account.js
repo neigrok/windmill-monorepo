@@ -8,15 +8,22 @@ import { components, FollowGraph } from './graph.js';
 /** @typedef {{standing:'standing'|'hidden'|'unknown',place:Place|null,title:string|null}} Location */
 /** @typedef {{stamp:string,at:number|null}} LatestMark */
 /** @typedef {{node:string,kind:'subtree'|'pointer',tree:string,status:'loaded'|'unread'|'unknown'|'dangling'}} Opening */
+/** @typedef {{tree:string,done:number,total:number}} Told */
 
 export class RoadmapAccount {
-  /** @param {RoadmapTree[]} trees */
-  constructor(trees) {
+  // `told` is what a read elsewhere says roadmaps have come to, as a reader's progress answer names its subtrees: one the
+  // device holds no read copy of counts as it is told, and completes once it has steps and every one is done.
+  /** @param {RoadmapTree[]} trees @param {{told?: Told[]}} [elsewhere] */
+  constructor(trees, { told = [] } = {}) {
     this.trees = new Map([...trees].sort((a, b) => compareText(a.id, b.id)).map((tree) => [tree.id, tree]));
     if (this.trees.size !== trees.length) throw new TypeError('Duplicate normalized tree identity');
     /** @type {Map<string,Location>} */
     this.locations = new Map();
     for (const id of this.trees.keys()) this.locate(id);
+    /** @type {Map<string,{done:number,total:number}>} */
+    this.told = new Map(told.filter(({ tree }) => this.locations.get(tree)?.standing !== 'hidden'
+      && !(this.trees.get(tree)?.read === 'loaded' && this.locations.get(tree)?.standing === 'standing'))
+      .map(({ tree, done, total }) => [tree, { done, total }]));
     /** @type {Map<string,Opening[]>} */
     this.openings = new Map();
     /** @type {Map<string,{node:string,tree:string}[]>} */
@@ -62,7 +69,7 @@ export class RoadmapAccount {
           }
           openings.push({ node: node.id, kind: /** @type {Opening['kind']} */ (kind), tree: target, status });
           if (status !== 'dangling') {
-            if (status === 'loaded' || status === 'unread') {
+            if (status === 'loaded' || status === 'unread' || (status === 'unknown' && this.told.has(target))) {
               if (!this.openers.has(target)) this.openers.set(target, []);
               this.openers.get(target)?.push({ tree: id, node: node.id });
             }
@@ -80,6 +87,7 @@ export class RoadmapAccount {
       this.latestMarks.set(id, latest);
       if (nodes.length && pending === 0) ready.push(id);
     }
+    for (const [id, { done, total }] of this.told) if (total > 0 && done === total) ready.push(id);
     while (ready.length) {
       const id = ready.pop();
       if (id === undefined || this.complete.has(id)) continue;
@@ -148,7 +156,7 @@ export class RoadmapAccount {
   /** @param {string} id */
   counts(id) {
     const tree = this.trees.get(id);
-    if (!tree || tree.read !== 'loaded' || this.locations.get(id)?.standing !== 'standing') return null;
+    if (!tree || tree.read !== 'loaded' || this.locations.get(id)?.standing !== 'standing') return this.told.get(id) ?? null;
     const total = tree.nodes.filter((node) => node.present).length;
     return { done: total - (this.pending.get(id) ?? total), total };
   }
@@ -176,14 +184,14 @@ export class RoadmapAccount {
   /** @param {string} id */
   progress(id) {
     const tree = this.trees.get(id);
-    if (!tree || this.counts(id) === null) return null;
+    if (!tree || tree.read !== 'loaded' || this.locations.get(id)?.standing !== 'standing') return null;
     const completed = [...this.completedNodes(id)];
     const openings = new Map((this.openings.get(id) ?? []).map((opening) => [opening.node, opening]));
     const dates = completed.map((node) => {
       const mark = tree.marks.get(node);
       const opening = openings.get(node);
       if (!opening || opening.status === 'dangling') return { node, at: mark?.at ?? null };
-      if (mark?.status === 'complete' && mark.stamp && mark.stamp !== Stamp.UNSET) return { node, at: mark.at };
+      if (mark?.status === 'complete' && (this.told.has(opening.tree) || (mark.stamp && mark.stamp !== Stamp.UNSET))) return { node, at: mark.at };
       const setAt = opening.kind === 'subtree' ? tree.nodesById.get(node)?.branchStamp : tree.pointers.get(node)?.setAt;
       const pointer = setAt && setAt !== Stamp.UNSET ? { stamp: setAt, at: Stamp.parse(setAt).ms } : null;
       return { node, at: laterMark(this.latestMarks.get(opening.tree) ?? null, pointer)?.at ?? null };
@@ -232,8 +240,8 @@ export class RoadmapAccount {
   /** @param {string} id */
   openingsOf(id) {
     return (this.openings.get(id) ?? []).map((opening) => ({ ...opening,
-      complete: opening.status === 'loaded' && this.complete.has(opening.tree),
-      counts: opening.status === 'loaded' ? this.counts(opening.tree) : null,
+      complete: opening.status !== 'dangling' && this.complete.has(opening.tree),
+      counts: opening.status === 'dangling' ? null : this.counts(opening.tree),
       loop: opening.status !== 'dangling' && opening.status !== 'unknown' && this.loopOf.has(id) && this.loopOf.get(id) === this.loopOf.get(opening.tree),
     }));
   }
@@ -244,7 +252,7 @@ export class RoadmapAccount {
     return [...this.trees.values()]
       .filter((tree) => tree.own && this.locate(tree.id).standing === 'standing' && this.locate(tree.id).place?.parent === null)
       .sort((a, b) => Number(a.updatedAt === null) - Number(b.updatedAt === null) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || compareText(a.id, b.id))
-      .map((tree) => this.listing(tree.id));
+      .flatMap((tree) => this.listing(tree.id) ?? []);
   }
 
   // A roadmap that stands, whoever owns it, as a list shows it: what a reader names a roadmap someone else shared by. Null

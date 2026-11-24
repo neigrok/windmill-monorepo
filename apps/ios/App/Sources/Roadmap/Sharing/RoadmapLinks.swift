@@ -60,10 +60,7 @@ final class RoadmapLinks {
       room.path = [.roadmaps]
       return
     }
-    let held = room.account.trees.first { $0.own && $0.id.utf8.elementsEqual(address.tree.utf8) }
-    let root = held.flatMap { room.account.location(of: $0.id).place?.root }.flatMap { (root: String) -> String? in
-      room.roadmaps.contains { $0.id.utf8.elementsEqual(root.utf8) } ? root : nil
-    }
+    let root = room.ownRoot(of: address.tree)
     if tells {
       room.telemetry.event("roadmap_link_opened", properties: ["address": link.form.rawValue, "target": target, "mine": root == nil ? "false" : "true"])
     }

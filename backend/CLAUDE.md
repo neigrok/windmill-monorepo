@@ -48,8 +48,9 @@ process; it builds `windmill_server`, the harness-clocked `windmill_server_test_
 transport, for local runs). `rotate_sync_epoch.cpp` is the offline restore tool; its saved epoch
 pair makes a repeated rotation idempotent, `resum_sync_digests.cpp` is the offline tool that rewrites
 every alive scope's digest from its feed after a registry change (`deploy/README.md`),
-`subtree_inventory.cpp` counts how the roadmap's pointers between trees meet one owned subtree per step,
-reading only (`SPEC.md`, Subtree inventory), and `roadmap_adopt.cpp` runs roadmap's cutover onto the sync engine stage by
+`subtree_inventory.cpp` counts how the roadmap's pointers between trees meet one owned subtree per step, and the
+engine's roadmaps by owner and visibility and its pointers alive with no `opens`, reading only (`SPEC.md`, Subtree
+inventory), and `roadmap_adopt.cpp` runs roadmap's cutover onto the sync engine stage by
 stage, printing counts and verdicts alone (`products/roadmap/adoption/README.md`).
 
 ## How a product plugs in
@@ -102,13 +103,13 @@ against the sync contract in `../packages/api-contract/sync`, which CMake finds 
 `.github/workflows/backend.yml`). The domain tests replay its golden corpus over in-memory fakes, one
 case per vector (`test/platform/domain/sync/CorpusTest.cpp`); a corpus file with no runner is a named
 skipped case, and a file nobody claims fails. They also load every product registry the contract ships
-(`RegistryTest.cpp`), and run the gym, journal and roadmap bindings against registry v13/minimum 11 and composition.json.
+(`RegistryTest.cpp`), and run the gym, journal and roadmap bindings against registry v14/minimum 11 and composition.json.
 `windmill_sync_tests` replays the server's files again over Postgres under `WM_PG_TEST` (`RUNNING.md` §7).
 
 `products/gym/sync/` binds gym's thirteen types and nine commands, `products/journal/sync/` binds
 journal's `page` and `journalState` and its two commands, `journal.savePage` and `journal.claimPage`, and
 `products/roadmap/sync/` binds roadmap's fourteen types and five product commands on `roadmap_*` tables of
-their own (its `README.md`). `platform/infra/SyncProducts` seals the three into the v13/minimum-11 catalog.
+their own (its `README.md`). `platform/infra/SyncProducts` seals the three into the v14/minimum-11 catalog.
 `windmill_server` serves it at `/v1/sync/hello`, `push`, `pull` and `/v1/sync/live`, roadmap's scopes only
 where `ROADMAP_ENGINE_ENABLED` is `true` or `1`, and elsewhere withholds them, so they read as absent and admit
 nothing. Production reads it only from the host's `roadmap-engine.env`, which holds `ROADMAP_ENGINE_ENABLED=1`

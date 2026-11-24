@@ -145,6 +145,7 @@ public struct StoreTransaction {
     meta.serverEpoch = record["server_epoch"]
     meta.ackThrough = record["ack_through"]
     meta.authPaused = record["auth_paused"]
+    meta.serverSchema = record["server_schema"]
     return (ReplicaHandle(value: record["handle"]), meta, record["journaled"])
   }
 

@@ -57,6 +57,11 @@ bool creatable(const TypeDef& type) {
   return type.life && !type.governsTree && !type.wholePut;
 }
 
+// A keyed record's life brought back alive: its death kept no field (G1), so its restore carries the record's values.
+bool revivesKeyed(const TypeDef& type, const Json::Value& slot, const Json::Value& before) {
+  return type.identity == Identity::keyed && slot["kind"] == "life" && before == "alive";
+}
+
 bool textWithin(const FieldDef& field, const Json::Value& text) {
   if (!text.isString()) return false;
   return !field.bounds || !field.bounds->max || lengthIn(field.bounds->unit, text.asString()) <= static_cast<std::size_t>(*field.bounds->max);
@@ -103,7 +108,8 @@ bool footprintShaped(const TypeDef& type, const Json::Value& footprint) {
   return true;
 }
 
-bool creationValues(const Registry& registry, const TypeDef& type, const Json::Value& values) {
+// The values a create, or a keyed record's revival, writes: client lww, fww, const or time fields and client texts.
+bool admitsValues(const Registry& registry, const TypeDef& type, const Json::Value& values) {
   if (!exactKeys(values, {}, {"f", "x"})) return false;
   if (values.isMember("f")) {
     if (!values["f"].isObject()) return false;
@@ -122,6 +128,16 @@ bool creationValues(const Registry& registry, const TypeDef& type, const Json::V
     }
   }
   return true;
+}
+
+// Writes a create's or a keyed revival's values into `delta` under the server stamp, each text onto an empty head.
+void writeValues(Delta& delta, const Json::Value& values) {
+  if (values.isMember("f")) {
+    for (const std::string& name : values["f"].getMemberNames()) delta.lattice.f.insert_or_assign(name, Reg(values["f"][name], Stamp{}));
+  }
+  if (values.isMember("x")) {
+    for (const std::string& name : values["x"].getMemberNames()) delta.x.insert_or_assign(name, TextWrite{.text = values["x"][name].asString(), .base = TextBase{.rev = 0}});
+  }
 }
 
 // §2.4's ScopeRef families, a tree or overlay naming a governing id: the registry scope `ref` names, or nothing.
@@ -171,8 +187,9 @@ bool admitsRestoreArguments(const Registry& registry, const CommandDef& command,
     if (!registry.isIdOf(*type, op["id"])) return false;
     const std::string kind = op["kind"].asString();
     if (kind == "field") {
-      if (!exactKeys(op, {"kind", "t", "id", "slot", "expected", "before"})) return false;
+      if (!exactKeys(op, {"kind", "t", "id", "slot", "expected", "before"}, {"values"})) return false;
       if (!restorable(*type, op["slot"]) || !logicalValue(registry, *type, op["slot"], op["before"])) return false;
+      if (op.isMember("values") && (!revivesKeyed(*type, op["slot"], op["before"]) || !admitsValues(registry, *type, op["values"]))) return false;
       const Json::Value& expected = op["expected"];
       if (expected.isObject() && expected["kind"] == "absent") {
         if (!exactKeys(expected, {"kind", "born"}) || op["slot"]["kind"] == "life") return false;
@@ -188,7 +205,7 @@ bool admitsRestoreArguments(const Registry& registry, const CommandDef& command,
       if (!isSeq(op["rowSeq"]) || op["rowSeq"].asLargestInt() == 0) return false;
     } else if (kind == "createRecord") {
       if (!exactKeys(op, {"kind", "t", "id", "values"})) return false;
-      if (!creatable(*type) || !creationValues(registry, *type, op["values"])) return false;
+      if (!creatable(*type) || !admitsValues(registry, *type, op["values"])) return false;
     } else {
       return false;
     }
@@ -337,6 +354,8 @@ RestoreOutcome evaluateRestore(const Registry& registry, const RestoreReader& re
       Delta& delta = deltaOf();
       if (slotKind == "life") {
         delta.lattice.life = Life(op["before"].asString() == "alive" ? LifeState::alive : LifeState::dead, Stamp{});
+        // A record found alive keeps its own fields; only a dead keyed row lacks them (G1).
+        if (op.isMember("values") && !record.row->alive()) writeValues(delta, op["values"]);
       } else if (slotKind == "field") {
         delta.lattice.f.insert_or_assign(slot["name"].asString(), Reg(op["before"], Stamp{}));
       } else {
@@ -359,13 +378,7 @@ RestoreOutcome evaluateRestore(const Registry& registry, const RestoreReader& re
       Delta created{.t = type.name, .id = id};
       created.lattice.life = Life(LifeState::alive, Stamp{});
       if (hasBorn) created.lattice.born = Stamp{};
-      const Json::Value& values = op["values"];
-      if (values.isMember("f")) {
-        for (const std::string& name : values["f"].getMemberNames()) created.lattice.f.emplace(name, Reg(values["f"][name], Stamp{}));
-      }
-      if (values.isMember("x")) {
-        for (const std::string& name : values["x"].getMemberNames()) created.x.emplace(name, TextWrite{.text = values["x"][name].asString(), .base = TextBase{.rev = 0}});
-      }
+      writeValues(created, op["values"]);
       record.delta = std::move(created);
       applied(index);
     }

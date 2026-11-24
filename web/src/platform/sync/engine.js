@@ -821,8 +821,7 @@ export class BrowserSyncEngine {
         && device.activeReplica.meta.state === 'bound' && !device.activeReplica.meta.authPaused && !this.signOutPaused(device);
       const ready = await this.write(null, (device, ctx) => {
         if (!current(device)) return false;
-        if (hello.response.status === 200) onHello(device.activeReplica, ctx, hello.response, hello.timing);
-        else if (device.activeReplica.isUnauthenticated(hello.response)) device.activeReplica.meta.authPaused = true;
+        if (hello.response.status === 200 || device.activeReplica.isUnauthenticated(hello.response)) onHello(device.activeReplica, ctx, hello.response, hello.timing);
         return !device.activeReplica.meta.authPaused && hello.response.status === 200
           && hello.response.body?.as === seat.meta.account && hello.response.body.schema >= this.registry.minVersion;
       });

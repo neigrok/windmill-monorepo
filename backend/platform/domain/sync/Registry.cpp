@@ -435,6 +435,7 @@ void checkType(const Reader& reader, const TypeDef& type) {
     }
   }
   if (type.seeded && type.identity != Identity::minted) reader.fail("seeds ids without being minted");
+  if (type.revivable && !mintedOrDerived) reader.fail("is revivable without being minted or derived");
   if (type.revivable && type.deadRows != DeadRows::keep) reader.fail("is revivable without keeping its dead rows");
   if (type.governsTree && (type.identity != Identity::minted || type.revivable || type.scope.kind != ScopeKind::product ||
                            type.idSpace != IdSpace::global))

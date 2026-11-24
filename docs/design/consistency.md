@@ -662,8 +662,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   built as *Read the wind done*, the Board's sentence, and *Read the wind reset*; every board of the page draws
   the Coach circle or composer, and the page is built without it until its screen is, so a Locked or a Done step's
   foot holds the band alone and the … menu holds *Open in Graph*, *View
-  Branch* and *Delete Step*, without *Attach a Roadmap*; the roadmap's one starting step keeps no *Delete Step*, so
-  its menu holds the first two alone, and no board draws that step's menu; a link row shows the address's host as it is written, so *www.* stays where the
+  Branch*, *Attach a Roadmap* on a step that opens none, and *Delete Step*; the roadmap's one starting step keeps no
+  *Delete Step*, so its menu holds the others alone, and no board draws that step's menu; a link row shows the address's host as it is written, so *www.* stays where the
   address has it; an Undo of Reset marks the step done at the Undo's time, as the web's does, so the step then leads
   Done, and no board says so; the name is drawn as the first card's header, about 10 pt lower than 03.1 has it,
   with the list's own spacing between the cards (55 pt from card to card where the boards draw 43); and a Board row
@@ -719,8 +719,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   question is SpringBoard's alert, which the room waits on with its main actor free.
 - **Roadmap · iOS · what the step form leaves for the boards.** New Step, from the foot's + and from an empty roadmap,
   and *Edit* from a step's page are built in Debug builds from 05.1 to 05.8, 05.10 and 02.15. To draw or rule: every
-  board of the form draws the *Roadmap* row and Coach's composer, and the form is built without them until their
-  screens are; 05.2 draws the hues no kind names as Sky, Brick, Plum, where its NOTE keeps the web's list, whose order
+  board of the form draws Coach's composer, and the form is built without it until its screen is; 05.2 draws the hues no kind names as Sky, Brick, Plum, where its NOTE keeps the web's list, whose order
   and the rule book's is Brick, Sky, Plum, and it is built so; 05.3's caption makes a step that would close a loop
   `.disabled`, and 05.6b has a tap on one name it in the footer: a disabled row takes no tap, so those rows are drawn
   dimmed and stay buttons, each with its group's reason as its hint; no board words the band after *Save*, and it is
@@ -872,9 +871,37 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   with no step says *No steps yet* with no button, and no board draws it; a cover whose copy the phone cannot read says
   the room's *Couldn’t load this roadmap* with *Try Again* (01.5c), which no board of section 09 draws; a subtree's
   cover has no Fork, as the section's NOTE and the web have it, and no board draws that cover; a fork the server refuses
-  or that fails says *Couldn’t fork this roadmap. Try again.* in the band slot, which no board words; and a step that owns a subtree stands
-  on a cover as the domain reads it with that subtree unread, so it is never Done there, where the web's reader takes
-  what the server's `subtrees` says ([Roadmap on iOS](../foundation/roadmap-ios.md) §13).
+  or that fails says *Couldn’t fork this roadmap. Try again.* in the band slot, which no board words.
+- **Roadmap · iOS · what nested roadmaps leave for the boards.** A step that opens a roadmap or owns a subtree is built in
+  Debug builds from 04.6, 05.1's *Roadmap* row and 07.1 to 07.12b. To draw or rule: a roadmap the phone holds no copy of,
+  or one that is not the person's, reads as 07.5c's *Not found*, as no board draws either, where the web shows its *Tree*
+  heading with no row; one the phone is still bringing shows its row with a spinner for its name and no count, and a
+  subtree nothing is known of yet its step's name alone, which no board draws; a Locked step's subtree footer says *Needs
+  …, then every step in this subtree.* and a done subtree's *Done because every step in this subtree is done.*, after 07.11's
+  *this subtree*, and an empty subtree takes 07.5a's roadmap sentence, none of which a board draws; *Open* is offered in
+  the leading swipe of every row whose roadmap can be gone into, a Locked or a Done one too, where 07.1b draws an Up next
+  row; the Graph's mark and line stand beside and under the caption the layout seats, which keeps no room for them, so a
+  line can meet a caption below it; the Roadmap row's … menu stands over the system's link rather than inside it, so a
+  tap on it opens the menu and never goes in; the pasted row of someone else's roadmap says *Someone else’s · you can read
+  it*, the web's words, since the phone's copy names no author, where 07.7 draws *By Maya · you can read it*; a pasted
+  link to one of the person's own roadmaps chooses it as a tap on its row does, and one the phone has no copy of and no
+  connection to read says *Needs a connection* under the row, neither of which a board draws; a pasted link to a subtree
+  of the person's chooses it too, where the web's picker offers it no row, and one to the roadmap the step stands in is
+  refused with the dimmed row's *This roadmap*; a choice the room refuses says why under the list, *This roadmap is at its
+  limit.* or *Your choice couldn’t be saved. Try again.*, where the web says *Couldn’t change the tree. Try again.*; *None*
+  has no footer for a roadmap that cannot be found, whose name the form's Roadmap row gives as *Not found*; Fork
+  Roadmap's band after a tap with no connection stands until the next tap, and a fork waits up to fifteen seconds for its
+  copy to head the list, saying *Forking…*, which no board draws; that band says *Forking needs a connection.*, the
+  cover's sentence, where 07.12a draws it without its full stop; 07.5d draws *Night passage* before *Log 100 miles*, and
+  the Board's Roadmap Order keeps the roadmap's authored order between steps equally far, so *Log 100 miles* stands
+  first; 07.2b draws the steps under *Opens* *Locked · 1 to go* while both *Day skipper theory* and the step stand open
+  behind them, which the room counts *2 to go*; a roadmap gone into has no *Export* in its … menu until Export is built;
+  one the phone has yet to read waits with a spinner, and with no connection says *Needs a connection* over *This
+  roadmap isn’t on this iPhone.*, the cover's 09.11 words; a roadmap the stack already stands in is gone into no deeper,
+  its row going nowhere and its foot holding no control, so a loop is gone round once; the band is the stack's one, so a
+  band standing as a person goes in or comes back stands on over the screen reached with its Undo; none of these a board
+  draws; and a reader's cover shows a step's subtree with no door, where §6 has a reader go into it as on the web: no
+  board of section 09 draws it.
 - **Roadmap · iOS · what a pinch of a crowd shows while it moves.** On an iPhone 13 mini a pinch with the whole
   5,000-step handbook in view is given five sixths of its frames
   ([Roadmap on iOS](../foundation/roadmap-ios.md) §13). The room holds three ways to keep them (`GraphPinch`), each
