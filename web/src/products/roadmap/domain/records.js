@@ -9,7 +9,7 @@ import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/
 /** @typedef {{node:string,status:string,outOfOrder?:boolean,recordedAt:number|null,deviceAt:number|null,stamp?:string|null}} MarkInput */
 /** @typedef {{node:string,present:boolean,opens:string,setAt?:string|null}} Pointer */
 /** @typedef {{tree:string,step:string}} Parent */
-/** @typedef {{title:string,guide:string,guideInherited:boolean,root:string,depth:number,visibility:string,reach:string}} Metadata */
+/** @typedef {{title:string,guide:string,guideInherited:boolean,root:string,depth:number,visibility:string,reach:string,forkedFrom:string|null}} Metadata */
 /** @typedef {{id:string,present?:boolean,read?:'loaded'|'unread',own?:boolean,updatedAt?:number|null,parent?:Parent|null,meta?:Partial<Metadata>|null,nodes?:StepInput[],edges?:Edge[],kinds?:KindInput[],marks?:MarkInput[],pointers?:Pointer[]}} TreeInput */
 
 export class Step {
@@ -129,7 +129,8 @@ export class TreeIndex {
 }
 
 // A roadmap's normalized records. `own` says it is in the person's own list; `updatedAt` is when the server last received
-// any record of it, null where it has received none; `meta` is null while its tree scope holds no meta.
+// any record of it, null where it has received none; `meta` is null while its tree scope holds no meta, and its `forkedFrom`
+// names the roadmap a fork was copied from, null for one that is no fork.
 export class RoadmapTree {
   /** @param {TreeInput} input */
   constructor(input) {
@@ -140,7 +141,7 @@ export class RoadmapTree {
     this.updatedAt = input.updatedAt ?? null;
     this.parent = input.parent ? { ...input.parent } : null;
     this.meta = input.meta === null ? null
-      : { title: '', guide: '', guideInherited: false, root: input.id, depth: 0, visibility: 'private', reach: 'private', ...input.meta };
+      : { title: '', guide: '', guideInherited: false, root: input.id, depth: 0, visibility: 'private', reach: 'private', forkedFrom: null, ...input.meta };
     this.nodes = (input.nodes ?? []).map((node) => new Step(node)).sort(authoredOrder);
     this.nodesById = new Map(this.nodes.map((node) => [node.id, node]));
     this.edges = (input.edges ?? []).map((edge) => ({ ...edge })).sort(edgeOrder);

@@ -363,16 +363,19 @@ makes it false.
   the step form's *Edit Kinds*. The step form sets a step's name, description and kind, what it requires, what it opens
   and the links it shares, and has no *Roadmap* row or Coach composer. A step's page holds the person's workspace of
   it, subtasks, a note and links read live from their overlay on the phone's copy, each written by an act of the
-  domain, and its History, and has no *Open Roadmap*, and its menu has no *Attach a Roadmap* or *Copy Link*; the note's
+  domain, and its History, and has no *Open Roadmap*, and its menu has no *Attach a Roadmap*, nor *Copy Link* but on a
+  reader's cover; the note's
   field sets bold and italic alone, from the system's Format menu on iOS 26. The title menu's *Activity* and a step's
   *History* are the domain's read of the phone's copy (§3); the title menu has no *Guide*, *Share…* or *Export*, New
   Roadmap starts a blank roadmap alone, from no plan or file, and All Roadmaps has no gallery. An Undo that brings
   nothing back says so in the band. The Graph draws the picture, pans and zooms it, selects a step and opens its page,
   lists the Up next steps under *Next*, brings the one chosen there or by *Open in Graph* into view, and shows the whole
   roadmap alone under
-  *Fit*; it has no Find, no mark on a step that opens a roadmap, and draws no proposal and no reader's cover; no link
-  or Coach is built, and the Board has no pasted steps. The app has no associated domain, and its onboarding says
-  roadmap is on the web.
+  *Fit*; it has no Find, no mark on a step that opens a roadmap, and draws no proposal; no Coach is built, and the
+  Board has no pasted steps. A roadmap's link opens the room in Debug builds alone, whose entitlements claim the site's
+  addresses: Release's entitlements and the App ID carry no associated domain. A shared roadmap's cover reads no
+  subtree's progress, so a step that owns one stands as the domain reads it with that subtree unread. The app's
+  onboarding says roadmap is on the web.
 - `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
   room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once, and plays every
   Undo scene: no plan grammar or Coach executor.
@@ -411,7 +414,6 @@ makes it false.
   a mark; a name with a line break breaks the file's first line; and steps on a loop are not
   written. In a file an export wrote, text before the first step is dropped, where §7.1 keeps
   every line. The cases of `write.json` and `read.json` pin each as it stands.
-- The domain's read of a roadmap carries no `forkedFrom`, which the gallery's row reads (§3).
 - Roadmaps that hold `unlisted` are not moved to private (R-9).
 - The app's Info.plist names no Markdown type (§7.3).
 

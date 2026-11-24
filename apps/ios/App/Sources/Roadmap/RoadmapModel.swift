@@ -66,7 +66,7 @@ final class RoadmapModel {
   // or a row of Activity; a step's note over its page; or a step's History.
   enum Visit: Hashable {
     enum Door: String {
-      case card, step, graph, activity
+      case card, step, graph, activity, link
     }
 
     case roadmaps
@@ -116,8 +116,9 @@ final class RoadmapModel {
     // Its kinds as the room shows them, wherever a kind is listed, chosen or filtered by.
     let legend: RoadmapLegend
 
-    // Nil for a roadmap that does not stand or is not read yet.
-    init?(_ listed: ListedRoadmap, in account: RoadmapAccount, workspaces: [ID<RoadmapStep>: StepWorkspace] = [:]) {
+    // Nil for a roadmap that does not stand or is not read yet. A roadmap the person does not own, on a reader's cover,
+    // offers no Complete, Reset or Delete on any step.
+    init?(_ listed: ListedRoadmap, in account: RoadmapAccount, workspaces: [ID<RoadmapStep>: StepWorkspace] = [:], owned: Bool = true) {
       guard let graph = account.graph(listed.id) else { return nil }
       let (tree, board, legend) = (graph.tree, BoardRead(graph), RoadmapLegend(graph.tree))
       let openings = Dictionary(account.openings(of: listed.id).map { (Array($0.opening.node.utf8), $0.opening) }) { first, _ in first }
@@ -138,8 +139,8 @@ final class RoadmapModel {
         return (Array(card.id.utf8), Row(
           step: held, card: card, kind: owners[Array(held.color.utf8)],
           opensStanding: opening.map { $0.kind == .pointer && account.location(of: $0.tree).standing == .standing } ?? false,
-          completes: card.column == .upNext && opening == nil, resets: card.column == .done && opening == nil,
-          deletes: kept.map { !$0.utf8.elementsEqual(card.id.utf8) } ?? true))
+          completes: owned && card.column == .upNext && opening == nil, resets: owned && card.column == .done && opening == nil,
+          deletes: owned && (kept.map { !$0.utf8.elementsEqual(card.id.utf8) } ?? true)))
       }) { first, _ in first }
       id = ID(RecordID(listed.id))
       self.listed = listed
@@ -187,6 +188,14 @@ final class RoadmapModel {
   // What the room shows: its bar alone while the phone's copy is not read yet, a roadmap, no roadmap, or a failed read.
   enum Phase {
     case unread, empty, open(OpenRoadmap), failed
+  }
+
+  // Whom the room shows roadmaps to, given as it is made: their owner, whose own list it reads and who writes, with what a
+  // link raises over the room (`RoadmapLinks`, none where the room follows no link); or a reader of one roadmap someone
+  // else shared, which a cover reads into the room (`SharedRead`) and where every act refuses.
+  enum Role {
+    case owner(RoadmapLinks?)
+    case reader(SharedRead)
   }
 
   // A limit the room refuses a gesture at, said where the gesture is made. Any other refusal shows nothing.
@@ -260,6 +269,8 @@ final class RoadmapModel {
       case saved(step: String)
       // A roadmap deleted, by its title.
       case deletedRoadmap(String?)
+      // The copy a fork made, opened once it arrived, by how many steps it planted.
+      case forked(steps: Int)
       // A subtask checked, by its words.
       case checked(ID<Subtask>, label: String)
       // A subtask or a link of a step's workspace deleted, by its words or its title.
@@ -316,6 +327,11 @@ final class RoadmapModel {
     // seconds.
     init(unrestored receipt: Says) {
       says = .unrestored(receipt); undo = nil; arrived = []; lasts = RoadmapModel.bandLasts
+    }
+
+    // A fork's copy opened: said once, with no Undo, since the copy is the person's own and Delete Roadmap removes it.
+    init(forked steps: Int) {
+      says = .forked(steps: steps); undo = nil; arrived = []; lasts = RoadmapModel.bandLasts
     }
   }
 
@@ -423,24 +439,25 @@ final class RoadmapModel {
   @ObservationIgnored var activities: [String?: ActivityRead] = [:]
   // The phone's midnights while the room stands, which whatever reads `moment` is drawn again at.
   private(set) var midnights = 0
-  // The observer that counts them.
-  @ObservationIgnored var dayChanges: (any NSObjectProtocol)?
+  // The observer that counts them, which ends with the room, a cover's when the cover goes.
+  @ObservationIgnored var dayChanges: NotificationWatch?
   // Every view the room asked the engine for, kept so each stays live.
   @ObservationIgnored var views: [ViewKey: RecordsView] = [:]
   // The observation now live; one begun later ends the one before it.
   @ObservationIgnored var watch = 0
   @ObservationIgnored var reportedFailures: Set<String> = []
   @ObservationIgnored var bandTime: Task<Void, Never>?
+  let role: Role
 
   init(records: @escaping Records, runner: ActionRunner, phone: UserDefaults, telemetry: any Telemetry = NoopTelemetry(),
-       wait: @escaping Wait = { try await Task.sleep(for: $0) }, graph: RoadmapGraph? = nil, boardFrames: BoardFrames = BoardFrames()) {
+       wait: @escaping Wait = { try await Task.sleep(for: $0) }, graph: RoadmapGraph? = nil, boardFrames: BoardFrames = BoardFrames(),
+       role: Role = .owner(nil)) {
     self.records = records; self.runner = runner; self.phone = phone; self.telemetry = telemetry; self.wait = wait
+    self.role = role
     self.graph = graph ?? RoadmapGraph(telemetry: telemetry)
     self.boardFrames = boardFrames
     reading = BoardReading(telemetry: telemetry)
-    dayChanges = NotificationCenter.default.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: .main) { [weak self] _ in
-      MainActor.assumeIsolated { self?.midnights += 1 }
-    }
+    dayChanges = NotificationWatch(.NSCalendarDayChanged) { [weak self] in self?.midnights += 1 }
   }
 
   // The engine's now in the phone's zone, by which Activity and a step's History place each row's day; the phone's own
@@ -485,6 +502,18 @@ final class RoadmapModel {
     telemetry.event("roadmap_first_read", properties: ["step": "ended", "outcome": outcome])
   }
 
+  // The room is its owner's, who writes; a reader's writes nothing.
+  var owns: Bool {
+    guard case .owner = role else { return false }
+    return true
+  }
+
+  // What a link raises over the owner's room; none on a reader's.
+  var links: RoadmapLinks? {
+    guard case .owner(let links) = role else { return nil }
+    return links
+  }
+
   // The roadmap the room has open, where it has one.
   var shown: OpenRoadmap? {
     guard case .open(let open) = phase else { return nil }
@@ -515,6 +544,7 @@ final class RoadmapModel {
     let current = watch
     do { try read() }
     catch { fail(error) }
+    links?.followPending(in: self)
     withObservationTracking {
       for view in views.values { _ = view.state }
     } onChange: { [weak self] in
@@ -527,6 +557,7 @@ final class RoadmapModel {
 
   // Every listed roadmap is read with its tree scope and their overlay of it; while a view has yet to load, what is shown stays.
   func read() throws {
+    if case .reader(let shared) = role { return try shared.read(into: self) }
     guard let list = try snapshot(RoadmapEntry.scope, RoadmapEntry.type) else { return }
     var trees: [RoadmapTree] = []
     var overlays: [ID<RoadmapEntry>: [Record]] = [:]
@@ -563,16 +594,21 @@ final class RoadmapModel {
       return
     }
     if !listed.id.utf8.elementsEqual(last.utf8) { phone.set(listed.id, forKey: Self.lastOpen) }
-    // Another roadmap opens with its Board at rest, Done folded unless every step is done, asking nothing and choosing no
-    // steps, in the view it was last switched to, and with no step selected; one that opens on its Graph is told. On the
-    // one shown, Done opens by itself once every step is done, and rests folded again once one is not.
-    let again = shown.map { $0.listed.id.utf8.elementsEqual(listed.id.utf8) } ?? false
+    present(open, landing: (phone.dictionary(forKey: Self.lastLens)?[listed.id] as? String).flatMap { Lens(rawValue: $0) } ?? .board)
+    if links?.arrived(listed.id) == true { show(Band(forked: open.board.overall.total)) }
+  }
+
+  // A roadmap read to be shown. Another opens with its Board at rest, Done folded unless every step is done, asking nothing
+  // and choosing no steps, in the view it lands on, and with no step selected; one that opens on its Graph is told. On the
+  // one shown, Done opens by itself once every step is done, and rests folded again once one is not.
+  func present(_ open: OpenRoadmap, landing: Lens) {
+    let again = shown.map { $0.listed.id.utf8.elementsEqual(open.listed.id.utf8) } ?? false
     if let shown, again {
       if open.everyStepDone && !shown.everyStepDone { folded.remove(.done) }
       if !open.everyStepDone && shown.everyStepDone { folded.insert(.done) }
     } else {
       folded = open.everyStepDone ? [] : [.done]
-      lens = (phone.dictionary(forKey: Self.lastLens)?[listed.id] as? String).flatMap { Lens(rawValue: $0) } ?? .board
+      lens = landing
       selected = nil
       reading.forget()
       selection = nil
@@ -581,7 +617,7 @@ final class RoadmapModel {
     phase = .open(open)
     guard view(of: open) == .graph else { return }
     if !again { viewOpened(open) }
-    graph.follow(open.graph, of: listed.id)
+    graph.follow(open.graph, of: open.listed.id)
   }
 
   // The switch row's choice: the open roadmap's view, kept for it on this phone. The Graph then follows the roadmap as
@@ -589,7 +625,9 @@ final class RoadmapModel {
   func show(_ lens: Lens) {
     guard let shown, lens != self.lens else { return }
     self.lens = lens
-    phone.set((phone.dictionary(forKey: Self.lastLens) ?? [:]).merging([shown.listed.id: lens.rawValue]) { _, chosen in chosen }, forKey: Self.lastLens)
+    if owns {
+      phone.set((phone.dictionary(forKey: Self.lastLens) ?? [:]).merging([shown.listed.id: lens.rawValue]) { _, chosen in chosen }, forKey: Self.lastLens)
+    }
     viewOpened(shown)
     guard view(of: shown) == .graph else { return boardFrames.opened() }
     graph.opened()
@@ -713,6 +751,7 @@ final class RoadmapModel {
   // What the door tells of a write, whoever asked for it: a refusal by its kind, said in the band where it is a limit,
   // and a commit that failed, which is reported and shows nothing, since the phone's copy stands as it was.
   func told<Result>(as name: String, _ run: () throws -> Written<Result>) -> Written<Result> {
+    guard owns else { return .unchanged }
     do {
       let written = try run()
       if case .refused(let refusal) = written {
@@ -862,6 +901,7 @@ final class RoadmapModel {
     if case .open(let shown) = phase, shown.listed.id.utf8.elementsEqual(roadmap.utf8) { return }
     guard roadmaps.contains(where: { $0.id.utf8.elementsEqual(roadmap.utf8) }) else { return }
     arriving = nil
+    links?.forkArriving = nil
     phone.set(roadmap, forKey: Self.lastOpen)
     telemetry.event("roadmap_sheet", properties: ["step": "switch", "door": place.rawValue])
     observe()
@@ -1044,4 +1084,15 @@ extension RoadmapRefusal {
     case .other: "other"
     }
   }
+}
+
+// One observation of the notification center on the main queue, which ends as its holder lets it go.
+nonisolated final class NotificationWatch {
+  let token: any NSObjectProtocol
+
+  init(_ name: Notification.Name, _ heard: @escaping @MainActor () -> Void) {
+    token = NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in MainActor.assumeIsolated(heard) }
+  }
+
+  deinit { NotificationCenter.default.removeObserver(token) }
 }

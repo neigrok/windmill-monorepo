@@ -1,13 +1,16 @@
 import SwiftUI
 import RoadmapDomain
 
-// The room's foot (Roadmap · iOS 01.11, 02.2, 03.4, 03.6b, 03.9, 05.7, 05.10): the one band, a receipt with its Undo or a
-// limit that refused a gesture, over the control the screen keeps there. Every screen of the room stands on the same
-// band, the step form too, whose foot is away while one of its fields has the keyboard.
+// The room's foot (Roadmap · iOS 01.11, 02.2, 03.4, 03.6b, 03.9, 05.7, 05.10, 09.4): the one band, a receipt with its Undo
+// or a limit that refused a gesture, over the control the screen keeps there. Every screen of the room stands on the same
+// band, the step form too, whose foot is away while one of its fields has the keyboard. Every screen of a reader's cover
+// stands on Fork.
 struct RoadmapFoot<Control: View>: ViewModifier {
   let roadmap: RoadmapModel
   let away: Bool
   let control: Control
+  // The cover the screen stands on, for a reader; none in the person's own room.
+  @Environment(RoadmapCover.self) private var cover: RoadmapCover?
 
   func body(content: Content) -> some View {
     content.reachBand {
@@ -19,6 +22,7 @@ struct RoadmapFoot<Control: View>: ViewModifier {
             .accessibilityIdentifier("roadmap-band")
         }
         if !away { control }
+        if !away, let cover { ForkFoot(cover: cover) }
       }.roomMotion(roadmap.band)
     }
   }
@@ -65,6 +69,8 @@ extension RoadmapModel.Band.Says {
       return String(localized: "\(RoadmapModel.Row.name(of: step)) saved", comment: "The band after a step's changes are saved: the step's name")
     case .deletedRoadmap(let title):
       return String(localized: "\(ListedRoadmap.name(of: title)) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title")
+    case .forked(let steps):
+      return String(localized: "Forked · \(steps) steps planted", locale: .copy, comment: "The band once a fork's copy opens: how many steps it planted")
     case .checked(_, let label):
       return String(localized: "\(label) checked", comment: "The band after a subtask is checked: the subtask's words")
     case .deletedFromWorkspace(let name):

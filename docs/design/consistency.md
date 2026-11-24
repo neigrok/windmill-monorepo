@@ -813,6 +813,23 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the 5,000-step handbook opens with every disc at the layout's 6 pt floor and no connector wide enough to draw, 650
   times farther out than the working zoom, so until the Graph's own Find is built a person reaches a step there by
   pinching, from *Next*, or by *Open in Graph* on the step's Board row or page.
+- **Roadmap · iOS · what a roadmap's link, its cover and Fork leave for the boards.** A roadmap's link opening the room,
+  a shared roadmap's cover and Fork are built in Debug builds from 09.4, 09.5a, 09.5b and 09.7 to 09.11. To draw or rule:
+  the cover's Graph seats *Learn to sail* where the web's layout does, as the room's Graph does, not top-down as 09.4
+  draws it; Find on the cover's Graph is dimmed, as on the room's, where 09.4 draws it at rest; 09.4 draws no bar in the
+  band slot, and the cover has no *Next*, but a step selected on its Graph stands there as the room's bar, which opens
+  the step's page, and no board draws it; *Forking…*'s spinner wears the accent, where 09.7 draws it grey; 09.9a's sheet
+  is the shell's own sign-in at its own height, with *Close* and *Sign in* in its bar and *Sign in to fork this
+  roadmap.* as its title over the shell's doors, where the board draws a full sheet titled *Sign In* with a close
+  symbol and the sentence centred in body type; *Sign In* on 09.10b opens the same sheet saying *Sign in to open this
+  roadmap.*, which no board words; 09.10a's headline stands on one line where the board breaks it in two; 09.8 draws
+  Coach's composer under the band, which the room has not built, so the copy's Board has the + alone; a cover's Board
+  with no step says *No steps yet* with no button, and no board draws it; a cover whose copy the phone cannot read says
+  the room's *Couldn’t load this roadmap* with *Try Again* (01.5c), which no board of section 09 draws; a subtree's
+  cover has no Fork, as the section's NOTE and the web have it, and no board draws that cover; a fork the server refuses
+  or that fails says *Couldn’t fork this roadmap. Try again.* in the band slot, which no board words; and a step that owns a subtree stands
+  on a cover as the domain reads it with that subtree unread, so it is never Done there, where the web's reader takes
+  what the server's `subtrees` says ([Roadmap on iOS](../foundation/roadmap-ios.md) §13).
 - **Roadmap · iOS · what a pinch of a crowd shows while it moves.** On an iPhone 13 mini a pinch with the whole
   5,000-step handbook in view is given five sixths of its frames
   ([Roadmap on iOS](../foundation/roadmap-ios.md) §13). The room holds three ways to keep them (`GraphPinch`), each
