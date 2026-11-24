@@ -824,8 +824,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   symbol and the sentence centred in body type; *Sign In* on 09.10b opens the same sheet saying *Sign in to open this
   roadmap.*, which no board words; 09.10a's headline stands on one line where the board breaks it in two; 09.8 draws
   Coach's composer under the band, which the room has not built, so the copy's Board has the + alone; a cover's Board
-  with no step says *No steps yet* with no button, and no board draws it; a fork the server refuses or that fails says
-  *Couldn’t fork this roadmap. Try again.* in the band slot, which no board words; and a step that owns a subtree stands
+  with no step says *No steps yet* with no button, and no board draws it; a cover whose copy the phone cannot read says
+  the room's *Couldn’t load this roadmap* with *Try Again* (01.5c), which no board of section 09 draws; a subtree's
+  cover has no Fork, as the section's NOTE and the web have it, and no board draws that cover; a fork the server refuses
+  or that fails says *Couldn’t fork this roadmap. Try again.* in the band slot, which no board words; and a step that owns a subtree stands
   on a cover as the domain reads it with that subtree unread, so it is never Done there, where the web's reader takes
   what the server's `subtrees` says ([Roadmap on iOS](../foundation/roadmap-ios.md) §13).
 - **Roadmap · iOS · what a pinch of a crowd shows while it moves.** On an iPhone 13 mini a pinch with the whole

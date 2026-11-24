@@ -42,7 +42,7 @@ struct RoadmapRoom: View {
         RoadmapStepForm(roadmap: roadmap, draft: draft)
       }
       .sheet(isPresented: Binding(get: { roadmap.kindsDoor == .menu }, set: { if !$0 { roadmap.closeKinds() } })) { RoadmapKinds(roadmap: roadmap) }
-      .fullScreenCover(item: Binding(get: { roadmap.sharedCover }, set: { if $0 == nil { roadmap.sharedCover?.close() } })) { cover in
+      .fullScreenCover(item: Binding(get: { roadmap.links?.cover }, set: { if $0 == nil { roadmap.links?.cover?.close(.closed) } })) { cover in
         RoadmapCoverScreen(cover: cover, app: app)
       }
       .sensoryFeedback(trigger: roadmap.band) { _, band in

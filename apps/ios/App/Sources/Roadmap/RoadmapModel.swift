@@ -190,10 +190,12 @@ final class RoadmapModel {
     case unread, empty, open(OpenRoadmap), failed
   }
 
-  // Whom the room shows a roadmap to: its owner, whose own roadmaps it reads and writes, or a reader of one someone else
-  // shared, on a cover (`RoadmapCover`), which reads it into the room and is offered no act on it.
+  // Whom the room shows roadmaps to, given as it is made: their owner, whose own list it reads and who writes, with what a
+  // link raises over the room (`RoadmapLinks`, none where the room follows no link); or a reader of one roadmap someone
+  // else shared, which a cover reads into the room (`SharedRead`) and where every act refuses.
   enum Role {
-    case owner, reader
+    case owner(RoadmapLinks?)
+    case reader(SharedRead)
   }
 
   // A limit the room refuses a gesture at, said where the gesture is made. Any other refusal shows nothing.
@@ -437,36 +439,25 @@ final class RoadmapModel {
   @ObservationIgnored var activities: [String?: ActivityRead] = [:]
   // The phone's midnights while the room stands, which whatever reads `moment` is drawn again at.
   private(set) var midnights = 0
-  // The observer that counts them.
-  @ObservationIgnored var dayChanges: (any NSObjectProtocol)?
+  // The observer that counts them, which ends with the room, a cover's when the cover goes.
+  @ObservationIgnored var dayChanges: NotificationWatch?
   // Every view the room asked the engine for, kept so each stays live.
   @ObservationIgnored var views: [ViewKey: RecordsView] = [:]
   // The observation now live; one begun later ends the one before it.
   @ObservationIgnored var watch = 0
   @ObservationIgnored var reportedFailures: Set<String> = []
   @ObservationIgnored var bandTime: Task<Void, Never>?
-  // What a cover over the room reads a shared roadmap through; none where the room raises no cover.
-  let sources: RoadmapCover.Sources?
-  // The cover a shared roadmap's link raised over the room, while it stands.
-  var sharedCover: RoadmapCover?
-  // A link the app was handed, which the room follows once it has read the phone's copy.
-  @ObservationIgnored var linked: ClaimedLink?
-  // The copy a fork made, which the band names once it has arrived and opened.
-  @ObservationIgnored var forkArriving: String?
-  // On a cover, the cover that reads the shared roadmap into this room; none in the person's own room.
-  @ObservationIgnored weak var cover: RoadmapCover?
+  let role: Role
 
   init(records: @escaping Records, runner: ActionRunner, phone: UserDefaults, telemetry: any Telemetry = NoopTelemetry(),
        wait: @escaping Wait = { try await Task.sleep(for: $0) }, graph: RoadmapGraph? = nil, boardFrames: BoardFrames = BoardFrames(),
-       sources: RoadmapCover.Sources? = nil) {
+       role: Role = .owner(nil)) {
     self.records = records; self.runner = runner; self.phone = phone; self.telemetry = telemetry; self.wait = wait
-    self.sources = sources
+    self.role = role
     self.graph = graph ?? RoadmapGraph(telemetry: telemetry)
     self.boardFrames = boardFrames
     reading = BoardReading(telemetry: telemetry)
-    dayChanges = NotificationCenter.default.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: .main) { [weak self] _ in
-      MainActor.assumeIsolated { self?.midnights += 1 }
-    }
+    dayChanges = NotificationWatch(.NSCalendarDayChanged) { [weak self] in self?.midnights += 1 }
   }
 
   // The engine's now in the phone's zone, by which Activity and a step's History place each row's day; the phone's own
@@ -511,7 +502,17 @@ final class RoadmapModel {
     telemetry.event("roadmap_first_read", properties: ["step": "ended", "outcome": outcome])
   }
 
-  var role: Role { cover == nil ? .owner : .reader }
+  // The room is its owner's, who writes; a reader's writes nothing.
+  var owns: Bool {
+    guard case .owner = role else { return false }
+    return true
+  }
+
+  // What a link raises over the owner's room; none on a reader's.
+  var links: RoadmapLinks? {
+    guard case .owner(let links) = role else { return nil }
+    return links
+  }
 
   // The roadmap the room has open, where it has one.
   var shown: OpenRoadmap? {
@@ -543,7 +544,7 @@ final class RoadmapModel {
     let current = watch
     do { try read() }
     catch { fail(error) }
-    followLink()
+    links?.followPending(in: self)
     withObservationTracking {
       for view in views.values { _ = view.state }
     } onChange: { [weak self] in
@@ -556,7 +557,7 @@ final class RoadmapModel {
 
   // Every listed roadmap is read with its tree scope and their overlay of it; while a view has yet to load, what is shown stays.
   func read() throws {
-    if let cover { return try cover.read(into: self) }
+    if case .reader(let shared) = role { return try shared.read(into: self) }
     guard let list = try snapshot(RoadmapEntry.scope, RoadmapEntry.type) else { return }
     var trees: [RoadmapTree] = []
     var overlays: [ID<RoadmapEntry>: [Record]] = [:]
@@ -594,11 +595,7 @@ final class RoadmapModel {
     }
     if !listed.id.utf8.elementsEqual(last.utf8) { phone.set(listed.id, forKey: Self.lastOpen) }
     present(open, landing: (phone.dictionary(forKey: Self.lastLens)?[listed.id] as? String).flatMap { Lens(rawValue: $0) } ?? .board)
-    if let copy = forkArriving, listed.id.utf8.elementsEqual(copy.utf8) {
-      forkArriving = nil
-      sharedCover?.close()
-      show(Band(forked: open.board.overall.total))
-    }
+    if links?.arrived(listed.id) == true { show(Band(forked: open.board.overall.total)) }
   }
 
   // A roadmap read to be shown. Another opens with its Board at rest, Done folded unless every step is done, asking nothing
@@ -628,7 +625,7 @@ final class RoadmapModel {
   func show(_ lens: Lens) {
     guard let shown, lens != self.lens else { return }
     self.lens = lens
-    if role == .owner {
+    if owns {
       phone.set((phone.dictionary(forKey: Self.lastLens) ?? [:]).merging([shown.listed.id: lens.rawValue]) { _, chosen in chosen }, forKey: Self.lastLens)
     }
     viewOpened(shown)
@@ -754,6 +751,7 @@ final class RoadmapModel {
   // What the door tells of a write, whoever asked for it: a refusal by its kind, said in the band where it is a limit,
   // and a commit that failed, which is reported and shows nothing, since the phone's copy stands as it was.
   func told<Result>(as name: String, _ run: () throws -> Written<Result>) -> Written<Result> {
+    guard owns else { return .unchanged }
     do {
       let written = try run()
       if case .refused(let refusal) = written {
@@ -903,6 +901,7 @@ final class RoadmapModel {
     if case .open(let shown) = phase, shown.listed.id.utf8.elementsEqual(roadmap.utf8) { return }
     guard roadmaps.contains(where: { $0.id.utf8.elementsEqual(roadmap.utf8) }) else { return }
     arriving = nil
+    links?.forkArriving = nil
     phone.set(roadmap, forKey: Self.lastOpen)
     telemetry.event("roadmap_sheet", properties: ["step": "switch", "door": place.rawValue])
     observe()
@@ -1085,4 +1084,15 @@ extension RoadmapRefusal {
     case .other: "other"
     }
   }
+}
+
+// One observation of the notification center on the main queue, which ends as its holder lets it go.
+nonisolated final class NotificationWatch {
+  let token: any NSObjectProtocol
+
+  init(_ name: Notification.Name, _ heard: @escaping @MainActor () -> Void) {
+    token = NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in MainActor.assumeIsolated(heard) }
+  }
+
+  deinit { NotificationCenter.default.removeObserver(token) }
 }

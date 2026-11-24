@@ -9,6 +9,8 @@ struct RoadmapFoot<Control: View>: ViewModifier {
   let roadmap: RoadmapModel
   let away: Bool
   let control: Control
+  // The cover the screen stands on, for a reader; none in the person's own room.
+  @Environment(RoadmapCover.self) private var cover: RoadmapCover?
 
   func body(content: Content) -> some View {
     content.reachBand {
@@ -20,7 +22,7 @@ struct RoadmapFoot<Control: View>: ViewModifier {
             .accessibilityIdentifier("roadmap-band")
         }
         if !away { control }
-        if !away, let cover = roadmap.cover { ForkFoot(cover: cover) }
+        if !away, let cover { ForkFoot(cover: cover) }
       }.roomMotion(roadmap.band)
     }
   }

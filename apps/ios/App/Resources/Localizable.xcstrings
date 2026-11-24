@@ -2273,7 +2273,27 @@
 
     },
     "Forked · %lld steps planted" : {
-      "comment" : "The band once a fork's copy opens: how many steps it planted"
+      "comment" : "The band once a fork's copy opens: how many steps it planted",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Forked · %lld step planted"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Forked · %lld steps planted"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "Forking needs a connection." : {
 

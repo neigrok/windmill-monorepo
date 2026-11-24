@@ -25,6 +25,8 @@ struct RoadmapStepPage: View {
 
   let roadmap: RoadmapModel
   let step: String
+  // The cover the page stands on, for a reader; none in the person's own room.
+  @Environment(RoadmapCover.self) private var cover: RoadmapCover?
   @State private var last = LastRead()
   @State private var nameHeight = 0.0
   @State private var nameScrolledAway = false
@@ -68,7 +70,7 @@ struct RoadmapStepPage: View {
                               comment: "How many steps: beside Opens on a step's page, and Activity's row of the steps added within one minute"),
                 identifier: "roadmap-step-opens")
       }
-      if roadmap.role == .owner {
+      if roadmap.owns {
         StepWorkspaceSections(roadmap: roadmap, step: row.id, workspace: page.workspace, addingSubtask: $addingSubtask, addingLink: $addingLink)
       }
       Section {
@@ -89,7 +91,7 @@ struct RoadmapStepPage: View {
       }
       .navigationTitle(row.name).navigationBarTitleDisplayMode(.inline).toolbar(removing: nameScrolledAway ? nil : .title)
       .toolbar {
-        if roadmap.role == .owner {
+        if roadmap.owns {
           ToolbarItem(placement: .topBarTrailing) {
             Button("Edit") { roadmap.edit(page) }.fontWeight(.semibold).accessibilityIdentifier("roadmap-step-edit")
           }
@@ -104,7 +106,7 @@ struct RoadmapStepPage: View {
             if row.card.column != .locked {
               Button("View Branch", systemImage: "arrow.triangle.branch") { roadmap.viewBranch(of: row.id) }
             }
-            if let cover = roadmap.cover {
+            if let cover {
               Button("Copy Link", systemImage: "link") { cover.copyLink(of: row.id) }
             }
             if row.deletes {

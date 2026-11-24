@@ -5,8 +5,9 @@ import RoadmapDomain
 // roadmap never enters the room's. Its bar holds the close button, the roadmap's name over *Shared roadmap* and its
 // progress, and the share's address; under it the room's switch row, Board and Graph in the reader's role, a step's page
 // and its History pushed on the cover's stack, and Fork at the foot. Before the roadmap is read the cover is its close
-// button alone, with a spinner; a roadmap the phone can neither read nor hold, and one it holds no copy of with no
-// connection, say so. A sign-in the cover opens stands over it, the shell's own sheet.
+// button alone, with a spinner; a roadmap the phone can neither read nor hold, one it holds no copy of with no connection,
+// and a copy it could not read, say so. A sign-in the cover asks for stands over it, the shell's own sheet. Every screen
+// on the cover's stack finds the cover in its environment.
 struct RoadmapCoverScreen: View {
   let cover: RoadmapCover
   let app: AppModel
@@ -20,10 +21,10 @@ struct RoadmapCoverScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
           ToolbarItem(placement: .topBarLeading) {
-            if #available(iOS 26.0, *) { Button(role: .close) { cover.close() }.accessibilityIdentifier("roadmap-cover-close") }
-            else { Button("Close", systemImage: "xmark") { cover.close() }.accessibilityIdentifier("roadmap-cover-close") }
+            if #available(iOS 26.0, *) { Button(role: .close) { cover.close(.closed) }.accessibilityIdentifier("roadmap-cover-close") }
+            else { Button("Close", systemImage: "xmark") { cover.close(.closed) }.accessibilityIdentifier("roadmap-cover-close") }
           }
-          if cover.state == .open, let link = cover.link {
+          if cover.state == .open, let link = cover.shared {
             ToolbarItem(placement: .topBarTrailing) {
               ShareLink(item: link) { Label("Share", systemImage: "square.and.arrow.up") }.accessibilityIdentifier("roadmap-cover-share")
             }
@@ -36,20 +37,18 @@ struct RoadmapCoverScreen: View {
           case .roadmaps, .activity, .note: EmptyView()
           }
         }
-    }
+    }.environment(cover)
     // The shell's sign-in, which Fork and Sign In open signed out, stands over the cover while the room's waits.
     .onAppear { app.roomSheetUp = true }
     .onDisappear { app.roomSheetUp = false }
     .sheet(isPresented: Binding(get: { app.sheet != nil }, set: { if !$0 { app.cancelAuthentication(); app.sheet = nil } }),
            onDismiss: { app.dismissSheet() }) { AccountSheet(model: app) }
-    .onChange(of: cover.forking == .signingIn) { _, asks in if asks { app.signIn(for: .fork) } }
-    .onChange(of: app.sheet == nil) { _, closed in if closed { cover.signInEnded() } }
-    // Another account, or none, reads another copy: the cover follows the roadmap in it; a roadmap it could not open is
-    // asked of the room again, which may find it the person's own (09.10b).
-    .onChange(of: cover.signedIn) { _, _ in
-      if cover.state == .unopenable, let owner = cover.owner { owner.follow(ClaimedLink(cover.address, form: .share)) }
-      else { cover.accountChanged() }
+    .onChange(of: cover.signingIn) { _, asked in
+      if let asked { app.signIn(for: asked == .fork ? .fork : .link) }
     }
+    .onChange(of: app.sheet == nil) { _, closed in if closed { cover.signInEnded() } }
+    // Another account, or none, reads another copy, which follows the roadmap anew.
+    .onChange(of: cover.signedIn) { _, _ in cover.accountChanged() }
     .onChange(of: cover.online) { _, online in if online && cover.state == .needsConnection { cover.retry() } }
   }
 
@@ -67,7 +66,7 @@ struct RoadmapCoverScreen: View {
         Text("It may be private, or it may have moved.").foregroundStyle(RoadmapPalette.inkDim)
       } actions: {
         if !cover.signedIn {
-          Button("Sign In") { app.signIn(for: .link) }.buttonStyle(RoomSecondaryStyle()).accessibilityIdentifier("roadmap-cover-sign-in")
+          Button("Sign In") { cover.signInToOpen() }.buttonStyle(RoomSecondaryStyle()).accessibilityIdentifier("roadmap-cover-sign-in")
         }
       }
     // 09.11: no connection and no copy on the phone.
@@ -76,6 +75,15 @@ struct RoadmapCoverScreen: View {
         Label { Text("Needs a connection").foregroundStyle(RoadmapPalette.ink) } icon: { Image(systemName: "wifi.slash").foregroundStyle(RoadmapPalette.inkDim) }
       } description: {
         Text("This roadmap isn’t on this iPhone.").foregroundStyle(RoadmapPalette.inkDim)
+      } actions: {
+        Button("Try Again") { cover.retry() }.buttonStyle(RoomSecondaryStyle()).accessibilityIdentifier("roadmap-cover-try-again")
+      }
+    // 01.5c in the reader's role: the phone's copy of the roadmap could not be read.
+    case .failed:
+      ContentUnavailableView {
+        Label { Text("Couldn’t load this roadmap").foregroundStyle(RoadmapPalette.ink) } icon: { Image(systemName: "map").foregroundStyle(RoadmapPalette.inkDim) }
+      } description: {
+        Text("The copy on this iPhone couldn’t be read.").foregroundStyle(RoadmapPalette.inkDim)
       } actions: {
         Button("Try Again") { cover.retry() }.buttonStyle(RoomSecondaryStyle()).accessibilityIdentifier("roadmap-cover-try-again")
       }
@@ -114,11 +122,15 @@ struct RoadmapCoverScreen: View {
 
 // Fork at a reader's foot (Roadmap · iOS 09.4, 09.7, 09.9b): one glass button the width of the foot, its label a spinner and
 // *Forking…* while the server copies the roadmap and the copy comes, when it takes no second tap. With no connection it is
-// dimmed and the band slot says why; a fork that came to nothing says so there too.
+// dimmed and the band slot says why; a fork that came to nothing says so there too. A subtree's cover has none.
 struct ForkFoot: View {
   let cover: RoadmapCover
 
   var body: some View {
+    if cover.forks { foot }
+  }
+
+  var foot: some View {
     VStack(spacing: 0) {
       if let line {
         RoomTransient(message: line, room: .roadmap, type: .subheadline).accessibilityIdentifier("roadmap-fork-band")

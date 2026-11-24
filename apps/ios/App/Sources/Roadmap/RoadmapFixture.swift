@@ -108,20 +108,23 @@ enum RoadmapFixture {
   // nothing, so the phone holds no copy.
   static func sources(_ runtime: AppRuntime, telemetry: any Telemetry) -> RoadmapCover.Sources {
     let engine = runtime.engine
-    let account = { () -> String? in try? runtime.account() }
-    let requests = SharingRequests(baseURL: runtime.settings.baseURL, credential: {
-      engine.status.authPaused ? nil : account().flatMap { runtime.tokens.token(for: $0) }
-    }, online: { engine.status.online }, telemetry: telemetry)
+    // The session the phone can send as now: the signed-in account's, none while it waits to be renewed.
+    let credential = { () -> SessionToken? in
+      guard !engine.status.authPaused, let account = try? runtime.account() else { return nil }
+      return runtime.tokens.token(for: account)
+    }
     #if DEBUG && targetEnvironment(simulator)
     if let board = runtime.settings.board, board.hasPrefix("roadmap-cover") {
       let offline = board == "roadmap-cover-offline" || board == "roadmap-cover-no-connection"
       return RoadmapCover.Sources(follow: { board == "roadmap-cover-no-connection" ? .subscribed : try engine.subscribe($0) },
                                   letGo: { try engine.unsubscribe($0) }, online: { !offline && engine.status.online },
-                                  signedIn: { engine.status.account != nil }, requests: BoardSharing(), site: runtime.settings.baseURL)
+                                  signedIn: { engine.status.account != nil }, credential: credential, requests: BoardSharing(),
+                                  site: runtime.settings.baseURL)
     }
     #endif
+    let requests = SharingRequests(baseURL: runtime.settings.baseURL, credential: credential, online: { engine.status.online }, telemetry: telemetry)
     return RoadmapCover.Sources(follow: { try engine.subscribe($0) }, letGo: { try engine.unsubscribe($0) }, online: { engine.status.online },
-                                signedIn: { engine.status.account != nil }, requests: requests, site: runtime.settings.baseURL)
+                                signedIn: { engine.status.account != nil }, credential: credential, requests: requests, site: runtime.settings.baseURL)
   }
 
   static func prepare(_ board: String, model: AppModel) async -> Bool {
@@ -253,7 +256,7 @@ enum RoadmapFixture {
   // roadmap's link.
   static func prepareCover(_ board: String, model: AppModel) async {
     do {
-      guard let server = model.runtime?.auth.fake, let sharing = model.roadmap?.sources?.requests as? BoardSharing else {
+      guard let server = model.runtime?.auth.fake, let sharing = model.roadmap?.links?.sources.requests as? BoardSharing else {
         throw AppFailure(message: "no model server")
       }
       let clock = SteppingBoardClock()

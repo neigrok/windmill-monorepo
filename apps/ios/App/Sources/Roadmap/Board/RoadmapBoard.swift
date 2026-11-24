@@ -14,7 +14,7 @@ struct RoadmapBoard: View {
   let open: RoadmapModel.OpenRoadmap
 
   var body: some View {
-    if open.board.overall.total == 0 && roadmap.role == .reader {
+    if open.board.overall.total == 0 && !roadmap.owns {
       ContentUnavailableView {
         Label { Text("No steps yet").foregroundStyle(RoadmapPalette.ink) } icon: { Image(systemName: "map").foregroundStyle(RoadmapPalette.inkDim) }
       }
@@ -49,7 +49,7 @@ struct RoadmapBoard: View {
     let kept = selection == nil ? Set<String>() : Set(shown.groups.flatMap { (group: RoadmapModel.Group) -> [String] in group.rows.map(\.id) })
     return ScrollViewReader { list in
       List(selection: chosen) {
-        if open.everyStepDone && shown.recovery == nil && shown.branch == nil && roadmap.role == .owner { Section {} header: { everyStepDone } }
+        if open.everyStepDone && shown.recovery == nil && shown.branch == nil && roadmap.owns { Section {} header: { everyStepDone } }
         if let branch = shown.branch {
           narrowed(String(localized: "Branch · \(branch.name)", comment: "The Board's first row while it stays in a step's branch: the step's name"),
                    identifier: "roadmap-branch") { roadmap.reading.clearBranch() }
@@ -121,7 +121,7 @@ struct RoadmapBoard: View {
           .foregroundStyle(RoadmapPalette.inkDim)
       }
     } actions: {
-      if found && roadmap.role == .owner {
+      if found && roadmap.owns {
         Button(String(localized: "New Step “\(words)”", comment: "Find matched no step: a new step named as the words looked for")) {
           roadmap.newStep(from: .find, named: words)
         }.buttonStyle(RoomSecondaryStyle()).accessibilityIdentifier("roadmap-find-new-step")
@@ -173,7 +173,7 @@ struct RoadmapBoard: View {
       .swipeActions(edge: .trailing, allowsFullSwipe: false) {
         if row.deletes && !selecting { Button("Delete", systemImage: "trash", role: .destructive) { roadmap.askDelete(row, by: .swipe) }.tint(nil) }
       }
-      .contextMenu { if !selecting && roadmap.role == .owner { menu(row) } }
+      .contextMenu { if !selecting && roadmap.owns { menu(row) } }
       .modifier(DeleteQuestion(roadmap: roadmap, step: row.id, by: [.swipe, .menu]))
   }
 
@@ -220,8 +220,8 @@ struct BoardTool: View {
     Menu {
       // An inline picker in a menu drops its label on iOS 26.5, so the order is a section of three toggles under Sort.
       Section(String(localized: "Sort", comment: "The Board's Sort and filter menu: the order of Up next and Locked")) {
-        // A reader's menu has no Select Steps, so its first item tells the opening.
-        order(.roadmap, "Roadmap Order").onAppear { if roadmap.role == .reader { told() } }
+        // The menu's items are made as it opens, so its first one tells the opening.
+        order(.roadmap, "Roadmap Order").onAppear { roadmap.telemetry.event("roadmap_board_menu", properties: ["menu": "sortFilter"]) }
         order(.newest, "Newest First")
         order(.oldest, "Oldest First")
       }
@@ -234,17 +234,12 @@ struct BoardTool: View {
           }
         }
       }
-      // The menu's items are made as it opens, so its last one tells the opening.
-      if roadmap.role == .owner {
-        Button("Select Steps", systemImage: "checkmark.circle") { roadmap.startSelecting(nil, from: .tool) }.onAppear { told() }
+      if roadmap.owns {
+        Button("Select Steps", systemImage: "checkmark.circle") { roadmap.startSelecting(nil, from: .tool) }
       }
     } label: {
       Label("Sort and filter", systemImage: reading.narrows ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
     }.menuOrder(.fixed).modifier(GlassCircle()).accessibilityIdentifier("roadmap-board-tool")
-  }
-
-  func told() {
-    roadmap.telemetry.event("roadmap_board_menu", properties: ["menu": "sortFilter"])
   }
 
   // One order, checked while it stands.

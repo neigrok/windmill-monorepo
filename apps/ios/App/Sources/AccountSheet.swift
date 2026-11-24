@@ -101,6 +101,7 @@ struct AccountSheet: View {
       VStack(alignment: .leading, spacing: 16) {
         switch model.sheet {
         case .keep: keep
+        case .roomSignIn: if let reason = model.signInFor { signIn(for: reason) }
         case .address, .appleAddress: address
         case .code: code
         case .adoption, .discardAdoption: if model.appleLinkedReceipt { appleAdded } else { code }
@@ -143,7 +144,7 @@ struct AccountSheet: View {
   var sheetTitle: Text {
     switch model.sheet {
     case .you: Text("You")
-    case .keep: model.signInFor == nil ? Text(verbatim: "") : Text("Sign in")
+    case .keep: Text(verbatim: "")
     case .appleQuestion, .appleAdded, .appleNoAccount, .appleExpired: Text("Apple")
     default: Text("Sign in")
     }
@@ -166,6 +167,8 @@ struct AccountSheet: View {
         Button("Back", systemImage: "chevron.left", action: goBack)
       } else if model.sheet == .keep {
         Button("Close") { model.cancelAuthentication(); model.closeKeep() }
+      } else if model.sheet == .roomSignIn {
+        Button("Close") { model.closeRoomSignIn() }
       } else if compact {
         Button("Close") { model.cancelAuthentication(); model.closeAppleStep() }
       }
@@ -177,7 +180,7 @@ struct AccountSheet: View {
     model.cancelAuthentication(); model.choose("back", screen: model.sheet?.telemetryName ?? "keep"); model.error = nil
     if model.sheet == .code { model.sheet = model.appleTicket == nil ? .address : .appleAddress }
     else if model.sheet == .appleAddress { model.sheet = model.account == nil ? .appleQuestion : model.appleOrigin }
-    else { model.sheet = .keep }
+    else { model.sheet = model.signInFor == nil ? .keep : .roomSignIn }
   }
 
   func closeSignIn() {
@@ -245,12 +248,7 @@ struct AccountSheet: View {
 
   func errorText(_ error: String) -> some View { Text(error).font(ShellType.meta).foregroundStyle(brand).accessibilityIdentifier("auth-error") }
 
-  // From a room the sheet keeps what the phone holds; from Where to start? it brings the account back (02b). Opened for a
-  // room's own verb it says that verb (Roadmap · iOS 09.9a, 09.10b).
-  @ViewBuilder var keep: some View {
-    if let reason = model.signInFor { signIn(for: reason) } else { keepWork }
-  }
-
+  // The sign-in a room opens for one of its own verbs says that verb (Roadmap · iOS 09.9a, 09.10b).
   func signIn(for reason: AppModel.RoomSignIn) -> some View {
     VStack(alignment: .leading, spacing: 14) {
       Text(reason == .fork ? "Sign in to fork this roadmap." : "Sign in to open this roadmap.").font(ShellType.title)
@@ -262,7 +260,8 @@ struct AccountSheet: View {
     }
   }
 
-  var keepWork: some View {
+  // From a room the sheet keeps what the phone holds; from Where to start? it brings the account back (02b).
+  var keep: some View {
     let returning = model.welcome, journal = model.selectedRoom == .journal
     return VStack(alignment: .leading, spacing: 14) {
       head(returning ? "person.crop.circle.badge.checkmark" : "icloud.and.arrow.up")

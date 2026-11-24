@@ -16,30 +16,32 @@ protocol RoadmapSharing {
   func fork(_ tree: String, request: String) async throws(SharingFailure) -> String
 }
 
-// Why a sharing request came to nothing: no connection; no account, which a fork needs; the server's refusal, a roadmap
-// the person may not read or a subtree's id; or a failure, an answer the room cannot read among them.
+// Why a sharing request came to nothing: no connection; no session the phone can send as, or one the server no longer
+// takes (401), which a fork needs; the server's refusal, a roadmap the person may not read or a subtree's id; the server
+// busy for a moment (503), to be tried again; the request given up by whoever asked, as a cover that closed; or a failure,
+// an answer the room cannot read among them.
 enum SharingFailure: Error, Equatable {
-  case offline, signedOut, refused, failed
+  case offline, signedOut, refused, busy, cancelled, failed
 }
 
 // The requests over HTTP to the site the app syncs with. Each failure is told as an `api_request_failed` under its
-// operation, `roadmap_progress` or `roadmap_fork`, and reported where nobody expects it: neither no connection nor a status
-// the server answers on purpose.
+// operation, `roadmap_progress` or `roadmap_fork`, and reported where nobody expects it: neither no connection, a status
+// the server answers on purpose, nor the server busy. A request given up is no failure and tells nothing.
 final class SharingRequests: RoadmapSharing {
   let baseURL: URL?
   // The signed-in account's token; none signed out, or while the session waits to be renewed.
-  let credential: () throws -> SessionToken?
+  let credential: () -> SessionToken?
   let online: () -> Bool
   let telemetry: any Telemetry
   let session: URLSession
 
-  init(baseURL: URL?, credential: @escaping () throws -> SessionToken?, online: @escaping () -> Bool, telemetry: any Telemetry,
+  init(baseURL: URL?, credential: @escaping () -> SessionToken?, online: @escaping () -> Bool, telemetry: any Telemetry,
        session: URLSession = NativeAuth.nativeSession()) {
     self.baseURL = baseURL; self.credential = credential; self.online = online; self.telemetry = telemetry; self.session = session
   }
 
   func progress(of tree: String) async throws(SharingFailure) -> [RoadmapTree.Mark] {
-    let answer = try await request("v1/trees/\(tree)/progress", method: "GET", operation: "roadmap_progress", token: try? credential())
+    let answer = try await request("v1/trees/\(tree)/progress", method: "GET", operation: "roadmap_progress", token: credential())
     guard let marks = try? RoadmapTree.Mark.owners(answer) else {
       telemetry.failure("roadmap_progress", kind: "decode", properties: ["method": "GET", "route": "/v1/trees"])
       throw .failed
@@ -49,7 +51,7 @@ final class SharingRequests: RoadmapSharing {
   }
 
   func fork(_ tree: String, request id: String) async throws(SharingFailure) -> String {
-    guard let token = try? credential() else { throw .signedOut }
+    guard let token = credential() else { throw .signedOut }
     let answer = try await request("v1/trees/\(tree)/fork", method: "POST", operation: "roadmap_fork", token: token, body: ["requestId": id])
     guard case .string(let copy)? = (try? JSON(parsing: Array(answer)))?["data"]?["id"] else {
       telemetry.failure("roadmap_fork", kind: "decode", properties: ["method": "POST", "route": "/v1/trees"])
@@ -84,6 +86,7 @@ final class SharingRequests: RoadmapSharing {
       }
       return data
     } catch {
+      if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled { throw .cancelled }
       if let failure = error as? URLError {
         if [.notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .networkConnectionLost].contains(failure.code) { kind = "offline" }
         if failure.code == .timedOut { kind = "timeout" }
@@ -93,9 +96,10 @@ final class SharingRequests: RoadmapSharing {
       var properties = ["method": method, "route": "/v1/trees", "operation": operation, "failure_kind": kind]
       if let status { properties["status"] = String(status) }
       telemetry.event("api_request_failed", properties: properties, durationMs: ms)
-      if kind != "offline", !ExpectedStatuses.contains(status) { telemetry.failure(operation, kind: kind, properties: properties, durationMs: ms) }
+      if kind != "offline", status != 503, !ExpectedStatuses.contains(status) { telemetry.failure(operation, kind: kind, properties: properties, durationMs: ms) }
       if kind == "offline" || kind == "timeout" { throw .offline }
       if status == 401 { throw .signedOut }
+      if status == 503 { throw .busy }
       throw ExpectedStatuses.contains(status) ? .refused : .failed
     }
   }
