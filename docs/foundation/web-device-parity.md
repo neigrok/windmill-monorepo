@@ -156,6 +156,16 @@ A phone always has its store. A browser can refuse one, lose one, or fill one.
   tell. The backend remembers each session's replica, and a session that arrives with a new one is
   told so. The browser then starts as a new device, and the person is told once that what this
   browser had not sent is gone. It is never said that it can be recovered.
+  - **What the backend keeps.** Every push answered `200` records its replica as the replica of the
+    session it was served through, the cookie's when the request sends one, else the bearer's.
+    `GET /v1/me` answers it as `syncReplica`, `null` until that session's first accepted push
+    ([backend/AUTH.md](../../backend/AUTH.md)). A new sign-in is a new session, so it starts at `null`.
+  - **What is no clear.** A re-identify gives the active replica a new id within one session (a
+    push answered `replica-forked`, `replica-foreign` or `gap`, and an epoch change; engine §7.11),
+    and `syncReplica` names the old id until the new one's first accepted push. So the browser
+    tells a clear only when `syncReplica` is none of the replica ids its own store has held, and says
+    nothing on `null`. A browser on a replica held in memory is a new device in every tab under one
+    cookie, and says nothing.
 - **Persistence.** The browser asks to keep its storage. Where it is denied, nothing more is shown.
 - One turn of Coach a browser, which Coach's spec rules, does not hold across tabs of a browser
   that keeps nothing.

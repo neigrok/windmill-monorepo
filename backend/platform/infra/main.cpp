@@ -166,13 +166,15 @@ struct SyncChanges : wm::sync::ChangeFeed {
 
 struct SyncEngine {
   SyncEngine(std::shared_ptr<wm::sync::SyncCatalog> catalog, std::shared_ptr<wm::PgPool> pool,
-             wm::Clock& clock, wm::FailureReporter& errors, std::size_t workerCount, std::size_t queueCeiling)
+             wm::Clock& clock, wm::FailureReporter& errors, std::shared_ptr<wm::SessionReplicas> sessionReplicas,
+             std::size_t workerCount, std::size_t queueCeiling)
       : catalog(std::move(catalog)), store(std::move(pool), limits.lockTimeoutMs),
         physicalClock(std::make_shared<wm::sync::PhysicalClock>(clock)),
         live(std::make_shared<wm::sync::SyncLive>(*this->catalog, store, limits)),
         changes{live}, admission(*this->catalog, store, changes, serverClock, errors, limits),
         service(std::make_shared<wm::sync::SyncService>(*this->catalog, store, admission, *physicalClock,
-                                                        std::make_shared<wm::FailureWindow>(errors, "sync.push.bind_unavailable"))),
+                                                        std::make_shared<wm::FailureWindow>(errors, "sync.push.bind_unavailable"),
+                                                        std::move(sessionReplicas))),
         workers(std::make_shared<wm::WorkerPool>("sync", workerCount, queueCeiling,
                                                  std::make_shared<wm::FailureWindow>(errors, "worker_pool.saturated"))) {}
 
@@ -651,7 +653,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 #else
   auto syncCatalog = productsCatalog;
 #endif
-  auto syncEngine = std::make_shared<SyncEngine>(syncCatalog, pool, *systemClock, *sentry, kSyncWorkers, kSyncQueueCeiling);
+  auto syncEngine = std::make_shared<SyncEngine>(syncCatalog, pool, *systemClock, *sentry, authRepo, kSyncWorkers, kSyncQueueCeiling);
   lifetime.watch(syncEngine, systemClock, sentry);
 
   // Every server write for a person goes through roadmap's door where the engine serves roadmap's scopes (Roadmap on the

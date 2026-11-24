@@ -10,6 +10,7 @@ is the contract the frontend consumes and the operator's wiring reference.
 domain/Auth.{h,cpp}                 email parsing, verdicts, lifetimes — pure, no I/O
 application/AuthService.{h,cpp}     the lifecycle pipeline (load → domain → persist → email)
 ports/AuthRepository.h              users + magic_links + sessions persistence
+ports/SessionReplicas.h             each session's latest pushed replica, which the sync push records
 ports/EmailSender.h                 sendMagicLink / sendForkLink / sendSignInCode
 ports/TokenGenerator.h              mint() / mintCode() / digestOf()
 adapters/postgres/PgAuthRepository  the SQL
@@ -93,10 +94,17 @@ single use, 5 attempts per row, and a per-IP bucket on `/v1/auth/verify-code` (1
 ### `GET /v1/me`
 
 `200 { "user": {…}, "signInMethods": [{ "kind": "email", "email": "sam@example.com" },
-{ "kind": "apple", "email": "<email_at_link>", "relay": true }] }` when the session resolves
-(the window rolls forward on each call), else `401 {}`. Email is first; bound providers follow.
-Apple is absent when unbound. Its address and relay flag describe the door at attachment, not the
-account's email or the latest sign-in token.
+{ "kind": "apple", "email": "<email_at_link>", "relay": true }], "syncReplica": "rp_…" }` when the
+session resolves (the window rolls forward on each call), else `401 {}`. Email is first; bound
+providers follow. Apple is absent when unbound. Its address and relay flag describe the door at
+attachment, not the account's email or the latest sign-in token.
+
+`syncReplica` is the replica this session's latest accepted sync push was for, `null` until its
+first: every push `/v1/sync/push` answers `200` records its `replica` on `sessions.sync_replica`
+for the session it was served through, the cookie's when the request sends one, else the bearer's,
+which is also the session `/v1/me` reads. A browser compares it with the replicas its own store has
+held, so it can tell that its store was cleared ([web-device-parity.md](../docs/foundation/web-device-parity.md)
+§7). It goes with the session's row. The phones ignore it.
 
 ### `POST /v1/auth/logout`
 

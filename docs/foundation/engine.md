@@ -1214,6 +1214,9 @@ The scope mutex is held until step R's transaction, or a fault path's (§6.6), e
    its result. `lastN` still reports durable `last_n`, even beyond the returned batch.
 6. **Prune.** In a request answered `200`, delete this replica's `sync_results` rows with
    `n ≤ min(ackThrough, last_n)`.
+7. **The session's replica.** In a request answered `200`, the session the push was served through
+   records its `replica`, which `GET /v1/me` answers ([the web as a device](web-device-parity.md)
+   §7, Cleared). A failure to record it is reported and changes no answer.
 
 `digest(intent) = sha256(jcs(intent))`. A client never resends an `n` whose result it recorded, so
 a missing row for `n ≤ last_n` means the store was forked or restored.
