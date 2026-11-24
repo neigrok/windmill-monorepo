@@ -12,7 +12,7 @@ result holds a sentence: a surface words the values a case names. A rule changes
 | `read.json` | A text read for a new roadmap | `{text, kinds}`, `kinds` the legend the plan starts from | the plan |
 | `read-into.json` | A text read into a roadmap | `{text, kinds}`, `kinds` the roadmap's own | the plan, with no kind of the roadmap renamed |
 | `create-roadmap.json` | A text and a typed name to a creation | `{text, kinds, name}` | `{CreateRoadmap: {title, steps: {steps, links}, kinds}, Complete: [key]}`, or `null` |
-| `import-steps.json` | A text into a roadmap under a step | `{text, kinds, under, held}` | `{ImportSteps: {imported: {steps, links}, under}, CreateKind: [{hue, label, description}]}`, or `null` |
+| `import-steps.json` | A text into a roadmap under a step | `{text, kinds, under, held}` | `{ImportSteps: {imported: {steps, links}, under, done?}, CreateKind: [{hue, label, description}]}`, or `null` |
 | `write.json` | A roadmap written, and the text read back | `{title, guide?, kinds, nodes, done, readOver}` | `{text, readBack}` |
 
 A kind is `{id, hue, label, description}`. A hue is one of `terracotta`, `olive`, `gold`, `brick`, `sky`, `plum`: the
@@ -167,9 +167,11 @@ file, and every node but the first of an unnamed plan. Where none lands the resu
 and no kind is made.
 
 `ImportSteps` is the action's input without its `tree`: each landing step as `{key, label, icon: "", color,
-description?, links?}`; in `imported.links`, each link between two landing steps; and `under`, the step given. The
-domain puts every imported step that follows no other under `under`, so the first node of a named plan, each first
-step of a marked file and each step that followed the unnamed first node all follow it. A done mark is not carried.
+description?, links?}`; in `imported.links`, each link between two landing steps; `under`, the step given; and `done`,
+the key of each landing step the plan brings done, in node order, where there is one. The domain puts every imported
+step that follows no other under `under`, so the first node of a named plan, each first step of a marked file and each
+step that followed the unnamed first node all follow it, and marks each step of `done` complete in the same act, so
+the steps arrive done as a roadmap planted from the plan has them, and one Undo takes back the steps and their marks.
 `held` is the id of every step the roadmap holds, deleted ones included. A key is the node's id, counted up (`-2`,
 `-3`, …) past the held ids and the keys given before it: the domain mints each step's own id, and a key that never
 equals a held id can stand in one list with them, as the web's gesture lists both. `CreateKind` is each kind the plan

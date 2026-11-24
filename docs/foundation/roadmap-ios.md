@@ -235,8 +235,10 @@ binds a heading to a kind the roadmap has or adds one, and renames none (boards 
 - The read-back shows the steps in the states they will land in, read by the domain over the
   roadmap as the paste would leave it. Nothing is written before Add.
 - Add runs, as one act with one Undo, the domain's `ImportSteps` under the roadmap's starting
-  step and `CreateKind` for each kind the plan adds. The starting step is the first, in authored
-  order, of the steps that follow nothing; a roadmap with none takes the steps at its root.
+  step, with the person's mark on each step the plan brings done (R-15), and `CreateKind` for each
+  kind the plan adds. The starting step is the first, in authored order, of the steps that follow
+  nothing; a roadmap with none takes the steps at its root. Undo takes the paste back whole, its
+  marks included.
 - It needs neither a connection nor an account. A roadmap too full for the steps refuses them
   where the gesture is made (§3).
 
@@ -433,3 +435,4 @@ makes it false.
 | R-12 | Whether sharing's requests move into synchronization | Decided when links and readers are built; until then the gallery, Fork and the owner's progress on a cover stay requests. (2026-11-21) |
 | R-13 | Quests on the iPhone | Not offered: New Roadmap starts a roadmap blank, from a copied plan or from a file. Quests return with a design of their own. (2026-11-23) |
 | R-14 | Which time Activity, History and the Board's Done order show | When the person did it: a step's birth and a mark's device time, the server's receipt only where the copy holds none, on the iPhone and on the web alike. (2026-11-23) |
+| R-15 | Whether steps pasted into a roadmap carry the plan's done marks | They do: a step the plan marks done (`- [x]`) arrives done, as when a new roadmap is planted from the same plan, so the read-back's count of steps already done is true, and Undo takes the paste back whole, marks included. On the web and the iPhone alike. (2026-11-24) |

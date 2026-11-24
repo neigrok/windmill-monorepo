@@ -62,7 +62,7 @@ function actOf(input) {
     case 'MoveStep': return new MoveStep(given.tree, given.step, given.below, given.siblings);
     case 'DeleteStep': return new DeleteStep(given.tree, given.step);
     case 'ChangePrerequisites': return new ChangePrerequisites(given.tree, given.step, { add: given.add, remove: given.remove });
-    case 'ImportSteps': return new ImportSteps(given.tree, given.imported, given.under ?? null);
+    case 'ImportSteps': return new ImportSteps(given.tree, given.imported, given.under ?? null, given.done ?? []);
     case 'CreateKind': return new CreateKind(given.tree, given.kind);
     case 'ChangeKind': return new ChangeKind(given.tree, given.kind, given.changes);
     case 'RecolourKind': return new RecolourKind(given.tree, given.kind, given.hue);
