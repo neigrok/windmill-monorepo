@@ -494,9 +494,19 @@ behind it; `-board roadmap-unreadable` opens the room over views it cannot make;
 and make it public, signs the phone in to an account of its own and opens the roadmap's link, and
 `-board roadmap-cover-signed-out` opens it signed out; `-board roadmap-cover-offline` opens it with no connection;
 `-board roadmap-cover-private` and `roadmap-cover-private-signed-out` open the link to it left private; and
-`-board roadmap-cover-no-connection` opens a link with no connection to a roadmap the phone holds no copy of. On these
-boards the board's own requests stand in for the backend's (`RoadmapFixture.BoardSharing`): the owner's progress is
-read from the owner's phone, each subtree counted as the owner's account reads it, and a fork is made by another phone of the reader's account, so the copy arrives by sync;
+`-board roadmap-cover-no-connection` opens a link with no connection to a roadmap the phone holds no copy of. Nested
+roadmaps (`RoadmapFixture.prepareNested`): `-board roadmap-nested` has another account make *Reefing course* public and
+puts its link on the pasteboard, and another phone of the person's account plant *Learn to sail* with three steps done,
+*Become a day skipper* as the boards draw it (`plantSkipper`), its *Learn to sail* opening *Learn to sail*, and *Spanish
+B1* and *Coastal navigation handbook* far smaller than the boards count them, a second apart so the list stands as 07.6
+draws it, and opens the room on *Become a day skipper* signed in; `-board roadmap-nested-offline` is the same with no
+connection for the board's requests; `-board roadmap-nested-signed-out` plants the person's roadmaps on the phone itself,
+never signed in; `-board roadmap-nested-done` has every step of *Learn to sail* done; `-board roadmap-nested-odd` is the
+boards' variation whose *Learn to sail* opens a roadmap that leads back, *Night passage* one with no steps and *Log 100
+miles* one no phone holds; and `-board roadmap-nested-subtree` the variation whose *Night passage* owns a subtree of five
+steps, one done. On the cover's and the nested boards the board's own requests stand in for the backend's
+(`RoadmapFixture.BoardSharing`): the owner's progress is read from the owner's phone, each subtree counted as the owner's
+account reads it, and a fork is made by another phone of the reader's account, so the copy arrives by sync;
 `-fork-held` leaves a fork unanswered. A simulator launch with
 `-graph-measures <path>` appends what the Graph measures of itself to that file, and with `-board-measures <path>` what
 the Board measures, one JSON line a measure; with
@@ -1100,7 +1110,7 @@ and Daylight. `DesignCapture.swift` holds the shared base: launch, capture, the 
 the opt-in skip. XCTest skips every capture unless the test runner sees `WM_DESIGN_CAPTURE=1`; Xcode forwards
 `TEST_RUNNER_`-prefixed variables to the runner without the prefix. Each area keeps its captures in its own file and
 class, a subclass of `DesignCapture`: `ShellCaptures`, `JournalCaptures`, `ChromeCaptures`, `CoachCaptures`,
-`NotesCaptures`, `RoutinesCaptures`, `WorkoutCaptures`, `LogCaptures`, `RecoveryCaptures` and `RoadmapCaptures`. The CI shards leave
+`NotesCaptures`, `RoutinesCaptures`, `WorkoutCaptures`, `LogCaptures`, `RecoveryCaptures`, `RoadmapCaptures` and `RoadmapNestedCaptures`. The CI shards leave
 the suite out and check that its guard remains.
 
 A capture's name is its screen, then `-375` on a 375 pt phone, `-ax3` at the largest text, and its appearance:

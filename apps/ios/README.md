@@ -165,7 +165,7 @@ app and `WindmillTests` without the UI tests. Three UI shards, balanced on measu
 | Shard | Classes |
 |---|---|
 | `integration-roadmap` | `GymIntegrationFlowTests`, `RoadmapFlowTests` |
-| `gym-journal` | `GymCoachFlowTests`, `GymAnonymousCoachFlowTests`, `GymWorkoutFlowTests`, `GymRecoveryFlowTests`, `JournalFlowTests`, `JournalIntegrationFlowTests`, `JournalEchoFlowTests` |
+| `gym-journal` | `GymCoachFlowTests`, `GymAnonymousCoachFlowTests`, `GymWorkoutFlowTests`, `GymRecoveryFlowTests`, `JournalFlowTests`, `JournalIntegrationFlowTests`, `JournalEchoFlowTests`, `RoadmapNestedFlowTests` |
 | `shell-offline-system` | `OfflineFlowTests`, `OnboardingFlowTests`, `ShellFlowTests`, `WorkoutActivityFlowTests`, `WorkoutOutsideFlowTests` |
 
 Each test job builds its own App, and the packages job checks that the UI class partition stays complete. The opt-in
