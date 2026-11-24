@@ -463,10 +463,12 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
   return {
     read,
     // Before the seat changes (`routes.sync.seatWillChange`), each workout the anon replica holds is saved for adoption, an
-    // open one with its sets recorded again, as the phones do; a bound replica holds none. Each workout is one act on the
-    // API's binding, so it lands whole before the seat changes or not at all, and one the domain refuses or that fails
-    // leaves the others to land; a seat that moved refuses every act after it, so the first such refusal ends the hook.
-    // Told once when it saved something, and once for each workout refused or failed; the seat changes on whichever.
+    // open one with its sets recorded again, as the phones do, and a copy an earlier sign-in saved of a workout deleted
+    // since is let go with it, so a workout deleted signed out never comes back; a bound replica holds none. Each workout is
+    // one act on the API's binding, so it lands whole before the seat changes or not at all, and one the domain refuses or
+    // that fails leaves the others to land; a seat that moved refuses every act after it, so the first such refusal ends
+    // the hook. Told once when it saved something, and once for each workout refused or failed; the seat changes on
+    // whichever.
     saveSignedOutWorkouts: async () => {
       // An open copy's set as its adoption saves it: one the start it was logged on took with it, which the adoption
       // superseded, is recorded again, and one the act still draws stands.
@@ -479,11 +481,13 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
       const saved = () => read((reader) => reader.device(SignedOutWorkout.key));
       const workouts = await boundary('workout-adopt', async () => read((reader) => {
         if (!reader.isAnonymous) return [];
-        return reader.repository(Session).all('drawn').map((workout) => {
-          const adoption = AdoptWorkout(workout.id, 'prepare');
-          const copy = adoption.load(reader).workout;
-          return [scopedAct(adoption), ...(copy?.session.isOpen ? copy.sets.map(recordedAgain) : [])];
-        });
+        const deleted = SignedOutWorkout.read(reader).filter((copy) => reader.repository(Session).find(copy.session.id, 'drawn') === null);
+        return [...deleted.map((copy) => [scopedAct(DiscardSignedOutWorkout(copy.session.id))]),
+          ...reader.repository(Session).all('drawn').map((workout) => {
+            const adoption = AdoptWorkout(workout.id, 'prepare');
+            const copy = adoption.load(reader).workout;
+            return [scopedAct(adoption), ...(copy?.session.isOpen ? copy.sets.map(recordedAgain) : [])];
+          })];
       })).catch(() => []);
       let savedAny = false;
       for (const parts of workouts) {

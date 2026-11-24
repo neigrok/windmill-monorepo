@@ -974,3 +974,19 @@ test('a copy that holds no set is not offered and is let go, and a copy\'s propo
     proposals: phone.drawn(WorkoutProposal).map((each) => [String(each.id.record), String(each.sessionId.record), each.summary]),
   }, { saved: ['keptK001'], proposals: [['wproposal1', 'heldP001', 'Add bench']] });
 });
+
+test('a workout deleted signed out after a cancelled sign-in saved it is let go at the next sign-in, so it never comes back', async (t) => {
+  const { browser, run, events, told, saved } = await signedOutBrowser(t);
+  const deleted = new Id('session1', Session), kept = new Id('session2', Session);
+  await run(StartSession({ id: deleted, startedAt: new Instant(DEFAULT_NOW - 60_000) }));
+  await run(AppendSet(benchSet('set00001', deleted, DEFAULT_NOW - 50_000)));
+  await run(FinishSession({ id: deleted, finishedAt: new Instant(DEFAULT_NOW - 40_000) }));
+  await run(StartSession({ id: kept, startedAt: new Instant(DEFAULT_NOW - 30_000) }));
+  await run(AppendSet(benchSet('set00002', kept, DEFAULT_NOW - 20_000)));
+  const api = createGymApi(browser.engine, told);
+  await api.saveSignedOutWorkouts();
+  await run(new Remove(deleted, GymRefusals));
+  await api.saveSignedOutWorkouts();
+  assert.deepEqual({ saved: saved(), events }, { saved: [['session2', true, ['set00002']]],
+    events: [{ operation: 'workout-adopt', outcome: 'saved-local' }, { operation: 'workout-adopt', outcome: 'saved-local' }] });
+});

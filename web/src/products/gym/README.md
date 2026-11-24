@@ -52,7 +52,8 @@ workout the anon replica holds for adoption (`AdoptWorkout` in `prepare`, kept u
 finished one becomes one import that supersedes its chain, an open one keeps a start that does not join, and an open one's
 sets the replacing start folded are recorded again with it (`AppendSet` as recorded). Each workout is one composed act on
 the API's binding, so it lands whole before the seat changes, or not at all when the seat moved first; one the domain
-refuses or that fails leaves the others to land, and a seat that moved ends the hook. A bound replica holds none. Every
+refuses or that fails leaves the others to land, and a seat that moved ends the hook. A copy an earlier sign-in saved of a
+workout deleted since goes with it, so a workout deleted signed out never comes back. A bound replica holds none. Every
 rack change is written as it is made, so no rack waits to be written first.
 The sign-in that follows (`routes.sync`): the saved workouts and the form drafts the account refused are gym's pending
 device work (`gymDeviceWork`; a pending draft's queued command is counted already), merged entry by entry into a dormant replica's own at a sign-in that joins it, the
