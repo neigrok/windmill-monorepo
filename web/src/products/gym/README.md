@@ -22,7 +22,16 @@ conversation stays.
 
 Every local gym read and write uses the domain kit through `gymRuntime.js`. Training entities and rules live in
 `domain/training.js`; `trainingActions.js` owns imports, corrections, set deletion and the four phone-only
-actions. The web remains a live mirror and does not call StartSession, AppendSet, FinishSession or DiscardSession.
+actions. The web remains a live mirror and does not call StartSession, FinishSession or DiscardSession; AppendSet runs
+only before the seat changes, below.
+Before the shell signs in or finishes a sign-out (`routes.sync.seatWillChange`), `saveSignedOutWorkouts` saves each
+workout the anon replica holds for adoption (`AdoptWorkout` in `prepare`, kept under the device row `rack:adoption`): a
+finished one becomes one import that supersedes its chain, an open one keeps a start that does not join, and an open one's
+sets the replacing start folded are recorded again with it (`AppendSet` as recorded). Each workout is one composed act on
+the API's binding, so it lands whole before the seat changes, or not at all when the seat moved first; one the domain
+refuses or that fails leaves the others to land, and a seat that moved ends the hook. A bound replica holds none. The web
+holds no rack, so nothing of one is written first. Nothing on the web draws a signed-out workout yet; its recovery after
+sign-in is the domain's (`domain/workoutRecovery.js`) and no screen's.
 Correction and backfill helpers parse fields and arrange draft rows into domain inputs.
 `trainingReads.js` owns prefill, last time, records, the log's new bests (`ProgressRecords`, read by no web screen yet) and chart windows, and
 `trainingHistory.js` composes history, reviews and screen documents.
@@ -71,7 +80,8 @@ and the admitted minting calls before it, as the server's gate does; `RecordShar
 The Coach room runs each turn in the browser (`coach/`). `CoachTurns` admits a send, opens its records, and runs the turn on
 the Coach engine (`platform/agent`) with `GymTurnHost` and `GymProfile`, each model round a call to the AI service
 (`platform/ai`); the host writes the text about once a second and the round's mark, runs each call through
-`RunAbility` on the turn's replica or a share through the Share door, and ends, withdraws or recovers the turn. One turn
+`RunAbility` or a share through the Share door, and ends, withdraws or recovers the turn, every write under the seat the
+turn opened on, the engine's binding, which a re-identify keeps and an account change ends. One turn
 runs at a time in a browser across its tabs, the mark refusing a second; a tab that opens on a turn in its last round
 recovers its answer; a send opens under a browser-wide lock until the engine holds the turn's own, so another tab's
 recovery never meets a fresh turn. Pictures stay in the browser's `picture:<id>` rows, their model copy uploaded once a
@@ -136,9 +146,10 @@ in the catalog.
 `outcome` only, and a `refused` one also `code`: `not-writable` when the replica moved under the room, `domain` when the
 gym's rules refused it, this device's or the server's. Operations cover routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
-delete/Undo and refusal. Outcomes are `saved-local`, `unchanged`, `failed`, `held`, `undone`,
+delete/Undo, refusal and the save of signed-out workouts for adoption (`workout-adopt`, told once when it saved something
+and once for each workout refused or failed, and never stopping the seat change). Outcomes are `saved-local`, `unchanged`, `failed`, `held`, `undone`,
 `closed`, `refused`. A local save does not claim server admission. Unexpected boundary failures
-report a static `gym-<operation>` to Sentry, without exceptions, IDs, names, bodies or field values;
+report a static `gym-<operation>` to Sentry with the error's stack frames, never its message, IDs, names, bodies or field values;
 a `GymRefusal` is expected and reports nothing, and a store failure is the engine's to report.
 Engine telemetry owns transport, storage, authentication and admission failures. Refusal content stays on the device; the room announces
 unresolved notices.
@@ -164,8 +175,8 @@ Screen tests run over a real browser engine for a signed-in account (`gymAccount
 `test/products/gym/harness.mjs`) and assert what the account still owes the server. `boot.browser.test.js` boots the
 account provider, the sign-in door and the shell over a browser copy an earlier visit seeded, in Chromium: the room draws
 with `/v1/me` held and reports how long it took, keeps the room for a paused session, keeps the pitch signed out, keeps
-the room and what is typed in it through a re-identify, and draws `Opening`, never another tab's account, under the account
-this tab's shell has settled. Shared training
+the room and what is typed in it through a re-identify and through a page restored from the back/forward cache, its scroll
+too, and draws `Opening`, never another tab's account, under the account this tab's shell has settled. Shared training
 reads run on web, Swift and Kotlin. The local stack checks domain reads over an actual disposable
 backend account and persisted browser-engine observations. Chromium acceptance has twelve checks: a phone replica's `gym.start`, set and `gym.finish`
 pushes arrive live; web routine edits, backfills, additive recovery, weigh-ins and unit changes converge; a held weigh-in delete can be

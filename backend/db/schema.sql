@@ -316,6 +316,9 @@ alter table sessions add column if not exists user_agent text not null default '
 alter table sessions add column if not exists last_seen_ms bigint not null default 0;
 alter table sessions add column if not exists ip text not null default '';
 create unique index if not exists sessions_id on sessions (id);
+-- The replica this session's latest accepted sync push was for, which GET /v1/me answers so a browser whose store was
+-- cleared is told (web-device-parity.md §7); null until its first. It goes with the session's row.
+alter table sessions add column if not exists sync_replica text;
 
 -- Immutable closure receipts survive account erasure until their own bounded expiry.
 create table if not exists account_closures (

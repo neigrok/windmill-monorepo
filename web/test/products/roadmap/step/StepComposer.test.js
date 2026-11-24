@@ -135,7 +135,7 @@ async function closed(page) {
   await page.waitForFunction(() => document.activeElement.textContent === 'Open composer');
 }
 
-test('Composer fixture transforms its complete entry and imports the real action module with a complete beacon stub', async () => {
+test('Composer fixture transforms its complete entry and the real action module, and loads the real buckets beside a complete beacon stub', async () => {
   await serving;
   const tree = new SkillTree({ id: 'sail', title: '', nodes: fixtureNodes(8) });
   assert.equal(tree.nodes.length, 8);
@@ -156,8 +156,8 @@ test('Composer fixture transforms its complete entry and imports the real action
   assert.equal(resolved.id, '\0composer-beacon');
   const stub = await server.ssrLoadModule('\0composer-beacon');
   assert.deepEqual(Object.keys(stub).sort(), Object.keys(actualBeacon).sort());
-  const acts = await server.ssrLoadModule('/src/products/roadmap/board/acts.js');
-  assert.deepEqual([0, 1, 2, 6, 21].map(acts.countBucket), ['0', '1', '2-5', '6-20', '21+']);
+  const buckets = await server.ssrLoadModule('/src/telemetry/countBucket.js');
+  assert.deepEqual([0, 1, 2, 6, 21].map(buckets.countBucket), ['0', '1', '2-5', '6-20', '21+']);
 });
 
 test('Chromium: the composer offers what the legend names, then the unnamed hues in palette order, wherever a worn hue was derived', async () => {

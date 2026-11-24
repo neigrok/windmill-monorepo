@@ -132,9 +132,12 @@ for (const vector of vectors) test(`Chromium: ${vector.name} keeps Gym usable ac
     assert.deepEqual(errors, []);
     assert.equal(reports.length, 2, 'each page load reports its schema fault once');
     for (const report of reports) {
-      assert.deepEqual(report.exception.values, [{ type: 'gym', value: 'gym-projection', stacktrace: { frames: [] } }]);
+      const [exception, ...more] = report.exception.values;
+      assert.deepEqual({ type: exception.type, value: exception.value, more: more.length,
+        decodes: exception.stacktrace.frames.some((frame) => frame.function === 'PlanSnapshot.decode') },
+      { type: 'gym', value: 'gym-projection', more: 0, decodes: true }, 'the report carries the decode\'s stack frames');
       assert.deepEqual(report.request, { url: '/gym' });
-      assert.doesNotMatch(JSON.stringify(report), /Private|session_private|routine_private|note_private|set_private|DecodeError|not an? (string|object|array)/);
+      assert.doesNotMatch(JSON.stringify(report), /Private|session_private|routine_private|note_private|set_private|not an? (string|object|array)/);
     }
   } finally { await context.close(); }
 });

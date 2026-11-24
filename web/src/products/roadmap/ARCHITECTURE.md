@@ -355,7 +355,9 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   - *Refusals and failures:* a write the domain refuses is said in the words of the room with the switch off where there are some (a roadmap at its
     cap, a link that would close a loop) and emits `roadmap_write_refused`; a mark it refuses marks nothing. One the
     store does not take reports `roadmap-replica-write`, its one report: the doors above it (the switcher's rename and
-    delete, the share dialog's visibility) hear a `BoundaryFailure` and say their own failure without reporting it.
+    delete, the share dialog's visibility) hear a `BoundaryFailure` and say their own failure without reporting it. One a
+    sign-in or a sign-out overtook, as one the back/forward cache held while another tab moved the seat, lands nothing
+    (the engine's `ReplicaChanged`) and `reportRoadmapFailure` reports it at no door.
   - Such a room draws no presence and hands its session neither to a reconnect nor to a claim of the device's trees: the
     engine reconnects, and its lineage rule takes what the device holds at sign-in.
 - **Export.** The row's Export writes the room's picture (below), here `ReplicaRoadmap.seed` and the owner's marks.
@@ -773,11 +775,14 @@ while every entry of the deletion is still held; it returns the person to the ro
 once its view stands. A page reached after the hold, or reloaded, offers no Undo. A build without the switch has no such
 page: its route table serves `#/app/roadmaps` as any roadmap address.
 
-**Export** builds one Markdown file through `buildRoadmapExport` in `exportArchive.js`, with a
-`<!-- windmill:roadmap -->` marker: its title is metadata, its guide a quote between `<!-- windmill:guide -->` lines that a
-replant reads past, and every step, including each root, is a list item with its own completion mark. Kind changes are inline comments, keeping the nested list uninterrupted in
-Markdown viewers. Indentation preserves primary prerequisites; additional prerequisites become `needs also`
-notes. Kind descriptions, link labels and the workspace are outside the paste format. The row's Export writes the room's
+**Export** builds one Markdown file through `buildRoadmapExport` in `exportArchive.js`, in the plan grammar's second
+edition (`<!-- windmill:roadmap 2 -->`, `packages/api-contract/roadmap/plan/README.md`): its title is metadata, its guide a
+quote between `<!-- windmill:guide -->` lines that a replant reads past, and every step, including each root, is a list
+item with its own completion mark, its description a quote and its links' addresses in angle brackets, so the file reads
+back to the same steps. Kind changes are inline comments, keeping the nested list uninterrupted in Markdown viewers.
+Indentation preserves primary prerequisites; additional prerequisites become a `needs also` line of the description, and
+a step no first step reaches, as on a loop, is written after the rest. Kind descriptions, link labels and the workspace
+are outside the paste format. The row's Export writes the room's
 picture of the open roadmap, a subtree included, with a step whose delete is held left out. Settings exports every roadmap
 of the person's list as a zip (`buildExportArchive`), a subtree being no row of it: from the server and this device's store
 (`readAccountRoadmaps`), or where the room reads the device's copy, from there (`readReplicaRoadmaps`, Reading the device's

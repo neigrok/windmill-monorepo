@@ -94,12 +94,12 @@ test('one roadmap exports its current marks as a paste-format Markdown file with
   const file = buildRoadmapExport(tree, { completed: new Set(['wind']) });
   assert.deepEqual(file, {
     name: 'learn-to-sail-12345678.md',
-    text: '# Learn to sail\n<!-- windmill:roadmap -->\n- Learn to sail <!-- windmill:kind terracotta -->\n  - [x] Read the wind\n    - Leave the dock\n      Check the lines.',
+    text: '# Learn to sail\n<!-- windmill:roadmap 2 -->\n- Learn to sail <!-- windmill:kind terracotta -->\n  - [x] Read the wind\n    - Leave the dock\n      > Check the lines.',
   });
   const replanted = parsePlan(file.text);
   assert.equal(serializePlan(replanted, replanted.kinds), file.text);
   assert.deepEqual(buildRoadmapExport({ id: 't_abcdefghijk', title: '🌱', nodes: [], kinds: [] }, null), {
-    name: 'roadmap-abcdefgh.md', text: '# 🌱\n<!-- windmill:roadmap -->',
+    name: 'roadmap-abcdefgh.md', text: '# 🌱\n<!-- windmill:roadmap 2 -->',
   });
 });
 
@@ -114,7 +114,7 @@ test('export and Settings zip preserve a distinct root label and its completion 
   const file = buildRoadmapExport(tree, { completed: new Set(['root', 'wind']) });
   assert.deepEqual(file, {
     name: 'learn-to-sail-12345678.md',
-    text: '# Learn to sail\n<!-- windmill:roadmap -->\n- [x] Choose a course <!-- windmill:kind terracotta -->\n  - [x] Read the wind\n    - Leave the dock',
+    text: '# Learn to sail\n<!-- windmill:roadmap 2 -->\n- [x] Choose a course <!-- windmill:kind terracotta -->\n  - [x] Read the wind\n    - Leave the dock',
   });
   const replanted = parsePlan(file.text);
   assert.deepEqual(replanted, {
@@ -134,7 +134,7 @@ test('export and Settings zip preserve a distinct root label and its completion 
       { mark: 'step', nodeId: 'leave-the-dock', liberties: [] },
     ],
     readout: { steps: 3, branches: 0, done: 2 },
-    imperfections: { notes: 0, clamps: 0, renames: 0 },
+    imperfections: { notes: 0, clamps: 0, renames: 0, clips: 0 },
   });
   assert.equal(serializePlan(replanted, replanted.kinds), file.text);
   const archive = bytes([file]);
@@ -153,20 +153,20 @@ test('an export carries the roadmap\'s guide as a quote under its title, and a r
   const guide = 'One step a week, on weekend sails with Maya.\n\n- Agents: ask before changing a completed step.\n<!-- /windmill:guide -->';
   const file = buildRoadmapExport({ id: 't_1234567890', title: 'Learn to sail', guide, kinds: [], nodes }, { completed: new Set(['root']) });
   assert.equal(file.text, [
-    '# Learn to sail', '<!-- windmill:roadmap -->',
+    '# Learn to sail', '<!-- windmill:roadmap 2 -->',
     '<!-- windmill:guide -->',
     '> One step a week, on weekend sails with Maya.', '>', '> - Agents: ask before changing a completed step.', '> <!-- /windmill:guide -->',
     '<!-- /windmill:guide -->',
     '- [x] Choose a course <!-- windmill:kind terracotta -->', '  - Read the wind',
   ].join('\n'));
   const withoutGuide = buildRoadmapExport({ id: 't_1234567890', title: 'Learn to sail', guide: '  \n', kinds: [], nodes }, { completed: new Set(['root']) });
-  assert.equal(withoutGuide.text, '# Learn to sail\n<!-- windmill:roadmap -->\n- [x] Choose a course <!-- windmill:kind terracotta -->\n  - Read the wind');
+  assert.equal(withoutGuide.text, '# Learn to sail\n<!-- windmill:roadmap 2 -->\n- [x] Choose a course <!-- windmill:kind terracotta -->\n  - Read the wind');
   const replanted = parsePlan(file.text);
   const { gutter, ...planted } = replanted;
   const { gutter: plainGutter, ...plain } = parsePlan(withoutGuide.text);
   assert.deepEqual(planted, plain);
   assert.equal(gutter.length, plainGutter.length + 6);
-  assert.deepEqual(replanted.imperfections, { notes: 0, clamps: 0, renames: 0 });
+  assert.deepEqual(replanted.imperfections, { notes: 0, clamps: 0, renames: 0, clips: 0 });
 });
 
 test('a guide whose lines end in CR or CRLF stays in its quote, so a replant plants no step from it', async () => {
@@ -291,15 +291,15 @@ test('with the switch on, Settings and the row export a roadmap with a subtree, 
   assert.deepEqual(replica.map(fieldsOf), today.map(fieldsOf));
   assert.deepEqual(today, [
     { name: `learn-to-sail-${sail.slice(2, 10)}.md`, text: [
-      '# Learn to sail', '<!-- windmill:roadmap -->',
+      '# Learn to sail', '<!-- windmill:roadmap 2 -->',
       '<!-- windmill:guide -->', '> One step a week, on weekend sails.', '>', '> - Ask before changing a completed step.', '<!-- /windmill:guide -->',
-      '- [x] Choose a course <!-- windmill:kind terracotta Build -->', '  https://example.com/syllabus',
-      '  - [x] Tie the knots <!-- windmill:kind sky Practice -->', '    Bowline, cleat hitch.',
-      '  - Read the wind <!-- windmill:kind olive Learn -->', '    Watch the flags.', '    Feel the gusts.',
+      '- [x] Choose a course <!-- windmill:kind terracotta Build -->', '  <https://example.com/syllabus>',
+      '  - [x] Tie the knots <!-- windmill:kind sky Practice -->', '    > Bowline, cleat hitch.',
+      '  - Read the wind <!-- windmill:kind olive Learn -->', '    > Watch the flags.', '    > Feel the gusts.',
       '    - Leave the dock <!-- windmill:kind sky Practice -->',
-      '      - Sail solo <!-- windmill:kind gold Milestone -->', '        needs also: Read the wind',
+      '      - Sail solo <!-- windmill:kind gold Milestone -->', '        > needs also: Read the wind',
     ].join('\n') },
-    { name: `learn-to-knot-${knot.slice(2, 10)}.md`, text: '# Learn to knot\n<!-- windmill:roadmap -->\n- Tie a bowline <!-- windmill:kind terracotta Build -->' },
+    { name: `learn-to-knot-${knot.slice(2, 10)}.md`, text: '# Learn to knot\n<!-- windmill:roadmap 2 -->\n- Tie a bowline <!-- windmill:kind terracotta Build -->' },
   ]);
   assert.deepEqual(replica, today);
   assert.deepEqual(settings.replica[0], settings.today[0], 'the two archives are the same bytes');
@@ -325,7 +325,7 @@ test('with the switch on, Settings and the row export a roadmap with a subtree, 
     assert.deepEqual(fromReplica, fromToday);
     if (treeId === sail) assert.deepEqual(fromToday, today.slice(0, 1), 'the row and Settings export the roadmap alike');
     else assert.deepEqual(fromToday, [{ name: `leave-the-dock-${subtree.slice(2, 10)}.md`,
-      text: '# Leave the dock\n<!-- windmill:roadmap -->\n- [x] Cast off the lines <!-- windmill:kind terracotta Build -->\n  - Coil the ropes' }]);
+      text: '# Leave the dock\n<!-- windmill:roadmap 2 -->\n- [x] Cast off the lines <!-- windmill:kind terracotta Build -->\n  - Coil the ropes' }]);
   }
 });
 
@@ -344,7 +344,7 @@ test('with no connection, Settings’ export reads every roadmap the device’s 
     const session = { getSnapshot: () => ({ engine: a.engine, ready: true, online: false, error: false }), subscribe: () => () => {} };
     assert.deepEqual(await buildExportArchive(() => readReplicaRoadmaps({ session, timers: a.env.timers }), (zip) => zips.push(zip)), { count: 1, total: 2 });
     assert.deepEqual(filesIn(zips[0]), [
-      { name: `learn-to-knot-${knot.slice(2, 10)}.md`, text: '# Learn to knot\n<!-- windmill:roadmap -->\n- Tie a bowline <!-- windmill:kind terracotta Build -->' },
+      { name: `learn-to-knot-${knot.slice(2, 10)}.md`, text: '# Learn to knot\n<!-- windmill:roadmap 2 -->\n- Tie a bowline <!-- windmill:kind terracotta Build -->' },
     ]);
   } finally {
     a.close();
@@ -383,8 +383,8 @@ test('where the device’s copy reads a roadmap otherwise than today’s server,
       { id: 'turn', label: 'Turn the boat', color: 'terracotta', prerequisites: [] },
     ] }, { completed: new Set(['stroke']) });
     assert.deepEqual({ today: today.text, replica: buildRoadmapExport(held.seedOf(row), held.marksOf(row)).text }, {
-      today: '# Learn to row\n<!-- windmill:roadmap -->\n- Grip the oars <!-- windmill:kind terracotta Build -->\n- [x] Find the stroke\n- Turn the boat',
-      replica: '# Learn to row\n<!-- windmill:roadmap -->\n- Find the stroke <!-- windmill:kind terracotta Build -->\n- Grip the oars\n  - Turn the boat',
+      today: '# Learn to row\n<!-- windmill:roadmap 2 -->\n- Grip the oars <!-- windmill:kind terracotta Build -->\n- [x] Find the stroke\n- Turn the boat',
+      replica: '# Learn to row\n<!-- windmill:roadmap 2 -->\n- Find the stroke <!-- windmill:kind terracotta Build -->\n- Grip the oars\n  - Turn the boat',
     });
   } finally {
     a.close();

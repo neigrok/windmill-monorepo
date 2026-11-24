@@ -22,6 +22,7 @@ import { QuestShelf } from '/src/products/roadmap/quests/QuestShelf.jsx';
 import { YourDataSection } from '/src/products/roadmap/settings/YourDataSection.jsx';
 import { fetchTending, startTend, fetchRun } from '/src/products/roadmap/tending/tendingClient.js';
 import { BoundaryFailure, reportRoadmapFailure, reportUnexpectedFailure } from '/src/products/roadmap/reportFailure.js';
+import { ReplicaChanged } from '/src/platform/sync/engine.js';
 const rows = [{ id: 't_a', title: 'Learn to sail', done: 3, total: 8, dominantKind: 'sky', origin: 'server' }, { id: 't_b', title: 'Bake bread', done: 0, total: 2, dominantKind: 'olive', origin: 'server' }];
 const doors = {
   browse: () => React.createElement(BrowsePage),
@@ -41,7 +42,7 @@ window.issues = [];
 window.events = [];
 window.mount = (door) => createRoot(document.getElementById('fixture')).render(doors[door]());
 window.tend = { fetchTending, startTend, fetchRun };
-window.reporting = { BoundaryFailure, reportRoadmapFailure, reportUnexpectedFailure };
+window.reporting = { BoundaryFailure, ReplicaChanged, reportRoadmapFailure, reportUnexpectedFailure };
 window.entryReady = true;
 `;
 const auth = `
@@ -349,10 +350,10 @@ test('a report carries no line of the message, even one written like a stack fra
   });
 });
 
-test('a lost request reports only while someone is watching; a refusal, a browser refusing storage and a judged failure never do', async () => {
+test('a lost request reports only while someone is watching; a refusal, a browser refusing storage, a judged failure and a write a seat change overtook never do', async () => {
   await withDoor(null, {}, async (page) => {
     const reported = await page.evaluate(() => {
-      const { BoundaryFailure, reportRoadmapFailure, reportUnexpectedFailure } = window.reporting;
+      const { BoundaryFailure, ReplicaChanged, reportRoadmapFailure, reportUnexpectedFailure } = window.reporting;
       const lands = (failure, { hidden = false, offline = false } = {}) => {
         Object.defineProperty(document, 'visibilityState', { value: hidden ? 'hidden' : 'visible', configurable: true });
         Object.defineProperty(navigator, 'onLine', { value: !offline, configurable: true });
@@ -360,9 +361,9 @@ test('a lost request reports only while someone is watching; a refusal, a browse
         reportUnexpectedFailure('roadmap-share', failure);
         return window.issues.length;
       };
-      const judged = () => {
+      const judged = (failure) => {
         window.issues.length = 0;
-        reportRoadmapFailure('roadmap-load', new BoundaryFailure('read failed'));
+        reportRoadmapFailure('roadmap-replica-write', failure);
         return window.issues.length;
       };
       return {
@@ -374,11 +375,14 @@ test('a lost request reports only while someone is watching; a refusal, a browse
         anyOtherException: lands(new TypeError('boom')),
         storageSecurity: lands(new DOMException('no', 'SecurityError')),
         storageQuota: lands(new DOMException('no', 'QuotaExceededError')),
-        judged: judged(),
+        judged: judged(new BoundaryFailure('read failed')),
+        seatChanged: judged(new ReplicaChanged()),
+        storeFailed: judged(new TypeError('the device store did not commit')),
       };
     });
     assert.deepEqual(reported, {
-      serverFailure: 1, refusal: 0, lostWatched: 1, lostHidden: 0, lostOffline: 0, anyOtherException: 1, storageSecurity: 0, storageQuota: 0, judged: 0,
+      serverFailure: 1, refusal: 0, lostWatched: 1, lostHidden: 0, lostOffline: 0, anyOtherException: 1, storageSecurity: 0, storageQuota: 0,
+      judged: 0, seatChanged: 0, storeFailed: 1,
     });
   });
 });

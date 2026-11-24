@@ -293,6 +293,7 @@
   "roadmap.paste.planting": "Planting…",
   "roadmap.paste.renamed": "{count} renamed",
   "roadmap.paste.renamedTo": "renamed to \"{label}\"",
+  "roadmap.paste.shortenedToFit": "shortened to fit",
   "roadmap.paste.steps": "{count, plural, one {# step} other {# steps}}",
   "roadmap.paste.title": "Paste a plan",
   "roadmap.paste.titleAppend": "Add to this tree",

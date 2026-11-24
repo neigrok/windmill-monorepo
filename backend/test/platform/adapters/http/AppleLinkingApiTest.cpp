@@ -35,6 +35,16 @@ struct HttpFixture : AppleLinkingFixture {
     (api.*method)(request, [&](auto r) { response = std::move(r); });
     return response;
   }
+  // GET /v1/me as Drogon parses it from the wire, which is where /v1/me reads its caller from.
+  drogon::HttpResponsePtr me(const std::string& session, bool bearer = false) {
+    const std::string credential = bearer ? "Authorization: Bearer " + session : "Cookie: wm_session=" + session;
+    wm::test::DrogonLoopback::Connection wire;
+    const auto request = wire.exchange("GET /v1/me HTTP/1.1\r\nHost: localhost\r\n" + credential + "\r\n\r\n").request;
+    if (!request) throw std::runtime_error("Drogon answered GET /v1/me without handing it over");
+    drogon::HttpResponsePtr response;
+    api.me(request, [&](auto r) { response = std::move(r); });
+    return response;
+  }
   drogon::HttpResponsePtr start(bool native, const std::string& session = "", bool bearer = false) {
     return call(native ? &AuthApi::appleNative : &AuthApi::apple,
                 R"({"identityToken":"token","nonce":"nonce","authorizationCode":"code","name":"Sam Gold"})",
@@ -222,7 +232,7 @@ TEST(apple_me_lists_link_metadata_and_remove_only_unbinds_callers_apple_door) {
   f.session(mine, "s-mine");
   f.repo.tryBindIdentity(f.identity(), mine.id);
   f.repo.bindIdentity(Provider::apple, "other-subject", other.id, "other-relay@privaterelay.appleid.com");
-  const auto me = f.call(&AuthApi::me, "{}", "s-mine", true);
+  const auto me = f.me("s-mine", true);
   Json::Value expected(Json::arrayValue), email, apple;
   email["kind"] = "email"; email["email"] = mine.email.value;
   apple["kind"] = "apple"; apple["email"] = f.identity().email.value; apple["relay"] = true;
@@ -236,7 +246,7 @@ TEST(apple_me_lists_link_metadata_and_remove_only_unbinds_callers_apple_door) {
   CHECK(f.repo.findIdentity(Provider::apple, "other-subject"));
   CHECK_EQ(f.call(&AuthApi::removeApple, "{}", "s-mine")->getStatusCode(), drogon::k404NotFound);
   CHECK_EQ(f.call(&AuthApi::removeApple)->getStatusCode(), drogon::k401Unauthorized);
-  const auto remaining = *f.call(&AuthApi::me, "{}", "s-mine")->getJsonObject();
+  const auto remaining = *f.me("s-mine")->getJsonObject();
   REQUIRE_EQ(remaining["signInMethods"].size(), Json::ArrayIndex{1});
   CHECK_EQ(remaining["signInMethods"][0], email);
 }

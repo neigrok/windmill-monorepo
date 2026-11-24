@@ -149,7 +149,7 @@ export class ReplicaRoadmap {
     return {
       id, title: location.title ?? '', guide: tree.meta?.guide ?? '', author: null,
       visibility: (place.subtree ? tree.meta?.reach : tree.meta?.visibility) ?? 'private', mine: this.held.get(id)?.record != null, place,
-      kinds: new LegendRead(tree).shown.map((kind) => ({ id: kind.id, hue: kind.hue, label: kind.label, description: kind.description })),
+      kinds: new LegendRead(tree).shown.flatMap(({ kind }) => (kind ? [{ id: kind.id, hue: kind.hue, label: kind.label, description: kind.description }] : [])),
       nodes: graph.nodes.map((step) => {
         const pointer = tree.pointers.get(step.id);
         return {
