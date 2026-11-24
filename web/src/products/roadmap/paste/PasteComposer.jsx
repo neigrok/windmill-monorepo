@@ -17,9 +17,11 @@ const PLACEHOLDER = t('roadmap.paste.placeholder');
 const GLYPHS = { root: '◉', branch: '├', step: '·', done: '✓', note: '¶' };
 const CLAMP_WORDS = { ragged: t('roadmap.paste.mixedIndentClamped'), jump: t('roadmap.paste.indentClamped') };
 
+// What a line's liberty says: each type the grammar takes has its words.
 function libertyWords(liberty) {
   if (liberty.type === 'rename') return t('roadmap.paste.renamedTo', { label: liberty.label });
   if (liberty.type === 'clamp') return CLAMP_WORDS[liberty.indent];
+  if (liberty.type === 'clip') return t('roadmap.paste.shortenedToFit');
   return t('roadmap.paste.keptAsNote');
 }
 

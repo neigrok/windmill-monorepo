@@ -904,10 +904,10 @@
           "liberties": [{"type": "clamp", "indent": "ragged"}, {"type": "clamp", "indent": "jump"}, {"type": "rename", "label": "a (2)"}]
         },
         {"mark": "note", "nodeId": "a-2", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a-2", "liberties": [{"type": "note"}]}
+        {"mark": "note", "nodeId": "a-2", "liberties": []}
       ],
       "readout": {"steps": 4, "branches": 0, "done": 1},
-      "imperfections": {"notes": 2, "clamps": 2, "renames": 1, "clips": 0}
+      "imperfections": {"notes": 1, "clamps": 2, "renames": 1, "clips": 0}
     }
   },
   {
@@ -1544,11 +1544,11 @@
         {"mark": "root", "nodeId": "root", "liberties": []},
         {"mark": "step", "nodeId": "step", "liberties": []},
         {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "step", "liberties": []},
         {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 3, "clamps": 0, "renames": 0, "clips": 0}
+      "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1620,9 +1620,9 @@
       "gutter": [
         {"mark": "root", "nodeId": "root", "liberties": []},
         {"mark": "step", "nodeId": "s", "liberties": []},
-        {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "s", "liberties": []},
+        {"mark": "note", "nodeId": "s", "liberties": []},
+        {"mark": "note", "nodeId": "s", "liberties": []},
         {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
         {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
         {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
@@ -1632,7 +1632,7 @@
         {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 10, "clamps": 0, "renames": 0, "clips": 0}
+      "imperfections": {"notes": 7, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1670,12 +1670,12 @@
         {"mark": "note", "nodeId": "title", "liberties": [{"type": "note"}]},
         {"mark": "branch", "nodeId": "branch", "liberties": []},
         {"mark": "note", "nodeId": "branch", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "branch", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "branch", "liberties": []},
         {"mark": "step", "nodeId": "a", "liberties": []},
         {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 3, "branches": 1, "done": 0},
-      "imperfections": {"notes": 4, "clamps": 0, "renames": 0, "clips": 0}
+      "imperfections": {"notes": 3, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2491,10 +2491,10 @@
         {"mark": "root", "nodeId": "root", "liberties": []},
         {"mark": "step", "nodeId": "a", "liberties": []},
         {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
+        {"mark": "note", "nodeId": "a", "liberties": []}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
+      "imperfections": {"notes": 1, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2604,44 +2604,44 @@
       "gutter": [
         {"mark": "root", "nodeId": "root", "liberties": []},
         {"mark": "step", "nodeId": "a", "liberties": []},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
         {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
         {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
         {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 35, "clamps": 0, "renames": 0, "clips": 0}
+      "imperfections": {"notes": 3, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2863,12 +2863,12 @@
         {"mark": null, "nodeId": null, "liberties": []},
         {"mark": null, "nodeId": null, "liberties": []},
         {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": []},
         {"mark": "step", "nodeId": "a", "liberties": []},
         {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 1, "branches": 0, "done": 0},
-      "imperfections": {"notes": 3, "clamps": 0, "renames": 0, "clips": 0}
+      "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2904,10 +2904,10 @@
         {"mark": null, "nodeId": null, "liberties": []},
         {"mark": null, "nodeId": null, "liberties": []},
         {"mark": "note", "nodeId": "root", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "root", "liberties": [{"type": "note"}]}
+        {"mark": "note", "nodeId": "root", "liberties": []}
       ],
       "readout": {"steps": 1, "branches": 0, "done": 0},
-      "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
+      "imperfections": {"notes": 1, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -3206,14 +3206,14 @@
         {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": [{"type": "note"}]},
         {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": [{"type": "note"}]},
         {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": []},
+        {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": []},
+        {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": []},
         {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": [{"type": "note"}]},
         {"mark": "done", "nodeId": "read-the-wind", "liberties": []}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 1},
-      "imperfections": {"notes": 8, "clamps": 0, "renames": 0, "clips": 0}
+      "imperfections": {"notes": 5, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -3244,10 +3244,10 @@
         {"mark": "note", "nodeId": "rig-the-boat", "liberties": [{"type": "note"}]},
         {"mark": "step", "nodeId": "one", "liberties": []},
         {"mark": "note", "nodeId": "one", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "one", "liberties": [{"type": "note"}]}
+        {"mark": "note", "nodeId": "one", "liberties": []}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 3, "clamps": 0, "renames": 0, "clips": 0}
+      "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -3472,10 +3472,10 @@
         {"mark": "step", "nodeId": "a-2", "liberties": [{"type": "rename", "label": "a (2)"}]},
         {"mark": "step", "nodeId": "jump", "liberties": [{"type": "clamp", "indent": "jump"}]},
         {"mark": "note", "nodeId": "jump", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "jump", "liberties": [{"type": "note"}]}
+        {"mark": "note", "nodeId": "jump", "liberties": []}
       ],
       "readout": {"steps": 9, "branches": 2, "done": 1},
-      "imperfections": {"notes": 2, "clamps": 1, "renames": 1, "clips": 0}
+      "imperfections": {"notes": 1, "clamps": 1, "renames": 1, "clips": 0}
     }
   },
   {

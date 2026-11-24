@@ -107,11 +107,13 @@ A label is compared as it stands in the kind, so a heading longer than 24 charac
 - A text line belongs to the node made last. Where it is `http://` or `https://`, in lower case, followed by one or
   more characters of which none is whitespace, it is an address, and one of that node's links while the node holds
   fewer than 32 and the address is at most 2,048 characters; any other text line, and an address past either bound, is
-  one of its notes. Either way it takes the liberty `{type: note}`.
+  one of its notes and takes the liberty `{type: note}`. An address that is one of the links takes none.
 
 **Names and ids.** In node order, a node whose label is not empty and equals the label an earlier node ended with is
 renamed `label (2)`, or `(3)` and on until no node has that label, and takes `{type: rename, label}` with its new
-label; a label that would pass 200 characters so keeps as much of itself as leaves room for ` (n)`. A node's id is its label's id form: the label lowercased, each run of characters other than `a` to `z` and `0`
+label; a label that would pass 200 characters so keeps as much of itself as leaves room for ` (n)`. A label once taken
+stays taken, so the count for a label starts past the one its last renaming took, and a read takes time in proportion
+to its lines however many names are alike. A node's id is its label's id form: the label lowercased, each run of characters other than `a` to `z` and `0`
 to `9` made one `-`, a `-` at either end dropped, the result clipped at 40, and a `-` at its end dropped again. Where
 that is empty the id is `root` for the first node and `step` for any other, and an id a node already has is counted up
 (`-2`, `-3`, …).
@@ -124,7 +126,7 @@ that is empty the id is `root` for the first node and `step` for any other, and 
 | `kinds` | each kind as `{id, hue, label, description, source}` |
 | `gutter` | one entry for each line, `{mark, nodeId, liberties}`: `mark` is `root` for the name's line, `branch`, `step`, `done` for a done item, or `note`; `nodeId` the node the line made or belongs to; `liberties` what was taken on it, in the order clamp ragged, clamp jump, note, clip, rename. A line that made nothing is `{mark: null, nodeId: null, liberties: []}` |
 | `readout` | `steps`, the count of nodes, the unnamed first node included; `branches`; `done`, the count of done nodes |
-| `imperfections` | the count of liberties by type: `notes`, `clamps`, `renames`, `clips`. An address counts among the notes |
+| `imperfections` | the count of liberties by type: `notes`, `clamps`, `renames`, `clips`. An address that became a link is no note |
 
 **A marked file.** A named plan whose first line after the name that is not blank has the content
 `<!-- windmill:roadmap -->` (the first edition) or `<!-- windmill:roadmap 2 -->` (the second) is a file the grammar
@@ -157,6 +159,12 @@ wrote. That line is read as blank, and:
   its content is `<`, then characters none of which is whitespace, `<` or `>`, then `>`, it is an address, the
   characters between the brackets with their entities read, held to the links' bounds as any address is.
 - No label is renamed, so duplicate names stand.
+- A file of the first edition is read by these rules too: its steps' names have their entities read, the whitespace
+  ones among them, and a kind's label from its marker keeps 24 characters, counted as every bound is.
+
+A browser tab that still runs the grammar from before the second edition reads a second-edition file as an ordinary
+paste: its read-back shows the plan before anything is planted, and no iPhone build or export has shipped that reads
+or writes one.
 
 ## Creating
 
@@ -207,8 +215,10 @@ order to write them, `links` each `{url, label}`; `done` is the id of each step 
    text's are, as `> ` and the line, or `>` alone for an empty one; then `<!-- /windmill:guide -->`.
 4. The steps. A step whose first prerequisite the roadmap holds is written under that step; any other is a first step.
    First steps are written in their order, each followed by the steps under it in their order, and so on down, two
-   spaces deeper each level, each step once. Then each step this has not reached, as one on a loop or under one, in
-   the order given, is written as a first step, followed by the steps under it not yet written.
+   spaces deeper each level, each step once. Then, for each step this has not reached in the order given, which
+   stands on a loop or under one: from it, each step's first prerequisite is followed until a step comes round again,
+   and that step, on the loop, is written as a first step, followed by the steps under it not yet written, the rest of
+   the loop and the steps under the loop among them.
 
 A step's line is `- `, then `[x] ` where `done` holds its id, then its label, then its kind marker where its colour is
 not that of the step written before it, the first step always: ` <!-- windmill:kind COLOUR -->`, or

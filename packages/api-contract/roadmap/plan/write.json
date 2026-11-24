@@ -47,13 +47,13 @@
           {"mark": "done", "nodeId": "choose-a-course", "liberties": []},
           {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
           {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
-          {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "choose-a-course", "liberties": []},
           {"mark": "done", "nodeId": "read-the-wind", "liberties": []},
           {"mark": "step", "nodeId": "leave-the-dock", "liberties": []},
           {"mark": "done", "nodeId": "pack-a-bag", "liberties": []}
         ],
         "readout": {"steps": 4, "branches": 0, "done": 3},
-        "imperfections": {"notes": 3, "clamps": 0, "renames": 0, "clips": 0}
+        "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -113,13 +113,13 @@
           {"mark": "done", "nodeId": "choose-a-course", "liberties": []},
           {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
           {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
-          {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "choose-a-course", "liberties": []},
           {"mark": "done", "nodeId": "read-the-wind", "liberties": []},
           {"mark": "step", "nodeId": "leave-the-dock", "liberties": []},
           {"mark": "done", "nodeId": "pack-a-bag", "liberties": []}
         ],
         "readout": {"steps": 4, "branches": 0, "done": 3},
-        "imperfections": {"notes": 3, "clamps": 0, "renames": 0, "clips": 0}
+        "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -506,6 +506,43 @@
     }
   },
   {
+    "name": "A step behind a loop that comes before it is written under the loop, which is broken at the first step of it met up from there",
+    "input": {
+      "title": "Behind a loop",
+      "kinds": [],
+      "nodes": [
+        {"id": "behind", "label": "Behind", "color": "sky", "prerequisites": ["a"]},
+        {"id": "a", "label": "A", "color": "sky", "prerequisites": ["b"]},
+        {"id": "b", "label": "B", "color": "sky", "prerequisites": ["a"]}
+      ],
+      "done": ["behind"],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Behind a loop\n<!-- windmill:roadmap 2 -->\n- A <!-- windmill:kind sky -->\n  > needs also: B\n  - [x] Behind\n  - B",
+      "readBack": {
+        "title": "Behind a loop",
+        "missingRoot": false,
+        "nodes": [
+          {"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles", "description": "needs also: B"},
+          {"id": "behind", "label": "Behind", "color": "sky", "prerequisites": ["a"], "status": "complete"},
+          {"id": "b", "label": "B", "color": "sky", "prerequisites": ["a"]}
+        ],
+        "kinds": [],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "a", "liberties": []},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+          {"mark": "done", "nodeId": "behind", "liberties": []},
+          {"mark": "step", "nodeId": "b", "liberties": []}
+        ],
+        "readout": {"steps": 3, "branches": 0, "done": 1},
+        "imperfections": {"notes": 1, "clamps": 0, "renames": 0, "clips": 0}
+      }
+    }
+  },
+  {
     "name": "A kind is declared where the hue changes: named where a kind wears the hue, bare where none does, and never for a kind no step wears",
     "input": {
       "title": "Kinds",
@@ -820,13 +857,13 @@
           {"mark": null, "nodeId": null, "liberties": []},
           {"mark": null, "nodeId": null, "liberties": []},
           {"mark": "step", "nodeId": "a", "liberties": []},
-          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
+          {"mark": "note", "nodeId": "a", "liberties": []},
+          {"mark": "note", "nodeId": "a", "liberties": []},
+          {"mark": "note", "nodeId": "a", "liberties": []},
+          {"mark": "note", "nodeId": "a", "liberties": []}
         ],
         "readout": {"steps": 1, "branches": 0, "done": 0},
-        "imperfections": {"notes": 4, "clamps": 0, "renames": 0, "clips": 0}
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -1047,10 +1084,10 @@
           {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
           {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
           {"mark": "step", "nodeId": "not-a-list", "liberties": []},
-          {"mark": "note", "nodeId": "not-a-list", "liberties": [{"type": "note"}]}
+          {"mark": "note", "nodeId": "not-a-list", "liberties": []}
         ],
         "readout": {"steps": 3, "branches": 0, "done": 1},
-        "imperfections": {"notes": 3, "clamps": 0, "renames": 0, "clips": 0}
+        "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },

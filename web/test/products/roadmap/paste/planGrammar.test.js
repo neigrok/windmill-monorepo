@@ -187,13 +187,13 @@ test('seven branches: three takeovers, three minted hues, then a deterministic c
   assert.equal(parsed.readout.branches, 7);
 });
 
-test('prose becomes notes on the nearest step, bare URLs become links', () => {
+test('prose becomes notes on the nearest step, bare URLs become links, and only the notes count as notes', () => {
   const parsed = parsePlan('Root\n- step\nhalf a sentence\nhttps://example.com/docs\nanother aside', KINDS);
   const step = parsed.nodes[1];
   assert.equal(step.description, 'half a sentence\nanother aside');
   assert.deepStrictEqual(step.links, ['https://example.com/docs']);
-  assert.deepStrictEqual(parsed.gutter.map((g) => [g.mark, g.liberties]), [['root', []], ['step', []], ['note', [{ type: 'note' }]], ['note', [{ type: 'note' }]], ['note', [{ type: 'note' }]]]);
-  assert.deepStrictEqual(parsed.imperfections, { notes: 3, clamps: 0, renames: 0, clips: 0 });
+  assert.deepStrictEqual(parsed.gutter.map((g) => [g.mark, g.liberties]), [['root', []], ['step', []], ['note', [{ type: 'note' }]], ['note', []], ['note', [{ type: 'note' }]]]);
+  assert.deepStrictEqual(parsed.imperfections, { notes: 2, clamps: 0, renames: 0, clips: 0 });
 });
 
 test('only the root wears the birth icon — steps and branches arrive bare', () => {
@@ -233,6 +233,22 @@ test('duplicate names get " (2)" exhaustively — never a duplicate id', () => {
   ]);
   assert.deepStrictEqual(parsed.gutter.map((g) => g.liberties), [[], [], [{ type: 'rename', label: 'Foo (2)' }], [{ type: 'rename', label: 'Foo (2) (2)' }], [{ type: 'rename', label: 'Foo (3)' }]]);
   assert.deepStrictEqual(parsed.imperfections, { notes: 0, clamps: 0, renames: 3, clips: 0 });
+});
+
+test('names alike are renamed, and ids alike counted, in time that grows with their count, as names that differ are read', () => {
+  const timed = (text) => {
+    const start = performance.now();
+    const parsed = parsePlan(text, KINDS);
+    return { parsed, ms: performance.now() - start };
+  };
+  const count = 8000;
+  const different = timed(['Plan', ...Array.from({ length: count }, (_, at) => `- Practice scales, day ${at}`)].join('\n'));
+  const alike = timed(['Plan', ...Array.from({ length: count }, () => '- Practice scales')].join('\n'));
+  const filed = timed(['# Plan', '<!-- windmill:roadmap 2 -->', ...Array.from({ length: count }, () => '- Practice scales')].join('\n'));
+  assert.deepStrictEqual(alike.parsed.nodes.at(-1), { id: `practice-scales-${count}`, label: `Practice scales (${count})`, color: 'terracotta', prerequisites: ['plan'] });
+  assert.deepStrictEqual(filed.parsed.nodes.at(-1), { id: `practice-scales-${count}`, label: 'Practice scales', color: 'terracotta', prerequisites: [] });
+  assert.ok(alike.ms < different.ms * 4 + 250, `${count} names alike took ${alike.ms.toFixed(0)} ms, ${count} that differ ${different.ms.toFixed(0)} ms`);
+  assert.ok(filed.ms < different.ms * 4 + 250, `${count} names alike in a file took ${filed.ms.toFixed(0)} ms, ${count} that differ ${different.ms.toFixed(0)} ms`);
 });
 
 test('distinct labels that slug alike still get distinct ids', () => {

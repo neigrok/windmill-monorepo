@@ -37,22 +37,23 @@ test('every line that spoke shows its glyph, and a line kept as a note says so i
   assert.deepEqual(view.foot(), { readout: ['8 steps · 2 branches · 1 already done'], chip: ['1 line → note'] });
 });
 
-test('an indent off the document’s grid, a jump past the step above and a renamed duplicate are each worded on their line', async (t) => {
+test('an indent off the document’s grid, a jump past the step above, a name cut to its bound and a renamed duplicate are each worded on their line', async (t) => {
   assert.deepEqual((await composer(t, 'Root\n- a\n    - b\n  - c')).gutter()[3], ['·', 'mixed indent clamped', 'pc-glyph pc-glyph--liberty']);
   assert.deepEqual((await composer(t, 'Root\n- a\n  - b\n        - deep')).gutter()[3], ['·', 'indent clamped', 'pc-glyph pc-glyph--liberty']);
+  assert.deepEqual((await composer(t, `Root\n- ${'x'.repeat(250)}`)).gutter()[1], ['·', 'shortened to fit', 'pc-glyph pc-glyph--liberty']);
   const renamed = await composer(t, 'Plan\n- Foo\n- Foo\n- Foo (2)\n- Foo');
   assert.deepEqual(renamed.gutter().map(([, title]) => title), [null, null, 'renamed to "Foo (2)"', 'renamed to "Foo (2) (2)"', 'renamed to "Foo (3)"']);
   assert.deepEqual(renamed.foot(), { readout: ['5 steps'], chip: ['3 renamed'] });
 });
 
-test('a line that took several liberties words them in the order they were taken, and the chip counts each kind', async (t) => {
+test('a line that took several liberties words them in the order they were taken, and the chip counts each kind; an address that became a link took none', async (t) => {
   const view = await composer(t, 'Root\n- a\n  - b\n       - [x] a\nhalf a thought\nhttps://example.com/docs');
   assert.deepEqual(view.gutter().slice(3), [
     ['✓', 'mixed indent clamped · indent clamped · renamed to "a (2)"', 'pc-glyph pc-glyph--done pc-glyph--liberty'],
     ['¶', 'kept as a note', 'pc-glyph pc-glyph--note pc-glyph--liberty'],
-    ['¶', 'kept as a note', 'pc-glyph pc-glyph--note pc-glyph--liberty'],
+    ['¶', null, 'pc-glyph pc-glyph--note'],
   ]);
-  assert.deepEqual(view.foot(), { readout: ['4 steps · 1 already done'], chip: ['2 lines → notes · 2 clamped · 1 renamed'] });
+  assert.deepEqual(view.foot(), { readout: ['4 steps · 1 already done'], chip: ['1 line → note · 2 clamped · 1 renamed'] });
 });
 
 test('Plant hands on the plan’s own name over a typed one, a typed name where the plan has none, and nothing while it has neither', async (t) => {

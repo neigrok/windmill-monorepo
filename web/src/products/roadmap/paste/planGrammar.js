@@ -9,12 +9,15 @@ const BOUNDS = Object.freeze({ title: 200, label: 200, kindLabel: 24, descriptio
 const ID_MAX = 40;
 // A file the grammar wrote, of the first edition (notes and links as they are) or the second (notes quoted, links in
 // angle brackets, the name and every text escaped where the read would take it for something else).
-const MARKERS = Object.freeze({ '<!-- windmill:roadmap -->': 1, '<!-- windmill:roadmap 2 -->': 2 });
+const MARKERS = new Map([['<!-- windmill:roadmap -->', 1], ['<!-- windmill:roadmap 2 -->', 2]]);
 const EDITION = 2;
 // An export carries the tree's guide as a quote between these two lines; a replant plants steps, so it reads past them.
 const GUIDE_OPEN = '<!-- windmill:guide -->';
 const GUIDE_CLOSE = '<!-- /windmill:guide -->';
-const KIND_MARKER = /^(?:(.*?) )??<!-- windmill:kind (terracotta|olive|gold|brick|sky|plum)(?: (.*?))? -->$/;
+// The kind marker that ends a file's item, with its kind's label where it has one, and the one that ends a file's heading.
+const MARKER_HUE = `<!-- windmill:kind (${PLAN_HUES.join('|')})`;
+const KIND_MARKER = new RegExp(`^(?:(.*?) )??${MARKER_HUE}(?: (.*?))? -->$`);
+const HEADING_KIND_MARKER = new RegExp(`^(?:(.*?) )?${MARKER_HUE} -->$`);
 // The domain kit's whitespace (§4.3), which ECMAScript's `\s` is, one character at a time.
 const WHITESPACE = [0x9, 0xa, 0xb, 0xc, 0xd, 0x20, 0xa0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006,
   0x2007, 0x2008, 0x2009, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff];
@@ -27,7 +30,7 @@ export function parsePlan(text, existingKinds = [], { bindOnly = false } = {}) {
   const lines = scanLines(String(text ?? '').replaceAll('\u0000', ''));
   const root = takeRoot(lines);
   const marker = lines.findIndex((line, at) => at > root.line && line.kind !== 'blank');
-  root.edition = root.line >= 0 ? MARKERS[lines[marker]?.content] ?? 0 : 0;
+  root.edition = root.line >= 0 ? MARKERS.get(lines[marker]?.content) ?? 0 : 0;
   if (root.edition > 0) {
     lines[marker].kind = 'blank';
     const named = lines[root.line];
@@ -192,8 +195,12 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
   const takeText = (index, line, at) => {
     const node = nodes[index];
     const { note, link } = noteOf(line, root.edition);
-    if (link !== undefined && node.links.length < BOUNDS.links && [...link].length <= BOUNDS.link) node.links.push(link);
-    else node.notes.push({ text: note ?? link, line: at });
+    if (link !== undefined && node.links.length < BOUNDS.links && [...link].length <= BOUNDS.link) {
+      node.links.push(link);
+      marks[at] = { node: index, mark: 'note', liberties: [] };
+      return;
+    }
+    node.notes.push({ text: note ?? link, line: at });
     marks[at] = { node: index, mark: 'note', liberties: [{ type: 'note' }] };
   };
 
@@ -202,7 +209,7 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
 
     // Export headings only switch kind; ordinary paste headings also open a branch.
     if (line.kind === 'heading') {
-      const exportedKind = exported && line.content.match(/^(?:(.*?) )?<!-- windmill:kind (terracotta|olive|gold|brick|sky|plum) -->$/);
+      const exportedKind = exported && line.content.match(HEADING_KIND_MARKER);
       if (exportedKind) {
         hue = exportedKind[1] ? book.claim(exportedKind[1].trim(), exportedKind[2]).hue : exportedKind[2];
       } else {
@@ -271,24 +278,17 @@ function growNodes(lines, root, existingKinds, bindOnly = false) {
 // does not keep whole says so.
 function assemble(root, grove) {
   const exported = root.edition > 0;
-  const labels = new Set();
-  const ids = new Set();
+  const labels = new Taken((label, n) => renamed(label, n));
+  const ids = new Taken((base, n) => `${base}-${n}`);
   const named = grove.nodes.map((draft, index) => {
     let label = draft.label;
     if (!exported && label !== '' && labels.has(label)) {
-      let n = 2;
-      while (labels.has(renamed(label, n))) n += 1;
-      label = renamed(label, n);
+      label = labels.free(label);
       grove.marks[draft.line]?.liberties.push({ type: 'rename', label });
     }
     if (label !== '') labels.add(label);
     const base = slug(label) || (index === 0 ? 'root' : 'step');
-    let id = base;
-    if (ids.has(id)) {
-      let n = 2;
-      while (ids.has(`${base}-${n}`)) n += 1;
-      id = `${base}-${n}`;
-    }
+    const id = ids.has(base) ? ids.free(base) : base;
     ids.add(id);
     return { draft, id, label };
   });
@@ -336,6 +336,32 @@ function assemble(root, grove) {
   }));
 
   return { title: root.title, missingRoot: root.missingRoot, nodes, kinds, gutter, readout, imperfections };
+}
+
+// Names taken so far, and for each name the count its next free form starts from: a form once taken stays taken, so the
+// count only climbs, and a thousand alike take a thousand steps rather than half a million.
+class Taken {
+  constructor(form) {
+    this.form = form;
+    this.names = new Set();
+    this.next = new Map();
+  }
+
+  has(name) {
+    return this.names.has(name);
+  }
+
+  add(name) {
+    this.names.add(name);
+  }
+
+  // The first form of `name`, counted from 2, that is not taken.
+  free(name) {
+    let n = this.next.get(name) ?? 2;
+    while (this.names.has(this.form(name, n))) n += 1;
+    this.next.set(name, n + 1);
+    return this.form(name, n);
+  }
 }
 
 // A label renamed `label (n)`, keeping as much of it as leaves the count room within its bound.
@@ -392,14 +418,14 @@ function unescapeExportText(text) {
 const linkUrl = (link) => (typeof link === 'string' ? link : link?.url ?? '');
 
 // A roadmap as a file of the grammar's second edition, which reads back to the same steps, links, kinds and marks.
-// Each step stands under the first step it follows, the rest named in a note, and a step no first step reaches, as on a
-// loop, is written after them as a first step of its own. Kind descriptions and link labels are not written.
+// Each step stands under the first step it follows, the rest named in a note, and a loop is written after them, broken
+// at one step of it, which is written as a first step. Kind descriptions and link labels are not written.
 export function serializePlan(treeData, kinds, progress) {
   const nodes = treeData.nodes ?? [];
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const kindByHue = new Map((kinds ?? []).map((kind) => [kind.hue, kind]));
   const completed = completedNodeIds(treeData, progress);
-  const out = [`# ${escapeName(treeData.title ?? '')}`, Object.keys(MARKERS).find((marker) => MARKERS[marker] === EDITION)];
+  const out = [`# ${escapeName(treeData.title ?? '')}`, [...MARKERS].find(([, edition]) => edition === EDITION)[0]];
   if (/\S/.test(treeData.guide ?? '')) {
     out.push(GUIDE_OPEN, ...treeData.guide.split(/\r\n|\r|\n/).map((line) => (line ? `> ${line}` : '>')), GUIDE_CLOSE);
   }
@@ -429,7 +455,19 @@ export function serializePlan(treeData, kinds, progress) {
     for (const child of childrenOf.get(node.id) ?? []) if (!written.has(child.id)) walk(child, depth + 1, node.id);
   };
   for (const node of nodes) if (!byId.has(node.prerequisites[0])) walk(node, 0, null);
-  for (const node of nodes) if (!written.has(node.id)) walk(node, 0, null);
+  // A step no first step reaches stands on a loop or under one: up its first prerequisites the loop is met, and it is
+  // broken at the first step of it met, which is written as a first step, the rest of the loop and the steps under it
+  // under that step.
+  for (const node of nodes) {
+    if (written.has(node.id)) continue;
+    const met = new Set();
+    let onLoop = node;
+    while (!met.has(onLoop.id)) {
+      met.add(onLoop.id);
+      onLoop = byId.get(onLoop.prerequisites[0]);
+    }
+    walk(onLoop, 0, null);
+  }
   return out.join('\n');
 }
 
