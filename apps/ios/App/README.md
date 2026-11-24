@@ -582,7 +582,9 @@ the Board measures, one JSON line a measure; with
 `-graph-pinch <way>` it keeps a pinch's frames that way, and with `-graph-crowd <count>` it does so from that many
 steps in view, so a way can act on a board of eight steps. With `-band-stands <seconds>` every band stands that long
 in place of its six seconds or the hold's nine (`RoadmapFixture.wait()`): the flows that take a band's Undo launch with
-it, so a slow runner cannot outlast the band, and the flows that watch a band leave launch without it. The roadmaps
+it, so a slow runner cannot outlast the band, and the flows that watch a band leave launch without it. A flow holds
+that a control not built yet is absent with `for unbuilt in [...]`, so a change that builds one searches `UITests/` for
+`unbuilt` and takes it off the list. The roadmaps
 under *Learn to sail* hold a few steps
 each, not the counts the boards draw, and the account's board holds three roadmaps, not nine: it is planted by a
 second engine on the model server, which takes about half a second longer for every roadmap the account already

@@ -501,9 +501,9 @@ import XCTest
     let name = stepForm(app, raisedBy: "roadmap-new-step")
     XCTAssertFalse(commit.isEnabled || refusal.exists)
     XCTAssertTrue(app.staticTexts["Lands in Up next"].exists)
-    // The rows whose screens are not built are left out: the form's Roadmap row would read as Kind's does.
+    // A new step's form has no Delete Step; its Roadmap row is driven in RoadmapNestedFlowTests.
     XCTAssertTrue(app.staticTexts["Links"].exists && app.buttons["roadmap-form-add-link"].exists)
-    for unbuilt in ["Roadmap, None", "Delete Step"] { XCTAssertFalse(app.staticTexts[unbuilt].exists || app.buttons[unbuilt].exists) }
+    XCTAssertFalse(app.staticTexts["Delete Step"].exists || app.buttons["Delete Step"].exists)
     name.tap()
     name.typeText("Reef")
     XCTAssertTrue(commit.wait(for: \.isEnabled, toEqual: true, timeout: 5))
