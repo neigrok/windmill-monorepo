@@ -406,14 +406,16 @@ struct Growth {
     loose = []
   }
 
-  // A text line under a node: one of its links where it is an address that fits them, otherwise one of its notes.
+  // A text line under a node: one of its links where it is an address that fits them, which takes no liberty, otherwise
+  // one of its notes.
   mutating func take(_ line: ScannedLine, at: Int, on node: Int) {
     let read = Self.note(line, edition: edition)
     if let link = read.link, drafts[node].links.count < PlanText.linksBound, PlanText.count(link) <= PlanText.linkBound {
       drafts[node].links.append(link)
-    } else {
-      drafts[node].notes.append((read.note ?? read.link ?? "", at))
+      marks[at] = Mark(node: node, mark: .note, liberties: [])
+      return
     }
+    drafts[node].notes.append((read.note ?? read.link ?? "", at))
     marks[at] = Mark(node: node, mark: .note, liberties: [.note])
   }
 
@@ -438,26 +440,19 @@ struct Growth {
   // The plan's nodes: duplicate names renamed where the text is not a file, ids made from names, each node's description
   // within its bound and each note line it does not keep whole said; and the gutter.
   mutating func assembled() -> (nodes: [RoadmapPlan.Node], gutter: [RoadmapPlan.Line]) {
-    var labels: Set<[UInt8]> = []
-    var ids: Set<[UInt8]> = []
+    var labels = Taken(form: Self.renamed)
+    var ids = Taken { base, n in "\(base)-\(n)" }
     var named: [(id: String, label: String)] = []
     for (index, draft) in drafts.enumerated() {
       var label = draft.label
-      if !isFile && !label.isEmpty && labels.contains(PlanText.key(label)) {
-        var n = 2
-        while labels.contains(PlanText.key(Self.renamed(label, n))) { n += 1 }
-        label = Self.renamed(label, n)
+      if !isFile && !label.isEmpty && labels.has(label) {
+        label = labels.free(label)
         if let line = draft.line { marks[line]?.liberties.append(.rename(label)) }
       }
-      if !label.isEmpty { labels.insert(PlanText.key(label)) }
+      if !label.isEmpty { labels.add(label) }
       let base = PlanText.idForm(label).isEmpty ? (index == 0 ? "root" : "step") : PlanText.idForm(label)
-      var id = base
-      if ids.contains(PlanText.key(id)) {
-        var n = 2
-        while ids.contains(PlanText.key("\(base)-\(n)")) { n += 1 }
-        id = "\(base)-\(n)"
-      }
-      ids.insert(PlanText.key(id))
+      let id = ids.has(base) ? ids.free(base) : base
+      ids.add(id)
       named.append((id, label))
     }
     let nodes = drafts.enumerated().map { (index: Int, draft: Draft) -> RoadmapPlan.Node in
@@ -484,5 +479,30 @@ struct Growth {
   static func renamed(_ label: String, _ n: Int) -> String {
     let suffix = " (\(n))"
     return PlanText.clipped(label, to: PlanText.labelBound - suffix.unicodeScalars.count) + suffix
+  }
+}
+
+// Names taken so far, compared by scalar value, and for each name the count its next free form starts from: a form once
+// taken stays taken, so the count only climbs, and a thousand alike take a thousand steps rather than half a million.
+struct Taken {
+  // A name's form counted `n`.
+  let form: (String, Int) -> String
+  var names: Set<[UInt8]> = []
+  var next: [[UInt8]: Int] = [:]
+
+  init(form: @escaping (String, Int) -> String) {
+    self.form = form
+  }
+
+  func has(_ name: String) -> Bool { names.contains(PlanText.key(name)) }
+
+  mutating func add(_ name: String) { names.insert(PlanText.key(name)) }
+
+  // The first form of `name`, counted from 2, that is not taken.
+  mutating func free(_ name: String) -> String {
+    var n = next[PlanText.key(name)] ?? 2
+    while has(form(name, n)) { n += 1 }
+    next[PlanText.key(name)] = n + 1
+    return form(name, n)
   }
 }

@@ -1,7 +1,7 @@
 // §7.3 A roadmap written as the plan grammar's file, of its second edition, which reads back to the same steps, links,
 // kinds and marks (packages/api-contract/roadmap/plan/README.md, Writing). Each step stands under the first step it
-// follows, the rest named in a line of its description, and a step no first step reaches, as on a loop, is written after
-// them as a first step of its own. A kind's description and a link's label are not written.
+// follows, the rest named in a line of its description, and a loop is written after them, broken at one step of it, which
+// is written as a first step. A kind's description and a link's label are not written.
 public struct PlanFile: Sendable, Equatable {
   public struct Step: Sendable {
     public let id: String
@@ -69,7 +69,15 @@ public struct PlanFile: Sendable, Equatable {
     }
 
     for step in steps where step.prerequisites.first.map({ byId[PlanText.key($0)] == nil }) ?? true { write(step, depth: 0, under: nil) }
-    for step in steps where !written.contains(PlanText.key(step.id)) { write(step, depth: 0, under: nil) }
+    // A step no first step reaches stands on a loop or under one: up its first prerequisites the loop is met, and it is
+    // broken at the first step of it met, which is written as a first step, the rest of the loop and the steps under it
+    // under that step.
+    for step in steps where !written.contains(PlanText.key(step.id)) {
+      var met: Set<[UInt8]> = []
+      var onLoop = step
+      while met.insert(PlanText.key(onLoop.id)).inserted, let next = onLoop.prerequisites.first.flatMap({ byId[PlanText.key($0)] }) { onLoop = next }
+      write(onLoop, depth: 0, under: nil)
+    }
     text = lines.joined(separator: "\n")
   }
 
