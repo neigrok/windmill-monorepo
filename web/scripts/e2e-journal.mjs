@@ -233,21 +233,25 @@ try {
       await converged(page, expected);
     } finally { await context.close(); }
   });
-  await check('pre-engine cache and owed write migrate once and converge', async () => {
+  await check('an owed page from before the engine carries into the account as a claim once and converges; its cached copy is left to the pull', async () => {
     const context = await browser.newContext(); await cookie(context);
     try {
-      await context.addInitScript(({ account, today }) => {
-        if (localStorage.getItem('fixture-migrated')) return;
-        localStorage.setItem('fixture-migrated', 'yes');
+      // The account's page of today, read before this browser went offline and written on there: the claim keeps both.
+      const held = await context.request.get(`${backend}/v1/journal/page/${today}`);
+      const owed = held.status() === 200 ? `${(await held.json()).body}\n\nwritten offline before the engine` : 'written offline before the engine';
+      await context.addInitScript(({ account, today, owed }) => {
+        if (localStorage.getItem('fixture-seeded')) return;
+        localStorage.setItem('fixture-seeded', 'yes');
         localStorage.setItem(`wm.journal.v2.pages.u.${account}`, JSON.stringify({
-          [today]: { page: { day: today, body: 'legacy owed page', mood: 0, energy: null, source: 'typed', stamp: '9999999999999:0:legacy' }, needsPush: true, read: true },
+          [today]: { page: { day: today, body: owed, mood: 0, energy: null, source: 'typed', stamp: '9999999999999:0:legacy' }, needsPush: true, read: true },
           '2026-01-01': { page: { day: '2026-01-01', body: 'cached page', mood: 1, energy: null, source: 'typed', stamp: '1:0:legacy' }, needsPush: false, read: true },
         }));
-      }, { account, today });
+      }, { account, today, owed });
       const page = await context.newPage(); await page.goto(`${origin}/app/journal`); await ready(page);
-      await converged(page, 'legacy owed page');
+      await converged(page, owed);
       assert.equal(await page.evaluate((account) => localStorage.getItem(`wm.journal.v2.pages.u.${account}`), account), null);
-      await page.reload(); await ready(page); await converged(page, 'legacy owed page');
+      assert.deepEqual(await page.evaluate(() => journal.pagesOf(journal.syncSession.engine).map((each) => each.day)), [today]);
+      await page.reload(); await ready(page); await converged(page, owed);
     } finally { await context.close(); }
   });
   for (const choice of ['Keep', 'Discard']) await check(`revoke this session → Cancel → ${choice} → completed sign-out`, async () => {

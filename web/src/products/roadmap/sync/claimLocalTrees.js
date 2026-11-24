@@ -9,9 +9,9 @@ import { LocalTreeRegistry, resolveDeviceOwner } from '../persistence/LocalTreeR
 import { OpenedTrees } from '../model/OpenedTrees.js';
 import { SyncSession } from './SyncSession.js';
 import { mintTreeId, moveLocalTree, deleteLocalTree, readDeviceTrees, repointDeviceSteps } from './localTrees.js';
-import { countBucket } from '../board/acts.js';
 import { readNavigation, replaceLocation } from '../../../shell/navigation.js';
 import { track } from '../../../telemetry/beacon.js';
+import { countBucket } from '../../../telemetry/countBucket.js';
 import { ROOM_READS_REPLICA } from '../replicaRoom.js';
 
 const DRAIN_TIMEOUT_MS = 30_000;

@@ -2,7 +2,7 @@ import React, { useLayoutEffect, useRef } from 'react';
 import { Check, ChevronDown, ChevronLeft, Search, X } from 'lucide-react';
 import { Button } from '../../../design-system';
 import { track } from '../../../telemetry/beacon.js';
-import { countBucket } from '../board/acts.js';
+import { countBucket } from '../../../telemetry/countBucket.js';
 import { boardKey } from '../shortcuts/shortcutMap.js';
 import {
   COMPOSER, LABELS, PICKER, backTo, draftLine, formatCount, matchCount,

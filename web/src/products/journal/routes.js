@@ -3,7 +3,7 @@
 
 import { lazy } from 'react';
 import { journalLandingHead } from './marketing/landingHead.js';
-import { migratePages } from './migrate.js';
+import { CarryOver, forgetSeat } from './carry.js';
 import { adoptDeviceRows, isWritten, onSyncResult, pagesOf, pendingClaimWork, recoveredDrafts, watchClaims } from './pages.js';
 import { talkStore } from './talk/talkStore.js';
 import { track } from '../../telemetry/beacon.js';
@@ -58,7 +58,7 @@ export const journalRoutes = {
   preloadApp: importJournalApp,
   // How the journal rides the browser engine; the shell composes every product's hooks into it.
   sync: {
-    prepare: async (engine) => { await migratePages(engine); watchClaims(engine); },
+    prepare: async (engine) => { await new CarryOver(engine).start(); watchClaims(engine); },
     onPushResult: onSyncResult,
     pendingDeviceWork: pendingClaimWork,
     adoptDeviceRows,
@@ -75,8 +75,12 @@ export const journalRoutes = {
     data: [YourJournalSection],
   },
   signOutNotice,
-  // An account change forgets what Talk held for the last account: a recording never crosses accounts.
-  forgetDevice: () => talkStore.forget(),
+  // An account change forgets what Talk held for the last account: a recording never crosses accounts. A Discard or a
+  // closure that took the account's replica takes the pages this browser kept of it from before the engine too.
+  forgetDevice: (change) => {
+    talkStore.forget();
+    forgetSeat(change);
+  },
   landing: {
     head: journalLandingHead,
     href: '/journal',

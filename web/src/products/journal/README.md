@@ -51,17 +51,34 @@ typed input remains available. Notice-cleanup failure reports separately from th
 editing and reconciliation use the domain actions. The route table hands the engine the domain's
 pending-work and adoption hooks and records claim receipts in the same transaction as result processing.
 
-`migrate.js` imports v1/v2 cached pages and owed writes, preserving account lineages and anonymous
-snapshots. Durable source digests prevent replay after a crash between import and source deletion.
-Unreadable entries and failed storage leave source keys intact without blocking the journal from
-opening. Valid entries can still migrate; oversized writing becomes an editable or recovered draft.
-Distinct overlapping sources and changed source snapshots remain recoverable without another
-appending claim. Unattributable pages stay quarantined until explicit restore, with alternatives
-marked `recovered` so restoring them retains a draft instead of appending it to the account.
-Migration's claim adapter translates the domain's validated plan. The quarantine and the migration's
-markers live in the engine's device metadata, so restoring and dropping unclaimed pages and the
-migration's import write in the engine's device transaction rather than through the kit's runner,
-which writes only the active replica.
+`carry.js` carries what the journal's bundle before the engine kept in this browser's storage, a store a key, into
+the replica (web-device-parity §5), through the domain's actions (`domain/carry.js`). A seat's pages go only into
+their own replica while it is active: an account's (`wm.journal.*.u.<id>`) into that account's bound replica, the
+pages written signed out (`.anon`) into the anon replica; a run starts on every load and again whenever another
+binding becomes active, under a browser lock a tab that finds taken leaves to the tab holding it, and is pinned to the
+engine's active binding, so a sign-in or a sign-out between ends it with every store whole. A day's page (an owed page
+before the account's copy, an owed page never read before one read, then the newer stamp) is claimed under an id its
+day and words derive, so carrying it twice writes it once, and joins the account's page of the day as every claim does,
+whether or not the replica has pulled it. A page of a day this browser already holds work of (a queued write, a claim
+or the editor's draft of the day), and each other page of the day with other words, is kept as a draft to recover, so
+a later save of the day cannot supersede it; words past a claim's bound become the editor's draft where its day is
+free, a draft to recover otherwise. An account's copies of its own pages are not carried: the pull
+brings them. The first act retires the first run's invitations for a seat with written pages, and each act records its
+pages last in the seat's ledger, the replica's device row `carry:<seat>`; a store goes once its acts are written, and
+only while it holds the bytes that were read. An entry that does not read stays in its store, reported once a load, and
+a browser that refuses its storage opens the journal all the same. A device held in memory carries nothing. A sign-out's
+Discard, or the account's closure, that takes an account's replica takes that account's stores too (`forgetSeat`, from
+`forgetDevice`); a Keep leaves them for its next sign-in.
+
+The pages that bundle could not attribute (`.unclaimed`, and its first version's unscoped store) stay in the
+browser's storage, which is their only record, and the signed-in person decides in Settings: Restore claims them into
+the account's replica through the runner, joined onto that day's page as a claim is, each other page of a day as a draft
+to recover, and deletes each store once its acts are written; Discard deletes them and writes nothing to the engine. A
+sign-out leaves them for whoever is at the browser next, who sees the day and length of each, never the words. A
+browser that ran the journal's first bundle on the engine kept those pages and its migration's records in the engine's
+device metadata; the carry returns the pages to the browser's storage once, a store a page, drops from the old stores
+the entries those records show carried, and deletes the three keys in the engine's one door to its metadata, the
+journal's only write of the device rather than of a replica.
 
 Settings' export (`settings/journalExport.js`) is one Markdown file of the room's written pages as
 the room shows them, read from the replica: signed out the browser's own, and on a bound replica, once
@@ -103,7 +120,7 @@ restart, offline writing, receipt arrival order and multiple tabs.
 cases on ports 8094/5181 with its own database and `schema.sql`. Build `windmill_server` using
 `backend/RUNNING.md` first. It requires Postgres client tools (`/tmp` on macOS), stops its listeners
 by port and drops its database. `WM_E2E_PORT`, `WM_E2E_WEB_PORT` and `WM_E2E_DB_PREFIX` select isolated
-backend/web ports and a database prefix. Cases cover offline convergence, claim choices, migration,
-current-session Keep/Discard, account closure, and two-tab account identity protection. Account
+backend/web ports and a database prefix. Cases cover offline convergence, claim choices, the carry of an owed page
+from before the engine, current-session Keep/Discard, account closure, and two-tab account identity protection. Account
 flows wait for completed sign-out before navigating. The same script works in CI with a backend
 binary and Postgres tools; the web workflow runs the complete tests/build without a backend-stack step.

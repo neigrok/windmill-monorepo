@@ -1,13 +1,9 @@
 import { syncSession } from '../../platform/sync/session.js';
 import { compareDocumentStamps } from '../../platform/sync/core/content.js';
-import { commit } from '../../../../packages/api-contract/sync/reference/client/commit.js';
-import { registry } from '../../platform/sync/schema.js';
 import { recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { ActionRunner, EngineReplica } from '../../platform/domain-kit/runner.js';
 import { Decision, decision } from '../../platform/domain-kit/actions.js';
-import { Violation } from '../../platform/domain-kit/values.js';
-import { translate } from '../../platform/domain-kit/translation.js';
 import { JournalRoom, PageDocument } from './domain/page.js';
 import { EditorDraft, JournalWriting, PreserveEditorDraft, ReconcileClaim, RetireJournalInvitation, SavePage } from './domain/writing.js';
 import { captureError } from '../../telemetry/sentry.js';
@@ -89,13 +85,6 @@ export function pagesOf(engine, snapshot = engine.observe(SCOPE).getSnapshot()) 
   }
   return [...pages.values()].sort((a, b) => a.day < b.day ? -1 : a.day > b.day ? 1 : 0);
 }
-export function claimGesture(doc, claimId = crypto.randomUUID()) {
-  const plan = JournalWriting.claimPlan({ day: doc.day, document: doc, claimId });
-  const { changes, atomic, hold, guards, retire, cmd, predict, local } = translate(plan, SCOPE, registry);
-  return { changes, opts: { atomic, hold, guard: guards, retire, cmd, predict,
-    local: Object.fromEntries(local.map(({ key, value }) => [key, value])) } };
-}
-
 export async function savePage(engine, doc, expectedReplica = engine.activeReplica(), retirements = {}, priorDraft = null) {
   const action = new SavePage({ day: doc.day, document: doc, retiring: Object.keys(retirements) });
   const runner = journalRunner(engine, expectedReplica);
@@ -137,15 +126,6 @@ export async function savePage(engine, doc, expectedReplica = engine.activeRepli
     await runner.dismissNotices(SCOPE, notices, ({ devices = {} }) => !JournalWriting.keepsRefusalNotices(devices, action.day));
   } catch (error) { captureError('journal', 'journal-notice-cleanup', error?.stack ?? '', '/journal'); }
   return outcome;
-}
-
-export function retainRecoveredPage(replica, doc) {
-  const draft = new EditorDraft({ day: doc.day, document: doc });
-  const rows = replica.deviceRows('journal');
-  const occupied = rows[EditorDraft.key] || replica.confirmedRow(SCOPE, 'page', doc.day)
-    || replica.entries(SCOPE).some((entry) => entry.intent.cmd?.args.day === doc.day);
-  if (occupied) EditorDraft.retain(rows, draft);
-  else rows[EditorDraft.key] = draft.json;
 }
 
 export function recoveredDrafts(engine = syncSession.engine) {
@@ -211,38 +191,4 @@ export function corpus({ account = null } = {}) {
   if ((account ?? null) !== (meta.state === 'bound' ? meta.account : null)) return { pages: [], source: 'failed' };
   const snapshot = engine.observe(SCOPE).getSnapshot();
   return { pages: pagesOf(engine, snapshot).filter(isWritten), source: meta.state === 'anon' ? 'device' : snapshot.firstPullComplete ? 'account' : 'failed' };
-}
-export function unclaimedPages(engine = syncSession.engine) {
-  return engine?.device.meta.journalUnclaimed ?? [];
-}
-export async function dropUnclaimedPages(engine = syncSession.engine) {
-  await engine.write(null, (device) => { delete device.meta.journalUnclaimed; });
-  track('sync_commit', { outcome: 'ok' });
-}
-export async function restoreUnclaimedPages(account, engine = syncSession.engine) {
-  const pages = unclaimedPages(engine);
-  await engine.write('sync-commit', (device, ctx) => {
-    const replica = device.activeReplica;
-    if (replica.meta.state !== 'bound' || replica.meta.account !== account) throw new Error('journal-account-changed');
-    if (JSON.stringify(device.meta.journalUnclaimed ?? []) !== JSON.stringify(pages)) throw new Error('journal-unclaimed-changed');
-    for (const page of pages) {
-      const { stamp, recovered, ...doc } = page;
-      if (recovered) {
-        EditorDraft.retain(replica.deviceRows('journal'), new EditorDraft({ day: doc.day, document: doc }));
-        continue;
-      }
-      let gesture;
-      try { gesture = claimGesture(doc); }
-      catch (error) {
-        if (!(error instanceof Violation)) throw error;
-        retainRecoveredPage(replica, doc);
-        continue;
-      }
-      const result = commit(replica, ctx, SCOPE, gesture.changes, gesture.opts);
-      if (result.refused) throw new Error('journal-restore-refused');
-    }
-    delete device.meta.journalUnclaimed;
-  }, [SCOPE]);
-  engine.kick();
-  return pages.length;
 }
