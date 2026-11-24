@@ -34,6 +34,9 @@ function tabOf(screen) {
   return 'routines';
 }
 
+// The screens that stand behind an account the shell has settled.
+const ACCOUNT_SCREENS = new Set(['coach', 'threads', 'thread', 'share-log']);
+
 function columnClass(screen) {
   if (screen === 'coach' || screen === 'thread') return ' has-coach';
   if (['backfill', 'log', 'session', 'routine', 'record', 'share-log', 'notes'].includes(screen)) return ' has-desk';
@@ -63,11 +66,12 @@ export function GymApp({ hash, inShell = false }) {
     );
   }
 
-  // The replica decides: a bound one is the room, its session paused or its account yet to answer; the anon one is the pitch.
+  // The replica this tab draws decides: a bound one is the room, its session paused or its account yet to answer, and the
+  // room lives as long as its binding, through a re-identify; the anon one is the pitch.
   const door = replica?.state === 'bound' ? 'room' : replica && status === 'ghost' ? 'pitch' : 'opening';
   return (
     <div className="gym-root gym-skin" ref={lendDoorSkin} data-chrome={inShell ? 'shell' : 'own'} data-theme={theme} data-brand="gym">
-      {door === 'opening' && <main className="gym-column"><p className="gym-quiet">{t('gym.app.opening')}</p></main>}
+      {door === 'opening' && <main className="gym-column"><Opening /></main>}
       {door === 'pitch' && (
         <>
           <Chrome inShell={inShell} user={user} status={status} onSignIn={openSignInDoor} onSignOut={signOut} />
@@ -75,7 +79,7 @@ export function GymApp({ hash, inShell = false }) {
         </>
       )}
       {door === 'room' && (
-        <TrainingRoom key={replica.id} hash={hash} inShell={inShell} user={user} status={status} onSignIn={openSignInDoor} onSignOut={signOut} />
+        <TrainingRoom key={replica.binding} hash={hash} inShell={inShell} user={user} status={status} onSignIn={openSignInDoor} onSignOut={signOut} />
       )}
     </div>
   );
@@ -103,6 +107,10 @@ function Chrome({ inShell, user, status, onSignIn, onSignOut }) {
   );
 }
 
+function Opening() {
+  return <p className="gym-quiet">{t('gym.app.opening')}</p>;
+}
+
 function SignInPitch({ onSignIn }) {
   return (
     <section className="gym-door">
@@ -113,12 +121,15 @@ function SignInPitch({ onSignIn }) {
   );
 }
 
-// Shares, log shares, the connected log and Coach stay behind a confirmed account; the rest draws from the replica.
+// Shares, log shares, the connected log and Coach stay behind an account the shell has settled, online or offline from its
+// last answer; until then Coach, its threads and the log share are the pitch, or the opening line while the account has
+// yet to answer. The rest draws from the replica.
 function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
   const { account } = useAuth();
   const signedIn = status === 'signed-in';
   const log = useTrainingLog();
   const screen = screenOf(hash);
+  const waitsForAccount = !signedIn && ACCOUNT_SCREENS.has(screen);
   const historyPositions = React.useRef(new Map());
   const pagePositions = React.useRef(new Map());
   const content = React.useRef(null);
@@ -141,6 +152,7 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
           {screen === 'routine' && <RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />}
           {screen === 'finish' && <FinishScreen id={finishIdOf(hash)} log={log} signedIn={signedIn} />}
           {screen === 'backfill' && <Backfill key={hash} target={backfillTargetOf(hash)} from={backfillFromOf(hash)} log={log} />}
+          {waitsForAccount && (status === 'ghost' ? <SignInPitch onSignIn={onSignIn} /> : <Opening />)}
           {signedIn && screen === 'coach' && <CoachRoom key={account?.id} log={log} />}
           {signedIn && screen === 'threads' && <HistoryPage key={account?.id} log={log} />}
           {signedIn && screen === 'thread' && <CoachRoom key={account?.id} log={log} threadId={threadIdOf(hash)} />}

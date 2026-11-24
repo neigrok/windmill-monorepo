@@ -39,6 +39,8 @@ const OPERATIONS = new Set(['routine-create', 'routine-save', 'exercise-create',
   'preferences-save', 'note-save', 'note-reorder', 'bodyweight-save', 'set-correct', 'delete', 'undo',
   'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'refusal']);
 const OUTCOMES = new Set(['saved-local', 'unchanged', 'failed', 'held', 'undone', 'closed', 'refused']);
+// What refused a write: the replica moved under the room, or the gym's rules, this device's or the server's.
+const REFUSED_BY = new Set(['not-writable', 'domain']);
 const shownRemovals = new WeakMap();
 const WORKOUT_DRAFTS = 'rack:workoutDrafts';
 
@@ -49,9 +51,10 @@ function sameWorkoutCommand(left, right) {
     && left.args.requestId === right.args.requestId;
 }
 
-export function gymStep(operation, outcome) {
-  if (!OPERATIONS.has(operation) || !OUTCOMES.has(outcome)) return;
-  try { track('gym_action', { operation, outcome }); } catch { /* reporting cannot stop a save */ }
+// A refused step names what refused it, and no other step names anything.
+export function gymStep(operation, outcome, code = null) {
+  if (!OPERATIONS.has(operation) || !OUTCOMES.has(outcome) || (outcome === 'refused') !== REFUSED_BY.has(code)) return;
+  try { track('gym_action', code === null ? { operation, outcome } : { operation, outcome, code }); } catch { /* reporting cannot stop a save */ }
 }
 
 export function gymFailure(operation) {
@@ -228,24 +231,28 @@ export function noteDraft(note) {
 // A sign-in or a sign-out moved the engine off the replica the API stands on; nothing in it asks a person to sign in.
 const notWritable = () => new GymRefusal('not-writable', { sentence: t('gym.runtime.notWritable') });
 
+// The API stands on the engine's binding as it is made: the replica's storage and its account, which a re-identify keeps.
+// A sign-in or a sign-out changes it, the anon replica bound in place included, and every read and write then is refused.
 export function createGymApi(engine, { event = gymStep, failure = gymFailure, zone = deviceZone } = {}) {
-  const owner = engine.activeReplica();
-  const anonymous = engine.getSnapshot().state === 'anon';
+  const owner = engine.activeBinding();
   if (shownRemovals.get(engine)?.owner !== owner) shownRemovals.set(engine, { owner, proposals: new Map() });
   const shown = shownRemovals.get(engine).proposals;
   const checkedPlans = new WeakSet();
   const port = new EngineReplica(engine);
-  // A commit's views, or the engine as it last published: another replica, or the anon one bound in place, is refused.
-  const checkOwner = (views = { replica: engine.activeReplica(), isAnonymous: engine.getSnapshot().state === 'anon' }) => {
-    if (views.replica !== owner || views.isAnonymous !== anonymous) throw notWritable();
+  const checkOwner = (binding) => {
+    if (binding !== owner) throw notWritable();
   };
   const runner = new ActionRunner({
     commit: (scope, body) => port.commit(scope, (views) => {
-      checkOwner(views);
+      checkOwner(views.binding);
       reportUnreadablePlans(views, failure, checkedPlans);
       return body(views);
     }),
-    read: (scope) => { checkOwner(); return port.read(scope); },
+    read: (scope) => {
+      const views = port.read(scope);
+      checkOwner(views.binding);
+      return views;
+    },
     cancelHeld: (id) => port.cancelHeld(id),
     mintId: (type, taken) => port.mintId(type, taken),
     physNow: () => port.physNow(),
@@ -255,7 +262,8 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
     try { return await body(); }
     catch (thrown) {
       const error = thrown instanceof CommitError && thrown.kind === 'not-writable' ? notWritable() : thrown;
-      event(operation, error instanceof GymRefusal ? 'refused' : 'failed');
+      if (error instanceof GymRefusal) event(operation, 'refused', error.code === 'not-writable' ? 'not-writable' : 'domain');
+      else event(operation, 'failed');
       if (!(error instanceof GymRefusal) && !isStoreFailure(error)) failure(operation);
       throw error;
     }
@@ -431,7 +439,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
       return remove(type === 'set' ? DeleteSet(id) : new Remove(id, GymRefusals));
     },
     undoDeath: (gestureId) => boundary('undo', async () => {
-      checkOwner();
+      checkOwner(engine.activeBinding());
       const undone = await runner.cancelHeld(gestureId);
       event('delete', undone ? 'undone' : 'closed');
       return undone;
@@ -459,7 +467,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
       }
     }),
     notes: async () => read(notesDocument),
-    mintNote: () => { checkOwner(); return runner.mint(Note).record; },
+    mintNote: () => { checkOwner(engine.activeBinding()); return runner.mint(Note).record; },
     saveNote: (id, { title, body }, base) => boundary('note-save', async () => {
       const draft = (base instanceof Draft ? base : noteDraft(base ?? { id, fresh: true }))
         .edit((value) => new NoteValue(value.id, title, body, value.updatedAt));
@@ -523,12 +531,13 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
   };
 }
 
-// Over whichever replica the engine holds, bound or anon, waiting for no account; `ready` once it has something to draw.
+// Over the replica this tab draws, bound or anon, waiting for no account, and made again only when its binding changes;
+// `ready` once it has something to draw.
 export function useGymApi() {
   const replica = useSyncReplica();
   const records = useSyncRecords(SCOPE);
   const ready = records.firstPullComplete || records.drawn.length > 0;
-  return useMemo(() => replica ? { ...createGymApi(replica.engine), ready } : null, [replica, records.replica, ready]);
+  return useMemo(() => replica ? { ...createGymApi(replica.engine), ready } : null, [replica, ready]);
 }
 
 // A workout running on a phone keeps the mirror's sync close, until four idle hours close it.

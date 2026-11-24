@@ -119,7 +119,7 @@ export default function AuthProvider({ children }) {
     }
     if (revision === roomOwnership.current.revision)
       dataScope.reconcile(syncSession.engine, roomOwnership.current.scopeTicket ?? dataScope.ticket);
-    syncSession.publish({ signedIn: Boolean(value.account) });
+    syncSession.publish({ signedIn: Boolean(value.account), account: value.account?.id ?? null });
     if (value.confirmed) remember(value.user);
   }, [seat, dataScope]);
   const signedOut = useCallback(() => {

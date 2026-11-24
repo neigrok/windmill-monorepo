@@ -4,6 +4,7 @@ import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { registry } from '../../../src/platform/sync/schema.js';
 import { environment, until } from '../../platform/sync/fakes.js';
 import { hello } from '../../../../packages/api-contract/sync/reference/server/pull.js';
+import { reidentify } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { GymRefusal, isStoreFailure } from '../../../src/products/gym/errors.js';
 import { Note } from '../../../src/products/gym/domain/notes.js';
 import { createGymApi, gymLiveHint } from '../../../src/products/gym/gymRuntime.js';
@@ -79,7 +80,7 @@ test('before its first pull of gym’s scope the copy reads no last time, and on
     session: { id: 'sessionPulled', startedAt: 1000, finishedAt: 2000 }, sets: (await api.session('sessionPulled')).sets });
 });
 
-test('a sign-in that binds the anon replica in place refuses the signed-out API in words that ask no one to sign in', async (t) => {
+test('a sign-in that binds the anon replica in place refuses the signed-out API in words that ask no one to sign in, and its step says so', async (t) => {
   const env = environment();
   env.options.registry = registry;
   env.transport.request = async () => ({ response: hello({ state: env.state, registry, account: 'A', serverTime: env.timers.time }), timing: {
@@ -88,8 +89,10 @@ test('a sign-in that binds the anon replica in place refuses the signed-out API 
   const engine = await BrowserSyncEngine.open(env.options);
   t.after(() => engine.close());
   const events = [], failures = [];
-  const signedOut = createGymApi(engine, { event: (operation, outcome) => events.push({ operation, outcome }), failure: (operation) => failures.push(operation) });
+  const signedOut = createGymApi(engine, { event: (operation, outcome, code) => events.push({ operation, outcome, ...(code ? { code } : {}) }),
+    failure: (operation) => failures.push(operation) });
   await signedOut.saveBodyweight('1970-01-01', { weightKg: 82 });
+  await assert.rejects(signedOut.saveBodyweight('1970-01-01', { weightKg: -5 }), { code: 'invalid' });
   const replica = engine.activeReplica();
   assert.equal((await engine.signIn('A')).complete, true);
   assert.deepEqual([engine.activeReplica(), engine.getSnapshot().state], [replica, 'bound']);
@@ -97,6 +100,24 @@ test('a sign-in that binds the anon replica in place refuses the signed-out API 
   await assert.rejects(signedOut.saveBodyweight('1970-01-02', { weightKg: 83 }),
     { code: 'not-writable', sentence: 'That wasn’t saved — the account on this browser changed.' });
   assert.deepEqual(engine.device.activeReplica.outbox, owed);
+  assert.deepEqual(events, [{ operation: 'bodyweight-save', outcome: 'saved-local' },
+    { operation: 'bodyweight-save', outcome: 'refused', code: 'domain' }, { operation: 'bodyweight-save', outcome: 'refused', code: 'not-writable' }]);
+  assert.deepEqual(failures, []);
+});
+
+test('a re-identify keeps the API on the account’s replica, and a sign-out then refuses it', async (t) => {
+  const { api, engine, env, events, failures } = await open(t);
+  const replica = engine.activeReplica();
+  await engine.write(null, (device, context) => reidentify(device.activeReplica, context));
+  assert.notEqual(engine.activeReplica(), replica, 'the replica answers the server under a new id');
+  assert.deepEqual(await api.saveBodyweight('1970-01-01', { weightKg: 83 }), { dateLocal: '1970-01-01', weightKg: 83, recordedAt: env.timers.time });
+  assert.deepEqual((await api.bodyweight()).entries.map(({ dateLocal, weightKg }) => [dateLocal, weightKg]), [['1970-01-01', 83]]);
+  engine.setOnline(false);
+  await engine.beginSignOut();
+  assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+  await assert.rejects(api.saveBodyweight('1970-01-01', { weightKg: 84 }), { code: 'not-writable' });
+  await assert.rejects(api.bodyweight(), { code: 'not-writable' });
+  assert.deepEqual(engine.device.activeReplica.outbox, [], 'the anon replica owes nothing');
   assert.deepEqual(events, [{ operation: 'bodyweight-save', outcome: 'saved-local' }, { operation: 'bodyweight-save', outcome: 'refused' }]);
   assert.deepEqual(failures, []);
 });
@@ -512,7 +533,7 @@ test('custom exercise creation preserves a supplied step and validates it before
 
 test('an adapter pinned to a previous replica cannot write into another account', async (t) => {
   const { api, engine } = await open(t);
-  t.mock.method(engine, 'commit', async (scope, read) => read({ replica: 'anotherAccount' }));
+  t.mock.method(engine, 'commit', async (scope, read) => read({ binding: '["rp_another","B"]' }));
   await assert.rejects(api.createRoutine(routine), { code: 'not-writable', sentence: 'That wasn’t saved — the account on this browser changed.' });
 });
 
@@ -619,7 +640,7 @@ for (const [operation, write] of [
   test(`${operation}: an old account adapter refuses writes after a replica switch`, async (t) => {
     const { api, engine, failures, events } = await open(t);
     const commit = engine.commit.bind(engine);
-    t.mock.method(engine, 'commit', (scope, build) => commit(scope, (views) => build({ ...views, replica: 'another-account' })));
+    t.mock.method(engine, 'commit', (scope, build) => commit(scope, (views) => build({ ...views, binding: '["rp_another","B"]' })));
     await assert.rejects(write(api), { code: 'not-writable' });
     assert.deepEqual(engine.device.activeReplica.outbox, []);
     assert.deepEqual(failures, []);
@@ -641,7 +662,9 @@ test('rapid preference changes compare against the previous commit and keep the 
 
 test('domain read handles cannot follow the engine into another account', async (t) => {
   const { api, engine, failures } = await open(t);
-  t.mock.method(engine, 'activeReplica', () => 'another-account');
+  const metadata = engine.readMetadata.bind(engine);
+  t.mock.method(engine, 'readMetadata', (...args) => ({ ...metadata(...args), binding: '["rp_another","B"]' }));
+  t.mock.method(engine, 'activeBinding', () => '["rp_another","B"]');
   await assert.rejects(api.preferences(), { code: 'not-writable' });
   await assert.rejects(api.bodyweight(), { code: 'not-writable' });
   await assert.rejects(api.notes(), { code: 'not-writable' });

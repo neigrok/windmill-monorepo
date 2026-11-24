@@ -165,6 +165,37 @@ test('a routine arrives filled: agreeing sets fold to a line and a rail, bodywei
   assert.deepEqual(textOf(source.type(source.props)), 'Bench PressTarget3 × 8 · 60Last time · 19 Sep60 × 860 × 857.5 × 8Filled from the target. A blank load or rep count takes last time’s set.');
 });
 
+test('a form opened before the first pull takes last time once the pull lands, unless the lifter has typed into it', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: NOW });
+  browserWith();
+  const gym = await pushAAccount(t);
+  const pulled = (booted) => gym.engine.write(null, (device) => {
+    device.activeReplica.cursors['self/gym'] = { ...device.activeReplica.cursorOf('self/gym'), booted };
+  }, ['self/gym']);
+  await pulled(false);
+  // The route and its form, the form drawn with whatever the route hands it now.
+  const opened = async () => {
+    const outer = await route(t, 'routinePushA', roomLog({ catalog: CATALOG }));
+    const view = renderHook(t, () => { const [workout] = named(outer.tree, 'PastWorkout'); return workout.type(workout.props); });
+    return { outer, view, chinUp: () => rowsOf(movements(view.tree)[2]).map((cell) => [cell.field, cell.value]) };
+  };
+  const untouched = await opened();
+  const typed = await opened();
+  movements(typed.view.tree)[0].props.onOpen();
+  rowsOf(movements(typed.view.tree)[0])[1].onCommit(5);
+  const waiting = [['load', null], ['reps', 8], ['load', null], ['reps', 7], ['load', null], ['reps', 6]];
+  assert.deepEqual([untouched.chinUp(), typed.chinUp()], [waiting, waiting], 'no last time before the first pull');
+  await pulled(true);
+  for (const form of [untouched, typed]) {
+    form.outer.redraw();
+    await settle();
+    form.view.redraw();
+  }
+  assert.deepEqual(untouched.chinUp(), [['load', 0], ['reps', 8], ['load', 0], ['reps', 7], ['load', 0], ['reps', 6]]);
+  assert.deepEqual([typed.chinUp(), rowsOf(movements(typed.view.tree)[0]).map((cell) => cell.value)], [waiting, [60, 5, 60, 5, 60, 5]],
+    'a form the lifter has typed into keeps what it holds');
+});
+
 test('each movement says what its typed load counts, after the one kilogram head over every row', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();

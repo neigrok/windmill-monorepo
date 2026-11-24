@@ -3,9 +3,12 @@
 The gym room draws from whichever replica the shell's browser engine holds (`useSyncReplica`), and every gym write goes
 through it: `useGymApi()` answers the API over that replica, bound or anon, from the moment the engine opens, and
 nothing before. `GymApp` opens the training room on a bound replica without waiting for the account's answer, its
-session paused or not; a paused session is offered sign-in by the account seat beside the room. Signed out, the room is
-the sign-in pitch. Shares, log shares, the connected log and Coach wait for a confirmed account (auth `status` is
-`signed-in`), and draw nothing in their place until then. Sessions and
+session paused or not; a paused session is offered sign-in by the account seat beside the room. The room is keyed by the
+replica's binding, so a re-identify keeps it and what is typed in it. While the shell has settled an account the
+engine's replica is not bound to (another tab signed in someone else), the room is `Opening` until the shell catches up.
+Signed out, the room is the sign-in pitch. Shares, log shares, the connected log and Coach wait for an account the shell
+has settled (auth `status` is `signed-in`: online, or offline from its last answer); until then Coach, its History and
+the log share show the sign-in pitch, or `Opening` while the account has yet to answer, and no share is offered. Sessions and
 their sets are read-only live mirrors; backfills use `gym.importSession`. Routine and note editors
 retain their opening values and guard touched fields through kit drafts. A routine name, movement
 name or note title is written NFC-normalised, trimmed and at most 60 code points, and a blank one is
@@ -54,7 +57,8 @@ is a `GymRefusal` (`errors.js`) carrying the engine's code, the sentence a scree
 and, for an overlap, the crossed session; `failureReason` finishes the sentence for any failure,
 naming this device when its store could not keep the write and the network only for a REST door. A write whose replica
 changed under the room, a sign-in or a sign-out having moved the engine to another replica or bound the anon one in
-place, is refused `not-writable`, in words that ask no one to sign in.
+place, is refused `not-writable`, in words that ask no one to sign in; the API stands on the engine's binding, so a
+re-identify of the account's replica refuses nothing.
 
 Coach's records as the engine holds them live in `domain/coach/`: `conversation.js` holds the `thread` and `message`
 entities, a call's record and the receipt the calls derive; `turn.js` the writes of a turn (open, text, round, end,
@@ -129,7 +133,8 @@ in the catalog.
 ## Observability
 
 `gymRuntime.js` owns the gym telemetry boundary. Engine-backed writes emit first-party `gym_action` events with allowlisted `operation` and
-`outcome` only. Operations cover routine create/save, exercise create/rename, preferences save,
+`outcome` only, and a `refused` one also `code`: `not-writable` when the replica moved under the room, `domain` when the
+gym's rules refused it, this device's or the server's. Operations cover routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
 delete/Undo and refusal. Outcomes are `saved-local`, `unchanged`, `failed`, `held`, `undone`,
 `closed`, `refused`. A local save does not claim server admission. Unexpected boundary failures
@@ -158,7 +163,9 @@ failed commits, command refusals, raw receipt replay and additive correction rec
 Screen tests run over a real browser engine for a signed-in account (`gymAccount` in
 `test/products/gym/harness.mjs`) and assert what the account still owes the server. `boot.browser.test.js` boots the
 account provider, the sign-in door and the shell over a browser copy an earlier visit seeded, in Chromium: the room draws
-with `/v1/me` held and reports how long it took, keeps the room for a paused session, and keeps the pitch signed out. Shared training
+with `/v1/me` held and reports how long it took, keeps the room for a paused session, keeps the pitch signed out, keeps
+the room and what is typed in it through a re-identify, and draws `Opening`, never another tab's account, under the account
+this tab's shell has settled. Shared training
 reads run on web, Swift and Kotlin. The local stack checks domain reads over an actual disposable
 backend account and persisted browser-engine observations. Chromium acceptance has twelve checks: a phone replica's `gym.start`, set and `gym.finish`
 pushes arrive live; web routine edits, backfills, additive recovery, weigh-ins and unit changes converge; a held weigh-in delete can be
