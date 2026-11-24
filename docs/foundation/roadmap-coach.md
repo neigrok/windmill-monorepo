@@ -8,8 +8,9 @@ roadmap nodes can cite them.
 
 **Status:** Specified, and approved by the owner on 2026-11-15, and again on 2026-11-17 as revised
 for roadmap on the sync engine (R-13) and Coach on the iPhone in the first release (R-14). Of Coach
-only its contract is built: the catalog, its limits and the format of its vectors (§3). The roadmap's
-AI today is tending: a server-side agent that
+its contract is built: the catalog, its limits and the format of its vectors (§3); and on the web
+the standing roadmap (D-2) and the read abilities (§4, §5), in `web/src/products/roadmap/domain/abilities/`,
+which claim the read abilities' vectors. The roadmap's AI today is tending: a server-side agent that
 edits a roadmap at once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person
 sees of Coach is ruled in the [design canon](../design/roadmap-coach.md); this document says how it
 is built. The build order lives in the Roadmap Coach roadmap tree, which the dogfood tree

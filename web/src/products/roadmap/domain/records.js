@@ -152,6 +152,20 @@ export class RoadmapTree {
       throw new TypeError('Duplicate normalized roadmap identity');
     }
   }
+
+  // The tree as the plain data it is constructed from, every field spelled.
+  /** @returns {TreeInput & {meta: Metadata|null}} */
+  get json() {
+    return {
+      id: this.id, present: this.present, read: /** @type {'loaded'|'unread'} */ (this.read), own: this.own, updatedAt: this.updatedAt,
+      parent: this.parent && { ...this.parent }, meta: this.meta && { ...this.meta },
+      nodes: this.nodes.map((step) => ({ ...step, links: step.links.map((link) => ({ ...link })) })),
+      edges: this.edges.map((edge) => ({ ...edge })),
+      kinds: this.kinds.map((kind) => ({ ...kind })),
+      marks: [...this.marks.values()].map((mark) => ({ ...mark })),
+      pointers: [...this.pointers.values()].map((pointer) => ({ ...pointer })),
+    };
+  }
 }
 
 /** @param {{id:string,ord:string,born:string}} a @param {{id:string,ord:string,born:string}} b */

@@ -135,9 +135,10 @@ contents. Native acceptance and a same-key update check precede publication. See
   [The Coach engine](docs/foundation/coach-engine.md) supplies product-neutral device turn libraries
   and AI clients, with shared stories under `packages/api-contract/agent`.
   [Roadmap Coach](docs/foundation/roadmap-coach.md), which replaces tending with a Coach whose
-  abilities run on the browser's copy of a roadmap, and
+  abilities run on the browser's copy of a roadmap, is specified, and of it the contract and the web's
+  read abilities are built.
   [Gym Coach on the AI service](docs/foundation/gym-coach-on-ai-service.md), which moves gym Coach onto
-  that engine on every surface, are specified and not built.
+  that engine on every surface, is specified and not built.
   [Roadmap on the sync engine](docs/foundation/roadmap-on-the-engine.md), which moves roadmap's records and rules
   onto the engine and the domain kit, is built, and production's roadmaps sync through the engine; the deletion of
   roadmap's own sync remains. Of [Roadmap on iOS](docs/foundation/roadmap-ios.md), the iPhone's Roadmap room on

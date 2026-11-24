@@ -18,14 +18,15 @@ import { Opening, TreePlace } from '../model/Opening.js';
 const TIMELESS = new Moment(new Instant(0), new FixedZone(0));
 
 // What the replica holds of one roadmap: its record in the person's list (null for one someone else owns), its tree
-// scope's records, and its owner's overlay with the records of it a queued entry still changes (`queued`); `read` says
-// the device holds the server's whole copy of it: the first pull of its tree scope, and of the owner's overlay for one of
-// the person's own, has ended.
+// scope's records as drawn and as stored, which keeps a step whose delete the person can still undo, and its owner's
+// overlay with the records of it a queued entry still changes (`queued`); `read` says the device holds the server's whole
+// copy of it: the first pull of its tree scope, and of the owner's overlay for one of the person's own, has ended.
 export class HeldRoadmap {
-  constructor({ id, record = null, tree = [], overlay = [], queued = [], read = true }) {
+  constructor({ id, record = null, tree = [], stored = tree, overlay = [], queued = [], read = true }) {
     this.id = id;
     this.record = record;
     this.records = tree;
+    this.stored = stored;
     this.overlay = overlay;
     this.queued = queued;
     this.read = read;
@@ -35,12 +36,15 @@ export class HeldRoadmap {
   // Whether its tree scope holds anything at all: a roadmap the device has read and holds nothing of is in no address.
   get holds() { return this.records.length > 0; }
 
-  // The domain's roadmap (`readRoadmap`), the overlay read only for the person's own: the room shows a reader its owner's
-  // marks, which the server reads.
-  tree(registry) {
-    const reader = (scope, drawn) => new Reader(Views.ofRecords(registry, { drawn, stored: drawn }), scope, TIMELESS);
-    return readRoadmap(this.id, { listed: this.record, tree: reader(RoadmapScopes.tree(this.id), this.records), read: this.read,
-      overlay: this.record ? reader(RoadmapScopes.overlay(this.id), this.overlay) : null, queued: this.queued });
+  // The domain's roadmap (`readRoadmap`).
+  tree(registry) { return readRoadmap(this.id, this.copy(registry)); }
+
+  // The roadmap as the domain reads it (`readRoadmap`, Coach's `readStanding`), the overlay read only for the person's
+  // own: the room shows a reader its owner's marks, which the server reads.
+  copy(registry) {
+    const reader = (scope, drawn, stored = drawn) => new Reader(Views.ofRecords(registry, { drawn, stored }), scope, TIMELESS);
+    return { id: this.id, listed: this.record, tree: reader(RoadmapScopes.tree(this.id), this.records, this.stored), read: this.read,
+      overlay: this.record ? reader(RoadmapScopes.overlay(this.id), this.overlay) : null, queued: this.queued };
   }
 
   // The owner's workspace of each step, as the step page reads it: subtasks and links in their own order, and the note.
