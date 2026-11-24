@@ -88,9 +88,9 @@ The web logs a workout (R-2). It is no longer only a mirror.
   which the web's domain already holds, run on the browser's copy.
 - **One open workout.** An account has one open workout, and every device draws it and continues
   it. A start while one is drawn open is refused on the device. A start that loses a race with
-  another device is refused `session-open`, and the sets logged under it are recovered. This is the
-  phones' rule, which lives in their apps today; it moves into the shared domain with its vectors,
-  and the sync engine's gym binding is corrected to it.
+  another device is refused `session-open`, and the sets logged under it are recovered. The
+  refusals are the phones' rule, which lives in the shared domain's `StartSession` with its
+  vectors, as the sync engine's gym binding states.
 - **Two tabs are one workout.** The rack and what is on offer are gym's device rows. Every change
   to the rack reads its row and commits it in one local write, so a tab never writes over another's.
   Log set uses the set id the offer row already holds, so one tap in each of two tabs logs one set.
@@ -206,7 +206,6 @@ Each is corrected in the change that makes it false:
 - the sync folder's README and the domain kit's document, where they list what the web claims;
 - [Gym Coach on the AI service](gym-coach-on-ai-service.md) where it withholds the workout proposal
   from the web and keeps Coach closed during a workout;
-- the sync engine's gym binding where it says a client's start joins the open workout;
 - the design ledger's entry that the web's mirror has no rack, and the Android task for the
   mirror's planned rows.
 

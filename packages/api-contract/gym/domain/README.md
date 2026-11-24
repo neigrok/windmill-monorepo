@@ -154,7 +154,7 @@ separately and is outside the v4 rule book because v4 has no such type.
 | `RenameExercise` | `{id,name}` | `null`; a custom rename, or a seed override writing `{name}` alone over any equipment or count it holds |
 | `SaveNoteCall` | `{note:{id,fields}}` | Call id, or the stored note with the same words |
 | `MoveNote` | `{id,below}`; `below:null` means the top | `null`; only the moved note's order changes, a drop in place writes nothing |
-| `StartSession` | `{id,routineId?,startedAt?}` | Predicted or joined session id; always sends `joinOpenSession:true` |
+| `StartSession` | `{id,routineId?,startedAt?}` | Predicted session id; sends `joinOpenSession:false`. A replay of its own id is `unchanged`; otherwise a session `drawn` holds open, by the stale rule over the `drawn` sets, refuses it `sessionOpen` |
 | `FinishSession` | `{id,finishedAt?}`; without `finishedAt` it finishes at the later of now and the workout's last activity (its last `stored` set's `completedAt`, else its start), and a `finishedAt` before that is `badInstant` | `null` |
 | `AppendSet`, `CorrectSet` | `{set:{id,fields}}` | Set id or `null` |
 | `AppendSet.recorded`, `CorrectSet.recorded`, `ImportSession.recorded`, `CorrectSession.recorded` | as the action | as the action; the replay of a recorded fact, never refused by the load floor |

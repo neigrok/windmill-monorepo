@@ -62,6 +62,15 @@ function EntersLoads(recorded, floored) {
   });
 }
 
+// A client's start never joins another device's open workout: the account refuses it `session-open` (engine A.2 `gym.start`).
+/** @param {Id<SessionValue>} id @param {Id<RoutineValue> | null} routineId @param {Instant} startedAt */
+export function startSessionCommand(id, routineId, startedAt) {
+  return { name: 'gym.start', args: { id: id.json, startedAt: startedAt.ms, joinOpenSession: false,
+    ...(routineId === null ? {} : { routineId: routineId.json }) }, specs: [] };
+}
+
+// One open workout per account: a start while the log draws one open is refused here, and a start that loses a race with
+// another device's is refused `session-open` by the account, its sets folded into that notice.
 /** @param {{ id: Id<SessionValue>, routineId?: Id<RoutineValue> | null, startedAt?: Instant | null }} input */
 export function StartSession({ id, routineId = null, startedAt = null }) {
   return Object.freeze({
@@ -75,15 +84,14 @@ export function StartSession({ id, routineId = null, startedAt = null }) {
     /** @param {{ state: TrainingState, routine: RoutineValue | null, prior: boolean }} loaded */
     decide({ state, routine, prior }) {
       if (prior) return Decision.unchanged(id);
+      if (state.drawn.some((session) => SessionRules.drawn(session, state.drawnSets, state.moment.now).isOpen)) {
+        return Decision.refuse(GymRefusals.ofRefused(new Refused('session-open', id.ref, null, 'predicted')));
+      }
       const at = startedAt ?? state.moment.now;
-      const command = { name: 'gym.start', args: { id: id.json, startedAt: at.ms, joinOpenSession: true,
-        ...(routineId === null ? {} : { routineId: routineId.json }) }, specs: [] };
-      const open = state.stored.find((session) => SessionRules.drawn(session, state.sets, state.moment.now).isOpen);
-      if (open !== undefined) return Decision.write(Plan.running(command), open.id);
       SessionRules.instant(at, 'session.startedAt', new Path('startedAt'));
       const predicted = new SessionValue(id, at, null, null, routine?.id ?? null, routine?.id ?? null,
         routine === null ? null : PlanSnapshot.fromRoutine(routine));
-      return Decision.write(Plan.running(command, [Prediction.create(id, predicted.fields())]), id);
+      return Decision.write(Plan.running(startSessionCommand(id, routineId, at), [Prediction.create(id, predicted.fields())]), id);
     },
   });
 }
