@@ -17,7 +17,7 @@ final class GuideSheet: Identifiable {
 
   unowned let room: RoadmapModel
   // The roadmap whose guide the sheet shows.
-  let tree: ID<RoadmapEntry>
+  let tree: DomainKit.ID<RoadmapEntry>
   // The draft while the sheet writes; none while it reads.
   private(set) var draft: GuideDraft?
   // The guide this sheet has just written, which it reads until the phone's copy is read again and holds it (the note's
@@ -26,7 +26,7 @@ final class GuideSheet: Identifiable {
   // Discard draft? stands over Cancel.
   var asksDiscard = false
 
-  init(of tree: ID<RoadmapEntry>, room: RoadmapModel) {
+  init(of tree: DomainKit.ID<RoadmapEntry>, room: RoadmapModel) {
     self.room = room
     self.tree = tree
   }
