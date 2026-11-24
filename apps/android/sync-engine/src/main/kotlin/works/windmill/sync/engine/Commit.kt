@@ -123,6 +123,7 @@ internal class DeltaBuilder(private val engine: Engine, private val replica: Rep
         var life: Life? = null
         var born: Stamp? = null
         var values = change.values
+        var diffedAgainst = before
         if (op is Change.Operation.Update || op is Change.Operation.Move) {
             if (!type.hasBorn || before == null) malformed("update-absent")
             born = before.born
@@ -140,9 +141,11 @@ internal class DeltaBuilder(private val engine: Engine, private val replica: Rep
             if (type.json.flag("wholePut") && (change.values.isNotEmpty() || change.texts.isNotEmpty())) malformed("whole-put-removal")
             life = if (present != previous) Life(if (present) "alive" else "dead", stamp) else before?.life
             if (life == null) return null
+            // A put that makes the record present diffs against no record, since the server keeps no field of a dead keyed record (G1).
+            if (present && !previous) diffedAgainst = null
         } else malformed("operation")
-        val f = fields(type, values, before)
-        val x = texts(type, id, if (op is Change.Operation.Move) emptyMap() else change.texts, before)
+        val f = fields(type, values, diffedAgainst)
+        val x = texts(type, id, if (op is Change.Operation.Move) emptyMap() else change.texts, diffedAgainst)
         if (f.isEmpty() && x.isEmpty() && (life == null || life == before?.life)) return null
         return Delta(key, Lattice(life, born, f), x)
     }

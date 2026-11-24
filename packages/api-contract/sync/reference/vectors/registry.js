@@ -59,6 +59,23 @@ function headlines() {
   ];
 }
 
+// Only a minted or derived type is revivable: a keyed type comes back by a put, and its dead rows keep no field.
+function revivables() {
+  const DAY = { type: 'day', scope: 'product:p', identity: 'keyed', idPattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$', life: true, deadRows: 'keep',
+    origins: ['replica'], fields: { score: { kind: 'lww', writer: 'client' } } };
+  return [
+    ['a minted type keeping its dead rows is revivable', documentOf({ ...ITEM, revivable: true, deadRows: 'keep' }), true],
+    ['a keyed type with life is not revivable', documentOf(ITEM, DAY), true],
+    ['a keyed type that says it is not revivable loads', documentOf(ITEM, { ...DAY, revivable: false }), true],
+    ['a keyed type is never revivable: a put brings it back', documentOf(ITEM, { ...DAY, revivable: true }), false],
+    ['a singleton is never revivable', documentOf(ITEM, BOARD, { ...META, revivable: true }), false],
+  ].map(([name, document, expected]) => {
+    const sample = loaded(name, document);
+    assert.equal(sample.expect.admitted, expected, name);
+    return sample;
+  });
+}
+
 function unicodeDocument() {
   return documentOf(
     {
@@ -198,5 +215,5 @@ function scopedCommands() {
 }
 
 export function files() {
-  return { 'registry/refusals.json': [...headlines(), ...idDomains(), ...scopedCommands()], 'registry/ids.json': unicodeIds() };
+  return { 'registry/refusals.json': [...headlines(), ...revivables(), ...idDomains(), ...scopedCommands()], 'registry/ids.json': unicodeIds() };
 }

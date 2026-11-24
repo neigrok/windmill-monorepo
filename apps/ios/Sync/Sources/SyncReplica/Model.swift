@@ -49,6 +49,8 @@ public struct ReplicaMeta: Sendable, Hashable {
   public var serverEpoch: String?
   public var ackThrough: Int64
   public var authPaused: Bool
+  // §9.2 the schema the latest hello served as `account` advertised, which gates what a version declares (§2.4).
+  public var serverSchema: Int64?
 
   // A new replica: numbered from 1, its clock and offset unset (corpus/README.md "Client steps").
   public init(replica: String, state: State, account: String? = nil) {
@@ -92,6 +94,16 @@ public struct ReplicaMeta: Sendable, Hashable {
     if offset.take(serverTime: serverTime, send: send, recv: recv) { serverOffsetMs = offset.ms }
   }
 
+  // §9.2 a hello's verdict on the server's schema: a 200 served as the account records it, an answer handled as a 401
+  // forgets it.
+  public mutating func hear(_ hello: Answer<HelloResponse>) {
+    if hello.isUnauthenticated(for: account) {
+      serverSchema = nil
+    } else if case .ok(let body) = hello, let account, body.isServed(to: account) {
+      serverSchema = Int64(body.schema)
+    }
+  }
+
   public init(json: JSON) throws {
     let object = try json.asObject()
     replica = try object.member("replica").asString()
@@ -110,6 +122,7 @@ public struct ReplicaMeta: Sendable, Hashable {
     serverEpoch = epoch.isNull ? nil : try epoch.asString()
     ackThrough = try object.member("ackThrough").asInteger()
     authPaused = try object.member("authPaused").asBool()
+    serverSchema = try object["serverSchema"]?.asInteger()
   }
 
   public var json: JSON {
@@ -121,6 +134,7 @@ public struct ReplicaMeta: Sendable, Hashable {
     ]
     object["account"] = account.map { .string($0) }
     object["clockReading"] = offset.clockReading?.json
+    object["serverSchema"] = serverSchema.map { JSON($0) }
     return .object(object)
   }
 

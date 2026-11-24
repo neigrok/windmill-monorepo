@@ -27,8 +27,8 @@ struct RoadmapGraphCanvas: View {
     } else {
       GeometryReader { space in
         let bars = space.safeAreaInsets
-        GraphSurface(picture: picture, camera: camera, captions: captions, selected: selected, pinched: graph.pinched, pinch: graph.pinch,
-                     crowd: graph.crowd) { _ in graph.drew() }
+        GraphSurface(picture: picture, camera: camera, captions: captions, selected: selected, opened: graph.marks, pinched: graph.pinched,
+                     pinch: graph.pinch, crowd: graph.crowd) { _ in graph.drew() }
           .gesture(moves)
           .simultaneousGesture(SpatialTapGesture().onEnded { tap in
             if graph.fitted { roadmap.unfit() } else { roadmap.select(graph.step(at: tap.location)) }
@@ -70,10 +70,11 @@ struct RoadmapGraphCanvas: View {
 // The Graph's band slot holding the selected step (Roadmap · iOS 04.2; the kit's Step bar, Selected): the step's state
 // symbol in its kind's colour, its name, and the way to its page.
 struct GraphStepBar: View {
+  let roadmap: RoadmapModel
   let row: RoadmapModel.Row
 
   var body: some View {
-    NavigationLink(value: RoadmapModel.Visit.step(row.id, by: .graph)) {
+    NavigationLink(value: roadmap.stacked(.step(row.id, by: .graph))) {
       HStack(spacing: 10) {
         Image(systemName: row.card.column.symbol).imageScale(.large).foregroundStyle(RoadmapPalette.kind(row.step.color))
           .accessibilityLabel(row.colour ?? "").accessibilityHidden(row.colour == nil)

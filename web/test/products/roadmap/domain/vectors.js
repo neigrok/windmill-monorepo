@@ -256,7 +256,7 @@ export function runRead(input) {
       overlay: input.overlay && reader(RoadmapScopes.overlay(input.id), input.overlay.drawn), queued: input.overlay?.queued ?? [] }).json;
   }
   if (['account', 'activity', 'guides', 'pointers', 'progress', 'openings', 'list', 'listing'].includes(input.operation)) {
-    const account = new RoadmapAccount(input.trees.map((/** @type {any} */ tree) => new RoadmapTree(tree)));
+    const account = new RoadmapAccount(input.trees.map((/** @type {any} */ tree) => new RoadmapTree(tree)), { told: input.told ?? [] });
     if (input.operation === 'account') return account.result();
     if (input.operation === 'activity') {
       const graph = account.graph(input.tree);

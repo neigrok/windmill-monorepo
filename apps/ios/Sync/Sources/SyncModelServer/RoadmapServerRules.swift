@@ -43,7 +43,7 @@ public struct RoadmapServerRules: ServerRules {
       } ?? []
       let visible = context.deltas.contains { $0.key.type == "meta" && $0.fields["visibility"] != nil }
         || operations.contains { (operation: RestoreOperation) -> Bool in
-          guard case .field(let key, .field("visibility"), _, _) = operation else { return false }
+          guard case .field(let key, .field("visibility"), _, _, _) = operation else { return false }
           return key.type == "meta"
         }
       if visible {
@@ -52,7 +52,7 @@ public struct RoadmapServerRules: ServerRules {
       }
       let restored: [RecordKey] = operations.filter { (operation: RestoreOperation) -> Bool in
         guard operation.key.type == "node" else { return false }
-        guard case .field(_, let slot, _, _) = operation else { return true }
+        guard case .field(_, let slot, _, _, _) = operation else { return true }
         return slot == .life
       }.map(\.key)
       let touched: [RecordKey] = context.deltas.filter { $0.key.type == "node" && $0.life != nil }.map(\.key) + restored

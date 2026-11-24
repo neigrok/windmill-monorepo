@@ -280,7 +280,8 @@ class TypeDef(val json: Json) {
         require(seeded == null || identity == "minted")
         require(mint == null || hasBorn)
         require(json["key"] == null || identity == "keyed")
-        if (json["revivable"]?.bool() == true) require(json["deadRows"]?.str() == "keep")
+        // Only a minted or derived type is revivable, keeping its dead rows: a keyed type comes back by a put (§2.4).
+        if (json["revivable"]?.bool() == true) require(hasBorn && json["deadRows"]?.str() == "keep")
         if (json["governs"] != null) require(json["governs"]!!.str() == "tree" && scope.startsWith("product:") && identity == "minted" && json["revivable"]?.bool() == false && json["idSpace"]?.str() == "global")
         if (json["wholePut"] != null) require(json["wholePut"]!!.bool() && identity == "keyed" && life && fields.values.none { it.kind == "text" } && fields.values.filter { it.writer == "client" && it.isLattice }.all { it.kind == "lww" })
         if (json["visibleWhen"] != null) require(!life && json["visibleWhen"]!!.distinctStrings().isNotEmpty() && json["visibleWhen"]!!.distinctStrings().all(fields::containsKey))

@@ -15,7 +15,7 @@ struct SyncSchemaTests {
     let types: [JSON] = try registries.flatMap { (registry: JSON.Object) throws -> [JSON] in try registry.member("types").asArray() }
     let commands: [JSON] = try registries.flatMap { (registry: JSON.Object) throws -> [JSON] in try registry.member("commands").asArray() }
     let expected: JSON = [
-      "registry": "windmill", "version": 13, "minVersion": 11, "products": .object(JSON.Object(uniqueKeysWithValues: products)),
+      "registry": "windmill", "version": 14, "minVersion": 11, "products": .object(JSON.Object(uniqueKeysWithValues: products)),
       "types": .array(types), "commands": .array(commands),
     ]
     #expect(SyncSchema.registry.json == expected)
@@ -26,7 +26,7 @@ struct SyncSchemaTests {
   }
 
   @Test func theVersionIsTheRegistrys() {
-    #expect([SyncSchema.version, SyncSchema.registry.version, SyncSchema.registry.minVersion] == [13, 13, 11])
+    #expect([SyncSchema.version, SyncSchema.registry.version, SyncSchema.registry.minVersion] == [14, 14, 11])
   }
 
   @Test func everyTypeAndCommandHasItsName() {

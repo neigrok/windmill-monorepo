@@ -29,7 +29,7 @@ object Journal {
         listOf(
             "{",
             "  \"registry\": \"journal\",",
-            "  \"version\": 13,",
+            "  \"version\": 14,",
             "  \"minVersion\": 11,",
             "  \"products\": {",
             "    \"journal\": {",

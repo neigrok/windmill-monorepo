@@ -10,12 +10,12 @@ filters and *Select Steps*, a narrowed Board and a branch said in the first row 
 Board, a full roadmap's New Step refused in the band, an empty roadmap, every step done, *No roadmaps yet*, the room
 before its first read and its failed read; a step's page, opened by a Board row or an Activity row: its
 status row, description and shared links, *Requires* and *Opens*, *Complete* and *Reset* in place with their *Undo*, the
-… menu's *Open in Graph*, *View Branch* and *Delete Step* with its question, and the person's workspace: *Subtasks*
+… menu's *Open in Graph*, *View Branch*, *Attach a Roadmap* and *Delete Step* with its question, and the person's workspace: *Subtasks*
 checked in place, added in the list and removed by a swipe, the *Note* on its own screen with bold and italic from the
 system's Format menu, and *Your links* with New Link's two fields, and *History*; the step form, New Step from the
 foot's + and from an empty roadmap, and *Edit* from a step's page or a Board row: Name, Description, *Kind* with *Edit
 Kinds*, *Requires* and *Opens* pushed inside the sheet, the *Links* the step shares, their refusals as footers, *Discard
-draft?*, the created step shown on the Board and each save with its *Undo*, without its *Roadmap* row or Coach's
+draft?*, the created step shown on the Board and each save with its *Undo*, and its *Roadmap* row, without Coach's
 composer; the room's roadmaps: the title menu with the three most recent, *All Roadmaps…*, *New Roadmap*, *Guide*, *Kinds*,
 *Activity*, *Rename* and *Delete Roadmap*, Activity with its days and its fold, All Roadmaps with its search and its
 swipe to Delete, New Roadmap for a blank roadmap, from *A Copied Plan* or from *A File*, the plan read back before it is
@@ -25,7 +25,11 @@ renaming in the bar, and a roadmap's delete asked once and held with *Undo*; Kin
 described, recolored and removed with *Undo*, at most six; and the Graph:
 the switch row's *Board | Graph*, the canvas with its discs, connectors and captions, one finger's pan and a pinch, a
 step selected with its bar in the band slot and its page from there, *Next* in that slot with its menu of the Up next
-steps, *Fit*, and an empty roadmap, without Find, a step that opens a roadmap's mark or Coach's composer; a roadmap's
+steps, *Fit*, a step that opens a roadmap's mark, and an empty roadmap, without Find or Coach's composer; a step that opens a
+roadmap: its pill on the Board and *Open* in its swipe, its page's Roadmap or Subtree section with its rule and *Open
+Roadmap*, *Open Subtree* or *Choose Roadmap* at its foot, the roadmap gone into on the stack with its … menu, the odd ends,
+*Attach a Roadmap* with a pasted link and Fork first, *Change Roadmap* and *Detach Roadmap* with their *Undo*, and a Done
+mark set aside and back; a roadmap's
 link: the person's own opening on its Board or its step, and anyone else's on a cover, on its Graph and its Board with the
 owner's progress, read-only step pages and History with *Copy Link*, Fork with its sign-in and its line with no
 connection, the copy arriving on its Board, and the links the phone cannot open; the Guide from the title menu, read

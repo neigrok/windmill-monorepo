@@ -5,7 +5,7 @@ request; `open({ inMemory: true })` holds the device in the tab instead (below).
 and lifecycle hooks, releases holds on the first tab, requests persistent storage and starts synchronization. Products and UI reach the engine through `session.js`;
 from this module they import only `ReplicaChanged`.
 
-The registry composes the shared gym, journal and roadmap registries at version 13, minimum 11. The deterministic
+The registry composes the shared gym, journal and roadmap registries at version 14, minimum 11. The deterministic
 core and replica rules import `packages/api-contract/sync/reference/core` and `client` directly.
 The shared modules use `TextEncoder`, canonical base64url and vendored synchronous SHA-256, with no
 dependencies. `core/encoding.js` exposes the shared encoding helpers to web consumers;
