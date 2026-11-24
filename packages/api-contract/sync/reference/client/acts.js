@@ -1,6 +1,6 @@
 import { CONSTANTS } from '../core/constants.js';
 import { mintId } from '../core/derive.js';
-import { jcs } from '../core/jcs.js';
+import { jcs, sameJson } from '../core/jcs.js';
 import { recipeFault, recordValues, valueIn } from '../core/restore.js';
 import { recordKey } from '../core/rows.js';
 import { CommitError, commitGesture } from './commit.js';
@@ -72,7 +72,9 @@ function optedGesture(registry, scope, opts) {
 }
 
 // The act's journal record, from the segments that left an entry: one source entry each, in commit order, with
-// the value the act left in each target, which a Redo writes back.
+// the value the act left in each target, which a Redo writes back. Each ordinary entry never numbered that a
+// journaled preimage read over takes its scope kind's capture command, so its ACK carries the receipt a restore's
+// walk steps over; an entry already numbered keeps its intent.
 function recordAct(replica, registry, actId, plan, receipts) {
   if (plan === null) return;
   const sourceEntries = [];
@@ -87,7 +89,16 @@ function recordAct(replica, registry, actId, plan, receipts) {
     });
     sourceEntries.push({ localId: localIds[0], originScope: scope, recipes, preimages, written, attempts: [] });
   }
-  if (sourceEntries.length) replica.journal.push({ version: 1, actId, retained: true, sourceEntries });
+  if (sourceEntries.length === 0) return;
+  replica.journal.push({ version: 1, actId, retained: true, sourceEntries });
+  for (const { target } of sourceEntries.flatMap((source) => source.preimages)) {
+    for (const entry of replica.entries(target.scope)) {
+      const queued = entry.gestureId !== actId && entry.n === undefined && entry.intent.cmd === undefined;
+      if (!queued || !(entry.intent.d ?? []).some((delta) => delta.t === target.t && sameJson(delta.id, target.id))) continue;
+      entry.intent.cmd = { name: captureCommandOf(registry, target.scope), args: {} };
+      entry.predictions = [{ scope: entry.scope, d: [] }];
+    }
+  }
 }
 
 

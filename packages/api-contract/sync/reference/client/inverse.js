@@ -349,8 +349,10 @@ function ownedHistory(replica, act) {
 const rowsOf = (effects, address) => effects.filter(({ scope }) => scope === address.scope)
   .flatMap(({ rows }) => rows.filter((row) => row.t === address.t && sameJson(row.id, address.id)));
 
-// A Redo of a cancellation waits while an entry its references name has no result yet.
+// A Redo of a cancellation waits while the replica holds no epoch, in which a waiting slot's references bind, and
+// while an entry its references name has no result yet.
 function referencesAuthoritative(replica, request) {
+  if (replica.meta.serverEpoch === null && request.slots.some((slot) => slot.state === 'waiting')) return false;
   const pending = request.slots.filter((slot) => slot.state === 'waiting' && slot.recipe.kind === 'restore')
     .flatMap((slot) => slot.recipe.operations.flatMap((op) => [op.reference, op.reference?.recordBirth]))
     .filter((reference) => reference?.kind === 'pending');

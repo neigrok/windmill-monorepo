@@ -1413,8 +1413,10 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   the created tree grew; explicit slots replace the stored recipes whole; a Redo writes back the act's own
   value, never a later local edit the server refused; a held cancellation's Redo writes back against the
   accepted versions it found and creates the record again with the act's own creation values, waits for a
-  pending entry's accepted version, binds an ordinary pending edit's own write, and restores nothing for a
-  write a later local edit masked; a cancelled product command has no generic Redo, and takes the
+  pending entry's accepted version, binds the own write of an ordinary edit sent and not yet answered, and
+  restores nothing for a write a later local edit masked; a Redo asked signed out of a held put that made a
+  record present draws it and waits for an epoch, creating it once sign-in adds the work to the account's
+  replica, or once a fresh replica's first pull gives it one; a cancelled product command has no generic Redo, and takes the
   product's slots when given; a result whose inverse outcomes are malformed settles its slot skipped and
   later work goes on; a Discard at sign-in settles a pending inverse skipped with its values withdrawn; a
   segment named with no recipes journals its receipts, which prove a tree the act created to its Undo,
@@ -1431,8 +1433,10 @@ K-3, Undo of an act (engine.md §7.3). `commitAct`'s `opts.undo` is the `ActRequ
   joined; an Undo of a removal brings back a tag whose birth, by an act that keeps no journal, was pulled
   before the removal, acknowledged but unpulled, still unsent when it was removed, or still unsent when the
   Undo was asked, the removal's preimage stepping over the birth's receipt row, while another device's write
-  between the two, or a birth written as an
-  ordinary entry, whose answer carries no receipt, skips it; a preimage never steps over an earlier segment
+  between the two skips it; a birth or a rename written as an ordinary entry still unsent when the record was
+  removed goes up with the removal's capture command, so the Undo brings the record back as that entry left it,
+  signed in or signed out, while one already sent, or answered before the removal, keeps its intent, and its
+  answer, which carries no receipt, skips the Undo; a preimage never steps over an earlier segment
   of its own act, and steps over two acknowledged own writes, a birth and a rename, in commit order; and an Undo asked signed out of a removal whose record was born there brings it back once
   sign-in adds the work and sends it; an act made signed out gives up at sign-in each target the account's dormant replica
   holds a write of, an unsent one, one acknowledged after sign-out and not yet pulled, or a receipt its journal keeps, so
