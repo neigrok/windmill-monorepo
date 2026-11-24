@@ -37,7 +37,7 @@ struct OpenedSection: View {
         // The … menu stands over the link, so a tap on it opens the menu and never goes in.
         NavigationLink(value: roadmap.stacked(opening.leads ? .roadmap(opening.tree, by: .step) : .attach(to: row.id))) { label }
           .accessibilityIdentifier("roadmap-step-roadmap")
-          .overlay(alignment: .trailing) { if !opening.owned { menu } }
+          .overlay(alignment: .trailing) { if !opening.owned { menu.padding(.trailing, 6) } }
       } else {
         label.accessibilityElement(children: .combine).accessibilityIdentifier("roadmap-step-roadmap")
       }
@@ -57,15 +57,15 @@ struct OpenedSection: View {
         if let progress = opening.progress { Text(progress).font(.footnote).foregroundStyle(RoadmapPalette.inkDim) }
       }.frame(maxWidth: .infinity, alignment: .leading)
       // Room for the … menu, which stands over the row.
-      if roadmap.owns && !opening.owned { Color.clear.frame(width: RoomSpace.minimumTarget, height: 1).accessibilityHidden(true) }
+      if roadmap.owns && !opening.owned { Color.clear.frame(width: RoomSpace.minimumTarget + 6, height: 1).accessibilityHidden(true) }
     }
   }
 
   // The owner's Change Roadmap and Detach Roadmap (07.9): Detach asks nothing and is not red, since the band offers Undo.
   var menu: some View {
     Menu {
-      Button("Change Roadmap", systemImage: "square.stack.3d.up") { roadmap.path.append(.attach(to: row.id)) }
-      Button("Detach Roadmap", systemImage: "minus.circle") { roadmap.detach(row) }
+      Button("Change Roadmap", systemImage: "square.stack.3d.up") { roadmap.path.append(.attach(to: row.id)) }.tint(RoadmapPalette.ink)
+      Button("Detach Roadmap", systemImage: "minus.circle") { roadmap.detach(row) }.tint(RoadmapPalette.ink)
     } label: {
       Image(systemName: "ellipsis").foregroundStyle(RoadmapPalette.accent).frame(minWidth: RoomSpace.minimumTarget, minHeight: RoomSpace.minimumTarget)
         .contentShape(Rectangle())
@@ -145,13 +145,13 @@ struct InsideTitle: ViewModifier {
         if roadmap.selection == nil {
           ToolbarItem(placement: .topBarTrailing) {
             Menu("More", systemImage: "ellipsis") {
-              Button(GuideSheet.menuTitle(above: open.guidesAbove.count), systemImage: "book.closed") { roadmap.openGuide() }
-              Button("Kinds", systemImage: "paintpalette") { roadmap.openKinds(from: .menu) }
-              Button("Activity", systemImage: "clock.arrow.circlepath") { roadmap.showActivity() }
+              Button(GuideSheet.menuTitle(above: open.guidesAbove.count), systemImage: "book.closed") { roadmap.openGuide() }.tint(RoadmapPalette.ink)
+              Button("Kinds", systemImage: "paintpalette") { roadmap.openKinds(from: .menu) }.tint(RoadmapPalette.ink)
+              Button("Activity", systemImage: "clock.arrow.circlepath") { roadmap.showActivity() }.tint(RoadmapPalette.ink)
             }.accessibilityIdentifier("roadmap-inside-more")
           }
         }
-      }
+      }.roomBar(.roadmap)
   }
 
   @ViewBuilder var title: some View {

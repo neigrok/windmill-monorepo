@@ -36,10 +36,9 @@ struct AttachRoadmap: View {
           Button { chooseNone() } label: {
             Text(String(localized: "None", comment: "Nothing chosen: no step in the step form's Requires or Opens, and no roadmap in its Roadmap row or the attach list"))
               .foregroundStyle(RoadmapPalette.ink).frame(maxWidth: .infinity, alignment: .leading)
-          }
-            .accessibilityIdentifier("roadmap-attach-none")
+          }.accessibilityIdentifier("roadmap-attach-none")
         } footer: {
-          Text(String(localized: "\(ListedRoadmap.name(of: name(of: current))) stays. This step becomes ordinary.",
+          Text(String(localized: "\(roadmap.name(of: current)) stays. This step becomes ordinary.",
                       comment: "The attach list's None: the roadmap the step opens now, which detaching leaves as it is"))
             .foregroundStyle(RoadmapPalette.inkDim)
         }.listRowBackground(RoadmapPalette.card)
@@ -94,11 +93,6 @@ struct AttachRoadmap: View {
     if let draft { return draft.roadmap }
     guard let opening = roadmap.shown?.step(step)?.opening, !opening.owned else { return nil }
     return opening.tree
-  }
-
-  // A roadmap's name as the person's list or the room's copy holds it.
-  func name(of tree: String) -> String? {
-    roadmap.root.roadmaps.first { $0.id == tree }?.title ?? roadmap.account.location(of: tree).title
   }
 
   // A row of the person's own: its name over its progress, checked where the step opens it. The roadmap the step stands in

@@ -133,9 +133,7 @@ struct RoadmapStepForm: View {
       row("Roadmap", value: subtree.name).disabled(true)
     } else {
       NavigationLink { AttachRoadmap(roadmap: roadmap, step: draft.step.description, draft: draft) } label: {
-        row("Roadmap", value: draft.roadmap.map { (tree: String) -> String in
-          ListedRoadmap.name(of: roadmap.root.roadmaps.first { $0.id == tree }?.title ?? roadmap.account.location(of: tree).title)
-        } ?? String(localized: "None", comment: "Nothing chosen: no step in the step form's Requires or Opens, and no roadmap in its Roadmap row or the attach list"))
+        row("Roadmap", value: draft.roadmap.map { roadmap.name(of: $0) } ?? String(localized: "None", comment: "Nothing chosen: no step in the step form's Requires or Opens, and no roadmap in its Roadmap row or the attach list"))
       }
     }
   }

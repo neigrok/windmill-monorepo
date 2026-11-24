@@ -29,7 +29,8 @@ import SyncSchema
 // roadmap-nested, *Become a day skipper* whose *Learn to sail* opens *Learn to sail* (07.1 to 07.10), with *Spanish B1* and
 // *Coastal navigation handbook* beside them and the link to another account's public *Reefing course* copied;
 // roadmap-nested-offline, the same with no connection for its requests (07.12a); roadmap-nested-signed-out, the same planted
-// on a phone never signed in (07.12b); roadmap-nested-done, the same with every step of *Learn to sail* done (07.4); roadmap-nested-odd, the variation whose Up next steps open a roadmap that loops back,
+// on a phone never signed in (07.12b); roadmap-nested-done, the same with every step of *Learn to sail* done (07.4);
+// roadmap-nested-unattached, the same whose *Learn to sail* opens no roadmap yet (07.8 to 07.10); roadmap-nested-odd, the variation whose Up next steps open a roadmap that loops back,
 // one with no steps and one that cannot be found (07.5a to 07.5d); and roadmap-nested-subtree, the variation whose *Night
 // passage* owns a subtree (07.11, 07.11b). A launch can also name where the
 // Graph's measures go and how it keeps a pinch's frames (`graph(telemetry:)`), where the Board's go (`boardFrames()`), and
@@ -437,8 +438,8 @@ enum RoadmapFixture {
     }
     let id = { (key: String) -> ID<RoadmapStep> in skipper.steps.first { $0.key == key }!.id }
     var overlay = [AnyActAction<RoadmapRefusal>(MarkStep.complete(tree: skipper.tree, step: id("theory"))),
-                   AnyActAction(MarkStep.complete(tree: skipper.tree, step: id("aid"))),
-                   AnyActAction(PointStep.set(tree: skipper.tree, step: id("sail"), opens: sail.tree))]
+                   AnyActAction(MarkStep.complete(tree: skipper.tree, step: id("aid")))]
+    if board != "roadmap-nested-unattached" { overlay.append(AnyActAction(PointStep.set(tree: skipper.tree, step: id("sail"), opens: sail.tree))) }
     if board == "roadmap-nested-odd" {
       guard case .committed(let night, _) = try runner.runAct(CreateRoadmap(title: "Night sailing")) else {
         throw AppFailure(message: "Night sailing was not planted.")

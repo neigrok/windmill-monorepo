@@ -191,6 +191,11 @@ extension RoadmapModel {
   // The person's own room, which the rooms gone into stand over: where their list is read and links are followed.
   var root: RoadmapModel { outside?.root ?? self }
 
+  // A roadmap a step may open, by its name as the person's list or the room's copy holds it.
+  func name(of roadmap: String) -> String {
+    ListedRoadmap.name(of: root.roadmaps.first { $0.id == roadmap }?.title ?? account.location(of: roadmap).title)
+  }
+
   // Into the roadmap a step opens (07.1b, 07.2, 07.11): its room is pushed on the stack over the screen gone in from.
   func goIn(_ row: Row, by door: Visit.Door) {
     guard owns, let opening = row.opening, opening.leads else { return }

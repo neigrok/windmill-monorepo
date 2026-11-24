@@ -37,6 +37,11 @@ final class RoadmapNestedCaptures: DesignCapture {
       let app = skipper(look)
       app.segmentedControls.buttons["Graph"].tap()
       XCTAssertTrue(app.descendants(matching: .any)["roadmap-graph"].waitForExistence(timeout: 10))
+      // Picked from Next, the step is brought to the centre at a zoom where its caption, mark and line show.
+      XCTAssertTrue(app.buttons["roadmap-graph-next"].waitForHittable(timeout: 10))
+      app.buttons["roadmap-graph-next"].tap()
+      XCTAssertTrue(app.buttons["Learn to sail"].waitForExistence(timeout: 5))
+      app.buttons["Learn to sail"].tap()
       return app
     }
   }
@@ -61,11 +66,12 @@ final class RoadmapNestedCaptures: DesignCapture {
     }
     captureBoard("07.2b-roadmap-step-locked-opens-a-roadmap") { look in
       let app = skipper(look, standing: 1)
+      page(of: "Learn to sail", in: app)
       page(of: "Day skipper theory", in: app)
       app.buttons["roadmap-reset"].tap()
-      XCTAssertTrue(app.buttons["roadmap-undo"].waitForExistence(timeout: 10) && app.buttons["roadmap-undo"].waitForNonExistence(timeout: 10))
+      XCTAssertTrue(app.buttons["roadmap-reset"].waitForNonExistence(timeout: 10))
       app.navigationBars.firstMatch.buttons.element(boundBy: 0).tap()
-      page(of: "Learn to sail", in: app)
+      XCTAssertTrue(app.roadmapStepPage("Learn to sail") && app.buttons["roadmap-undo"].waitForNonExistence(timeout: 10))
       return app
     }
   }
@@ -149,16 +155,16 @@ final class RoadmapNestedCaptures: DesignCapture {
     }
   }
 
-  // 07.8 to 07.10: detached and attached again with the band; the … menu; marked Done by hand, attached with the mark set
-  // aside; and detached with the mark back.
+  // 07.8 to 07.10: *Learn to sail* attached with the band; the … menu; marked Done by hand first, attached with the mark
+  // set aside; and detached with the mark back. The board whose step opens no roadmap yet is attached afresh.
   func testAttachAndDetach() {
-    let reattached = { (app: XCUIApplication, completing: Bool) in
+    let attached = { (app: XCUIApplication, completing: Bool) in
       self.page(of: "Learn to sail", in: app)
-      app.buttons["roadmap-step-roadmap-more"].tap()
-      XCTAssertTrue(app.buttons["Detach Roadmap"].waitForExistence(timeout: 5))
-      app.buttons["Detach Roadmap"].tap()
       XCTAssertTrue(app.buttons["roadmap-complete"].waitForHittable(timeout: 10))
-      if completing { app.buttons["roadmap-complete"].tap() }
+      if completing {
+        app.buttons["roadmap-complete"].tap()
+        XCTAssertTrue(app.buttons["roadmap-reset"].waitForHittable(timeout: 10))
+      }
       app.buttons["roadmap-step-more"].tap()
       XCTAssertTrue(app.buttons["Attach a Roadmap"].waitForExistence(timeout: 5))
       app.buttons["Attach a Roadmap"].tap()
@@ -168,13 +174,13 @@ final class RoadmapNestedCaptures: DesignCapture {
       XCTAssertTrue(app.staticTexts["Roadmap attached"].waitForExistence(timeout: 10))
     }
     captureBoard("07.8-roadmap-attached") { look in
-      let app = skipper(look)
-      reattached(app, false)
+      let app = skipper(look, board: "roadmap-nested-unattached")
+      attached(app, false)
       return app
     }
     captureBoard("07.8b-roadmap-attached-mark-set-aside") { look in
-      let app = skipper(look)
-      reattached(app, true)
+      let app = skipper(look, board: "roadmap-nested-unattached")
+      attached(app, true)
       return app
     }
     captureBoard("07.9-roadmap-row-menu") { look in
@@ -185,8 +191,8 @@ final class RoadmapNestedCaptures: DesignCapture {
       return app
     }
     captureBoard("07.10-roadmap-detached-mark-back") { look in
-      let app = skipper(look)
-      reattached(app, true)
+      let app = skipper(look, board: "roadmap-nested-unattached")
+      attached(app, true)
       app.buttons["roadmap-step-roadmap-more"].tap()
       XCTAssertTrue(app.buttons["Detach Roadmap"].waitForExistence(timeout: 5))
       app.buttons["Detach Roadmap"].tap()

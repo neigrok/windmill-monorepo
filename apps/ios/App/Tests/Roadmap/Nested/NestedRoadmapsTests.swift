@@ -242,6 +242,37 @@ import SyncTesting
     ])
   }
 
+  // A roadmap detached and attached again reads as that roadmap at every read on the way, never as one not found. Known
+  // to fail where both acts reach the server in one push: the attach writes the pointer's life alone, since its `opens`
+  // equals what the dead record held, and the model server's row comes back alive with no `opens`, read as Not found.
+  @Test func aRoadmapDetachedAndAttachedAgainIsReadAsItselfThroughout() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let (model, sail, _) = try await skipper(on: engine, runner, memory)
+    model.detach(try row("Learn to sail", in: model))
+    await settle(model, on: engine) { self.find("Learn to sail", in: $0)?.opening == nil }
+    #expect(model.attach(sail.tree.description, to: try row("Learn to sail", in: model)))
+    var faces: [String] = []
+    let overlay = try #require(model.shown?.id).overlay
+    let pointers = { () throws -> [String] in
+      try engine.drawn(overlay, StepPointer.type).map { "\($0.id) life=\(String(describing: $0.life)) values=\($0.values) pending=\($0.isPending)" }
+    }
+    var before: [String] = []
+    for _ in 0..<20 {
+      faces.append(find("Learn to sail", in: model)?.opening?.face.rawValue ?? "none")
+      await engine.settleViews()
+      model.observe()
+      if faces.count == 10 {
+        before = try pointers()
+        engine.sync()
+      }
+    }
+    let after = try pointers()
+    withKnownIssue("the re-attached pointer comes back from the server with no opens", isIntermittent: true) {
+      #expect(Set(faces.dropFirst()) == ["open"], "\(faces) before \(before) after \(after)")
+    }
+  }
+
   @Test func theFormsRoadmapRowIsWrittenWithTheStepInOneSave() async throws {
     let (engine, runner, memory, suite) = phone()
     defer { memory.removePersistentDomain(forName: suite) }
