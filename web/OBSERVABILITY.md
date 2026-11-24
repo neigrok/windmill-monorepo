@@ -34,7 +34,7 @@ refusal text never enter telemetry properties.
 
 | Events | Meaning |
 |---|---|
-| `sync-start`, `sync-commit`, `sync-release`, `sync-undo` | Local engine and gesture steps |
+| `sync-start`, `sync-commit`, `sync-release`, `sync-undo` | Local engine and gesture steps. A commit or an act a sign-in or a sign-out overtook before it landed, in this tab or another, one the back/forward cache held among them, writes nothing and tells its `sync-commit` `not-writable` |
 | `sync-inverse` | An Undo or Redo of a journaled act (engine.md §7.3 Undo of an act). When requested: `ok` when cancelled in place or already settled, `pending` while its slots wait or travel, `unavailable` for an act it cannot invert, `failed` when the transaction did not commit. When a pending request settles: `settled`, with its `applied` and `skipped` operation counts. At the first tab's engine start, while requests still wait: `pending`, with how many are `waiting` and the oldest one's `ageMs` |
 | `sync-signin`, `sync-signout` | Lineage decisions and authentication transitions |
 | `sync-auth-paused` | The active replica's sync stopping for its credential, told once by the transaction that makes the change: `paused` (a `401`, an answer or frame served as another principal, or the shell reading that the browser no longer holds the account's credential), `released` (a sign-in, a sign-out, the shell reading that the browser holds no credential, or a credential deletion that leaves none) |
@@ -48,7 +48,7 @@ refusal text never enter telemetry properties.
 Properties are restricted to `scopeKind` (`product`, `tree`, `overlay`, `device`), a nonnegative safe
 integer `seq`, `durationMs` and `queueMs` (capped at 60,000), `applied`, `skipped` and `waiting` (capped at
 1,000), `ageMs` (capped at 30 days), and `outcome` (`ok`, `denied`, `unavailable`, `pending`, `settled`,
-`paused`, `failed`, `acquired`, `released`, `superseded`, `reloaded`). No id or value of an act, request or record enters them.
+`paused`, `failed`, `acquired`, `released`, `superseded`, `reloaded`, `not-writable`). No id or value of an act, request or record enters them.
 Failures reach Sentry with kind `sync`, route `/sync` and no stack, under these static operations only:
 
 | Failure | When |
@@ -71,7 +71,10 @@ when the server is out of reach while the browser reports itself online, and jou
 is `needs_connection`, no Issue. Once a read for an account has bound the seat, the shell tells the engine the read's
 `syncReplica`: a store the browser cleared emits `sync-store-cleared`, whose mark a write that fails leaves for the next
 read, reported as `sync-storage`; no replica id, session or account enters either. A page in the back/forward cache reports nothing new: its rooms stand, and a write it
-holds until the restore lands then, or fails as the `store` failure the restore already reported.
+holds until the restore lands then, under the binding it was issued under, or fails as the `store` failure the restore already
+reported. One whose seat another tab moved meanwhile writes nothing, reports no failure and tells its `sync-commit`
+`not-writable`. Once a restore has failed, a write issued before the page is shown again fails at once, a `CommitError` of
+kind `store` reported as `sync-storage` as any write the store did not commit, so nothing waiting on it hangs.
 
 The shell reports session transition failures as `auth-session`, a refused auth-hint storage write as
 `auth-hint-storage` and a read of `/v1/me` the engine could not take as `auth-credential-held`, each with
@@ -147,7 +150,9 @@ static `journal-*` Sentry operation names. Claim/save, first-run retirements and
 gesture events. Domain refusals retain the complete input in a local editor draft and keep the
 editor's unsaved status; failed reconciliation emits a bounded `sync_commit` failure outcome.
 Post-commit notice-cleanup failures use `journal-notice-cleanup` and preserve the successful save
-outcome; it and `journal-claim-reconcile` carry the error's stack, its message struck.
+outcome; it, `journal-save`, `journal-invitation` and `journal-claim-reconcile` carry the error's stack, its message struck.
+A save or a retirement a sign-in or a sign-out overtook, in this tab or another, the one binding the signed-out replica in
+place included, is refused (`ReplicaChanged`), lands in no seat and is no Issue: it tells `sync_commit` `not-writable`.
 The carry of what the journal's bundle before the engine kept in this browser's storage (`carry.js`) emits
 `journal_carry` with `seat` (`anon` or `account`, whose pages they are; `unclaimed` for those returned), `outcome` and
 `pages`, a count through `countBucket` (`0/1/2-5/6-20/21+`): `carried`, the pages a run wrote into the replica as claims
@@ -205,14 +210,15 @@ delete, Undo, refusal and `workout-adopt`, the hook before the seat changes savi
 told only when it saved something (`saved-local`), was refused or failed. Outcomes are `saved-local`, `unchanged` (a clean draft or a rename to the
 name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`. A local save
 records durability, not server admission. Unexpected product boundary failures use static
-`gym-<operation>` Sentry names; projection failures use `gym-projection`. A malformed frozen plan
+`gym-<operation>` Sentry names with the error's stack frames, never its message; projection failures use `gym-projection`. A malformed frozen plan
 reports that static operation at read and write boundaries and is omitted from the display; the
 workout's facts, set corrections and deletion remain available, and its stored plan is preserved.
 Workout drafts stay in account-scoped device rows while admission is pending or refused; the
 refusal step offers the retained editor without reporting its contents. A gym refusal and a store
 failure report no `gym-<operation>`: engine telemetry owns transport, storage, authentication and
-admission failures. A write whose replica changed under the room, a sign-in or a sign-out having moved the engine, is
-such a refusal: `gym_action` with `refused` and `code: not-writable`, and no Issue; every other refusal, the gym's rules on
+admission failures. A write whose replica changed under the room, a sign-in or a sign-out having moved the engine before
+it or while it waited (the engine's `ReplicaChanged`), is such a refusal: `gym_action` with `refused` and `code: not-writable`,
+and no Issue; every other refusal, the gym's rules on
 this device or the server's notice of one, carries `code: domain`. The room drawing before the account answers
 adds no event and no failure of its own. No workout or note content, identifiers, field values, refusal details or raw
 exception messages are reported.
@@ -503,7 +509,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-gallery-load` | A still-wanted initial gallery read or page failed, tagged `read: initial/page` and `reason: server/network/shape`. Server failures and transport loss, including an interrupted body after successful headers, report through `reportUnexpectedFailure`; 4xx and offline or hidden transport loss do not. A fully read successful response whose JSON parse or entry projection throws reports as `shape` through `reportRoadmapFailure`. Only static labels leave; no bodies, cursors, URLs, names or raw messages | The gallery's existing error and Try again; a failed page retains its cards, count and cursor for retry |
 | `roadmap-share` | Publishing or making private: a server failure, or a request lost while visible and online; on the device's copy, a write the door below reported is not reported again (`BoundaryFailure`) | The dialog's own error |
 | `roadmap-replica-landing` | A room on the device's copy: reading what the device tells of the owner's own changes (§6) threw, once per visit | The room tells no landing line this visit and reads on; the device's note keeps what it holds for the next opening |
-| `roadmap-replica-write` | A room on the device's copy: a write its store did not take, or an Undo, Redo or release of one that threw, its one report (the share dialog and the switcher pass such a failure on unreported), tagged `write` with what it wrote (`mark/title/guide/visibility/workspace/note/landing`, a gesture's kind such as `CreateNode` or `BulkDelete`, or `deleteRoadmap/undeleteRoadmap/undo/redo/release`) | Nothing of that write is drawn: the room shows what the device holds, and a switcher's rename puts the old name back |
+| `roadmap-replica-write` | A room on the device's copy: a write its store did not take, or an Undo, Redo or release of one that threw, its one report (the share dialog and the switcher pass such a failure on unreported), tagged `write` with what it wrote (`mark/title/guide/visibility/workspace/note/landing`, a gesture's kind such as `CreateNode` or `BulkDelete`, or `deleteRoadmap/undeleteRoadmap/undo/redo/release`). A write a sign-in or a sign-out overtook (`ReplicaChanged`, one the back/forward cache held while another tab moved the seat among them) reports nothing, here or at any roadmap door: the engine told its `sync-commit` `not-writable` | Nothing of that write is drawn: the room shows what the device holds, and a switcher's rename puts the old name back |
 | `roadmap-kept` | The one list's render | The list closes; the account menu still offers it, and opening it again renders it afresh |
 | `roadmap-kept-copy` | A kept change's Copy throwing anything but the browser's refusal (`NotAllowedError`, `SecurityError`) or a missing clipboard, which emit only the failed attempt; only the static operation and sanitized stack frames, never the change's words | Below 1024px *Copy failed. Select the text to copy it.* with Select text; from 1024px nothing is said yet (the board draws no such state) and the text stays selectable |
 | `roadmap-kept-discard` | The engine's dismiss of a kept change's notice throwing, once a Discard; a dismiss the engine answers `false`, the notice no longer held, is no failure and closes the change quietly | The change stays in the list, back on its page with Discard; nothing is said yet (the board draws no such state) |
@@ -533,7 +539,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-sync-refused` | An unexpected refusal, once per bounded code per session, with `code` as a tag | The refusal notice |
 | `auth-session` | An unexpected account refresh failure | The session's existing path |
 | `auth-credential-held` | Telling the engine whose credential a read of `/v1/me` found threw, its store having failed or closed underneath it (a store failure the engine reports as `sync-storage` too); once a page, stack frames only | The read goes on: the shell settles the account it read, and the engine hears the next read, 20 seconds on at most |
-| `auth-seat-will-change` | A product's hook before the seat changes (`sync.seatWillChange`, before a sign-in binds the device and before a sign-out finishes) threw (`outcome: failed`, its stack frames) or outlasted its five seconds (`outcome: timeout`), tagged `product`, the route table's id. Never a record, a count or an account | The seat changes without it: the next product's hook runs, then the sign-in or the sign-out; a write the late hook makes afterwards is refused by its own binding check (gym's `not-writable`) |
+| `auth-seat-will-change` | A product's hook before the seat changes (`sync.seatWillChange`, before a sign-in binds the device and before a sign-out finishes) threw (`outcome: failed`, its stack frames) or outlasted its five seconds (`outcome: timeout`), tagged `product`, the route table's id. Never a record, a count or an account | The seat changes without it: the next product's hook runs, then the sign-in or the sign-out; a write the late hook makes afterwards is refused by the binding it was issued under and writes nothing (gym's one act, `not-writable`) |
 | `auth-product-words` | A product's hook into an account-change question threw, tagged `question`: `adoption` (`adoptionAnswer`, the product's own answer to a sign-in question), `signin` (`signInWords` or `adoptionCount`, the sign-in question's words or its count of the product's records), `signout` (`signOutWords`), `step` (the words' `onStep`, a step of the question told to the product), `begin` (`signOutBegins`, what the product does as a sign-out begins, before the engine sends what the device holds), `forget` (`signOutForgets`, the device rows the product's finished sign-out takes) or `notice` (`signOutNotice`, the product's line on what signing out discards from this tab). Stack frames only: never the product's words, a count or an account | The shell asks as it would of a product that says nothing: the person answers the sign-in question, in the shell's words with the engine's count, and the sign-out question in the next product's words or the shell's, without that product's line or its step event, so signing in and out go on |
 | `billing-subscription` | The subscription read (`GET /v1/subscription`), kind `billing`, under the tag `reason`: `server` for a 5xx, `shape` for a 200 that is not a SubscriptionResponse. A request lost and a 4xx report nothing | The page reads as holding no Windmill One until the next read, at the next focus |
 

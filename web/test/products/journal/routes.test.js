@@ -50,7 +50,7 @@ test('only unwritten journal work is adopted without a personal-data question', 
   ];
   for (const { devices, answer } of cases) {
     const snapshot = { drawn: [], stored: [], notices: [], loaded: true, firstPullComplete: true };
-    const engine = { registry, now: () => Date.parse(`${day}T12:00:00Z`), activeReplica: () => 'replica',
+    const engine = { registry, now: () => Date.parse(`${day}T12:00:00Z`), activeReplica: () => 'replica', activeBinding: () => 'binding',
       readMetadata: () => ({ devices, confirmed: new Map(), firstPullComplete: true, commands: [],
         actor: 'writer', isAnonymous: true, checkpoint: { epoch: null, cleanSeq: null } }),
       readDeviceRows: () => devices,

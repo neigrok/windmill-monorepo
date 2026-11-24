@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
+import { BrowserSyncEngine, ReplicaChanged } from '../../../src/platform/sync/engine.js';
 import { adoptDeviceRows, pendingClaimWork, recoveredDrafts, retireInvitation } from '../../../src/products/journal/pages.js';
 import { EditorDraft } from '../../../src/products/journal/domain/writing.js';
 import { ReconcileClaim } from '../../../src/products/journal/domain/writing.js';
@@ -47,6 +47,24 @@ async function converge(engine) {
   await until(() => engine.device.activeReplica.entries(SCOPE).length === 0);
 }
 
+// A save comes due after the seat moved, as one the back/forward cache held while another tab signed in: the sign-in that
+// binds the anon replica in place keeps its id, so only the binding tells that the words were typed under another seat.
+test('a save planned under the signed-out seat that comes due after a sign-in bound its replica in place lands in no seat', async () => {
+  const { env, engine } = await setup({ watch: false });
+  await savePage(engine, doc('typed earlier, signed out'));
+  const planned = { replica: engine.activeReplica(), binding: engine.activeBinding() };
+  env.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, true);
+  const told = env.events.length;
+  await assert.rejects(savePage(engine, doc('typed before the seat moved'), planned.binding), ReplicaChanged);
+  assert.deepEqual({ sameReplica: engine.activeReplica() === planned.replica, account: engine.getSnapshot().account,
+    owed: engine.device.activeReplica.entries(SCOPE).map((entry) => entry.intent.cmd.args.body), pages: pagesOf(engine).map((page) => page.body),
+    commits: env.events.slice(told).filter((event) => event.name === 'sync-commit'), failures: env.failures },
+  { sameReplica: true, account: 'A', owed: ['typed earlier, signed out'], pages: ['typed earlier, signed out'],
+    commits: [{ name: 'sync-commit', props: { outcome: 'not-writable' } }], failures: [] });
+  engine.close();
+});
+
 test('anonymous autosaves supersede per day; offline restart retains the full latest document', async () => {
   const { engine, env } = await setup();
   await savePage(engine, doc('first'));
@@ -86,7 +104,7 @@ test('a refused cross-day carry preserves the original dated draft as well as th
   try {
     await engine.write(null, (device) => { device.activeReplica.deviceRows('journal')[EditorDraft.key] = original.json; }, [SCOPE]);
     const body = `today\n\n${original.document.body}`;
-    await assert.rejects(savePage(engine, doc(body), engine.activeReplica(), {}, original.json), /journal-local-refusal/);
+    await assert.rejects(savePage(engine, doc(body), engine.activeBinding(), {}, original.json), /journal-local-refusal/);
     assert.equal(pagesOf(engine).find((page) => page.day === day).body, body);
     assert.deepEqual(recoveredDrafts(engine).map(({ day, body }) => ({ day, body })), [{ day: original.day.text, body: original.document.body }]);
   } finally { engine.close(); }

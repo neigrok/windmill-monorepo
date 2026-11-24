@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { registry } from '../../../src/platform/sync/schema.js';
-import { environment, until } from '../../platform/sync/fakes.js';
+import { environment, FakeTimers, tick, until } from '../../platform/sync/fakes.js';
+import { DeviceSeat, SEAT_WILL_CHANGE_MS } from '../../../src/shell/auth/accountChange.js';
 import { hello } from '../../../../packages/api-contract/sync/reference/server/pull.js';
 import { reidentify } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { GymRefusal, isStoreFailure } from '../../../src/products/gym/errors.js';
@@ -756,6 +757,42 @@ test('an open workout an older build started joining keeps its sets: the start t
   });
 });
 
+// The seat's five seconds run out while the hook's writes wait on a slow store, and the sign-in binds the anon replica in
+// place: the hook's one act lands whole before the seat changes, or not at all, and never leaves a set only in the rack.
+for (const [stalled, lands] of [[1, false], [2, true]]) test(`a seat that changes while the hook's ${stalled === 1 ? 'first' : 'second'} write waits ${lands ? 'finds the workout saved whole' : 'finds it untouched'}`, async (t) => {
+  const { browser, run, events, told, saved, commands, sets } = await signedOutBrowser(t);
+  const open = new Id('session1', Session), startedAt = new Instant(DEFAULT_NOW - 30_000);
+  await run({ scope: Session.scope, refusals: GymRefusals, load: () => null,
+    decide: () => Decision.write(Plan.running({ name: 'gym.start', args: { id: open.json, startedAt: startedAt.ms }, specs: [] },
+      [Prediction.create(open, new SessionValue(open, startedAt, null, null, null, null, null).fields())]), open) });
+  await run(AppendSet(benchSet('set00001', open, DEFAULT_NOW - 20_000)));
+  await run(AppendSet(benchSet('set00002', open, DEFAULT_NOW - 10_000, 62.5)));
+  const { engine } = browser;
+  const write = engine.write.bind(engine);
+  let commits = 0, release;
+  const slow = new Promise((resolve) => { release = resolve; });
+  t.mock.method(engine, 'write', async (operation, ...rest) => {
+    if (operation === 'sync-commit' && ++commits === stalled) await slow;
+    return write(operation, ...rest);
+  });
+  const timers = new FakeTimers();
+  const reported = [];
+  const products = [{ id: 'gym', sync: { seatWillChange: (moving) => createGymApi(moving, told).saveSignedOutWorkouts() } }];
+  const changing = new DeviceSeat(products, { timers, reportWillChange: (product, outcome) => reported.push([product, outcome]) }).willChange(engine);
+  await until(() => commits >= 1);
+  for (let turn = 0; turn < 20; turn++) await tick();
+  timers.advance(SEAT_WILL_CHANGE_MS);
+  await changing;
+  assert.equal((await engine.signIn('A')).complete, true);
+  release();
+  for (let turn = 0; turn < 50; turn++) await tick();
+  assert.deepEqual({ reported, account: engine.getSnapshot().account, saved: saved(), commands: commands(), sets: sets(), events }, lands
+    ? { reported: [], account: 'A', saved: [['session1', true, ['set00001', 'set00002']]], commands: [['gym.start', 'session1', false]],
+      sets: ['set00001', 'set00002'], events: [{ operation: 'workout-adopt', outcome: 'saved-local' }] }
+    : { reported: [['gym', 'timeout']], account: 'A', saved: [], commands: [['gym.start', 'session1', null]], sets: ['set00001', 'set00002'],
+      events: [{ operation: 'workout-adopt', outcome: 'refused', code: 'not-writable' }] });
+});
+
 test('a seat that moved before the hook ran refuses it as not-writable, and a store that throws is a failure; each told once and neither stops the seat', async (t) => {
   const moved = await signedOutBrowser(t);
   const finished = new Id('session1', Session);
@@ -769,8 +806,9 @@ test('a seat that moved before the hook ran refuses it as not-writable, and a st
 
   const failing = await signedOutBrowser(t);
   await failing.run(StartSession({ id: finished, startedAt: new Instant(DEFAULT_NOW - 60_000) }));
-  t.mock.method(failing.browser.engine, 'commit', async () => { throw new Error('private detail'); });
-  await createGymApi(failing.browser.engine, failing.told).saveSignedOutWorkouts();
-  assert.deepEqual({ events: failing.events, failures: failing.failures },
-    { events: [{ operation: 'workout-adopt', outcome: 'failed' }], failures: ['workout-adopt'] });
+  const thrown = new Error('private detail');
+  t.mock.method(failing.browser.engine, 'commitAct', async () => { throw thrown; });
+  const reported = [];
+  await createGymApi(failing.browser.engine, { ...failing.told, failure: (operation, error) => reported.push([operation, error]) }).saveSignedOutWorkouts();
+  assert.deepEqual({ events: failing.events, reported }, { events: [{ operation: 'workout-adopt', outcome: 'failed' }], reported: [['workout-adopt', thrown]] });
 });

@@ -19,8 +19,10 @@ page keeps an invisible sync ordering marker so older offline saves cannot reviv
 The canvas draws the replica this tab draws (`useSyncReplica`): while the shell has settled an account the engine's
 replica is not bound to, as when another tab signed someone else in, it draws nothing of that replica until the shell
 catches up. A page restored from the back/forward cache keeps the canvas, what was typed and its scroll; a save that came
-due while the page was suspended lands once the engine is restored. `test/products/journal/boot.browser.test.js` boots
-the shell over a seeded browser copy in Chromium and proves both.
+due while the page was suspended lands once the engine is restored, unless another tab moved the seat meanwhile: what is
+typed belongs to the seat it was typed under (its binding, which a re-identify keeps), so that save is refused
+(`ReplicaChanged`) and lands in no other seat. `test/products/journal/boot.browser.test.js` boots the shell over a seeded
+browser copy in Chromium and proves all three.
 
 Typing shows at once and commits 600 ms after the last keystroke, one save for the burst. A mood or
 energy change, the page hiding and the editor unmounting save a staged body at once; a local day

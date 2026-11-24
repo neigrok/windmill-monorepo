@@ -1594,8 +1594,8 @@ entries and predictions never enter it.
 `opts = {atomic, hold, guard, retire, supersede, cmd, predict, scopedPredict, local, gestureId}`. `commit` is a synchronous
 call on the local store. It MUST NOT be launched from a cancellable UI scope, and never awaits the
 network. It throws only before its local transaction commits, and every client API declares exactly
-three failures, told apart by where they arise (the browser engine's `commitAct` adds `ReplicaChanged` to
-an act its caller guards, Ordered local acts below):
+three failures, told apart by where they arise (the browser engine's `commit` and `commitAct` add
+`ReplicaChanged`, a write whose binding changed before it landed, Ordered local acts below):
 - *not writable*: step 1, the replica's state forbids writes;
 - *malformed*, a programming error: every throw of steps 2 to 10, the checks before step 2 included
   (a type outside the commit's scope, an `opts.gestureId` that an outbox entry or a notice of any
@@ -1795,12 +1795,13 @@ an earlier admitted intent.
 
 The browser engine's `commitAct(prepare, segment, {binding})` takes the `activeBinding()` (§7.12) its
 caller planned the act under, outside the transaction and across awaits, as a product's multi-step write
-does. In the write transaction, before the prepare callback runs, a binding that no longer stands
-throws `ReplicaChanged`, exported beside the engine, and the act writes nothing: a sign-in or a sign-out
-in between, in this tab or another, the sign-in that binds the anon replica in place included. The
-caller handles it, and the engine reports it as no failure.
-Without `binding` nothing is checked. The guard is the browser engine's; the Swift and Kotlin engines
-have none.
+does; without `binding`, and for every `commit`, it takes the one standing when the call is made, so a write
+the page's back/forward cache held while another tab moved the seat is guarded too. In the write
+transaction, before any callback runs, a binding that no longer stands throws `ReplicaChanged`, exported
+beside the engine, and the write lands nothing: a sign-in or a sign-out in between, in this tab or
+another, the sign-in that binds the anon replica in place included. The caller handles it, and the
+engine reports it as no failure and tells its commit's step `not-writable`. The guard is the browser
+engine's; the Swift and Kotlin engines have none.
 
 ### §7.2 Send order
 
@@ -2814,8 +2815,8 @@ it (§7.8).
 The browser engine adds `activeBinding()`: an opaque string that changes whenever the active replica or
 the account it is bound to changes, so a switch to another replica, a sign-in (the one that binds the
 anon replica in place, whose id stands, included) and a sign-out each change it, and a re-identify does
-not; null before the engine's first publication. An act planned under it commits only while it stands
-(§7.1 Ordered local acts). A pull's answer and its pages land only under the binding the pull was sent
+not; null before the engine's first publication. A commit made or an act planned under it lands only while
+it stands (§7.1 Ordered local acts). A pull's answer and its pages land only under the binding the pull was sent
 under, and the answer only under the replica id it was sent under as well; a frame lands only under the
 binding its live socket opened under, and a change of binding, another tab's included, closes that
 socket and ends every doubt (§7.9), so the socket opens again under the new one. An answer or frame

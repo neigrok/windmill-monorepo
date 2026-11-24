@@ -12,7 +12,11 @@ const { DeleteConversation, Mark, PictureCopy } = await import('../../../../src/
 const { CoachTurns, coachRowsToForget, coachSeatWillChange, shareDoor } = await import('../../../../src/products/gym/coach/coachTurns.js');
 const { GymProfile } = await import('../../../../src/products/gym/coach/profile.js');
 const { forgetRetiredCoach } = await import('../../../../src/products/gym/coach/retiredCoach.js');
-const { GymTurn } = await import('../../../../src/products/gym/coach/turnHost.js');
+const { GymTurn, GymTurnHost } = await import('../../../../src/products/gym/coach/turnHost.js');
+const { HostUnavailable } = await import('../../../../src/platform/agent/turn.js');
+const { Decision } = await import('../../../../src/platform/domain-kit/actions.js');
+const { FixedZone } = await import('../../../../src/platform/domain-kit/time.js');
+const { GymRefusals } = await import('../../../../src/products/gym/domain/gymRules.js');
 const { GymTurnTelemetry } = await import('../../../../src/products/gym/coach/turnTelemetry.js');
 const { gymRoutes } = await import('../../../../src/products/gym/routes.js');
 const { Harness } = await import('../../../platform/domain-kit/harness.js');
@@ -242,4 +246,22 @@ test('F5: deleting a conversation is told, and one answering here stays, told as
 test('the Share door that never answers lets the turn go on as refused, within its bound', async () => {
   const door = shareDoor({ shareSession: () => new Promise(() => {}) }, 'https://windmill.works', globalThis, 10);
   await assert.rejects(door.share('session-1'), (error) => error.name === 'TimeoutError');
+});
+
+test('a turn\'s write the engine held while the seat moved ends the turn as the seat\'s, never as a fault of the host', async (t) => {
+  const harness = await phone(t);
+  const { engine } = harness;
+  const host = new GymTurnHost({ engine, zone: new FixedZone(0) });
+  const write = engine.write.bind(engine);
+  let release;
+  const slow = new Promise((resolve) => { release = resolve; });
+  t.mock.method(engine, 'write', async (operation, ...rest) => {
+    if (operation === 'sync-commit') await slow;
+    return write(operation, ...rest);
+  });
+  const held = host.runnerOn(engine.activeReplica()).run({ scope: CoachMessage.scope, refusals: GymRefusals, load: () => null,
+    decide: () => Decision.unchanged(null) }).then(() => 'landed', (error) => (error instanceof HostUnavailable ? `unavailable:${error.reason}` : error.name));
+  assert.equal((await signOut(harness)).complete, true);
+  release();
+  assert.equal(await held, 'unavailable:seat');
 });
