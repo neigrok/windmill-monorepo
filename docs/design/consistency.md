@@ -2132,6 +2132,10 @@ Android. It and the product differ in these places.
 
 ### Figma reconciliation
 
+- **Enter on the web's rack.** The Gym file's component Gym / Workout / Rack (`2151:11710`) says Enter logs from either
+  field. The build follows the iPhone (`docs/design/ios/workout-in-flight.md`, 03.23D.4): Enter, a phone keyboard's done
+  key included, lands the value and drops the field, and only Log set logs, so a lifter who taps done after typing a load
+  does not log the set before lifting it. The component's description is corrected, or the owner rules otherwise.
 - **The web's desktop head.** The Gym file's 08W boards and the Shell file's board 20 draw the desktop head with the
   brand mark and centred rooms; `chrome.css` hides the mark from 744 px and left-aligns the rooms.
 - **The published Gym library lags its file** (last published 2026-09-25): its Web shell / Desktop lacks the mark and
