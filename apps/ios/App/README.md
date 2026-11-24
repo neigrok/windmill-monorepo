@@ -446,7 +446,15 @@ of the layout's shared fixture, read from the repository the build was made in a
 steps' ids are the phone's, with the first 120 of the fixture's 1,800 done steps marked, since signed out each mark's
 commit reads everything the phone has still to send; `-board roadmap-full` is a phone never signed in that holds *Every
 harbour in Europe*, as many steps as the registry lets a roadmap hold, each harbour entered Up next and its berth Locked
-behind it; and `-board roadmap-unreadable` opens the room over views it cannot make. A simulator launch with
+behind it; `-board roadmap-unreadable` opens the room over views it cannot make; and a shared roadmap's covers
+(`RoadmapFixture.prepareCover`): `-board roadmap-cover` has another account plant *Learn to sail*, complete three steps
+and make it public, signs the phone in to an account of its own and opens the roadmap's link, and
+`-board roadmap-cover-signed-out` opens it signed out; `-board roadmap-cover-offline` opens it with no connection;
+`-board roadmap-cover-private` and `roadmap-cover-private-signed-out` open the link to it left private; and
+`-board roadmap-cover-no-connection` opens a link with no connection to a roadmap the phone holds no copy of. On these
+boards the board's own requests stand in for the backend's (`RoadmapFixture.BoardSharing`): the owner's progress is
+read from the owner's phone, and a fork is made by another phone of the reader's account, so the copy arrives by sync;
+`-fork-held` leaves a fork unanswered. A simulator launch with
 `-graph-measures <path>` appends what the Graph measures of itself to that file, and with `-board-measures <path>` what
 the Board measures, one JSON line a measure; with
 `-graph-pinch <way>` it keeps a pinch's frames that way, and with `-graph-crowd <count>` it does so from that many

@@ -8,7 +8,7 @@ import RoadmapDomain
 // button alone, with a spinner; a roadmap the phone can neither read nor hold, and one it holds no copy of with no
 // connection, say so. A sign-in the cover opens stands over it, the shell's own sheet.
 struct RoadmapCoverScreen: View {
-  @Bindable var cover: RoadmapCover
+  let cover: RoadmapCover
   let app: AppModel
 
   var body: some View {
