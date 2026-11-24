@@ -46,6 +46,18 @@ LegendRead::LegendRead(const RoadmapTree& tree) {
     std::stable_sort(kinds.begin(), kinds.end(), [](const Kind& a, const Kind& b) {
       return a.born != b.born ? a.born < b.born : a.id < b.id;
     });
+  for (const Step& step : tree.nodes)
+    if (step.present) worn_.push_back(step.color);
+}
+
+std::vector<ShownHue> LegendRead::shown() const {
+  static const std::vector<std::string> kPalette = {"terracotta", "olive", "gold", "brick", "sky", "plum"};
+  std::vector<ShownHue> shown;
+  for (const Kind& kind : kinds_)
+    if (ownerOf(kind.hue)->id == kind.id) shown.push_back(ShownHue{kind.hue, kind.id});
+  for (const std::string& hue : kPalette)
+    if (!claims(hue) && std::find(worn_.begin(), worn_.end(), hue) != worn_.end()) shown.push_back(ShownHue{hue, std::nullopt});
+  return shown;
 }
 
 const Kind* LegendRead::ownerOf(const std::string& hue) const {
