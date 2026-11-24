@@ -50,12 +50,13 @@ test('before the seat changes, the old pages its replica\'s ledger records leave
   assert.deepEqual([...data.entries()], [[key, JSON.stringify(entry('2026-10-02', 'not carried yet'))]]);
 });
 
-test('an account change keeps the old pages its account still owns, and a closure takes them all from this browser', (t) => {
+test('every account change forgets the old pages no account can be shown to own and keeps those its account still owns, and a closure takes them all from this browser', (t) => {
   const page = (day, body) => JSON.stringify({ [day]: { page: { day, body, mood: null, energy: null, source: 'typed', stamp: '' }, needsPush: true, read: false } });
   const kept = { 'wm.journal.v2.pages.anon': page('2026-10-03', 'written signed out') };
-  const data = new Map([...Object.entries(kept), ['wm.journal.v2.pages.u.A', page('2026-10-01', 'not carried yet')],
-    ['wm.journal.pages.u.A', page('2026-10-02', 'first version')]]);
-  const before = Object.fromEntries(data);
+  const owned = { 'wm.journal.v2.pages.u.A': page('2026-10-01', 'not carried yet'), 'wm.journal.pages.u.A': page('2026-10-02', 'first version') };
+  const unattributed = { 'wm.journal.pages': page('2026-10-04', 'first version, unscoped'),
+    'wm.journal.v2.pages.unclaimed': page('2026-10-05', 'unattributed'), 'wm.journal.v2.pages.unclaimed.0123456789abcdef': page('2026-10-06', 'returned') };
+  const data = new Map(Object.entries({ ...kept, ...owned, ...unattributed }));
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { get length() { return data.size; }, key: (index) => [...data.keys()][index] ?? null,
     getItem: (name) => data.get(name) ?? null, setItem: (name, value) => data.set(name, value), removeItem: (name) => data.delete(name) } });
@@ -64,8 +65,10 @@ test('an account change keeps the old pages its account still owns, and a closur
     else delete globalThis.localStorage;
   });
   journalRoutes.forgetDevice({ previous: 'A', next: null });
+  assert.deepEqual(Object.fromEntries(data), { ...kept, ...owned });
+  for (const [key, value] of Object.entries(unattributed)) data.set(key, value);
   journalRoutes.forgetDevice({ previous: 'A', next: 'B' });
-  assert.deepEqual(Object.fromEntries(data), before);
+  assert.deepEqual(Object.fromEntries(data), { ...kept, ...owned });
   journalRoutes.forgetDevice({ previous: 'A', next: null, closed: true });
   assert.deepEqual(Object.fromEntries(data), kept);
 });

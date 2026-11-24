@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { BrowserSyncEngine, ReplicaChanged } from '../../../src/platform/sync/engine.js';
 import { syncSession } from '../../../src/platform/sync/session.js';
 import { hashText } from '../../../src/platform/sync/core/encoding.js';
-import { CarryOver, OldStores, dropUnclaimedPages, forgetClosedAccount, restoreUnclaimedPages, settleSeat, unclaimedPages } from '../../../src/products/journal/carry.js';
+import { CarryOver, OldStores, dropUnclaimedPages, forgetClosedAccount, forgetUnclaimedPages, restoreUnclaimedPages, settleSeat, unclaimedPages } from '../../../src/products/journal/carry.js';
 import { CarryLedger, Seat } from '../../../src/products/journal/domain/carry.js';
 import { adoptDeviceRows, onSyncResult, pagesOf, pendingClaimWork, recoveredDrafts, savePage, SCOPE, watchClaims } from '../../../src/products/journal/pages.js';
 import { environment, until } from '../../platform/sync/fakes.js';
@@ -599,6 +599,48 @@ test('an oversized unattributed page restores for correction, once, without bloc
     assert.equal(await restoreUnclaimedPages('A', { engine, stores, track: () => {} }), 0);
     await savePage(engine, doc('corrected quarantined writing'));
     assert.equal(pagesOf(engine).find((page) => page.day === day).body, 'corrected quarantined writing');
+  } finally { engine.close(); }
+});
+
+test('every sign-out, Keep or Discard, forgets the unattributed pages, so the next person to sign in is not offered them, and a Restore before it still lands', async () => {
+  const { engine, env } = await setup();
+  const data = storage({ 'wm.journal.pages': stored(entry('restored before the sign-out', { date: '2026-09-20' })) });
+  const stores = new OldStores(data);
+  const told = { events: [], reports: [] };
+  const options = { stores, track: (name, props) => told.events.push([name, props]), report: (operation, stage) => told.reports.push([operation, stage]) };
+  // What the shell runs around a sign-out that finishes: the seat's settle before it, and the journal's `forgetDevice` after.
+  const signOut = async (choice) => {
+    settleSeat(engine, options);
+    assert.equal((await engine.finishSignOut({ choice })).complete, true);
+    forgetUnclaimedPages(options);
+  };
+  // What an old tab of the bundle before the engine writes, which no account can be shown to own.
+  const unattributed = (body, date) => data.setItem('wm.journal.v2.pages.unclaimed', stored(entry(body, { date }), { invalid: entry('no day')[day] }));
+  try {
+    env.transport.account = 'A'; await engine.signIn('A');
+    assert.equal(await restoreUnclaimedPages('A', { engine, ...options }), 1);
+    await converge(engine);
+    unattributed('written in an old tab', '2026-09-21');
+    data.setItem('wm.journal.pages', stored(entry('a cached copy', { date: '2026-09-22', owed: false })));
+    await signOut('keep');
+    assert.deepEqual([...data.data.keys()], []);
+    env.transport.account = 'B'; await engine.signIn('B');
+    assert.deepEqual(unclaimedPages(stores), []);
+    unattributed('written in an old tab again', '2026-09-23');
+    await signOut('discard');
+    assert.deepEqual([...data.data.keys()], []);
+    env.transport.account = 'A'; await engine.signIn('A');
+    await until(() => engine.leader); engine.kickPull(); await engine.pull();
+    assert.deepEqual(unclaimedPages(stores), []);
+    assert.deepEqual(bodies(pagesOf(engine)), [{ day: '2026-09-20', body: 'restored before the sign-out' }]);
+    await signOut('keep');
+    forgetUnclaimedPages({ ...options, stores: new OldStores({ get length() { throw new Error('storage denied'); } }) });
+    assert.deepEqual(told, { reports: [['journal-forget', 'forget']], events: [
+      ['journal_unclaimed', { action: 'restore', outcome: 'ok', pages: '1' }],
+      ['journal_unclaimed', { action: 'forget', outcome: 'ok', pages: '1' }],
+      ['journal_unclaimed', { action: 'forget', outcome: 'ok', pages: '1' }],
+      ['journal_unclaimed', { action: 'forget', outcome: 'failed', pages: '0' }],
+    ] });
   } finally { engine.close(); }
 });
 

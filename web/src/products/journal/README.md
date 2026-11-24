@@ -89,8 +89,11 @@ signed-in person decides in Settings: Restore claims them into the account's rep
 that day's page as a claim is, each other page of a day as a draft to recover, each act's pages leaving their stores as
 it commits; Discard deletes the pages Settings listed, and no page that arrived since, and writes nothing to the engine.
 The first version's unscoped store also cached an account's pages beside the writes it owed: those copies are neither
-listed nor restored, and go with their store. A sign-out leaves the unattributed pages for whoever is at the browser
-next, who sees the day and length of each, never the words. A browser that ran the journal's first bundle on the engine
+listed nor restored, and go with their store. Settings shows the day and length of each page, never the words. No
+account can be shown to own them, so every sign-out that finishes, Keep or Discard, forgets them (the route's
+`forgetDevice`, `forgetUnclaimedPages`): every store of them is deleted whole, the entries that do not read and the cached
+copies among them, so the next person to sign in on this browser is not offered them; a Restore made before the sign-out
+is in the account's replica by then, and a sign-in forgets nothing. A browser that ran the journal's first bundle on the engine
 kept those pages and its migration's records in the engine's device metadata; the carry returns the pages to the
 browser's storage once, a store a page, drops from the old stores the entries those records show carried, and deletes
 the three keys in the engine's one door to its metadata, the journal's only write of the device rather than of a

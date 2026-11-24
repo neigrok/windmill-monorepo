@@ -171,9 +171,13 @@ it at the next run or before the seat changes; once a page load from a run; a cl
 bundle's metadata failed; it is tried again at the next run). Settings' unsent pages emit `journal_unclaimed` with
 `action` (`restore` or `discard`), `outcome` (`ok`; `none` where no page waited any longer; for a restore,
 `replica_changed` where the account changed before or while it wrote and `refused` where the domain refused an act,
-either leaving the pages not yet written where they were; or `failed`) and `pages` through `countBucket`. Only `failed`
-also reports `journal-restore` or `journal-discard` with the error's stack. No day, page body, scale, claim identifier,
-store key or account is reported.
+either leaving the pages not yet written where they were; or `failed`) and `pages` through `countBucket`. Every finished
+sign-out, Keep or Discard, forgets them (`forgetUnclaimedPages`, the journal's `forgetDevice`) and emits
+`journal_unclaimed` with `action` `forget`: `outcome` `ok` with the pages it deleted, counted as Settings lists them, or
+`failed` with `pages` `0` where the browser refused its storage, the stores before the refusal gone and the rest
+tried again at the next sign-out; a sign-out that finds none emits nothing. Only `failed` also reports
+`journal-restore`, `journal-discard` or `journal-forget` with the error's stack. No day, page body, scale, claim
+identifier, store key or account is reported.
 Settings' export emits `journal_export` with `outcome`: `ok`, `first_pull_timeout` (a bound replica's first pull of
 the journal did not end within 30 seconds), `replica_changed` (the account changed while it waited), `no_replica` (the
 browser holds no open replica) or `failed`, which alone also reports `journal-export` with the error's stack and `step`:

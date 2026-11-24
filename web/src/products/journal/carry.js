@@ -9,7 +9,7 @@
 // it counted, as the work they were carried into; the pages not yet carried, and the entries that do not read, wait for
 // that seat's next replica. An account's closure deletes every page of its seat (`forgetClosedAccount`). The pages that
 // bundle could not attribute (`.unclaimed`) stay in the browser's storage until a signed-in person restores or discards
-// them in Settings.
+// them in Settings, or a sign-out forgets them (`forgetUnclaimedPages`).
 
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { ActionRunner, EngineReplica } from '../../platform/domain-kit/runner.js';
@@ -38,7 +38,7 @@ const WROTE = new Set(['claimed', 'drafted', 'recovered']);
 const LEFTOVERS = Object.freeze(['journalUnclaimed', 'journalMigration', 'journalMigrationEntries']);
 
 // A failure to Sentry under its static operation, tagged with the step it met, with the error's stack where there is one.
-/** @param {string} operation @param {'read' | 'write' | 'clear' | 'leftovers' | 'restore' | 'discard'} stage @param {any} [error] */
+/** @param {string} operation @param {'read' | 'write' | 'clear' | 'leftovers' | 'restore' | 'discard' | 'forget'} stage @param {any} [error] */
 function reportFailure(operation, stage, error = null) {
   captureError('journal', operation, error?.stack ?? '', '/journal', { stage });
 }
@@ -282,6 +282,22 @@ export function forgetClosedAccount(account, { stores = new OldStores(), track =
     if (gone.length > 0) track('journal_carry', { seat: 'account', outcome: 'cleared', pages: countBucket(gone.length) });
   } catch (error) {
     report('journal-migration', 'clear', error);
+  }
+}
+
+// A sign-out that finished, Keep or Discard (the shell's `forgetDevice`), forgets the pages the bundle before the engine
+// could not attribute, every store of them deleted whole, the entries that do not read and the first version's cached
+// copies among them: no account can be shown to own them (web-device-parity R-9), so the next person to sign in on this
+// browser is not offered them. Answers how many pages went, as Settings would have listed them.
+export function forgetUnclaimedPages({ stores = new OldStores(), track = trackEvent, report = reportFailure } = {}) {
+  try {
+    const forgotten = new Set(stores.forget(Seat.unclaimed).filter((page) => !page.copy).map((page) => page.digest)).size;
+    if (forgotten > 0) track('journal_unclaimed', { action: 'forget', outcome: 'ok', pages: countBucket(forgotten) });
+    return forgotten;
+  } catch (error) {
+    report('journal-forget', 'forget', error);
+    track('journal_unclaimed', { action: 'forget', outcome: 'failed', pages: countBucket(0) });
+    return 0;
   }
 }
 
