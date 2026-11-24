@@ -345,10 +345,7 @@ import SyncTesting
     ])
   }
 
-  // A roadmap detached and attached again reads as that roadmap at every read on the way, never as one not found. It
-  // fails every run, as both acts reach the server in one push: the engine's put diffs the revived pointer against its
-  // dead row and sends its life alone, so the row comes back alive with no `opens`, read as Not found. The engine's fix
-  // is the plan's node m1-reattach-a-detached-roadmap.
+  // A roadmap detached and attached again in one push reads as that roadmap at every read, never as one not found.
   @Test func aRoadmapDetachedAndAttachedAgainIsReadAsItselfThroughout() async throws {
     let (engine, runner, memory, suite) = phone()
     defer { memory.removePersistentDomain(forName: suite) }
@@ -372,9 +369,7 @@ import SyncTesting
       }
     }
     let after = try pointers()
-    withKnownIssue("the re-attached pointer comes back from the server with no opens") {
-      #expect(Set(faces.dropFirst()) == ["open"], "\(faces) before \(before) after \(after)")
-    }
+    #expect(Set(faces.dropFirst()) == ["open"], "\(faces) before \(before) after \(after)")
   }
 
   @Test func theFormsRoadmapRowIsWrittenWithTheStepInOneSave() async throws {
