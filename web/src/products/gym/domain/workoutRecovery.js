@@ -224,8 +224,8 @@ export class WorkoutFix {
 
 // A start that lost a race with another device's is refused `session-open`, and the sets logged under it live only in its
 // notice. This saves them as a copy under the device key, the start's workout with every set the notice holds, so the
-// review offers them; the notice stays, and names the copy's reason. A notice of anything else, one holding no set, a copy
-// already saved and a workout on the log save nothing.
+// review offers them; the notice stays, and names the copy's reason. A notice of anything else, one holding no set, a
+// workout deleted before the refusal, a copy already saved and a workout on the log save nothing.
 /** @param {GymNotice} notice */
 export function SaveRefusedStart(notice) {
   return Object.freeze({
