@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { RoadmapTree } from '../../../../src/products/roadmap/domain/records.js';
+import { LegendRead } from '../../../../src/products/roadmap/domain/reads.js';
 
 import {
   DEFAULT_KINDS,
@@ -382,4 +385,19 @@ test('kindChoices — the legend\'s names, then the unnamed hues in palette orde
   assert.deepEqual(kindChoices([...named, { id: 'k_plum', hue: 'plum', label: '', description: '' }, { id: 'k_sky', hue: 'sky', label: '', description: '' }]), expected);
   assert.deepEqual(kindChoices().map((kind) => kind.label), ['Terracotta', 'Olive', 'Gold', 'Brick', 'Sky', 'Plum']);
   assert.deepEqual(kindChoices(null).map((kind) => kind.label), ['Terracotta', 'Olive', 'Gold', 'Brick', 'Sky', 'Plum']);
+});
+
+// The legend a paste reads its text over is the room's: `deriveLegend` over the kinds `ReplicaRoadmap` seeds from the
+// domain's legend shown, which the iPhone reads as it stands. For every legend case the two are the same hues, in the same
+// order, each owned by the same kind; a hue no kind claims has a fresh id in the room and none in the read.
+test('the room’s legend is the domain’s legend shown, where two kinds share a hue too', () => {
+  const cases = JSON.parse(readFileSync(new URL('../../../../../packages/api-contract/roadmap/domain/legend.json', import.meta.url), 'utf8'));
+  for (const { name, input } of cases) {
+    const tree = new RoadmapTree(input.tree);
+    const shown = new LegendRead(tree).shown;
+    const seeded = shown.flatMap(({ kind }) => (kind ? [{ id: kind.id, hue: kind.hue, label: kind.label, description: kind.description }] : []));
+    const owned = new Set(seeded.map((kind) => kind.id));
+    const legend = deriveLegend(tree.nodes.filter((node) => node.present), seeded);
+    assert.deepEqual(legend.map((kind) => [kind.hue, owned.has(kind.id) ? kind.id : null]), shown.map(({ hue, kind }) => [hue, kind?.id ?? null]), name);
+  }
 });

@@ -32,7 +32,7 @@
         {"mark": "step", "nodeId": "moment", "liberties": []}
       ],
       "readout": {"steps": 5, "branches": 2, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -65,7 +65,7 @@
         {"mark": "step", "nodeId": "ship", "liberties": []}
       ],
       "readout": {"steps": 3, "branches": 1, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -100,7 +100,7 @@
         {"mark": "step", "nodeId": "b", "liberties": []}
       ],
       "readout": {"steps": 5, "branches": 2, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -137,7 +137,7 @@
         {"mark": "step", "nodeId": "c", "liberties": []}
       ],
       "readout": {"steps": 7, "branches": 3, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -187,7 +187,7 @@
         {"mark": "step", "nodeId": "d", "liberties": []}
       ],
       "readout": {"steps": 9, "branches": 4, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -215,7 +215,7 @@
         {"mark": "step", "nodeId": "b", "liberties": []}
       ],
       "readout": {"steps": 5, "branches": 2, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -247,7 +247,7 @@
         {"mark": "step", "nodeId": "after", "liberties": []}
       ],
       "readout": {"steps": 4, "branches": 1, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -279,7 +279,7 @@
         {"mark": "step", "nodeId": "b", "liberties": []}
       ],
       "readout": {"steps": 5, "branches": 2, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -326,7 +326,7 @@
         {"mark": "step", "nodeId": "d", "liberties": []}
       ],
       "readout": {"steps": 9, "branches": 4, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -354,7 +354,7 @@
         {"mark": "step", "nodeId": "b", "liberties": []}
       ],
       "readout": {"steps": 5, "branches": 2, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -384,7 +384,7 @@
         {"mark": "step", "nodeId": "dock", "liberties": []}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 1},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -415,7 +415,7 @@
         {"mark": "step", "nodeId": "dock", "liberties": []}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -443,7 +443,7 @@
         {"mark": "step", "nodeId": "dock", "liberties": []}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -467,7 +467,7 @@
         {"mark": "step", "nodeId": "dock", "liberties": []}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -480,7 +480,7 @@
       "kinds": [{"id": "rest", "hue": "plum", "label": "Rest", "description": "", "source": "existing"}],
       "gutter": [{"mark": null, "nodeId": null, "liberties": []}],
       "readout": {"steps": 1, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   }
 ]

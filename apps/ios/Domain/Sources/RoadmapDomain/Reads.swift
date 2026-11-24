@@ -18,9 +18,18 @@ public struct LegendRead: Sendable {
     public let others: [String]
   }
 
+  // An entry of the legend a roadmap shows: a hue, and the kind that owns it, none for a hue no kind claims.
+  public struct Shown: Sendable {
+    public let hue: String
+    public let kind: Kind?
+  }
+
   public let kinds: [Kind]
   // In hue byte order.
   public let hues: [Hue]
+  // The legend a roadmap shows, which a paste reads its text over: each hue's owner in the kinds' order, then each hue a
+  // present step wears that no kind claims, in the palette's order, with no kind.
+  public let shown: [Shown]
   let claimed: Set<[UInt8]>
 
   public init(_ tree: RoadmapTree) {
@@ -35,6 +44,10 @@ public struct LegendRead: Sendable {
     self.kinds = kinds
     self.hues = hues.sorted { $0.name.utf8.lexicographicallyPrecedes($1.name.utf8) }
     claimed = Set(wearers.keys)
+    let owners = Set(hues.map { Array($0.owner.utf8) })
+    let worn = Set(tree.index.nodes.map { Array($0.color.utf8) })
+    shown = kinds.filter { owners.contains(Array($0.id.utf8)) }.map { Shown(hue: $0.hue, kind: $0) }
+      + RoadmapRules.hues.filter { worn.contains(Array($0.utf8)) && wearers[$0] == nil }.map { Shown(hue: $0, kind: nil) }
   }
 
   public func claims(_ hue: String) -> Bool { claimed.contains(Array(hue.utf8)) }

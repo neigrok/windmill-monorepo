@@ -177,7 +177,7 @@ final class AppModel {
       guard runtime.settings.roadmapRoom else { return nil }
       return RoadmapModel(records: RoadmapFixture.records(runtime), runner: runtime.roadmapRunner, phone: preferences, telemetry: telemetry,
                           wait: RoadmapFixture.wait(), graph: RoadmapFixture.graph(telemetry: telemetry), boardFrames: RoadmapFixture.boardFrames(),
-                          role: .owner(RoadmapLinks(sources: RoadmapFixture.sources(runtime, telemetry: telemetry))))
+                          role: .owner(RoadmapLinks(sources: RoadmapFixture.sources(runtime, telemetry: telemetry))), handedFile: RoadmapFixture.chosenFile)
     }
     let lastRoom = Room(rawValue: preferences.string(forKey: "lastRoom") ?? "") ?? .journal
     selectedRoom = lastRoom == .roadmap && roadmap == nil ? .journal : lastRoom

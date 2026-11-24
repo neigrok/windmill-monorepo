@@ -25,7 +25,8 @@ const OPERATIONS = {
     const graft = graftPlan({ parse: parsePlan(text, kinds, { bindOnly: true }), targetId: under, reservedNodeIds: held, liveKinds: kinds });
     if (graft === null) return null;
     const [importing, ...creating] = new ReplicaSession({ treeId: 'T', runner: null, roadmap: null, say: null }).actsOf({ kind: 'ImportSubgraph', ...graft });
-    return { ImportSteps: { imported: importing.imported, under: importing.under }, CreateKind: creating.map((act) => act.kind) };
+    return { ImportSteps: { imported: importing.imported, under: importing.under, ...(importing.done.length > 0 ? { done: importing.done } : {}) },
+      CreateKind: creating.map((act) => act.kind) };
   },
   'write.json': ({ title, guide, kinds, nodes, done, readOver }) => {
     const text = serializePlan({ title, guide, nodes }, kinds, done);

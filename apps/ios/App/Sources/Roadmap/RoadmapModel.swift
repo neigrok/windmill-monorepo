@@ -283,6 +283,14 @@ final class RoadmapModel {
       case refused(Limit)
       // An Undo that brought back nothing of what its receipt said.
       indirect case unrestored(Says)
+      // A roadmap planted from a plan, by how many steps it holds and how many of them the plan brought done.
+      case planted(steps: Int, done: Int)
+      // Steps pasted into the open roadmap, by how many.
+      case added(steps: Int)
+      // Paste Steps found no text to read back on the clipboard.
+      case noText
+      // The system was not allowed to hand Paste Steps the copied text.
+      case pasteRefused
     }
 
     // A receipt's Undo: the gesture its act wrote, whether the engine holds that act, and the act it takes back.
@@ -325,13 +333,18 @@ final class RoadmapModel {
 
     // A gesture refused at a limit.
     init(refused limit: Limit) {
-      says = .refused(limit); undo = nil; arrived = []; lasts = RoadmapModel.bandLasts
+      self.init(told: .refused(limit))
+    }
+
+    // What the band tells once with no Undo, for six seconds.
+    init(told says: Says) {
+      self.says = says; undo = nil; arrived = []; lasts = RoadmapModel.bandLasts
     }
 
     // An Undo that brought nothing back: the receipt's words give way to what could not come back, with no Undo, for six
     // seconds.
     init(unrestored receipt: Says) {
-      says = .unrestored(receipt); undo = nil; arrived = []; lasts = RoadmapModel.bandLasts
+      self.init(told: .unrestored(receipt))
     }
 
     // A fork's copy opened: said once, with no Undo, since the copy is the person's own and Delete Roadmap removes it.
@@ -355,6 +368,10 @@ final class RoadmapModel {
   let phone: UserDefaults
   let telemetry: any Telemetry
   let wait: Wait
+  // Where Paste Steps reads the copied text from.
+  let clipboard: Clipboard
+  // The file a launch hands New Roadmap's A File in place of the system's importer, none in the app.
+  let handedFile: @MainActor () -> URL?
   // The Graph of the open roadmap: its picture, its camera and its captions.
   let graph: RoadmapGraph
   // What the Board measures of itself, where a launch asks for it.
@@ -420,8 +437,10 @@ final class RoadmapModel {
   private(set) var selected: String? {
     didSet { graph.attend(to: selected) }
   }
-  // The New Roadmap sheet stands open.
-  private(set) var naming = false
+  // The New Roadmap sheet stands open on its draft.
+  var newRoadmap: NewRoadmapDraft?
+  // Paste Steps' sheet stands open on the steps it read back.
+  var pasting: PastedSteps?
   // The draft the step form stands open on, New Step's or Edit's.
   var draft: StepDraft?
   // The draft the note's screen stands open on.
@@ -461,9 +480,9 @@ final class RoadmapModel {
 
   init(records: @escaping Records, runner: ActionRunner, phone: UserDefaults, telemetry: any Telemetry = NoopTelemetry(),
        wait: @escaping Wait = { try await Task.sleep(for: $0) }, graph: RoadmapGraph? = nil, boardFrames: BoardFrames = BoardFrames(),
-       role: Role = .owner(nil)) {
+       role: Role = .owner(nil), clipboard: Clipboard = .system, handedFile: @escaping @MainActor () -> URL? = { nil }) {
     self.records = records; self.runner = runner; self.phone = phone; self.telemetry = telemetry; self.wait = wait
-    self.role = role
+    self.role = role; self.clipboard = clipboard; self.handedFile = handedFile
     self.graph = graph ?? RoadmapGraph(telemetry: telemetry)
     self.boardFrames = boardFrames
     reading = BoardReading(telemetry: telemetry)
@@ -732,10 +751,10 @@ final class RoadmapModel {
 
   // The same door for a gesture that is several acts, each reading what the ones before it wrote: one write, one
   // receipt and one Undo, or nothing written where the domain refuses any of them.
-  func write(_ acts: [AnyActAction<RoadmapRefusal>], as name: String) -> Written<Void> {
+  func write(_ acts: [AnyActAction<RoadmapRefusal>], as name: String) -> Written<[any Sendable]> {
     told(as: name) {
       switch try runner.runComposed(acts) {
-      case .committed(_, let receipt): .committed((), receipt)
+      case .committed(let results, let receipt): .committed(results, receipt)
       case .unchanged: .unchanged
       case .refused(_, let refusal): .refused(refusal)
       }
@@ -924,36 +943,15 @@ final class RoadmapModel {
   }
 
   // New Roadmap, in the title menu, on All Roadmaps and in the room that holds no roadmap, opens the one sheet that
-  // names it.
+  // names it, on a new draft.
   func nameRoadmap(from place: Place) {
-    naming = true
+    newRoadmap = NewRoadmapDraft(in: self)
     telemetry.event("roadmap_sheet", properties: ["step": "new", "door": place.rawValue])
   }
 
-  // Cancel, or the sheet sent away: nothing is written.
-  func cancelNaming() {
-    guard naming else { return }
-    naming = false
-    telemetry.event("roadmap_board_create", properties: ["step": "cancel", "door": "blank"])
-  }
-
   // A name as the web's room takes one before the domain reads it (`NewTreeBirth.plant`, `ReplicaSession.renameTree`):
-  // without the blanks around it.
-  static func name(typed: String) -> String { typed.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-  // Create: a blank roadmap starts with one step, named as the roadmap and in the first kind's colour, as the web's
-  // birth plants it (`NewTreeBirth.plant`). The room opens it on its Board once the phone's copy holds it; the engine
-  // keeps no Undo of a birth. A name the domain refuses leaves the sheet open.
-  func create(named typed: String) {
-    let title = Self.name(typed: typed)
-    let start = ImportedStep(key: "start", RoadmapStep.Changes(label: title, icon: "sparkles", color: RoadmapRules.genesisKinds[0].hue))
-    guard let written = write(CreateRoadmap(title: title, steps: ImportedSteps(steps: [start])), as: "createRoadmap").committed else { return }
-    forget(written.receipt.gestureId)
-    naming = false
-    path = []
-    arriving = written.result.tree.description
-    telemetry.event("birth")
-  }
+  // without the kit's whitespace around it, which is ECMAScript's.
+  static func name(typed: String) -> String { TextSpec.trimmed(typed) }
 
   // Rename, committed in the bar's field: the open roadmap's name as the domain takes it. A name of blanks alone is
   // written as no name, and the roadmap then reads as one without a title. The room offers no Undo of a rename.
@@ -1079,6 +1077,12 @@ extension TextSpec {
 }
 
 extension RoadmapRefusal {
+  // A roadmap at its cap, the one limit a write meets that the band words.
+  var isFull: Bool {
+    guard case .full = self else { return false }
+    return true
+  }
+
   // The refusal's kind as an event carries it, in the web's words.
   var label: String {
     switch self {

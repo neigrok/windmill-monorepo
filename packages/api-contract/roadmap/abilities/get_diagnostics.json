@@ -1,0 +1,213 @@
+[
+  {
+    "case": "a loop, a link to a missing step, a link from a step to itself and the smells, on a roadmap of the person's own",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "⚓",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "🪢",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tack",
+              "icon": "⛵",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Gybe",
+              "icon": "⛵",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "e",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Read the weather",
+              "icon": "",
+              "color": "plum",
+              "ord": "a4",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "gone",
+              "to": "a",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "b",
+              "present": true
+            },
+            {
+              "from": "c",
+              "to": "d",
+              "present": true
+            },
+            {
+              "from": "d",
+              "to": "c",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "call": {
+      "name": "get_diagnostics",
+      "input": {
+        "treeId": "t_0000000000000001"
+      }
+    },
+    "expect": {
+      "result": {
+        "cycles": [
+          {
+            "count": 1,
+            "nodes": [
+              "b"
+            ]
+          },
+          {
+            "count": 2,
+            "nodes": [
+              "c",
+              "d"
+            ]
+          }
+        ],
+        "dangling": [
+          {
+            "from": "gone",
+            "to": "a"
+          }
+        ],
+        "selfEdges": [
+          {
+            "from": "b",
+            "to": "b"
+          }
+        ],
+        "smells": [
+          {
+            "kind": "unclaimed-hue",
+            "hue": "plum",
+            "count": 1,
+            "nodes": [
+              "e"
+            ]
+          },
+          {
+            "kind": "empty-icon",
+            "count": 1,
+            "nodes": [
+              "e"
+            ]
+          }
+        ],
+        "treeLoops": [],
+        "danglingPointers": []
+      }
+    }
+  }
+]

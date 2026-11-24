@@ -313,6 +313,7 @@ jobs:
               -only-testing:WindmillUITests/OfflineFlowTests
               -only-testing:WindmillUITests/OnboardingFlowTests
               -only-testing:WindmillUITests/ShellFlowTests
+              -only-testing:WindmillUITests/RoadmapSharingFlowTests
               -only-testing:WindmillUITests/WorkoutActivityFlowTests
               -only-testing:WindmillUITests/WorkoutOutsideFlowTests
     uses: ./.github/workflows/ios-ui-tests.yml

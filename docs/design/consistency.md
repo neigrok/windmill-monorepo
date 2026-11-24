@@ -666,7 +666,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   hand, and no board says what such a slide does.
 - **Roadmap · iOS · what the room's roadmaps leave for the boards.** The title menu, All Roadmaps, New Roadmap for a
   blank roadmap, renaming in the bar and a roadmap's delete held with *Undo* are built in Debug builds from 01.3 to
-  01.6 and 01.9 to 01.11. To draw or rule: 01.10 words what else goes as *the step that opens it in Become a day
+  01.6 and 01.9 to 01.11; New Roadmap's plans are the next entry's. To draw or rule: 01.10 words what else goes as *the step that opens it in Become a day
   skipper, and its 3 Coach conversations*, and no domain reads a roadmap's Coach conversations, the web's and Swift's
   alike, so the question is built naming the steps alone; the board words one step in one roadmap, and the rest are
   the web's sentences with *roadmap* for *tree* (*Also removes 3 steps that open it in …*, *…, in A and B*, *…, in A,
@@ -678,17 +678,39 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   keyboard the foot rides above it, the band and New Step with it, where 01.9 draws nothing there, and
   the system tells the room nothing of its rename; the system's Rename has no pencil in the menu (01.3), and a long
   name there wraps onto a second line where the board truncates it; the menu
-  lists the three most recent, so an open roadmap that is not among them has no checkmark there; with *Start from*
-  left out, New Roadmap has lost its footer *Create alone plants one step, named as the roadmap.*, and nothing on the
-  sheet says what Create plants; the name field stops at the domain's 200 characters with no counter, and no board
+  lists the three most recent, so an open roadmap that is not among them has no checkmark there; the name field stops
+  at the domain's 200 characters with no counter, and no board
   draws the bound; no board draws All Roadmaps when a search finds nothing, and it is built as the system's own
   `ContentUnavailableView.search`; a delete made on a row of All Roadmaps leaves the list on screen with the band at
   its foot, and its *Undo* brings the row back without opening it, where 01.11 draws the Board alone; *No roadmaps yet*
-  stands over the band while the last roadmap's delete is held, and 01.5 draws no band; a new roadmap is opened once
-  the phone's copy holds it, with no band, where 01.8b draws *Roadmap planted* for a quest and a plan and no board
-  draws it for a blank one; 01.3 and 01.4 group a count's digits (*3,200 of 5,000*) and the app writes every count as
+  stands over the band while the last roadmap's delete is held, and 01.5 draws no band; a blank roadmap is opened once
+  the phone's copy holds it, with no band, as no board draws one for it; 01.3 and 01.4 group a count's digits (*3,200 of 5,000*) and the app writes every count as
   Swift does, *3200 of 5000*; and the domain orders a person's roadmaps by when a server last received each, so on a
   phone never signed in the title menu's three and All Roadmaps stand in the order of their ids, which no board says.
+- **Roadmap · iOS · what plans leave for the boards.** New Roadmap's *A Copied Plan* and *A File*, the plan read back,
+  *Roadmap planted*, a file that can't be read, and Paste Steps with its read-back, its *Undo* and its two bands are
+  built in Debug builds from 01.6, 01.8 to 01.8c, 02.16 to 02.18, 02.16b and 02.16c. To draw or rule: 01.8 and 01.8b
+  draw a plan that plants no step for its name, twelve steps whose steps under a heading stand Up next; the plan grammar
+  plants a step for a plan's name, the roadmap's starting step named as it, and a heading's step that its steps wait on,
+  on the web as on the iPhone, so the read-back's first row is the plan's name and the steps under a heading are Locked;
+  the captures read the boards' plan (`RoadmapFixture.summerCruise`, twelve steps, three branches, two done, four notes),
+  whose first steps differ from the board's for that reason. 01.8 draws the plan's steps in Sky, and they are built in
+  the colour each will wear, for a plan with no kind of its own the first kind's, Terracotta. 01.8 draws one header, *Pasted plan*, and it is built for a
+  file too, which is not pasted. 01.8 draws its four counts, each above zero, and 02.17 two: the counts are built shown
+  where they are above zero, *Steps* always; *Lines kept as notes* counts notes alone, an address that became a link
+  none. The read also counts the lines whose text the domain's bounds cut (a step's name past 200 characters, a
+  description past 16,000, `clips`): the web composer's gutter words such a line *shortened to fit*, and no board, on the
+  iPhone or the web, has a row or a count for them, so the iPhone's read-back is built without one. No board draws Paste
+  Steps over a text that lands no step, built as *No text to paste*, or an *Add* the domain refuses, built with the sheet
+  left open, *Add* off, and under its counts the band's *This roadmap is at its limit.* at the cap, *This roadmap changed
+  elsewhere.* where its starting step, the roadmap or a kind changed since the read, and *These steps can’t be added.*
+  otherwise. A file whose bytes are not UTF-8 is read as the web reads one, with U+FFFD in their place, so 01.8c is built
+  for a file that could not be opened; no board draws a file past the 2,000,000 bytes the phone reads, built in 01.8c's
+  footer as *“Name” is too large to read.*, or an importer that handed back no file, built as *Couldn’t open the file.* Paste
+  Steps is the + menu's item that 02.16 draws, which reads the clipboard itself once `UIPasteboard.hasStrings` says it
+  holds text, so the system asks before it hands over another app's text (02.16c), where
+  [Roadmap · iOS](ios/roadmap.md)'s stock parts name `PasteButton` for paste, as New Roadmap's *A Copied Plan* is; that
+  question is SpringBoard's alert, which the room waits on with its main actor free.
 - **Roadmap · iOS · what the step form leaves for the boards.** New Step, from the foot's + and from an empty roadmap,
   and *Edit* from a step's page are built in Debug builds from 05.1 to 05.8, 05.10 and 02.15. To draw or rule: every
   board of the form draws the *Roadmap* row and Coach's composer, and the form is built without them until their
@@ -888,17 +910,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Roadmap file · a prototype variable collection nothing on the iPhone pages binds.** *🧪 iOS 07 · Local picker
   state* held the state of boards that are deleted. No node on the Roadmap · iOS or Roadmap Coach page binds it;
   the file's other pages were not checked. Delete it once they are.
-- **Roadmap Coach · the engineering note against the spec.** The Figma
-  [engineering note](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=688-4965) of 2026-11-08 and
-  [Roadmap Coach](../foundation/roadmap-coach.md) disagree in every section, and the spec stands (owner, 2026-11-14).
-  1: the note runs the turn on the server over gym's turn wire and the web's tools on the server; the spec runs the
-  turn on the device and every ability on the browser's copy. 2: the note lists `get_health` and the change kind
-  `tidy`, both retired, and mints a server proposal record where its section 5 keeps it in the roadmap's replica; the
-  spec keeps it as a synced record with terminal states. 3: the note pre-reads a health score. 4: the note takes
-  allowance from the backend's installations and budget; the spec takes it from the
-  [AI service](../foundation/ai-service.md). 5: the note's proposal rests on `baseSeq`; the spec's on the copy's
-  stamps. 6: the note logs a turn on the backend, which no longer sees one. Rewrite the note; the boards are not
-  affected.
 - **Roadmap Coach · an applied proposal the server refuses.** The design rules that an applied proposal is never
   refused or discarded. A proposal is applied on the device and then synced, and the server can refuse the synced
   change. The owner ruled on 2026-11-15 ([Roadmap Coach](../foundation/roadmap-coach.md) R-10) that the refusal shows
@@ -908,9 +919,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   notice, opening the store sheet (05.6). The owner ruled on 2026-11-15 (Roadmap Coach R-12) that the web shows no
   such button while Windmill One cannot be bought there: the notice says the allowance is used up and when it
   returns. The web's 05 boards need that state drawn without the button.
-- **Roadmap Coach · not drawn.** No board draws Coach for a person who only reads a roadmap, a card whose proposal
-  was applied and then undone, a replaced card, or the sign-in question when both the device and the account hold
-  conversations.
 - **Step relations · "Opens", "Unlocks" and "Tree" (18–22, 27, 28).** The approved step editor heads the steps a
   step unlocks with *Opens*; the Board card says *Unlocks*. The approved
   [28 · A node opens a tree](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=876-48881) calls the tree a

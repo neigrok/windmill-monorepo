@@ -104,6 +104,31 @@ extension XCUIApplication {
     return false
   }
 
+  // Paste Steps, from the long press of the room's +; the system then asks, in SpringBoard's alert, before the room reads
+  // what another app copied, answered as `allowing` says. Once allowed, the system asks no more of the same copied text,
+  // so an allowing paste answers only where it is asked, and a refusing one needs text copied since.
+  func pasteSteps(allowing allowed: Bool? = nil, file: StaticString = #filePath, line: UInt = #line) {
+    let plus = buttons["roadmap-new-step"]
+    XCTAssertTrue(plus.waitForHittable(timeout: 10), file: file, line: line)
+    plus.press(forDuration: 1.0)
+    let item = buttons["Paste Steps"]
+    XCTAssertTrue(item.waitForExistence(timeout: 5), file: file, line: line)
+    item.tap()
+    guard let allowed else { return }
+    let answer = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons[allowed ? "Allow Paste" : "Don’t Allow Paste"]
+    let asked = answer.waitForExistence(timeout: allowed ? 3 : 10)
+    XCTAssertTrue(asked || allowed, "the system asks before the room reads another app's text", file: file, line: line)
+    if asked { answer.tap() }
+  }
+
+  // The system's Paste button in New Roadmap's *A Copied Plan* row, which takes the row's label and frame: its capsule
+  // stands at the row's trailing end, where a tap reaches it.
+  func pastePlan() {
+    let row = buttons["roadmap-new-paste"]
+    XCTAssertTrue(row.waitForHittable(timeout: 5))
+    row.coordinate(withNormalizedOffset: CGVector(dx: 0.88, dy: 0.5)).tap()
+  }
+
   func cancelConfirmation() {
     let cancel = buttons["Cancel"]
     if cancel.exists { cancel.tap(); return }

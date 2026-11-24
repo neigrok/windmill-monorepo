@@ -142,8 +142,11 @@ gesture (`ActionRunner.runComposed`), each reading what the ones before it wrote
 whoever asked (`told(as:_:)`): a refusal as an event, and in the band where it is a limit, and a failed commit as a report.
 `complete(_:by:)` and `reset(_:)` run `MarkStep`; a delete is asked first
 (`askDelete(_:by:)`, the question the model holds with what the delete costs and where it was asked) and, answered *Delete
-Step*, `delete(_:by:)` runs `DeleteStep` and leaves the room on the Board, the form that asked closed. `create(named:)` runs `CreateRoadmap` and
-`rename(to:)` runs `WriteRoadmap`, and the engine keeps no Undo of either. A roadmap's delete is asked first too
+Step*, `delete(_:by:)` runs `DeleteStep` and leaves the room on the Board, the form that asked closed. New Roadmap's draft
+(`newRoadmap`, a `NewRoadmapDraft`) runs `CreateRoadmap`, then, for a plan, `MarkStep.complete` of the steps it brings done
+as one act, and `rename(to:)` runs `WriteRoadmap`; the engine keeps no Undo of any of them. Paste Steps' sheet
+(`pasting`, a `PastedSteps`) runs the plan's `ImportSteps`, with the marks it brings done, and a `CreateKind` for each kind
+it adds as one act, with its Undo in the band. A roadmap's delete is asked first too
 (`askDelete(_:from:)`, with what else goes) and, answered *Delete Roadmap*, `delete(_:from:taking:)` runs `DeleteRoadmap`:
 the room then opens the most recent other roadmap, or holds none. `newStep(from:named:)` reads first how many steps the
 roadmap holds against the registry's cap, through the kit's `Capacity`, and at the cap refuses where the gesture is
@@ -167,10 +170,11 @@ which a step's page lists under *Opens* and the delete question counts; and what
 every roadmap: what else a roadmap's delete takes (`openers(of:)`, the web's `OpenedTrees.openersOf` and `deleteCost`),
 the steps of the person's other roadmaps whose pointer opens it, which the server deletes with it. And of a name: it is
 written without the blanks around it (`name(typed:)`, the web's `NewTreeBirth.plant` and `ReplicaSession.renameTree`), and a
-blank roadmap starts with one step, named as the roadmap, in the first kind's colour (`create(named:)`, the web's
-`NewTreeBirth.plant`). Of a roadmap's kinds (`RoadmapLegend`): its legend is each kind that owns its hue in the roadmap's
-order, then each hue steps wear that no kind claims, called by the hue (the web's `deriveLegend` over the kinds
-`ReplicaRoadmap` keeps), each with how many steps wear it (`withCounts`); the six kinds a step may wear, the named ones
+blank roadmap starts with one step, named as the roadmap, in the first kind's colour: the empty plan, named
+(`NewRoadmapDraft.planting`, the web's `NewTreeBirth.plant`). Of a roadmap's kinds (`RoadmapLegend`): its legend is
+each kind that owns its hue in the roadmap's order, then each hue steps wear that no kind claims, called by the hue (the
+web's `deriveLegend` over the kinds `ReplicaRoadmap` keeps), each with how many steps wear it (`withCounts`); the six
+kinds a step may wear, the named ones
 first (`kindChoices`); the kinds the Board's filter offers, the ones steps wear, none where steps wear one hue alone
 (`kindOptions`); the hue Add Kind takes, the first no entry has (`freeHue`); and only a kind no step wears may be removed
 (`onRemoveKind`). Of several steps: they cannot be deleted while they hold every step the roadmap starts from
@@ -184,7 +188,8 @@ the roadmap's name and progress, the switch row pinned under the bar, whose *Boa
 whose Find is the Board's and whose one tool is the Board's *Sort and filter* or the Graph's *Fit*, and at the foot the
 band over New step, which raises the step form. New step leaves the foot while Find is up and while several steps are
 selected. While Fit stands the bar, the switch row and the foot are away and the status bar stays. It announces
-and plays the band's haptic once, whichever screen stands over it. Before the phone's copy is first read the room is its
+and plays the band's haptic once, whichever screen stands over it. The foot's + is a menu whose tap is New step and whose
+long press offers *New Step* and *Paste Steps* (02.16). Before the phone's copy is first read the room is its
 bar alone, the room capsule and the account, and a large spinner shows once the read has run half a second
 (`RoadmapRoom.FirstRead`, 01.5b), which is told, and how the wait ended: read, failed, or the room put away first; a read that fails says *Couldn’t load this roadmap* and *The copy on this iPhone
 couldn’t be read.* with *Try Again*, which asks the engine for every view anew (01.5c). The title's menu (`RoadmapTitle`,
@@ -203,9 +208,23 @@ checked. That order is by when a server last received each, the most recent firs
 the order of their ids. A row opens its roadmap on its Board and slides left for *Delete*, which asks on the row, never
 commits by a full swipe, and leaves the list on screen under the band; past eight roadmaps the bar's drawer finds them
 by name; and + names a new one. Its last row on the board, the gallery, is left out. `Roadmaps/NewRoadmap.swift` is the
-sheet the title menu, All Roadmaps and *No roadmaps yet* all open: a name, held to the length the
-domain takes, *Cancel* and *Create*, which plants a blank roadmap with its one starting step and opens it. Its *Start
-from* section (a copied plan, a file) is left out. All of it works on the phone's copy, signed in or out.
+sheet the title menu, All Roadmaps and *No roadmaps yet* all open, over its draft (`Roadmaps/NewRoadmapDraft.swift`): a
+name, held to the length the domain takes, *Cancel* and *Create*, and *Start from* (01.6) with *A Copied Plan*, the
+system's `PasteButton`, and *A File*, the system's `.fileImporter` for Markdown, by the identifier the Info.plist imports
+(`net.daringfireball.markdown`), and plain text. A file is read off the main actor as the web reads one, its bytes as
+UTF-8 with a leading byte order mark dropped, up to 2,000,000 bytes; one that cannot be opened is named in *Start
+from*'s footer (01.8c), reports, and reads nothing, as does an importer that hands back none, and one past the bound is
+named there as too large to read. A plan from either is read by `RoadmapPlan` over the genesis kinds, off the main
+actor, and read back before anything is written
+(01.8): its counts (`Components/PlanReadBack.swift`, `PlanCounts`) and its first six steps in the states they will land
+in (`PlannedStepRow`, the domain's `Planting.landing`), with *Clear*, which returns to *Start from*. An empty name field
+takes the plan's name, which plants the plan under its own as the web does, a file's title with its padding; a name
+typed names the roadmap and the step that stands for the plan's name, and Create plants
+it, opens it and says what it planted in the band with no Undo (01.8b); a name alone plants a blank roadmap with its one
+starting step and opens it. A simulator launch that names `-roadmap-file` hands *A File* the boards' plan, or a file that
+cannot be read, in place of the system's importer (`RoadmapFixture.chosenFile()`, which the app hands the room's model as
+`handedFile`). All of it works on the phone's copy,
+signed in or out.
 
 `Board/RoadmapBoard.swift` is the Board's list, its groups under headers that fold them, as the Board's reading keeps
 them. A row opens its step's page. An Up next row that opens no roadmap slides right for *Complete*; every row but the
@@ -229,6 +248,18 @@ with six seconds of *Undo*, and the delete one gesture held nine seconds with *U
 step the Board stops showing is chosen no longer. `Board/BoardReading.swift` and `Board/BoardSelection.swift` are the Board's query
 and its selection, each the domain's read and acts. `Board/BoardFrames.swift` measures the time from the switch to the
 Board's first frame and the frames each scroll is given, on a launch that names a file for them, and reports nothing.
+`Board/PasteSteps.swift` is Paste Steps, from the foot's + held (02.16 to 02.18): the room asks the clipboard whether it
+holds text, which raises no prompt, and says *No text to paste* in the band where it holds none (02.16b); reads the text,
+which the system may ask the person to allow, and says *Paste not allowed* with *Settings*, which opens Windmill's page
+in Settings, where they did not (02.16c); and otherwise reads it into the open roadmap by `RoadmapPlan` over the
+roadmap's legend, the domain's legend shown (`LegendRead.shown`), grafted under its starting step, the first in authored
+order of the steps that follow nothing, the grammar run off the main actor. A text that lands no step says *No text to
+paste* too. The read-back is a medium sheet of its counts and each step in the state it will land in
+(`Graft.landing(in:)`); *Add* writes the steps with the marks the text brings done and the kinds it adds as one act, and
+the band says *Added N steps* with *Undo* for six seconds over the steps washed in their groups; an *Add* the domain
+refuses leaves the sheet open, *Add* off, and says why under its counts in the room's words (`pasteWords`); *Cancel*
+writes nothing. The room reads the clipboard through a `Clipboard`, the system's in the app and a test's own in a test;
+the system's text is read off the main actor, which the system's question would otherwise hold until it is answered.
 
 `Step/RoadmapStepPage.swift` is a step's page, pushed on the room's stack: one list under the step's name, which the bar
 takes once it has scrolled away; the status row, with the state, the kind's name (the hue's where no kind names it) and why
