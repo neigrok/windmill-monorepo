@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import { createServer } from 'node:http';
-import { createReadStream, existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -117,4 +117,34 @@ test('Chromium: before its first use, with no connection, search by meaning says
     await foot(page).filter({ hasText: 'Search by meaning needs a connection the first time' }).waitFor();
     assert.ok(refused > 0, 'the search reached for what it has not kept');
   } finally { reachable = true; await context.close(); }
+});
+
+test('Chromium: with the connection back, reopening search brings meaning that needed one', { skip: missing, timeout: 110_000 }, async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    const page = await journal(context);
+    await shellKept(page);
+    await page.getByRole('textbox', { name: 'Write today' }).fill('I walked along the sea at dusk and felt calm.');
+    await page.locator('.journal-saved.is-on').waitFor({ state: 'attached' });
+    await disconnect(context);
+    await page.reload();
+    await page.getByRole('textbox', { name: 'Write today' }).waitFor();
+    await search(page, 'peaceful evening by the ocean');
+    await foot(page).filter({ hasText: 'Search by meaning needs a connection the first time' }).waitFor();
+    await page.keyboard.press('Escape');
+
+    reachable = true;
+    await context.setOffline(false);
+    await search(page, 'peaceful evening by the ocean');
+    await foot(page).filter({ hasText: 'Matched by meaning, on your device.' }).waitFor({ timeout: 60_000 });
+    assert.match(await page.locator('.journal-search-hit').first().textContent(), /I walked along the sea at dusk/);
+  } finally { reachable = true; await context.close(); }
+});
+
+test('the build keeps search by meaning\'s worker and runtime out of the offline shell', { skip: missing }, async () => {
+  await ready;
+  const shell = JSON.parse(readFileSync(join(dist, 'offline-assets.json'), 'utf8'));
+  assert.deepEqual(shell.filter((url) => /embedder\.worker|ort-wasm|transformers/.test(url)), []);
+  assert.ok(shell.some((url) => /\/assets\/JournalApp-[\w-]+\.js$/.test(url)), 'the journal room, which holds the model\'s door, is in the shell');
 });

@@ -145,9 +145,16 @@ Settings' export emits `journal_export` with `outcome`: `ok`, `first_pull_timeou
 the journal did not end within 30 seconds), `replica_changed` (the account changed while it waited), `no_replica` (the
 browser holds no open replica) or `failed`, which alone also reports `journal-export` with the error's stack and `step`:
 `pages` (reading the pages), `file` (writing them as Markdown) or `download` (handing the file to the browser).
-Search by meaning emits `journal_search_meaning` each time its model comes up or does not for a search: `outcome`
-`ready`, `needs_connection` (the browser is offline, so the search says it needs a connection) or `failed`, which alone
-also reports `journal-search-meaning`. No page body, scales, date, claim identifier, search text or account is reported.
+Search by meaning emits `journal_search_meaning` once for each opening of search, as its model comes up or does not,
+however often the pages change while it is open: `outcome` `ready`; `needs_connection` (the engine says the browser is
+offline or the server unreachable, and search by meaning never came up in this browser, so the search says it needs a
+connection the first time); `unkept` (offline, in a browser where it came up before and that keeps it no longer, so the
+search answers in words); or `failed` (it did not come up with a connection), which alone also reports
+`journal-search-meaning` with the error's stack and `step`: `worker` (the model's worker did not start) or `model` (the
+model did not load in it). A model that came up and then could not index the pages reports `journal-search-meaning` with
+`step: index` and no event. `cache_refused` is told at most once an opening, when the service worker says the browser
+would not keep the weights it served (`public/sw.js` posts `model-not-kept` to the pages it controls). No page body,
+scales, date, claim identifier, search text or account is reported.
 
 Journal Talk emits `journal_talk_refused` each time the sheet says why Talk refused, with `code`, `reason` and
 `moment`. `code` is the allowance or voice route's code (`subject_exhausted`, `free_month_exhausted`,

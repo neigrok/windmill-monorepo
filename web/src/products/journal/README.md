@@ -68,11 +68,19 @@ Search (`search/`) indexes the corpus on the device: words first, then meaning, 
 in a worker on wasm, never WebGPU, which miscomputes the quantized model. The worker takes its
 onnxruntime-web runtime from the build, where Vite copies the package's wasm as a hashed asset, and
 its weights from `/models/`; `public/sw.js` keeps the runtime in its asset cache and the weights in
-`windmill-models-v1` after first use, and neither joins the offline shell. Offline before that first
-use, the search's foot says search by meaning needs a connection.
-`test/products/journal/search/neuralOffline.browser.test.js` builds the app and proves both in
-Chromium; it is skipped when `public/models` lacks the weights, which `npm run build`'s `prebuild`
-fetches.
+`windmill-models-v1` after first use, and neither joins the offline shell. One opening of search
+starts one model worker however often the pages change while it is open, and closing it ends the
+worker, so the next opening tries afresh and a connection that comes back brings meaning back. Offline is
+the engine's word on the connection, an unreachable server included. Offline before its first use in
+this browser (remembered under `windmill:journal-search-meaning`), the search's foot says search by
+meaning needs a connection the first time; a browser where it came up before and that keeps it no
+longer answers in words, with the words-only foot. The service worker keeps no redirected answer,
+drops an older `windmill-models-*` cache at every activation, and tells the pages it controls when the
+browser would not keep the weights.
+`test/products/journal/search/neuralOffline.browser.test.js` builds the app and proves in Chromium
+that meaning works offline after its first use, says it needs a connection before it, comes back with
+the connection, and leaves the shell without its worker and runtime; it is skipped when
+`public/models` lacks the weights, which `npm run build`'s `prebuild` fetches.
 
 Echo quotations compare in NFC; saved writing retains its original bytes. The domain matcher
 returns whole-grapheme UTF-16 ranges in the current source, with segmentation supplied by the
