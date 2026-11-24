@@ -354,7 +354,8 @@ RestoreOutcome evaluateRestore(const Registry& registry, const RestoreReader& re
       Delta& delta = deltaOf();
       if (slotKind == "life") {
         delta.lattice.life = Life(op["before"].asString() == "alive" ? LifeState::alive : LifeState::dead, Stamp{});
-        if (op.isMember("values")) writeValues(delta, op["values"]);
+        // A record found alive keeps its own fields; only a dead keyed row lacks them (G1).
+        if (op.isMember("values") && !record.row->alive()) writeValues(delta, op["values"]);
       } else if (slotKind == "field") {
         delta.lattice.f.insert_or_assign(slot["name"].asString(), Reg(op["before"], Stamp{}));
       } else {

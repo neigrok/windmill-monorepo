@@ -7,7 +7,7 @@ import { CONSTANTS } from '../core/constants.js';
 import { admit } from '../server/admit.js';
 import { ServerState } from '../server/state.js';
 import { EffectPlanProduct } from './effect-plan.js';
-import { overlayScope, product, productScope, registry, row, serverState, st, treeScope, vector } from './fixtures.js';
+import { OTHER, overlayScope, product, productScope, registry, row, serverState, st, treeScope, vector } from './fixtures.js';
 
 const NOW = 1_000_000;
 const A = { kind: 'replica', account: 'A', replica: 'rp_0000000000000000000000000000000a', n: 1 };
@@ -99,7 +99,8 @@ function creations() {
 }
 
 // A keyed record keeps no field once dead (§6.10 G1): a life operation that brings it back alive carries the values its
-// preimage read and writes them with the life, under the server stamp; one that skips writes none of them.
+// preimage read and writes them with the life, under the server stamp; one that skips writes none of them, and one that
+// finds the record alive leaves its fields as another device wrote them.
 function keyedRevivals() {
   const dead = world(row({ t: 'link', id: ['oak', 'elm'], life: ['dead', st(5000)], seq: 5 }));
   const revive = (expected) => restore(`tree/${BOARD}`, 'probe.restoreTree', [
@@ -111,7 +112,12 @@ function keyedRevivals() {
   const moved = admitted('a keyed record\'s life that moved since skips, and writes none of the values', dead, revive(stamp(4000)));
   assert.deepEqual(moved.expect.result.detail.command.inverse.outcomes, [{ index: 0, s: 'skipped', code: 'version-changed' }]);
   assert.deepEqual(linkOf(moved), linkOf({ expect: { state: dead } }));
-  return [back, moved];
+  const theirs = world(row({ t: 'link', id: ['oak', 'elm'], life: ['alive', st(5000)], f: { strength: [9, st(8000, 0, OTHER)] }, seq: 5 }));
+  const kept = admitted('a keyed record found alive at its life\'s version keeps the fields another device wrote: the values write nothing',
+    theirs, revive(stamp(5000)));
+  assert.deepEqual(kept.expect.result.detail.command.inverse.outcomes, [{ index: 0, s: 'applied' }]);
+  assert.deepEqual(linkOf(kept).f, { strength: [9, st(8000, 0, OTHER)] });
+  return [back, moved, kept];
 }
 
 function malformed() {
@@ -122,6 +128,10 @@ function malformed() {
     ['values beside a life it takes away', [linkLife('dead', { f: { strength: 3 } })]],
     ['values of a field its type does not hold', [linkLife('alive', { f: { weight: 3 } })]],
     ['values off their domain', [linkLife('alive', { f: { strength: 12 } })]],
+    ...[['a number', 3], ['null', null], ['an array', []]].map(([what, f]) => [`values whose fields are ${what}`, [linkLife('alive', { f })]]),
+    ['values whose texts are a boolean', [linkLife('alive', { x: true })]],
+    ['a create whose fields are a number', [{ kind: 'createRecord', t: 'card', id: 'card0002', values: { f: 3 } }]],
+    ['a create whose texts are a boolean', [{ kind: 'createRecord', t: 'card', id: 'card0002', values: { x: true } }]],
     ['born, which nothing restores', [{ kind: 'field', t: 'card', id: 'card0001', slot: { kind: 'born' }, expected: stamp(2000), before: 'alive' }]],
     ['a governing record', [{ kind: 'createdRecord', t: 'board', id: BOARD, rowSeq: 1, footprint: [{ slot: { kind: 'born' }, version: stamp(1000) }] }]],
     ['the life of a record no write brings back', [{ kind: 'field', t: 'card', id: 'card0001', slot: { kind: 'life' }, expected: stamp(2000), before: 'alive' }]],

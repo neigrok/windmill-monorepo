@@ -39,7 +39,7 @@ struct RestoreOutcome {
 };
 
 // Each operation holds or skips on its own condition, in order; those that hold write back their earlier
-// values, a keyed record's revival with the values it carries (§6.4 restore).
+// values, a keyed record's revival with the values it carries where the stored record is dead (§6.4 restore).
 RestoreOutcome evaluateRestore(const Registry& registry, const RestoreReader& read, const Json::Value& args, const std::string& epoch);
 
 // What an inverse command reads to check its evidence: rows and scope sequences by ScopeRef.

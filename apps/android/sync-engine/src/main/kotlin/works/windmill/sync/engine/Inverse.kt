@@ -401,7 +401,8 @@ internal fun ReplicaState.bindReferences(epoch: String?) {
 
 // What one planned restore operation becomes: its wire form, a skip by its code the request counts, or nothing where the act never wrote
 // the target, so there is nothing to take back. Where a source's history is lost, an unowned target may be one it wrote, and skips. A keyed
-// record's life brought back alive carries the values its preimage's record read, as the slot's projection draws them.
+// record's life brought back alive carries the values its preimage's record read, as the slot's projection draws them, to a server that
+// declares them.
 private sealed interface Bound {
     data class Sent(val operation: RestoreOperation) : Bound
     data class Skipped(val code: String) : Bound
@@ -412,7 +413,8 @@ private fun ReplicaState.bind(registry: Registry, act: ReversibleAct?, history: 
     return when (op) {
         is PlannedOperation.Field -> {
             val type = registry.type(op.target.key.type)!!
-            val values = op.drawn?.takeIf { type.revivesKeyed(op.target.slot, op.before) }?.let { CreationValues.revival(type, it) }?.takeUnless { it.isEmpty }
+            val declared = (meta["serverSchema"]?.long() ?: 0L) >= REVIVAL_VALUES_SCHEMA
+            val values = op.drawn?.takeIf { declared && type.revivesKeyed(op.target.slot, op.before) }?.let { CreationValues.revival(type, it) }?.takeUnless { it.isEmpty }
             val sent = { expected: Expectation -> Bound.Sent(RestoreOperation.Field(op.target.key, op.target.slot, expected, op.before, values)) }
             if (op.reference != null) return expectedOf(op.reference)?.let(sent) ?: Bound.Skipped("reference-unbound")
             val expected = history.latestOwned(op.target) ?: return if (history.lost) Bound.Skipped("history-changed") else null

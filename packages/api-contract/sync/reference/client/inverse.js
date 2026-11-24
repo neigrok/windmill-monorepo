@@ -9,7 +9,7 @@
 import { Clock } from '../core/clock.js';
 import { jcs, sameJson } from '../core/jcs.js';
 import { moveEntry } from '../core/machines.js';
-import { compareSlots, creatableFault, inverseOutcomes, recipeFault, recordValues, restorableSlotFault, revivalValues, revivesKeyed, sameRecord, sameSlot, valueIn, versionIn } from '../core/restore.js';
+import { compareSlots, creatableFault, inverseOutcomes, recipeFault, recordValues, restorableSlotFault, REVIVAL_VALUES_SCHEMA, revivalValues, revivesKeyed, sameRecord, sameSlot, valueIn, versionIn } from '../core/restore.js';
 import { recordKey } from '../core/rows.js';
 import { CommitError } from './commit.js';
 import { undo } from './hold.js';
@@ -479,12 +479,13 @@ function createdScope(history, scope) {
 // What one planned restore operation becomes: its wire form, a skip by `code` the request counts, or nothing
 // (`null`) where the act never wrote the target, so there is nothing to take back. Where a source's history is
 // unavailable, an unowned target may be one it wrote, and skips. A keyed record's life brought back alive carries
-// the values its preimage's record read, as the slot's projection draws them.
+// the values its preimage's record read, as the slot's projection draws them, to a server that declares them.
 function bound(replica, registry, act, history, op) {
   const epoch = replica.meta.serverEpoch;
   const field = (expected) => {
     const type = registry.type(op.target.t);
-    const values = op.record && revivesKeyed(type, op.target.slot, op.before) ? revivalValues(type, op.record) : {};
+    const declared = (replica.meta.serverSchema ?? 0) >= REVIVAL_VALUES_SCHEMA;
+    const values = declared && op.record && revivesKeyed(type, op.target.slot, op.before) ? revivalValues(type, op.record) : {};
     return { kind: 'field', t: op.target.t, id: op.target.id, slot: op.target.slot, expected, before: op.before, ...(Object.keys(values).length ? { values } : {}) };
   };
   if (op.kind === 'field' && op.reference) {

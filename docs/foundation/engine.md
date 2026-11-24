@@ -17,14 +17,15 @@ names roadmap (A.1), whose rules the JS reference model server and the C++ bindi
 roadmap and withholds its scopes (§9.2) unless its deployment serves them, as production's does. Production's roadmaps
 were adopted by [Roadmap on the sync engine](roadmap-on-the-engine.md) §8.1.
 
-**Registry contract:** The composed source registry is version 13 with minimum version 11. Gym's
+**Registry contract:** The composed source registry is version 14 with minimum version 11. Gym's
 finite normalized loads have no fixed kg bounds; exact zero is a load and an absent target remains
 last time. Derived volume and estimates are explicit null when unavailable. Older clients must
 upgrade. The explicit `other` equipment value remains supported. All legacy
 equipment values and load counts remain stored without migration. `other` counts one external load,
 and signed set values remain unchanged. Gym also retains the additive `thread` and `message`
 records and `runningTurn` and `picture:<id>` device rows. `composition.json` composes gym, journal and
-roadmap, whose versions rise together (§2.4); journal's field shape is unchanged. Production's hello advertised
+roadmap, whose versions rise together (§2.4); journal's field shape is unchanged. A keyed record's revival
+carries its values only to a server that advertises version 14 (§2.4, §6.4). Production's hello advertised
 schema 13 / minimum 11 when last verified; the [coordinated release runbook](../../backend/deploy/README.md#coordinated-client-cutoff)
 holds the receipts. Every other product starts from empty stores.
 
@@ -401,7 +402,9 @@ client of version 11 never writes and reads as before, and the session's `planRe
 `routineRevision`, the `workoutProposal` type, its two commands and the `plan-logged` code are additive.
 Roadmap's registry joins the composition at version 13, minimum 11 (A.1): its product, types and commands are
 additive, and gym's and journal's registries carry version 13 with it, since the composed registries declare one
-version.
+version. Version 14, minimum 11, declares `values` on a restore that brings a keyed record back alive (§6.4): a
+client sends them only while the replica's latest hello served as its account advertised schema 14 or later, and
+otherwise the life alone, which every server admits.
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern` or `idDomain`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and
@@ -532,7 +535,8 @@ type ReplicaMeta = { replica: string, state: 'anon'|'bound'|'dormant', account?:
                      nextN: number, hlc: {ms: number, counter: number}, hlcHigh: Stamp, admittedHigh: Stamp,
                      serverOffsetMs: number, offsetSamples: {offset: number, rtt: number}[],
                      clockReading?: {wall: number, mono: number, boot: string},
-                     serverEpoch: string | null, ackThrough: number, authPaused: boolean }
+                     serverEpoch: string | null, ackThrough: number, authPaused: boolean,
+                     serverSchema?: number }  // the schema the latest hello served as `account` advertised (§9.2)
 type ConfirmedRow = Row                                  // keyed (replica, scope, type, id); replaced, never joined
 type SpentId = { replica, scope, type, id, born, seq? }  // derived types only
 type CursorRec = { replica, scope, cursor: string | null, digest: string, booted: boolean,
@@ -1340,9 +1344,10 @@ type InverseDetail = { inverse: { outcomes: { index, s: 'applied' | 'skipped', c
   `lww` field, a client text or the life of a keyed type with life or a revivable type, and `before` is on
   its domain (a life is `alive` or `dead`, a text within its bound). `absent` names no life, and its `born`
   is the record's birth, or null for a type without one. A `field` carries `values` only on the life of a
-  keyed type it brings back alive. A `createdRecord` or `createRecord` type has life, governs no tree and
-  is not whole-put; a footprint lists born, life, fields and texts in that order; a create's values, and a
-  revival's, are client `lww`, `fww`, `const` or `time` fields and client texts, on their domains.
+  keyed type it brings back alive; version 14 declares them (§2.4). A `createdRecord` or `createRecord` type
+  has life, governs no tree and is not whole-put; a footprint lists born, life, fields and texts in that
+  order; a create's values, and a revival's, are objects of client `lww`, `fww`, `const` or `time` fields
+  (`f`) and client texts (`x`), on their domains.
   Anything else, an empty list included, is `invalid` at §6.1 step 2.
 - At step 8 each operation, in order, holds or skips by its own condition, read from the scope as stored
   and as earlier operations of the command leave it. Another `expectedEpoch` skips every one
@@ -1353,8 +1358,9 @@ type InverseDetail = { inverse: { outcomes: { index, s: 'applied' | 'skipped', c
   `record-changed`. A `createRecord` holds while the id is wholly absent, no spent id among it; otherwise
   `record-present`.
 - What holds becomes one server delta a record: a `field` writes `before` (a text by a replacement that
-  archives the head, §6.4 above), and a keyed record's revival its `values` with its life, since its death
-  kept no field (§6.10 G1); a `createdRecord` writes the record's death, a `createRecord` the
+  archives the head, §6.4 above), and a keyed record's revival its `values` with its life where the stored
+  record is dead, since its death kept no field (§6.10 G1), while a record found alive keeps its own; a
+  `createdRecord` writes the record's death, a `createRecord` the
   record with its values, all under the server stamp step 9 mints, newer than every register it joins. The
   delta carries the record's born, and its stored life where a keyed type or a dead record needs one. Checks
   and consequences run as for any command. The detail is `InverseDetail`, one outcome an operation, inside
@@ -1969,8 +1975,9 @@ holds no field recipe. Asking again for the same act answers its existing reques
    `rowSeq`), until the act's last; a write the device had not seen breaks the chain, and the operation skips
    `history-changed`. The check is per row: an unseen write of another field of the record breaks it too. A
    life operation that brings a keyed record back alive carries the client values of its preimage's
-   `record` (`values`, §6.4), so the server writes the record as its projection draws it, though the death
-   kept no field (§6.10 G1). A preimage of another epoch skips `epoch-changed`. An operation on a target no source owns is dropped, as
+   `record` (`values`, §6.4) while the replica's `serverSchema` is 14 or later (§2.4), so the server writes
+   the record as its projection draws it, though the death kept no field (§6.10 G1); to an older server it
+   carries the life alone. A preimage of another epoch skips `epoch-changed`. An operation on a target no source owns is dropped, as
    there is nothing to take back (a refused source owns nothing), unless a source's history is
    `unavailable`, when it skips `history-changed`. A `createdRecord` is proven by its own receipts alone: its
    creation (`beforeRowSeq: null`) and each later own write continuing it; a gap, or `unavailable` history,
@@ -3053,6 +3060,9 @@ A thin dead row is `{t, id, life, born?, seq}`.
 
 A client reads `minSchema` from a `200` hello only: one above its registry `version` stops sync as
 the server's `426 upgrade-required` does (§9.6). Another status carrying a `minSchema` is no verdict.
+A `200` hello served as a bound replica's account records its `schema` in the replica's `serverSchema`, which
+outlasts a restart; a hello handled as a `401` (§9.1) clears it. A client uses what a version declares only
+while `serverSchema` reaches that version (§2.4).
 `holdsRecords` is present iff `as` is an account A; a hello whose credential does not resolve
 answers `401` (§9.1). `holdsRecords[p]` is true
 iff `acct:A/<p>` holds a row that `visible` (§7.6) accepts, of a `primary` type (§2.4): an existence

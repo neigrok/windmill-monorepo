@@ -320,8 +320,13 @@ export class SenderWait {
 }
 
 // §10.4: every response carrying serverTime yields an offset sample, hello included. A 401, or a hello
-// served as anyone but the replica's account, pauses sync (§9.1).
+// served as anyone but the replica's account, pauses sync (§9.1) and forgets the server's schema; a 200 served
+// as the account records it, which gates what a version declares (§9.2, §2.4).
 export function onHello(replica, ctx, response, timing) {
   if (response.body?.serverTime !== undefined) replica.takeOffsetSample(response.body.serverTime, timing, ctx.limits);
-  if (replica.isUnauthenticated(response)) replica.meta.authPaused = true;
+  if (replica.isUnauthenticated(response)) {
+    replica.meta.authPaused = true;
+    delete replica.meta.serverSchema;
+  } else if (response.status === 200 && replica.meta.account !== undefined && response.body?.as === replica.meta.account
+    && Number.isSafeInteger(response.body.schema)) replica.meta.serverSchema = response.body.schema;
 }

@@ -372,7 +372,7 @@ the grace that container was created with, so a changed value holds from the dep
 
 ## Coordinated client cutoff
 
-The repository registry is schema 13 / minimum 11. Every schema in that interval carries explicit gym
+The repository registry is schema 14 / minimum 11. Every schema in that interval carries explicit gym
 `other`, finite normalized loads without a fixed kg cap, nullable derived metrics and sets without a kind. Production hello advertises
 schema 13 / minimum 11, verified on 2026-11-21 by the start stage of
 [Roadmap cutover 44846026848](https://github.com/neigrok/windmill-monorepo/actions/runs/44846026848).
@@ -386,6 +386,10 @@ once the live hello admits it. The last complete promotion is
 The run before it, 41319412052, failed mid-rsync with no space left on the VPS; the host's free disk
 is not monitored. Queued client delivery and final native
 availability remain unverified. The deployment guard requires exact acknowledgement for any further minimum change.
+
+Schema 14 adds `values` to a restore that brings a keyed record back alive (engine.md §6.4) and keeps minimum 11, so
+the promotion rule below admits a schema 14 web against a schema 13 server; a client sends the values only once a
+hello served as its account advertises 14, and to an older server the life alone, which it admits.
 
 Schema 13 composes roadmap's registry beside gym's and journal's, and the server binds it
 (`products/roadmap/sync/`). The server reads `ROADMAP_ENGINE_ENABLED` only from the host's `roadmap-engine.env`, which

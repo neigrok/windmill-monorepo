@@ -52,6 +52,10 @@ export function restorableSlotFault(type, slot) {
   return field?.kind === 'text' && field.writer === 'client' ? null : `${type.type}.${slot.name} is not a client text`;
 }
 
+// The composed version that declares a keyed revival's values (§2.4): a client sends them only to a server that
+// advertised it.
+export const REVIVAL_VALUES_SCHEMA = 14;
+
 // A keyed record's life brought back alive: its death kept no field (§6.10 G1), so its restore carries the record's values.
 export function revivesKeyed(type, slot, before) {
   return type.identity === 'keyed' && slot.kind === 'life' && before === 'alive';
@@ -272,6 +276,7 @@ export function restoreArgumentsFault(registry, command, args) {
 // The values a create, or a keyed record's revival, writes: client lww, fww, const or time fields and client texts.
 function valuesFault(registry, type, values) {
   if (!exactKeys(values, [], ['f', 'x'])) return 'values are {f?, x?}';
+  if ((values.f !== undefined && !isObject(values.f)) || (values.x !== undefined && !isObject(values.x))) return 'values hold objects of fields and texts';
   for (const [name, value] of Object.entries(values.f ?? {})) {
     const field = type.field(name);
     if (!field || field.writer !== 'client' || !['lww', 'fww', 'const', 'time'].includes(field.kind)) return `${type.type}.${name} is not a client value`;
@@ -350,7 +355,7 @@ export function evaluateRestore(registry, { stored, spent, epoch }, args) {
       const delta = deltaOf(record);
       if (op.slot.kind === 'life') {
         delta.life = [op.before, null];
-        const written = registersOf(op.values ?? {});
+        const written = row.life?.[0] === 'dead' ? registersOf(op.values ?? {}) : {};
         if (written.f) delta.f = { ...delta.f, ...written.f };
         if (written.x) delta.x = { ...delta.x, ...written.x };
       } else if (op.slot.kind === 'field') delta.f = { ...delta.f, [op.slot.name]: [op.before, null] };

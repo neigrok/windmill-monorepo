@@ -261,6 +261,10 @@ public enum RestoreOperation: Sendable, Hashable {
 
   // `values`: on a keyed record's life brought back alive, the record's values, which its death did not keep (G1).
   case field(RecordKey, slot: EffectSlot.Slot, expected: Expected, before: JSON, values: JSON.Object? = nil)
+
+  // The composed version that declares a keyed revival's values (§2.4): a client sends them only to a server that
+  // advertised it.
+  public static let revivalValuesSchema: Int64 = 14
   case createdRecord(RecordKey, rowSeq: Int64, footprint: [EffectSlot])
   // `values`: `{f?, x?}` as the act created the record, client lww, fww, const and time fields and client texts.
   case createRecord(RecordKey, values: JSON.Object)

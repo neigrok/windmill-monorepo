@@ -469,9 +469,12 @@ struct AdmissionRun {
         switch slot {
         case .life:
           delta.life = PlannedLife(before == "alive" ? .alive : .dead, .server)
-          let revived = registers(values ?? [:])
-          delta.fields.merge(revived.fields) { $1 }
-          delta.texts.merge(revived.texts) { $1 }
+          // A record found alive keeps its own fields; only a dead keyed row lacks them (G1).
+          if let values, !row.isAlive {
+            let revived = registers(values)
+            delta.fields.merge(revived.fields) { $1 }
+            delta.texts.merge(revived.texts) { $1 }
+          }
         case .field(let name): delta.fields[name] = PlannedRegister(before, .server)
         case .text(let name): delta.replacements[name] = TextReplacement(text(before))
         case .born: preconditionFailure("born is never restored")

@@ -191,6 +191,9 @@ function lifecycle() {
 
 const outboxOf = (vector) => activeOf(vector)?.outbox ?? [];
 const requestStep = (actId, deviceNow = 9000) => ({ op: 'requestInverse', actId, deviceNow });
+// A hello served as A advertising `schema`, at the device's own time, so the offset stays.
+const helloStep = (schema, deviceNow = 9000) => ({ op: 'hello', deviceNow,
+  response: { status: 200, body: { serverTime: deviceNow, epoch: 'ep-1', as: 'A', schema, minSchema: 2 } } });
 const viewStep = (scope) => ({ op: 'view', scope, withHeld: true });
 const titleIn = (returned, t, id) => returned.records.find((record) => record.t === t && record.id === id)?.f?.title?.[0];
 
@@ -714,8 +717,9 @@ function revival() {
 }
 
 // A keyed record keeps no field once dead (§6.10 G1). An Undo of its removal restores its life alone, as a roadmap
-// pointer's clear does, and its restore carries the values the life's preimage read, so the server brings the link back
-// with its strength, as the device drew it. The Undo of a Redo of that removal brings it back the same way.
+// pointer's clear does, and to a server whose hello advertised schema 14 its restore carries the values the life's
+// preimage read, so the server brings the link back with its strength, as the device drew it. The Undo of a Redo of that
+// removal brings it back the same way. To a server that advertised an older schema it sends the life alone.
 function keyedRevival() {
   const linked = () => new Session(world({ rows: { [TREE]: [
     row({ t: 'tag', id: 'elm', born: st(1300), life: ['alive', st(1300)], f: { label: ['Elm', st(1300)] }, seq: 3 }),
@@ -731,7 +735,7 @@ function keyedRevival() {
   const undone = linked().local(remove);
   undone.flush();
   undone.pull([TREE]);
-  undone.local(requestStep('g1'));
+  undone.local(helloStep(14), requestStep('g1'));
   undone.flush();
   undone.pull([TREE]);
   const back = undone.local(viewStep(TREE))
@@ -744,6 +748,7 @@ function keyedRevival() {
   const redone = linked().local(remove);
   redone.flush();
   redone.pull([TREE]);
+  redone.local(helloStep(14, redone.serverNow));
   for (const actId of ['g1', 'g2', 'g4']) {
     redone.local(requestStep(actId, redone.serverNow));
     redone.flush();
@@ -755,7 +760,16 @@ function keyedRevival() {
     [[['alive', { f: { strength: 3 } }]], [['dead', null]], [['alive', { f: { strength: 3 } }]]]);
   assert.deepEqual(serverLink(redone).f, { strength: [3, serverLink(redone).life[1]] });
   assert.deepEqual(linkIn(again.expect.returns.at(-1)), { t: 'link', id: ['oak', 'elm'], life: serverLink(redone).life, f: serverLink(redone).f });
-  return [back, again];
+
+  const older = linked().local(remove);
+  older.flush();
+  older.pull([TREE]);
+  older.local(helloStep(13), requestStep('g1'));
+  older.flush();
+  const alone = older.vector('to a server whose hello advertised schema 13 a keyed revival\'s restore carries the life alone, which that server admits');
+  assert.deepEqual(restoresOf(alone), [[{ kind: 'field', t: 'link', id: ['oak', 'elm'], slot: { kind: 'life' }, expected: { kind: 'stamp', stamp: st(5000) },
+    before: 'alive' }]]);
+  return [back, again, alone];
 }
 
 // A revival of a tag the device knows only by its spent id: its preimages are read over the dead row the spent id
@@ -1029,7 +1043,7 @@ function releasedBirth() {
     { op: 'commitAct', deviceNow: 5100, segments: [{ scope: 'self/probe', changes: [{ op: 'delete', t: 'day', id: day.id }] }],
       opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: target('self/probe', 'day', day.id, 'life') }] }] }] } } },
     requestStep('g2', 5200), viewStep('self/probe'),
-    { op: 'signIn', account: 'A', holdsRecords: { probe: true }, decisions: { probe: 'add' } });
+    { op: 'signIn', account: 'A', holdsRecords: { probe: true }, decisions: { probe: 'add' } }, helloStep(14, 5300));
   signedOut.flush();
   signedOut.pull(['self/probe']);
   const added = signedOut.local({ op: 'readInverseResult', requestId: 'g4' }, viewStep('self/probe'))

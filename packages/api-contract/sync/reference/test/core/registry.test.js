@@ -112,6 +112,7 @@ test('registry.schema.json refuses broken registries', () => {
     'a product code that is not kebab-case': broken((r) => { r.products.probe.codes = ['Bad_Code']; }),
     'a whole put on a minted type': broken((r) => { card(r).wholePut = true; }),
     'a whole put on a keyed type without life': broken((r) => { r.types.find((t) => t.type === 'mark').wholePut = true; }),
+    'a keyed type that is revivable': broken((r) => { r.types.find((t) => t.type === 'link').revivable = true; }),
     'a whole put type with a client field that is not lww': broken((r) => { r.types.find((t) => t.type === 'fact').fields.at.kind = 'fww'; }),
     'a whole put type with a server-written text field': broken((r) => { Object.assign(r.types.find((t) => t.type === 'fact').fields, { note: { kind: 'text', writer: 'server', unit: 'bytes', max: 40 } }); }),
     'a minted type without its mint': broken((r) => { delete card(r).mint; }),
@@ -232,7 +233,7 @@ test('composition.json names the composed registries: gym, journal and roadmap, 
 // So a product registry joins the composition without a rename, no two product registries, composed or not, declare a
 // name twice.
 test('the composed registries declare one version, and no product registry declares a name another does', () => {
-  assert.deepEqual(COMPOSED.map((registry) => [registry.version, registry.minVersion]), [[13, 11], [13, 11], [13, 11]]);
+  assert.deepEqual(COMPOSED.map((registry) => [registry.version, registry.minVersion]), [[14, 11], [14, 11], [14, 11]]);
   const names = (pick) => PRODUCTS.flatMap(pick);
   const codes = names((r) => Object.values(r.products).flatMap((product) => product.codes ?? []));
   for (const declared of [names((r) => Object.keys(r.products)), names((r) => r.types.map((t) => t.type)), names((r) => r.commands.map((c) => c.name)), codes]) {

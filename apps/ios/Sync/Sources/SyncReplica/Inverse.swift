@@ -653,13 +653,15 @@ public struct Inverses: Sendable {
 
   // One planned operation bound to what it must find, a skip, or nil where the act never wrote the target, so there is
   // nothing to take back. Where a source's history is unavailable, an unowned target may be one it wrote, and skips. A keyed
-  // record's life brought back alive carries the values its preimage's record read, as the slot's projection draws them.
+  // record's life brought back alive carries the values its preimage's record read, as the slot's projection draws them, to
+  // a server that declares them.
   func bound(_ operation: PlannedOperation, of act: ReversibleAct, history: [(lost: Bool, effects: [EffectReceipt])], epoch: String,
              in replica: LoadedReplica) -> Bound? {
+    let declared = (replica.meta.serverSchema ?? 0) >= RestoreOperation.revivalValuesSchema
     let field = { (target: Target, before: JSON?, expected: RestoreOperation.Expected, record: RecordValues?) -> RestoreOperation in
       let before = before ?? .null
       let values = record.flatMap { (record: RecordValues) -> JSON.Object? in
-        guard let type = self.registry.type(target.key.type), self.registry.revivesKeyed(type, target.slot, before) else { return nil }
+        guard declared, let type = self.registry.type(target.key.type), self.registry.revivesKeyed(type, target.slot, before) else { return nil }
         let values = self.registry.revivalValues(type, fields: record.fields, texts: record.texts)
         return values.isEmpty ? nil : values
       }

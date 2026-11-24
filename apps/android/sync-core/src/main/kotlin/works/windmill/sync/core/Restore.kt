@@ -51,6 +51,9 @@ fun TypeDef.restores(slot: Slot): Boolean = when (slot.kind) {
     Slot.Kind.text -> fields[slot.name]?.let { it.kind == "text" && it.writer == "client" } == true
 }
 
+// The composed version that declares a keyed revival's values (§2.4): a client sends them only to a server that advertised it.
+const val REVIVAL_VALUES_SCHEMA = 14L
+
 // A keyed record's life brought back alive: its death kept no field (G1), so its restore carries the record's values.
 fun TypeDef.revivesKeyed(slot: Slot, before: Json): Boolean = identity == "keyed" && slot.kind == Slot.Kind.life && before == Json.of("alive")
 
@@ -290,7 +293,9 @@ data class RestoreArguments(val expectedEpoch: String, val operations: List<Rest
                         return@mapIndexed InverseOutcome(index, "record-dead")
                     val delta = record.delta(type)
                     record.delta = when (op.slot.kind) {
-                        Slot.Kind.life -> (op.values ?: CreationValues()).writtenInto(delta.with("life" to Json.array(op.before, Json.Null)))
+                        // A record found alive keeps its own fields; only a dead keyed row lacks them (G1).
+                        Slot.Kind.life -> (op.values?.takeIf { row!!.lattice.life?.isAlive != true } ?: CreationValues())
+                            .writtenInto(delta.with("life" to Json.array(op.before, Json.Null)))
                         Slot.Kind.field -> delta.with("f" to (delta["f"] ?: Json.objectOf()).with(op.slot.name!! to Json.array(op.before, Json.Null)))
                         else -> delta.with("x" to (delta["x"] ?: Json.objectOf()).with(op.slot.name!! to Json.objectOf("text" to op.before,
                             "replace" to Json.of(true), "archiveNonempty" to Json.of(false), "archive" to Json.objectOf())))

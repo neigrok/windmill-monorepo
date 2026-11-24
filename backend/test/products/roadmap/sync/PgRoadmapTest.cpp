@@ -64,7 +64,7 @@ TEST(the_production_composition_serves_roadmap_only_where_a_deployment_says_so) 
 
   CHECK_EQ(closedHello.body["holdsRecords"].getMemberNames(), (std::vector<std::string>{"gym", "journal", "roadmap"}));
   CHECK_EQ(jcs(closedHello.body["holdsRecords"]["roadmap"]), "false");
-  CHECK_EQ(closedHello.body["schema"].asInt(), 13);
+  CHECK_EQ(closedHello.body["schema"].asInt(), 14);
   CHECK_EQ(closedHello.body["minSchema"].asInt(), 11);
   CHECK_EQ(kindsOf(closedPull), jcs(parseJson(R"(["rows 0", "not-found 0"])")));
   CHECK_EQ(jcs(closedPush.body["results"]), jcs(parseJson(R"([{"n": 1, "s": "refused", "code": "forbidden"}, {"n": 2, "s": "refused", "code": "not-found"}])")));
