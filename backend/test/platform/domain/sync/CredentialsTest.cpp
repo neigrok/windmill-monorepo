@@ -9,8 +9,8 @@
 
 // What envelope/credentials.json does not pin about §9.1 Credentials: how a header line is read as received (the bytes
 // after its colon, whitespace included), how a Cookie piece and an Authorization value are read at their edges, that
-// two of one kind are refused before any token is resolved, how the live socket's digests replace the tokens, and
-// which credentials fail.
+// two of one kind are refused before any token is resolved, how the live socket's digests replace the tokens, which
+// credentials fail, and which session a credential that resolves is served through.
 
 using namespace wm;
 using namespace wm::sync;
@@ -104,4 +104,21 @@ TEST(a_credential_fails_only_when_sent_and_resolving_to_no_account_or_to_one_out
   CHECK(Credential::sent(std::nullopt).fails());
   CHECK(Credential::sent(UserId{std::string(kAccountIdBytes + 1, 'a')}).fails());
   CHECK(Credential::sent(UserId{"A\"B"}).fails());
+}
+
+TEST(a_credential_is_served_through_the_cookie_s_session_when_one_is_sent_else_the_authorization_s) {
+  const ResolveToken resolve = [](const std::string& token) -> std::optional<UserId> {
+    if (token == "gone") return std::nullopt;
+    return UserId{"A"};
+  };
+  const auto sessionOf = [&resolve](const HeaderOccurrences& occurrences) {
+    return SentCredentials::fromOccurrences(occurrences).resolve(resolve).session();
+  };
+  CHECK(sessionOf({{"Authorization", "Bearer a"}}) == std::optional<std::string>("a"));
+  CHECK(sessionOf({{"Cookie", "wm_session=b"}}) == std::optional<std::string>("b"));
+  CHECK(sessionOf({{"Authorization", "Bearer a"}, {"Cookie", "wm_session=b"}}) == std::optional<std::string>("b"));
+  CHECK(sessionOf({{"Cookie", "wm_session=b"}, {"Authorization", "Bearer a"}}) == std::optional<std::string>("b"));
+  CHECK(sessionOf({{"Cookie", "wm_session=gone"}, {"Authorization", "Bearer a"}}) == std::nullopt);
+  CHECK(sessionOf({}) == std::nullopt);
+  CHECK(Credential::sent(UserId{"A"}).session() == std::nullopt);
 }

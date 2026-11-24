@@ -507,12 +507,14 @@ std::optional<StoredSession> PgAuthRepository::findSession(const std::string& di
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT user_id::text, expires_ms FROM sessions WHERE token_hash = $1", digest);
+      "SELECT user_id::text, expires_ms, sync_replica FROM sessions WHERE token_hash = $1", digest);
   if (rows.empty()) return std::nullopt;
 
   const auto& row = rows[0];
+  const auto replica = row["sync_replica"];
   return StoredSession{UserId{row["user_id"].as<std::string>()},
-                       static_cast<UnixMs>(row["expires_ms"].as<long long>())};
+                       static_cast<UnixMs>(row["expires_ms"].as<long long>()),
+                       replica.is_null() ? std::nullopt : std::optional(replica.as<std::string>())};
 }
 
 bool PgAuthRepository::refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
@@ -533,6 +535,17 @@ void PgAuthRepository::deleteSession(const std::string& digest) {
   pqxx::work txn{*conn};
   txn.exec_params("DELETE FROM sessions WHERE token_hash = $1", digest);
   txn.commit();
+}
+
+bool PgAuthRepository::recordSyncReplica(const std::string& sessionDigest, const std::string& replica) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  // A session already holding the replica is left untouched, so a push of the same replica writes no row.
+  const pqxx::result updated = txn.exec_params(
+      "UPDATE sessions SET sync_replica = $2 WHERE token_hash = $1 AND sync_replica IS DISTINCT FROM $2",
+      sessionDigest, replica);
+  txn.commit();
+  return updated.affected_rows() != 0;
 }
 
 std::vector<SessionRow> PgAuthRepository::listSessions(const UserId& userId) {

@@ -8,8 +8,8 @@
 #include <utility>
 #include <vector>
 
-// §9.1 Credentials: what a request sends, read from its header field lines as received, and the principal it is served
-// as.
+// §9.1 Credentials: what a request sends, read from its header field lines as received, the principal it is served as,
+// and the session it is served through.
 
 namespace wm::sync {
 
@@ -21,25 +21,30 @@ inline constexpr char kSessionCookie[] = "wm_session";
 using HeaderOccurrences = std::vector<std::pair<std::string, std::string>>;
 
 // What a request's credentials resolve to: nothing sent, so the request is anonymous; or sent, resolving to an account
-// or to none.
+// through a session, or to none.
 class Credential {
 public:
   // A request that sends none: it is anonymous.
   static Credential none();
-  // A request that sends credentials, which resolve to `account`, or to none.
-  static Credential sent(std::optional<UserId> account);
+  // A request that sends credentials, which resolve to `account` through the session whose token is `session`, or to
+  // none.
+  static Credential sent(std::optional<UserId> account, std::optional<std::string> session = std::nullopt);
 
   // Sent credentials that resolve to no account, or to an id outside §9.1's form. Every endpoint answers them 401
   // unauthenticated, and none serves them as anonymous.
   bool fails() const;
   // §9.1 Principal: the account a request that does not fail is served as; nullopt when it sends no credential.
   const std::optional<UserId>& servedAs() const { return account_; }
+  // The token of the session the request is served through, as it was resolved: the cookie's when the request sends
+  // one, else its Authorization's, as REST reads a caller's session. nullopt when its credentials resolve to none.
+  const std::optional<std::string>& session() const { return session_; }
 
 private:
-  Credential(bool sent, std::optional<UserId> account);
+  Credential(bool sent, std::optional<UserId> account, std::optional<std::string> session);
 
   bool sent_ = false;
   std::optional<UserId> account_;
+  std::optional<std::string> session_;
 };
 
 // One credential a request sends: an Authorization line, or a Cookie piece named the session cookie, whatever its
@@ -75,7 +80,8 @@ public:
 
   // The credential they make: none when nothing is sent. Otherwise they resolve only when at most one of each kind is
   // sent, each carries a token that `resolve` resolves, and a cookie and a header sent together name one account. Two
-  // of one kind are refused before any token is resolved.
+  // of one kind are refused before any token is resolved. A credential that resolves is served through the cookie's
+  // session when one is sent, else the Authorization's.
   Credential resolve(const ResolveToken& resolve) const;
 
   const std::vector<SentCredential>& each() const { return each_; }

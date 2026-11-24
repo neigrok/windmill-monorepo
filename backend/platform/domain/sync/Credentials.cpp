@@ -79,22 +79,25 @@ Credential SentCredentials::resolve(const ResolveToken& resolve) const {
   };
   if (ofKind(SentCredential::Kind::authorization) > 1 || ofKind(SentCredential::Kind::cookie) > 1) return Credential::sent(std::nullopt);
   std::optional<UserId> account;
+  std::optional<std::string> session;
   for (const SentCredential& credential : each_) {
     const std::optional<UserId> resolved = credential.token ? resolve(*credential.token) : std::nullopt;
     if (!resolved || (account && *account != *resolved)) return Credential::sent(std::nullopt);
     account = resolved;
+    if (!session || credential.kind == SentCredential::Kind::cookie) session = credential.token;
   }
-  return Credential::sent(account);
+  return Credential::sent(account, session);
 }
 
-Credential::Credential(bool sent, std::optional<UserId> account) : sent_(sent), account_(std::move(account)) {}
+Credential::Credential(bool sent, std::optional<UserId> account, std::optional<std::string> session)
+    : sent_(sent), account_(std::move(account)), session_(std::move(session)) {}
 
 Credential Credential::none() {
-  return Credential(false, std::nullopt);
+  return Credential(false, std::nullopt, std::nullopt);
 }
 
-Credential Credential::sent(std::optional<UserId> account) {
-  return Credential(true, std::move(account));
+Credential Credential::sent(std::optional<UserId> account, std::optional<std::string> session) {
+  return Credential(true, std::move(account), std::move(session));
 }
 
 bool Credential::fails() const {

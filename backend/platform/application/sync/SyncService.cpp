@@ -567,8 +567,9 @@ bool TimeBudget::spent(std::size_t admitted) {
 }
 
 SyncService::SyncService(const SyncCatalog& catalog, SyncStore& store, Admission& admission, Clock& clock,
-                         std::shared_ptr<FailureWindow> bindUnavailable)
-    : catalog_(catalog), store_(store), admission_(admission), clock_(clock), bindUnavailable_(std::move(bindUnavailable)) {}
+                         std::shared_ptr<FailureWindow> bindUnavailable, std::shared_ptr<SessionReplicas> sessionReplicas)
+    : catalog_(catalog), store_(store), admission_(admission), clock_(clock), bindUnavailable_(std::move(bindUnavailable)),
+      sessionReplicas_(std::move(sessionReplicas)) {}
 
 // §9.2: holdsRecords[p] iff acct:<caller>/<p> holds a visible row of a primary type; holdings[p] tallies the visible
 // rows of p's headline type: how many, and the last write among them (the greatest ru). Both read one snapshot. A
@@ -620,7 +621,24 @@ SyncReply SyncService::push(const Credential& credential, std::string_view body,
   const std::optional<Json::Value> request = parsed(body);
   if (!request || !isPushRequest(*request)) return SyncReply::refused(400, std::move(answer), "malformed");
   if ((*request)["intents"].size() > limits.pushMaxIntents) return SyncReply::refused(413, std::move(answer), "request-too-large");
-  return ReplicaPush(catalog_, store_, admission_, *caller, *request, serverNow, bindUnavailable_.get()).run(budget, std::move(answer));
+  SyncReply reply = ReplicaPush(catalog_, store_, admission_, *caller, *request, serverNow, bindUnavailable_.get()).run(budget, std::move(answer));
+  if (reply.status != 200 || !credential.session() || !sessionReplicas_) return reply;
+  // The accepted push's replica is now its session's. Recording it is part of the push's write and never changes its
+  // answer: a failure is reported under its own operation, and the results the push admitted are still answered.
+  WriteObservation recorded("sync.push.session_replica", "platform", "sync");
+  WriteContext context(recorded);
+  try {
+    if (sessionReplicas_->recordSyncReplica(*credential.session(), (*request)["replica"].asString())) {
+      recorded.wrote();
+      recorded.finish();
+    } else recorded.skip();
+  } catch (const std::exception& error) {
+    recorded.fail(error);
+  } catch (...) {
+    recorded.failUnknown();
+    throw;
+  }
+  return reply;
 }
 
 SyncReply SyncService::pull(const Credential& credential, std::string_view body) {

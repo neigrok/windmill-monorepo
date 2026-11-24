@@ -570,7 +570,8 @@ void AuthApi::link(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
 }
 
 void AuthApi::me(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  std::optional<User> user = auth_->authenticate(sessionSecretOf(req), contextOf(req));
+  const std::string secret = sessionSecretOf(req);
+  std::optional<User> user = auth_->authenticate(secret, contextOf(req));
   if (!user) {
     callback(jsonResponse(Json::Value(Json::objectValue), drogon::k401Unauthorized));
     return;
@@ -590,6 +591,8 @@ void AuthApi::me(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
     methods.append(row);
   }
   body["signInMethods"] = methods;
+  const std::optional<std::string> replica = auth_->syncReplicaOf(secret);
+  body["syncReplica"] = replica ? Json::Value(*replica) : Json::Value();
   callback(jsonResponse(body));
 }
 

@@ -101,6 +101,7 @@ struct FakeAuthRepository : AuthRepository {
     UnixMs lastSeenMs = 0;
     UnixMs createdAtMs = 0;
     std::string ip;
+    std::optional<std::string> syncReplica;
   };
   std::map<std::string, LinkRow> links;             // digest -> row
   std::map<std::string, SessionRecord> sessions;    // digest -> record
@@ -356,7 +357,7 @@ struct FakeAuthRepository : AuthRepository {
   std::optional<StoredSession> findSession(const std::string& digest) override {
     auto it = sessions.find(digest);
     if (it == sessions.end()) return std::nullopt;
-    return StoredSession{it->second.user, it->second.expiresAt};
+    return StoredSession{it->second.user, it->second.expiresAt, it->second.syncReplica};
   }
   bool refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
                       const std::string& userAgent, const std::string& ip) override {
@@ -369,6 +370,12 @@ struct FakeAuthRepository : AuthRepository {
     return true;
   }
   void deleteSession(const std::string& digest) override { sessions.erase(digest); }
+  bool recordSyncReplica(const std::string& sessionDigest, const std::string& replica) override {
+    auto it = sessions.find(sessionDigest);
+    if (it == sessions.end() || it->second.syncReplica == replica) return false;
+    it->second.syncReplica = replica;
+    return true;
+  }
 
   std::vector<SessionRow> listSessions(const UserId& userId) override {
     std::vector<SessionRow> out;
