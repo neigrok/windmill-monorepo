@@ -1,7 +1,9 @@
 #include "platform/adapters/json/JsonText.h"
 #include "platform/adapters/postgres/PgPool.h"
 #include "platform/adapters/sentry/ObservedTool.h"
+#include "platform/domain/sync/Scope.h"
 #include "products/roadmap/adapters/postgres/PgTreeRepository.h"
+#include "products/roadmap/domain/Access.h"
 #include "products/roadmap/domain/SubtreeInventory.h"
 
 #include <pqxx/pqxx>
@@ -64,18 +66,20 @@ Json::Value countsOf(const wm::SubtreeInventory& counted) {
   return out;
 }
 
-// Every alive roadmap once, by the visibility it reads as: a root by the visibility its meta holds, a subtree by its
-// reach, since only a root holds a visibility. A roadmap with no meta, or a meta that holds none, is unset.
+// Every alive roadmap once, by whose it is and the visibility it reads as. The house's ($1 its product scope) are apart
+// from people's. A root reads as the visibility its meta holds, a subtree as its reach, since only a root holds a
+// visibility. A roadmap with no meta, or a meta that holds none, is unset.
 constexpr const char* kRoadmapsByVisibility = R"(
-select place,
+select account, place,
        case when held is null then 'unset' when held in ('private', 'unlisted', 'public') then held else 'other' end,
        count(*)
-from (select case when jsonb_typeof(t.parent) = 'object' then 'subtrees' else 'roots' end as place,
+from (select case when t.scope_key = $1 then 'house' else 'people' end as account,
+             case when jsonb_typeof(t.parent) = 'object' then 'subtrees' else 'roots' end as place,
              case when jsonb_typeof(t.parent) = 'object' then m.reach else m.visibility end as held
       from roadmap_trees t
       left join roadmap_metas m on m.scope_key = 'tree:' || t.id and m.id = 'meta'
       where t.life = 'alive') roadmaps
-group by 1, 2)";
+group by 1, 2, 3)";
 
 // The pointers alive with no `opens` in an alive roadmap's overlay, by the door their life stamp's actor names: the
 // server's `srv`, an Undo's restore, or any other, a client's put.
@@ -86,18 +90,23 @@ join sync_scopes s on s.key = p.scope_key and s.state = 'alive'
 where p.life = 'alive' and p.opens is null
 group by 1)";
 
-// The counts of the sync engine's roadmap tables, read in one read-only transaction. Every bucket starts at zero here,
-// so each prints, and the statements name no other.
+// The counts of the sync engine's roadmap tables, read from one snapshot. A hand-run read of whole tables, so each
+// statement may run a minute rather than the pool's 5 s, and fails closed past it. Every bucket starts at zero here, so
+// each prints, and the statements name no other.
 Json::Value engineCountsOf(wm::PgPool& pool) {
   Json::Value out(Json::objectValue);
-  for (const char* place : {"roots", "subtrees"})
-    for (const char* held : {"private", "unlisted", "public", "unset", "other"})
-      out["visibility"][place][held] = Json::UInt64(0);
+  for (const char* account : {"house", "people"})
+    for (const char* place : {"roots", "subtrees"})
+      for (const char* held : {"private", "unlisted", "public", "unset", "other"})
+        out["visibility"][account][place][held] = Json::UInt64(0);
   for (const char* door : {"restore", "clientPut"}) out["pointersWithoutOpens"][door] = Json::UInt64(0);
   wm::PgLease conn{pool};
-  pqxx::read_transaction txn{*conn};
-  for (const auto& row : txn.exec(kRoadmapsByVisibility))
-    out["visibility"][row[0].as<std::string>()][row[1].as<std::string>()] = Json::UInt64(row[2].as<std::uint64_t>());
+  pqxx::transaction<pqxx::isolation_level::repeatable_read, pqxx::write_policy::read_only> txn{*conn};
+  txn.exec("SET LOCAL statement_timeout = '60s'");
+  const pqxx::params house{wm::sync::ScopeKey::product(wm::kHouseAccount, "roadmap").text()};
+  for (const auto& row : txn.exec(kRoadmapsByVisibility, house))
+    out["visibility"][row[0].as<std::string>()][row[1].as<std::string>()][row[2].as<std::string>()] =
+        Json::UInt64(row[3].as<std::uint64_t>());
   for (const auto& row : txn.exec(kPointersWithoutOpensByDoor))
     out["pointersWithoutOpens"][row[0].as<std::string>()] = Json::UInt64(row[1].as<std::uint64_t>());
   return out;
