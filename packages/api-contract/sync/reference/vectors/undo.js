@@ -6,11 +6,10 @@ import { Device, freshMeta } from '../client/replica.js';
 import { onPushResponse } from '../client/sender.js';
 import { steadyTiming } from '../core/clock.js';
 import { CONSTANTS } from '../core/constants.js';
-import { pull } from '../server/pull.js';
 import { push } from '../server/push.js';
 import { ServerState } from '../server/state.js';
 import { ACTOR, OTHER, overlayScope, product, productScope, registry, row, serverState, st, treeScope } from './fixtures.js';
-import { runSteps, settle, stepsVector } from './steps.js';
+import { Session, settle, stepsVector } from './steps.js';
 
 export const REPLICA = 'rp_00000000000000000000000000000001';
 export const BOARD = 'b_00000001';
@@ -41,77 +40,6 @@ export function world({ rows = {}, overlay } = {}) {
     rows: { 'acct:A/probe': confirmed['self/probe'], [`tree:${BOARD}`]: confirmed[TREE], ...(overlay ? { [`acct:A/overlay/${BOARD}`]: overlay } : {}) },
   }));
   return { device, state };
-}
-
-// Client steps paired with the reference server's answers: `push` and `pull` ask the device for its request
-// as the steps so far leave it, let the server answer, and append the answer.
-export class Session {
-  constructor({ device, state }, input = {}) {
-    this.device = device;
-    this.state = state;
-    this.input = input;
-    this.steps = [];
-    this.serverNow = 6000;
-  }
-
-  local(...steps) {
-    this.steps.push(...steps);
-    return this;
-  }
-
-  run() {
-    return runSteps({ device: this.device, ...this.input, steps: this.steps });
-  }
-
-  last() {
-    return this.run().returns.at(-1);
-  }
-
-  push({ deviceNow = this.serverNow, dieAfter, answer = (response) => response } = {}) {
-    this.steps.push({ op: 'push', deviceNow });
-    const request = this.last();
-    if (!request) return null;
-    this.serverNow += 1000;
-    const pushed = push({ state: this.state, registry, product, account: 'A', request, serverNow: this.serverNow });
-    this.state = pushed.state;
-    const response = answer(structuredClone(pushed.response));
-    this.steps.push({ op: 'pushResponse', response, deviceNow, ...(dieAfter === undefined ? {} : { dieAfter }) });
-    return response;
-  }
-
-  // Pushes until nothing is left to number, each answer applied.
-  flush(limit = 8) {
-    for (let k = 0; k < limit; k++) if (this.push() === null) return this;
-    throw new Error('the session did not flush');
-  }
-
-  // Intents another replica of the same account pushes meanwhile, each at the server's present.
-  elsewhere(...intents) {
-    this.serverNow += 1000;
-    this.otherN = (this.otherN ?? 0) + intents.length;
-    const request = { replica: 'rp_0000000000000000000000000000000b', account: 'A', ackThrough: 0,
-      intents: intents.map((intent, k) => ({ n: this.otherN - intents.length + 1 + k, ...intent })) };
-    const pushed = push({ state: this.state, registry, product, account: 'A', request, serverNow: this.serverNow });
-    assert.ok(pushed.response.body.results.every(({ s }) => s === 'ok'), 'a foreign write lands');
-    this.state = pushed.state;
-    return this;
-  }
-
-  pull(scopes, { deviceNow = this.serverNow, dieAfter, settle: perSlice } = {}) {
-    this.steps.push({ op: 'pull', scopes, deviceNow });
-    const request = this.last();
-    if (!request) return null;
-    this.serverNow += 1000;
-    const pulled = pull({ state: this.state, registry, product, account: 'A', request, serverNow: this.serverNow });
-    this.state = pulled.state;
-    this.steps.push({ op: 'pullResponse', response: pulled.response, deviceNow,
-      ...(dieAfter === undefined ? {} : { dieAfter }), ...(perSlice === undefined ? {} : { settle: perSlice }) });
-    return pulled.response;
-  }
-
-  vector(name) {
-    return stepsVector(name, { device: this.device, ...this.input, steps: structuredClone(this.steps) });
-  }
 }
 
 const cardTitle = target('self/probe', 'card', CARD, 'field', 'title');

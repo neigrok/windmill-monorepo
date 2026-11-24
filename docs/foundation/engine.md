@@ -1651,6 +1651,9 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
        the put leaves it present;
      - `[dead, s]` when it removes it;
      - otherwise the drawn life register, unchanged.
+   - A put that makes a keyed record present diffs against no record: it writes every field the change
+     names, changed or not, stamped `s`. The server keeps no field of a dead keyed record (§6.10 G1), so a
+     value its dead row in `drawn` still shows is not one the server holds.
    - A put that leaves a `wholePut` record present writes every client-written lattice field of its
      type, changed or not, stamped `s`; a change that leaves one out throws. A change that removes a
      `wholePut` record carries its life alone (§6.1 step 2 refuses a dead whole delta with a field

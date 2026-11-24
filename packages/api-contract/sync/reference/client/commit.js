@@ -204,6 +204,8 @@ class DeltaBuilder {
     return delta;
   }
 
+  // §7.1 step 4: a put that makes the record present diffs against no record, since the server keeps no field of a
+  // dead keyed record (G1).
   put(type, change) {
     if (type.identity !== 'keyed' || !type.life) throw new CommitError(`${type.type} is not keyed with life`);
     const current = this.drawnView.get(recordKey(type.type, change.id));
@@ -211,12 +213,13 @@ class DeltaBuilder {
     const present = change.present ?? true;
     if (type.wholePut && present) return this.wholePut(type, change);
     if (type.wholePut && Object.keys({ ...change.f, ...change.x }).length) throw new CommitError(`a removal of ${type.type} carries its life alone`);
+    const makesPresent = present && !presentBefore;
     let life = current?.life;
-    if (present && !presentBefore) life = ['alive', this.stamp];
+    if (makesPresent) life = ['alive', this.stamp];
     if (!present && presentBefore) life = ['dead', this.stamp];
     if (life === undefined) return null;
     const delta = { t: type.type, id: change.id, life };
-    const changed = this.withChanges(type, delta, change, current);
+    const changed = this.withChanges(type, delta, change, makesPresent ? undefined : current);
     return changed || !sameJson(life, current?.life ?? null) ? delta : null;
   }
 

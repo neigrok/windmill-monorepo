@@ -1340,7 +1340,8 @@ write-map stamps.
 
 ### commit/*.json
 
-- `deltas.json`: deltas and stamps.
+- `deltas.json`: deltas and stamps. A keyed put that makes a record present writes every field it names, even one
+  its dead row in `drawn` still shows; one vector runs it through one sync with the reference server's answers.
 - `ids.json`: minted, seeded and derived ids. A create without `id` mints one by its type's `mint`: the
   prefix, then `length` characters `alphabet[draw]` from the `draws` queue; a derived create without
   `id` and `label` mints the same way. A minted id already taken (in `drawn`, or spent) is drawn again.

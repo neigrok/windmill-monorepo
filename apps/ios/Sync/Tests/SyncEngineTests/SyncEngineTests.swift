@@ -3,6 +3,7 @@ import SyncCore
 import SyncEngine
 import SyncModelServer
 import SyncReplica
+import SyncSchema
 import SyncStore
 import SyncTesting
 import Testing
@@ -302,6 +303,37 @@ struct SyncEngineTests {
     #expect(try rig.outbox() == ["g1/0 ready", "g2/0 ready"])
     #expect(rig.engine.sender.wake.kicks == kicks + 1)
     #expect(try rig.engine.cancelHeld("g1") == false)
+  }
+
+  // MARK: A keyed record brought back (§7.1 step 4)
+
+  // A step's pointer set and synced, cleared, and set again to the same roadmap, with one sync after both or one between
+  // them, on Windmill's registry and server rules. The server keeps no field of the dead pointer (G1), so the pointer
+  // comes back opening the roadmap only because the put that makes it present writes `opens`, which the dead row the
+  // device draws until the sync still shows.
+  @Test(arguments: [false, true]) func aPointerClearedAndSetAgainOpensItsRoadmapAfterTheSync(syncsBetween: Bool) throws {
+    let phone = SteppedEngine(registry: SyncSchema.registry, startMs: Rig.startMs, account: "A",
+                              rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
+    let (roadmap, opened) = (RecordID("t_00000000000000a1"), RecordID("t_00000000000000b2"))
+    let overlay = ScopeRef.overlay(roadmap.string!)
+    let point = { (present: Bool) throws in
+      _ = try phone.replica.commit(overlay, Gesture(changes: [.put("pointer", "step", present: present, present ? ["opens": opened.json] : [:])]))
+    }
+    _ = try phone.replica.commit(.product("roadmap"), Gesture(changes: [.create("tree", id: .given(roadmap)), .create("tree", id: .given(opened))]))
+    _ = try phone.replica.commit(.tree(roadmap.string!), Gesture(changes: [.create("node", id: .given("step"), ["label": "Step"])]))
+    try point(true)
+    phone.sync()
+    try point(false)
+    if syncsBetween { phone.sync() }
+    try point(true)
+    phone.sync()
+    let server = phone.server.rows(overlay, of: "A")
+    let drawn = try phone.drawn(overlay, "pointer")
+    #expect(server.map(\.key) == [RecordKey("pointer", "step")])
+    #expect(server.map { $0.lattice.fields.mapValues(\.value) } == [["opens": opened.json]])
+    #expect(drawn.map(\.values) == [["opens": opened.json]])
+    #expect(drawn.map(\.life) == server.map(\.lattice.life))
+    #expect(drawn.map(\.isPending) == [false])
   }
 
   // MARK: Ids and time

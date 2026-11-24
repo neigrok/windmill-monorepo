@@ -674,8 +674,9 @@ struct DeltaBuilder {
   }
 
   // A keyed put's life: alive when it makes the record present, dead when it removes it, else the drawn life unchanged. A
-  // put that leaves a `wholePut` record present is a whole put; any other carries its life alone, since §6.1 step 2 refuses
-  // a dead whole delta with a field register, so one that names a field value throws.
+  // put that makes the record present diffs against no record, since the server keeps no field of a dead keyed record
+  // (G1). A put that leaves a `wholePut` record present is a whole put; any other carries its life alone, since §6.1 step 2
+  // refuses a dead whole delta with a field register, so one that names a field value throws.
   mutating func put(_ type: TypeDef, _ id: RecordID, present: Bool?, values: [String: JSON], texts edits: [String: TextEdit]) throws -> Delta? {
     guard type.identity == .keyed, type.life else { throw CommitFailure.malformed("\(type.name) is not keyed with life") }
     let key = RecordKey(type.name, id)
@@ -685,12 +686,13 @@ struct DeltaBuilder {
     let present = present ?? presentBefore
     if present && type.wholePut { return try wholePut(type, key, values: values, texts: edits) }
     guard !type.wholePut || (values.isEmpty && edits.isEmpty) else { throw CommitFailure.malformed("a removal of \(key) carries its life alone") }
+    let makesPresent = present && !presentBefore
     var life = current?.lattice.life
-    if present && !presentBefore { life = Life(.alive, stamp) }
+    if makesPresent { life = Life(.alive, stamp) }
     if !present && presentBefore { life = Life(.dead, stamp) }
     guard let life else { return nil }
     var delta = Delta(key: key, lattice: Lattice(life: life))
-    let changed = try withChanges(&delta, type, values, edits, current: current)
+    let changed = try withChanges(&delta, type, values, edits, current: makesPresent ? nil : current)
     return changed || life != current?.lattice.life ? delta : nil
   }
 
