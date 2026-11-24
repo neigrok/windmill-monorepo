@@ -49,8 +49,9 @@ import SyncTesting
     telemetry.entries.withLock { $0.map { "\($0.name) \($0.properties.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " "))" } }
   }
 
-  // Roadmap · iOS 08.5: the guides of the roadmaps above stand under the roadmap's own, nearest first, and the title menu
-  // counts them; the farther one opens the nearer, which opens *Learn to sail*.
+  // Roadmap · iOS 08.5: the guides of the roadmaps above stand under the roadmap's own, nearest first and equals in id
+  // byte order, as the domain orders them, and the title menu counts them. *Become a day skipper* and *Run a 10k* each
+  // open *Learn to sail*, and *Spanish B1* opens *Become a day skipper*.
   @Test func aGuideIsReadWithTheGuidesAboveNearestFirstAndTheMenuCountsThem() async throws {
     let (engine, runner, memory, suite) = phone()
     defer { memory.removePersistentDomain(forName: suite) }
@@ -59,8 +60,11 @@ import SyncTesting
     try RoadmapFixture.write(RoadmapFixture.Guides.skipper, on: skipper.tree, by: runner)
     let spanish = try RoadmapFixture.plant(RoadmapFixture.others[0], opening: sail.tree, by: runner)
     try RoadmapFixture.write("Order dinner in Spanish by May.", on: spanish.tree, by: runner)
-    guard case .committed = try runner.runAct(PointStep.set(tree: spanish.tree, step: spanish.steps[0].id, opens: skipper.tree)) else {
-      Issue.record("Spanish B1's step does not open Become a day skipper")
+    let run = try RoadmapFixture.plant(RoadmapFixture.others[4], opening: sail.tree, by: runner)
+    try RoadmapFixture.write("Run on Mondays.", on: run.tree, by: runner)
+    guard case .committed = try runner.runAct(PointStep.set(tree: spanish.tree, step: spanish.steps[0].id, opens: skipper.tree)),
+          case .committed = try runner.runAct(PointStep.set(tree: run.tree, step: run.steps[1].id, opens: sail.tree)) else {
+      Issue.record("Spanish B1's step does not open Become a day skipper, or Run a 10k's does not open Learn to sail")
       return
     }
     let telemetry = TelemetryRecorder()
@@ -68,15 +72,16 @@ import SyncTesting
     model.roomOpened()
     await shows(model, guide: RoadmapFixture.Guides.sail, on: engine)
     let open = try #require(model.shown)
-    #expect(open.guidesAbove.map { "\($0.title): \($0.text)" } == [
-      "Become a day skipper: \(RoadmapFixture.Guides.skipper)", "Spanish B1: Order dinner in Spanish by May.",
-    ])
-    #expect(GuideSheet.menuTitle(above: open.guidesAbove.count) == "Guide · +2 from above")
+    let nearest = [skipper.tree, run.tree].sorted { $0.description.utf8.lexicographicallyPrecedes($1.description.utf8) }
+    #expect(open.guidesAbove.map(\.tree) == (nearest + [spanish.tree]).map(\.description))
+    #expect(open.guidesAbove.map(\.distance) == [1, 1, 2])
+    #expect(open.guidesAbove.last.map { "\($0.title): \($0.text)" } == "Spanish B1: Order dinner in Spanish by May.")
+    #expect(GuideSheet.menuTitle(above: open.guidesAbove.count) == "Guide · +3 from above")
 
     model.openGuide()
     let sheet = try #require(model.guide)
     #expect(sheet.written && sheet.text == RoadmapFixture.Guides.sail && sheet.draft == nil)
-    #expect(sheet.above.map(\.title) == ["Become a day skipper", "Spanish B1"])
+    #expect(Set(sheet.above.prefix(2).map(\.title)) == ["Become a day skipper", "Run a 10k"] && sheet.above.last?.title == "Spanish B1")
 
     // Another roadmap opening closes the sheet.
     model.open(skipper.tree.description, from: .menu)
@@ -113,6 +118,8 @@ import SyncTesting
     #expect(sheet.draft?.changed == true && sheet.draft?.fits == true)
     sheet.save()
     #expect(sheet.draft == nil && model.guide === sheet)
+    // Before the phone's copy is read again, the sheet reads what it wrote.
+    #expect(model.shown?.tree.meta?.guide == "" && sheet.written && sheet.text == "Sail on Sundays.")
     let band = try #require(model.band)
     #expect(band.says == .savedGuide(cleared: false) && band.undo?.act == .step("guide") && band.undo?.held == false && band.lasts == .seconds(6))
     await shows(model, guide: "Sail on Sundays.", on: engine)
@@ -185,14 +192,13 @@ import SyncTesting
     await shows(model, guide: long + ", then tie up.", on: engine)
     #expect(told(telemetry) == [
       "roadmap_room_opened ", "roadmap_guide above=none door=menu step=open view=board", "roadmap_guide step=edit via=edit",
-      "roadmap_write_refused refusal=tooLong write=guide", "roadmap_write_refused refusal=tooLong write=guide",
-      "roadmap_guide length=4501-5000 outcome=saved step=save",
+      "roadmap_guide step=tooLong", "roadmap_guide step=tooLong", "roadmap_guide length=4501-5000 outcome=saved step=save",
     ])
   }
 
   // Roadmap · iOS 08.3: Cancel leaves an unchanged draft at once and asks before discarding a changed one. A draft with no
-  // change follows the guide another phone writes; one with a change keeps the person's words. A commit that fails keeps
-  // the draft as it was typed.
+  // change follows the guide another phone writes; one with a change keeps the person's words, and its save over the
+  // other phone's guide is told as a conflict. A commit that fails keeps the draft as it was typed and is told.
   @Test func cancelAsksOnAChangedDraftAndOnlyAnUnchangedDraftFollowsTheGuideWrittenElsewhere() async throws {
     let (engine, runner, memory, suite) = phone()
     defer { memory.removePersistentDomain(forName: suite) }
@@ -242,9 +248,33 @@ import SyncTesting
     #expect(told(telemetry) == [
       "roadmap_room_opened ", "roadmap_guide above=none door=menu step=open view=board", "roadmap_guide step=edit via=edit",
       "roadmap_guide step=cancel", "roadmap_guide step=edit via=edit", "roadmap_guide step=discard", "roadmap_guide step=edit via=edit",
-      "client_error failure_kind=storage operation=roadmap_write", "roadmap_guide length=1-500 outcome=saved step=save",
-      "roadmap_guide step=edit via=edit", "roadmap_guide step=cancel",
+      "client_error failure_kind=storage operation=roadmap_write", "roadmap_guide length=1-500 outcome=failed reason=device step=save",
+      "roadmap_guide length=1-500 outcome=saved step=save", "roadmap_guide step=conflict", "roadmap_guide step=edit via=edit",
+      "roadmap_guide step=cancel",
     ])
+  }
+
+  // A NUL typed or pasted is not kept, as the web's draft keeps none: Save never offers a draft the domain would refuse.
+  @Test func aNulIsNotKeptSoSaveWritesWhatItOffers() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    _ = try learnToSail(guide: nil, on: engine, runner, memory)
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    model.roomOpened()
+    await shows(model, guide: "", on: engine)
+    model.openGuide()
+    let sheet = try #require(model.guide)
+    sheet.edit(via: .add)
+    sheet.type("Sail\u{0} on Sundays.\u{0}")
+    #expect(sheet.draft?.text == "Sail on Sundays." && sheet.draft?.changed == true && sheet.draft?.fits == true)
+    sheet.save()
+    #expect(sheet.draft == nil && model.band?.says == .savedGuide(cleared: false))
+    await shows(model, guide: "Sail on Sundays.", on: engine)
+    sheet.edit(via: .edit)
+    sheet.type("\u{0}")
+    #expect(sheet.draft?.text == "" && sheet.draft?.saved == "")
+    #expect(!told(telemetry).contains { $0.hasPrefix("roadmap_write_refused") || $0.contains("outcome=failed") })
   }
 
   // What a draft counts and saves, as the domain counts a guide: the code points of the text as typed, so an accent typed

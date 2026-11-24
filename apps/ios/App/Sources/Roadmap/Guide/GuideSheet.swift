@@ -20,6 +20,9 @@ final class GuideSheet: Identifiable {
   let tree: ID<RoadmapEntry>
   // The draft while the sheet writes; none while it reads.
   private(set) var draft: GuideDraft?
+  // The guide this sheet has just written, which it reads until the phone's copy is read again and holds it (the note's
+  // screen keeps what it opened on the same way while it leaves).
+  private var lastWrite: String?
   // Discard draft? stands over Cancel.
   var asksDiscard = false
 
@@ -34,8 +37,8 @@ final class GuideSheet: Identifiable {
     return shown
   }
 
-  // The roadmap's own guide, as the phone's copy holds it.
-  var text: String { open?.tree.meta?.guide ?? "" }
+  // The roadmap's own guide, as the phone's copy holds it or as this sheet has just written it.
+  var text: String { lastWrite ?? open?.tree.meta?.guide ?? "" }
 
   // A guide of blanks alone is no guide.
   var written: Bool { !TextSpec.isBlank(text) }
@@ -49,28 +52,34 @@ final class GuideSheet: Identifiable {
     room.telemetry.event("roadmap_guide", properties: ["step": "edit", "via": gesture.rawValue])
   }
 
-  // What is typed, all of it: a draft that goes past the limit is refused there, as the footer then says, and told by its
-  // kind as the step form's own refusals are.
+  // What is typed, all of it: a draft that goes past the limit is refused there, as the footer then says, and told once
+  // each time it goes over.
   func type(_ typed: String) {
     guard var draft, draft.text != typed else { return }
     let fitted = draft.fits
     draft.text = typed
     self.draft = draft
-    if fitted && !draft.fits { room.telemetry.event("roadmap_write_refused", properties: ["write": "guide", "refusal": "tooLong"]) }
+    if fitted && !draft.fits { room.telemetry.event("roadmap_guide", properties: ["step": "tooLong"]) }
   }
 
-  // Save, offered on a changed draft that fits: the draft's one write. Written, the sheet reads again and the band holds
-  // its Undo; refused or failed, the draft stays as it was typed, and the door has told it.
+  // Save, offered on a changed draft that fits: the draft's one write. Written, the sheet reads what it wrote and the
+  // band holds its Undo, and a draft begun from a guide another device has since replaced is told as a conflict, as the
+  // web tells it; refused or failed, the draft stays as it was typed, told by why.
   func save() {
     guard let draft, draft.changed, draft.fits, open != nil else { return }
+    let replaced = draft.base != text
     switch room.write(WriteRoadmap(tree: tree, guide: draft.saved), as: "guide") {
     case .committed(_, let receipt):
-      self.draft = nil
+      (self.draft, lastWrite) = (nil, draft.saved)
       let cleared = draft.saved.isEmpty
       room.telemetry.event("roadmap_guide", properties: ["step": "save", "outcome": cleared ? "cleared" : "saved", "length": draft.lengthBucket])
+      if replaced { room.telemetry.event("roadmap_guide", properties: ["step": "conflict"]) }
       room.show(RoadmapModel.Band(.savedGuide(cleared: cleared), of: receipt, act: .step("guide")))
     case .unchanged: self.draft = nil
-    case .refused, .failed: break
+    case .refused:
+      room.telemetry.event("roadmap_guide", properties: ["step": "save", "outcome": "failed", "length": draft.lengthBucket, "reason": "refused"])
+    case .failed:
+      room.telemetry.event("roadmap_guide", properties: ["step": "save", "outcome": "failed", "length": draft.lengthBucket, "reason": "device"])
     }
   }
 
@@ -91,9 +100,11 @@ final class GuideSheet: Identifiable {
     room.telemetry.event("roadmap_guide", properties: ["step": "discard"])
   }
 
-  // The phone's copy read the guide anew. A draft holding no change starts again from it, so the field shows what another
-  // device wrote; one that holds a change keeps the person's words, which its save writes over the guide.
+  // The phone's copy read the guide anew, a guide this sheet wrote included. A draft holding no change starts again from
+  // it, so the field shows what another device wrote; one that holds a change keeps the person's words, which its save
+  // writes over the guide.
   func follow() {
+    lastWrite = nil
     guard let draft, !draft.changed, draft.base != text else { return }
     self.draft = GuideDraft(text)
   }
@@ -106,15 +117,20 @@ final class GuideSheet: Identifiable {
   }
 }
 
-// A guide as its editor writes it (08.3, 08.4): the text typed over the guide it started from, every character kept,
-// counted as the domain counts a guide. The counter shows from 4,500 of the domain's 5,000 characters; past them it counts
-// the excess, and nothing is written until the text fits. Blanks against no guide are no change, and a blank draft saves
-// no guide.
+// A guide as its editor writes it (08.3, 08.4): the text typed over the guide it started from, every character kept but
+// a NUL, which a guide cannot hold and which draws nothing (the web's `heldText` drops it too), counted as the domain
+// counts a guide. The counter shows from 4,500 of the domain's 5,000 characters; past them it counts the excess, and
+// nothing is written until the text fits. Blanks against no guide are no change, and a blank draft saves no guide.
 struct GuideDraft: Equatable {
   static let countedFrom = 4_500
 
   let base: String
-  var text: String
+  var text: String {
+    didSet {
+      guard text.unicodeScalars.contains("\u{0}") else { return }
+      text = String(String.UnicodeScalarView(text.unicodeScalars.filter { $0 != "\u{0}" }))
+    }
+  }
 
   init(_ base: String) {
     self.base = base
@@ -138,11 +154,11 @@ struct GuideDraft: Equatable {
 
   // The saved guide's length as an event carries it, in the web's buckets (`guideLengthBucket`).
   var lengthBucket: String {
-    let length = TextSpec.isBlank(text) ? 0 : length
-    if length < 1 { return "0" }
-    if length <= 500 { return "1-500" }
-    if length <= 2_000 { return "501-2000" }
-    return length <= Self.countedFrom ? "2001-4500" : "4501-5000"
+    let saved = TextSpec.isBlank(text) ? 0 : length
+    if saved < 1 { return "0" }
+    if saved <= 500 { return "1-500" }
+    if saved <= 2_000 { return "501-2000" }
+    return saved <= Self.countedFrom ? "2001-4500" : "4501-5000"
   }
 }
 
@@ -164,6 +180,11 @@ extension RoadmapModel {
 }
 
 extension RoadmapModel.OpenRoadmap {
-  // The guides of the roadmaps above this one, nearest first, so the guide the person writes stands first (08.5).
-  var guidesAbove: [Guide] { guides.filter { !$0.tree.utf8.elementsEqual(listed.id.utf8) }.reversed() }
+  // The guides of the roadmaps above this one, nearest first, so the guide the person writes stands first (08.5), and
+  // equals in id byte order, as the domain orders them.
+  var guidesAbove: [Guide] {
+    guides.filter { $0.distance > 0 }.sorted { a, b in
+      a.distance != b.distance ? a.distance < b.distance : a.tree.utf8.lexicographicallyPrecedes(b.tree.utf8)
+    }
+  }
 }

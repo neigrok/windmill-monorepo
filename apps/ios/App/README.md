@@ -403,15 +403,17 @@ foot.
 `Guide/` is a roadmap's guide (boards 08.1 to 08.5). `Guide/GuideSheet.swift` is the sheet's model, which the title
 menu's *Guide* raises (`RoadmapModel.openGuide()`): the open roadmap's guide as the phone's copy holds it, and the
 guides of the roadmaps above it, which the domain's `RoadmapAccount.guides(_:)` reads with it, at most eight, and the
-open roadmap holds nearest first (`OpenRoadmap.guidesAbove`), so the guide the person writes stands first; the menu's item
+open roadmap holds nearest first and equals in id byte order (`OpenRoadmap.guidesAbove`, by each guide's `distance`),
+so the guide the person writes stands first; the menu's item
 counts them (*Guide · +1 from above*). *Edit*, or *Add Guide* on a roadmap with none, opens one draft of the guide
-(`GuideDraft`), which keeps every character typed and counts them as the domain counts a guide, in code points: from
-4,500 of the domain's 5,000 the footer says how many it may still hold, and past them how many it is over, which is
-refused there and told once as it goes over. *Save* waits for a change that fits, writes the draft once by the domain's
-`WriteRoadmap` through the door under the write name `guide`, a blank draft writing no guide, and the band then says
-*Guide saved* or *Guide removed* with *Undo* for six seconds, which restores the guide as it was. *Cancel* leaves an
+(`GuideDraft`), which keeps every character typed but a NUL, which a guide cannot hold, and counts them as the domain
+counts a guide, in code points: from 4,500 of the domain's 5,000 the footer says how many it may still hold, and past
+them how many it is over, which is refused there and told once as it goes over. *Save* waits for a change that fits,
+writes the draft once by the domain's `WriteRoadmap` through the door under the write name `guide`, a blank draft
+writing no guide, and the band then says *Guide saved* or *Guide removed* with *Undo* for six seconds, which restores
+the guide as it was; until the phone's copy is next read the sheet reads the guide it wrote. *Cancel* leaves an
 unchanged draft at once and asks *Discard draft?* on a changed one. A draft with no change follows the guide another
-device writes; one with a change keeps the person's words, which its save writes over the guide.
+device writes; one with a change keeps the person's words, which its save writes over the guide, told as a conflict.
 `Guide/RoadmapGuide.swift` is the sheet, a large one with its own bar: read, the guide as one column with, where the
 phone is signed in, who else reads it, then each guide from above under its roadmap's name, read-only, and the room's
 empty view with *Add Guide* where the roadmap has no guide of its own; writing, one field over the draft with the keyboard

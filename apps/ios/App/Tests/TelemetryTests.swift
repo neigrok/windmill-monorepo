@@ -187,8 +187,9 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
   }
 
-  // The Guide tells its sheet opened, how a draft began, a save with its length as a bucket, a draft refused past the
-  // limit and the band's Undo of a save: never the guide's text, a count of characters or an id.
+  // The Guide tells its sheet opened, how a draft began, a save with its length as a bucket or why it was not written, a
+  // draft gone past the limit, a save over a guide written elsewhere and the band's Undo of a save: never the guide's
+  // text, a count of characters or an id.
   @Test func theGuideTellsItsStepsAndNothingOfItsText() {
     let events = ["roadmap_guide", "roadmap_write_refused", "roadmap_board_undo"]
     #expect(events.filter(TelemetryPrivacy.events.contains) == events)
@@ -204,8 +205,14 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
               ["step": .label("save"), "outcome": .label(outcome), "length": .label(length)])
     }
     #expect(TelemetryPrivacy.properties(["step": "save", "length": "4985"]) == ["step": .label("save")])
-    for step in ["cancel", "discard"] { #expect(TelemetryPrivacy.properties(["step": step]) == ["step": .label(step)]) }
-    #expect(TelemetryPrivacy.properties(["write": "guide", "refusal": "tooLong", "over": "12"]) == ["write": .label("guide"), "refusal": .label("tooLong")])
+    for reason in ["refused", "device"] {
+      #expect(TelemetryPrivacy.properties(["step": "save", "outcome": "failed", "length": "1-500", "reason": reason, "error": "private-marker"]) ==
+              ["step": .label("save"), "outcome": .label("failed"), "length": .label("1-500"), "reason": .label(reason)])
+    }
+    for step in ["cancel", "discard", "tooLong", "conflict"] {
+      #expect(TelemetryPrivacy.properties(["step": step, "over": "12"]) == ["step": .label(step)])
+    }
+    #expect(TelemetryPrivacy.properties(["write": "guide", "refusal": "invalid"]) == ["write": .label("guide"), "refusal": .label("invalid")])
     #expect(TelemetryPrivacy.properties(["act": "guide", "outcome": "ok"]) == ["act": .label("guide"), "outcome": .label("ok")])
   }
 

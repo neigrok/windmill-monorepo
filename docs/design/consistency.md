@@ -774,6 +774,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the footer says who else reads the guide where the phone is signed in, as the web's phone does; 08.2's symbol is
   the system's empty view's size, larger than the board draws it, as on the room's other empty views; and the editor's
   text scrolls on under the sheet's bar, which the system blurs, where 08.3 starts it below the bar.
+  08's NOTE gives up to eight guides from above, and where the roadmap has a guide of its own the domain's read of the
+  nearest eight holds that one, so seven stand above it (`RoadmapAccount.guides`, the web's read alike).
   10.7 draws its third button *Cancel Sign-In*, where the Shell's 23i and the app say *Cancel sign-in*, and it is built
   as the Shell's, for the Shell's owner to rule; and 10.7 and 10.8 name Coach's conversations, which the phone cannot
   make until Coach is built, so neither question names them.
