@@ -21,6 +21,7 @@ export function WorkoutBar({ onPage }) {
   const [now, setNow] = useState(() => api?.now() ?? Date.now());
   useEffect(() => {
     if (!api || !view) return undefined;
+    setNow(api.now());
     const timer = setInterval(() => setNow(api.now()), 1000);
     return () => clearInterval(timer);
   }, [api, Boolean(view)]);

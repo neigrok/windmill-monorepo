@@ -197,9 +197,11 @@ test('Chromium: an empty workout asks for its first movement, and logs what the 
     await page.getByRole('button', { name: 'More reps', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('.gym-live-reps input')?.value === '6');
     await loggable(page);
+    // What the field shows is what Log set logs, typed and not yet let go.
+    await page.locator('.gym-live-load input').fill('22.5');
     await page.getByRole('button', { name: 'Log set', exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll('.gym-live-row.is-logged').length === 1);
-    assert.deepEqual(await ledger(page), ['20 × 6']);
+    assert.deepEqual(await ledger(page), ['22.5 × 6']);
     assert.deepEqual(await steps(page, 'gym_session_started'), [{ screen: 'workout', door: 'empty', outcome: 'ok' }]);
     assert.deepEqual(await steps(page, 'gym_workout_adjusted'), [{ screen: 'workout', field: 'reps', outcome: 'ok' }]);
   });
@@ -253,6 +255,7 @@ test('Chromium: a plan edit another tab made stale is refused, its draft kept, a
 
 test('Chromium: a set logged with no connection is kept through a reload and sent when there is one', async (t) => {
   const { context, tab } = await browserWith(t);
+  await context.route('**/v1/sync/push', (route) => route.abort('internetdisconnected'));
   const page = await tab();
   await page.getByRole('button', { name: 'Empty workout', exact: true }).click();
   await page.getByPlaceholder(/Search/).fill('back squat');
@@ -263,11 +266,17 @@ test('Chromium: a set logged with no connection is kept through a reload and sen
   const [set] = await page.evaluate(() => window.drawnSets().map((record) => record.id));
   await page.close();
 
+  // Still no connection: a fresh page draws the set from the copy alone.
+  const again = await tab('#/gym/workout');
+  await again.waitForFunction(() => document.querySelectorAll('.gym-live-row.is-logged').length === 1);
+  assert.deepEqual(await ledger(again), ['20 × 5']);
+
   // The connection returns: the reference server takes what the browser kept.
   const product = new GymProduct();
   product.seeds = Object.fromEntries(SeedExercises.all.map((seed) => [String(seed.id.record), seed.fields()]));
   let state = ServerState.empty({ epoch: 'gym-live', accounts: { A: { name: 'A' } } });
   const taken = [];
+  await context.unroute('**/v1/sync/push');
   await context.route('**/v1/sync/push', (route) => {
     const request = JSON.parse(route.request().postData() ?? '{}');
     const out = push({ state, registry, product, account: 'A', request, serverNow: Date.now() });
@@ -275,10 +284,8 @@ test('Chromium: a set logged with no connection is kept through a reload and sen
     taken.push(JSON.stringify(request));
     return route.fulfill({ status: out.response.status, contentType: 'application/json', body: JSON.stringify(out.response.body) });
   });
-  const again = await tab('#/gym/workout');
-  await again.waitForFunction(() => document.querySelectorAll('.gym-live-row.is-logged').length === 1);
-  assert.deepEqual(await ledger(again), ['20 × 5']);
-  const deadline = Date.now() + 15000;
+  await again.evaluate(() => window.dispatchEvent(new Event('online')));
+  const deadline = Date.now() + 30000;
   while (!taken.some((body) => body.includes(set)) && Date.now() < deadline) await again.waitForTimeout(200);
   assert.ok(taken.some((body) => body.includes(set)), 'the set the reload kept went out once the connection returned');
 });

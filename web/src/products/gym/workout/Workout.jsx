@@ -481,12 +481,14 @@ function FixInPlace({ set, ordinal, name, exercise, onSave, onDelete, onClose })
 function FixSheet({ set, name, ordinal, exercise, onSave, onDelete, onClose }) {
   const [load, setLoad] = useState(shownLoad(set.weightKg));
   const [reps, setReps] = useState(set.reps);
+  const [typedReps, setTypedReps] = useState(null);
   const [refusal, setRefusal] = useState(null);
   const save = async (event) => {
     event.preventDefault();
     const weightKg = typedNumber(load);
-    if (weightKg === null) { setRefusal(t('gym.workout.checkSet')); return; }
-    const refused = await onSave(set, { weightKg, reps });
+    const count = typedReps === null ? reps : countOf(typedReps);
+    if (weightKg === null || count === null) { setRefusal(t('gym.workout.checkSet')); return; }
+    const refused = await onSave(set, { weightKg, reps: count });
     if (refused) { setRefusal(refused); return; }
     onClose();
   };
@@ -504,7 +506,7 @@ function FixSheet({ set, name, ordinal, exercise, onSave, onDelete, onClose }) {
             aria-label={t('gym.workout.loadIn', { basis: loadBasisLabel(exercise, set.weightKg, KG) })} onFocus={(event) => event.currentTarget.select()} />
           <span aria-hidden="true">{loadBasisLabel(exercise, set.weightKg, KG)}</span>
         </label>
-        <RepsStepper reps={reps} onReps={setReps} />
+        <RepsStepper reps={reps} typed={typedReps} onType={setTypedReps} onReps={setReps} />
         {refusal && <p className="gym-live-refusal" role="alert">{refusal}</p>}
         <button type="button" className="gym-live-sheet-delete" onClick={() => onDelete(set)}>{t('gym.workout.deleteSet')}</button>
       </form>
@@ -512,27 +514,46 @@ function FixSheet({ set, name, ordinal, exercise, onSave, onDelete, onClose }) {
   );
 }
 
-function RepsStepper({ reps, onReps, onKeyDown, inputRef }) {
+const countOf = (text) => {
+  const count = typedNumber(text);
+  return count !== null && Number.isInteger(count) && count >= 1 ? count : null;
+};
+
+// The reps stepper: − and + change the count at once; what is typed stays the field's until it lets go.
+function RepsStepper({ reps, typed, onType, onReps, onKeyDown }) {
+  const shown = typed ?? String(reps);
+  const land = () => {
+    if (typed === null) return;
+    const count = countOf(typed);
+    onType(null);
+    if (count !== null && count !== reps) onReps(count);
+  };
+  const bump = (by) => { onType(null); onReps(WeightLadder.bumpReps(countOf(shown) ?? reps, by)); };
   return (
     <span className="gym-live-reps">
-      <button type="button" aria-label={t('gym.workout.fewerReps')} onClick={() => onReps(WeightLadder.bumpReps(reps, -1))}><Minus size={18} aria-hidden="true" /></button>
+      <button type="button" aria-label={t('gym.workout.fewerReps')} onMouseDown={(event) => event.preventDefault()} onClick={() => bump(-1)}>
+        <Minus size={18} aria-hidden="true" />
+      </button>
       <label>
-        <input ref={inputRef} type="number" inputMode="numeric" min="1" value={reps} aria-label={t('gym.workout.reps')} onKeyDown={onKeyDown}
-          onChange={(event) => { const count = typedNumber(event.target.value); if (count !== null && Number.isInteger(count) && count >= 1) onReps(count); }} />
-        <span aria-hidden="true">{t('gym.workout.repsUnit', { count: reps })}</span>
+        <input type="number" inputMode="numeric" min="1" value={shown} aria-label={t('gym.workout.reps')} onKeyDown={onKeyDown}
+          onChange={(event) => onType(event.target.value)} onBlur={land} />
+        <span aria-hidden="true">{t('gym.workout.repsUnit', { count: countOf(shown) ?? reps })}</span>
       </label>
-      <button type="button" aria-label={t('gym.workout.moreReps')} onClick={() => onReps(WeightLadder.bumpReps(reps, 1))}><Plus size={18} aria-hidden="true" /></button>
+      <button type="button" aria-label={t('gym.workout.moreReps')} onMouseDown={(event) => event.preventDefault()} onClick={() => bump(1)}>
+        <Plus size={18} aria-hidden="true" />
+      </button>
     </span>
   );
 }
 
 // The rack (Gym / Workout / Rack): a form whose submit is Log set. The load numeral is the field; what is typed stays the
 // field's until it lets go, so a set landing from elsewhere never changes it under the lifter's fingers, and Log set logs
-// what the field shows. The ladder and the stepper change the rack's row at once, and every tab draws it.
+// what the field shows: pressing Log set keeps the field's focus, so what it holds is logged rather than first written to
+// the rack. The ladder and the stepper change the rack's row at once, and every tab draws it.
 function Rack({ view, log, api, exercise }) {
   const [typed, setTyped] = useState(null);
+  const [typedReps, setTypedReps] = useState(null);
   const [busy, setBusy] = useState(false);
-  const field = useRef(null);
   const rack = view.rack;
   const shown = typed ?? shownLoad(rack.weightKg);
   const basis = loadBasisLabel(exercise, rack.weightKg, KG);
@@ -553,25 +574,29 @@ function Rack({ view, log, api, exercise }) {
   };
   const logSet = async (event) => {
     event.preventDefault();
+    const form = event.currentTarget;
     if (busy || !view.offer) return;
     if (view.sound) wakeTone();
     const weightKg = typed === null ? rack.weightKg : typedNumber(typed);
-    if (weightKg === null) { log.say(t('gym.workout.checkSet')); return; }
+    const reps = typedReps === null ? rack.reps : countOf(typedReps);
+    if (weightKg === null || reps === null) { log.say(t('gym.workout.checkSet')); return; }
     setBusy(true);
     try {
       const offer = view.offer;
       loggedHere.add(offer);
-      await api.logSet(view.id, { offer, weightKg, reps: rack.reps });
+      await api.logSet(view.id, { offer, weightKg, reps });
       setTyped(null);
-      field.current?.blur();
+      setTypedReps(null);
+      if (form.contains(document.activeElement)) document.activeElement.blur();
     } catch (error) {
       log.say(error.code === 'stale' ? t('gym.workout.stale') : error.sentence ?? t('gym.workout.notLogged', { reason: failureReason(error) }));
     } finally { setBusy(false); }
   };
   return (
-    <form className="gym-live-rack" onSubmit={logSet}>
+    <form className="gym-live-rack" onSubmit={logSet}
+      onMouseDown={(event) => { if (event.target.closest?.('button[type="submit"]')) event.preventDefault(); }}>
       <label className="gym-live-load">
-        <input ref={field} inputMode="decimal" enterKeyHint="done" value={shown} aria-label={t('gym.workout.loadIn', { basis })}
+        <input inputMode="decimal" enterKeyHint="done" value={shown} aria-label={t('gym.workout.loadIn', { basis })}
           style={{ '--gym-load-chars': Math.max(1, shown.length) }}
           onFocus={(event) => { const input = event.currentTarget; window.requestAnimationFrame?.(() => input.select()); }}
           onChange={(event) => setTyped(event.target.value)} onBlur={land}
@@ -586,7 +611,8 @@ function Rack({ view, log, api, exercise }) {
           </button>
         ))}
       </span>
-      <RepsStepper reps={rack.reps} onReps={(reps) => turn({ reps })} onKeyDown={(event) => stepped(event, (by) => turn({ reps: WeightLadder.bumpReps(rack.reps, by) }))} />
+      <RepsStepper reps={rack.reps} typed={typedReps} onType={setTypedReps} onReps={(reps) => turn({ reps })}
+        onKeyDown={(event) => stepped(event, (by) => { setTypedReps(null); turn({ reps: WeightLadder.bumpReps(countOf(typedReps ?? '') ?? rack.reps, by) }); })} />
       <Button type="submit" size="lg" full held={!view.offer || busy} ariaBusy={busy}>{t('gym.workout.logSet')}</Button>
     </form>
   );

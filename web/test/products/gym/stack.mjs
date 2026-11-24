@@ -445,7 +445,7 @@ async function run() {
       await page.getByRole('link', { name: 'Fixture Web Edited', exact: false }).first().waitFor();
       assert.ok(await page.getByRole('status').filter({ hasText: 'Offline.' }).count()); e2e++;
       assert.deepEqual(pageErrors, []);
-      assert.deepEqual(gymRequests.filter((request) => request !== 'GET /v1/gym/threads'), [], 'the web's training room and engine writes must use no replaced REST door');
+      assert.deepEqual(gymRequests.filter((request) => request !== 'GET /v1/gym/threads'), [], 'the web’s training room and engine writes must use no replaced REST door');
       await context.close();
       console.log(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 13, pending: 0, persistedGymOperations: 7, syncWriteLog: true, ports: [backendPort, webPort] }));
     }
