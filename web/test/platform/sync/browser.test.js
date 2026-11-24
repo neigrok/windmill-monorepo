@@ -639,7 +639,12 @@ test('Chromium: a durable commit resolves when versionchange closes IndexedDB be
   const context = await freshContext();
   try {
     const writer = await open(context, 'commit-versionchange');
+    // The tab leads before the hook below: its lead reads the replica as the lock is granted, which the engine's start does
+    // not wait for, and that read would take the hook and close the store under the lead.
+    await writer.waitForFunction(() => engine.leader, null, { timeout: 10_000 });
     const reloaded = writer.waitForEvent('load', { timeout: 15_000 });
+    // A step that fails before the reload closes the page under this wait, whose rejection must not stand in for that failure.
+    reloaded.catch(() => {});
     const result = await writer.evaluate(async () => {
       const refresh = engine.refresh.bind(engine);
       engine.refresh = async (...args) => {
