@@ -15,26 +15,6 @@ import XCTest
     return app
   }
 
-  // The title's menu, open once it leads with Set Aside: nothing else in the room says a change is set aside, so the menu
-  // is opened again until the phone has heard the server refuse them.
-  func setAsideRow(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
-    let title = app.navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Learn to sail")).firstMatch
-    let row = app.buttons["2 Set Aside"]
-    for _ in 0..<10 {
-      XCTAssertTrue(title.waitForHittable(timeout: 10), file: file, line: line)
-      title.tap()
-      XCTAssertTrue(app.buttons["All Roadmaps…"].waitForExistence(timeout: 5), file: file, line: line)
-      if row.waitForExistence(timeout: 3) { return row }
-      // Not yet: the menu closes through All Roadmaps and back, and opens again.
-      app.buttons["All Roadmaps…"].tap()
-      XCTAssertTrue(app.navigationBars["All Roadmaps"].waitForExistence(timeout: 10), file: file, line: line)
-      app.navigationBars["All Roadmaps"].buttons.element(boundBy: 0).tap()
-      XCTAssertTrue(app.navigationBars["All Roadmaps"].waitForNonExistence(timeout: 10), file: file, line: line)
-    }
-    XCTFail("the title menu never led with Set Aside", file: file, line: line)
-    return row
-  }
-
   func change(_ words: String, in app: XCUIApplication) -> XCUIElement {
     app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND label BEGINSWITH %@", "roadmap-set-aside-row", words)).firstMatch
   }
@@ -45,7 +25,7 @@ import XCTest
   // rest, closing the list and the menu's row with it.
   func testTheSetAsideListCopiesAndDiscardsItsChangesAndClosesOnceEmpty() {
     let app = launch("roadmap-sync-set-aside")
-    setAsideRow(in: app).tap()
+    app.titleMenuLeadingWithSetAside().tap()
     XCTAssertTrue(app.navigationBars["Set Aside"].waitForExistence(timeout: 10))
     let anchor = change("Anchor at night, New step", in: app), rota = change("Plan the watch rota, Note edited", in: app)
     XCTAssertTrue(anchor.waitForExistence(timeout: 5) && rota.exists)

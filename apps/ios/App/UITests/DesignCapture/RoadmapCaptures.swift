@@ -1071,23 +1071,11 @@ final class RoadmapCaptures: DesignCapture {
     return app
   }
 
-  // roadmap-sync-set-aside with the title's menu open once it leads with Set Aside, which nothing else in the room says,
-  // so the menu is opened again until the phone has heard the server refuse the two changes.
+  // roadmap-sync-set-aside with the title's menu open, leading with Set Aside.
   func setAside(_ look: Look) -> XCUIApplication {
     let app = launch("roadmap-sync-set-aside", look)
-    let title = app.navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Learn to sail")).firstMatch
-    for _ in 0..<10 {
-      XCTAssertTrue(title.waitForHittable(timeout: 60))
-      title.tap()
-      XCTAssertTrue(app.buttons["All Roadmaps…"].waitForExistence(timeout: 5))
-      if app.buttons["2 Set Aside"].waitForExistence(timeout: 3) { return app }
-      // Not yet: the menu closes through All Roadmaps and back, and opens again.
-      app.buttons["All Roadmaps…"].tap()
-      XCTAssertTrue(app.navigationBars["All Roadmaps"].waitForExistence(timeout: 10))
-      app.navigationBars["All Roadmaps"].buttons.element(boundBy: 0).tap()
-      XCTAssertTrue(app.navigationBars["All Roadmaps"].waitForNonExistence(timeout: 10))
-    }
-    XCTFail("the title menu never led with Set Aside")
+    XCTAssertTrue(app.navigationBars["Learn to sail"].waitForExistence(timeout: 60))
+    _ = app.titleMenuLeadingWithSetAside()
     return app
   }
 

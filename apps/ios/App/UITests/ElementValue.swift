@@ -42,6 +42,26 @@ extension XCUIApplication {
                                                      "roadmap-step", name + ", ", ", " + name + ", ", ", " + name)).firstMatch
   }
 
+  // The Roadmap room's title menu, open once it leads with *2 Set Aside*, which it answers. Nothing else in the room says a
+  // change is set aside, so until the phone has heard the server refuse them the menu closes through All Roadmaps and
+  // back, and opens again.
+  func titleMenuLeadingWithSetAside(_ roadmap: String = "Learn to sail", file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+    let title = navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", roadmap)).firstMatch
+    let row = buttons["2 Set Aside"]
+    for _ in 0..<10 {
+      XCTAssertTrue(title.waitForHittable(timeout: 10), file: file, line: line)
+      title.tap()
+      XCTAssertTrue(buttons["All Roadmaps…"].waitForExistence(timeout: 5), file: file, line: line)
+      if row.waitForExistence(timeout: 3) { return row }
+      buttons["All Roadmaps…"].tap()
+      XCTAssertTrue(navigationBars["All Roadmaps"].waitForExistence(timeout: 10), file: file, line: line)
+      navigationBars["All Roadmaps"].buttons.element(boundBy: 0).tap()
+      XCTAssertTrue(navigationBars["All Roadmaps"].waitForNonExistence(timeout: 10), file: file, line: line)
+    }
+    XCTFail("the title menu never led with Set Aside", file: file, line: line)
+    return row
+  }
+
   // A step in the step form's Requires or Opens list, by its name.
   func roadmapChoice(_ name: String) -> XCUIElement {
     buttons.matching(NSPredicate(format: "identifier == %@ AND label == %@", "roadmap-choice", name)).firstMatch
