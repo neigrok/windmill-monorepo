@@ -76,6 +76,13 @@ function ledgerRows(rack, movement, held) {
   })];
 }
 
+// A number as typed, a comma or a typographic minus read as a point or a minus; null for anything else, the empty field
+// included.
+export function typedNumber(text) {
+  const value = Number(String(text).trim().replace(',', '.').replace('−', '-'));
+  return String(text).trim() !== '' && Number.isFinite(value) ? value : null;
+}
+
 // The clocks at `now`, the server's time: the workout's from its start, the rest's from the latest set, and whether the
 // rest has come to its target. Every reading is an instant's distance, never a count, so a tab that wakes reads true.
 export function clocksAt(view, now) {

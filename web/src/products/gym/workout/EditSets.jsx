@@ -4,17 +4,13 @@ import { Button, Select } from '../../../design-system/index.js';
 import { failureReason } from '../errors.js';
 import { t } from '../i18n/index.js';
 import { clockOf, setReading } from '../log.js';
+import { typedNumber } from './workout.js';
 
 // The rests a movement may take in this workout, 15 s to 15 min, as the phones offer them; none is the lifter's preference.
 const RESTS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240, 300, 360, 420, 480, 540, 600, 720, 900];
 const MAX_SETS = 20;
 
 const textOf = (value) => (value === null || value === undefined ? '' : String(value));
-const numberOf = (text) => {
-  const value = Number(String(text).trim().replace(',', '.').replace('−', '-'));
-  return String(text).trim() === '' || !Number.isFinite(value) ? null : value;
-};
-
 // One movement's entry in this workout's plan as Edit sets drafts it (iOS 03.29): each planned set keeps the place it
 // opened at, and its rest. Saved, the draft becomes the operations that take the entry as it opened to the entry as drawn:
 // sets taken out last to first so each earlier place stands, each kept set retargeted at its new place, added sets copying
@@ -27,7 +23,7 @@ class EditSetsDraft {
     this.minted = this.rows.length;
   }
 
-  static targetOf(row) { return { reps: numberOf(row.reps), weightKg: numberOf(row.weightKg) }; }
+  static targetOf(row) { return { reps: typedNumber(row.reps), weightKg: typedNumber(row.weightKg) }; }
   static same(left, right) { return (left?.reps ?? null) === (right?.reps ?? null) && (left?.weightKg ?? null) === (right?.weightKg ?? null); }
 
   get entry() {

@@ -18,7 +18,7 @@ import { KG } from '../units.js';
 import { EditSets } from './EditSets.jsx';
 import { PopOut } from './PopOut.jsx';
 import { Receipt } from './Receipt.jsx';
-import { clocksAt, spokenClock, workoutView } from './workout.js';
+import { clocksAt, spokenClock, typedNumber, workoutView } from './workout.js';
 import '../planning/planning.css';
 import './workout.css';
 
@@ -32,7 +32,7 @@ export function WorkoutPage({ hash, log, signedIn = false }) {
 
 // The server's time, read again on every animation frame while the tab is shown and drawn once a second: a hidden tab's
 // timers slow and stop, and a clock computed from instants is right the moment the page is shown again.
-export function useServerNow(api) {
+function useServerNow(api) {
   const [now, setNow] = useState(() => api?.now() ?? Date.now());
   useEffect(() => {
     if (!api) return undefined;
@@ -436,10 +436,6 @@ function Ledger({ view, log, api, name, swiped }) {
 // came from elsewhere.
 const loggedHere = new Set();
 
-const typedNumber = (text) => {
-  const value = Number(String(text).trim().replace(',', '.').replace('−', '-'));
-  return String(text).trim() !== '' && Number.isFinite(value) ? value : null;
-};
 const shownLoad = (weightKg) => String(WeightLadder.round(weightKg));
 
 // Fix set on a desk (WD2.3): the row as two fields, load then reps, and ×. Enter or leaving the row saves, Escape puts it
