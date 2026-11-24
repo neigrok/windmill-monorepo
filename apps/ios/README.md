@@ -77,6 +77,14 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild build -scheme WindmillSync-Package -destination 'generic/platform=iOS Simulator'
 ```
 
+The App's tests call the packages' public API too, so a change that renames or removes a public symbol also builds
+them, from `apps/ios/App` after `python3 Tools/generate_project.py`:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcodebuild build-for-testing -project Windmill.xcodeproj -scheme Windmill -destination 'generic/platform=iOS Simulator'
+```
+
 Keep the full monorepo: the corpus runner finds `packages/api-contract/sync/corpus/` by walking up from
 its own file. `WINDMILL_SYNC_CORPUS=<path>` points it elsewhere.
 
