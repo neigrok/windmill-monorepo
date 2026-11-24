@@ -196,6 +196,7 @@
 .gym-live-bar { flex: none; box-sizing: border-box; align-self: center; display: flex; align-items: center; gap: 8px; height: 48px; width: min(402px, calc(100% - 32px));
   margin: 0 auto 16px; padding: 0 16px; border: 1px solid var(--gym-line); border-radius: var(--radius-full); background: var(--gym-surface);
   color: var(--gym-ink); text-decoration: none; }
+.gym-live-bar:hover { color: var(--gym-ink); }
 .gym-live-bar > svg { flex: none; color: var(--color-brand); }
 .gym-live-bar-name { min-width: 0; font: 600 15px/22px var(--font-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 800px) {
