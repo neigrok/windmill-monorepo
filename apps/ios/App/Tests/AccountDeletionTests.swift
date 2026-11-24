@@ -3,6 +3,7 @@ import Testing
 import DomainKit
 import JournalDomain
 import GymDomain
+import RoadmapDomain
 import SyncEngine
 import SyncStore
 import SyncSchema
@@ -46,6 +47,28 @@ import SyncSchema
     #expect(try model.runner.read(Journal.scope) { try $0.repository(Page.self).all(in: .drawn).isEmpty })
     #expect(!FileManager.default.fileExists(atPath: drafts.file(identity.account).path))
     #expect(recorder.entries.withLock { $0.filter { $0.name == "account_delete" }.map(\.properties) } == [["state": "shown"], ["outcome": "ok"]])
+  }
+
+  // The account's change ends the Roadmap room's band before the engine lets go of its holds: once the account is deleted
+  // no Undo is left that names the replica the delete discarded.
+  @Test func deletingTheAccountLeavesNoRoadmapUndoBehind() async throws {
+    let server = JournalModelTransport()
+    let identity = server.identity(email: "roadmap-leaving@example.com")
+    let model = try LineageFlowTests().fixture(server)
+    defer { model.gym.stop() }
+    try await model.signIn(identity)
+    let room = try #require(model.roadmap)
+    _ = try RoadmapFixture.plantLearnToSail(try #require(model.runtime).roadmapRunner)
+    await model.runtime?.engine.start()
+    room.roomOpened()
+    for _ in 0..<800 where room.roadmaps.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+    let listed = try #require(room.roadmaps.first)
+    room.delete(listed, from: .menu, taking: nil)
+    #expect(room.band?.undo?.held == true)
+    model.openAccountDeletion()
+    await model.deleteAccount()
+    guard case .deleted = model.deletion else { Issue.record("not deleted: \(String(describing: model.deletion))"); return }
+    #expect(room.band == nil && model.account == nil)
   }
 
   @Test func aFailedDeleteKeepsTheAccountAndAsksToTryAgain() async throws {

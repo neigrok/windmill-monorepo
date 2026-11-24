@@ -374,8 +374,11 @@ makes it false.
   domain, and its History, and has no *Open Roadmap*, and its menu has no *Attach a Roadmap*, nor *Copy Link* but on a
   reader's cover; the note's
   field sets bold and italic alone, from the system's Format menu on iOS 26. The title menu's *Activity* and a step's
-  *History* are the domain's read of the phone's copy (§3); the title menu has no *Guide*, *Share…* or *Export*, and
-  All Roadmaps has no gallery. The foot's + held offers Paste Steps (§7.2). An Undo that brings
+  *History* are the domain's read of the phone's copy (§3), and its *Guide* reads the roadmap's guide with the guides of
+  the roadmaps above it, and writes the guide from one draft; the title menu has no *Share…* or *Export*, and All
+  Roadmaps has no gallery. The foot's + held offers Paste Steps (§7.2). The shell's sign-in question names the roadmaps
+  made signed out and its sign-out question counts roadmap's unconfirmed changes; neither names Coach's conversations.
+  An Undo that brings
   nothing back says so in the band. The Graph draws the picture, pans and zooms it, selects a step and opens its page,
   lists the Up next steps under *Next*, brings the one chosen there or by *Open in Graph* into view, and shows the whole
   roadmap alone under
@@ -408,9 +411,9 @@ makes it false.
   `DeleteStep` composed for several steps chosen on the Board, with one *Undo*; `CreateStep`, `ChangeStep` and
   `ChangePrerequisites`, composed into the step form's one save with one *Undo*, and `ChangeStep` composed for several
   steps recolored on the Board, with one *Undo*; `CreateRoadmap` for a blank roadmap or a plan, then `MarkStep` for the
-  steps a plan brings done, and `WriteRoadmap` for a roadmap's name, of which it keeps none; `ImportSteps`, with the
-  marks the pasted steps bring, and `CreateKind` for each kind they add, composed into Paste Steps' *Add* with one
-  *Undo*; of a roadmap's kinds `CreateKind`, `ChangeKind` and `RecolourKind`, of which it keeps
+  steps a plan brings done, and `WriteRoadmap` for a roadmap's name, of which it keeps none, and for its guide, with
+  *Undo*; `ImportSteps`, with the marks the pasted steps bring, and `CreateKind` for each kind they add, composed into
+  Paste Steps' *Add* with one *Undo*; of a roadmap's kinds `CreateKind`, `ChangeKind` and `RecolourKind`, of which it keeps
   none, and `DeleteKind`, which the engine does not hold, with *Undo* for six seconds; and of a step's workspace
   `ChangeSubtask`, with *Undo* of a subtask checked, `DeleteSubtask` and `DeleteStepLink`, each held with *Undo*, and
   `AddSubtask`, `AddStepLink` and the note's draft save, `SaveStepNote`, of which it keeps none. Every other action of

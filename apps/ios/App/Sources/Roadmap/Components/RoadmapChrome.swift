@@ -79,6 +79,9 @@ extension RoadmapModel.Band.Says {
                     comment: "The band after a step is made: the step's name, and the group it landed in")
     case .saved(let step):
       return String(localized: "\(RoadmapModel.Row.name(of: step)) saved", comment: "The band after a step's changes are saved: the step's name")
+    case .savedGuide(let cleared):
+      return cleared ? String(localized: "Guide removed", comment: "The band after a roadmap's guide is saved blank")
+        : String(localized: "Guide saved", comment: "The band after a roadmap's guide is saved")
     case .deletedRoadmap(let title):
       return String(localized: "\(ListedRoadmap.name(of: title)) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title")
     case .forked(let steps):

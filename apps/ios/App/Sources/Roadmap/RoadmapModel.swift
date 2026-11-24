@@ -115,6 +115,8 @@ final class RoadmapModel {
     let workspaces: [ID<RoadmapStep>: StepWorkspace]
     // Its kinds as the room shows them, wherever a kind is listed, chosen or filtered by.
     let legend: RoadmapLegend
+    // Its guide and the guides of the roadmaps above it, as the domain reads them.
+    let guides: [Guide]
 
     // Nil for a roadmap that does not stand or is not read yet. A roadmap the person does not own, on a reader's cover,
     // offers no Complete, Reset or Delete on any step.
@@ -151,6 +153,7 @@ final class RoadmapModel {
       self.followers = followers
       self.workspaces = workspaces
       self.legend = legend
+      guides = account.guides(listed.id)
       self.starting = starting
       keptStep = kept
       groups = [BoardRead.Column.Name.upNext, .locked, .done].compactMap { (name: BoardRead.Column.Name) -> Group? in
@@ -267,6 +270,8 @@ final class RoadmapModel {
       case created(step: String, in: BoardRead.Column.Name)
       // A step the form saved a change to.
       case saved(step: String)
+      // The roadmap's guide saved, or saved blank and so removed.
+      case savedGuide(cleared: Bool)
       // A roadmap deleted, by its title.
       case deletedRoadmap(String?)
       // The copy a fork made, opened once it arrived, by how many steps it planted.
@@ -290,8 +295,8 @@ final class RoadmapModel {
 
     // A receipt's Undo: the gesture its act wrote, whether the engine holds that act, and the act it takes back.
     struct Undo: Equatable {
-      // An act on steps or kinds, or on a workspace, by its name in the room's events, or a roadmap's delete, with the
-      // roadmap where the room had it open, which its Undo opens again.
+      // An act on a roadmap's steps, kinds or guide, or on a workspace, by its name in the room's events, or a roadmap's
+      // delete, with the roadmap where the room had it open, which its Undo opens again.
       enum Act: Equatable {
         case step(String)
         case workspace(String)
@@ -375,12 +380,15 @@ final class RoadmapModel {
   // back to the Board, and so does the roadmap whose Activity is open no longer being the open one, or the last roadmap
   // going while All Roadmaps is open. The form closes once its roadmap is not the open one, or the step it edits is gone,
   // and a selected step that is gone is selected no longer. A note open on its screen follows what the phone's copy now
-  // holds of it, and the Board's reading what the room shows.
+  // holds of it, and the Board's reading what the room shows. The Guide sheet closes once its roadmap is not the open one,
+  // and its draft follows the guide the copy holds.
   private(set) var phase = Phase.unread {
     didSet {
       if let draft, draft.open == nil { self.draft = nil }
+      if let guide, guide.open == nil { self.guide = nil }
       if let selected, shown?.step(selected) == nil { self.selected = nil }
       note?.follow()
+      guide?.follow()
       if let shown { reading.read(shown, shown: view(of: shown)) }
       if !removedKinds.isEmpty { removedKinds = removedKinds.filter { shown?.legend.entry($0.key) != nil } }
       activities = [:]
@@ -437,6 +445,8 @@ final class RoadmapModel {
   var draft: StepDraft?
   // The draft the note's screen stands open on.
   private(set) var note: StepNoteDraft?
+  // The Guide sheet stands open over the open roadmap, reading its guide or writing a draft of it.
+  var guide: GuideSheet?
   // The Board's groups that stand folded: Done at rest, until every step is done.
   var folded: Set<BoardRead.Column.Name> = [.done]
   // What the Board asks of the open roadmap: its order, the kinds it shows, a branch and Find's words.
@@ -1037,8 +1047,9 @@ final class RoadmapModel {
     if let undo { forget(undo.gesture) }
   }
 
-  // The app left the front: a note open on its screen is saved as it stands, and the band goes with its Undo.
-  func background() {
+  // The engine lets go of every delete it holds, as the app leaves the front or the account changes: a note open on its
+  // screen is saved as it stands, and the band goes with its Undo.
+  func flush() {
     note?.save()
     endBand()
   }
