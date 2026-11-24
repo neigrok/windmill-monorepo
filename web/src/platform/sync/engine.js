@@ -306,7 +306,8 @@ export class BrowserSyncEngine {
     return this.unreachable ? 'unreachable' : 'online';
   }
 
-  // Whether the server answers: the leader learns it from its own requests and tells the other tabs.
+  // Whether the server answers, learned from each request a tab makes, the engine's own and the session owner's reads of
+  // the account, and told to the other tabs: a signed-out engine sends nothing of its own, so the reads are all it hears.
   answered(answered, { told = false } = {}) {
     if (this.unreachable === !answered) return;
     this.unreachable = !answered;

@@ -45,16 +45,19 @@ export async function verifyToken(token) {
   throw await errorFrom(response);
 }
 
-export async function fetchMe() {
-  try {
-    const response = await fetch(`${API_BASE}/v1/me`, { credentials: 'include', signal: AbortSignal.timeout(10000) });
-    if (response.status === 401) return null;
-    if (!response.ok) return undefined;
-    const body = await response.json();
-    return body.user;
-  } catch {
+// `heard` is told whether the server answered: an answer under 500, where no answer and a 5xx are none.
+export async function fetchMe({ heard = () => {} } = {}) {
+  let response;
+  try { response = await fetch(`${API_BASE}/v1/me`, { credentials: 'include', signal: AbortSignal.timeout(10000) }); }
+  catch {
+    heard(false);
     return undefined;
   }
+  heard(response.status < 500);
+  if (response.status === 401) return null;
+  if (!response.ok) return undefined;
+  try { return (await response.json()).user; }
+  catch { return undefined; }
 }
 
 export async function logout() {

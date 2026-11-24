@@ -28,6 +28,11 @@ function remember(user) {
   catch { captureError('auth', 'auth-hint-storage', '', '/auth'); }
 }
 const syncOf = (id) => PRODUCTS.find((product) => product.id === id)?.sync;
+// Every read of the account tells the engine whether the server answered, so a page whose engine sends nothing of its own,
+// as a signed-out one's, learns when the server is out of reach (the engine's `connection`).
+function readAccount(engine) {
+  return fetchMe({ heard: (answered) => { if (engine && !engine.closed) engine.answered(answered); } });
+}
 // The sign-in decisions still due: those the answers leave open, and those answered for work that changed since, which
 // the engine asks again (an answer that pins no work is given to the question as it stands).
 function unanswered(result, answers) {
@@ -170,7 +175,7 @@ export default function AuthProvider({ children }) {
     const replica = engine.device.activeReplica.meta;
     if (replica.state === 'bound' && replica.account === account) {
       const revision = roomOwnership.current.revision;
-      const me = await fetchMe();
+      const me = await readAccount(engine);
       if (revision !== roomOwnership.current.revision) throw new Error('account-changed-during-closure');
       confirmRoom(me);
       if (me === undefined) throw new Error('account-closure-unavailable');
@@ -252,7 +257,7 @@ export default function AuthProvider({ children }) {
     await engine.cleanupCredentials();
     if (engine.device.meta.clearCredential) { settle(null, { signedOut: true }); return null; }
     const revision = roomOwnership.current.revision;
-    const me = await fetchMe();
+    const me = await readAccount(engine);
     if (revision !== roomOwnership.current.revision) return undefined;
     const confirmedRevision = confirmRoom(me);
     if (engine.restoring) await engine.restoring;
@@ -394,7 +399,7 @@ export default function AuthProvider({ children }) {
     // stays. Whose credential it holds the engine hears from every refresh (`tellCredential`).
     syncSession.open({ base: API_BASE, credentials: { clear: async (account) => {
       const revision = roomOwnership.current.revision;
-      const current = await fetchMe();
+      const current = await readAccount(syncSession.engine);
       if (revision !== roomOwnership.current.revision) throw new Error('account-changed-during-cleanup');
       if (current === undefined) throw new Error('cookie-cleanup-unavailable');
       if (current?.id !== account) { confirmRoom(current); return current === null; }

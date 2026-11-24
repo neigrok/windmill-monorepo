@@ -133,6 +133,27 @@ test('an account the page starts on with no connection is the cached one until t
     { status: 'ghost', account: null, confirmed: false });
 });
 
+test('each read of the account tells the engine whether the server answered, so a page whose engine sends nothing knows when it is out of reach', async (t) => {
+  const state = await account(t);
+  state.setMe(null);
+  await state.auth().refresh();
+  const answer = globalThis.fetch;
+  let server = 'down';
+  t.mock.method(globalThis, 'fetch', async (...request) => {
+    if (server === 'down') throw new TypeError('Failed to fetch');
+    if (server === 'failing') return { ok: false, status: 503, json: async () => ({}) };
+    return answer(...request);
+  });
+  const told = [];
+  for (const next of ['down', 'up', 'failing', 'up']) {
+    server = next;
+    await state.auth().refresh();
+    told.push([next, state.engine.getSnapshot().connection, state.auth().status]);
+  }
+  assert.deepEqual(told, [['down', 'unreachable', 'ghost'], ['up', 'online', 'ghost'], ['failing', 'unreachable', 'ghost'], ['up', 'online', 'ghost']]);
+  assert.equal(state.env.requests.filter(({ endpoint }) => endpoint !== 'hello').length, 0, 'the paused replica sent nothing of its own');
+});
+
 test('a different account after a lapse keeps its own replica and invokes roadmap account cleanup once', async (t) => {
   const state = await account(t);
   state.setMe(null);

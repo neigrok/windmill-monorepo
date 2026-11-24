@@ -58,7 +58,9 @@ and reports nothing.
 (null for the anon replica), and `connection`: `offline` while the
 browser reports no network, `unreachable` after a request to the server got no answer or a 5xx answer
 and before one answers again, else `online`. The tab that makes a request tells the other tabs whether it
-was answered. `onEvent` delivers active replica changes after durable commits and persisted-page
+was answered. The session owner's own requests count: `answered(answered)` takes whether one reached the server, and the
+shell tells it of each read of `/v1/me`, so a signed-out engine, which sends nothing of its own, learns when the server is
+out of reach. `onEvent` delivers active replica changes after durable commits and persisted-page
 suspension, restoration and restore failure.
 `activeBinding()` answers an opaque string that a sign-in or a sign-out changes, the sign-in that binds the anon
 replica in place included, and a re-identify does not (engine.md §7.12). `commitAct(prepare, segment, {binding})` commits

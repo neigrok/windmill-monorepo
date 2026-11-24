@@ -64,7 +64,11 @@ Storage denial is explicit; no volatile fallback replaces durable work. An engin
 the device's store cannot commit reports `storage` once and reaches its caller as a `CommitError` of
 kind `store`; an error a caller's read-and-commit function throws passes through unreported. The engine
 asks no one whose credential the browser holds: the shell tells it what each read of `/v1/me` finds (its
-20-second poll among them), and that read is what releases a paused anon replica.
+20-second poll among them), and that read is what releases a paused anon replica. Each read also tells it whether the
+server answered (an answer under 500), so a signed-out page, whose engine sends nothing of its own, reads `unreachable`
+when the server is out of reach while the browser reports itself online, and journal search's first use of meaning there
+is `needs_connection`, no Issue. A page in the back/forward cache reports nothing new: its rooms stand, and a write it
+holds until the restore lands then, or fails as the `store` failure the restore already reported.
 
 The shell reports session transition failures as `auth-session`, a refused auth-hint storage write as
 `auth-hint-storage` and a read of `/v1/me` the engine could not take as `auth-credential-held`, each with

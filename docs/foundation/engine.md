@@ -2968,7 +2968,9 @@ no longer holds is `authPaused` as a `401` would pause it, and a paused `anon` r
 the browser holds none. The session owner tells it what its reads of the account find, and that is
 what ends a paused `anon` replica's pause while no deletion is owed and no sign-in is pending: the
 web shell reads `/v1/me` once the engine opens or is restored, on focus, on reconnection and every
-20 s, outside a sign-out or an account closure. The engine asks no one itself. A frame's `as` never
+20 s, outside a sign-out or an account closure. The engine asks no one itself. Each of those reads also tells the browser
+engine whether the server answered (an answer under 500), as its own requests do, so a signed-out engine, which sends
+nothing of its own, knows when the server is out of reach while the browser reports itself online. A frame's `as` never
 deletes a credential: it may name a cookie a sign-in set before the sign-in recorded `pendingSignIn`.
 
 An HTTP request is checked in this order, and the first failing check answers:
