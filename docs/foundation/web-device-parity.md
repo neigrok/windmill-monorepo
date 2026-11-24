@@ -81,7 +81,8 @@ what the phones do before the replica changes:
   signed-out workout is saved for adoption, and a workout still open has its sets recorded with it;
 - the pending device work the engine counts: the workouts saved for adoption and the drafts of
   forms, merged key by key into the account's own rows, so neither side's draft is lost;
-- the question's count, which names workouts, routines and weigh-ins;
+- the question's count, which names every kind of gym work the browser holds: workouts, routines, weigh-ins, movements
+  and settings;
 - after sign-in, a workout the account cannot take is recovered, and a proposal held for it is
   issued again;
 - at sign-out, what the browser forgets: Coach's leftovers beside the replica.

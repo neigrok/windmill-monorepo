@@ -15,3 +15,28 @@
   .gym-browser-copies.is-narrow { display: flex; margin-bottom: 0; }
   .gym-browser-copies.is-wide { display: none; }
 }
+
+/* The room's one voice while a workout is open (WD4.3), the lost race's among them: one line where the page is wide
+   enough, between the rack and the tab bar, 24px above the bar, where the page leaves it room, and otherwise 12px above
+   the rack, as a narrow screen's rack sheet leaves it, so it never covers Log set or the reps. */
+@supports (anchor-name: --gym-live-rack) {
+  .gym-room .gym-live-rack { anchor-name: --gym-live-rack; }
+  .gym-room:has(.gym-live-rack) .gym-toast-slot {
+    position-anchor: --gym-live-rack;
+    position-try-fallbacks: --gym-over-the-rack;
+    top: calc(anchor(bottom) + 24px);
+    bottom: calc(var(--gym-bottom-panel-height) + 24px);
+    align-self: end;
+    /* Centred by its margins, not a transform: a fallback is taken only where the box fits, and a box moved by a transform
+       is laid out half off a narrow screen. */
+    left: 0;
+    right: 0;
+    margin-inline: auto;
+    transform: none;
+    width: min(560px, calc(100vw - 32px));
+  }
+}
+@position-try --gym-over-the-rack {
+  top: auto;
+  bottom: calc(anchor(top) + 12px);
+}

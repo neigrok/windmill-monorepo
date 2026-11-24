@@ -32,3 +32,6 @@ export { TabRail, RAIL_HEIGHT } from './navigation/TabRail.jsx';
 
 // charts
 export { DotChart } from './charts/DotChart.jsx';
+
+// hooks
+export { useMediaQuery } from './useMediaQuery.js';

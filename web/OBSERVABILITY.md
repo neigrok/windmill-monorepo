@@ -220,8 +220,9 @@ note save/reorder, bodyweight save, set/session correction, session import, prop
 delete, Undo, refusal and `workout-adopt`, the hook before the seat changes saving each signed-out workout for adoption in
 an act of its own, told once when it saved something (`saved-local`) and once for each workout refused or failed. Outcomes are `saved-local`, `unchanged` (a clean draft or a rename to the
 name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`.
-A sign-in question in gym's count (WD9) tells `gym_signin_decision` with `choice` (`add`, `discard`, `cancel`) and
-`count_bucket` (`0/1/2-5/6-20/21+`), the browser's workouts, routines and weigh-ins it counted. How a copy In this browser
+A sign-in question in gym's count (WD9) tells `gym_signin_decision` with `step` (`shown` as it is asked, then `add`,
+`discard` or `cancel`) and `count_bucket` (`0/1/2-5/6-20/21+`), what it counted: the browser's workouts, routines,
+weigh-ins, movements and settings, or its changes where it holds none of them. How a copy In this browser
 holds ended, a signed-out workout the account could not take or a start that lost a race, is one `gym_recovery` with
 `outcome` (`saved` as a lost race's sets are saved from its notice, `kept`, `retried` or `discarded` as the person answered
 it, `refused` or `failed` when the answer did not land) and `reason`, the review's bounded label (`session-open`,

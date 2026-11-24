@@ -78,12 +78,12 @@ export const journalRoutes = {
   },
   signOutNotice,
   // An account change forgets what Talk held for the last account: a recording never crosses accounts. The old pages no
-  // account can be shown to own leave this browser's storage at every sign-out, and a closed account's old pages leave
-  // with it (carry.js).
+  // account can be shown to own leave this browser at every sign-out, and a closed account's old pages leave with it
+  // (carry.js).
   forgetDevice: ({ previous, closed = false }) => {
     talkStore.forget();
-    forgetUnclaimedPages();
     if (closed) forgetClosedAccount(previous);
+    return forgetUnclaimedPages();
   },
   landing: {
     head: journalLandingHead,

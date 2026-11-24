@@ -10,10 +10,11 @@ import { push } from '../../../../packages/api-contract/sync/reference/server/pu
 import { Id } from '../../../src/platform/domain-kit/entities.js';
 import { Instant } from '../../../src/platform/domain-kit/time.js';
 import { registry } from '../../../src/platform/sync/schema.js';
-import { Exercise } from '../../../src/products/gym/domain/catalogue.js';
+import { Catalogue, Exercise, RenameExercise } from '../../../src/products/gym/domain/catalogue.js';
+import { ChangePreferences, Preferences } from '../../../src/products/gym/domain/preferences.js';
 import { SeedExercises } from '../../../src/products/gym/domain/seedExercises.js';
-import { Session, TrainingSet } from '../../../src/products/gym/domain/training.js';
-import { ImportedSet, ImportSession, StartSession } from '../../../src/products/gym/domain/trainingActions.js';
+import { Session, TrainingSet, TrainingSetValue } from '../../../src/products/gym/domain/training.js';
+import { AppendSet, ImportedSet, ImportSession, StartSession } from '../../../src/products/gym/domain/trainingActions.js';
 import { Harness } from '../../platform/domain-kit/harness.js';
 import { beacon } from '../roadmap/browserFixture.js';
 
@@ -52,6 +53,8 @@ window.mount = (hash) => {
 };
 window.replica = () => syncSession.engine?.getSnapshot() ?? null;
 window.gym = () => createGymApi(syncSession.engine);
+window.notices = () => syncSession.engine.observe('self/gym').getSnapshot().notices;
+window.saved = () => syncSession.engine.readDeviceRows('gym')['rack:adoption'] ?? null;
 // A workout the person logs in this tab, through the gym domain on this page's engine: its start, each set, and its finish
 // when \`finishedAt\` is given.
 window.logWorkout = async ({ id, routineId = null, startedAt, sets, finishedAt = null }) => {
@@ -209,7 +212,7 @@ test('Chromium: signed out, the gym room is the room on the browser’s copy, wi
   await signedOutWork(page, { finished: true });
   await page.locator('.gym-routine-name', { hasText: 'Pull day' }).waitFor();
   assert.deepEqual(await page.locator('.gym-routine-name').allTextContents(), ['Push day', 'Pull day']);
-  assert.equal(await page.locator('.gym-door').count(), 0, 'no sign-in pitch stands in the room’s place');
+  assert.equal(await page.locator('.gym-coach-door').count(), 0, 'no sign-in pitch stands in the room’s place');
   await page.getByRole('button', { name: 'More for Pull day', exact: true }).click();
   assert.deepEqual(await page.getByRole('menuitem').allInnerTexts(), ['Delete'], 'Log past, a server command, is left out');
   await page.keyboard.press('Escape');
@@ -218,6 +221,9 @@ test('Chromium: signed out, the gym room is the room on the browser’s copy, wi
   await shoot(page, 'wd8.1-390');
   await page.setViewportSize({ width: 1440, height: 1000 });
 
+  // The workouts saved for the account, as the hook before a sign-in saves them, are no copy to offer while signed out.
+  await page.evaluate(() => window.gym().saveSignedOutWorkouts());
+  assert.deepEqual(Object.keys(await page.evaluate(() => window.saved())).sort(), ['pullday01', 'pushday01']);
   await page.evaluate(() => { window.location.hash = '#/gym/log'; });
   await page.locator('.gym-history-index .gym-row-title', { hasText: 'Pull day' }).waitFor();
   assert.deepEqual({
@@ -228,13 +234,42 @@ test('Chromium: signed out, the gym room is the room on the browser’s copy, wi
     said: await page.getByText(/this (browser|device)/i).count(),
   }, { share: 0, past: 0, weigh: true, copies: 0, said: 0 }, 'The log reads the browser’s training, says nothing of where it is kept, and leaves out the account’s doors');
 
+  // The past-workout form and a finished workout's corrections are server commands a signed-out replica never sends (R-5):
+  // their addresses draw The log, and the workout as it was logged, with no form and no set to fix.
+  await page.evaluate(() => { window.location.hash = '#/gym/backfill'; });
+  await page.locator('.gym-history-index .gym-row-title', { hasText: 'Pull day' }).waitFor();
+  assert.equal(await page.locator('.gym-routine-pick').count(), 0, 'Add past workout’s address draws The log');
+  for (const hash of ['#/gym/session/pullday01/edit', '#/gym/session/pullday01/set/pullday01s0/edit']) {
+    await page.evaluate((at) => { window.location.hash = at; }, hash);
+    await page.locator('h1.gym-title', { hasText: 'Pull day' }).waitFor();
+    assert.deepEqual({ editor: await page.locator('.gym-workout-editor').count(), fix: await page.locator('.gym-fix-page').count(),
+      fixable: await page.locator('button.gym-set').count(), sets: await page.locator('.gym-set').count() },
+    { editor: 0, fix: 0, fixable: 0, sets: 1 }, `${hash} draws the workout as it was logged`);
+  }
+
   for (const hash of ['#/gym/coach', '#/gym/notes']) {
     await page.evaluate((at) => { window.location.hash = at; }, hash);
-    const door = page.locator('.gym-door');
+    const door = page.locator('.gym-coach-door');
     await door.waitFor();
-    assert.deepEqual([await door.locator('h1').innerText(), await door.locator('.gym-door-line').innerText(), await door.getByRole('button').innerText()],
+    assert.deepEqual([await door.locator('h1').innerText(), await door.locator('.gym-coach-door-line').innerText(), await door.getByRole('button').innerText()],
       ['Coach', 'Coach reads your training and suggests changes you apply. Sign in to use it.', 'Sign in'], `${hash} is Coach’s door`);
   }
+  // WD8.3: at the head of the reading column wide; on a phone in the reach band, 24px above what stands under the page (the
+  // tab bar, here the open workout's bar over it), Sign in as wide as the column.
+  const doorAt = () => page.evaluate(() => {
+    const box = (selector) => document.querySelector(selector).getBoundingClientRect();
+    const [door, title, button, page] = [box('.gym-coach-door'), box('.gym-coach-door h1'), box('.gym-coach-door button'), box('.gym-scroll')];
+    return { x: Math.round(door.x), y: Math.round(title.y), width: Math.round(door.width), button: Math.round(button.width), overWhatIsBelow: Math.round(page.bottom - door.bottom) };
+  });
+  const wide = await doorAt();
+  assert.deepEqual({ x: wide.x, y: wide.y, width: wide.width, button: wide.button < 120 }, { x: 400, y: 120, width: 640, button: true });
+  await shoot(page, 'wd8.3-1440');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => document.querySelector('.gym-coach-door button').getBoundingClientRect().width > 300);
+  const narrow = await doorAt();
+  assert.deepEqual({ x: narrow.x, width: narrow.width, button: narrow.button, overWhatIsBelow: narrow.overWhatIsBelow }, { x: 16, width: 358, button: 358, overWhatIsBelow: 24 });
+  await shoot(page, 'wd8.3-390');
+  await page.setViewportSize({ width: 1440, height: 1000 });
   assert.deepEqual(await page.evaluate(() => window.issues ?? []), []);
 });
 
@@ -281,7 +316,7 @@ test('Chromium: a sign-in into an account with training asks once in gym’s cou
     decision: await events(page, 'gym_signin_decision'),
     recovery: await events(page, 'gym_recovery'),
     issues: await page.evaluate(() => window.issues ?? []),
-  }, { decision: [{ choice: 'add', count_bucket: '6-20' }], recovery: [{ outcome: 'kept', reason: 'session-open' }], issues: [] });
+  }, { decision: [{ step: 'shown', count_bucket: '6-20' }, { step: 'add', count_bucket: '6-20' }], recovery: [{ outcome: 'kept', reason: 'session-open' }], issues: [] });
   await page.evaluate(() => { window.location.hash = '#/gym'; });
   await page.locator('.gym-routine-name', { hasText: 'Pull day' }).waitFor();
   assert.deepEqual(await page.locator('.gym-routine-name').allTextContents(), ['Push day', 'Pull day'], 'the routines joined the account');
@@ -314,7 +349,7 @@ test('Chromium: Discard asks again in the browser’s words, and its Discard lea
     copies: await page.locator('.gym-browser-copies').count(),
     decision: await events(page, 'gym_signin_decision'),
     issues: await page.evaluate(() => window.issues ?? []),
-  }, { log: ['Free session'], copies: 0, decision: [{ choice: 'discard', count_bucket: '6-20' }], issues: [] });
+  }, { log: ['Free session'], copies: 0, decision: [{ step: 'shown', count_bucket: '6-20' }, { step: 'discard', count_bucket: '6-20' }], issues: [] });
   await page.evaluate(() => { window.location.hash = '#/gym'; });
   await page.locator('.gym-routines, .gym-plan-empty').first().waitFor();
   assert.equal(await page.locator('.gym-routine-name').count(), 0, 'the browser’s routines did not reach the account');
@@ -327,13 +362,31 @@ test('Chromium: a start that lost the race to the phone’s keeps its sets: the 
   await context.setOffline(true);
   await page.evaluate(async (now) => window.logWorkout({ id: 'lostrace01', startedAt: now - 3 * 60_000, sets: [
     { exerciseId: 'back-squat', weightKg: 100, reps: 5, completedAt: now - 2 * 60_000 }, { exerciseId: 'back-squat', weightKg: 105, reps: 5, completedAt: now - 60_000 }] }), Date.now());
+  await page.evaluate(() => { window.location.hash = '#/gym/workout'; });
+  await page.locator('.gym-live-rack').waitFor();
   phone.world.now = Date.now();
-  assert.equal((await phone.runner.run(StartSession({ id: new Id('phoneOpen2', Session), startedAt: new Instant(Date.now() - 6 * minute) }))).kind, 'committed');
+  const phoneOpen = new Id('phoneOpen2', Session);
+  assert.equal((await phone.runner.run(StartSession({ id: phoneOpen, startedAt: new Instant(Date.now() - 6 * minute) }))).kind, 'committed');
+  assert.equal((await phone.runner.run(AppendSet(new TrainingSetValue(new Id('phoneOpen2s0', TrainingSet), phoneOpen, new Id('bench-press', Exercise), 60, 8,
+    new Instant(Date.now() - 5 * minute))))).kind, 'committed');
   await phone.sync();
   await context.setOffline(false);
   const toast = page.locator('.gym-toast-slot', { hasText: 'Your account already had a workout open. Your 2 sets are in The log.' });
   await toast.waitFor();
+  // WD4.3: the voice never covers the rack, Log set or the reps, and is as wide as 560px allows.
+  const clearOfRack = () => page.evaluate(() => {
+    const slot = document.querySelector('.gym-toast-slot').getBoundingClientRect();
+    const rack = document.querySelector('.gym-live-rack').getBoundingClientRect();
+    return { clear: slot.bottom <= rack.top || slot.top >= rack.bottom, width: Math.round(slot.width) };
+  });
+  await page.locator('.gym-live-movement-title', { hasText: 'Bench Press' }).waitFor();
+  assert.deepEqual(await clearOfRack(), { clear: true, width: 560 });
   await shoot(page, 'wd4.3-1440');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.gym-live-rack')).position === 'fixed');
+  assert.deepEqual(await clearOfRack(), { clear: true, width: 358 });
+  await shoot(page, 'wd4.3-390');
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await toast.getByRole('button', { name: 'View sets', exact: true }).click();
   const card = page.locator('.gym-browser-copies.is-wide .gym-browser-copy');
   await card.locator('.gym-browser-copy-line', { hasText: 'Your account has a workout open.' }).waitFor();
@@ -344,4 +397,69 @@ test('Chromium: a start that lost the race to the phone’s keeps its sets: the 
   await page.locator('.gym-history-index .gym-row-title').nth(1).waitFor();
   assert.deepEqual({ recovery: await events(page, 'gym_recovery'), issues: await page.evaluate(() => window.issues ?? []) },
     { recovery: [{ outcome: 'saved', reason: 'session-open' }, { outcome: 'kept', reason: 'session-open' }], issues: [] }, 'saved, and so said, once');
+});
+
+test('Chromium: a sign-in asks of movements and settings too, in words of their own, and its Discard leaves the account’s names and settings alone (WD9, consistency 7d)', async (t) => {
+  const phone = await account(t);
+  assert.equal((await phone.runner.run(new RenameExercise(new Id('bench-press', Exercise), 'Bench (account)'))).kind, 'committed');
+  assert.equal((await phone.runner.run(ChangePreferences({ confirmSound: true }))).kind, 'committed');
+  await phone.sync();
+  const { page, seat } = await visit(t, phone, { signedIn: false });
+  await page.waitForFunction(() => window.replica().state === 'anon');
+  await page.evaluate(async () => {
+    const gym = window.gym();
+    await gym.createExercise({ id: 'ex_sledpush', name: 'Sled Push', pattern: 'press', equipment: 'machine' });
+    await gym.renameExercise('bench-press', 'Bench (browser)');
+    await gym.savePreferences({ units: 'lb' });
+  });
+  seat.signedIn = true;
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  const { dialog, said } = await question(page);
+  assert.deepEqual(said, {
+    lead: 'This browser has 2 movements and your settings from before you signed in. Your account already has training.',
+    items: [['2 movements', 'Bench (browser) · Sled Push'], ['your settings']],
+    note: 'Add them, or discard them from this browser.',
+    answers: ['Cancel sign-in', 'Discard', 'Add'],
+  });
+  await shoot(page, 'wd9.1-movements-1440');
+  await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
+  const confirm = page.getByRole('dialog', { name: 'Discard 2 movements and your settings?', exact: true });
+  await confirm.getByRole('button', { name: 'Discard', exact: true }).click();
+  await confirm.waitFor({ state: 'detached' });
+  await page.waitForFunction(() => window.replica().state === 'bound');
+  await phone.sync();
+  assert.deepEqual({
+    names: phone.runner.read(Exercise.scope, (read) => ['bench-press', 'ex_sledpush'].map((id) => new Catalogue(read).find(new Id(id, Exercise))?.name ?? null)),
+    settings: phone.drawn(Preferences).map((prefs) => prefs.fields()),
+    decision: await events(page, 'gym_signin_decision'),
+    issues: await page.evaluate(() => window.issues ?? []),
+  }, {
+    names: ['Bench (account)', null], settings: [{ units: 'kg', confirmHaptic: true, confirmSound: true }],
+    decision: [{ step: 'shown', count_bucket: '2-5' }, { step: 'discard', count_bucket: '2-5' }], issues: [],
+  });
+});
+
+test('Chromium: a workout discarded signed out never comes back: the sign-in counts its changes, and after Add the account’s refusal of its start saves nothing and says nothing', async (t) => {
+  const phone = await account(t, { open: true });
+  const { page, seat } = await visit(t, phone, { signedIn: false, hash: '#/gym/log' });
+  await page.waitForFunction(() => window.replica().state === 'anon');
+  await page.evaluate(async (now) => {
+    await window.logWorkout({ id: 'gonework01', startedAt: now - 5 * 60_000, sets: [{ exerciseId: 'bench-press', weightKg: 60, reps: 8, completedAt: now - 4 * 60_000 }] });
+    await window.gym().holdDeath('session', 'gonework01');
+  }, Date.now());
+  seat.signedIn = true;
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  const { dialog, said } = await question(page);
+  assert.deepEqual([said.lead, said.items], ['This browser has 3 changes from before you signed in. Your account already has training.', [['3 changes']]]);
+  await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.waitForFunction(() => window.replica().state === 'bound');
+  await page.waitForFunction(() => window.notices().length === 1 && window.notices()[0].dismissed === true);
+  await page.locator('.gym-history-index .gym-row-title', { hasText: 'Free session' }).first().waitFor();
+  assert.deepEqual({
+    toast: await page.locator('.gym-toast-slot').innerText(),
+    saved: await page.evaluate(() => window.saved()),
+    copies: await page.locator('.gym-browser-copies').count(),
+    recovery: await events(page, 'gym_recovery'),
+    issues: await page.evaluate(() => window.issues ?? []),
+  }, { toast: '', saved: null, copies: 0, recovery: [], issues: [] });
 });

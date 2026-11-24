@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { Button, Dialog } from '../../design-system';
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { Button, Dialog, useMediaQuery } from '../../design-system';
 import { useDialogFocus } from '../../design-system/feedback/Dialog.jsx';
 import { t } from '../i18n/entry/index.js';
 import './sync-decisions.css';
@@ -29,15 +29,6 @@ export function SyncDecisions({ question, notices = [], busy, error, onDecision,
   </Dialog>;
 }
 
-function useWide() {
-  const subscribe = useCallback((changed) => {
-    const query = window.matchMedia(WIDE);
-    query.addEventListener('change', changed);
-    return () => query.removeEventListener('change', changed);
-  }, []);
-  return useSyncExternalStore(subscribe, () => window.matchMedia(WIDE).matches, () => true);
-}
-
 // An account decision in its words: a title, a sentence, what the work holds and a note, over its answers. From 744px a
 // dialog over the page; below, a page of its own with the answers pinned under the thumb. Focus enters on the title.
 // A sign-in (consistency 7d, WD9) answers Add or Discard, of equal weight, or cancels the sign-in, as Escape does; its
@@ -48,7 +39,7 @@ export function AccountDecision({ question, busy, error, onDecision, onCancel })
   const { words } = question;
   const signin = question.kind === 'signed-out';
   const [discarding, setDiscarding] = useState(false);
-  const wide = useWide();
+  const wide = useMediaQuery(WIDE, true);
   const cardRef = useRef(null);
   const titleRef = useRef(null);
   const titleId = useId();

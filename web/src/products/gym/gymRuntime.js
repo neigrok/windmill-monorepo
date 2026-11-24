@@ -19,7 +19,7 @@ import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
 import { countBucket } from '../../telemetry/countBucket.js';
 import { Bodyweight, DeleteWeighIn, WeighIn, WeighInValue } from './domain/bodyweight.js';
-import { Catalogue, CreateExercise, Exercise, ExerciseValue, RenameExercise, defaultStepKg } from './domain/catalogue.js';
+import { Catalogue, CreateExercise, Exercise, ExerciseName, ExerciseValue, RenameExercise, defaultStepKg } from './domain/catalogue.js';
 import { GymRefusals, RoutineRules } from './domain/gymRules.js';
 import { DeleteNote, MoveNote, Note, NoteRules, NoteValue } from './domain/notes.js';
 import { ChangePreferences, Preferences, PreferencesValue, restSettings } from './domain/preferences.js';
@@ -501,10 +501,12 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
       }
       if (savedAny) event('workout-adopt', 'saved-local');
     },
-    // In this browser (WD9.3): every copy saved for the account that it has not taken, oldest first, as its card draws it.
+    // In this browser (WD9.3): every copy saved for the account that it has not taken, oldest first, as its card draws it. A
+    // copy that holds no set loses nothing, as `SaveRefusedStart` saves none, so it is not offered.
     browserCopies: () => read((reader) => {
       const rows = reviewOf(reader);
-      return SignedOutWorkout.read(reader).map((copy) => browserCopy(reader, copy, rows.find((row) => row.id.equals(copy.session.id)) ?? null))
+      return SignedOutWorkout.read(reader).filter((copy) => copy.sets.length > 0)
+        .map((copy) => browserCopy(reader, copy, rows.find((row) => row.id.equals(copy.session.id)) ?? null))
         .sort((a, b) => a.startedAt - b.startedAt);
     }),
     // Keep as finished: the copy imported as a workout of its own, an open one finished at its last set.
@@ -542,8 +544,9 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
       return SignedOutWorkout.ofRefusedStart(refusal) !== null || SignedOutWorkout.read(reader).some((copy) => copy.owns(refusal));
     }),
     // The copies the account has taken (web-device-parity §3 Sign-in): each proposal a copy held issued again once the
-    // account holds its workout, then every copy taken whole let go. A reissue the account refuses but for a finished
-    // workout is a proposal lost, reported once per `lost`.
+    // account holds its workout, then every copy taken whole let go, and every copy that holds no set and no proposal
+    // waiting, which loses nothing. A reissue the account refuses but for a finished workout is a proposal lost, reported
+    // once per `lost`.
     settleBrowserCopies: async (lost = new Set()) => {
       const holding = read((reader) => SignedOutWorkout.read(reader)
         .filter((copy) => copy.proposals.length > 0 && reader.confirmed(Session, copy.session.id) !== null));
@@ -554,6 +557,8 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
         failure('workout-recover', new Error('workout-proposal-reissue-refused'));
       }
       await runner.run(ReconcileAdoptedWorkouts());
+      const empty = read((reader) => SignedOutWorkout.read(reader).filter((copy) => copy.sets.length === 0 && copy.proposals.length === 0));
+      for (const copy of empty) await runner.run(DiscardSignedOutWorkout(copy.session.id));
     },
     workoutSave,
     workoutSaves: () => read((reader) => Object.keys(reader.device(WORKOUT_DRAFTS) ?? {}).map((key) => ({ key, ...workoutSave(key) }))),
@@ -806,31 +811,43 @@ function browserCopy(reader, copy, row) {
     sets: stranded ? row.strandedSets.length : copy.sets.length, stranded, reason: row?.reason ?? null, answer: row === null ? null : answerOf(row) };
 }
 
-// What gym's signed-out work holds as the sign-in question counts it (web-device-parity §3 Sign-in): its workouts, routines
-// and weigh-ins, each with what names it, the noun for what the account holds, and the decision told as
+// What gym's signed-out work holds as the sign-in question counts it (web-device-parity §3 Sign-in, consistency 7d): every
+// kind the browser holds, each with what names it — its workouts, routines and weigh-ins, the movements it made or
+// renamed, and its settings — so the question names everything its Add joins and its Discard deletes. Work that no longer
+// draws any of them, a workout made and deleted, is counted by its changes (`due.counted`), as the iPhone counts a room
+// holding only kinds it does not name. With the noun for what the account holds, and each step of the question told as
 // `gym_signin_decision` with the count as a bucket. The engine's active replica is the anon one while the question stands.
-export function signInWork(engine, { told = track } = {}) {
-  const { workouts, routines, weighIns } = createGymApi(engine).read((reader) => ({
-    workouts: reader.repository(Session).all('drawn').sort((a, b) => a.startedAt.ms - b.startedAt.ms)
-      .map((session) => ({ title: workoutTitle(reader, session), at: session.startedAt.ms })),
-    routines: RoutineValue.ordered(reader.repository(Routine).all('drawn')).map((routine) => routine.name),
-    weighIns: reader.repository(WeighIn).all('drawn').map((entry) => {
-      const [year, month, date] = String(entry.id.record).split('-').map(Number);
-      return new Date(year, month - 1, date).getTime();
-    }).sort((a, b) => a - b),
-  }));
+export function signInWork(engine, due, { told = track } = {}) {
+  const { workouts, routines, weighIns, movements, settings } = createGymApi(engine).read((reader) => {
+    const madeOrRenamed = [...reader.repository(Exercise).all('drawn'), ...reader.repository(ExerciseName).all('drawn')].map((value) => String(value.id.record));
+    return {
+      workouts: reader.repository(Session).all('drawn').sort((a, b) => a.startedAt.ms - b.startedAt.ms)
+        .map((session) => ({ title: workoutTitle(reader, session), at: session.startedAt.ms })),
+      routines: RoutineValue.ordered(reader.repository(Routine).all('drawn')).map((routine) => routine.name),
+      weighIns: reader.repository(WeighIn).all('drawn').map((entry) => {
+        const [year, month, date] = String(entry.id.record).split('-').map(Number);
+        return new Date(year, month - 1, date).getTime();
+      }).sort((a, b) => a - b),
+      movements: new Catalogue(reader).exercises.filter((exercise) => madeOrRenamed.includes(String(exercise.id.record))).map((exercise) => exercise.name),
+      settings: reader.repository(Preferences).find(new Id('prefs', Preferences), 'drawn') !== null,
+    };
+  });
   const since = (days) => t('gym.signedOutWork.since', { day: dayOf(days[0]) });
-  const items = [
+  const named = [
     workouts.length > 0 && { label: t('gym.signedOutWork.workouts', { count: workouts.length }),
       detail: workouts.length === 1 ? t('gym.signedOutWork.oneWorkout', { name: workouts[0].title, day: dayOf(workouts[0].at) }) : since(workouts.map((each) => each.at)) },
     routines.length > 0 && { label: t('gym.signedOutWork.routines', { count: routines.length }), detail: routines.join(' · ') },
     weighIns.length > 0 && { label: t('gym.signedOutWork.weighIns', { count: weighIns.length }),
       detail: weighIns.length === 1 ? dayOf(weighIns[0]) : since(weighIns) },
+    movements.length > 0 && { label: t('gym.signedOutWork.movements', { count: movements.length }), detail: movements.join(' · ') },
+    settings && { label: t('gym.signedOutWork.settings') },
   ].filter(Boolean);
-  const total = workouts.length + routines.length + weighIns.length;
+  const changes = due.counted.length;
+  const items = named.length > 0 ? named : [{ label: t('gym.signedOutWork.changes', { count: changes }) }];
+  const total = named.length > 0 ? workouts.length + routines.length + weighIns.length + movements.length + (settings ? 1 : 0) : changes;
   return { items, total, held: t('gym.signedOutWork.held'),
     onStep: (step) => {
-      if (['add', 'discard', 'cancel'].includes(step)) told('gym_signin_decision', { choice: step, count_bucket: countBucket(total) });
+      if (['shown', 'add', 'discard', 'cancel'].includes(step)) told('gym_signin_decision', { step, count_bucket: countBucket(total) });
     } };
 }
 

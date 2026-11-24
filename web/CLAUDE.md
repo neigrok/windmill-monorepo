@@ -323,7 +323,7 @@ engine resumes as it starts included) and before a sign-out finishes, in rail or
 (`DeviceSeat.willChange`); one that throws or outlasts that is reported and the seat changes without it. Gym saves each
 signed-out workout for adoption there. A sign-in question is asked in its product's words (`sync.signInWords`, as
 roadmap's), or else in the shell's, consistency 7d's with *this browser*, around what the product counts: kind by kind,
-each with what names it (`sync.signInWork`, gym's workouts, routines and weigh-ins), or by its one noun
+each with what names it (`sync.signInWork`, gym's workouts, routines, weigh-ins, movements and settings), or by its one noun
 (`sync.signedOutWork`, counted by `adoptionCount`, the journal's pages) beside its unsaved device work. It is a dialog from
 744px and a page below, as flow 50 draws roadmap's: Add and Discard of equal weight and Cancel sign-in, which Escape is
 too; Discard asks again before it deletes anything, in the words' `discard` (*Discard all of it?* where a product's words

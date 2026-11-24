@@ -92,6 +92,13 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
     what the phone holds (12n). iOS asks in these words (`AdoptionQuestion.swift`); Android words it
     differently (`app/MainActivity.kt:287-304`). The first-run READ ME line `2:1029` still says
     signed-out work *moves to the account on sign-in* with no question.
+  - The web's gym question (WD9) asks whenever the account holds gym records of its own, and names every kind of gym work
+    the browser holds, so its Add and Discard cover only what it named. Beside the drawn workouts, routines and weigh-ins
+    it names, in words no board draws, the movements the browser made or renamed (*2 movements* over their names) and its
+    settings (*your settings*), which 12n leaves unnamed on the phones; where the browser's gym work draws none of these
+    any longer, a workout made and deleted, it counts its changes (*2 changes*), as iOS does for a room holding only
+    unnamed kinds. Its confirmation reads *Discard 2 movements and your settings?* (`gymRuntime.js` `signInWork`).
+    Designer to draw the extra rows, or rule that the phones name them too.
 - **7g · Notes account-only.** Signed out, Notes is a sign-in door, and the signed-out Coach greeting
   (boards 01.1–01.2) offers saving notes only after sign-in. `../foundation/mobile/gym_coach.md`
   Appendix C gives `save_note` `seats: bound` to match, so a signed-out Coach turn is not offered it.
@@ -1340,9 +1347,11 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   `1828:53151`, `1828:53298`, `1828:53416`), which draw the mirror's card that WD3.4 and WD4.1 replace, are archived.
   Where the build of WD1–WD6 parts from the boards:
   - *Coach during a workout (WD7).* The index draws *This workout* alone and the narrow toolbar no Coach button, and the
-    receipt has no *Share with Coach*: Coach on the web takes no handed question yet. Coach's workout panel still says
-    *A mirror of your phone. Nothing here logs a set.* and reads a planned set's load as *last* (`coach/CoachRoom.jsx`,
-    `coach/coach.js`), though the web logs sets now.
+    receipt has no *Share with Coach*: Coach on the web takes no handed question yet. Until it does, Coach speaks in
+    interim words no board draws, which claim nothing about a phone: closed while a workout is open, *Coach opens again
+    when this workout is over.*; its workout panel *This workout as logged so far. Nothing here logs a set.*; an empty
+    History *No conversations yet. What you ask Coach is listed here.* (`coach/CoachRoom.jsx`, `coach/History.jsx`). The
+    panel reads a planned set's load as *last* (`coach/coach.js`).
   - *Edit movement (WD3.1).* It opens the movement's record, which renames it; the web has no form for its equipment.
   - *A stale plan edit (WD5.1).* The drawn heading, *{movement} changed in another tab.*, stands also when a phone or
     Coach changed the plan.
