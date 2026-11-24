@@ -1,7 +1,9 @@
 import Foundation
 import Sentry
+import SyncCore
 import SyncEngine
 import SyncReplica
+import SyncSchema
 import Synchronization
 
 nonisolated struct TelemetryMetadata: Sendable {
@@ -68,9 +70,9 @@ nonisolated enum TelemetryPrivacy {
     "seat": ["anon", "bound"],
     "target": ["workout", "routine", "none", "roadmap", "step"],
     "name": ["list_routines", "list_exercises", "list_sessions", "get_session", "get_sessions", "last_time", "get_last_times", "get_stats", "get_record", "list_notes", "list_bodyweight", "get_preferences", "create_routine", "create_exercise", "save_note", "share_session", "share_log", "propose_routine_change", "propose_routine_removal", "propose_workout_change", "revoke_share", "true", "false"],
-    "code": ["subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted", "debt_outstanding", "device_bound", "invalid_installation", "coach-bad-request", "coach-update-required", "coach-turn-conflict", "coach-turn-unknown", "coach-turn-order", "coach-turn-volume", "coach-rate-limited", "coach-busy", "coach-vendor-error", "coach-stream-replaced", "coach-replica-syncing", "transport", "decode", "storage", "refusal", "other", "unauthenticated", "invalid_network",
-             "not-found", "scope-dead", "forbidden", "invalid", "too-large", "clock-skew", "id-taken", "id-spent", "unknown-record", "record-dead",
-             "parent-dead", "stale", "cap", "base-unknown"],
+    "code": Set(["subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted", "debt_outstanding", "device_bound", "invalid_installation", "coach-bad-request", "coach-update-required", "coach-turn-conflict", "coach-turn-unknown", "coach-turn-order", "coach-turn-volume", "coach-rate-limited", "coach-busy", "coach-vendor-error", "coach-stream-replaced", "coach-replica-syncing", "transport", "decode", "storage", "refusal", "other", "unauthenticated", "invalid_network"])
+      // A notice's refusal code: the engine's, and each product's its registry declares.
+      .union(RefusalCode.engine.map(\.text)).union(SyncSchema.registry.products.flatMap(\.codes).map(\.text)),
     "surface": ["activity", "control", "shortcut", "document", "board", "history"],
     "intent": ["start_workout", "open_workout"],
     "item": ["write", "start", "open_workout", "weigh_in", "bodyweight", "date", "movement", "targets", "routine"],

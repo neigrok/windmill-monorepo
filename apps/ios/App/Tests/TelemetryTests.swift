@@ -210,8 +210,13 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
             ["operation": .label("roadmap_kept"), "failure_kind": .label("unexpected"), "code": .label("scope-dead")])
     #expect(TelemetryPrivacy.properties(["operation": "roadmap_write", "write": "dismissNotice"]) ==
             ["operation": .label("roadmap_write"), "write": .label("dismissNotice")])
-    #expect(TelemetryPrivacy.properties(["operation": "roadmap_landing", "write": "clearLanding"]) ==
-            ["operation": .label("roadmap_landing"), "write": .label("clearLanding")])
+    #expect(TelemetryPrivacy.properties(["operation": "roadmap_write", "write": "clearLanding", "failure_kind": "storage"]) ==
+            ["operation": .label("roadmap_write"), "write": .label("clearLanding"), "failure_kind": .label("storage")])
+    #expect(TelemetryPrivacy.properties(["operation": "roadmap_landing", "failure_kind": "decode"]) ==
+            ["operation": .label("roadmap_landing"), "failure_kind": .label("decode")])
+    for code in ["request-conflict", "target-merged", "step-opens-a-tree", "depth-limit", "not-a-root", "turn-final"] {
+      #expect(TelemetryPrivacy.properties(["code": code]) == ["code": .label(code)])
+    }
   }
 
   // The Guide tells its sheet opened, how a draft began, a save with its length as a bucket or why it was not written, a
