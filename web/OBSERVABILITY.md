@@ -43,6 +43,7 @@ refusal text never enter telemetry properties.
 | `sync-refused`, `sync-push-malformed` | Terminal refusals, and malformed push responses or receipts: a 400, or a `200` whose receipt or inverse outcomes the replica cannot read, which still acknowledges its entry |
 | `sync-writer` | Transaction enqueue-to-durability latency and initial queue/read latency, sampled: the first 10 writes of each minute that change the store |
 | `sync-digest-mismatch` | Confirmed scope digest disagreed with the server |
+| `sync-store-cleared` | The browser cleared the device's store, as the backend reported it (web-device-parity.md §7 Cleared): an account read whose `syncReplica`, the replica its session last pushed for, is none of the replica ids this store has held, while the store keeps the device past the page and the active replica is bound to that account. Once per clear, by the write that marks the store, in one tab; a reload, another tab and the next read find the mark. No property |
 
 Properties are restricted to `scopeKind` (`product`, `tree`, `overlay`, `device`), a nonnegative safe
 integer `seq`, `durationMs` and `queueMs` (capped at 60,000), `applied`, `skipped` and `waiting` (capped at
@@ -67,7 +68,9 @@ asks no one whose credential the browser holds: the shell tells it what each rea
 20-second poll among them), and that read is what releases a paused anon replica. Each read also tells it whether the
 server answered (an answer under 500), so a signed-out page, whose engine sends nothing of its own, reads `unreachable`
 when the server is out of reach while the browser reports itself online, and journal search's first use of meaning there
-is `needs_connection`, no Issue. A page in the back/forward cache reports nothing new: its rooms stand, and a write it
+is `needs_connection`, no Issue. Once a read for an account has bound the seat, the shell tells the engine the read's
+`syncReplica`: a store the browser cleared emits `sync-store-cleared`, whose mark a write that fails leaves for the next
+read, reported as `sync-storage`; no replica id, session or account enters either. A page in the back/forward cache reports nothing new: its rooms stand, and a write it
 holds until the restore lands then, or fails as the `store` failure the restore already reported.
 
 The shell reports session transition failures as `auth-session`, a refused auth-hint storage write as

@@ -29,7 +29,7 @@ function remember(user) {
 }
 const syncOf = (id) => PRODUCTS.find((product) => product.id === id)?.sync;
 // Every read of the account tells the engine whether the server answered, so a page whose engine sends nothing of its own,
-// as a signed-out one's, learns when the server is out of reach (the engine's `connection`).
+// as a signed-out one's, learns when the server is out of reach (the engine's `connection`). It answers `fetchMe`'s read.
 function readAccount(engine) {
   return fetchMe({ heard: (answered) => { if (engine && !engine.closed) engine.answered(answered); } });
 }
@@ -178,7 +178,7 @@ export default function AuthProvider({ children }) {
     const replica = engine.device.activeReplica.meta;
     if (replica.state === 'bound' && replica.account === account) {
       const revision = roomOwnership.current.revision;
-      const me = await readAccount(engine);
+      const me = (await readAccount(engine))?.user;
       if (revision !== roomOwnership.current.revision) throw new Error('account-changed-during-closure');
       confirmRoom(me);
       if (me === undefined) throw new Error('account-closure-unavailable');
@@ -262,7 +262,8 @@ export default function AuthProvider({ children }) {
     await engine.cleanupCredentials();
     if (engine.device.meta.clearCredential) { settle(null, { signedOut: true }); return null; }
     const revision = roomOwnership.current.revision;
-    const me = await readAccount(engine);
+    const read = await readAccount(engine);
+    const me = read?.user;
     if (revision !== roomOwnership.current.revision) return undefined;
     const confirmedRevision = confirmRoom(me);
     if (engine.restoring) await engine.restoring;
@@ -275,7 +276,13 @@ export default function AuthProvider({ children }) {
       else if (!seat.confirmed) settle(undefined, undefined, confirmedRevision);
       return undefined;
     }
-    if (me) { await bind(me, pending.current?.user.id === me.id ? pending.current : {}, confirmedRevision); return me; }
+    if (me) {
+      await bind(me, pending.current?.user.id === me.id ? pending.current : {}, confirmedRevision);
+      // The replica the session last pushed for, told once the seat is bound to its account, the only seat a cleared store is
+      // found under (web-device-parity.md §7 Cleared).
+      await engine.sessionReplica(me.id, read.syncReplica);
+      return me;
+    }
     const ended = signedOut || Boolean(seat.previousAccount && engine.device.activeReplica.meta.state === 'anon');
     if (ended && engine.device.activeReplica.meta.state === 'bound') await finishSignOut({ choice: 'keep' }, me?.id ?? null);
     pending.current = null; setQuestion(null); settle(null, { signedOut: ended }, confirmedRevision);
@@ -404,7 +411,7 @@ export default function AuthProvider({ children }) {
     // stays. Whose credential it holds the engine hears from every refresh (`tellCredential`).
     syncSession.open({ base: API_BASE, credentials: { clear: async (account) => {
       const revision = roomOwnership.current.revision;
-      const current = await readAccount(syncSession.engine);
+      const current = (await readAccount(syncSession.engine))?.user;
       if (revision !== roomOwnership.current.revision) throw new Error('account-changed-during-cleanup');
       if (current === undefined) throw new Error('cookie-cleanup-unavailable');
       if (current?.id !== account) { confirmRoom(current); return current === null; }

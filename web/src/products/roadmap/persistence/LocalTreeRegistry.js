@@ -46,7 +46,7 @@ export function deviceOwnerAnswered(withinMs = 2000) {
 }
 
 export async function resolveDeviceOwner() {
-  const me = await fetchMe();
+  const me = (await fetchMe())?.user;
   if (!me && !confirmation() && syncSession.opening) {
     const restored = syncSession.opening.then(async (engine) => {
       if (engine?.restoring) await engine.restoring;

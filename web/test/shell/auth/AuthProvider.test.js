@@ -156,6 +156,21 @@ test('each read of the account tells the engine whether the server answered, so 
   assert.equal(state.env.requests.filter(({ endpoint }) => endpoint !== 'hello').length, 0, 'the paused replica sent nothing of its own');
 });
 
+test('a read that binds the seat tells the engine the replica its session last pushed for, and one the store never held is a cleared store, told once', async (t) => {
+  const state = await account(t);
+  const answer = (syncReplica) => t.mock.method(globalThis, 'fetch', async () => ({ ok: true, status: 200,
+    json: async () => ({ user: { id: 'A', name: 'Ada' }, signInMethods: [], syncReplica }) }));
+  const told = () => state.env.events.filter(({ name }) => name === 'sync-store-cleared');
+  answer(state.engine.activeReplica());
+  await state.auth().refresh();
+  assert.deepEqual({ storeCleared: state.engine.getSnapshot().storeCleared, told: told() }, { storeCleared: false, told: [] });
+  answer(`rp_${'e'.repeat(32)}`);
+  await state.auth().refresh();
+  await state.auth().refresh();
+  assert.deepEqual({ storeCleared: state.engine.getSnapshot().storeCleared, told: told(), status: state.auth().status, failures: state.env.failures },
+    { storeCleared: true, told: [{ name: 'sync-store-cleared', props: {} }], status: 'signed-in', failures: [] });
+});
+
 test('the seat-change hook runs before a sign-out finishes and before a sign-in binds the device, never at a refresh of the bound account', async (t) => {
   const state = await account(t);
   state.engine.online = false;
