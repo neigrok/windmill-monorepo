@@ -155,7 +155,7 @@ public struct RunAbility: Action {
   // malformed, is `invalid-arguments`; what a rule refuses in deciding is `refused`, or `load-floor` for a target below its
   // movement's floor.
   static func gate(_ request: AbilityRequest, seat: Seat, appBaseUrl: String) -> Gate {
-    guard let ability = Catalog.ability(named: request.name), ability.agent != .withheld, ability.declared,
+    guard let ability = Catalog.gym.ability(named: request.name), ability.agent != .withheld, ability.declared,
           !AbilityExecutor.serverRun.contains(request.name) else { return .refuse(.notOffered) }
     guard ability.admits(seat) else { return .refuse(.seatRequired) }
     guard JSONSchema(ability.input).fault(in: request.input) == nil else { return .refuse(.invalidInput) }

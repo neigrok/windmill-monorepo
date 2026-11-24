@@ -484,4 +484,20 @@ public struct CreateSubtree: ActAction {
     let revival = loaded.step.reviving(try Valid(held.value, fields: [], at: loaded.step.moment), fields: [])
     return .write(ActPlan([ScopedPlan(tree.tree, revival), connected]), result)
   }
+
+  // R-8 Redo of the creation: the Undo's inverse act, its sources by ordinal, given recipes of the product's own.
+  // `roadmap.redoCreateSubtree` plants a new subtree under `fresh` while the step's `branch` is still the one the Undo
+  // cleared; a step the creation revived is revived again. The Undo's sources walk the creation backwards: the command's
+  // inverse first, then the revival's restore.
+  public func redo(_ creation: (root: ID<RoadmapEntry>, revived: Bool), under fresh: ID<RoadmapEntry>) -> [ProductSlot] {
+    var planted = Plan()
+    planted.undoBy(.command(Roadmap.Commands.redoCreateSubtree,
+                            input: ["tree": tree.json, "root": creation.root.json, "step": step.json, "subtree": fresh.json],
+                            ownedFields: [.field(step, "branch", in: tree.tree)]))
+    let slots = [ProductSlot(index: 0, scope: RoadmapEntry.scope, plan: planted)]
+    guard creation.revived else { return slots }
+    var alive = Plan()
+    alive.undoBy(.restoring(step, life: true, by: Roadmap.Commands.restoreTree))
+    return slots + [ProductSlot(index: 1, scope: tree.tree, plan: alive)]
+  }
 }

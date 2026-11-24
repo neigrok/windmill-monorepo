@@ -89,7 +89,7 @@ apps/ios/                   the engine, in Swift: a module `Agent`, the twin of 
   data, and it reaches everything else through three ports: the tool host, the AI client and
   telemetry.
 - The types that read a catalog (an ability, a catalog, a schema check) are not the engine's. Kotlin
-  keeps them in the domain kit and Swift in gym's domain; the web's domain kit gains them. A
+  and Swift keep them in the domain kit; the web's domain kit gains them. A
   product's tool host builds the profile's tools from them and answers the gate's catalog rules
   (§6).
 - The AI client is platform code. It is the only code that knows the service's wire, and it checks

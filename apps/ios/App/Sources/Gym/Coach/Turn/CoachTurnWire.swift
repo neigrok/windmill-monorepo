@@ -1,4 +1,5 @@
 import Foundation
+import DomainKit
 import GymDomain
 import SyncSchema
 import SyncCore
