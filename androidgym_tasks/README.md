@@ -108,7 +108,7 @@ On 2026-11-01 the dogfood tree's open Android, gym and sync nodes were checked a
 
 **What each waiting task waits for**
 - **A board or ruling** from the [design brief](design-brief-quality-wave.md):
-  - 80 (QW5), 81 (QW6) and 94 (QW7);
+  - 80 (QW5) and 81 (QW6), and 94 waits for WD7;
   - 96's iOS screen (QW8), 97's numberless wording (QW10) and 98 (QW9);
   - 99 (QW11) and 100 (QW13);
   - 102–105 (QW1–QW4).
@@ -254,7 +254,7 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [91](91-outbox-costs-linear.md) — A phone back from a long time offline drains its outbox in linear time
 - [92](92-catch-up-after-a-reopen.md) — iOS and web catch up after a live socket reopens
 - [93](93-share-page-set-count.md) — The web share page counts sets 1..N in logged order
-- [94](94-web-planned-rows-offered-load.md) — The web live mirror's planned rows read the load the plan expects
+- [94](94-web-planned-rows-offered-load.md) — Coach's workout panel on the web reads the load the plan expects
 - [95](95-one-stated-best.md) — The Best tile follows the stated rule the records follow
 - [96](96-shared-performed-range.md) — Every surface states what was lifted, every set counted
 - [97](97-coach-read-receipt-weeks.md) — What Coach read counts only weeks it can show

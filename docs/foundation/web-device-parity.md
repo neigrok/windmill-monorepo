@@ -7,14 +7,14 @@ them.
 ## §0 Status and scope
 
 **Status:** Specified, and approved by the owner on 2026-11-17; being built. On the web, journal reads and writes the
-browser's replica, signed in and signed out, and exports from it. Gym does so for everything but a workout, and draws
-from the browser's copy without waiting for the account (§2): signed out it is the room on the browser's own copy (§3),
-and it is a live mirror of a phone's workout. The domain's part is built: the refusals of §4's one open workout on every
+browser's replica, signed in and signed out, and exports from it. Gym does so for everything, a workout included (§4), and
+draws from the browser's copy without waiting for the account (§2): signed out it is the room on the browser's own copy
+(§3). The domain's part is built: the refusals of §4's one open workout on every
 surface, and the recovery of a start that loses a race, whose sets the web saves from its notice for the recovery to
 offer while the phones show the refusal alone ([open problems](local-first-open-problems.md) LP-6); and §8's adoption,
 recovery and Coach onboarding import in the web's domain, which claims every file §8 names. §3's sign-in is built on the
-web: the shell's hook before the seat changes saves each signed-out workout for adoption, an open one with its sets, with
-no rack to write first since the web has none yet; gym's device work and its merge, the question's count, the recovery of
+web: the shell's hook before the seat changes saves each signed-out workout for adoption, an open one with its sets, the
+rack having been written as it changed; gym's device work and its merge, the question's count, the recovery of
 a workout the account cannot take in The log, a proposal issued again and the copies the account took let go. Gym's
 Coach takes its turn in the browser. The browser
 counts a store it cleared (§7) once, with its event. A browser that cannot keep a copy is not supported (§7, R-7), and

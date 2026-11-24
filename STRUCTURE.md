@@ -146,8 +146,8 @@ contents. Native acceptance and a same-key update check precede publication. See
   built and nothing else. [Journal Talk](docs/foundation/journal-talk.md), live speech to text through the AI
   service, is specified and not built. Of [the web as a device](docs/foundation/web-device-parity.md), which makes
   gym and journal on the web work as they do on a phone, the shared domain's part, the gym room drawn from the
-  browser's copy, the signed-out gym with its join at sign-in and the journal's reads of its own copy are built; a workout
-  is not. [Echoes on the AI service](docs/foundation/echoes-on-ai-service.md), which
+  browser's copy, a workout logged on the web, the signed-out gym with its join at sign-in and the journal's reads of its
+  own copy are built; Coach during a workout is not. [Echoes on the AI service](docs/foundation/echoes-on-ai-service.md), which
   moves the journal's two background model calls there, is approved and not built.
 - [The running Coach conversation contract](docs/gym-coach-contract.md) covers the server-hosted
   model loop the web uses. [The iOS app](apps/ios/App/README.md) also documents

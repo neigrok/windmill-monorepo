@@ -127,7 +127,7 @@ export function LogList({ log, signedIn = false, anonymous = false, hash = '#/gy
         <HistoryFilter kind="exercise" value={filters.exercise} onChange={(exercise) => moveFilter({ exercise })} options={exerciseOptions} />
         <HistoryFilter kind="routine" value={filters.routine} onChange={(routine) => moveFilter({ routine })} options={routineOptions} />
       </div>
-      {history.data?.summary && <p className="gym-log-count">{historyTotals(withoutRows(history.data.summary, (history.data.sessions ?? []).filter((session) => hidden.has(session.id))))}</p>}
+      {complete && history.data?.summary && <p className="gym-log-count">{historyTotals(withoutRows(history.data.summary, (history.data.sessions ?? []).filter((session) => hidden.has(session.id))))}</p>}
       {history.phase === 'loading' && !history.data && <p className="gym-quiet">{t('gym.log.opening')}</p>}
       {history.failure && <p className="gym-read-failed">{t('gym.log.readFailed')} <Button size="sm" variant="secondary" onClick={history.retry}>{t('gym.common.retry')}</Button></p>}
       {empty && !noMatches && <p className="gym-quiet">{t('gym.log.noSessions')}</p>}
@@ -137,6 +137,7 @@ export function LogList({ log, signedIn = false, anonymous = false, hash = '#/gy
           {signedIn && <InThisBrowser log={log} placement="wide" />}
           <HistoryIndex sessions={sessions} selected={selected} filters={filters} dense={dense} />
           {!history.data?.next && complete && history.phase === 'ready' && sessions.length > 0 && <p className="gym-history-end">{t('gym.log.historyEnd')}</p>}
+          {stored.phase === 'ready' && !complete && <p className="gym-history-end gym-first-pull" role="status">{t('gym.common.gettingLog')}</p>}
           {history.data?.next && <button type="button" className="gym-older" aria-busy={history.more === 'loading'} onClick={history.load}>{history.more === 'loading' ? t('gym.log.loadingOlder') : history.more === 'failed' ? t('gym.log.olderFailed') : t('gym.log.loadOlder')}</button>}
         </aside>
         <div className="gym-history-detail">
@@ -145,7 +146,7 @@ export function LogList({ log, signedIn = false, anonymous = false, hash = '#/gy
             <nav className="gym-reader-nav" aria-label={t('gym.log.readerNavLabel')}><a className="gym-reader-top-back" href={historyHref(filters, { selected: null })}>{t('gym.log.backToLog')}</a><button type="button" disabled={selectedIndex < 0 || (selectedIndex === sessions.length - 1 && !history.data?.next) || history.more === 'loading'} onClick={() => adjacent(1)}>{t('gym.log.previous')}</button><button type="button" disabled={selectedIndex <= 0} onClick={() => adjacent(-1)}>{t('gym.log.next')}</button>{!anonymous && <a className="gym-reader-edit" href={`${sessionHref(selected)}/edit?from=${encodeURIComponent(from)}`}>{t('gym.log.editWorkout')}</a>}</nav>
             <div className="gym-history-reader"><SessionDetail key={selected} id={selected} log={log} signedIn={signedIn} anonymous={anonymous} embedded from={from} /></div>
           </>}
-          {!selected && <><div className="gym-progress-head"><h2 className="gym-section-title">{t('gym.log.progressTitle')}</h2>{consistency && <p className="gym-consistency">{consistency}</p>}</div>
+          {!selected && complete && <><div className="gym-progress-head"><h2 className="gym-section-title">{t('gym.log.progressTitle')}</h2>{consistency && <p className="gym-consistency">{consistency}</p>}</div>
           <ProgressCards log={log} from={{ screen: 'log', href: from }} /></>}
         </div>
       </div>}

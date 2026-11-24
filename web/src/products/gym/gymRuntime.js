@@ -23,7 +23,7 @@ import { Catalogue, CreateExercise, Exercise, ExerciseValue, RenameExercise, def
 import { GymRefusals, RoutineRules } from './domain/gymRules.js';
 import { DeleteNote, MoveNote, Note, NoteRules, NoteValue } from './domain/notes.js';
 import { ChangePreferences, Preferences, PreferencesValue, restSettings } from './domain/preferences.js';
-import { DeleteRoutine, PlanSnapshot, Routine, RoutineValue } from './domain/routines.js';
+import { DeleteRoutine, PlanSnapshot, Routine, RoutineValue, SetTarget } from './domain/routines.js';
 import { AcknowledgeRoutineRemoval, ApplyProposalKeepingReceipt, DismissProposal, Proposal, ProposalState,
   REMOVAL_RECEIPTS, removalReceipts } from './domain/proposals.js';
 import { exerciseDocument, proposalDocument, proposalsDocument, sessionDocument, setDocument, TrainingHistory } from './domain/trainingHistory.js';
@@ -33,6 +33,8 @@ import { AdoptWorkout, ReconcileAdoptedWorkouts, SignedOutWorkout } from './doma
 import { DiscardSignedOutWorkout, RecoverStrandedSets, SaveRefusedStart, WorkoutFix, WorkoutRecovery } from './domain/workoutRecovery.js';
 import { ReissueWorkoutProposal } from './domain/workoutProposals.js';
 import { TrainingLog } from './domain/trainingReads.js';
+import { PlanOperations } from './domain/workoutPlan.js';
+import { FinishWorkout, LogRackSet, ReviseWorkout, SettleRack, StartWorkout, TurnRack } from './domain/workoutRack.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
 import { REFUSALS } from './bodyweight/bodyweight.js';
 import { fixLoadFloorLine } from './fix.js';
@@ -45,7 +47,8 @@ import { fromDisplayUnit, weightUnit } from './units.js';
 const SCOPE = 'self/gym';
 const OPERATIONS = new Set(['routine-create', 'routine-save', 'exercise-create', 'exercise-rename',
   'preferences-save', 'note-save', 'note-reorder', 'bodyweight-save', 'set-correct', 'delete', 'undo',
-  'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'workout-adopt', 'workout-recover', 'refusal']);
+  'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'workout-adopt', 'workout-recover', 'refusal',
+  'workout-start', 'rack-settle', 'rack-turn', 'set-log', 'plan-revise', 'workout-finish']);
 const OUTCOMES = new Set(['saved-local', 'unchanged', 'failed', 'held', 'undone', 'closed', 'refused']);
 // What refused a write: the replica moved under the room, or the gym's rules, this device's or the server's.
 const REFUSED_BY = new Set(['not-writable', 'domain']);
@@ -74,6 +77,24 @@ const RECOVERY_REASONS = new Set(['session-open', 'session-overlap', 'id-taken',
 export function gymRecovery(outcome, reason) {
   if (!RECOVERY_OUTCOMES.has(outcome) || !RECOVERY_REASONS.has(reason)) return;
   try { track('gym_recovery', { outcome, reason }); } catch { /* reporting cannot stop a recovery */ }
+}
+
+// A workout's steps, told under the iPhone's event names (web-device-parity §10), each property one of a closed set of
+// labels: never a name or an id of a workout, a routine or a movement, and never a value.
+const WORKOUT_LABELS = Object.freeze({
+  screen: ['workout'],
+  outcome: ['ok', 'refused', 'failed'],
+  code: ['not-writable', 'domain'],
+  reason: ['stale'],
+  door: ['routine', 'empty', 'workout', 'bar'],
+  action: ['retarget', 'add_set', 'remove_set', 'swap', 'add_movement', 'remove_movement', 'rest', 'hide', 'open'],
+  field: ['weight', 'reps'],
+});
+const WORKOUT_STEPS = new Set(['gym_session_started', 'gym_set_logged', 'gym_session_finished', 'gym_workout_plan_changed',
+  'gym_workout_adjusted', 'gym_rest_target_reached', 'gym_hidden_workout', 'gym_receipt_plan_saved']);
+export function workoutStep(name, props) {
+  if (!WORKOUT_STEPS.has(name) || Object.entries(props).some(([key, value]) => !WORKOUT_LABELS[key]?.includes(value))) return;
+  try { track(name, props); } catch { /* reporting cannot stop a workout */ }
 }
 
 // A failure goes to Sentry under its static operation with the error's stack frames, never its message.
@@ -254,7 +275,7 @@ const notWritable = () => new GymRefusal('not-writable', { sentence: t('gym.runt
 
 // The API stands on the engine's binding as it is made: the replica's storage and its account, which a re-identify keeps.
 // A sign-in or a sign-out changes it, the anon replica bound in place included, and every read and write then is refused.
-export function createGymApi(engine, { event = gymStep, recovered = gymRecovery, failure = gymFailure, zone = deviceZone } = {}) {
+export function createGymApi(engine, { event = gymStep, recovered = gymRecovery, told = workoutStep, failure = gymFailure, zone = deviceZone } = {}) {
   const owner = engine.activeBinding();
   if (shownRemovals.get(engine)?.owner !== owner) shownRemovals.set(engine, { owner, proposals: new Map() });
   const shown = shownRemovals.get(engine).proposals;
@@ -291,6 +312,31 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
       if (!(error instanceof GymRefusal) && !isStoreFailure(error)) failure(operation, error);
       throw error;
     }
+  };
+  // A workout's write tells its step, once per label, with how it ended: `body` answers whether a step happened. A refusal
+  // is told with what refused it and, when the workout moved under it, `stale`; an unexpected failure also goes to Sentry.
+  const workoutWrite = async (operation, { step = null, labels = [{}] } = {}, body) => {
+    const tell = (props) => { if (step) for (const label of labels) told(step, { ...label, ...props }); };
+    try {
+      const { happened, result } = await body();
+      if (happened) tell({ outcome: 'ok' });
+      return result;
+    } catch (thrown) {
+      const moved = thrown instanceof ReplicaChanged || (thrown instanceof CommitError && thrown.kind === 'not-writable');
+      const error = moved ? notWritable() : thrown;
+      if (error instanceof GymRefusal) {
+        tell({ outcome: 'refused', code: error.code === 'not-writable' ? 'not-writable' : 'domain', ...(error.code === 'stale' ? { reason: 'stale' } : {}) });
+      } else {
+        tell({ outcome: 'failed' });
+        if (!isStoreFailure(error)) failure(operation, error);
+      }
+      throw error;
+    }
+  };
+  const ran = async (action) => {
+    const outcome = await runner.run(action);
+    if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
+    return outcome;
   };
   const read = (body) => readGym((loaded) => runner.read(SCOPE, loaded), body, failure, checkedPlans);
   const workoutSave = (key) => read((reader) => {
@@ -670,6 +716,59 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
       return outcome.result.fields();
     }),
     deleteBodyweight: (date) => remove(DeleteWeighIn(new Id(date, WeighIn))),
+    // A workout on this browser's copy (web-device-parity §4): the domain's actions, each one write; the clock the log
+    // stamps with, this device's corrected by the server's offset.
+    now: () => port.physNow(),
+    startWorkout: ({ routineId = null } = {}) => workoutWrite('workout-start',
+      { step: 'gym_session_started', labels: [{ screen: 'workout', door: routineId === null ? 'empty' : 'routine' }] }, async () => {
+        const id = runner.mint(Session);
+        const outcome = await ran(StartWorkout({ id, routineId: routineId === null ? null : new Id(routineId, Routine) }));
+        return { happened: outcome.kind === 'committed', result: { sessionId: id.record } };
+      }),
+    settleRack: (sessionId) => workoutWrite('rack-settle', {}, async () => {
+      await ran(SettleRack(new Id(sessionId, Session)));
+      return { happened: false, result: null };
+    }),
+    // `change` is `{ movement }` or `{ adding }` (an exercise id), or the `{ weightKg }` or `{ reps }` the lifter set.
+    turnRack: (sessionId, change) => {
+      const field = 'weightKg' in change ? 'weight' : 'reps' in change ? 'reps' : null;
+      const domainChange = 'movement' in change ? { movement: new Id(change.movement, Exercise) }
+        : 'adding' in change ? { adding: new Id(change.adding, Exercise) } : change;
+      const step = field ? { step: 'gym_workout_adjusted', labels: [{ screen: 'workout', field }] }
+        : 'adding' in change ? { step: 'gym_workout_plan_changed', labels: [{ action: 'add_movement', door: 'workout' }] } : {};
+      return workoutWrite('rack-turn', step, async () => {
+        const outcome = await ran(TurnRack(new Id(sessionId, Session), domainChange));
+        return { happened: outcome.kind === 'committed', result: null };
+      });
+    },
+    // Log set under the offer the tab drew; `logged` is false when that offer's set was already written, by this tab or another.
+    logSet: (sessionId, { offer, weightKg, reps }) => workoutWrite('set-log', { step: 'gym_set_logged', labels: [{ screen: 'workout' }] }, async () => {
+      const outcome = await ran(LogRackSet({ sessionId: new Id(sessionId, Session), offer, weightKg, reps }));
+      return { happened: outcome.kind === 'committed', result: { logged: outcome.kind === 'committed' } };
+    }),
+    // `base` is the plan the editor opened on; `edits` are `{ kind, index, set, target, exerciseId, restSeconds }` as the
+    // domain's PlanOperations name them. A plan another tab or device changed since is refused `stale`.
+    reviseWorkout: (sessionId, base, edits) => {
+      const operations = edits.map((edit) => ({
+        retarget: () => PlanOperations.retarget(edit.index, edit.set, new SetTarget(edit.target?.reps ?? null, edit.target?.weightKg ?? null)),
+        addSet: () => PlanOperations.addSet(edit.index),
+        removeSet: () => PlanOperations.removeSet(edit.index, edit.set),
+        swap: () => PlanOperations.swap(edit.index, new Id(edit.exerciseId, Exercise)),
+        addMovement: () => PlanOperations.addMovement(new Id(edit.exerciseId, Exercise)),
+        removeMovement: () => PlanOperations.removeMovement(edit.index),
+        setRest: () => PlanOperations.setRest(edit.index, edit.restSeconds ?? null),
+      }[edit.kind]()));
+      const actions = [...new Set(operations.map((operation) => ({ retarget: 'retarget', addSet: 'add_set', removeSet: 'remove_set', swap: 'swap',
+        addMovement: 'add_movement', removeMovement: 'remove_movement', setRest: 'rest' })[operation.kind]))];
+      return workoutWrite('plan-revise', { step: 'gym_workout_plan_changed', labels: actions.map((action) => ({ action, door: 'workout' })) }, async () => {
+        const outcome = await ran(ReviseWorkout({ sessionId: new Id(sessionId, Session), base: base === null ? null : PlanSnapshot.decode(base), operations }));
+        return { happened: outcome.kind === 'committed', result: null };
+      });
+    },
+    finishWorkout: (sessionId) => workoutWrite('workout-finish', { step: 'gym_session_finished', labels: [{ screen: 'workout' }] }, async () => {
+      const outcome = await ran(FinishWorkout(new Id(sessionId, Session)));
+      return { happened: outcome.kind === 'committed', result: null };
+    }),
   };
 }
 
@@ -780,7 +879,7 @@ export function watchBrowserCopies(engine, { failure = gymFailure } = {}) {
   settle();
 }
 
-// A workout running on a phone keeps the mirror's sync close, until four idle hours close it.
+// An open workout, whichever device started it, keeps the room's sync close, until four idle hours close it.
 export function gymLiveHint(engine, replica) {
   return gymReadView(engine.observe(SCOPE).getSnapshot(), {
     now: Date.now() + (replica?.meta?.serverOffsetMs ?? 0),

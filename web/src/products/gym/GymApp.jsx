@@ -28,10 +28,13 @@ import {
 import { LogShareScreen, SharedLogScreen } from './share/LogShare.jsx';
 import { SharedSession } from './share/SharedSession.jsx';
 import { useTrainingLog } from './useTrainingLog.js';
+import { WorkoutPage } from './workout/Workout.jsx';
+import { WorkoutBar } from './workout/WorkoutBar.jsx';
 import { historyHref, historyQuery } from './logbook/history.js';
 import './gym.css';
 
 function tabOf(screen) {
+  if (screen === 'workout') return null;
   if (['coach', 'thread', 'threads', 'notes'].includes(screen)) return 'coach';
   if (['log', 'session', 'finish', 'backfill', 'bodyweight', 'record', 'share-log'].includes(screen)) return 'log';
   return 'routines';
@@ -51,7 +54,7 @@ function screenIn(hash, { signedIn, anonymous }, status) {
 
 function columnClass(screen) {
   if (screen === 'coach' || screen === 'thread') return ' has-coach';
-  if (['backfill', 'log', 'session', 'routine', 'record', 'share-log', 'notes'].includes(screen)) return ' has-desk';
+  if (['backfill', 'log', 'session', 'routine', 'record', 'share-log', 'notes', 'workout'].includes(screen)) return ' has-desk';
   return '';
 }
 
@@ -165,8 +168,10 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
           {signedIn && screen === 'thread' && <CoachRoom key={account?.id} log={log} threadId={threadIdOf(hash)} />}
           {signedIn && screen === 'notes' && <Notes log={log} />}
           {signedIn && screen === 'share-log' && <LogShareScreen />}
+          {screen === 'workout' && <WorkoutPage hash={hash} log={log} signedIn={signedIn} />}
         </main>
       </div>
+      <WorkoutBar onPage={screen === 'workout'} />
       <TabBar screen={tabOf(screen)} />
       <Transient transient={log.transient} />
     </div>
