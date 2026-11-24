@@ -1,8 +1,10 @@
 # By hand only, and never during a deploy: counts how the roadmap's pointers between trees meet one owned subtree
-# per step (backend/SPEC.md, Subtree inventory). The tool runs inside the live server container, reads the database
-# that container already knows and never writes. Where few accounts hold pointers its counts are one person's private
-# structure, and this repository's logs are public, so the counts are sealed on the runner to the owner's certificate,
-# .github/ops/inventory-recipient.pem, before anything is printed. Opening them is in backend/deploy/README.md.
+# per step, the engine's roadmaps by owner and visibility, and its pointers alive with no `opens` (backend/SPEC.md,
+# Subtree inventory). The tool runs inside the live server container, reads the database that container already knows
+# and never writes. Where few accounts hold pointers its counts are one person's private structure, and the visibility
+# counts are one person's private facts even with no pointers. This repository's logs are public, so the counts are
+# sealed on the runner to the owner's certificate, .github/ops/inventory-recipient.pem, before anything is printed.
+# Opening them is in backend/deploy/README.md.
 name: Ops · subtree inventory
 
 on:
@@ -49,7 +51,7 @@ jobs:
               fi
             done
           done
-      - name: Count the roadmap's pointers in the live database, sealed to the owner
+      - name: Count the roadmap's pointers and visibility in the live database, sealed to the owner
         env:
           SSH_KEY: ${{ secrets.SSH_KEY }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
