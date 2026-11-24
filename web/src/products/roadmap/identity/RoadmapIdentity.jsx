@@ -4,12 +4,12 @@ import { Activity, ChevronLeft, Compass, Download, GitFork, Keyboard, MoreHorizo
 import { Tooltip } from '../../../design-system';
 import { requestNavigation } from '../../../shell/navigation.js';
 import { track } from '../../../telemetry/beacon.js';
+import { countBucket } from '../../../telemetry/countBucket.js';
 import { hueOf } from '../theme.js';
 import { FindStep, NewStep, handleMenuKey } from '../board/BoardControls.jsx';
 import { usePopoverDismissal } from '../popoverDismissal.js';
 import { RoadmapSheet } from './RoadmapSheet.jsx';
 import { ViewSwitch } from './ViewSwitch.jsx';
-import { countBucket } from '../board/acts.js';
 import { DEMO_BYLINE, LABELS, ROADMAP_VERBS, backTo, formatCount, nextChip, progressFigure, progressLabel, reasonLine, upNextCount } from '../copy.js';
 import './identity.css';
 

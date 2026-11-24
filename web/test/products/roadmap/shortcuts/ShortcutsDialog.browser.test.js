@@ -194,6 +194,11 @@ for (const width of [390, 1440]) {
       await page.goto(`${origin}/shortcuts-test`);
       await page.waitForFunction(() => typeof window.paint === 'function');
       await page.evaluate(() => window.paint({ view: 'graph', open: true }));
+      await page.getByRole('dialog').waitFor();
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+        await Promise.all(document.getAnimations().map((animation) => animation.finished));
+      });
       for (const name of ['Windows', 'Mac']) {
         const button = page.getByRole('button', { name, exact: true });
         const box = await button.boundingBox();

@@ -35,7 +35,7 @@ import { FixedZone } from '../../../platform/domain-kit/time.js';
 import { ReplicaChanged } from '../../../platform/sync/engine.js';
 import { syncSession } from '../../../platform/sync/session.js';
 import { track as trackEvent } from '../../../telemetry/beacon.js';
-import { countBucket } from '../board/acts.js';
+import { countBucket } from '../../../telemetry/countBucket.js';
 import { CarriedIds, CarryLedger, RecordCarry, carryLedgerOf, kept, listedAs } from '../domain/carry.js';
 import { RoadmapKind } from '../domain/kinds.js';
 import { HeldRecord, RoadmapScopes } from '../domain/roadmapRules.js';

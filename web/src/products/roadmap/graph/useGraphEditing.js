@@ -3,11 +3,12 @@ import { cmpOrder } from '../model/TrunkTree.js';
 import { graftPlan } from '../paste/graftPlan.js';
 import { parsePlan } from '../paste/planGrammar.js';
 import { parseEdgeKey } from '../scene/edgeKey.js';
-import { countBucket, onceLanded, receiptUndo, takesEveryRoot } from '../board/acts.js';
+import { onceLanded, receiptUndo, takesEveryRoot } from '../board/acts.js';
 import { GRAPH_TOAST, deletedSelectionToast, graftedToast, recoloredToast } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { track } from '../../../telemetry/beacon.js';
+import { countBucket } from '../../../telemetry/countBucket.js';
 
 const NEW_NODE_ICON = 'sparkles';
 

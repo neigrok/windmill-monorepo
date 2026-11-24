@@ -2,11 +2,11 @@ import Foundation
 import RoadmapDomain
 
 // A roadmap's legend as the room shows it (Roadmap · iOS 02.7, 02.11, 05.2, 06.1 to 06.6, 10.6b), read once with the open
-// roadmap, so the step form's Kind list, the Kinds sheet, the Board's filter and Recolor all show this one value. Its
-// entries are the web room's (`deriveLegend` over the kinds `ReplicaRoadmap` keeps): each kind that owns its hue in the
-// domain's legend, in the roadmap's order, then each hue steps wear that no kind claims, called by the hue, in the rule
-// book's order, each with how many steps wear it. One entry a hue, so at most six: Add Kind takes the first hue no entry
-// has, and a hue an entry has cannot be chosen for another.
+// roadmap, so the step form's Kind list, the Kinds sheet, the Board's filter, Recolor and Paste Steps all read this one
+// value. Its entries are the domain's legend shown, as the web room's are (`deriveLegend` over the kinds `ReplicaRoadmap`
+// takes from the same read): each kind that owns its hue, in the roadmap's order, then each hue steps wear that no kind
+// claims, called by the hue, in the rule book's order, each with how many steps wear it. One entry a hue, so at most six:
+// Add Kind takes the first hue no entry has, and a hue an entry has cannot be chosen for another.
 struct RoadmapLegend {
   // What an entry is: a kind of the roadmap, by its id, or a hue steps wear that no kind names.
   enum Subject: Hashable {
@@ -40,14 +40,13 @@ struct RoadmapLegend {
 
   let entries: [Entry]
 
+  // The domain's legend shown (`LegendRead.shown`), which a paste reads its text over, each entry with its steps.
   init(_ tree: RoadmapTree) {
-    let legend = LegendRead(tree)
     var worn: [[UInt8]: Int] = [:]
     for step in tree.index.nodes { worn[Array(step.color.utf8), default: 0] += 1 }
-    let owners = legend.kinds.filter { (kind: Kind) -> Bool in legend.hues.contains { $0.owner.utf8.elementsEqual(kind.id.utf8) } }
-    let named = owners.map { (kind: Kind) -> Entry in Entry(hue: kind.hue, kind: kind, steps: worn[Array(kind.hue.utf8)] ?? 0) }
-    let unclaimed = RoadmapRules.hues.filter { (hue: String) -> Bool in !legend.claims(hue) && worn[Array(hue.utf8)] != nil }
-    entries = named + unclaimed.map { (hue: String) -> Entry in Entry(hue: hue, kind: nil, steps: worn[Array(hue.utf8)] ?? 0) }
+    entries = LegendRead(tree).shown.map { (shown: LegendRead.Shown) -> Entry in
+      Entry(hue: shown.hue, kind: shown.kind, steps: worn[Array(shown.hue.utf8)] ?? 0)
+    }
   }
 
   func entry(_ subject: Subject) -> Entry? {

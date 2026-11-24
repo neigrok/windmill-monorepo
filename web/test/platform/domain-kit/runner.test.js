@@ -244,6 +244,8 @@ test('a commit reads the current tab transaction, including confirmed values ben
     drawn: read.repository(Probe.run).find(id, 'drawn')?.fields() ?? null, devices: read.devices('picture:'),
     commands: read.commands(), checkpoint: read.checkpoint(), actor: read.actor,
     isAnonymous: read.isAnonymous, complete: read.firstPullComplete() });
+  await peer.write(null, (/** @type {any} */ device) => { Object.assign(device.activeReplica.meta, { state: 'bound', account: 'A', serverEpoch: 'ep-current' }); });
+  await engine.refresh();
   const before = runner.read(PROBE_SCOPE, metadata);
   await peer.write(null, (/** @type {any} */ device) => {
     device.activeReplica.putConfirmed(PROBE_SCOPE, { ...confirmed, seq: 5, rc: 1, ru: 1 });
@@ -257,7 +259,6 @@ test('a commit reads the current tab transaction, including confirmed values ben
   const receipt = queued.kind === 'committed' ? queued.receipt : assert.fail('not committed');
   await peer.write(null, (/** @type {any} */ device) => {
     const replica = device.activeReplica;
-    Object.assign(replica.meta, { state: 'bound', account: 'A', serverEpoch: 'ep-current' });
     replica.cursors[PROBE_SCOPE] = { cursor: Cursor.encode({ e: 'ep-current', m: 'live', s: 5 }), digest: ZERO_DIGEST, booted: true };
     Object.assign(replica.entry(receipt.localIds[0]), { state: 'acked', n: 1, resultEpoch: 'ep-current', resultSeq: 6 });
   }, [PROBE_SCOPE]);

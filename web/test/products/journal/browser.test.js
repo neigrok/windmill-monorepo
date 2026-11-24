@@ -15,16 +15,24 @@ const fixture = `
   import { usePages } from '/src/products/journal/usePages.js';
   import { localDay } from '/src/products/journal/localDay.js';
   let root;
-  export async function open(name, { migrate = false, legacy = null } = {}) {
+  // Offline but for a sign-in's hello, which answers as the account the test names (window.helloAs), holding nothing.
+  function hello(endpoint) {
+    if (endpoint !== 'hello' || !window.helloAs) throw new Error('offline');
+    const at = Date.now();
+    return { response: { status: 200, body: { serverTime: at, epoch: 'ep-1', as: window.helloAs, schema: registry.version,
+      minSchema: registry.minVersion, holdsRecords: Object.fromEntries(Object.keys(registry.products).map((product) => [product, false])) } },
+    timing: { send: { wall: at, mono: at, boot: 'test' }, recv: { wall: at, mono: at, boot: 'test' } } };
+  }
+  export async function open(name, { carry = false, legacy = null } = {}) {
     const options = { name, registry,
-      transport: { request() { throw new Error('offline'); }, openLive() { throw new Error('offline'); } },
+      transport: { request: hello, openLive() { throw new Error('offline'); } },
       telemetry: { failure() {}, event() {} } };
-    if (migrate) {
+    if (carry) {
       if (legacy) localStorage.setItem('wm.journal.v2.pages.anon', JSON.stringify(legacy));
       window.engine = await syncSession.open({ ...options, prepare: async (opened) => {
         opened.setOnline(false);
-        const { migratePages } = await import('/src/products/journal/migrate.js');
-        await migratePages(opened);
+        const { CarryOver } = await import('/src/products/journal/carry.js');
+        await new CarryOver(opened).start();
       } });
     } else {
       window.engine = await BrowserSyncEngine.open(options);
@@ -66,6 +74,12 @@ const fixture = `
     root.render(React.createElement(Editor));
   }
   export function unmountEditor() { root.unmount(); }
+  // The Settings row, mounted afresh each time, as opening Settings mounts it.
+  let shown = 0;
+  export async function showUnclaimed(account) {
+    const { UnclaimedPagesRow } = await import('/src/products/journal/settings/UnclaimedPagesRow.jsx');
+    root.render(React.createElement(UnclaimedPagesRow, { account, key: ++shown }));
+  }
   export async function showCanvas() {
     const { Canvas } = await import('/src/products/journal/Canvas.jsx');
     root.render(React.createElement(Canvas));
@@ -321,7 +335,7 @@ test('Chromium: Canvas exposes the complete recovered draft beside the corrected
   } finally { await context.close(); }
 });
 
-test('Chromium: first offline open migrates oversized legacy writing for correction and durable reload', async () => {
+test('Chromium: first offline open carries oversized writing from before the engine for correction and durable reload', async () => {
   await ready;
   const context = await browser.newContext({ timezoneId: 'UTC' });
   try {
@@ -330,20 +344,20 @@ test('Chromium: first offline open migrates oversized legacy writing for correct
     const legacy = Object.fromEntries([
       ['2026-10-01', original], ['2026-09-30', 'valid older page'],
     ].map(([day, body]) => [day, { page: { day, body, mood: 0, energy: null, source: 'spoken', stamp: '1:0:legacy' }, needsPush: true, read: false }]));
-    const page = await open(context, name, '2026-10-01T12:00:00Z', { migrate: true, legacy });
+    const page = await open(context, name, '2026-10-01T12:00:00Z', { carry: true, legacy });
     await body(page, original);
     assert.deepEqual(await page.evaluate(async () => {
       const { syncSession } = await import('/src/platform/sync/session.js');
       return { ready: syncSession.snapshot.ready, error: syncSession.snapshot.error, closed: engine.closed,
         legacy: localStorage.getItem('wm.journal.v2.pages.anon'),
-        commands: engine.device.activeReplica.entries('self/journal').map((entry) => entry.intent.cmd.args.body) };
+        commands: engine.device.activeReplica.entries('self/journal').filter((entry) => entry.intent.cmd).map((entry) => entry.intent.cmd.args.body) };
     }), { ready: true, error: false, closed: false, legacy: null, commands: ['valid older page'] });
     assert.equal(await page.getByRole('status', { name: 'Scores' }).textContent(), '[0,null]');
     await page.getByRole('textbox', { name: 'Body' }).fill('corrected legacy writing');
     await page.waitForFunction(() => Number(document.querySelector('main').dataset.saveTick) === 1);
-    await reopen(page, name, { migrate: true });
+    await reopen(page, name, { carry: true });
     await body(page, 'corrected legacy writing');
-    assert.deepEqual(await page.evaluate(() => engine.device.activeReplica.entries('self/journal').map((entry) => ({
+    assert.deepEqual(await page.evaluate(() => engine.device.activeReplica.entries('self/journal').filter((entry) => entry.intent.cmd).map((entry) => ({
       day: entry.intent.cmd.args.day, body: entry.intent.cmd.args.body,
     }))), [
       { day: '2026-09-30', body: 'valid older page' },
@@ -354,6 +368,75 @@ test('Chromium: first offline open migrates oversized legacy writing for correct
       return Object.entries(engine.device.activeReplica.deviceRows('journal'))
         .some(([key, row]) => key.startsWith(EditorDraft.recoveryPrefix) && row.document.body === original);
     }, original), true);
+  } finally { await context.close(); }
+});
+
+test('Chromium: a browser from before the engine carries each seat\'s owed pages as that seat becomes active, and restores and discards the unattributed signed in', async () => {
+  await ready;
+  const context = await browser.newContext({ timezoneId: 'UTC' });
+  try {
+    const name = 'w6_journal-carry-seats';
+    const page = (day, body, { owed = true, read = false, mood = null, energy = null } = {}) =>
+      ({ [day]: { page: { day, body, mood, energy, source: 'typed', stamp: '1:0:legacy' }, needsPush: owed, read } });
+    const stores = {
+      'wm.journal.v2.pages.anon': { ...page('2026-09-28', 'written signed out') },
+      'wm.journal.v2.pages.u.A': { ...page('2026-09-29', 'owed to A', { read: true }), ...page('2026-09-20', 'A\'s copy of its page', { owed: false, read: true }) },
+      'wm.journal.pages.u.B': { ...page('2026-09-30', 'owed to B', { mood: 3, energy: 2 }) },
+      'wm.journal.v2.pages.unclaimed': { ...page('2026-09-15', 'nobody\'s to say') },
+    };
+    const first = await context.newPage();
+    first.setDefaultTimeout(10000);
+    await first.clock.setFixedTime(new Date('2026-10-01T12:00:00Z'));
+    await first.goto(`${origin}/journal-hook-test`);
+    await first.evaluate((stores) => { for (const [key, value] of Object.entries(stores)) localStorage.setItem(key, JSON.stringify(value)); }, stores);
+    await first.evaluate(async (name) => { await (await import('/journal-hook-fixture.js')).open(name, { carry: true }); }, name);
+
+    const seen = () => first.evaluate(() => ({
+      stores: Object.keys(localStorage).filter((key) => key.startsWith('wm.journal.')).sort(),
+      replica: engine.device.activeReplica.meta.state === 'bound' ? engine.device.activeReplica.meta.account : 'anon',
+      claims: engine.device.activeReplica.entries('self/journal').filter((entry) => entry.intent.cmd)
+        .map(({ intent: { cmd: { args } } }) => ({ day: args.day, body: args.body, mood: args.mood, energy: args.energy })),
+      ledger: Object.keys(engine.readDeviceRows('journal')).filter((key) => key.startsWith('carry:')).length,
+      meta: Object.keys(engine.device.meta).filter((key) => key.startsWith('journal')),
+    }));
+    const waitGone = (key) => first.waitForFunction((key) => localStorage.getItem(key) === null, key);
+    await waitGone('wm.journal.v2.pages.anon');
+    assert.deepEqual(await seen(), {
+      stores: ['wm.journal.pages.u.B', 'wm.journal.v2.pages.u.A', 'wm.journal.v2.pages.unclaimed'], replica: 'anon',
+      claims: [{ day: '2026-09-28', body: 'written signed out', mood: null, energy: null }], ledger: 1, meta: [],
+    });
+
+    await first.evaluate(async () => { window.helloAs = 'A'; await engine.signIn('A'); });
+    await waitGone('wm.journal.v2.pages.u.A');
+    assert.deepEqual(await seen(), {
+      stores: ['wm.journal.pages.u.B', 'wm.journal.v2.pages.unclaimed'], replica: 'A',
+      claims: [{ day: '2026-09-28', body: 'written signed out', mood: null, energy: null }, { day: '2026-09-29', body: 'owed to A', mood: null, energy: null }],
+      ledger: 2, meta: [],
+    });
+
+    await first.evaluate(async () => { await (await import('/journal-hook-fixture.js')).showUnclaimed('A'); });
+    await first.getByText('2026-09-15 · 3 words', { exact: true }).waitFor();
+    await first.getByRole('button', { name: 'These are mine — restore them' }).click();
+    await first.getByText('Restored 1 page into your journal.', { exact: true }).waitFor();
+    assert.deepEqual((await seen()).claims.map(({ body }) => body), ['written signed out', 'owed to A', 'nobody\'s to say']);
+    assert.equal(await first.evaluate(() => localStorage.getItem('wm.journal.v2.pages.unclaimed')), null);
+
+    await first.evaluate(() => localStorage.setItem('wm.journal.pages.unclaimed', JSON.stringify({
+      '2026-09-14': { page: { day: '2026-09-14', body: 'still unattributed', mood: 3, energy: 1, source: 'typed', stamp: '1:0:legacy' }, needsPush: true, read: false } })));
+    await first.evaluate(async () => { await (await import('/journal-hook-fixture.js')).showUnclaimed('A'); });
+    await first.getByText('2026-09-14 · 2 words', { exact: true }).waitFor();
+    const revision = await first.evaluate(() => engine.revision);
+    await first.getByRole('button', { name: 'Discard them' }).click();
+    await first.getByText('Deleted from this browser.', { exact: true }).waitFor();
+    assert.deepEqual(await first.evaluate(() => ({ store: localStorage.getItem('wm.journal.pages.unclaimed'), revision: engine.revision })), { store: null, revision });
+
+    await first.evaluate(async () => { await engine.finishSignOut({ choice: 'keep' }); window.helloAs = 'B'; await engine.signIn('B'); });
+    await waitGone('wm.journal.pages.u.B');
+    assert.deepEqual(await seen(), { stores: [], replica: 'B', claims: [{ day: '2026-09-30', body: 'owed to B', mood: 5, energy: 5 }], ledger: 1, meta: [] });
+
+    await first.reload();
+    await first.evaluate(async (name) => { await (await import('/journal-hook-fixture.js')).open(name, { carry: true }); }, name);
+    assert.deepEqual(await seen(), { stores: [], replica: 'B', claims: [{ day: '2026-09-30', body: 'owed to B', mood: 5, energy: 5 }], ledger: 1, meta: [] });
   } finally { await context.close(); }
 });
 
@@ -626,6 +709,30 @@ test('Chromium: midnight carries a staged body into today and sends it at once',
       tick: Number(document.querySelector('main').dataset.saveTick),
       commands: engine.device.activeReplica.entries('self/journal').map((entry) => ({ day: entry.intent.cmd.args.day, body: entry.intent.cmd.args.body })),
     })), { tick: 1, commands: [{ day: '2026-10-02', body: 'staged late words' }] });
+  } finally { await context.close(); }
+});
+
+test('Chromium: words a sign-in refuses stay on the screen unsaved, and reach the account only when the person types again', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    const page = await open(context, 'journal-seat-refusal', null, { carry: true });
+    const textbox = page.getByRole('textbox', { name: 'Body' });
+    await textbox.fill('first words');
+    await page.waitForFunction(() => Number(document.querySelector('main').dataset.saveTick) === 1);
+    const seen = () => page.evaluate(async () => {
+      const { pagesOf } = await import('/src/products/journal/pages.js');
+      return { typed: document.querySelector('textarea').value, state: document.querySelector('main').dataset.saveState,
+        account: engine.getSnapshot().account, stored: pagesOf(engine).map(({ body }) => body) };
+    });
+    await textbox.fill('first words, and more');
+    await page.evaluate(async () => { window.helloAs = 'A'; await engine.signIn('A'); });
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 1500)));
+    assert.deepEqual(await seen(), { typed: 'first words, and more', state: 'unsaved', account: 'A', stored: ['first words'] });
+    await textbox.press('End');
+    await textbox.pressSequentially(' again');
+    await page.waitForFunction(() => Number(document.querySelector('main').dataset.saveTick) === 2);
+    assert.deepEqual(await seen(), { typed: 'first words, and more again', state: 'offline', account: 'A', stored: ['first words, and more again'] });
   } finally { await context.close(); }
 });
 

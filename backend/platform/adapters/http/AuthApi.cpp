@@ -570,7 +570,9 @@ void AuthApi::link(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
 }
 
 void AuthApi::me(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  std::optional<User> user = auth_->authenticate(sessionSecretOf(req), contextOf(req));
+  // Read as the sync doors read a caller, so the session it answers the replica of is the one a push records it on.
+  const SentCaller caller = SentCaller::of(req, *auth_, contextOf(req));
+  const std::optional<User>& user = caller.user;
   if (!user) {
     callback(jsonResponse(Json::Value(Json::objectValue), drogon::k401Unauthorized));
     return;
@@ -590,6 +592,8 @@ void AuthApi::me(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
     methods.append(row);
   }
   body["signInMethods"] = methods;
+  const std::optional<std::string> replica = auth_->syncReplicaOf(caller.credential.session().value_or(""));
+  body["syncReplica"] = replica ? Json::Value(*replica) : Json::Value();
   callback(jsonResponse(body));
 }
 

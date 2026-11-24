@@ -1,5 +1,5 @@
 // The magic-link API. Every failure throws an AuthError whose `code` maps to copy and whose `said` is the
-// server's own sentence, shown as received; fetchMe answers null only for a real 401 and undefined for a blip.
+// server's own sentence, shown as received; fetchMe answers a `user` of null only for a real 401 and undefined for a blip.
 
 import { API_BASE } from '../apiBase.js';
 
@@ -45,16 +45,23 @@ export async function verifyToken(token) {
   throw await errorFrom(response);
 }
 
-export async function fetchMe() {
-  try {
-    const response = await fetch(`${API_BASE}/v1/me`, { credentials: 'include', signal: AbortSignal.timeout(10000) });
-    if (response.status === 401) return null;
-    if (!response.ok) return undefined;
-    const body = await response.json();
-    return body.user;
-  } catch {
+// What the server says of this browser's session: its `user`, and `syncReplica`, the replica the session last pushed for
+// (null until its first accepted push, and from a server that names none). `heard` is told whether the server answered:
+// an answer under 500, where no answer and a 5xx are none.
+export async function fetchMe({ heard = () => {} } = {}) {
+  let response;
+  try { response = await fetch(`${API_BASE}/v1/me`, { credentials: 'include', signal: AbortSignal.timeout(10000) }); }
+  catch {
+    heard(false);
     return undefined;
   }
+  heard(response.status < 500);
+  if (response.status === 401) return { user: null, syncReplica: null };
+  if (!response.ok) return undefined;
+  try {
+    const { user, syncReplica } = await response.json();
+    return { user, syncReplica: typeof syncReplica === 'string' ? syncReplica : null };
+  } catch { return undefined; }
 }
 
 export async function logout() {

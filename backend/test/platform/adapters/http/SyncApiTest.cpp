@@ -1,5 +1,6 @@
 #include "platform/adapters/http/SyncApi.h"
 
+#include "platform/adapters/http/AuthApi.h"
 #include "platform/application/OAuthService.h"
 #include "platform/domain/sync/Jcs.h"
 #include "products/probe/ProbeRegistry.h"
@@ -19,8 +20,9 @@
 // SyncApi's gates, driven over the fakes with requests Drogon parsed from the wire: the 503 it answers on the IO thread
 // when the pool is full, §9.1's envelope in its order (the version, the credentials, the body's size, then its shape),
 // the version as the one value its carrier presents, credentials sent that do not resolve answered 401 whatever their
-// shape and however many lines carry them, each request on a keep-alive connection read with its own lines alone, and a
-// signed-in round trip whose body is JCS and says whom it was served as.
+// shape and however many lines carry them, each request on a keep-alive connection read with its own lines alone, a
+// signed-in round trip whose body is JCS and says whom it was served as, and the replica an accepted push leaves on the
+// session it was served through, which GET /v1/me answers, reading its caller from the same lines by the same rule.
 
 using namespace wm;
 using namespace wm::fake;
@@ -58,7 +60,7 @@ drogon::HttpRequestPtr request(std::string_view method, std::string_view path, c
 }
 
 struct Harness {
-  FakeAuthRepository authRepo;
+  std::shared_ptr<FakeAuthRepository> authRepo = std::make_shared<FakeAuthRepository>();
   FakeEmail email;
   FakeTokens tokens;
   std::shared_ptr<FakeClock> clock = std::make_shared<FakeClock>();
@@ -66,10 +68,11 @@ struct Harness {
   OAuthService oauth{oauthRepo, tokens, *clock};
   FakeAccountFootprint footprint;
   FakeSessionRevocations revocations;
-  std::shared_ptr<AuthService> auth = std::make_shared<AuthService>(authRepo, email, tokens, *clock, oauth, footprint, revocations, "https://windmill.works");
+  std::shared_ptr<AuthService> auth = std::make_shared<AuthService>(*authRepo, email, tokens, *clock, oauth, footprint, revocations, "https://windmill.works");
   sync::test::FakeWorld world;
   sync::Admission admission{world.catalog(), world.store(), world.feed, world.clock(), world.failures};
-  std::shared_ptr<sync::SyncService> service = std::make_shared<sync::SyncService>(world.catalog(), world.store(), admission, *clock);
+  std::shared_ptr<sync::SyncService> service =
+      std::make_shared<sync::SyncService>(world.catalog(), world.store(), admission, *clock, nullptr, authRepo);
 
   sync::SyncApi api(std::size_t queueCeiling) {
     return sync::SyncApi(sync::SyncDeps{.service = service,
@@ -82,8 +85,8 @@ struct Harness {
 
   // A session secret of a new account, whose id the fakes number u1, u2, …
   std::string signIn(const std::string& name) {
-    const User user = authRepo.createUser(Email{name + "@example.com"}, name);
-    authRepo.insertSession(tokens.digestOf("s-" + name), user.id, clock->now + 1'000'000, "", "", clock->now);
+    const User user = authRepo->createUser(Email{name + "@example.com"}, name);
+    authRepo->insertSession(tokens.digestOf("s-" + name), user.id, clock->now + 1'000'000, "", "", clock->now);
     return "s-" + name;
   }
 };
@@ -239,4 +242,106 @@ TEST(sync_api_admits_a_push_naming_the_account_it_is_served_as_and_answers_it_as
            (std::pair<int, std::string>{200, R"({"as":"u1","epoch":"ep-1","lastN":1,"results":[{"n":1,"s":"ok","seq":1}],"serverTime":1700000000000})"}));
   CHECK_EQ(answer(&sync::SyncApi::push, api, request("POST", "/v1/sync/push", push, "2")),
            (std::pair<int, std::string>{401, R"({"as":null,"epoch":"ep-1","error":"unauthenticated","serverTime":1700000000000})"}));
+}
+
+TEST(sync_api_push_records_its_replica_for_the_session_it_is_served_through_and_v1_me_answers_each_session_its_own) {
+  Harness harness;
+  sync::SyncApi api = harness.api(8);
+  AuthApi auth(harness.auth, nullptr, false, SessionCookieScopes{"", ""});
+  const std::string browser = harness.signIn("ann");
+  const std::string phone = "s-ann-phone";
+  harness.authRepo->insertSession(harness.tokens.digestOf(phone), UserId{"u1"}, harness.clock->now + 1'000'000, "", "", harness.clock->now);
+  const sync::HeaderOccurrences byCookie{{"Cookie", "wm_session=" + browser}};
+  const sync::HeaderOccurrences byBearer{{"Authorization", "Bearer " + phone}};
+  const sync::HeaderOccurrences byBoth{{"Authorization", "Bearer " + phone}, {"Cookie", "wm_session=" + browser}};
+  auto push = [&api](const std::string& replica, const std::string& account, const sync::HeaderOccurrences& fields) {
+    const std::string body = R"({"replica":")" + replica + R"(","account":")" + account + R"(","ackThrough":0,"intents":[]})";
+    return answer(&sync::SyncApi::push, api, request("POST", "/v1/sync/push", body, "2", fields)).first;
+  };
+  // GET /v1/me's body, sent the same header lines: its cookie, its bearer, or both.
+  auto me = [&auth](const sync::HeaderOccurrences& fields) {
+    Json::Value body;
+    auth.me(request("GET", "/v1/me", "", "", fields), [&body](const drogon::HttpResponsePtr& response) { body = *response->getJsonObject(); });
+    return body;
+  };
+  auto ann = [](const Json::Value& syncReplica) {
+    Json::Value body = sync::parseJson(R"({"user":{"email":"ann@example.com","id":"u1","name":"ann"},
+        "signInMethods":[{"email":"ann@example.com","kind":"email"}]})");
+    body["syncReplica"] = syncReplica;
+    return body;
+  };
+  const std::string first = "rp_0000000000000000000000000000000a";
+  const std::string phones = "rp_0000000000000000000000000000000b";
+  const std::string reidentified = "rp_0000000000000000000000000000000c";
+  const std::string together = "rp_0000000000000000000000000000000d";
+
+  CHECK_EQ(me(byCookie), ann(Json::Value()));
+  CHECK_EQ(push(first, "u1", byCookie), 200);
+  CHECK_EQ(me(byCookie), ann(first));
+  CHECK_EQ(me(byBearer), ann(Json::Value()));
+
+  CHECK_EQ(push(phones, "u1", byBearer), 200);
+  CHECK_EQ(me(byBearer), ann(phones));
+  CHECK_EQ(me(byCookie), ann(first));
+
+  // A push the server refuses leaves the session's replica as it was; the next one it accepts moves it.
+  CHECK_EQ(push(reidentified, "u2", byCookie), 409);
+  CHECK_EQ(me(byCookie), ann(first));
+  CHECK_EQ(push(reidentified, "u1", byCookie), 200);
+  CHECK_EQ(me(byCookie), ann(reidentified));
+
+  // Sent both, a push is the cookie's session's, and so is GET /v1/me's answer.
+  CHECK_EQ(push(together, "u1", byBoth), 200);
+  CHECK_EQ(me(byBoth), ann(together));
+  CHECK_EQ(me(byBearer), ann(phones));
+}
+
+TEST(sync_api_push_and_v1_me_read_one_session_whatever_shape_the_credentials_take) {
+  Harness harness;
+  sync::SyncApi api = harness.api(8);
+  AuthApi auth(harness.auth, nullptr, false, SessionCookieScopes{"", ""});
+  const std::string browser = harness.signIn("ann");
+  const std::string phone = "s-ann-phone";
+  harness.authRepo->insertSession(harness.tokens.digestOf(phone), UserId{"u1"}, harness.clock->now + 1'000'000, "", "", harness.clock->now);
+  const std::string bob = harness.signIn("bob");
+  auto push = [&api](const std::string& replica, const std::string& account, const sync::HeaderOccurrences& fields) {
+    const std::string body = R"({"replica":")" + replica + R"(","account":")" + account + R"(","ackThrough":0,"intents":[]})";
+    return answer(&sync::SyncApi::push, api, request("POST", "/v1/sync/push", body, "2", fields)).first;
+  };
+  // GET /v1/me's body, sent the same header lines; a 401 answers {}.
+  auto me = [&auth](const sync::HeaderOccurrences& fields) {
+    Json::Value body;
+    auth.me(request("GET", "/v1/me", "", "", fields), [&body](const drogon::HttpResponsePtr& response) { body = *response->getJsonObject(); });
+    return body;
+  };
+  auto ann = [](const Json::Value& syncReplica) {
+    Json::Value body = sync::parseJson(R"({"user":{"email":"ann@example.com","id":"u1","name":"ann"},
+        "signInMethods":[{"email":"ann@example.com","kind":"email"}]})");
+    body["syncReplica"] = syncReplica;
+    return body;
+  };
+  const Json::Value unauthenticated(Json::objectValue);
+  const std::string phones = "rp_0000000000000000000000000000000b";
+  const std::string browsers = "rp_0000000000000000000000000000000c";
+
+  // The Bearer scheme is read in any case.
+  const sync::HeaderOccurrences lowercaseBearer{{"Authorization", "bearer " + phone}};
+  CHECK_EQ(push(phones, "u1", lowercaseBearer), 200);
+  CHECK_EQ(me(lowercaseBearer), ann(phones));
+
+  // A session cookie piece with no `=` carries no token, and fails the request whatever bearer is sent beside it.
+  const sync::HeaderOccurrences bareCookie{{"Cookie", "theme=dark; wm_session"}, {"Authorization", "Bearer " + phone}};
+  CHECK_EQ(push(browsers, "u1", bareCookie), 401);
+  CHECK_EQ(me(bareCookie), unauthenticated);
+
+  // A cookie and a bearer of two accounts serve the request as neither.
+  const sync::HeaderOccurrences twoAccounts{{"Cookie", "wm_session=" + browser}, {"Authorization", "Bearer " + bob}};
+  CHECK_EQ(push(browsers, "u1", twoAccounts), 401);
+  CHECK_EQ(me(twoAccounts), unauthenticated);
+
+  // A session cookie on a second Cookie line is the cookie, and its session is the one both read.
+  const sync::HeaderOccurrences secondCookieLine{{"Cookie", "theme=dark"}, {"Cookie", "wm_session=" + browser}, {"Authorization", "Bearer " + phone}};
+  CHECK_EQ(push(browsers, "u1", secondCookieLine), 200);
+  CHECK_EQ(me(secondCookieLine), ann(browsers));
+  CHECK_EQ(me({{"Authorization", "Bearer " + phone}}), ann(phones));
 }

@@ -161,7 +161,9 @@ for (const width of [320, 390, 744, 1024, 1440]) {
         await coach.click();
       }
       await page.setViewportSize({ width: width === 320 ? 390 : 320, height: 700 });
+      await page.locator('.st-step-read-shell.is-phone').waitFor();
       await page.setViewportSize({ width, height: 700 });
+      await page.locator(`.st-step-read-shell${width < 744 ? '.is-phone' : ':not(.is-phone)'}`).waitFor();
       assert.deepEqual(await input.evaluate((node) => [node.value, node.selectionStart, node.selectionEnd, node.scrollTop]), before);
       const controls = page.getByRole('button', { name: /^(Save|Cancel)$/ }).filter({ visible: true });
       assert.deepEqual(await controls.evaluateAll((nodes) => nodes.map((node) => {

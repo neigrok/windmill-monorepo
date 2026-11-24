@@ -21,7 +21,7 @@
       "readOver": []
     },
     "expect": {
-      "text": "# Learn to sail\n<!-- windmill:roadmap -->\n- [x] Choose a course <!-- windmill:kind sky -->\n  Start nearby.\n  Check the dates.\n  https://example.com/course\n  - [x] Read the wind <!-- windmill:kind olive -->\n    - Leave the dock <!-- windmill:kind sky -->\n- [x] Pack a bag <!-- windmill:kind gold -->",
+      "text": "# Learn to sail\n<!-- windmill:roadmap 2 -->\n- [x] Choose a course <!-- windmill:kind sky -->\n  > Start nearby.\n  > Check the dates.\n  <https://example.com/course>\n  - [x] Read the wind <!-- windmill:kind olive -->\n    - Leave the dock <!-- windmill:kind sky -->\n- [x] Pack a bag <!-- windmill:kind gold -->",
       "readBack": {
         "title": "Learn to sail",
         "missingRoot": false,
@@ -47,13 +47,13 @@
           {"mark": "done", "nodeId": "choose-a-course", "liberties": []},
           {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
           {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
-          {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "choose-a-course", "liberties": []},
           {"mark": "done", "nodeId": "read-the-wind", "liberties": []},
           {"mark": "step", "nodeId": "leave-the-dock", "liberties": []},
           {"mark": "done", "nodeId": "pack-a-bag", "liberties": []}
         ],
         "readout": {"steps": 4, "branches": 0, "done": 3},
-        "imperfections": {"notes": 3, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -83,7 +83,7 @@
       ]
     },
     "expect": {
-      "text": "# Learn to sail\n<!-- windmill:roadmap -->\n- [x] Choose a course <!-- windmill:kind sky -->\n  Start nearby.\n  Check the dates.\n  https://example.com/course\n  - [x] Read the wind <!-- windmill:kind olive -->\n    - Leave the dock <!-- windmill:kind sky -->\n- [x] Pack a bag <!-- windmill:kind gold -->",
+      "text": "# Learn to sail\n<!-- windmill:roadmap 2 -->\n- [x] Choose a course <!-- windmill:kind sky -->\n  > Start nearby.\n  > Check the dates.\n  <https://example.com/course>\n  - [x] Read the wind <!-- windmill:kind olive -->\n    - Leave the dock <!-- windmill:kind sky -->\n- [x] Pack a bag <!-- windmill:kind gold -->",
       "readBack": {
         "title": "Learn to sail",
         "missingRoot": false,
@@ -113,13 +113,13 @@
           {"mark": "done", "nodeId": "choose-a-course", "liberties": []},
           {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
           {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
-          {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "choose-a-course", "liberties": []},
           {"mark": "done", "nodeId": "read-the-wind", "liberties": []},
           {"mark": "step", "nodeId": "leave-the-dock", "liberties": []},
           {"mark": "done", "nodeId": "pack-a-bag", "liberties": []}
         ],
         "readout": {"steps": 4, "branches": 0, "done": 3},
-        "imperfections": {"notes": 3, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -141,7 +141,7 @@
       ]
     },
     "expect": {
-      "text": "# A roadmap\n<!-- windmill:roadmap -->",
+      "text": "# A roadmap\n<!-- windmill:roadmap 2 -->",
       "readBack": {
         "title": "A roadmap",
         "missingRoot": false,
@@ -153,7 +153,7 @@
         ],
         "gutter": [{"mark": null, "nodeId": null, "liberties": []}, {"mark": null, "nodeId": null, "liberties": []}],
         "readout": {"steps": 0, "branches": 0, "done": 0},
-        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -161,7 +161,7 @@
     "name": "An empty name is a lone hash",
     "input": {"title": "", "kinds": [], "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": []}], "done": [], "readOver": []},
     "expect": {
-      "text": "# \n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky -->",
+      "text": "# \n<!-- windmill:roadmap 2 -->\n- A <!-- windmill:kind sky -->",
       "readBack": {
         "title": "",
         "missingRoot": false,
@@ -173,7 +173,7 @@
           {"mark": "step", "nodeId": "a", "liberties": []}
         ],
         "readout": {"steps": 1, "branches": 0, "done": 0},
-        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -181,7 +181,7 @@
     "name": "A name that is a hash is two",
     "input": {"title": "#", "kinds": [], "nodes": [], "done": [], "readOver": []},
     "expect": {
-      "text": "# #\n<!-- windmill:roadmap -->",
+      "text": "# #\n<!-- windmill:roadmap 2 -->",
       "readBack": {
         "title": "#",
         "missingRoot": false,
@@ -189,28 +189,28 @@
         "kinds": [],
         "gutter": [{"mark": null, "nodeId": null, "liberties": []}, {"mark": null, "nodeId": null, "liberties": []}],
         "readout": {"steps": 0, "branches": 0, "done": 0},
-        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
   {
-    "name": "A name is written as it is: its padding is lost on the way back, and its hashes are kept",
+    "name": "A name is written with its padding as entities, and reads back with its padding and its hashes",
     "input": {"title": "  ## Sail ##  ", "kinds": [], "nodes": [], "done": [], "readOver": []},
     "expect": {
-      "text": "#   ## Sail ##  \n<!-- windmill:roadmap -->",
+      "text": "# &#32;&#32;## Sail ##&#32;&#32;\n<!-- windmill:roadmap 2 -->",
       "readBack": {
-        "title": "## Sail ##",
+        "title": "  ## Sail ##  ",
         "missingRoot": false,
         "nodes": [],
         "kinds": [],
         "gutter": [{"mark": null, "nodeId": null, "liberties": []}, {"mark": null, "nodeId": null, "liberties": []}],
         "readout": {"steps": 0, "branches": 0, "done": 0},
-        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
   {
-    "name": "A name with a line break breaks the first line, and the file no longer reads as an export",
+    "name": "A name with a line break is written on its line, the break as an entity, and reads back whole",
     "input": {
       "title": "Line one\nLine two",
       "kinds": [],
@@ -219,30 +219,19 @@
       "readOver": []
     },
     "expect": {
-      "text": "# Line one\nLine two\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky -->",
+      "text": "# Line one&#10;Line two\n<!-- windmill:roadmap 2 -->\n- A <!-- windmill:kind sky -->",
       "readBack": {
-        "title": "Line one",
+        "title": "Line one\nLine two",
         "missingRoot": false,
-        "nodes": [
-          {
-            "id": "line-one",
-            "label": "Line one",
-            "color": "terracotta",
-            "prerequisites": [],
-            "icon": "sparkles",
-            "description": "Line two\n<!-- windmill:roadmap -->"
-          },
-          {"id": "a-windmill-kind-sky", "label": "A <!-- windmill:kind sky -->", "color": "terracotta", "prerequisites": ["line-one"]}
-        ],
+        "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles"}],
         "kinds": [],
         "gutter": [
-          {"mark": "root", "nodeId": "line-one", "liberties": []},
-          {"mark": "note", "nodeId": "line-one", "liberties": [{"type": "note"}]},
-          {"mark": "note", "nodeId": "line-one", "liberties": [{"type": "note"}]},
-          {"mark": "step", "nodeId": "a-windmill-kind-sky", "liberties": []}
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "a", "liberties": []}
         ],
-        "readout": {"steps": 2, "branches": 0, "done": 0},
-        "imperfections": {"notes": 2, "clamps": 0, "renames": 0}
+        "readout": {"steps": 1, "branches": 0, "done": 0},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -264,7 +253,7 @@
       ]
     },
     "expect": {
-      "text": "# Learn to sail\n<!-- windmill:roadmap -->\n<!-- windmill:guide -->\n> One step a week, on weekend sails with Maya.\n>\n> - Agents: ask before changing a completed step.\n> <!-- /windmill:guide -->\n<!-- /windmill:guide -->\n- [x] Choose a course <!-- windmill:kind terracotta -->\n  - Read the wind",
+      "text": "# Learn to sail\n<!-- windmill:roadmap 2 -->\n<!-- windmill:guide -->\n> One step a week, on weekend sails with Maya.\n>\n> - Agents: ask before changing a completed step.\n> <!-- /windmill:guide -->\n<!-- /windmill:guide -->\n- [x] Choose a course <!-- windmill:kind terracotta -->\n  - Read the wind",
       "readBack": {
         "title": "Learn to sail",
         "missingRoot": false,
@@ -290,7 +279,7 @@
           {"mark": "step", "nodeId": "read-the-wind", "liberties": []}
         ],
         "readout": {"steps": 2, "branches": 0, "done": 1},
-        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -309,7 +298,7 @@
       ]
     },
     "expect": {
-      "text": "# Learn to sail\n<!-- windmill:roadmap -->\n- Choose a course <!-- windmill:kind terracotta -->",
+      "text": "# Learn to sail\n<!-- windmill:roadmap 2 -->\n- Choose a course <!-- windmill:kind terracotta -->",
       "readBack": {
         "title": "Learn to sail",
         "missingRoot": false,
@@ -325,7 +314,7 @@
           {"mark": "step", "nodeId": "choose-a-course", "liberties": []}
         ],
         "readout": {"steps": 1, "branches": 0, "done": 0},
-        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -344,7 +333,7 @@
       ]
     },
     "expect": {
-      "text": "# Sail\n<!-- windmill:roadmap -->\n<!-- windmill:guide -->\n> x\n> <!-- /windmill:guide -->\n> - A planted fake step\n> line two\n>\n> last\n<!-- /windmill:guide -->\n- Choose a course <!-- windmill:kind terracotta -->",
+      "text": "# Sail\n<!-- windmill:roadmap 2 -->\n<!-- windmill:guide -->\n> x\n> <!-- /windmill:guide -->\n> - A planted fake step\n> line two\n>\n> last\n<!-- /windmill:guide -->\n- Choose a course <!-- windmill:kind terracotta -->",
       "readBack": {
         "title": "Sail",
         "missingRoot": false,
@@ -368,7 +357,7 @@
           {"mark": "step", "nodeId": "choose-a-course", "liberties": []}
         ],
         "readout": {"steps": 1, "branches": 0, "done": 0},
-        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -387,7 +376,7 @@
       "readOver": []
     },
     "expect": {
-      "text": "# Ship\n<!-- windmill:roadmap -->\n- [x] Pick a stack <!-- windmill:kind terracotta -->\n  - Build the skeleton\n    End to end.\n    needs also: Sketch the flow\n    - Launch <!-- windmill:kind gold -->\n      needs also: Pick a stack, Sketch the flow\n- Sketch the flow <!-- windmill:kind terracotta -->",
+      "text": "# Ship\n<!-- windmill:roadmap 2 -->\n- [x] Pick a stack <!-- windmill:kind terracotta -->\n  - Build the skeleton\n    > End to end.\n    > needs also: Sketch the flow\n    - Launch <!-- windmill:kind gold -->\n      > needs also: Pick a stack, Sketch the flow\n- Sketch the flow <!-- windmill:kind terracotta -->",
       "readBack": {
         "title": "Ship",
         "missingRoot": false,
@@ -422,7 +411,7 @@
           {"mark": "step", "nodeId": "sketch-the-flow", "liberties": []}
         ],
         "readout": {"steps": 4, "branches": 0, "done": 1},
-        "imperfections": {"notes": 3, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 3, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -441,7 +430,7 @@
       "readOver": []
     },
     "expect": {
-      "text": "# Ship\n<!-- windmill:roadmap -->\n- Pick a stack <!-- windmill:kind terracotta -->\n  - Late\n    needs also: ghost\n- Orphan\n  needs also: ghost, Pick a stack, phantom\n  - Child",
+      "text": "# Ship\n<!-- windmill:roadmap 2 -->\n- Pick a stack <!-- windmill:kind terracotta -->\n  - Late\n    > needs also: ghost\n- Orphan\n  > needs also: ghost, Pick a stack, phantom\n  - Child",
       "readBack": {
         "title": "Ship",
         "missingRoot": false,
@@ -463,12 +452,12 @@
           {"mark": "step", "nodeId": "child", "liberties": []}
         ],
         "readout": {"steps": 4, "branches": 0, "done": 0},
-        "imperfections": {"notes": 2, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
   {
-    "name": "Steps on a loop, and the steps behind them, are not written",
+    "name": "Steps on a loop, and the steps behind them, are written after the rest, each that no step above reaches as a first step naming every step it follows",
     "input": {
       "title": "Loop",
       "kinds": [],
@@ -484,13 +473,17 @@
       "readOver": []
     },
     "expect": {
-      "text": "# Loop\n<!-- windmill:roadmap -->\n- R <!-- windmill:kind sky -->\n  - Free\n    needs also: A",
+      "text": "# Loop\n<!-- windmill:roadmap 2 -->\n- R <!-- windmill:kind sky -->\n  - Free\n    > needs also: A\n- [x] A\n  > needs also: B\n  - B\n    > needs also: R\n  - Behind\n- [x] Self\n  > needs also: Self",
       "readBack": {
         "title": "Loop",
         "missingRoot": false,
         "nodes": [
           {"id": "r", "label": "R", "color": "sky", "prerequisites": [], "icon": "sparkles"},
-          {"id": "free", "label": "Free", "color": "sky", "prerequisites": ["r"], "description": "needs also: A"}
+          {"id": "free", "label": "Free", "color": "sky", "prerequisites": ["r"], "description": "needs also: A"},
+          {"id": "a", "label": "A", "color": "sky", "prerequisites": [], "status": "complete", "description": "needs also: B"},
+          {"id": "b", "label": "B", "color": "sky", "prerequisites": ["a"], "description": "needs also: R"},
+          {"id": "behind", "label": "Behind", "color": "sky", "prerequisites": ["a"]},
+          {"id": "self", "label": "Self", "color": "sky", "prerequisites": [], "status": "complete", "description": "needs also: Self"}
         ],
         "kinds": [],
         "gutter": [
@@ -498,10 +491,54 @@
           {"mark": null, "nodeId": null, "liberties": []},
           {"mark": "step", "nodeId": "r", "liberties": []},
           {"mark": "step", "nodeId": "free", "liberties": []},
-          {"mark": "note", "nodeId": "free", "liberties": [{"type": "note"}]}
+          {"mark": "note", "nodeId": "free", "liberties": [{"type": "note"}]},
+          {"mark": "done", "nodeId": "a", "liberties": []},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+          {"mark": "step", "nodeId": "b", "liberties": []},
+          {"mark": "note", "nodeId": "b", "liberties": [{"type": "note"}]},
+          {"mark": "step", "nodeId": "behind", "liberties": []},
+          {"mark": "done", "nodeId": "self", "liberties": []},
+          {"mark": "note", "nodeId": "self", "liberties": [{"type": "note"}]}
         ],
-        "readout": {"steps": 2, "branches": 0, "done": 0},
-        "imperfections": {"notes": 1, "clamps": 0, "renames": 0}
+        "readout": {"steps": 6, "branches": 0, "done": 2},
+        "imperfections": {"notes": 4, "clamps": 0, "renames": 0, "clips": 0}
+      }
+    }
+  },
+  {
+    "name": "A step behind a loop that comes before it is written under the loop, which is broken at the first step of it met up from there",
+    "input": {
+      "title": "Behind a loop",
+      "kinds": [],
+      "nodes": [
+        {"id": "behind", "label": "Behind", "color": "sky", "prerequisites": ["a"]},
+        {"id": "a", "label": "A", "color": "sky", "prerequisites": ["b"]},
+        {"id": "b", "label": "B", "color": "sky", "prerequisites": ["a"]}
+      ],
+      "done": ["behind"],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Behind a loop\n<!-- windmill:roadmap 2 -->\n- A <!-- windmill:kind sky -->\n  > needs also: B\n  - [x] Behind\n  - B",
+      "readBack": {
+        "title": "Behind a loop",
+        "missingRoot": false,
+        "nodes": [
+          {"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles", "description": "needs also: B"},
+          {"id": "behind", "label": "Behind", "color": "sky", "prerequisites": ["a"], "status": "complete"},
+          {"id": "b", "label": "B", "color": "sky", "prerequisites": ["a"]}
+        ],
+        "kinds": [],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "a", "liberties": []},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+          {"mark": "done", "nodeId": "behind", "liberties": []},
+          {"mark": "step", "nodeId": "b", "liberties": []}
+        ],
+        "readout": {"steps": 3, "branches": 0, "done": 1},
+        "imperfections": {"notes": 1, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -530,7 +567,7 @@
       ]
     },
     "expect": {
-      "text": "# Kinds\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky Sea -->\n  - B\n  - C <!-- windmill:kind gold -->\n    - D <!-- windmill:kind sky Sea -->\n- E <!-- windmill:kind olive -->\n- F",
+      "text": "# Kinds\n<!-- windmill:roadmap 2 -->\n- A <!-- windmill:kind sky Sea -->\n  - B\n  - C <!-- windmill:kind gold -->\n    - D <!-- windmill:kind sky Sea -->\n- E <!-- windmill:kind olive -->\n- F",
       "readBack": {
         "title": "Kinds",
         "missingRoot": false,
@@ -559,7 +596,7 @@
           {"mark": "step", "nodeId": "f", "liberties": []}
         ],
         "readout": {"steps": 6, "branches": 0, "done": 0},
-        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -573,7 +610,7 @@
       "readOver": []
     },
     "expect": {
-      "text": "# Kinds\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky Second -->",
+      "text": "# Kinds\n<!-- windmill:roadmap 2 -->\n- A <!-- windmill:kind sky Second -->",
       "readBack": {
         "title": "Kinds",
         "missingRoot": false,
@@ -585,7 +622,7 @@
           {"mark": "step", "nodeId": "a", "liberties": []}
         ],
         "readout": {"steps": 1, "branches": 0, "done": 0},
-        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -604,7 +641,7 @@
       "readOver": []
     },
     "expect": {
-      "text": "# Plan\n<!-- windmill:roadmap -->\n- Same <!-- windmill:kind sky A &#45;&#45;&#62; B &#38; C&#10;D -->\n  - Same\n    - Second &#60;!-- windmill:kind gold --&#62;\n      - R&#38;D &#60;b&#62;&#13;&#10;&#38;#38; - done",
+      "text": "# Plan\n<!-- windmill:roadmap 2 -->\n- Same <!-- windmill:kind sky A &#45;&#45;&#62; B &#38; C&#10;D -->\n  - Same\n    - Second &#60;!-- windmill:kind gold --&#62;\n      - R&#38;D &#60;b&#62;&#13;&#10;&#38;#38; - done",
       "readBack": {
         "title": "Plan",
         "missingRoot": false,
@@ -624,12 +661,12 @@
           {"mark": "step", "nodeId": "r-d-b-38-done", "liberties": []}
         ],
         "readout": {"steps": 4, "branches": 0, "done": 0},
-        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
   {
-    "name": "A name that begins like a checkbox reads back as a mark",
+    "name": "A name that begins like a checkbox is written with its bracket as an entity, and reads back as its name",
     "input": {
       "title": "Boxes",
       "kinds": [],
@@ -642,78 +679,77 @@
       "readOver": []
     },
     "expect": {
-      "text": "# Boxes\n<!-- windmill:roadmap -->\n- [x] marks the spot <!-- windmill:kind sky -->\n- [ ] open box\n- [x] [ ] done box",
+      "text": "# Boxes\n<!-- windmill:roadmap 2 -->\n- &#91;x] marks the spot <!-- windmill:kind sky -->\n- &#91; ] open box\n- [x] &#91; ] done box",
       "readBack": {
         "title": "Boxes",
         "missingRoot": false,
         "nodes": [
-          {"id": "marks-the-spot", "label": "marks the spot", "color": "sky", "prerequisites": [], "icon": "sparkles", "status": "complete"},
-          {"id": "open-box", "label": "open box", "color": "sky", "prerequisites": []},
+          {"id": "x-marks-the-spot", "label": "[x] marks the spot", "color": "sky", "prerequisites": [], "icon": "sparkles"},
+          {"id": "open-box", "label": "[ ] open box", "color": "sky", "prerequisites": []},
           {"id": "done-box", "label": "[ ] done box", "color": "sky", "prerequisites": [], "status": "complete"}
         ],
         "kinds": [],
         "gutter": [
           {"mark": null, "nodeId": null, "liberties": []},
           {"mark": null, "nodeId": null, "liberties": []},
-          {"mark": "done", "nodeId": "marks-the-spot", "liberties": []},
+          {"mark": "step", "nodeId": "x-marks-the-spot", "liberties": []},
           {"mark": "step", "nodeId": "open-box", "liberties": []},
           {"mark": "done", "nodeId": "done-box", "liberties": []}
         ],
-        "readout": {"steps": 3, "branches": 0, "done": 2},
-        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+        "readout": {"steps": 3, "branches": 0, "done": 1},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
   {
-    "name": "A note is written line for line as it is, so a list line in it reads back as a step, a heading as a kind, an address as a link, and a blank line is lost",
+    "name": "A description is written line for line as a quote, so its list lines, headings, addresses, blank lines and padding read back as they are",
     "input": {
       "title": "Notes",
       "kinds": [],
       "nodes": [
-        {
-          "id": "a",
-          "label": "A",
-          "color": "sky",
-          "prerequisites": [],
-          "description": "Things:\n- one\n- two\n\n## heading\nhttps://x.example/y\n  padded"
-        },
+        {"id": "a", "label": "A", "color": "sky", "prerequisites": [], "description": "Things:\n- one\n- two\n\n## heading\nhttps://x.example/y\n  padded"},
         {"id": "b", "label": "B", "color": "sky", "prerequisites": ["a"]}
       ],
       "done": [],
       "readOver": []
     },
     "expect": {
-      "text": "# Notes\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky -->\n  Things:\n  - one\n  - two\n  \n  ## heading\n  https://x.example/y\n    padded\n  - B",
+      "text": "# Notes\n<!-- windmill:roadmap 2 -->\n- A <!-- windmill:kind sky -->\n  > Things:\n  > - one\n  > - two\n  >\n  > ## heading\n  > https://x.example/y\n  >   padded\n  - B",
       "readBack": {
         "title": "Notes",
         "missingRoot": false,
         "nodes": [
-          {"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles", "description": "Things:"},
-          {"id": "one", "label": "one", "color": "sky", "prerequisites": ["a"]},
-          {"id": "two", "label": "two", "color": "sky", "prerequisites": ["a"], "description": "padded", "links": ["https://x.example/y"]},
-          {"id": "b", "label": "B", "color": "terracotta", "prerequisites": ["a"]}
+          {
+            "id": "a",
+            "label": "A",
+            "color": "sky",
+            "prerequisites": [],
+            "icon": "sparkles",
+            "description": "Things:\n- one\n- two\n\n## heading\nhttps://x.example/y\n  padded"
+          },
+          {"id": "b", "label": "B", "color": "sky", "prerequisites": ["a"]}
         ],
-        "kinds": [{"id": "heading", "hue": "terracotta", "label": "heading", "description": "", "source": "added"}],
+        "kinds": [],
         "gutter": [
           {"mark": null, "nodeId": null, "liberties": []},
           {"mark": null, "nodeId": null, "liberties": []},
           {"mark": "step", "nodeId": "a", "liberties": []},
           {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-          {"mark": "step", "nodeId": "one", "liberties": []},
-          {"mark": "step", "nodeId": "two", "liberties": []},
-          {"mark": null, "nodeId": null, "liberties": []},
-          {"mark": null, "nodeId": null, "liberties": []},
-          {"mark": "note", "nodeId": "two", "liberties": [{"type": "note"}]},
-          {"mark": "note", "nodeId": "two", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
           {"mark": "step", "nodeId": "b", "liberties": []}
         ],
-        "readout": {"steps": 4, "branches": 0, "done": 0},
-        "imperfections": {"notes": 3, "clamps": 0, "renames": 0}
+        "readout": {"steps": 2, "branches": 0, "done": 0},
+        "imperfections": {"notes": 7, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
   {
-    "name": "An unnamed step is a marker and a space, done or not; at a change of kind the kind marker reads back as its name",
+    "name": "An unnamed step is a marker and a space, done or not, and reads back unnamed at a change of kind too",
     "input": {
       "title": "Blank",
       "kinds": [{"id": "sea", "hue": "sky", "label": "Sea", "description": ""}],
@@ -726,30 +762,30 @@
       "readOver": []
     },
     "expect": {
-      "text": "# Blank\n<!-- windmill:roadmap -->\n-  <!-- windmill:kind sky Sea -->\n  - [x] \n  -   padded   <!-- windmill:kind gold -->",
+      "text": "# Blank\n<!-- windmill:roadmap 2 -->\n-  <!-- windmill:kind sky Sea -->\n  - [x] \n  - &#32;&#32;padded&#32;&#32; <!-- windmill:kind gold -->",
       "readBack": {
         "title": "Blank",
         "missingRoot": false,
         "nodes": [
-          {"id": "windmill-kind-sky-sea", "label": "<!-- windmill:kind sky Sea -->", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
-          {"id": "step", "label": "", "color": "terracotta", "prerequisites": ["windmill-kind-sky-sea"], "status": "complete"},
-          {"id": "padded", "label": "padded  ", "color": "gold", "prerequisites": ["windmill-kind-sky-sea"]}
+          {"id": "root", "label": "", "color": "sky", "prerequisites": [], "icon": "sparkles"},
+          {"id": "step", "label": "", "color": "sky", "prerequisites": ["root"], "status": "complete"},
+          {"id": "padded", "label": "  padded  ", "color": "gold", "prerequisites": ["root"]}
         ],
-        "kinds": [],
+        "kinds": [{"id": "sea", "hue": "sky", "label": "Sea", "description": "", "source": "added"}],
         "gutter": [
           {"mark": null, "nodeId": null, "liberties": []},
           {"mark": null, "nodeId": null, "liberties": []},
-          {"mark": "step", "nodeId": "windmill-kind-sky-sea", "liberties": []},
+          {"mark": "step", "nodeId": "root", "liberties": []},
           {"mark": "done", "nodeId": "step", "liberties": []},
           {"mark": "step", "nodeId": "padded", "liberties": []}
         ],
         "readout": {"steps": 3, "branches": 0, "done": 1},
-        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
   {
-    "name": "A description is cut at LF alone: a CR in it is written as it is, and ends a line on the way back",
+    "name": "A description is cut at LF alone, and a CR in it is written as an entity and reads back",
     "input": {
       "title": "Notes",
       "kinds": [],
@@ -758,11 +794,11 @@
       "readOver": []
     },
     "expect": {
-      "text": "# Notes\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky -->\n  one\r\n  two\rthree\n  \n  four",
+      "text": "# Notes\n<!-- windmill:roadmap 2 -->\n- A <!-- windmill:kind sky -->\n  > one&#13;\n  > two&#13;three\n  >\n  > four",
       "readBack": {
         "title": "Notes",
         "missingRoot": false,
-        "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles", "description": "one\ntwo\nthree\nfour"}],
+        "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles", "description": "one\r\ntwo\rthree\n\nfour"}],
         "kinds": [],
         "gutter": [
           {"mark": null, "nodeId": null, "liberties": []},
@@ -771,16 +807,15 @@
           {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
           {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
           {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-          {"mark": null, "nodeId": null, "liberties": []},
           {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
         ],
         "readout": {"steps": 1, "branches": 0, "done": 0},
-        "imperfections": {"notes": 4, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 4, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
   {
-    "name": "A link is written by its address whatever its scheme; one with no address is not written; only http and https read back as links",
+    "name": "A link is written by its address in angle brackets whatever its scheme, and reads back as a link; one with no address is not written",
     "input": {
       "title": "Links",
       "kinds": [],
@@ -803,7 +838,7 @@
       "readOver": []
     },
     "expect": {
-      "text": "# Links\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky -->\n  https://example.com/a\n  mailto:a@b.example\n  www.example.com\n  https://example.com/with space",
+      "text": "# Links\n<!-- windmill:roadmap 2 -->\n- A <!-- windmill:kind sky -->\n  <https://example.com/a>\n  <mailto:a@b.example>\n  <www.example.com>\n  <https://example.com/with&#32;space>",
       "readBack": {
         "title": "Links",
         "missingRoot": false,
@@ -814,8 +849,7 @@
             "color": "sky",
             "prerequisites": [],
             "icon": "sparkles",
-            "description": "mailto:a@b.example\nwww.example.com\nhttps://example.com/with space",
-            "links": ["https://example.com/a"]
+            "links": ["https://example.com/a", "mailto:a@b.example", "www.example.com", "https://example.com/with space"]
           }
         ],
         "kinds": [],
@@ -823,13 +857,13 @@
           {"mark": null, "nodeId": null, "liberties": []},
           {"mark": null, "nodeId": null, "liberties": []},
           {"mark": "step", "nodeId": "a", "liberties": []},
-          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
-          {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
+          {"mark": "note", "nodeId": "a", "liberties": []},
+          {"mark": "note", "nodeId": "a", "liberties": []},
+          {"mark": "note", "nodeId": "a", "liberties": []},
+          {"mark": "note", "nodeId": "a", "liberties": []}
         ],
         "readout": {"steps": 1, "branches": 0, "done": 0},
-        "imperfections": {"notes": 4, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -843,7 +877,7 @@
       "readOver": []
     },
     "expect": {
-      "text": "# Marks\n<!-- windmill:roadmap -->\n- A <!-- windmill:kind sky -->\n  - [x] B",
+      "text": "# Marks\n<!-- windmill:roadmap 2 -->\n- A <!-- windmill:kind sky -->\n  - [x] B",
       "readBack": {
         "title": "Marks",
         "missingRoot": false,
@@ -859,7 +893,7 @@
           {"mark": "done", "nodeId": "b", "liberties": []}
         ],
         "readout": {"steps": 2, "branches": 0, "done": 1},
-        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -879,7 +913,7 @@
       "readOver": []
     },
     "expect": {
-      "text": "# Order\n<!-- windmill:roadmap -->\n- Z first <!-- windmill:kind sky -->\n- Parent\n  - Child\n  - Second child\n- A last",
+      "text": "# Order\n<!-- windmill:roadmap 2 -->\n- Z first <!-- windmill:kind sky -->\n- Parent\n  - Child\n  - Second child\n- A last",
       "readBack": {
         "title": "Order",
         "missingRoot": false,
@@ -901,7 +935,7 @@
           {"mark": "step", "nodeId": "a-last", "liberties": []}
         ],
         "readout": {"steps": 5, "branches": 0, "done": 0},
-        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -928,7 +962,7 @@
       "readOver": []
     },
     "expect": {
-      "text": "# Deep\n<!-- windmill:roadmap -->\n- [x] Level 0 <!-- windmill:kind sky -->\n  - [x] Level 1\n    - Level 2\n      - Level 3\n        - Level 4\n          - Level 5\n            - Level 6\n              - Level 7\n                - Level 8\n                  - Level 9\n                    - Level 10\n                      - Level 11",
+      "text": "# Deep\n<!-- windmill:roadmap 2 -->\n- [x] Level 0 <!-- windmill:kind sky -->\n  - [x] Level 1\n    - Level 2\n      - Level 3\n        - Level 4\n          - Level 5\n            - Level 6\n              - Level 7\n                - Level 8\n                  - Level 9\n                    - Level 10\n                      - Level 11",
       "readBack": {
         "title": "Deep",
         "missingRoot": false,
@@ -964,7 +998,7 @@
           {"mark": "step", "nodeId": "level-11", "liberties": []}
         ],
         "readout": {"steps": 12, "branches": 0, "done": 2},
-        "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   },
@@ -983,7 +1017,7 @@
       "readOver": []
     },
     "expect": {
-      "text": "# Учить языки 🚀\n<!-- windmill:roadmap -->\n<!-- windmill:guide -->\n> Каждый день по шагу.\n> 毎日一歩。\n<!-- /windmill:guide -->\n- Привет, мир <!-- windmill:kind plum Слова e\u0301 👍🏽 -->\n  مرحبا بالعالم\n  שלום עולם\n  - [x] 你好，世界\n  - 👨\u200d👩\u200d👧 e\u0301 Z\u0351a\u0306",
+      "text": "# Учить языки 🚀\n<!-- windmill:roadmap 2 -->\n<!-- windmill:guide -->\n> Каждый день по шагу.\n> 毎日一歩。\n<!-- /windmill:guide -->\n- Привет, мир <!-- windmill:kind plum Слова e\u0301 👍🏽 -->\n  > مرحبا بالعالم\n  > שלום עולם\n  - [x] 你好，世界\n  - 👨\u200d👩\u200d👧 e\u0301 Z\u0351a\u0306",
       "readBack": {
         "title": "Учить языки 🚀",
         "missingRoot": false,
@@ -1007,7 +1041,94 @@
           {"mark": "step", "nodeId": "e-z-a", "liberties": []}
         ],
         "readout": {"steps": 3, "branches": 0, "done": 1},
-        "imperfections": {"notes": 2, "clamps": 0, "renames": 0}
+        "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
+      }
+    }
+  },
+  {
+    "name": "Separators, a name of whitespace alone, a padded kind label and text that looks like an entity or a link read back as they are",
+    "input": {
+      "title": "Odd \u2028 names",
+      "kinds": [{"id": "k", "hue": "olive", "label": " Sea\u3000", "description": ""}],
+      "nodes": [
+        {"id": "a", "label": "one\u2028two\u2029three", "color": "sky", "prerequisites": []},
+        {"id": "b", "label": " \t\u00a0", "color": "olive", "prerequisites": ["a"], "description": "\tindented &#38; literal\n<not a link>"},
+        {"id": "c", "label": "- not a list", "color": "olive", "prerequisites": ["b"], "links": [{"url": "https://example.com/a&b<c>", "label": ""}]}
+      ],
+      "done": ["b"],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Odd &#8232; names\n<!-- windmill:roadmap 2 -->\n- one&#8232;two&#8233;three <!-- windmill:kind sky -->\n  - [x] &#32;&#9;&#160; <!-- windmill:kind olive &#32;Sea&#12288; -->\n    > \tindented &#38;#38; literal\n    > <not a link>\n    - - not a list\n      <https://example.com/a&#38;b&#60;c&#62;>",
+      "readBack": {
+        "title": "Odd \u2028 names",
+        "missingRoot": false,
+        "nodes": [
+          {"id": "one-two-three", "label": "one\u2028two\u2029three", "color": "sky", "prerequisites": [], "icon": "sparkles"},
+          {
+            "id": "step",
+            "label": " \t\u00a0",
+            "color": "olive",
+            "prerequisites": ["one-two-three"],
+            "status": "complete",
+            "description": "\tindented &#38; literal\n<not a link>"
+          },
+          {"id": "not-a-list", "label": "- not a list", "color": "olive", "prerequisites": ["step"], "links": ["https://example.com/a&b<c>"]}
+        ],
+        "kinds": [{"id": "sea", "hue": "olive", "label": " Sea\u3000", "description": "", "source": "added"}],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "one-two-three", "liberties": []},
+          {"mark": "done", "nodeId": "step", "liberties": []},
+          {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
+          {"mark": "step", "nodeId": "not-a-list", "liberties": []},
+          {"mark": "note", "nodeId": "not-a-list", "liberties": []}
+        ],
+        "readout": {"steps": 3, "branches": 0, "done": 1},
+        "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
+      }
+    }
+  },
+  {
+    "name": "A name of 200 characters that each take an entity is written whole and reads back whole",
+    "input": {
+      "title": "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "kinds": [],
+      "nodes": [
+        {
+          "id": "a",
+          "label": "\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028",
+          "color": "sky",
+          "prerequisites": []
+        }
+      ],
+      "done": [],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# &#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;&#10;xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n<!-- windmill:roadmap 2 -->\n- &#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232;&#8232; <!-- windmill:kind sky -->",
+      "readBack": {
+        "title": "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "missingRoot": false,
+        "nodes": [
+          {
+            "id": "root",
+            "label": "\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028\u2028",
+            "color": "sky",
+            "prerequisites": [],
+            "icon": "sparkles"
+          }
+        ],
+        "kinds": [],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "step", "nodeId": "root", "liberties": []}
+        ],
+        "readout": {"steps": 1, "branches": 0, "done": 0},
+        "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
   }

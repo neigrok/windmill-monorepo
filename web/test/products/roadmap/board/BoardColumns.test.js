@@ -575,21 +575,22 @@ test('Chromium: as cards above the view settle to their measured heights, what i
   try {
     await withBrowserErrors(page, async () => {
       await page.getByRole('button', { name: 'Show all 1,500' }).click();
-      const drift = await page.locator('.st-board-columns-column--done').evaluate(async (column) => {
-        const frames = async (count) => { for (let index = 0; index < count; index += 1) await new Promise((resolve) => requestAnimationFrame(resolve)); };
-        column.scrollTop = 80000;
-        await frames(6);
-        const viewTop = column.getBoundingClientRect().top + 60;
-        const anchor = [...column.querySelectorAll('.st-board-card')].find((card) => card.getBoundingClientRect().top >= viewTop);
-        const before = anchor.getBoundingClientRect().top;
-        for (let step = 0; step < 4; step += 1) {
-          column.scrollTop -= 150;
-          await frames(3);
-        }
-        const scrolled = 600;
-        return { connected: anchor.isConnected, drift: Math.round(anchor.getBoundingClientRect().top - before - scrolled) };
-      });
-      assert.deepEqual(drift, { connected: true, drift: 0 });
+      const column = page.locator('.st-board-columns-column--done');
+      await column.evaluate((column) => { column.scrollTop = 80000; });
+      const anchor = await page.waitForFunction((column) => [...column.querySelectorAll('.st-board-card')]
+        .find((card) => card.getBoundingClientRect().top >= column.getBoundingClientRect().top + 60) ?? false, await column.elementHandle());
+      const top = () => anchor.evaluate((card) => card.getBoundingClientRect().top);
+      const before = await top();
+      // The wheel scrolls as a person does: the column hears of each scroll in the frame it lands, before the Board's next work.
+      const box = await column.boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      for (let step = 0; step < 4; step += 1) {
+        const from = await top();
+        await page.mouse.wheel(0, -150);
+        await page.waitForFunction(([card, from]) => card.getBoundingClientRect().top !== from, [anchor, from]);
+        await page.evaluate(async () => { for (let frame = 0; frame < 3; frame += 1) await new Promise((resolve) => requestAnimationFrame(resolve)); });
+      }
+      assert.deepEqual({ connected: await anchor.evaluate((card) => card.isConnected), drift: Math.round(await top() - before - 600) }, { connected: true, drift: 0 });
     });
   } finally {
     await page.close();

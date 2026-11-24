@@ -29,7 +29,7 @@ fixture per rule, then type-checks the files using `tsconfig.domain.json`.
 | `plans.js` | §8.1, §8.4 | `Plan`, `Operation`, `Prediction`, `PlanError` |
 | `translation.js` | §8.2, §8.3 | `translate(plan, scope, registry)` → the engine gesture, `recordIdOf` |
 | `actions.js` | §9.1, §9.2 | `Decision`, `Outcome`, `IDSource`, `decision`, `firstGone`, `refusalSubject` |
-| `acts.js` | §9.5 | `ActPlan`, `ScopedPlan`, `ActDecision`, `ActReader`, `ActIDSource`: an act over several scopes |
+| `acts.js` | §9.5, §9.7 | `ActPlan`, `ScopedPlan`, `ActDecision`, `ActReader`, `ActIDSource`: an act over several scopes; `scopedAct(action)`, a one-scope action as an act, which a composed act takes as a part |
 | `drafts.js` | §10 | `Draft`, `Saved`, `SaveResult`, `SaveDraft` (`ofDraft`, `creating`) |
 | `standardActions.js` | §11 | `Remove`, `Move` |
 | `refusals.js` | §12 | `Refused`, `commandSubject`, `DomainNotice` |
@@ -89,7 +89,8 @@ cannot be overtaken between its reading and the dismissal; `EngineReplica` reads
 `engine.readMetadata(scope, replica)` inside the engine's `write`. The port method is the web kit's alone.
 `runAct(act, {binding})` and `runComposed(parts, {binding})` hand `commitAct` the `engine.activeBinding()` a
 product planned the act under, so a sign-in or a sign-out in between rejects the run with the engine's
-`ReplicaChanged` and writes nothing. Reads
+`ReplicaChanged` and writes nothing; without one, the engine pins every run to the binding standing when it reaches the
+engine, a commit's included. Reads
 outside a run come from `engine.observe(scope).getSnapshot()` and `engine.readMetadata(scope)`. Inside a run, confirmed rows,
 device rows, commands, actor, anonymity and checkpoint are loaded from the commit's own transaction.
 The checkpoint exposes `cleanSeq` only for a complete, same-epoch live cursor with no staging,

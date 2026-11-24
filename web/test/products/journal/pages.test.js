@@ -19,7 +19,7 @@ test('the corpus reads the replica for its own account, and makes no REST reques
     { t: 'page', id: '2026-08-05', x: { body: '' }, f: { mood: [null], energy: [null], source: ['typed'] } },
   ], notices: [], loaded: true, firstPullComplete: true };
   snapshot.stored = snapshot.drawn;
-  const engine = { registry, now: () => Date.parse('2026-08-05T12:00:00Z'), activeReplica: () => 'replica',
+  const engine = { registry, now: () => Date.parse('2026-08-05T12:00:00Z'), activeReplica: () => 'replica', activeBinding: () => 'binding',
     readMetadata: () => ({ devices: {}, confirmed: new Map(), firstPullComplete: snapshot.firstPullComplete,
       commands: [], actor: 'writer', isAnonymous: false, checkpoint: { epoch: null, cleanSeq: null } }),
     readDeviceRows: () => ({}),

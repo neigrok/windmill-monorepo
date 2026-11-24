@@ -1,6 +1,7 @@
 #include "platform/adapters/ws/SyncSocket.h"
 #include "platform/application/WriteObservation.h"
 
+#include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/SyncApi.h"
 
 #include "platform/application/Heartbeat.h"
@@ -28,19 +29,11 @@ constexpr auto kSessionEnded = static_cast<drogon::CloseCode>(1008);
 // Where the gate leaves what it served an upgrade as, for handleNewConnection.
 constexpr char kUpgradeAttribute[] = "wm.sync.upgrade";
 
-// What the gate served an upgrade as: its principal, and every credential it sent, each token's digest in its place.
+// What the gate served an upgrade as: its principal, and every credential it sent, each held as its token's digest.
 struct Upgrade {
   std::optional<UserId> principal;
   SentCredentials sent;
 };
-
-// The credential the upgrade's sent credentials make, each digest proven against its session now.
-Credential provenCredential(AuthService& auth, const SentCredentials& sent) {
-  return sent.resolve([&auth](const std::string& digest) -> std::optional<UserId> {
-    const std::optional<User> user = auth.revalidate(digest);
-    return user ? std::optional(user->id) : std::nullopt;
-  });
-}
 
 // One connection's frames as JCS text, queued on its loop until the socket closes. It holds the connection weakly:
 // the connection's context holds it.
@@ -120,7 +113,7 @@ void uninstallSyncSocket() { g_installed.reset(); }
 
 UpgradeProof proveUpgrade(AuthService& auth, const SentCredentials& sent, const Json::Value& envelope) {
   try {
-    const Credential credential = provenCredential(auth, sent);
+    const Credential credential = SentCaller::of(sent, auth).credential;
     if (credential.fails()) return {std::nullopt, SyncReply::unauthenticated(envelope)};
     return {credential.servedAs(), std::nullopt};
   } catch (const std::exception& error) {
@@ -145,8 +138,7 @@ void SyncUpgradeGate::doFilter(const drogon::HttpRequestPtr& req, drogon::Filter
   if (const std::optional<SyncReply> refused = schemaRefusal(req->getParameter("schema"), deps.minSchema, deps.clock->nowMs(), deps.epoch))
     return refuse(responseOf(*refused));
 
-  const SentCredentials sent = SentCredentials::fromOccurrences(req->headerOccurrences()).withTokens(
-      [&auth = *deps.auth](const std::string& token) { return auth.digestOf(token); });
+  const SentCredentials sent = sentCredentialsOf(req, *deps.auth);
   trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
   const bool posted = deps.workers->post([auth = deps.auth, loop, req, refuse, pass, envelope, sent] {
     const UpgradeProof proof = proveUpgrade(*auth, sent, envelope);
@@ -175,7 +167,7 @@ void SyncSocket::handleNewConnection(const drogon::HttpRequestPtr& req, const dr
     const std::shared_ptr<ConnectionSocket> socket = connection->socket;
     std::vector<std::string> digests;
     for (const SentCredential& credential : upgrade.sent.each()) {
-      if (credential.token) digests.push_back(*credential.token);
+      if (credential.digest) digests.push_back(*credential.digest);
     }
     if (!digests.empty()) {
       connection->session = sessions->enter(digests, clock->nowMs(), [live, socket] {
@@ -184,7 +176,7 @@ void SyncSocket::handleNewConnection(const drogon::HttpRequestPtr& req, const dr
       });
     }
     try {
-      const Credential again = provenCredential(*auth, upgrade.sent);
+      const Credential again = SentCaller::of(upgrade.sent, *auth).credential;
       if (again.fails() || again.servedAs() != upgrade.principal) return socket->close(kSessionEnded);
     } catch (...) {
       socket->close(kTryAgainLater);

@@ -7,6 +7,7 @@
 #include "platform/domain/sync/Credentials.h"
 #include "platform/domain/sync/Wire.h"
 #include "platform/ports/Clock.h"
+#include "platform/ports/SessionReplicas.h"
 #include "platform/ports/SyncStore.h"
 
 #include <json/json.h>
@@ -63,8 +64,10 @@ private:
 class SyncService {
 public:
   // `bindUnavailable`, when given, hears a push's bind failing transiently (its 503) once per its window.
+  // `sessionReplicas`, when given, records each push answered 200 as the replica of the session it was served through
+  // (web-device-parity.md §7, Cleared).
   SyncService(const SyncCatalog& catalog, SyncStore& store, Admission& admission, Clock& clock,
-              std::shared_ptr<FailureWindow> bindUnavailable = nullptr);
+              std::shared_ptr<FailureWindow> bindUnavailable = nullptr, std::shared_ptr<SessionReplicas> sessionReplicas = nullptr);
 
   SyncReply hello(const Credential& credential);
   SyncReply push(const Credential& credential, std::string_view body, PushBudget& budget);
@@ -76,6 +79,7 @@ private:
   Admission& admission_;
   Clock& clock_;
   std::shared_ptr<FailureWindow> bindUnavailable_;
+  std::shared_ptr<SessionReplicas> sessionReplicas_;
 };
 
 }

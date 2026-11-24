@@ -5,7 +5,7 @@
 
 import { mintId } from '../../../../packages/api-contract/sync/reference/core/derive.js';
 import { recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
-import { ActReader, ActIDSource, ActPlan, ActPrediction, ActDecision, ScopedPlan } from './acts.js';
+import { ActReader, ActIDSource, ActPrediction, ActDecision, scopedAct } from './acts.js';
 import { IDSource, Outcome, decision, firstGone, refusalSubject } from './actions.js';
 import { Draft, SaveDraft, SaveResult } from './drafts.js';
 import { DecodeError, Id } from './entities.js';
@@ -101,18 +101,7 @@ export class ActionRunner {
    */
   async run(action) {
     if (action.reversible !== true) return this.perform(action);
-    const scope = action.scope;
-    /** @type {import('./acts.js').ActAction<L, T, R>} */
-    const act = {
-      refusals: action.refusals,
-      load: (read) => read.inScope(scope, (reader) => action.load(reader)),
-      decide: (loaded, ids) => {
-        const decided = decision(action, loaded, /** @type {any} */ ({ mint: (/** @type {any} */ type) => ids.mint(type, scope), opaqueID: () => ids.opaqueID() }));
-        if (decided.kind !== 'write') return decided;
-        return ActDecision.write(new ActPlan([new ScopedPlan(scope, decided.plan)]), decided.result);
-      },
-    };
-    const outcome = await this.runAct(act);
+    const outcome = await this.runAct(scopedAct(action));
     if (outcome.kind !== 'committed') return outcome;
     const { gestureId, segments: [segment], retired, superseded, releaseAt } = outcome.receipt;
     precondition(segment !== undefined, 'a reversible action commits one segment');

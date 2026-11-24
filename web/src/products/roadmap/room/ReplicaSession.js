@@ -184,7 +184,8 @@ export class ReplicaSession {
   // The domain's acts that make one of the room's gestures, the parts of its one act in order. A gesture that changes a
   // step carries any of its fields (`STEP_FIELDS`), and an edit the labels of new items for the end of its checklist, the
   // person's own (`subtasks`); a gesture on several steps is the act on each in turn; links to remove are each step's
-  // prerequisites, one act a step; a paste's new kinds follow its steps, whose colours name their hues.
+  // prerequisites, one act a step; a paste's steps arrive with the marks its plan brings done, and its new kinds follow
+  // its steps, whose colours name their hues.
   actsOf(gesture) {
     const tree = this.treeId;
     const fields = (names) => Object.fromEntries(names.filter((name) => name in gesture).map((name) => [name, gesture[name]]));
@@ -224,7 +225,8 @@ export class ReplicaSession {
           steps: gesture.nodes.map(importedStep),
           links: gesture.edges.filter((link) => keys.has(link.from)).map((link) => [link.from, link.to]),
         };
-        return [new ImportSteps(tree, imported, gesture.edges.find((link) => !keys.has(link.from))?.from ?? null),
+        const done = gesture.nodes.filter((step) => step.status === 'complete').map((step) => step.id);
+        return [new ImportSteps(tree, imported, gesture.edges.find((link) => !keys.has(link.from))?.from ?? null, done),
           ...(gesture.kinds ?? []).map((kind) => new CreateKind(tree, { hue: kind.hue, label: kind.label ?? '', description: kind.description ?? '' }))];
       }
       case 'SetNodeTree': return [gesture.opens ? SetPointer(tree, gesture.id, gesture.opens) : ClearPointer(tree, gesture.id)];

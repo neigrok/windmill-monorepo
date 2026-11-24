@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DeviceSeat, ProductQuestions, restoredDeviceHolder } from '../../../src/shell/auth/accountChange.js';
+import { DeviceSeat, ProductQuestions, SEAT_WILL_CHANGE_MS, restoredDeviceHolder } from '../../../src/shell/auth/accountChange.js';
+import { FakeTimers, tick, until } from '../../platform/sync/fakes.js';
 
 const A = { id: 'u_A', email: 'a@example.com' };
 const B = { id: 'u_B', email: 'b@example.com' };
@@ -200,7 +201,7 @@ test('the seat tells the engine whose credential each read found, and a tell tha
     told.push(held);
     if (failing) throw new Error('store closed');
   } };
-  const seat = new DeviceSeat([], (error) => reported.push(error.message));
+  const seat = new DeviceSeat([], { reportCredential: (error) => reported.push(error.message) });
   await seat.tellCredential(engine, A);
   await seat.tellCredential(engine, null);
   await seat.tellCredential(engine, undefined);
@@ -208,6 +209,31 @@ test('the seat tells the engine whose credential each read found, and a tell tha
   await seat.tellCredential(engine, null);
   await seat.tellCredential(engine, B);
   assert.deepEqual({ told, reported }, { told: ['u_A', null, undefined, null, 'u_B'], reported: ['store closed'] });
+});
+
+test('before the seat changes each product’s hook runs in rail order, one at a time; one that throws or outlasts its bound is reported and the seat changes on', async () => {
+  const timers = new FakeTimers();
+  const ran = [], reported = [];
+  const products = [
+    { id: 'roadmap' },
+    { id: 'journal', sync: { seatWillChange: async (engine) => { ran.push(['journal', engine]); throw new Error('journal hook'); } } },
+    { id: 'hanging', sync: { seatWillChange: (engine) => { ran.push(['hanging', engine]); return new Promise(() => {}); } } },
+    { id: 'gym', sync: { seatWillChange: (engine) => { ran.push(['gym', engine]); } } },
+  ];
+  const seat = new DeviceSeat(products, { timers, reportWillChange: (product, outcome, error) => reported.push([product, outcome, error?.message ?? null]) });
+  let changed = false;
+  const changing = seat.willChange('engine').then(() => { changed = true; });
+  await until(() => ran.length === 2);
+  timers.advance(SEAT_WILL_CHANGE_MS - 1);
+  for (let turn = 0; turn < 10; turn++) await tick();
+  assert.deepEqual({ ran, changed }, { ran: [['journal', 'engine'], ['hanging', 'engine']], changed: false }, 'the next waits on the one before');
+  timers.advance(1);
+  await changing;
+  assert.deepEqual({ ran, reported, pending: timers.tasks.size }, {
+    ran: [['journal', 'engine'], ['hanging', 'engine'], ['gym', 'engine']],
+    reported: [['journal', 'failed', 'journal hook'], ['hanging', 'timeout', null]],
+    pending: 0,
+  });
 });
 
 test('a product hook that throws is asked of as one that says nothing, and each throw reports the question it was asked', async () => {

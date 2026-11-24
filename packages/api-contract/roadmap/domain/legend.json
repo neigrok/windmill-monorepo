@@ -24,7 +24,8 @@
     "expect": {
       "ids": ["late", "unknown", "", "😀"],
       "owners": [{"hue": "olive", "id": "unknown"}],
-      "collisions": [{"hue": "olive", "owner": "unknown", "others": ["late", "", "😀"]}]
+      "collisions": [{"hue": "olive", "owner": "unknown", "others": ["late", "", "😀"]}],
+      "shown": [{"hue": "olive", "id": "unknown"}]
     }
   },
   {
@@ -47,6 +48,100 @@
         "pointers": []
       }
     },
-    "expect": {"ids": ["", "😀"], "owners": [{"hue": "olive", "id": ""}], "collisions": [{"hue": "olive", "owner": "", "others": ["😀"]}]}
+    "expect": {
+      "ids": ["", "😀"],
+      "owners": [{"hue": "olive", "id": ""}],
+      "collisions": [{"hue": "olive", "owner": "", "others": ["😀"]}],
+      "shown": [{"hue": "olive", "id": ""}]
+    }
+  },
+  {
+    "name": "Two kinds share a hue: the legend shown takes its owner, the owners in the kinds' order, then each hue a present step wears that no kind claims, in the palette's order",
+    "input": {
+      "operation": "legend",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {
+            "id": "plum-step",
+            "present": true,
+            "born": null,
+            "rc": null,
+            "ru": null,
+            "label": "plum-step",
+            "icon": "",
+            "color": "plum",
+            "ord": "a",
+            "status": "none",
+            "description": "",
+            "links": [],
+            "branch": null
+          },
+          {
+            "id": "sky-step",
+            "present": true,
+            "born": null,
+            "rc": null,
+            "ru": null,
+            "label": "sky-step",
+            "icon": "",
+            "color": "sky",
+            "ord": "b",
+            "status": "none",
+            "description": "",
+            "links": [],
+            "branch": null
+          },
+          {
+            "id": "brick-step",
+            "present": true,
+            "born": null,
+            "rc": null,
+            "ru": null,
+            "label": "brick-step",
+            "icon": "",
+            "color": "brick",
+            "ord": "c",
+            "status": "none",
+            "description": "",
+            "links": [],
+            "branch": null
+          },
+          {
+            "id": "gone",
+            "present": false,
+            "born": null,
+            "rc": null,
+            "ru": null,
+            "label": "gone",
+            "icon": "",
+            "color": "gold",
+            "ord": "d",
+            "status": "none",
+            "description": "",
+            "links": [],
+            "branch": null
+          }
+        ],
+        "edges": [],
+        "kinds": [
+          {"id": "sea", "present": true, "born": "3:0:a", "hue": "sky", "label": "Sea", "description": "", "ord": "a"},
+          {"id": "wind", "present": true, "born": "1:0:a", "hue": "olive", "label": "Wind", "description": "", "ord": "b"},
+          {"id": "sky", "present": true, "born": "1:0:a", "hue": "sky", "label": "Sky", "description": "", "ord": "c"}
+        ],
+        "marks": [],
+        "pointers": []
+      }
+    },
+    "expect": {
+      "ids": ["sea", "wind", "sky"],
+      "owners": [{"hue": "olive", "id": "wind"}, {"hue": "sky", "id": "sky"}],
+      "collisions": [{"hue": "sky", "owner": "sky", "others": ["sea"]}],
+      "shown": [{"hue": "olive", "id": "wind"}, {"hue": "sky", "id": "sky"}, {"hue": "brick", "id": null}, {"hue": "plum", "id": null}]
+    }
   }
 ]

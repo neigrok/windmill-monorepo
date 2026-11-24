@@ -226,7 +226,7 @@ export class StandingRoadmap {
     const progress = roadmaps.progress(tree.id);
     this.graph = new FollowGraph(tree, new Set(progress.completed), new Map(progress.dates.map(({ node, at }) => [node, at])));
     // The kinds the legend shows, and the one that owns each hue.
-    this.kinds = new LegendRead(tree).shown;
+    this.kinds = new LegendRead(tree).shown.flatMap(({ kind }) => (kind ? [kind] : []));
     this.owners = new Map(this.kinds.map((kind) => [kind.hue, kind.id]));
     /** @type {Map<string, Opening>} */
     this.openings = new Map((roadmaps.account.openings.get(tree.id) ?? []).map((opening) => [opening.node, opening]));

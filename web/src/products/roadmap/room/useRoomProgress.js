@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { track } from '../../../telemetry/beacon.js';
-import { countBucket } from '../board/acts.js';
+import { countBucket } from '../../../telemetry/countBucket.js';
 import { DEMO_COPY, LABELS, completedStepsToast, completedToast } from '../copy.js';
 import { t } from '../i18n/index.js';
 import { COACHED_NODE_ID } from '../demo/demoStage.js';

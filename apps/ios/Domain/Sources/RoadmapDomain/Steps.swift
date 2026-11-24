@@ -558,18 +558,24 @@ public struct ChangePrerequisites: ActAction {
   }
 }
 
-// §5 Import and paste into a roadmap: the steps under fresh ids, in chunks, prerequisites first, one act and so one Undo.
-// Under a step, the import's first steps follow it. The device notes every step and link, with the name of each step a
-// link comes from (§6).
+// §5 Import and paste into a roadmap: the steps under fresh ids, in chunks, prerequisites first, and the person's mark on
+// each step the import brings done, in their overlay: one act and so one Undo. Under a step, the import's first steps
+// follow it. The device notes every step and link, with the name of each step a link comes from (§6).
 public struct ImportSteps: ActAction {
   public let tree: ID<RoadmapEntry>
   public let imported: ImportedSteps
   public let under: ID<RoadmapStep>?
+  // The keys of the steps that arrive done.
+  public let done: [String]
 
-  public init(tree: ID<RoadmapEntry>, imported: ImportedSteps, under: ID<RoadmapStep>? = nil) {
+  public init(tree: ID<RoadmapEntry>, imported: ImportedSteps, under: ID<RoadmapStep>? = nil, done: [String] = []) {
+    precondition(Set(done.map { Array($0.utf8) }).count == done.count
+                 && done.allSatisfy { key in imported.steps.contains { $0.key.utf8.elementsEqual(key.utf8) } },
+                 "an import marks each of its own steps once")
     self.tree = tree
     self.imported = imported
     self.under = under
+    self.done = done
   }
 
   public func load(_ read: ActReader) throws -> HeldSteps {
@@ -592,6 +598,18 @@ public struct ImportSteps: ActAction {
     }
     let labels = Dictionary(uniqueKeysWithValues: steps.map { ($0.id, $0.label) })
     chunks[0].note(loaded.note.adding(nodes: steps.map(\.id), edges: links, names: loaded.names(of: links.map(\.from), made: labels)), of: tree)
-    return .write(ActPlan(chunks.map { ScopedPlan(tree.tree, $0) }), planned.ids)
+    var segments = chunks.map { ScopedPlan(tree.tree, $0) }
+    if !done.isEmpty {
+      let minted = Dictionary(uniqueKeysWithValues: planned.ids.map { (Array($0.key.utf8), $0.id) })
+      var marks = Plan()
+      for key in done {
+        guard let step = minted[Array(key.utf8)] else { preconditionFailure("an import marks its own steps") }
+        let mark = StepMark(id: ID(step.record), status: "complete")
+        marks.create(try Valid(mark, at: loaded.moment), fields: ["mark"])
+        marks.undoBy(.restoring(mark.id, fields: ["mark"], by: Roadmap.Commands.restoreOverlay))
+      }
+      segments.append(ScopedPlan(tree.overlay, marks))
+    }
+    return .write(ActPlan(segments), planned.ids)
   }
 }

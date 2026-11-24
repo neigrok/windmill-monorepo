@@ -2,6 +2,9 @@
 // account matches the cached hint. A lapse retains that account's device work until sign-in;
 // explicit sign-out or a different account makes every product forget its device residue.
 
+// How long the seat waits on one product's `sync.seatWillChange` before it changes without it.
+export const SEAT_WILL_CHANGE_MS = 5000;
+
 export function restoredDeviceHolder(engine) {
   const meta = engine?.device?.meta;
   if (!engine || engine.closed || engine.signingOut || meta?.signOut || meta?.deviceCleanup || meta?.clearCredential || meta?.closingAccount) return null;
@@ -10,14 +13,33 @@ export function restoredDeviceHolder(engine) {
 }
 
 export class DeviceSeat {
-  constructor(products, reportCredential = () => {}) {
+  constructor(products, { reportCredential = () => {}, reportWillChange = () => {}, timers = globalThis } = {}) {
     this.account = null;
     this.previousAccount = null;
     this.lapsed = false;
     this.confirmed = false;
     this.products = products;
     this.reportCredential = reportCredential;
+    this.reportWillChange = reportWillChange;
+    this.timers = timers;
     this.credentialReported = false;
+  }
+
+  // What each product does before the seat changes (`sync.seatWillChange(engine)`), before a sign-in binds the device to an
+  // account and before a sign-out finishes: in rail order, each awaited for at most SEAT_WILL_CHANGE_MS. A hook that throws
+  // or runs past that is reported (`failed` or `timeout`) and the seat changes without it; a write it makes later is its
+  // own to fence to the seat it began under.
+  async willChange(engine) {
+    for (const product of this.products) {
+      const hook = product.sync?.seatWillChange;
+      if (!hook) continue;
+      let timer;
+      const late = new Promise((resolve) => { timer = this.timers.setTimeout(() => resolve({ outcome: 'timeout' }), SEAT_WILL_CHANGE_MS); });
+      const done = Promise.resolve().then(() => hook(engine)).then(() => null, (error) => ({ outcome: 'failed', error }));
+      const missed = await Promise.race([done, late]);
+      this.timers.clearTimeout(timer);
+      if (missed) this.reportWillChange(product.id, missed.outcome, missed.error);
+    }
   }
 
   // The durable bound replica remembers the holder, without granting session authority.
