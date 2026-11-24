@@ -222,7 +222,7 @@ import SyncTesting
     model.path.append(.note(of: wind))
     draft = try #require(model.note)
     draft.text += "\n\nLook upwind."
-    model.background()
+    model.flush()
     await shows(model, "Read the wind", ["subtasks 0 of 0: ", "note: Gusts show as **dark patches** on the water.\n\nLook upwind.", "links: "], on: engine)
     #expect(model.note === draft && draft.text == "Gusts show as **dark patches** on the water.\n\nLook upwind.")
     model.path = [page]

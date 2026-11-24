@@ -186,7 +186,7 @@ export async function gymAccount(t, records = []) {
     replica.cursors['self/gym'] = { ...replica.cursorOf('self/gym'), booted: true };
   }, ['self/gym']);
   engine.observe('self/gym');
-  const session = { engine, ready: true, signedIn: true, online: true, error: false };
+  const session = { engine, ready: true, signedIn: true, account: 'A', online: true, error: false };
   t.mock.method(syncSession, 'getSnapshot', () => session);
   return {
     engine,

@@ -22,7 +22,7 @@ import { precondition } from './values.js';
 /** @typedef {{ t: string, id: RecordID, born: string, seq?: number }} SpentId */
 /** @typedef {{ get(key: string): ViewRecord | undefined }} ConfirmedRows the scope's confirmed records by record key */
 /**
- * @typedef {{ spent?: SpentId[], devices?: Record<string, Json>, firstPullComplete?: boolean, replica?: string, actor?: string, isAnonymous?: boolean,
+ * @typedef {{ spent?: SpentId[], devices?: Record<string, Json>, firstPullComplete?: boolean, replica?: string, binding?: string, actor?: string, isAnonymous?: boolean,
  *   commands?: QueuedCommand[], checkpoint?: ScopeCheckpoint, mintId?: (type: string) => RecordID,
  *   opaqueID?: () => string, assertOpen?: () => void }} ViewMetadata
  */

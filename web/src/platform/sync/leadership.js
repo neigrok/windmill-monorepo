@@ -3,9 +3,8 @@ export class TabLeadership {
     visible = true, readReplica, onLeader, onMessage, onFailure = () => {}, id = crypto.randomUUID() }) {
     if (!locks || !channel || !store) throw new Error('sync coordination unavailable');
     Object.assign(this, { locks, channelFactory: channel, visible, readReplica, onLeader, onMessage, onFailure, id });
-    // Every name carries the device store's IndexedDB version (engine.md §7.8). Two versions never hold the store open
-    // together, so a tab under another version's names is one an upgrade cut off from the store: it may hold its lock
-    // forever, and no tab of this version waits on it, counts it as a peer or hears it.
+    // Every name carries the store's coordination name (engine.md §7.8): its IndexedDB version, so a tab an upgrade cut off
+    // holds no lock a current tab waits on and is no peer it hears; or a memory store's own, which no other tab shares.
     this.names = { start: `wm-tab-start@${store}`, tab: `wm-tab@${store}`, replica: (replica) => `wm-sync@${store}:${replica}` };
     this.peers = new Map();
     this.closed = false;

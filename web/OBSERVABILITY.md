@@ -59,7 +59,8 @@ Failures reach Sentry with kind `sync`, route `/sync` and no stack, under these 
 | `sync-observer` | A listener of the engine, of a scope's observation or of its events threw |
 | `sync-auth` | A sign-in whose hello did not answer as the account signing in, or that threw (a sign-out still open is no failure); a credential deletion the session owner's `clear` could not make |
 
-Storage denial is explicit; no volatile fallback replaces durable work. A write
+Storage denial is explicit; no volatile fallback replaces durable work. An engine opened in memory (`inMemory`, engine.md
+§2.5) reports as one on IndexedDB does, and its store never fails to open. A write
 the device's store cannot commit reports `storage` once and reaches its caller as a `CommitError` of
 kind `store`; an error a caller's read-and-commit function throws passes through unreported. The engine
 asks no one whose credential the browser holds: the shell tells it what each read of `/v1/me` finds (its
@@ -138,8 +139,22 @@ emit `sync_commit` with bounded outcome labels; claim/save and first-run retirem
 gesture events. Domain refusals retain the complete input in a local editor draft and keep the
 editor's unsaved status; failed reconciliation emits a bounded `sync_commit` failure outcome.
 Post-commit notice-cleanup failures use `journal-notice-cleanup` and preserve the successful save
-outcome. Unreadable legacy data uses `journal-migration`, retains its source, and allows startup.
-No page body, scales, date, claim identifier or account is reported.
+outcome; it and `journal-claim-reconcile` carry the error's stack, its message struck. Unreadable legacy data
+uses `journal-migration`, retains its source, and allows startup.
+Settings' export emits `journal_export` with `outcome`: `ok`, `first_pull_timeout` (a bound replica's first pull of
+the journal did not end within 30 seconds), `replica_changed` (the account changed while it waited), `no_replica` (the
+browser holds no open replica) or `failed`, which alone also reports `journal-export` with the error's stack and `step`:
+`pages` (reading the pages), `file` (writing them as Markdown) or `download` (handing the file to the browser).
+Search by meaning emits `journal_search_meaning` once for each opening of search, as its model comes up or does not,
+however often the pages change while it is open: `outcome` `ready`; `needs_connection` (the engine says the browser is
+offline or the server unreachable, and search by meaning never came up in this browser, so the search says it needs a
+connection the first time); `unkept` (offline, in a browser where it came up before and that keeps it no longer, so the
+search answers in words); or `failed` (it did not come up with a connection), which alone also reports
+`journal-search-meaning` with the error's stack and `step`: `worker` (the model's worker did not start) or `model` (the
+model did not load in it). A model that came up and then could not index the pages reports `journal-search-meaning` with
+`step: index` and no event. `cache_refused` is told at most once an opening, when the service worker says the browser
+would not keep the weights it served (`public/sw.js` posts `model-not-kept` to the pages it controls). No page body,
+scales, date, claim identifier, search text or account is reported.
 
 Journal Talk emits `journal_talk_refused` each time the sheet says why Talk refused, with `code`, `reason` and
 `moment`. `code` is the allowance or voice route's code (`subject_exhausted`, `free_month_exhausted`,
@@ -161,7 +176,7 @@ its `status`), a take the browser cannot decode for its waveform (`journal-talk-
 filename or allowance amount is reported.
 
 Gym engine writes emit `gym_action` through the first-party events intake with only `operation`
-and `outcome`. Operations are routine create/save, exercise create/rename, preferences save,
+and `outcome`, and for `refused` a `code`: `not-writable` or `domain`. Operations are routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
 delete, Undo and refusal. Outcomes are `saved-local`, `unchanged` (a clean draft or a rename to the
 name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`. A local save
@@ -172,7 +187,10 @@ workout's facts, set corrections and deletion remain available, and its stored p
 Workout drafts stay in account-scoped device rows while admission is pending or refused; the
 refusal step offers the retained editor without reporting its contents. A gym refusal and a store
 failure report no `gym-<operation>`: engine telemetry owns transport, storage, authentication and
-admission failures. No workout or note content, identifiers, field values, refusal details or raw
+admission failures. A write whose replica changed under the room, a sign-in or a sign-out having moved the engine, is
+such a refusal: `gym_action` with `refused` and `code: not-writable`, and no Issue; every other refusal, the gym's rules on
+this device or the server's notice of one, carries `code: domain`. The room drawing before the account answers
+adds no event and no failure of its own. No workout or note content, identifiers, field values, refusal details or raw
 exception messages are reported.
 
 Proposal decisions run through the gym domain. Removal snapshots persist in the account replica

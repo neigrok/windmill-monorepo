@@ -187,7 +187,9 @@ export function useEchoes({
   // The read, as a function rather than only as a mount effect. Echoes arrive SECONDS after a save —
   // the segmenter, the embedder and the curator take 10-17 of them — and until this was callable the
   // only way to see one was to reload the page, which is not a journal behaving like a journal.
+  // Echoes are the account's, so a signed-out seat asks for none.
   const load = useCallback(() => {
+    if (account === null) return () => {};
     let cancelled = false;
     const mine = era.current;
     journalApi.echoes('0001-01-01', today)
@@ -296,6 +298,7 @@ export function useEchoes({
   // Asking again is cheap (one small read of this account's echoes) and it is paused whenever the
   // tab is hidden, so a journal left open in a background tab costs nothing at all.
   useEffect(() => {
+    if (account === null) return undefined;
     const again = () => {
       if (document.visibilityState !== 'visible') return;
       load();
@@ -310,7 +313,7 @@ export function useEchoes({
       document.removeEventListener('visibilitychange', wake);
       window.removeEventListener('focus', wake);
     };
-  }, [load, check]);
+  }, [account, load, check]);
 
   const under = covered;
   isCovered.current = under;

@@ -1,4 +1,5 @@
 import { IndexedDBStore, WriterSlice, frozen } from './store.js';
+import { MemoryStore } from './memoryStore.js';
 import { ProductNotices, ScopeObservation } from './observation.js';
 import { TabLeadership } from './leadership.js';
 import { HttpTransport, LiveChannel } from './transport.js';
@@ -103,11 +104,12 @@ export class BrowserSyncEngine {
     this.revision = -1;
   }
 
+  // `inMemory` holds the device in this tab alone (`MemoryStore`), for a browser that offers no store; else IndexedDB keeps it.
   static async open(options = {}) {
     let store;
     try {
-      store = options.store ?? await IndexedDBStore.open({ indexedDB: options.indexedDB, keyRange: options.keyRange,
-        name: options.name, newReplicaId: options.newReplicaId ?? replicaId });
+      store = options.store ?? await (options.inMemory ? MemoryStore : IndexedDBStore).open({ indexedDB: options.indexedDB,
+        keyRange: options.keyRange, name: options.name, newReplicaId: options.newReplicaId ?? replicaId });
       const engine = new BrowserSyncEngine({ ...options, store });
       await engine.refresh();
       return engine;
@@ -196,8 +198,8 @@ export class BrowserSyncEngine {
     if (revision === this.revision && this.snapshot) return;
     this.revision = revision;
     const replica = device.activeReplica;
-    this.snapshot = frozen({ revision, replica: replica.id, state: replica.meta.state,
-      authPaused: replica.meta.authPaused, upgradeRequired: this.upgradeRequired,
+    this.snapshot = frozen({ revision, replica: replica.id, state: replica.meta.state, account: replica.meta.account ?? null,
+      binding: bindingOf(replica), authPaused: replica.meta.authPaused, upgradeRequired: this.upgradeRequired,
       pendingSignIn: structuredClone(device.meta.pendingSignIn ?? null), connection: this.connection() });
     for (const observation of [...this.views.values(), ...this.noticeViews.values()]) observation.refresh(replica);
     if (previous && previous.id !== replica.id) this.emit({ event: 'activeReplicaChanged', previous: previous.id, replica: replica.id });
@@ -318,7 +320,7 @@ export class BrowserSyncEngine {
   async start() {
     if (this.started || this.closed) return;
     this.started = true;
-    try { this.coordination = new TabLeadership({ locks: this.navigator?.locks, store: this.store.version,
+    try { this.coordination = new TabLeadership({ locks: this.navigator?.locks, store: this.store.coordination,
       visible: this.visible, ...this.leadershipOptions,
       readReplica: () => this.refresh(), onLeader: (leader) => {
         this.leader = leader;
@@ -479,6 +481,7 @@ export class BrowserSyncEngine {
       devices: structuredClone(replica.deviceRows(this.registry.productOfRef(scope))),
       firstPullComplete: firstPullComplete(replica, scope, this.scopes(replica)),
       replica: replica.meta.replica,
+      binding: bindingOf(replica),
       actor,
       isAnonymous: replica.meta.state === 'anon',
       commands: replica.entries(scope).filter((entry) => entry.intent.cmd !== undefined).map((entry) => ({

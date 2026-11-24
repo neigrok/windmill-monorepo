@@ -68,25 +68,26 @@ async function crashRenderer(page) {
   await crash;
 }
 
-// `newer` opens the device store one IndexedDB version up, as a build of the next store version does.
-async function open(context, name, { newer = false } = {}) {
+// `newer` opens the device store one IndexedDB version up, as a build of the next store version does; `inMemory` holds
+// the device in the tab alone.
+async function open(context, name, { newer = false, inMemory = false } = {}) {
   await serving();
   const page = await context.newPage();
   await page.goto(`${origin}/sync-test`);
-  await page.evaluate(async ({ name, newer, registryPath, referencePath }) => {
+  await page.evaluate(async ({ name, newer, inMemory, registryPath, referencePath }) => {
     const { BrowserSyncEngine } = await import('/src/platform/sync/engine.js');
     const { IndexedDBStore, STORE_VERSION } = await import('/src/platform/sync/store.js');
     const { Registry } = await import(`/@fs${referencePath}core/registry.js`);
     const probe = await (await fetch(`/@fs${registryPath}`)).json();
     window.requests = 0; window.failures = []; window.events = []; window.steps = [];
     const store = newer ? await IndexedDBStore.open({ name, version: STORE_VERSION + 1, newReplicaId: () => 'rp_00000000000000000000000000000001' }) : undefined;
-    window.engine = await BrowserSyncEngine.open({ name, store, registry: new Registry(probe),
+    window.engine = await BrowserSyncEngine.open({ name, store, inMemory, registry: new Registry(probe),
       transport: { request() { window.requests++; throw new Error('offline'); }, openLive() { throw new Error('offline'); } },
       telemetry: { failure: (name) => window.failures.push(name), event: (name, { outcome }) => window.steps.push(`${name}:${outcome}`) } });
     engine.onEvent((event) => events.push(event));
     window.observation = engine.observe('self/probe');
     await engine.start();
-  }, { name, newer, registryPath, referencePath });
+  }, { name, newer, inMemory, registryPath, referencePath });
   return page;
 }
 async function leader(pages) {
@@ -347,6 +348,29 @@ test('Chromium: two real tabs elect one leader, fan out durable observations, ha
     assert.equal(await replacement.evaluate(() => observation.getSnapshot().drawn.length), 1);
     assert.equal(await replacement.evaluate(() => requests), 0);
     await pages[second].close();
+  } finally { await context.close(); }
+});
+
+test('Chromium: two tabs holding their device in memory are two devices: each leads its own, neither reads the other’s write, and a restored page keeps what its tab held', async () => {
+  const context = await freshContext();
+  try {
+    const pages = await Promise.all([open(context, 'kept-nowhere', { inMemory: true }), open(context, 'kept-nowhere', { inMemory: true })]);
+    await Promise.all(pages.map((page) => page.waitForFunction(() => engine.leader)));
+    await gesture(pages[0], 'card0001');
+    assert.deepEqual(await Promise.all(pages.map((page) => page.evaluate(() => observation.getSnapshot().drawn.map((row) => row.id)))),
+      [['card0001'], []]);
+    const { held } = await pages[0].evaluate(() => navigator.locks.query());
+    assert.equal(new Set(held.filter((lock) => lock.name.startsWith('wm-tab@memory:')).map((lock) => lock.name)).size, 2);
+    assert.equal(held.filter((lock) => lock.name.startsWith('wm-sync@memory:')).length, 2);
+    const restored = await pages[0].evaluate(async () => {
+      window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+      await engine.restoring;
+      return { closed: engine.closed, rows: observation.getSnapshot().drawn.map((row) => row.id),
+        stores: (await indexedDB.databases()).map((database) => database.name) };
+    });
+    assert.deepEqual(restored, { closed: false, rows: ['card0001'], stores: [] });
+    assert.deepEqual(await pages[0].evaluate(() => [requests, failures]), [0, []]);
   } finally { await context.close(); }
 });
 

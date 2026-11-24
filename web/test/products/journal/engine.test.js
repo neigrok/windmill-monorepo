@@ -626,3 +626,58 @@ test('pending writing takes precedence over an older save refusal notice', async
     assert.equal(pagesOf(engine)[0].body, 'newer contribution');
   } finally { engine.close(); }
 });
+
+// A signed-in browser, offline, holding a claim of `claims[i].day` (refused when it names a code) and two refused saves of
+// today in its notices; the save of today that follows asks whether they still speak.
+async function claimsAndNotices(claims) {
+  const { engine, env } = await setup();
+  env.transport.account = 'A'; await engine.signIn('A'); await converge(engine);
+  engine.setOnline(false);
+  for (const { day: claimed, claimId, refusal } of claims) {
+    const base = { body: `claimed on ${claimed}`, mood: 1, energy: null, source: 'typed' };
+    await engine.commit(SCOPE, [], { cmd: { name: 'journal.claimPage', args: { day: claimed, ...base, claimId } },
+      local: { [`pendingClaim:${claimId}`]: { day: claimed, claimId, base, latest: base, touched: [], retirements: {}, claimResult: null, refusal } } });
+  }
+  await engine.write(null, (device) => {
+    for (const id of ['notice:first/0', 'notice:second/0']) device.activeReplica.notices.push({ id, scope: SCOPE, code: 'too-large', at: 0,
+      content: { cmd: { name: 'journal.savePage', args: { ...doc(`refused ${id}`), stamp: { ms: 1, counter: 0, actor: 'legacy' } } } } });
+  }, [SCOPE]);
+  return engine;
+}
+const speaking = (engine) => engine.observe(SCOPE).getSnapshot().notices.filter((notice) => !notice.dismissed).map((notice) => notice.id);
+
+test('a save dismisses its day\'s notices in one write, which reads whether a refused claim of the day still speaks', async (t) => {
+  for (const refusedOnTheWay of [false, true]) {
+    const engine = await claimsAndNotices([{ day, claimId: 'today', refusal: null }]);
+    try {
+      // The leader's push result refusing the claim lands just before the dismissal's own write.
+      const write = engine.write.bind(engine);
+      let saved = false;
+      const dismissals = [];
+      t.mock.method(engine, 'write', async (operation, change, scopes) => {
+        if (operation === 'sync-commit') saved = true;
+        else if (saved && operation === null) {
+          dismissals.push(scopes);
+          if (refusedOnTheWay && dismissals.length === 1) {
+            await write(null, (device) => { device.activeReplica.deviceRows('journal')['pendingClaim:today'].refusal = 'claim-conflict'; }, [SCOPE]);
+          }
+        }
+        return write(operation, change, scopes);
+      });
+      await savePage(engine, doc('claimed words, edited'));
+      assert.deepEqual({ dismissals: dismissals.length, speaking: speaking(engine) },
+        refusedOnTheWay ? { dismissals: 1, speaking: ['notice:first/0', 'notice:second/0'] } : { dismissals: 1, speaking: [] });
+    } finally { t.mock.restoreAll(); engine.close(); }
+  }
+});
+
+test('only a refused claim of the save\'s own day keeps its notices speaking', async () => {
+  const engine = await claimsAndNotices([
+    { day: '2026-09-26', claimId: 'yesterday', refusal: 'claim-conflict' },
+    { day, claimId: 'today', refusal: null },
+  ]);
+  try {
+    await savePage(engine, doc('claimed words, edited'));
+    assert.deepEqual(speaking(engine), []);
+  } finally { engine.close(); }
+});

@@ -47,10 +47,12 @@ ID byte order.
 | `roadmap` (`replica.json`) | One roadmap's records as a replica holds them, as the normalized tree | no |
 | `openings` (`replica.json`) | One tree's openings as `account` reads them, without reading every tree | no |
 | `list` (`replica.json`) | The person's own roots that stand, newest first by `updatedAt`, none received last, ID byte ties | no |
+| `listing` (`replica.json`) | One roadmap that stands, whoever owns it, as a list shows it, null for one that does not stand | no |
 
 `readRoadmap` (`roadmaps.js`) reads one roadmap from a device's replica: its tree scope's steps and links as
 `readTree` reads them, absent ones kept, each step with its `rc`, `ru` and the stamp of the subtree it owns;
-its meta with the server's `parent`, `depth`, `reach` and `guideInherited`, null where the scope holds none; its kinds; and, from its owner's
+its meta with the server's `parent`, `depth`, `reach`, `guideInherited` and `forkedFrom` (the roadmap a fork was copied from, null for
+one that is no fork), null where the scope holds none; its kinds; and, from its owner's
 overlay, the marks and pointers (a roadmap someone else owns takes no overlay). Its record in the person's
 list, where there is one, makes it `own`, says whether it is present and where it sits; without one the meta
 says where. A roadmap is read once the device holds the server's whole copy of it (`read`: the first pull of every

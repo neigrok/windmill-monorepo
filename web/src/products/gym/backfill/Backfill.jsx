@@ -146,7 +146,11 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
   // One clock for the life of the form, so the same form always builds the same request.
   const [now] = useState(() => restored?.now ?? Date.now());
   const [sessionId] = useState(() => restored?.sessionId ?? mintId('ses_'));
-  const [draft, setDraft] = useState(() => restored?.draft ?? opening);
+  // The lifter's own draft once they change the form; until then it is the prefill the route reads, which a replica's first
+  // pull fills with last times.
+  const [own, setOwn] = useState(() => restored?.draft ?? null);
+  const draft = own ?? opening;
+  const setDraft = (next) => setOwn((held) => (typeof next === 'function' ? next(held ?? opening) : next));
   const [day, setDay] = useState(() => restored?.day ?? todayOf(now));
   // The lifter's own start and length, once `Change time` is opened; the default slot until then.
   const [clock, setClock] = useState(restored?.clock ?? null);

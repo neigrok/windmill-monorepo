@@ -144,10 +144,10 @@ contents. Native acceptance and a same-key update check precede publication. See
   roadmap's own sync remains. Of [Roadmap on iOS](docs/foundation/roadmap-ios.md), the iPhone's Roadmap room on
   them, the Swift domain's reads, entities, rule book and actions
   (`apps/ios/Domain/Sources/RoadmapDomain`) and the Graph's picture (`apps/ios/Domain/Sources/RoadmapLayout`) are
-  built and nothing else. Two more are specified and not built:
-  [Journal Talk](docs/foundation/journal-talk.md), live speech to text through the AI service; and
-  [the web as a device](docs/foundation/web-device-parity.md), which makes gym and journal on the web
-  work as they do on a phone. [Echoes on the AI service](docs/foundation/echoes-on-ai-service.md), which
+  built and nothing else. [Journal Talk](docs/foundation/journal-talk.md), live speech to text through the AI
+  service, is specified and not built. Of [the web as a device](docs/foundation/web-device-parity.md), which makes
+  gym and journal on the web work as they do on a phone, the shared domain's part, the gym room drawn from the
+  browser's copy and the journal's reads of its own copy are built; a workout and the signed-out gym are not. [Echoes on the AI service](docs/foundation/echoes-on-ai-service.md), which
   moves the journal's two background model calls there, is approved and not built.
 - [The running Coach conversation contract](docs/gym-coach-contract.md) covers the server-hosted
   model loop the web uses. [The iOS app](apps/ios/App/README.md) also documents

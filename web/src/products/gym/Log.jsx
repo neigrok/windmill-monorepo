@@ -27,7 +27,7 @@ import { WorkoutEditor } from './correction/WorkoutEditor.jsx';
 import { ProgressCards } from './progress/Progress.jsx';
 import { consistencyLine } from './progress/progress.js';
 
-export function LogList({ log, hash = '#/gym/log', sessionId = null, fixSetId = null, edit = false, positions = null, pagePositions = null }) {
+export function LogList({ log, signedIn = false, hash = '#/gym/log', sessionId = null, fixSetId = null, edit = false, positions = null, pagePositions = null }) {
   const filters = historyQuery(hash);
   const localPositions = useRef(new Map());
   const index = useRef(null);
@@ -107,13 +107,13 @@ export function LogList({ log, hash = '#/gym/log', sessionId = null, fixSetId = 
     return () => page.removeEventListener('scroll', remember);
   }, [sessionId, edit, indexKey, history.phase, pagePositions]);
   const moveFilter = (change) => { window.location.hash = historyHref(filters, { ...change, selected: null }); };
-  if ((edit || fixSetId) && selected) return <SessionDetail key={`${edit ? 'edit' : fixSetId}-${selected}`} id={selected} log={log} from={from} edit={edit} fixSetId={fixSetId} />;
+  if ((edit || fixSetId) && selected) return <SessionDetail key={`${edit ? 'edit' : fixSetId}-${selected}`} id={selected} log={log} signedIn={signedIn} from={from} edit={edit} fixSetId={fixSetId} />;
   return (
     <section className={`gym-log-screen${sessionId ? ' has-session' : ''}${focusedHistory ? ' has-history-focus' : ''}`}>
       <header className="gym-head gym-log-head">
         <h1 className="gym-title">{t('gym.log.title')}</h1>
         <div className="gym-history-actions">
-          <a className="gym-history-share" href="#/gym/share-log" aria-label={t('gym.log.shareLog')} title={t('gym.log.shareLog')}><Icon name="share" size={20} /></a>
+          {signedIn && <a className="gym-history-share" href="#/gym/share-log" aria-label={t('gym.log.shareLog')} title={t('gym.log.shareLog')}><Icon name="share" size={20} /></a>}
           <button type="button" className="gym-history-weigh" onClick={() => setWeighing(true)}>{WEIGH_IN_VERB}</button>
           <a className="gym-door-past" href={BACKFILL_HREF}>{t('gym.log.addPastWorkout')}</a>
         </div>
@@ -138,7 +138,7 @@ export function LogList({ log, hash = '#/gym/log', sessionId = null, fixSetId = 
           {selectedOutside && <p className="gym-quiet">{t('gym.log.outsideFilters')} <a href={historyHref(filters, { selected: null })}>{t('gym.log.backToResults')}</a></p>}
           {selected && <>
             <nav className="gym-reader-nav" aria-label={t('gym.log.readerNavLabel')}><a className="gym-reader-top-back" href={historyHref(filters, { selected: null })}>{t('gym.log.backToLog')}</a><button type="button" disabled={selectedIndex < 0 || (selectedIndex === sessions.length - 1 && !history.data?.next) || history.more === 'loading'} onClick={() => adjacent(1)}>{t('gym.log.previous')}</button><button type="button" disabled={selectedIndex <= 0} onClick={() => adjacent(-1)}>{t('gym.log.next')}</button><a className="gym-reader-edit" href={`${sessionHref(selected)}/edit?from=${encodeURIComponent(from)}`}>{t('gym.log.editWorkout')}</a></nav>
-            <div className="gym-history-reader"><SessionDetail key={selected} id={selected} log={log} embedded from={from} /></div>
+            <div className="gym-history-reader"><SessionDetail key={selected} id={selected} log={log} signedIn={signedIn} embedded from={from} /></div>
           </>}
           {!selected && <><div className="gym-progress-head"><h2 className="gym-section-title">{t('gym.log.progressTitle')}</h2>{consistency && <p className="gym-consistency">{consistency}</p>}</div>
           <ProgressCards log={log} from={{ screen: 'log', href: from }} /></>}
@@ -191,7 +191,7 @@ function SessionRow({ summary, selected, href, unit }) {
   </a></li>;
 }
 
-export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', edit = false, fixSetId = null }) {
+export function SessionDetail({ id, log, signedIn = false, embedded = false, from = '#/gym/log', edit = false, fixSetId = null }) {
   const api = useGymApi();
   const correction = edit ? api?.workoutSave(`correction:${id}`) : null;
   const { say, holdDelete } = log;
@@ -341,7 +341,7 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
       <details className="gym-workout-more"><summary>{t('gym.log.workoutOptions')}</summary>
         {frozen && <p className="gym-detail-plan">{frozen}</p>}
         {isFinished(session) && <a className="gym-detail-review" href={finishHref(session.id)}>{t('gym.log.sessionReview')}</a>}
-        <ShareWorkout sessionId={id} />
+        {signedIn && <ShareWorkout sessionId={id} />}
         {isFinished(session) && <div className="gym-detail-discard"><button type="button" className="gym-short-discard" onClick={discard}>{t('gym.log.discardSession')}</button></div>}
       </details>
     </>

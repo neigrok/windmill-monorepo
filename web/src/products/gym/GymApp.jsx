@@ -3,6 +3,7 @@ import { Button, Toast } from '../../design-system/index.js';
 import { useAppearance } from '../../shell/useAppearance.js';
 import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
 import { navigate } from '../../shell/navigation.js';
+import { useSyncReplica } from '../../platform/sync/react.js';
 import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
 import { useSignInDoor, useSignInDoorHost } from '../../shell/auth/SignInDoor.jsx';
@@ -33,6 +34,9 @@ function tabOf(screen) {
   return 'routines';
 }
 
+// The screens that stand behind an account the shell has settled.
+const ACCOUNT_SCREENS = new Set(['coach', 'threads', 'thread', 'share-log']);
+
 function columnClass(screen) {
   if (screen === 'coach' || screen === 'thread') return ' has-coach';
   if (['backfill', 'log', 'session', 'routine', 'record', 'share-log', 'notes'].includes(screen)) return ' has-desk';
@@ -41,6 +45,7 @@ function columnClass(screen) {
 
 export function GymApp({ hash, inShell = false }) {
   const { user, status, signOut } = useAuth();
+  const replica = useSyncReplica();
   const { resolved: theme } = useAppearance();
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
@@ -61,17 +66,20 @@ export function GymApp({ hash, inShell = false }) {
     );
   }
 
+  // The replica this tab draws decides: a bound one is the room, its session paused or its account yet to answer, and the
+  // room lives as long as its binding, through a re-identify; the anon one is the pitch.
+  const door = replica?.state === 'bound' ? 'room' : replica && status === 'ghost' ? 'pitch' : 'opening';
   return (
     <div className="gym-root gym-skin" ref={lendDoorSkin} data-chrome={inShell ? 'shell' : 'own'} data-theme={theme} data-brand="gym">
-      {status === 'loading' && <main className="gym-column"><p className="gym-quiet">{t('gym.app.opening')}</p></main>}
-      {status === 'ghost' && (
+      {door === 'opening' && <main className="gym-column"><Opening /></main>}
+      {door === 'pitch' && (
         <>
           <Chrome inShell={inShell} user={user} status={status} onSignIn={openSignInDoor} onSignOut={signOut} />
           <main className="gym-column"><SignInPitch onSignIn={openSignInDoor} /></main>
         </>
       )}
-      {status === 'signed-in' && (
-        <TrainingRoom key={user?.id} hash={hash} inShell={inShell} user={user} status={status} onSignIn={openSignInDoor} onSignOut={signOut} />
+      {door === 'room' && (
+        <TrainingRoom key={replica.binding} hash={hash} inShell={inShell} user={user} status={status} onSignIn={openSignInDoor} onSignOut={signOut} />
       )}
     </div>
   );
@@ -99,6 +107,10 @@ function Chrome({ inShell, user, status, onSignIn, onSignOut }) {
   );
 }
 
+function Opening() {
+  return <p className="gym-quiet">{t('gym.app.opening')}</p>;
+}
+
 function SignInPitch({ onSignIn }) {
   return (
     <section className="gym-door">
@@ -109,10 +121,15 @@ function SignInPitch({ onSignIn }) {
   );
 }
 
+// Shares, log shares, the connected log and Coach stay behind an account the shell has settled, online or offline from its
+// last answer; until then Coach, its threads and the log share are the pitch, or the opening line while the account has
+// yet to answer. The rest draws from the replica.
 function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
   const { account } = useAuth();
+  const signedIn = status === 'signed-in';
   const log = useTrainingLog();
   const screen = screenOf(hash);
+  const waitsForAccount = !signedIn && ACCOUNT_SCREENS.has(screen);
   const historyPositions = React.useRef(new Map());
   const pagePositions = React.useRef(new Map());
   const content = React.useRef(null);
@@ -129,17 +146,18 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
       <div ref={content} className="gym-scroll">
         <main className={`gym-column${columnClass(screen)}`}>
           {(screen === 'routines' || screen === 'proposal') && <RoutinesList log={log} reviewing={screen === 'proposal' ? proposalIdOf(hash) : null} />}
-          {(screen === 'log' || screen === 'session') && <LogList log={log} positions={historyPositions.current} pagePositions={pagePositions.current} hash={screen === 'log' ? hash : new URLSearchParams(hash.split('?').slice(1).join('?')).get('from') ?? '#/gym/log'} sessionId={screen === 'session' ? sessionIdOf(hash) : null} fixSetId={fixSetIdOf(hash)} edit={/^#\/gym\/session\/[^/?]+\/edit(?:\?|$)/.test(hash)} />}
+          {(screen === 'log' || screen === 'session') && <LogList log={log} signedIn={signedIn} positions={historyPositions.current} pagePositions={pagePositions.current} hash={screen === 'log' ? hash : new URLSearchParams(hash.split('?').slice(1).join('?')).get('from') ?? '#/gym/log'} sessionId={screen === 'session' ? sessionIdOf(hash) : null} fixSetId={fixSetIdOf(hash)} edit={/^#\/gym\/session\/[^/?]+\/edit(?:\?|$)/.test(hash)} />}
           {screen === 'bodyweight' && <BodyweightScreen log={log} />}
           {screen === 'record' && <MovementRecord id={movementIdOf(hash)} from={recordFromOf(hash)} log={log} />}
           {screen === 'routine' && <RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />}
-          {screen === 'finish' && <FinishScreen id={finishIdOf(hash)} log={log} />}
+          {screen === 'finish' && <FinishScreen id={finishIdOf(hash)} log={log} signedIn={signedIn} />}
           {screen === 'backfill' && <Backfill key={hash} target={backfillTargetOf(hash)} from={backfillFromOf(hash)} log={log} />}
-          {screen === 'coach' && <CoachRoom key={account?.id} log={log} />}
-          {screen === 'threads' && <HistoryPage key={account?.id} log={log} />}
-          {screen === 'thread' && <CoachRoom key={account?.id} log={log} threadId={threadIdOf(hash)} />}
+          {waitsForAccount && (status === 'ghost' ? <SignInPitch onSignIn={onSignIn} /> : <Opening />)}
+          {signedIn && screen === 'coach' && <CoachRoom key={account?.id} log={log} />}
+          {signedIn && screen === 'threads' && <HistoryPage key={account?.id} log={log} />}
+          {signedIn && screen === 'thread' && <CoachRoom key={account?.id} log={log} threadId={threadIdOf(hash)} />}
           {screen === 'notes' && <Notes log={log} />}
-          {screen === 'share-log' && <LogShareScreen />}
+          {signedIn && screen === 'share-log' && <LogShareScreen />}
         </main>
       </div>
       <TabBar screen={tabOf(screen)} />

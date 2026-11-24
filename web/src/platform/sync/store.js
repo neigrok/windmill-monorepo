@@ -136,6 +136,8 @@ export class IndexedDBStore {
   constructor(database, keyRange) {
     this.database = database;
     this.version = database.version;
+    // The name the tabs sharing this store lead and talk under (engine.md §7.8): every tab of its version.
+    this.coordination = database.version;
     this.generationRows = (generation) => keyRange.bound([generation], [generation, []]);
     this.closed = false;
     this.controls = null;

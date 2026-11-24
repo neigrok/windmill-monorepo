@@ -288,7 +288,8 @@
         "root": "t_00000000000000a1",
         "depth": 0,
         "visibility": "public",
-        "reach": "public"
+        "reach": "public",
+        "forkedFrom": null
       },
       "nodes": [
         {
@@ -497,7 +498,8 @@
         "root": "t_00000000000000a1",
         "depth": 1,
         "visibility": "private",
-        "reach": "unlisted"
+        "reach": "unlisted",
+        "forkedFrom": null
       },
       "nodes": [
         {
@@ -510,6 +512,116 @@
           "icon": "",
           "color": "terracotta",
           "ord": "",
+          "status": "none",
+          "description": "",
+          "links": [],
+          "branch": null,
+          "branchStamp": null
+        }
+      ],
+      "edges": [],
+      "kinds": [],
+      "marks": [],
+      "pointers": []
+    }
+  },
+  {
+    "name": "A fork says the roadmap it was copied from: its meta's forkedFrom, which the server writes",
+    "input": {
+      "operation": "roadmap",
+      "id": "t_00000000000000c7",
+      "read": true,
+      "listed": {
+        "t": "tree",
+        "id": "t_00000000000000c7",
+        "life": [
+          "alive",
+          "300:0:srv"
+        ],
+        "born": "300:0:srv",
+        "rc": 5000,
+        "ru": 5000
+      },
+      "overlay": {
+        "drawn": [],
+        "queued": []
+      },
+      "tree": [
+        {
+          "t": "meta",
+          "id": "meta",
+          "f": {
+            "title": [
+              "Learn to sail",
+              "300:0:srv"
+            ],
+            "forkedFrom": [
+              "t_00000000000000a1",
+              "300:0:srv"
+            ],
+            "depth": [
+              0,
+              "300:0:srv"
+            ]
+          },
+          "rc": 5000,
+          "ru": 5000
+        },
+        {
+          "t": "node",
+          "id": "wind",
+          "life": [
+            "alive",
+            "300:1:srv"
+          ],
+          "born": "300:1:srv",
+          "f": {
+            "label": [
+              "Read the wind",
+              "300:1:srv"
+            ],
+            "ord": [
+              "a0",
+              "300:1:srv"
+            ],
+            "color": [
+              "sky",
+              "300:1:srv"
+            ]
+          },
+          "rc": 5000,
+          "ru": 5000
+        }
+      ]
+    },
+    "expect": {
+      "id": "t_00000000000000c7",
+      "present": true,
+      "read": "loaded",
+      "own": true,
+      "updatedAt": 5000,
+      "parent": null,
+      "meta": {
+        "title": "Learn to sail",
+        "guide": "",
+        "guideInherited": false,
+        "root": "t_00000000000000c7",
+        "depth": 0,
+        "visibility": "private",
+        "reach": "private",
+        "forkedFrom": "t_00000000000000a1"
+      },
+      "nodes": [
+        {
+          "id": "wind",
+          "present": true,
+          "born": "300:1:srv",
+          "rc": 5000,
+          "ru": 5000,
+          "label": "Read the wind",
+          "icon": "",
+          "color": "sky",
+          "ord": "a0",
           "status": "none",
           "description": "",
           "links": [],
@@ -698,7 +810,8 @@
         "root": "t_00000000000000f6",
         "depth": 0,
         "visibility": "private",
-        "reach": "private"
+        "reach": "private",
+        "forkedFrom": null
       },
       "nodes": [
         {
@@ -808,7 +921,8 @@
         "root": "t_00000000000000f6",
         "depth": 0,
         "visibility": "private",
-        "reach": "private"
+        "reach": "private",
+        "forkedFrom": null
       },
       "nodes": [
         {
@@ -1782,5 +1896,93 @@
         "updatedAt": null
       }
     ]
+  },
+  {
+    "name": "A roadmap as a list shows it, whoever owns it: someone else's root that stands, by its title, counts and last receipt",
+    "input": {
+      "operation": "listing",
+      "tree": "T",
+      "trees": [
+        {
+          "id": "T",
+          "present": true,
+          "read": "loaded",
+          "own": false,
+          "updatedAt": 40,
+          "parent": null,
+          "meta": {
+            "title": "Shared",
+            "root": "T",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true
+            },
+            {
+              "id": "b",
+              "present": true
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "b",
+              "present": true
+            }
+          ],
+          "kinds": [],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 30,
+              "deviceAt": 20
+            }
+          ],
+          "pointers": []
+        }
+      ]
+    },
+    "expect": {
+      "id": "T",
+      "title": "Shared",
+      "counts": {
+        "done": 1,
+        "total": 2
+      },
+      "updatedAt": 40
+    }
+  },
+  {
+    "name": "A roadmap as a list shows it: none for one that does not stand, such as a root read with no meta",
+    "input": {
+      "operation": "listing",
+      "tree": "H",
+      "trees": [
+        {
+          "id": "H",
+          "present": true,
+          "read": "loaded",
+          "own": false,
+          "updatedAt": 40,
+          "parent": null,
+          "meta": null,
+          "nodes": [
+            {
+              "id": "a",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "expect": null
   }
 ]

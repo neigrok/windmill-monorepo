@@ -348,6 +348,19 @@ import Synchronization
     model.closeKeep(); #expect(!model.journal.keepDue)
   }
 
+  // A room's sign-in, Fork's on a shared roadmap's cover, is a sheet of its own: closing it leaves the journal's offer to
+  // keep its pages as it was, and tells no choice of keeping.
+  @Test func closingARoomsSignInLeavesTheJournalsKeepOffer() throws {
+    let telemetry = TelemetryRecorder()
+    let (_, model) = try fixture(telemetry: telemetry)
+    model.journal.type("A"); model.journal.save(); model.journal.done()
+    #expect(model.journal.keepDue)
+    model.signIn(for: .fork); #expect(model.sheet == .roomSignIn && model.signInFor == .fork)
+    model.closeRoomSignIn(); model.dismissSheet()
+    #expect(model.sheet == nil && model.signInFor == nil && model.journal.keepDue && !model.keepDismissed)
+    #expect(!telemetry.entries.withLock { $0.contains { $0.name == "first_run_choice" && $0.properties["screen"] == "keep" } })
+  }
+
   @Test func editingSuppressesTheKeepOffer() throws {
     let (_, model) = try fixture()
     model.journal.type("A"); model.journal.save(); model.journal.editing = true
