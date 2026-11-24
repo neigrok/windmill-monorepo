@@ -854,17 +854,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Roadmap file · a prototype variable collection nothing on the iPhone pages binds.** *🧪 iOS 07 · Local picker
   state* held the state of boards that are deleted. No node on the Roadmap · iOS or Roadmap Coach page binds it;
   the file's other pages were not checked. Delete it once they are.
-- **Roadmap Coach · the engineering note against the spec.** The Figma
-  [engineering note](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=688-4965) of 2026-11-08 and
-  [Roadmap Coach](../foundation/roadmap-coach.md) disagree in every section, and the spec stands (owner, 2026-11-14).
-  1: the note runs the turn on the server over gym's turn wire and the web's tools on the server; the spec runs the
-  turn on the device and every ability on the browser's copy. 2: the note lists `get_health` and the change kind
-  `tidy`, both retired, and mints a server proposal record where its section 5 keeps it in the roadmap's replica; the
-  spec keeps it as a synced record with terminal states. 3: the note pre-reads a health score. 4: the note takes
-  allowance from the backend's installations and budget; the spec takes it from the
-  [AI service](../foundation/ai-service.md). 5: the note's proposal rests on `baseSeq`; the spec's on the copy's
-  stamps. 6: the note logs a turn on the backend, which no longer sees one. Rewrite the note; the boards are not
-  affected.
 - **Roadmap Coach · an applied proposal the server refuses.** The design rules that an applied proposal is never
   refused or discarded. A proposal is applied on the device and then synced, and the server can refuse the synced
   change. The owner ruled on 2026-11-15 ([Roadmap Coach](../foundation/roadmap-coach.md) R-10) that the refusal shows
@@ -874,9 +863,6 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   notice, opening the store sheet (05.6). The owner ruled on 2026-11-15 (Roadmap Coach R-12) that the web shows no
   such button while Windmill One cannot be bought there: the notice says the allowance is used up and when it
   returns. The web's 05 boards need that state drawn without the button.
-- **Roadmap Coach · not drawn.** No board draws Coach for a person who only reads a roadmap, a card whose proposal
-  was applied and then undone, a replaced card, or the sign-in question when both the device and the account hold
-  conversations.
 - **Step relations · "Opens", "Unlocks" and "Tree" (18–22, 27, 28).** The approved step editor heads the steps a
   step unlocks with *Opens*; the Board card says *Unlocks*. The approved
   [28 · A node opens a tree](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=876-48881) calls the tree a

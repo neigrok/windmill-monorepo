@@ -483,10 +483,9 @@ states them. This document's own:
 | R-12 | The Windmill One button on the web | The web shows no such button while Windmill One cannot be bought there. It says the allowance is used up and when it returns. (2026-11-15) |
 | R-13 | The copy Coach's abilities run on | The device's replica of the sync engine, once roadmap has moved onto it. Nothing of Coach is built on roadmap's former sync. (2026-11-17) |
 | R-14 | Coach on the iPhone | In the iPhone's first release of the Roadmap room, on the same catalog, vectors and records. (2026-11-17) |
+| R-15 | Coach for a reader on the iPhone | None: a shared roadmap's cover on the iPhone offers Fork alone, and a reader meets Coach on the web. (2026-11-24) |
 
-The design draws none of these, and each needs a board before it is built: Coach for a person who
-only reads a roadmap; a card whose proposal was applied and then undone; a replaced card; and the
-sign-in question of §11.
-
-What this document changes in the design's engineering note is listed in the
-[consistency ledger](../design/consistency.md).
+Each is drawn and ✅ Ready for dev (owner, 2026-11-24): on the Roadmap Coach page, section 10 (10.1 a reader's Coach
+on the web, 10.2 a card applied and then undone, 10.3 a replaced card, 10.4 the sign-in question of §11); on the
+Roadmap · iOS page, 11.24, with the replaced card at 11.9b and the sign-in question at 10.7. A reader meets no Coach on
+the iPhone (R-15).
