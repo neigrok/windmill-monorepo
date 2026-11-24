@@ -11,8 +11,9 @@ for roadmap on the sync engine (R-13) and Coach on the iPhone in the first relea
 its contract is built: the catalog, its limits and the format of its vectors (§3); and on the web
 the standing roadmap (D-2), the read abilities (§4, §5) and the direct writes (§6), in
 `web/src/products/roadmap/domain/abilities/`, which claim every vector but the proposal's, and the tool
-host that carries them out through the room's doors, in `web/src/products/roadmap/coach/toolHost.js`,
-which no turn runs yet. The roadmap's AI today is tending: a server-side agent that edits a roadmap at
+host that carries them out through the room's doors, in `web/src/products/roadmap/coach/toolHost.js`;
+and on the iPhone the same, which claim the same vectors, with the tool host's executor over the
+phone's copy, in `apps/ios/Domain/Sources/RoadmapDomain/Coach/`. No turn runs either host yet. The roadmap's AI today is tending: a server-side agent that edits a roadmap at
 once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person
 sees of Coach is ruled in the [design canon](../design/roadmap-coach.md); this document says how it
 is built. The build order lives in the Roadmap Coach roadmap tree, which the dogfood tree

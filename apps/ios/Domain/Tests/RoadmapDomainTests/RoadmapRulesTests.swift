@@ -17,6 +17,14 @@ struct RoadmapRulesTests {
     try RuleBookCheck.check(RoadmapRules.book, refusal: RoadmapRefusal.self, vectors: "roadmap/domain/values.json", actionVectors: actions)
   }
 
+  // packages/api-contract/roadmap-link-urls.json: the addresses the room shows of a step's web links.
+  @Test func theRoomShowsAWebLinkWhoseAddressIsHttpHttpsOrMailtoInAnyCase() throws {
+    for sample in try Contract.json("roadmap-link-urls.json").member("cases").asArray() {
+      let url = try sample.member("url").asString()
+      #expect(RoadmapRules.showsAddress(url) == (try sample.member("shown").asBool()), "\(url)")
+    }
+  }
+
   @Test func everyEntityAgreesWithTheRegistryItsSampleSettingEveryFieldItWrites() throws {
     let (book, registry) = (RoadmapRules.book, SyncSchema.registry)
     let tree = ID<RoadmapEntry>("t_0000000000000001")
