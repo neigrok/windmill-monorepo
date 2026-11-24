@@ -29,11 +29,20 @@ extension RoadmapPlan {
     let name = PlanText.clipped(PlanText.trimmed(String(String.UnicodeScalarView(typed.unicodeScalars.filter { $0.value != 0 }))),
                                 to: PlanText.titleBound)
     if name.isEmpty && missingRoot { return nil }
-    let title = name.isEmpty ? self.title : name
-    let renamed = name.isEmpty || isFile ? nodes : nodes.enumerated().map { index, node in
-      index == 0 ? Node(id: node.id, label: name, color: node.color, follows: node.follows, done: node.done, description: node.description,
-                        links: node.links) : node
-    }
+    return planted(title: name.isEmpty ? title : name, naming: name.isEmpty || isFile ? nil : name)
+  }
+
+  // Each node the plan plants, in its order, in the state the domain reads it in, an unnamed plan's first node unnamed.
+  public var landing: [Landing] { planted(title: title, naming: nil).landing }
+
+  // The plan's creation under `title`, its first node renamed `name` where one is given.
+  func planted(title: String, naming name: String?) -> Planting {
+    let renamed = name.map { name in
+      nodes.enumerated().map { index, node in
+        index == 0 ? Node(id: node.id, label: name, color: node.color, follows: node.follows, done: node.done, description: node.description,
+                          links: node.links) : node
+      }
+    } ?? nodes
     let steps = renamed.enumerated().map { index, node in node.imported(icon: index == 0 ? "sparkles" : "") }
     let links = renamed.compactMap { node in node.follows.map { (from: $0, to: node.id) } }
     let legend = kinds.map { NewKind(hue: $0.hue, label: $0.label, description: $0.description) }
@@ -88,5 +97,58 @@ extension RoadmapPlan.Node {
     let addresses = links.filter { !PlanText.trimmed($0).isEmpty }.map { Step.Link(url: $0, label: "") }
     return ImportedStep(key: id, RoadmapStep.Changes(label: label, icon: icon, color: color, description: description.flatMap { $0.isEmpty ? nil : $0 },
                                                      links: addresses.isEmpty ? nil : addresses))
+  }
+}
+
+extension RoadmapPlan {
+  // A step as it lands: its name and colour, and the state the domain reads it in once the plan's marks are made.
+  public struct Landing: Sendable, Equatable {
+    public let label: String
+    public let color: String
+    public let state: StepState
+
+    // Each of `steps` as it lands in `tree`, which holds them with the links and the marks they arrive with.
+    static func of(_ steps: [ImportedStep], in tree: RoadmapTree) -> [Landing] {
+      let states = FollowGraph(tree).states
+      return steps.map { Landing(label: $0.step.label ?? "", color: $0.step.color ?? "", state: states[$0.key] ?? .available) }
+    }
+  }
+}
+
+extension RoadmapPlan.Planting {
+  // Each step the creation plants, in its order, read over the plan as over a roadmap.
+  public var landing: [RoadmapPlan.Landing] {
+    let tree = RoadmapTree(id: "plan", meta: RoadmapTree.Metadata(root: "plan"), nodes: creation.steps.steps.map(\.planted),
+                           edges: creation.steps.links.map { RoadmapTree.Edge(from: $0.from, to: $0.to, present: true) },
+                           marks: done.map(RoadmapTree.Mark.init(completing:)))
+    return RoadmapPlan.Landing.of(creation.steps.steps, in: tree)
+  }
+}
+
+extension RoadmapPlan.Graft {
+  // Each step the import brings, in its order, read over the roadmap as the import would leave it: each step it has no
+  // prerequisite for following `under`.
+  public func landing(in roadmap: RoadmapTree) -> [RoadmapPlan.Landing] {
+    let followed = Set(imported.links.map { PlanText.key($0.to) })
+    let rooted = under.map { under in
+      imported.steps.filter { !followed.contains(PlanText.key($0.key)) }.map { RoadmapTree.Edge(from: under, to: $0.key, present: true) }
+    } ?? []
+    let tree = RoadmapTree(id: roadmap.id, present: roadmap.present, read: roadmap.read, own: roadmap.own, updatedAt: roadmap.updatedAt,
+                           parent: roadmap.parent, meta: roadmap.meta, nodes: roadmap.nodes + imported.steps.map(\.planted),
+                           edges: roadmap.edges + rooted + imported.links.map { RoadmapTree.Edge(from: $0.from, to: $0.to, present: true) },
+                           kinds: roadmap.kinds, marks: roadmap.marks + done.map(RoadmapTree.Mark.init(completing:)), pointers: roadmap.pointers)
+    return RoadmapPlan.Landing.of(imported.steps, in: tree)
+  }
+}
+
+extension ImportedStep {
+  // The step as a roadmap's records hold it once planted, under its key.
+  var planted: Step { Step(id: key, label: step.label, icon: step.icon, color: step.color, description: step.description, links: step.links) }
+}
+
+extension RoadmapTree.Mark {
+  // A step a plan brings done, as a roadmap holds its mark once it is made.
+  init(completing step: String) {
+    self.init(node: step, status: "complete", outOfOrder: false, recordedAt: nil, deviceAt: nil)
   }
 }
