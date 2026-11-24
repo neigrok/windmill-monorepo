@@ -207,6 +207,7 @@
 
 /* ── Narrow: the toolbar leads, the index is a sheet, and the rack is pinned in the reach band where the tab rail was ── */
 @media (max-width: 799px) {
+  .gym-root .gym-column:has(> .gym-live) { padding-top: 8px; }
   .gym-live { gap: 16px; padding-bottom: 340px; }
   .gym-live.has-panel .gym-live-hand { display: flex; }
   .gym-live > .gym-live-back { display: none; }
