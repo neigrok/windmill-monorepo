@@ -49,7 +49,9 @@ browser's installation credential ([Roadmap Coach](roadmap-coach.md) §11) for s
 - **Before the first pull.** A bound replica that has not finished its first pull of gym's scope
   draws what it has and offers no Start, no last-time values and no records until it has. What
   shows meanwhile is the design's.
-- Shares, log shares, the connected log, and Coach until its move, stay behind a confirmed account.
+- Shares, log shares, the connected log, and Coach until its move, stay behind an account the shell has
+  settled: online, or offline from its last answer. A replica bound to another account than the one the
+  shell has settled, as when another tab signed someone else in, is not drawn until the shell catches up.
 - A write whose replica changed under the room is refused `not-writable`, and its words do not ask
   a person to sign in.
 

@@ -198,8 +198,8 @@ export class BrowserSyncEngine {
     if (revision === this.revision && this.snapshot) return;
     this.revision = revision;
     const replica = device.activeReplica;
-    this.snapshot = frozen({ revision, replica: replica.id, state: replica.meta.state,
-      authPaused: replica.meta.authPaused, upgradeRequired: this.upgradeRequired,
+    this.snapshot = frozen({ revision, replica: replica.id, state: replica.meta.state, account: replica.meta.account ?? null,
+      binding: bindingOf(replica), authPaused: replica.meta.authPaused, upgradeRequired: this.upgradeRequired,
       pendingSignIn: structuredClone(device.meta.pendingSignIn ?? null), connection: this.connection() });
     for (const observation of [...this.views.values(), ...this.noticeViews.values()]) observation.refresh(replica);
     if (previous && previous.id !== replica.id) this.emit({ event: 'activeReplicaChanged', previous: previous.id, replica: replica.id });
@@ -481,6 +481,7 @@ export class BrowserSyncEngine {
       devices: structuredClone(replica.deviceRows(this.registry.productOfRef(scope))),
       firstPullComplete: firstPullComplete(replica, scope, this.scopes(replica)),
       replica: replica.meta.replica,
+      binding: bindingOf(replica),
       actor,
       isAnonymous: replica.meta.state === 'anon',
       commands: replica.entries(scope).filter((entry) => entry.intent.cmd !== undefined).map((entry) => ({

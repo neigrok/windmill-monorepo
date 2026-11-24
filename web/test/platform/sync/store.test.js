@@ -122,6 +122,22 @@ test('an aborted IndexedDB commit restores every row, clock, outbox and device c
   store.close();
 });
 
+test('an IndexedDB write the browser aborts after its callback succeeded, as a full disk does, leaves the next write none of its edits', async () => {
+  const store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB: new IDBFactory(), newReplicaId: () => id });
+  const rack = (device) => device.activeReplica.deviceRows('probe').rack;
+  await store.transact((device) => {
+    gesture(device);
+    device.activeReplica.deviceRows('probe').rack = { label: 'kept' };
+  });
+  await assert.rejects(store.transact((device) => {
+    device.activeReplica.outbox[0].state = 'ready';
+    rack(device).label = 'aborted';
+  }, { beforeCommit: ({ transaction }) => transaction.abort() }));
+  const { result } = await store.transact((device) => structuredClone({ rack: rack(device), state: device.activeReplica.outbox[0].state }));
+  assert.deepEqual(result, { rack: { label: 'kept' }, state: 'held' });
+  store.close();
+});
+
 test('a store forgets the rows it held of a generation another tab let go', async () => {
   const indexedDB = new IDBFactory();
   const [kept, other] = await Promise.all([1, 2].map(() => IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => id })));

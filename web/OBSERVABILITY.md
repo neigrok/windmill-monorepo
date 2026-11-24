@@ -167,7 +167,7 @@ its `status`), a take the browser cannot decode for its waveform (`journal-talk-
 filename or allowance amount is reported.
 
 Gym engine writes emit `gym_action` through the first-party events intake with only `operation`
-and `outcome`. Operations are routine create/save, exercise create/rename, preferences save,
+and `outcome`, and for `refused` a `code`: `not-writable` or `domain`. Operations are routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
 delete, Undo and refusal. Outcomes are `saved-local`, `unchanged` (a clean draft or a rename to the
 name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`. A local save
@@ -179,7 +179,8 @@ Workout drafts stay in account-scoped device rows while admission is pending or 
 refusal step offers the retained editor without reporting its contents. A gym refusal and a store
 failure report no `gym-<operation>`: engine telemetry owns transport, storage, authentication and
 admission failures. A write whose replica changed under the room, a sign-in or a sign-out having moved the engine, is
-such a refusal (`not-writable`): `gym_action` with `refused`, and no Issue. The room drawing before the account answers
+such a refusal: `gym_action` with `refused` and `code: not-writable`, and no Issue; every other refusal, the gym's rules on
+this device or the server's notice of one, carries `code: domain`. The room drawing before the account answers
 adds no event and no failure of its own. No workout or note content, identifiers, field values, refusal details or raw
 exception messages are reported.
 

@@ -12,15 +12,17 @@ function useSession() {
   return useSyncExternalStore(syncSession.subscribe, syncSession.getSnapshot, syncSession.getSnapshot);
 }
 
-// The replica the open engine holds, whoever it is for: `{ engine, id, state }`, `state` being `bound` (its session
-// paused or not) or `anon`; null while the engine is not open. A room that opens from the copy draws from it, and waits
-// for no answer from the network.
+// The replica the open engine holds, as this tab draws it: `{ engine, state, account, binding }`, `state` being `bound`
+// (its session paused or not) or `anon`, and `binding` the engine's, which a re-identify keeps and a sign-in or a sign-out
+// changes. It is drawn whether or not the account has answered, and waits for nothing from the network; null while the
+// engine is not open, and while the shell has settled an account the replica is not bound to, as when another tab moved
+// the engine first, until the shell catches up.
 export function useSyncReplica() {
   const session = useSession();
   const snapshot = useSyncExternalStore(session.engine?.observeEngine ?? boot.subscribe, session.engine?.getSnapshot ?? boot.getSnapshot, boot.getSnapshot);
-  const open = session.ready && snapshot !== null;
-  return useMemo(() => (open ? { engine: session.engine, id: snapshot.replica, state: snapshot.state } : null),
-    [open, session.engine, snapshot?.replica, snapshot?.state]);
+  const drawn = session.ready && snapshot !== null && (!session.account || snapshot.account === session.account);
+  return useMemo(() => (drawn ? { engine: session.engine, state: snapshot.state, account: snapshot.account, binding: snapshot.binding } : null),
+    [drawn, session.engine, snapshot?.binding, snapshot?.state]);
 }
 
 // The engine of a bound replica whose account the shell has settled, or null during boot and sign-out.

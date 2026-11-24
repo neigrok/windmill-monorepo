@@ -444,3 +444,16 @@ test('session totals use unavailable for pound conversion overflow and preserve 
     assert.equal(textOf(findByClass(room.screen(), 'gym-reader-totals')[0]), 'sets0reps0lb external0');
   } finally { spellWeightsIn('kg'); }
 });
+
+test('a workout’s share is offered in its options only to an account the shell has settled', async (t) => {
+  browserWith();
+  await gymAccount(t, sessionWithASet());
+  const { SessionDetail } = await loadScreen('products/gym/Log.jsx');
+  const shares = async (signedIn) => {
+    const view = renderHook(t, () => SessionDetail({ id: 'session0001', log: roomLog(), signedIn }));
+    await settle();
+    view.redraw();
+    return elementsOf(view.tree).filter((each) => each.type?.name === 'ShareWorkout').map((each) => each.props.sessionId);
+  };
+  assert.deepEqual([await shares(false), await shares(true)], [[], ['session0001']]);
+});

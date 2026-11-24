@@ -23,8 +23,8 @@ records.release(); // when the holder leaves the scope
 
 `commit` accepts either changes/options or the reference's synchronous read-and-commit callback.
 Its Promise resolves after the IndexedDB transaction commits; publication failures report separately and do not reject a durable save. The callback runs inside the
-transaction and must not return a Promise; its views carry `drawn`, `stored`, `now`, `replica`, the
-product's `devices` rows and the scope's `firstPullComplete`. A rejection is one of §7.1's three failures, a
+transaction and must not return a Promise; its views carry `drawn`, `stored`, `now`, `replica`, the replica's
+`binding` (below), the product's `devices` rows and the scope's `firstPullComplete`. A rejection is one of §7.1's three failures, a
 `CommitError` of kind `not-writable`, `malformed` or `store`, or the callback's own throw, passed
 through unchanged. `newGestureId()` mints the id a caller passes as `opts.gestureId` when it must know it
 before the commit; the domain kit's runner (`src/platform/domain-kit/runner.js`) does.
@@ -54,7 +54,8 @@ engine publishes it again only when the product's notices change. `dismissNotice
 D-17) and resolves to true; one the active replica does not hold is left alone, and its dismissal resolves to false
 and reports nothing.
 
-`observeEngine` and `getSnapshot` expose replica/auth/upgrade state and `connection`: `offline` while the
+`observeEngine` and `getSnapshot` expose replica/auth/upgrade state, the active replica's `binding` and bound `account`
+(null for the anon replica), and `connection`: `offline` while the
 browser reports no network, `unreachable` after a request to the server got no answer or a 5xx answer
 and before one answers again, else `online`. The tab that makes a request tells the other tabs whether it
 was answered. `onEvent` delivers active replica changes after durable commits and persisted-page
@@ -203,8 +204,10 @@ lost push reply. It requires `windmill_server` and Postgres client tools from `b
 territory; scheduling this script there remains an integration task. `npm run build` also bundles
 the browser engine separately and rejects Node builtins. The app shell caches the built room assets for offline reload; product adapters own their projections and migration.
 
-`react.js` exports `useSyncReplica()` (the open engine's active replica, `{ engine, id, state }`, bound or anon, from
-the moment the engine opens and whether or not the account has answered; null while it is not open), `useSyncEngine()`
+`react.js` exports `useSyncReplica()` (the open engine's active replica as this tab draws it, `{ engine, state, account,
+binding }`, bound or anon, from the moment the engine opens and whether or not the account has answered, the same object
+while its binding stands; null while the engine is not open, and while the shell has settled an account, the session's
+`account`, that the replica is not bound to, as when another tab moved the engine first), `useSyncEngine()`
 (the engine of a bound replica whose account the shell has settled, or null during boot and sign-out),
 `useSyncRecords(scope)` (the scope's snapshot through `useSyncExternalStore`, holding the scope for the
 document) and `useSyncNotices(product)` (the product's notices the same way). Records can observe the anonymous replica; only the session owner opens
