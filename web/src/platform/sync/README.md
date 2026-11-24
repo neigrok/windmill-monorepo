@@ -76,7 +76,11 @@ are control records of the replica's store, beside its outbox. The first tab's e
 act no unsettled request reads, and reports how many requests are `waiting` and the oldest one's age; each
 request that settles reports its applied and skipped counts.
 Persisted restores reopen IndexedDB and coordination with the same observations and listeners;
-the shell refreshes account state after restoration. Views and transport are injectable and product-neutral.
+the shell refreshes account state after restoration. While the page is in the back/forward cache the published views
+and observations stand and the session stays `ready`, so no room unmounts; a write waits for the restore that follows and
+lands in the reopened store, and fails as a `CommitError` of kind `store` when that restore fails (which reported
+`storage`) or the engine closes for good. A failed restore takes the rooms down (`ready: false, error: true`). Views and
+transport are injectable and product-neutral.
 
 HTTP goes to the `base` origin the engine's owner passes (same-origin when none) and uses the session
 cookie; anonymous pulls explicitly omit credentials. The `credentials` port
@@ -209,8 +213,9 @@ binding }`, bound or anon, from the moment the engine opens and whether or not t
 while its binding stands; null while the engine is not open, and while the shell has settled an account, the session's
 `account`, that the replica is not bound to, as when another tab moved the engine first), `useSyncEngine()`
 (the engine of a bound replica whose account the shell has settled, or null during boot and sign-out),
-`useSyncRecords(scope)` (the scope's snapshot through `useSyncExternalStore`, holding the scope for the
-document) and `useSyncNotices(product)` (the product's notices the same way). Records can observe the anonymous replica; only the session owner opens
+`useSyncRecords(scope)` (the scope's snapshot of the replica this tab draws through `useSyncExternalStore`, holding the
+scope for the document, and the placeholder while `useSyncReplica` draws none, so no room draws another seat's records) and
+`useSyncNotices(product)` (the product's notices the same way). Records can observe the anonymous replica; only the session owner opens
 and starts the engine. Each product's route table carries a `sync` group — `prepare(engine)`,
 `onPushResult`, `pendingDeviceWork`, `adoptDeviceRows`, `liveHint(engine, replica)`, `signedOutWork` — the record type a
 sign-in question counts, with the product's own words for it (`counted(n)`, `many`) —, `adoptionAnswer(engine, due)` and

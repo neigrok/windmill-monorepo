@@ -164,8 +164,8 @@ Screen tests run over a real browser engine for a signed-in account (`gymAccount
 `test/products/gym/harness.mjs`) and assert what the account still owes the server. `boot.browser.test.js` boots the
 account provider, the sign-in door and the shell over a browser copy an earlier visit seeded, in Chromium: the room draws
 with `/v1/me` held and reports how long it took, keeps the room for a paused session, keeps the pitch signed out, keeps
-the room and what is typed in it through a re-identify, and draws `Opening`, never another tab's account, under the account
-this tab's shell has settled. Shared training
+the room and what is typed in it through a re-identify and through a page restored from the back/forward cache, its scroll
+too, and draws `Opening`, never another tab's account, under the account this tab's shell has settled. Shared training
 reads run on web, Swift and Kotlin. The local stack checks domain reads over an actual disposable
 backend account and persisted browser-engine observations. Chromium acceptance has twelve checks: a phone replica's `gym.start`, set and `gym.finish`
 pushes arrive live; web routine edits, backfills, additive recovery, weigh-ins and unit changes converge; a held weigh-in delete can be

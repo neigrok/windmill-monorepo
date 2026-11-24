@@ -16,6 +16,12 @@ page. Blank drafts normalize before validation; a new blank draft queues no page
 erasing anonymous writing cancels its claim while preserving invitation state. Clearing an account
 page keeps an invisible sync ordering marker so older offline saves cannot revive it.
 
+The canvas draws the replica this tab draws (`useSyncReplica`): while the shell has settled an account the engine's
+replica is not bound to, as when another tab signed someone else in, it draws nothing of that replica until the shell
+catches up. A page restored from the back/forward cache keeps the canvas, what was typed and its scroll; a save that came
+due while the page was suspended lands once the engine is restored. `test/products/journal/boot.browser.test.js` boots
+the shell over a seeded browser copy in Chromium and proves both.
+
 Typing shows at once and commits 600 ms after the last keystroke, one save for the burst. A mood or
 energy change, the page hiding and the editor unmounting save a staged body at once; a local day
 change carries it into today and saves it.

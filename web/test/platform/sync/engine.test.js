@@ -490,6 +490,53 @@ test('failed restore reports storage failure, retains local work and permits a l
   engine.close();
 });
 
+test('a write while the page is suspended waits for the restore and lands in the reopened store, the views standing meanwhile', async () => {
+  const env = environment(), dispatch = lifecycle(env), engine = await open(env);
+  await engine.commit('self/probe', card());
+  const observation = engine.observe('self/probe');
+  const held = observation.getSnapshot();
+  dispatch('pagehide');
+  let landed = false;
+  const writing = engine.commit('self/probe', card('card0002')).then((outcome) => { landed = true; return outcome; });
+  for (let turn = 0; turn < 20; turn++) await tick();
+  assert.deepEqual({ landed, closed: engine.closed, snapshot: observation.getSnapshot() === held,
+    drawn: observation.getSnapshot().drawn.map((record) => record.id) }, { landed: false, closed: true, snapshot: true, drawn: ['card0001'] });
+  dispatch('pageshow'); await engine.restoring;
+  const outcome = await writing;
+  assert.deepEqual({ localIds: outcome.localIds.length, drawn: observation.getSnapshot().drawn.map((record) => record.id).sort(),
+    stored: (await engine.store.read()).device.activeReplica.entries().length, failures: env.failures },
+  { localIds: 1, drawn: ['card0001', 'card0002'], stored: 2, failures: [] });
+  engine.close();
+});
+
+test('a write waiting on a restore that fails fails as the store, and the next restore takes the writes after it', async () => {
+  const env = environment(), dispatch = lifecycle(env), engine = await open(env);
+  dispatch('pagehide');
+  const waiting = engine.commit('self/probe', card());
+  const reopen = engine.store.reopen;
+  engine.store.reopen = async () => { throw new Error('storage blocked'); };
+  dispatch('pageshow');
+  await assert.rejects(engine.restoring, /storage blocked/);
+  await assert.rejects(waiting, (error) => error instanceof CommitError && error.kind === 'store');
+  assert.deepEqual(env.failures, ['storage']);
+  const later = engine.commit('self/probe', card('card0002'));
+  engine.store.reopen = reopen;
+  dispatch('pageshow'); await engine.restoring;
+  assert.equal((await later).localIds.length, 1);
+  assert.deepEqual(engine.device.activeReplica.entries().map((entry) => entry.intent.d[0].id), ['card0002']);
+  assert.deepEqual(env.failures, ['storage']);
+  engine.close();
+});
+
+test('a write waiting on a suspended page fails as the store when the engine closes for good', async () => {
+  const env = environment(), dispatch = lifecycle(env), engine = await open(env);
+  dispatch('pagehide');
+  const waiting = engine.commit('self/probe', card());
+  engine.close();
+  await assert.rejects(waiting, (error) => error instanceof CommitError && error.kind === 'store');
+  assert.deepEqual(env.failures, []);
+});
+
 test('an explicit close during a stalled restore cannot resurrect coordination or storage', async () => {
   const env = environment(), dispatch = lifecycle(env), engine = await open(env);
   dispatch('pagehide');

@@ -128,8 +128,11 @@ export class BrowserSyncEngine {
   }
 
   // One transaction over the device. A failure of the store reports `storage` once and reaches the caller as a
-  // `CommitError` of kind `store`; the body's own throw is its caller's to report, and passes through unreported.
+  // `CommitError` of kind `store`; the body's own throw is its caller's to report, and passes through unreported. While
+  // the page is in the back/forward cache a write waits for the restore that follows, and a restore that fails fails it
+  // as the store's failure, which the restore reported.
   async write(operation, change, scopes = []) {
+    if (this.suspended) await this.restoration.restored;
     let context;
     let answer;
     let thrown;
@@ -1410,10 +1413,15 @@ export class BrowserSyncEngine {
         if (this.closed) return;
         this.announceScopes();
         this.emit({ event: 'restored' });
+        this.restoration.resolve();
+        this.restoration = null;
       } catch (error) {
         if (generation !== this.lifecycleGeneration) throw error;
         this.telemetry.failure('storage');
+        const failed = this.restoration;
+        this.restoration = null;
         this.close({ persisted: true });
+        failed.reject(new CommitError('the device store did not reopen', 'store', { cause: error }));
         this.emit({ event: 'restoreFailed' });
         throw error;
       } finally { this.restoring = null; }
@@ -1463,6 +1471,17 @@ export class BrowserSyncEngine {
     this.lifecycleGeneration++;
     this.suspended = persisted;
     this.closed = true;
+    // What a write waits on while the page is suspended: settled by the restore that follows, or failed by a close for good.
+    if (persisted && !this.restoration) {
+      const restoration = {};
+      restoration.restored = new Promise((resolve, reject) => Object.assign(restoration, { resolve, reject }));
+      restoration.restored.catch(() => {});
+      this.restoration = restoration;
+    }
+    if (!persisted) {
+      this.restoration?.reject(new CommitError('the device store closed', 'store'));
+      this.restoration = null;
+    }
     this.releaseSignOut?.(); this.releaseSignOut = null;
     this.timers.clearTimeout(this.reconcileTimer);
     this.timers.clearTimeout(this.cleanupTimer);

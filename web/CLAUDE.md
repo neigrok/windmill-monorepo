@@ -324,8 +324,10 @@ Escape cancels, and a cancelled sign-in signs the account out and leaves the wor
 product is asked in turn. Account closure records a durable intent and discards that
 account's device data without a second question, recovering interrupted cleanup before ordinary auth refresh.
 `platform/sync/react.js` exports `useSyncReplica()`, `useSyncEngine()`,
-`useSyncRecords(scope)` and `useSyncNotices(product)`. The anonymous journal uses record observations; gym's room draws from
-the replica the engine holds without waiting for the account, and signed out is its sign-in pitch.
+`useSyncRecords(scope)` and `useSyncNotices(product)`; records and notices follow the replica this tab draws, so no room
+draws another seat's while the shell catches up. The anonymous journal uses record observations; gym's room draws from
+the replica the engine holds without waiting for the account, and signed out is its sign-in pitch. A page restored from
+the back/forward cache keeps every room as it stood, and its writes wait for the engine's restore.
 Gym and journal records change only through the engine; their REST clients carry server features.
 The worker stages the shell and room dependencies listed by `offline-assets.json` in one verified
 cache generation before promoting it; a failed update retains the previous complete shell. The build
