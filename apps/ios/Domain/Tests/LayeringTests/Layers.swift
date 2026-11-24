@@ -25,7 +25,7 @@ enum Layers {
     LayerRow(layer: .engineAPI, modules: ["SyncCore", "SyncAPI", "SyncSchema"], mayDependOn: [.engineAPI], mayAlsoDependOn: []),
     LayerRow(
       layer: .engineRuntime,
-      modules: ["SyncReplica", "SyncStore", "SyncModelServer", "SyncEngine", "SyncIOS", "SyncSchemaGen", "GymCatalogGen", "GRDB"],
+      modules: ["SyncReplica", "SyncStore", "SyncModelServer", "SyncEngine", "SyncIOS", "SyncSchemaGen", "CatalogGen", "GRDB"],
       mayDependOn: [.engineAPI, .engineRuntime], mayAlsoDependOn: []),
     LayerRow(layer: .engineTestSupport, modules: ["SyncTesting"], mayDependOn: [.engineAPI, .engineRuntime], mayAlsoDependOn: []),
     LayerRow(layer: .agent, modules: ["Agent"], mayDependOn: [], mayAlsoDependOn: ["SyncCore"]),

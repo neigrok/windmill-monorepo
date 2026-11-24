@@ -25,7 +25,7 @@ struct PackagePlacement: Sendable {
       ]),
     PackagePlacement(
       name: "WindmillDomain", directory: "Domain", dependencies: ["Sync": .any, "swift-syntax": .onlyByTarget("LayeringTests")],
-      modules: ["DomainKitNFC", "DomainKit", "DomainKitTesting", "GymDomain", "JournalDomain", "RoadmapDomain", "RoadmapLayout", "GymCatalogGen"]),
+      modules: ["DomainKitNFC", "DomainKit", "DomainKitTesting", "GymDomain", "JournalDomain", "RoadmapDomain", "RoadmapLayout", "CatalogGen"]),
     PackagePlacement(name: "WindmillAgent", directory: "Agent", dependencies: ["Sync": .onlyProduct("SyncCore")], modules: ["Agent"]),
     PackagePlacement(
       name: "WindmillKit", directory: "WindmillKit", dependencies: ["Domain": .any, "Sync": .any, "Agent": .onlyProduct("Agent")],
@@ -34,7 +34,7 @@ struct PackagePlacement: Sendable {
       name: "SyncTestingSurface", directory: "SyncTestingSurface", dependencies: ["Sync": .onlyProduct("SyncTesting")], modules: []),
   ]
 
-  static let executables: Set<String> = ["SyncSchemaGen", "GymCatalogGen"]
+  static let executables: Set<String> = ["SyncSchemaGen", "CatalogGen"]
 
   static func kind(of module: String) -> String { executables.contains(module) ? "executable" : "regular" }
 }

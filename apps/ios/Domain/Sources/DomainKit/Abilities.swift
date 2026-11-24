@@ -28,16 +28,20 @@ public struct Ability: Sendable {
   public let seats: AbilitySeats
   // False for an ability the server declares no tool for: it has no server golden, and the phone does not run it either.
   public let declared: Bool
+  // Whether a turn declares the tool strict to the provider; a catalog that does not say holds every tool strict.
+  public let strict: Bool
   public let phrase: String
   public let input: JSON
   public let result: JSON
 
-  public init(name: String, kind: AbilityClass, agent: AgentRule, seats: AbilitySeats, declared: Bool, phrase: String, input: JSON, result: JSON) {
+  public init(name: String, kind: AbilityClass, agent: AgentRule, seats: AbilitySeats, declared: Bool, strict: Bool, phrase: String, input: JSON,
+              result: JSON) {
     self.name = name
     self.kind = kind
     self.agent = agent
     self.seats = seats
     self.declared = declared
+    self.strict = strict
     self.phrase = phrase
     self.input = input
     self.result = result
