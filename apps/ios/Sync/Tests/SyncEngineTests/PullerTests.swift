@@ -121,6 +121,29 @@ struct PullerTests {
     #expect(try Self.cursor(rig) == CursorRecord(cursor: Self.live(1, epoch: "ep-2"), digest: card.digest, booted: true))
   }
 
+  // A pull that gives the replica an epoch it did not hold, its first or a changed one, wakes the sender, so a Redo that
+  // waited for an epoch and the entries an epoch change returned to ready go; a pull that brings the epoch it holds does not.
+  @Test func aPullThatGivesTheReplicaAnEpochItDidNotHoldWakesTheSender() async throws {
+    let (rig, _) = try Self.booted()
+    #expect(try rig.meta().serverEpoch == nil)
+    var kicks = rig.engine.sender.wake.kicks
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    #expect(try rig.meta().serverEpoch == "ep-1")
+    #expect(rig.engine.sender.wake.kicks == kicks + 1)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 1, cursor: Self.live(1))]))
+    rig.engine.foreground()
+    kicks = rig.engine.sender.wake.kicks
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    #expect(rig.engine.sender.wake.kicks == kicks)
+    rig.random.queue(symbol: 1, of: 16, count: 32)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 1, cursor: Self.live(1))], epoch: "ep-2"))
+    rig.engine.foreground()
+    kicks = rig.engine.sender.wake.kicks
+    _ = await rig.engine.puller.step()
+    #expect(try rig.meta().serverEpoch == "ep-2")
+    #expect(rig.engine.sender.wake.kicks == kicks + 1)
+  }
+
   // MARK: Chunks (§7.5 step 2) and the writer (§2.5)
 
   // Five cards the server holds at seqs 1 to 5.

@@ -558,9 +558,12 @@ public struct Inverses: Sendable {
     }
   }
 
-  // A Redo of a cancellation waits while an entry its references name has no result yet.
+  // A Redo of a cancellation waits while the replica holds no epoch, in which a waiting slot's references bind, and while
+  // an entry its references name has no result yet.
   func referencesAuthoritative(_ request: InverseRequest, in replica: LoadedReplica) -> Bool {
-    request.slots.filter { $0.state == .waiting }.flatMap(\.recipe.pendingLocalIds).allSatisfy { replica.named($0) == nil }
+    let waiting = request.slots.filter { $0.state == .waiting }
+    if replica.meta.serverEpoch == nil && !waiting.isEmpty { return false }
+    return waiting.flatMap(\.recipe.pendingLocalIds).allSatisfy { replica.named($0) == nil }
   }
 
   // The accepted receipts the act's sources own in the current epoch, in commit order; a source whose history is
