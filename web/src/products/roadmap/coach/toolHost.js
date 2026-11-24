@@ -6,9 +6,10 @@
 // refused or could not store is `roadmap-not-ready`, one that changed nothing `no-change`, never a success, and such a
 // write leaves nothing to undo. A write answers with its receipt (D-4), which carries its Undo.
 //
-// A call tells nothing and reports nothing itself: the turn's engine tells each call it runs (`roadmap_coach_ability`)
-// and reports, once, anything that throws out of one, as it does for gym's Coach (§13). An Undo runs outside a turn, so
-// the host tells what each came to (`roadmap_coach_write_undone`).
+// A call tells no product event and reports nothing itself: the turn's engine tells each call it runs
+// (`roadmap_coach_ability`), a direct write's one product event, and reports, once, anything that throws out of one, as it
+// does for gym's Coach (§13). A write the door wrote tells the room's Activity the row the room's Board tells of the same
+// change (R-7). An Undo runs outside a turn, so the host tells what each came to (`roadmap_coach_write_undone`).
 
 import catalogFile from '../../../../../packages/api-contract/roadmap/catalog.json' with { type: 'json' };
 import { Catalog, JsonSchema } from '../../../platform/domain-kit/abilities.js';
@@ -16,6 +17,7 @@ import { precondition } from '../../../platform/domain-kit/values.js';
 import { track as trackEvent } from '../../../telemetry/beacon.js';
 import { AbilityCodes, refusal } from '../domain/abilities/answers.js';
 import { ReadAbilities } from '../domain/abilities/reads.js';
+import { StandingRoadmaps } from '../domain/abilities/standing.js';
 import { WriteAbilities } from '../domain/abilities/writes.js';
 import { inverseOutcome } from '../room/ReplicaSession.js';
 
@@ -49,12 +51,14 @@ export class WriteReceipt {
 }
 
 // `session` is the room's session open on the conversation's roadmap (`ReplicaSession`), `standing` reads the standing
-// roadmap as the room shows it now, and `about` is the roadmap the conversation is about, null for all of the person's.
+// roadmap as the room shows it now, `activity` is the room's Activity (`useActivity`'s `emit`), and `about` is the roadmap
+// the conversation is about, null for all of the person's.
 export class RoadmapToolHost {
-  constructor({ session, standing, about, catalog = new Catalog(catalogFile), abilities = { ...ReadAbilities, ...WriteAbilities },
+  constructor({ session, standing, activity, about, catalog = new Catalog(catalogFile), abilities = { ...ReadAbilities, ...WriteAbilities },
     mint = () => session.mintStepId(), track = trackEvent }) {
     this.session = session;
     this.standing = standing;
+    this.activity = activity;
     this.about = about;
     this.catalog = catalog;
     this.abilities = abilities;
@@ -69,7 +73,8 @@ export class RoadmapToolHost {
     const ability = this.catalog.ability(name);
     precondition(ability?.agent === 'runs' && Object.hasOwn(this.abilities, name), `the tool host runs ${name}`);
     if (new JsonSchema(ability.input).fault(input) !== null) return { answer: refusal(AbilityCodes.invalidInput), receipt: null };
-    const decided = this.abilities[name](this.standing(), input, this.about, this.mint);
+    const standing = this.standing();
+    const decided = this.abilities[name](standing, input, this.about, this.mint);
     if (!('writes' in decided)) return { answer: decided, receipt: null };
     precondition(decided.writes.length === 1, 'a direct write is one act');
     const room = this.handOver(decided.writes[0]);
@@ -78,8 +83,18 @@ export class RoadmapToolHost {
       if (room !== null) this.session.forget(room);
       return { answer: refusal(WROTE_NOTHING[landed], input.nodeId), receipt: null };
     }
+    this.tellActivity(name, input, standing);
     const nodeId = decided.result.nodeId ?? input.nodeId;
     return { answer: { result: decided.result }, receipt: new WriteReceipt({ ability: name, treeId: input.treeId, nodeId, room }) };
+  }
+
+  // R-7: the Activity row the room's Board tells of the same change, the person's own and told silently, as the person is
+  // in the conversation, not on the canvas. Of the direct writes only a new name has one, in the step's hue: the Board
+  // tells none of a step's words, a new step or a link, and a mark's rows come as the room adopts the copy's marks.
+  tellActivity(name, input, standing) {
+    if (name !== 'rename_node') return;
+    const { roadmap } = StandingRoadmaps.of(standing).open(input.treeId, this.about);
+    this.activity({ verb: 'renamed', nodeId: input.nodeId, label: input.label, kind: roadmap.shown(input.nodeId).color }, { silent: true });
   }
 
   // One act handed to the room's door at once, answering the room's receipt of it, or null where the door refused it at

@@ -635,9 +635,15 @@ The roadmap tools an outside assistant reaches over MCP stay on the server as th
     Undo runs outside a turn, with the ability and what the Undo came to once the engine has settled
     it: `undone`, `skipped` where a later write stood in its way, or `unavailable` where the room no
     longer holds the write.
-- A write Coach makes emits the product event and the Activity row the room's own control emits for
-  the same change. Those are emitted by the controls today, so they move with the rules into the
-  shared path (§3).
+- A direct write tells the room's Activity the row the room's own Board tells of the same change,
+  the person's own (R-7) and told silently, since the person is in the conversation, not on the
+  canvas: a new name, `renamed`, as the Board's step document tells it. The Board tells no row of a
+  step's description or web links, a new step or a link, so neither does Coach, and a mark's rows,
+  `completed` and `unlocked`, come as the room adopts the copy's marks, as any mark the room did not
+  make does. The tool host takes the room's Activity as a collaborator.
+- A direct write's one product event is `roadmap_coach_ability`. The room's gesture events
+  (`roadmap_board_edit`, `roadmap_board_complete`, `roadmap_graph_toast` and the like) count the
+  person's own gestures, and a Coach write adds to none of them.
 - Unexpected failures report to Sentry under the static names `roadmap-coach-turn`,
   `roadmap-coach-apply`, `agent-host` and `ai-call`. A refusal the person can act on is an event, not
   an Issue. Whatever throws in an ability's call, the ability, the standing roadmap it reads or the

@@ -154,6 +154,15 @@ test('a step that opens a roadmap the device holds nothing of takes neither mark
     { writes: [{ action: 'Reset', input: { tree: 't_0000000000000001', step: 'c' } }], result: {} }]);
 });
 
+// A lone surrogate is a case the web alone can hold: Swift's decoder refuses one before any ability sees it, so it is no
+// shared vector (packages/api-contract/roadmap/abilities/README.md).
+test('a title holding a lone surrogate is one the domain cannot store, refused before its cap', () => {
+  assert.deepEqual(answers({ trees: [sailing()] }, [
+    ['rename_node', { treeId: 't_0000000000000001', nodeId: 'b', label: 'Tie a \ud800 bowline' }],
+    ['rename_node', { treeId: 't_0000000000000001', nodeId: 'b', label: `${'é'.repeat(201)}\udc00` }],
+  ], 't_0000000000000001'), [{ refused: { code: 'invalid-input', id: 'b' } }, { refused: { code: 'invalid-input', id: 'b' } }]);
+});
+
 test('a text the domain cannot store is malformed before any cap, naming the step the write names, and a blank address is the address rule\'s', () => {
   const standing = { trees: [sailing()] };
   const write = (/** @type {string} */ name, /** @type {any} */ input) => answers(standing, [[name, { treeId: 't_0000000000000001', ...input }]], 't_0000000000000001')[0];

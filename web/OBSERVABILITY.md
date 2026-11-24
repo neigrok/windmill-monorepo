@@ -389,8 +389,10 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 Roadmap Coach's tool host tells nothing of a call and reports nothing of one: the platform's turn engine tells each call it
 runs, through its telemetry port, as `roadmap_coach_ability` (the ability and its outcome or refusal code), and reports
 whatever throws out of a call (the ability, the standing roadmap it reads, or the room's door) once, as `agent-host`,
-ending the turn `failed` with `host-fault`, as it does for gym's Coach. No roadmap turn runs on the engine yet, so
-production emits and reports neither.
+ending the turn `failed` with `host-fault`, as it does for gym's Coach. That event is a direct write's one product event:
+the room's gesture events (`roadmap_board_*`, `roadmap_graph_*`) count the person's own gestures, and a Coach write adds
+to none of them, so `roadmap_board_complete`'s `door: coach` stays the demo's coach. No roadmap turn runs on the engine
+yet, so production emits and reports neither.
 
 A guide's `saved` and `cleared` mean the session or this device's store took the write: durability on this device, not the
 server's admission, as a gym save's `saved-local` is. What the server then does with it is the structure lane's to say, through

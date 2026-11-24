@@ -10,10 +10,13 @@ import { Harness } from '../../../platform/domain-kit/harness.js';
 import { until } from '../../../platform/sync/fakes.js';
 import { roadmapRegistry } from '../domain/vectors.js';
 import { TurnRunner } from '../../../../src/platform/agent/turn.js';
+import { BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
+import { BoardActs } from '../../../../src/products/roadmap/board/useBoardActs.js';
 import { RoadmapToolHost, WriteReceipt } from '../../../../src/products/roadmap/coach/toolHost.js';
 import { readStanding } from '../../../../src/products/roadmap/domain/abilities/standing.js';
 import { CreateRoadmap } from '../../../../src/products/roadmap/domain/roadmaps.js';
 import { RoadmapScopes } from '../../../../src/products/roadmap/domain/roadmapRules.js';
+import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { HeldRoadmap } from '../../../../src/products/roadmap/room/ReplicaRoadmap.js';
 import { ReplicaReading } from '../../../../src/products/roadmap/room/ReplicaReading.js';
 
@@ -56,11 +59,30 @@ function standingOf(reading) {
   return readStanding([...roadmap.held.values()].map((held) => held.copy(roadmapRegistry)), { listRead: roadmap.listRead });
 }
 
-// The tool host of a conversation about `about`, over the room's session and what the room shows, with what it tells kept.
+// The tool host of a conversation about `about`, over the room's session and what the room shows, with what it tells and
+// the rows it tells the room's Activity kept.
 function coachOver({ session, reading }, about, collaborators = {}) {
   const told = [];
-  const tools = new RoadmapToolHost({ session, standing: () => standingOf(reading), about, track: (name, props) => told.push([name, props]), ...collaborators });
-  return { tools, told };
+  const rows = [];
+  const tools = new RoadmapToolHost({ session, standing: () => standingOf(reading), about, track: (name, props) => told.push([name, props]),
+    activity: (row, options) => rows.push([row, options]), ...collaborators });
+  return { tools, told, rows };
+}
+
+// The rows the room's own Board tells its Activity of one change, made by its own acts over the roadmap `sailing` holds.
+function boardRows(steps, change) {
+  const rows = [];
+  const tree = new SkillTree({ id: 'sail', title: 'Learn to sail', nodes: [
+    { id: steps.dock, label: 'Leave the dock', prerequisites: [], color: 'terracotta' },
+    { id: steps.knot, label: 'Tie a bowline', prerequisites: [], color: 'terracotta' },
+    { id: steps.sail, label: 'Sail with an instructor', prerequisites: [steps.dock, steps.knot], color: 'terracotta' },
+  ] });
+  const acts = new BoardActs({ tree, treeId: tree.id, active: true, owner: true, progress: { completed: new Set(), completedAt: {} }, query: new BoardQuery(),
+    now: () => 17, session: { ready: true, holdAct() {}, endHeldAct() {}, leavePage() {}, dispatch: () => ({}), revert: () => true },
+    showToast() {}, setQuery() {}, onReveal() {}, onQuiet() {}, onHeld() {}, track() {}, report: (operation, error) => assert.fail(`${operation}: ${error}`),
+    emit: (row, options) => rows.push([row, options]) });
+  assert.deepEqual(change(acts), { ok: true });
+  return rows;
 }
 
 // Each Undo asked, once the engine has settled it: the server settles an Undo, so the phone syncs until each has, a few
@@ -113,6 +135,37 @@ test('each direct write lands through the room\'s own door, as the person\'s wou
     assert.deepEqual({ stacked: room.session.undoStack.length, kept: room.session.kept.length }, { stacked: 4, kept: 1 },
       'each structure act stands on the room\'s own stack, where its ⌘Z reaches it, and the mark out of it, as the room\'s marks are');
     assert.deepEqual({ told, said: room.said }, { told: [], said: [] }, 'the turn\'s engine tells each call; the host tells none');
+    room.reading.close();
+  } finally {
+    a.close();
+  }
+});
+
+test('a direct write tells the room\'s Activity the row the room\'s own Board tells of the same change, silently: a new name alone', async () => {
+  const { a, tree, steps } = await sailing();
+  try {
+    const room = await openRoom(a, tree);
+    const { tools, rows } = coachOver(room, tree);
+    const told = async (/** @type {string} */ name, /** @type {any} */ input) => {
+      assert.ok('result' in (await tools.run(name, { treeId: tree, ...input })).answer);
+      return rows.splice(0);
+    };
+    const coach = {
+      renamed: await told('rename_node', { nodeId: steps.knot, label: 'Tie a cleat hitch' }),
+      described: await told('annotate_node', { nodeId: steps.knot, description: 'Round the post.' }),
+      created: await told('create_node', { label: 'Hoist the sail', prerequisites: [steps.dock] }),
+      linked: await told('connect', { nodeId: steps.knot, prerequisiteId: steps.dock }),
+    };
+    assert.deepEqual(coach, {
+      renamed: boardRows(steps, (acts) => acts.edit({ id: steps.knot, label: 'Tie a cleat hitch' })),
+      described: boardRows(steps, (acts) => acts.edit({ id: steps.knot, description: 'Round the post.' })),
+      created: boardRows(steps, (acts) => acts.create({ id: 'hoist', label: 'Hoist the sail', color: 'terracotta', prerequisites: [steps.dock] })),
+      linked: boardRows(steps, (acts) => acts.edit({ id: steps.knot, prerequisites: [steps.dock] })),
+    });
+    assert.deepEqual(coach, { renamed: [[{ verb: 'renamed', nodeId: steps.knot, label: 'Tie a cleat hitch', kind: 'terracotta' }, { silent: true }]],
+      described: [], created: [], linked: [] }, 'the person\'s own row, which names no actor, so the room says You');
+    await tools.run('set_progress', { treeId: tree, nodeId: steps.dock, status: 'complete' });
+    assert.deepEqual(rows, [], 'a mark\'s rows come as the room adopts the copy\'s marks');
     room.reading.close();
   } finally {
     a.close();
@@ -276,7 +329,7 @@ test('the turn\'s engine tells each call once and reports a throw once, the abil
   const roadmap = { id: 't_0000000000000001', own: true, meta: { title: 'Learn to sail' }, nodes: [{ id: 'a', label: 'Leave the dock' }] };
   const told = [];
   const host = (collaborators) => new RoadmapToolHost({ session: { treeId: roadmap.id }, standing: () => ({ trees: [roadmap] }), about: roadmap.id,
-    track: (name, props) => told.push([name, props]), ...collaborators });
+    track: (name, props) => told.push([name, props]), activity: (row) => told.push(['activity', row]), ...collaborators });
   const thrown = new TypeError('an input the host should never send');
   const broken = new TypeError('the door broke');
 

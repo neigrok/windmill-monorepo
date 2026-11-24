@@ -28,8 +28,10 @@ answer:
   for `create_node`, the new step's; for a proposal, the proposal's own and then one for each ref, in the order the
   changes give them (§7).
 - `call` names the file's ability and gives its input. The input stands inside the ability's `input` schema, but in a
-  case that expects `invalid-input`. A text of an input may hold U+0000 or a lone surrogate, escaped in the file, where a
-  case shows a direct write refusing text the domain cannot store.
+  case that expects `invalid-input`. A text of an input may hold U+0000, escaped in the file, where a case shows a direct
+  write refusing text the domain cannot store. A lone surrogate is refused the same way, but no case here holds one: a
+  case must be one every implementation can run, and Swift's decoder refuses a lone surrogate before any ability sees
+  it, so the web's `web/test/products/roadmap/domain/abilities/writes.test.js` holds that case.
 - `expect` is one of:
   - `{"result": …}` for a read: its answer, inside the ability's `result` schema, whose canonical text is at most its
     `result.maxBytes`;
