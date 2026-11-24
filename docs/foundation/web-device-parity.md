@@ -14,7 +14,8 @@ that loses a race holds its sets in its notice and no surface recovers them yet;
 onboarding import in the web's domain, which claims every file §8 names. Of them, the shell's hook before the seat changes
 (§3 Sign-in) saves each signed-out workout for adoption, an open one with its sets, with no rack to write first since the
 web has none yet; nothing else calls them on the web yet. Gym's Coach takes its turn in the browser. The browser
-counts a store it cleared (§7) once, with its event. A browser that cannot keep a copy is not supported (§7, R-7). The
+counts a store it cleared (§7) once, with its event. A browser that cannot keep a copy is not supported (§7, R-7), and
+every sign-out forgets the journal's pages no account claims (R-9). The
 boards for a workout on the web and the signed-out gym are approved (R-10). The build order lives in the Web as a device roadmap tree, which the dogfood tree
 (`t_9362d9bc883e0a1e`) opens from the node `web-device-parity`.
 

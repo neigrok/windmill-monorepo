@@ -22,8 +22,10 @@ copy in place.
 ## LP-2 Data no account can be shown to own
 
 **Ruled 2026-11-25:** data in this situation is forgotten at sign-out. The first case built is the journal's
-unattributed pages from before the engine (web-device-parity §5).
+unattributed pages from before the engine (web-device-parity §5): every sign-out, Keep or Discard, deletes them.
 
+- **Open:** nothing tells the person that signing out forgets such data; saying so is a visible change and needs a
+  design.
 - **Open:** which other data is in this situation, on each surface. Candidates:
   - signed-out work on a shared device that the next person signs in over;
   - signed-out gym workouts saved for adoption that no sign-in took;
