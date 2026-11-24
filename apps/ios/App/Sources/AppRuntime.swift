@@ -9,6 +9,7 @@ import SyncIOS
 import SyncReplica
 import SyncSchema
 import SyncStore
+import Synchronization
 
 nonisolated struct BoardClock: WallClock {
   func nowMs() -> Int64 { 1_790_424_000_000 }
@@ -22,6 +23,34 @@ nonisolated struct FixedConnectivity: Connectivity {
   let isOnline: Bool
   func onChange(_ handler: @escaping @Sendable (Bool) -> Void) {}
 }
+
+#if DEBUG
+// The model server's connection, which answers inside the app: online until a simulator board cuts it, as a phone that
+// loses its network does, and online again when the board gives it back.
+nonisolated final class BoardConnectivity: Connectivity {
+  struct State {
+    var online = true
+    var handlers: [@Sendable (Bool) -> Void] = []
+  }
+
+  let state = Mutex(State())
+
+  var isOnline: Bool { state.withLock(\.online) }
+
+  func onChange(_ handler: @escaping @Sendable (Bool) -> Void) {
+    state.withLock { $0.handlers.append(handler) }
+  }
+
+  func set(online: Bool) {
+    let handlers = state.withLock { (state: inout State) -> [@Sendable (Bool) -> Void] in
+      guard state.online != online else { return [] }
+      state.online = online
+      return state.handlers
+    }
+    for handler in handlers { handler(online) }
+  }
+}
+#endif
 
 nonisolated struct DeviceZone: Zone {
   func offsetSeconds(at instant: Instant) -> Int {
@@ -186,8 +215,8 @@ final class AppRuntime {
       transport = HTTPTransport(baseURL: settings.baseURL ?? URL(string: "http://127.0.0.1:1")!, schema: SyncSchema.version, telemetry: telemetry)
       auth = NativeAuth(baseURL: settings.baseURL, telemetry: telemetry, session: authSession)
     }
-    // The model server answers inside the app, so the device's network path never stands between them.
-    let reach: any Connectivity = connectivity ?? ((syncTransport ?? transport) is JournalModelTransport ? FixedConnectivity(isOnline: true) : PathConnectivity())
+    // The model server answers inside the app, so the device's network path never stands between them; a board may cut it.
+    let reach: any Connectivity = connectivity ?? ((syncTransport ?? transport) is JournalModelTransport ? BoardConnectivity() : PathConnectivity())
     #else
     transport = HTTPTransport(baseURL: settings.baseURL ?? URL(string: "http://127.0.0.1:1")!, schema: SyncSchema.version, telemetry: telemetry)
     auth = NativeAuth(baseURL: settings.baseURL, telemetry: telemetry, session: authSession)

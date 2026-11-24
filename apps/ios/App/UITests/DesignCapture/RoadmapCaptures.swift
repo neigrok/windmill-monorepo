@@ -1000,6 +1000,97 @@ final class RoadmapCaptures: DesignCapture {
     captureBoard("10.6b-roadmap-hue-in-use") { look in kind("Build", look) }
   }
 
+  // 10.1: offline, Reefing basics just made in the form, in Locked with its receipt, and Offline beside the progress.
+  func testOffline() {
+    captureBoard("10.1-roadmap-offline") { look in
+      let app = launch("roadmap-sync-offline", look, arguments: ["-band-stands", "600"])
+      XCTAssertTrue(app.staticTexts["3 of 9 done · Offline"].waitForExistence(timeout: 60))
+      XCTAssertTrue(app.buttons["roadmap-undo"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 10.2: Reefing basics landed after Read the wind was deleted elsewhere, Up next and washed, the band saying so with Show.
+  func testLanded() {
+    captureBoard("10.2-roadmap-landed") { look in landed(look) }
+  }
+
+  // 10.3: Show opens the landed step's page, its footer under the status row.
+  func testLandedStepPage() {
+    captureBoard("10.3-roadmap-landed-step-page") { look in
+      let app = landed(look)
+      app.buttons["roadmap-show"].tap()
+      XCTAssertTrue(app.staticTexts["roadmap-step-landed"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 10.4: Reefing basics back where its prerequisites put it, washed, the band saying why with Show.
+  func testCameBack() {
+    captureBoard("10.4-roadmap-came-back") { look in
+      let app = launch("roadmap-sync-came-back", look, arguments: ["-band-stands", "600"])
+      XCTAssertTrue(app.buttons["roadmap-show"].waitForExistence(timeout: 60))
+      XCTAssertTrue(app.staticTexts["3 of 9 done"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 10.5a: the title menu leading with the two changes set aside.
+  func testSetAsideInTheTitleMenu() {
+    captureBoard("10.5a-roadmap-set-aside-menu", settle: 1.5) { look in setAside(look) }
+  }
+
+  // 10.5b: Set Aside, the two changes under Winter refit with why.
+  func testSetAside() {
+    captureBoard("10.5b-roadmap-set-aside") { look in
+      let app = setAside(look)
+      app.buttons["2 Set Aside"].tap()
+      XCTAssertTrue(app.navigationBars["Set Aside"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 10.5c: a change's … menu, Copy and Discard.
+  func testSetAsideChangeMenu() {
+    captureBoard("10.5c-roadmap-set-aside-change-menu", settle: 1.5) { look in
+      let app = setAside(look)
+      app.buttons["2 Set Aside"].tap()
+      let more = app.buttons.matching(identifier: "roadmap-set-aside-more").firstMatch
+      XCTAssertTrue(more.waitForHittable(timeout: 10))
+      more.tap()
+      XCTAssertTrue(app.buttons["Copy"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // roadmap-sync-landed once the step has landed and the band says so.
+  func landed(_ look: Look) -> XCUIApplication {
+    let app = launch("roadmap-sync-landed", look, arguments: ["-band-stands", "600"])
+    XCTAssertTrue(app.buttons["roadmap-show"].waitForExistence(timeout: 60))
+    XCTAssertTrue(app.staticTexts["3 of 8 done"].waitForExistence(timeout: 10))
+    return app
+  }
+
+  // roadmap-sync-set-aside with the title's menu open once it leads with Set Aside, which nothing else in the room says,
+  // so the menu is opened again until the phone has heard the server refuse the two changes.
+  func setAside(_ look: Look) -> XCUIApplication {
+    let app = launch("roadmap-sync-set-aside", look)
+    let title = app.navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Learn to sail")).firstMatch
+    for _ in 0..<10 {
+      XCTAssertTrue(title.waitForHittable(timeout: 60))
+      title.tap()
+      XCTAssertTrue(app.buttons["All Roadmaps…"].waitForExistence(timeout: 5))
+      if app.buttons["2 Set Aside"].waitForExistence(timeout: 3) { return app }
+      // Not yet: the menu closes through All Roadmaps and back, and opens again.
+      app.buttons["All Roadmaps…"].tap()
+      XCTAssertTrue(app.navigationBars["All Roadmaps"].waitForExistence(timeout: 10))
+      app.navigationBars["All Roadmaps"].buttons.element(boundBy: 0).tap()
+      XCTAssertTrue(app.navigationBars["All Roadmaps"].waitForNonExistence(timeout: 10))
+    }
+    XCTFail("the title menu never led with Set Aside")
+    return app
+  }
+
   // Find up over *Learn to sail* with words typed.
   func find(_ words: String, _ look: Look) -> XCUIApplication {
     let app = learnToSail(look)

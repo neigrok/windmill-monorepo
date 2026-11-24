@@ -603,7 +603,17 @@ miles* one no phone holds; and `-board roadmap-nested-subtree` the variation who
 steps, one done. On the cover's and the nested boards the board's own requests stand in for the backend's
 (`RoadmapFixture.BoardSharing`): the owner's progress is read from the owner's phone, each subtree counted as the owner's
 account reads it, and a fork is made by another phone of the reader's account, so the copy arrives by sync;
-`-fork-held` leaves a fork unanswered. A simulator launch with
+`-fork-held` leaves a fork unanswered. Section 10's boards (`RoadmapFixture.prepareSync`) have another phone of the
+person's account plant their roadmaps, sign the phone in, and once the room has read them, take the model server's
+connection from the phone (`BoardConnectivity`, the connection every model-server launch has, online until a board cuts
+it): `-board roadmap-sync-offline` makes *Reefing basics* in the room's own form with no connection (10.1);
+`-board roadmap-sync-landed` does the same while the other phone deletes *Read the wind*, lets the receipt go and gives
+the connection back, so the step lands following *Name the boat parts* (10.2, 10.3); `-board roadmap-sync-came-back`
+has the other phone delete *Reefing basics* and, once that has reached the phone, writes an edit of it there, which
+brings it back (10.4); and `-board roadmap-sync-set-aside` holds *Winter refit* beside *Learn to sail*, *Spanish B1* and
+*Coastal navigation handbook*, which the other phone deletes while the phone, offline, adds *Anchor at night* to it and
+writes the note of its *Plan the watch rota*, and gives the connection back, so neither lands (10.5a to 10.5c). A
+simulator launch with
 `-graph-measures <path>` appends what the Graph measures of itself to that file, and with `-board-measures <path>` what
 the Board measures, one JSON line a measure; with
 `-graph-pinch <way>` it keeps a pinch's frames that way, and with `-graph-crowd <count>` it does so from that many
