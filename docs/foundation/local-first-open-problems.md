@@ -87,3 +87,14 @@ older phone build.
 A re-identify gives the same replica a new id. The domain's writersOwn rule compares a Coach message's writer with
 the replica's current id, so a turn whose ability call or next round comes after the re-identify ends `gone` on every
 surface. It is tracked in the gym Coach tree as `m4-coach-turn-survives-a-re-identify`.
+
+## LP-9 Signed-out work that names the same thing as the account's
+
+A record keyed by what it is rather than by a fresh id — a weigh-in by its date, a seeded movement by its id, a setting
+— can be changed both signed out on a device and on the account. When the device's work joins the account at sign-in
+(Add, or the silent join into an account that holds none), the engine's merge takes the later write.
+
+- **Web:** a signed-out weigh-in on a day the account already weighed in replaces the account's value at Add, though the
+  question says "Add them"; a movement renamed signed out renames the account's.
+- **iPhone, Android:** not surveyed; the merge is the engine's, the same on every surface.
+- **Open:** whether such a join keeps both, keeps the account's, or asks about each one.
