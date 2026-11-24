@@ -77,8 +77,10 @@ function dayOf(ms) {
   return days <= 1 ? t('gym.recovery.day', { days: Math.max(0, days) }) : shortDayLabel(ms);
 }
 
-// Why a copy waits, in one sentence; the web has no editor for a copy, so a sentence names no way out it cannot offer.
+// Why a copy waits, in one sentence; the web has no editor for a copy, so a sentence names no way out it cannot offer. A
+// landed workout's stranded sets waiting on their retry say so whatever refused them last.
 function reasonLine(copy) {
+  if (copy.stranded && copy.answer === 'retry') return t('gym.recovery.reason.strandedSets', { count: copy.sets });
   return {
     'session-open': t('gym.recovery.reason.accountOpen'),
     'session-overlap': t('gym.recovery.reason.overlap'),

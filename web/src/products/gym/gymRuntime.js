@@ -277,6 +277,7 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
     },
     cancelHeld: (id) => port.cancelHeld(id),
     mintId: (type, taken) => port.mintId(type, taken),
+    opaqueID: () => port.opaqueID(),
     physNow: () => port.physNow(),
     dismissNotice: (id) => port.dismissNotice(id),
   }, engine.registry, zone);
@@ -697,12 +698,13 @@ function answerOf(row) {
   return row.reason === 'unsent' || row.reason === 'session-finished' ? 'retry' : null;
 }
 
-// A copy as In this browser draws it (WD9.3): its title, when it started, the sets it would move, and while it waits on the
-// person the review's reason and the action that answers it; one with no reason is on its way.
+// A copy as In this browser draws it (WD9.3): its title, when it started, the sets it would move, whether they are a landed
+// workout's stranded sets, and while it waits on the person the review's reason and the action that answers it; one with
+// no reason is on its way.
 function browserCopy(reader, copy, row) {
+  const stranded = row !== null && row.strandedSets.length > 0;
   return { id: String(copy.session.id.record), title: workoutTitle(reader, copy.session), startedAt: copy.session.startedAt.ms,
-    sets: row !== null && row.strandedSets.length > 0 ? row.strandedSets.length : copy.sets.length,
-    reason: row?.reason ?? null, answer: row === null ? null : answerOf(row) };
+    sets: stranded ? row.strandedSets.length : copy.sets.length, stranded, reason: row?.reason ?? null, answer: row === null ? null : answerOf(row) };
 }
 
 // What gym's signed-out work holds as the sign-in question counts it (web-device-parity §3 Sign-in): its workouts, routines
