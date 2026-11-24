@@ -1,6 +1,7 @@
 import Testing
 import GymDomain
 import JournalDomain
+import RoadmapDomain
 @testable import Windmill
 
 @Suite @MainActor struct AdoptionQuestionTests {
@@ -57,6 +58,28 @@ import JournalDomain
     #expect(AdoptionQuestion(counts: [.gym: [GymPreferences.type: 1]]).message
             == "This phone has 1 change from before you signed in. Your account already has training. Add it, or discard it from this phone.")
     #expect(AdoptionQuestion(counts: [.gym: [GymPreferences.type: 1, ExerciseName.type: 2]]).discardTitle == "Discard 3 changes?")
+  }
+
+  // Roadmap · iOS 10.7: roadmaps made signed out are named by how many, whatever their steps, kinds and marks, beside the
+  // other rooms' work, and the account is said to hold roadmaps.
+  @Test func roadmapsAreNamedBesideTheOtherRoomsWork() {
+    let made = [RoadmapEntry.type: 2, RoadmapMeta.type: 2, RoadmapStep.type: 9, RoadmapKind.type: 6, StepMark.type: 3]
+    #expect(words([.roadmap: made]) == [
+      "Add to your account?",
+      "This phone has 2 roadmaps from before you signed in. Your account already has roadmaps. Add them, or discard them from this phone.",
+      "Discard 2 roadmaps?",
+      "They are deleted from this phone. You can’t undo this.",
+    ])
+    #expect(words([.roadmap: [RoadmapEntry.type: 1, RoadmapMeta.type: 1, RoadmapStep.type: 1]])[1]
+            == "This phone has 1 roadmap from before you signed in. Your account already has roadmaps. Add it, or discard it from this phone.")
+    #expect(words([.journal: [Page.type: 1], .roadmap: made, .gym: [Session.type: 2]]) == [
+      "Add to your account?",
+      "This phone has 2 workouts, 1 journal page and 2 roadmaps from before you signed in. Your account already has training, journal pages and roadmaps. Add them, or discard them from this phone.",
+      "Discard all of it?",
+      "2 workouts, 1 journal page and 2 roadmaps are deleted from this phone. You can’t undo this.",
+    ])
+    #expect(AdoptionQuestion(counts: [.roadmap: [StepMark.type: 3]]).message
+            == "This phone has 3 changes from before you signed in. Your account already has roadmaps. Add them, or discard them from this phone.")
   }
 
   // A room holding only unnamed kinds is still named when it shares the question, so Discard covers only what was named.

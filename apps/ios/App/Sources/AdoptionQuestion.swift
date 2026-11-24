@@ -1,9 +1,17 @@
 import JournalDomain
 import GymDomain
+import RoadmapDomain
 
-// The sign-in question (23d–23j), one for every room due: what the phone holds by kind, sets inside their workouts, and
-// what the account holds. Settings, movement names and proposals go unnamed; a room holding only those counts changes.
+// The sign-in question (23d–23j, Roadmap · iOS 10.7), one for every room due: what the phone holds by kind, sets inside
+// their workouts, and what the account holds. Settings, movement names, proposals and a roadmap's own records go unnamed;
+// a room holding only those counts changes.
 struct AdoptionQuestion: Equatable {
+  // The rooms the question names, in the order it names them, each with what the account holds of it.
+  static let rooms: [(room: AppModel.Room, held: String)] = [
+    (.gym, String(localized: "training", comment: "What the account already has, in the sign-in question")),
+    (.journal, String(localized: "journal pages", comment: "What the account already has, in the sign-in question")),
+    (.roadmap, String(localized: "roadmaps", comment: "What the account already has, in the sign-in question")),
+  ]
   // The kinds the question names, in the order it names them, each counted in its own words.
   static let named: [(type: String, counted: (Int) -> String)] = [
     (Session.type, { String(localized: "\($0) workouts", locale: .copy) }),
@@ -12,6 +20,7 @@ struct AdoptionQuestion: Equatable {
     (Exercise.type, { String(localized: "\($0) movements", locale: .copy) }),
     (Note.type, { String(localized: "\($0) notes", locale: .copy) }),
     (Page.type, { String(localized: "\($0) journal pages", locale: .copy) }),
+    (RoadmapEntry.type, { String(localized: "\($0) roadmaps", locale: .copy) }),
   ]
   let phrase: String
   let kinds: Int
@@ -20,7 +29,7 @@ struct AdoptionQuestion: Equatable {
 
   // `counts` holds each pending room's records by type, so every room the answer applies to is named.
   init(counts: [AppModel.Room: [String: Int]]) {
-    let parts = [AppModel.Room.gym, .journal].compactMap { counts[$0] }.flatMap { room in
+    let parts = Self.rooms.compactMap { counts[$0.room] }.flatMap { room in
       let held = Self.named.compactMap { type, counted in room[type].flatMap { $0 > 0 ? ($0, counted($0)) : nil } }
       let changes = room.filter { $0.key != JournalState.type }.values.reduce(0, +)
       return held.isEmpty ? [(changes, String(localized: "\(changes) changes", locale: .copy))] : held
@@ -28,12 +37,7 @@ struct AdoptionQuestion: Equatable {
     phrase = Self.joined(parts.map(\.1))
     kinds = parts.count
     single = parts.count == 1 && parts[0].0 == 1
-    account = switch (counts[.gym] != nil, counts[.journal] != nil) {
-    case (true, true): String(localized: "training and journal pages", comment: "What the account already has, in the sign-in question")
-    case (true, false): String(localized: "training", comment: "What the account already has, in the sign-in question")
-    case (false, true): String(localized: "journal pages", comment: "What the account already has, in the sign-in question")
-    case (false, false): ""
-    }
+    account = Self.joined(Self.rooms.filter { counts[$0.room] != nil }.map(\.held))
   }
 
   var title: String { String(localized: "Add to your account?") }

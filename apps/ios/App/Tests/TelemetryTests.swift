@@ -187,6 +187,35 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
   }
 
+  // The Guide tells its sheet opened, how a draft began, a save with its length as a bucket or why it was not written, a
+  // draft gone past the limit, a save over a guide written elsewhere and the band's Undo of a save: never the guide's
+  // text, a count of characters or an id.
+  @Test func theGuideTellsItsStepsAndNothingOfItsText() {
+    let events = ["roadmap_guide", "roadmap_write_refused", "roadmap_board_undo"]
+    #expect(events.filter(TelemetryPrivacy.events.contains) == events)
+    for above in ["none", "some"] {
+      #expect(TelemetryPrivacy.properties(["step": "open", "door": "menu", "view": "graph", "above": above, "tree": "private-id", "guides": "2"]) ==
+              ["step": .label("open"), "door": .label("menu"), "view": .label("graph"), "above": .label(above)])
+    }
+    for via in ["edit", "add"] {
+      #expect(TelemetryPrivacy.properties(["step": "edit", "via": via, "text": "Maya and I take the dinghy out"]) == ["step": .label("edit"), "via": .label(via)])
+    }
+    for (outcome, length) in [("saved", "1-500"), ("saved", "501-2000"), ("saved", "2001-4500"), ("saved", "4501-5000"), ("cleared", "0")] {
+      #expect(TelemetryPrivacy.properties(["step": "save", "outcome": outcome, "length": length, "guide": "private-marker", "chars": "4985"]) ==
+              ["step": .label("save"), "outcome": .label(outcome), "length": .label(length)])
+    }
+    #expect(TelemetryPrivacy.properties(["step": "save", "length": "4985"]) == ["step": .label("save")])
+    for reason in ["refused", "device"] {
+      #expect(TelemetryPrivacy.properties(["step": "save", "outcome": "failed", "length": "1-500", "reason": reason, "error": "private-marker"]) ==
+              ["step": .label("save"), "outcome": .label("failed"), "length": .label("1-500"), "reason": .label(reason)])
+    }
+    for step in ["cancel", "discard", "tooLong", "conflict"] {
+      #expect(TelemetryPrivacy.properties(["step": step, "over": "12"]) == ["step": .label(step)])
+    }
+    #expect(TelemetryPrivacy.properties(["write": "guide", "refusal": "invalid"]) == ["write": .label("guide"), "refusal": .label("invalid")])
+    #expect(TelemetryPrivacy.properties(["act": "guide", "outcome": "ok"]) == ["act": .label("guide"), "outcome": .label("ok")])
+  }
+
   @Test func theGraphTellsItsSwitchItsSelectionAndItsReportsAndNothingOfAStep() {
     let events = ["roadmap_view_switch", "roadmap_graph_select", "roadmap_board_step_open", "roadmap_board_create", "roadmap_whats_next",
                   "roadmap_graph_fit"]
