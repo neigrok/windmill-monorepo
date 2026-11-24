@@ -12,8 +12,10 @@ import SyncCore
 // new subtask alike keep theirs here, off the room's band, which offers a receipt's Undo where the conversation shows it.
 //
 // A call tells no product event and reports nothing: the turn's engine tells each call it runs and reports, once, anything
-// that throws out of one, the standing roadmap's read, the ability or the door (§13). An Undo runs outside a turn, so the
-// host tells what each came to.
+// that throws out of one, the standing roadmap's read, the ability or the door, a write the phone could not store among
+// them (§13). An Undo runs outside a turn, so the
+// host tells what each came to, and what an Undo throws reaches its caller, whose wiring reports it under the room's own
+// write-failure operation (§13).
 
 // D-4: one direct write, for the conversation's receipt: the ability, the roadmap and the step it wrote, and the act its
 // Undo takes back, held in this process's memory.
@@ -40,14 +42,17 @@ public final class RoadmapToolHost {
   let runner: ActionRunner
   let about: String?
   let standing: () throws -> StandingRoadmaps
-  let told: (WriteReceipt, WriteReceipt.Undo) -> Void
+  let told: (_ ability: String, _ undo: WriteReceipt.Undo) -> Void
+  // Each act the host keeps the engine holding: a landed write's, until its Undo is asked or its receipt forgotten, and an
+  // Undo's own, until the engine has settled it.
+  var held: [String] = []
   var settling: [Settling] = []
 
   // `runner` is the room's act runner over the phone's copy; `about` the roadmap the conversation is about, none for all of
   // the person's; `standing` reads the standing roadmap, by default the copy's through the runner; and `told` hears what
-  // each Undo came to.
+  // each Undo came to, by the ability it takes back.
   public init(runner: ActionRunner, about: String?, standing: (() throws -> StandingRoadmaps)? = nil,
-              told: @escaping (WriteReceipt, WriteReceipt.Undo) -> Void) {
+              told: @escaping (_ ability: String, _ undo: WriteReceipt.Undo) -> Void) {
     self.runner = runner
     self.about = about
     self.standing = standing ?? { try StandingRoadmaps(reading: runner) }
@@ -68,6 +73,7 @@ public final class RoadmapToolHost {
       let named = try input.text(ifAny: "nodeId")
       switch try runner.runComposed(acts.map(\.part)) {
       case .committed(_, let act):
+        hold(act.gestureId)
         let receipt = WriteReceipt(ability: name, treeId: try input.text("treeId"), nodeId: try result.text(ifAny: "nodeId") ?? named ?? "",
                                    act: act.gestureId)
         return (.success(result), receipt)
@@ -79,40 +85,63 @@ public final class RoadmapToolHost {
 
   // Takes back one direct write by the kit's Undo of its act, which spares anything written since: a later write of the
   // same field, the person's change of an item it added, or a mark the person set since; a completion's first date is not
-  // restored. What it came to is told once the engine has settled it: at once, or as the copy changes (`follow`).
+  // restored. What it came to is told once the engine has settled it: at once, or as the copy changes (`follow`). An Undo
+  // asked again while the engine settles the first asks nothing.
   public func undo(_ receipt: WriteReceipt) throws {
-    let asked = try runner.undo(receipt.act)
-    try runner.release(receipt.act)
-    try settle(receipt, asked)
+    guard !settling.contains(where: { $0.receipt == receipt }) else { return }
+    try settle(receipt, try runner.undo(receipt.act))
+    try letGo(receipt.act)
   }
 
-  // The copy changed: each Undo the engine has settled since it was asked is told.
+  // The copy changed: each Undo the engine has settled since it was asked is told. One the host could not finish stays to
+  // be told, and an act it could not let go of stays held.
   public func follow() throws {
-    let waiting = settling
-    settling = []
-    for each in waiting { try settle(each.receipt, runner.inverseResult(each.request)) }
+    for each in settling {
+      let result = try runner.inverseResult(each.request)
+      if case .pending = result { continue }
+      settling.removeAll { $0.receipt == each.receipt }
+      try settle(each.receipt, result)
+    }
   }
 
   // A receipt whose Undo is offered no longer: the engine keeps nothing more of its act.
   public func forget(_ receipt: WriteReceipt) throws {
-    try runner.release(receipt.act)
+    try letGo(receipt.act)
   }
 
-  // An Undo the engine answered: one it still settles waits, its act kept until it has, as the engine forgets an Undo whose
-  // act it let go of; one it settled is told and let go of.
+  // The conversation is over: the engine keeps nothing more of any act the host holds, and an Undo it still settles is
+  // told no more.
+  public func close() throws {
+    settling = []
+    for act in held { try letGo(act) }
+  }
+
+  // An Undo the engine answered: one it still settles waits, its own act held until it has, as the engine forgets an Undo
+  // whose act it let go of; one it settled is told first, and its act let go of last.
   func settle(_ receipt: WriteReceipt, _ result: InverseResult) throws {
-    switch result {
-    case .pending(let request, _, _):
-      settling.append(Settling(receipt: receipt, request: request))
-    case .cancelled(_, let inverse, let changed):
-      try runner.release(inverse)
-      told(receipt, changed ? .undone : .skipped)
-    case .settled(_, let inverse, _, let applied, _):
-      try runner.release(inverse)
-      told(receipt, applied > 0 ? .undone : .skipped)
-    case .unavailable:
-      told(receipt, .unavailable)
+    let finish = { (undo: WriteReceipt.Undo, inverse: String) throws in
+      self.told(receipt.ability, undo)
+      self.hold(inverse)
+      try self.letGo(inverse)
     }
+    switch result {
+    case .unavailable: told(receipt.ability, .unavailable)
+    case .pending(let request, let inverse, _):
+      hold(inverse)
+      settling.append(Settling(receipt: receipt, request: request))
+    case .cancelled(_, let inverse, let changed): try finish(changed ? .undone : .skipped, inverse)
+    case .settled(_, let inverse, _, let applied, _): try finish(applied > 0 ? .undone : .skipped, inverse)
+    }
+  }
+
+  func hold(_ act: String) {
+    if !held.contains(act) { held.append(act) }
+  }
+
+  // Lets the engine forget an act; one it could not let go of stays held, for `close`.
+  func letGo(_ act: String) throws {
+    try runner.release(act)
+    held.removeAll { $0 == act }
   }
 
   // §6 rule 6: a new step's id, minted as the room's controls mint one, from the engine's source, in the conversation's

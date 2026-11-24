@@ -3,43 +3,58 @@ import DomainKitTesting
 import RoadmapDomain
 import SyncAPI
 import SyncCore
+import SyncModelServer
+import SyncSchema
+import SyncTesting
+import Synchronization
 import Testing
 
 // Roadmap Coach's tool host over a phone's engine: each direct write through the room's act runner, what the door wrote and
-// did not, and the Undo of each kind of write and what it came to.
+// did not, the Undo of each kind of write and what it came to, and what the host leaves the engine holding.
 struct ToolHostTests {
-  // What the host told of each Undo, in the order it told them.
+  // What the host told of each Undo, in the order it told them: the ability it took back and what it came to.
   final class Heard {
-    var told: [(receipt: WriteReceipt, undo: WriteReceipt.Undo)] = []
+    var told: [String] = []
   }
 
   // The person's roadmap on a phone, synced: `dock` and `knot` lead to `sail`; and a host of a conversation about it.
-  static func sailing() throws -> (phone: Harness, tree: String, steps: [String: String], host: RoadmapToolHost, heard: Heard) {
-    let phone = RoadmapsTests.phone()
+  static func planted(on runner: ActionRunner, syncing sync: () -> Void) throws -> (tree: String, steps: [String: String], host: RoadmapToolHost, heard: Heard) {
     let planted = ImportedSteps(
       steps: [ImportedStep(key: "dock", .init(label: "Leave the dock")), ImportedStep(key: "knot", .init(label: "Tie a bowline")),
               ImportedStep(key: "sail", .init(label: "Sail with an instructor"))],
       links: [(from: "dock", to: "sail"), (from: "knot", to: "sail")])
-    guard case .committed(let created, _) = try phone.runner.runAct(CreateRoadmap(title: "Learn to sail", steps: planted)) else {
+    guard case .committed(let created, _) = try runner.runAct(CreateRoadmap(title: "Learn to sail", steps: planted)) else {
       throw ContractError("the roadmap was not created")
     }
-    phone.sync()
+    sync()
     let heard = Heard()
-    let host = RoadmapToolHost(runner: phone.runner, about: created.tree.description) { heard.told.append(($0, $1)) }
-    return (phone, created.tree.description, Dictionary(uniqueKeysWithValues: created.steps.map { ($0.key, $0.id.description) }), host, heard)
+    let host = RoadmapToolHost(runner: runner, about: created.tree.description) { heard.told.append("\($0) \($1.rawValue)") }
+    return (created.tree.description, Dictionary(uniqueKeysWithValues: created.steps.map { ($0.key, $0.id.description) }), host, heard)
   }
 
-  // Asks each Undo and answers what each came to once the engine has settled it: the server settles an Undo of a write the
-  // phone sent, so the phone syncs and the host follows the copy until each has, a few rounds at most.
-  static func undo(_ receipts: [WriteReceipt?], by host: RoadmapToolHost, _ heard: Heard, on phone: Harness) throws -> [WriteReceipt.Undo?] {
+  static func sailing() throws -> (phone: Harness, tree: String, steps: [String: String], host: RoadmapToolHost, heard: Heard) {
+    let phone = RoadmapsTests.phone()
+    let (tree, steps, host, heard) = try planted(on: phone.runner, syncing: phone.sync)
+    return (phone, tree, steps, host, heard)
+  }
+
+  // A phone whose act runner reaches its engine through a replica that keeps note of what it journals for Undo.
+  static func notedPhone() -> (engine: SteppedEngine, replica: NotedReplica, runner: ActionRunner) {
+    let engine = SteppedEngine(registry: SyncSchema.registry, startMs: 1_800_000_000_000, rules: RoadmapServerRules())
+    let replica = NotedReplica(engine.replica)
+    return (engine, replica, ActionRunner(replica: replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0)))
+  }
+
+  // Asks each Undo and answers what the host told of them once the engine has settled each: the server settles an Undo of a
+  // write the phone sent, so the phone syncs and the host follows the copy until each has, a few rounds at most.
+  static func undo(_ receipts: [WriteReceipt?], by host: RoadmapToolHost, _ heard: Heard, syncing sync: () -> Void) throws -> [String] {
     let start = heard.told.count
     for receipt in receipts { try host.undo(try #require(receipt)) }
     for _ in 0..<5 where heard.told.count < start + receipts.count {
-      phone.sync()
+      sync()
       try host.follow()
     }
-    let told = heard.told.dropFirst(start)
-    return receipts.map { receipt in told.first { $0.receipt == receipt }?.undo }
+    return Array(heard.told.dropFirst(start))
   }
 
   // The roadmap's steps as the phone's copy draws them, by label: each step's colour, words and web links, the labels of
@@ -106,7 +121,7 @@ struct ToolHostTests {
                                                                             ["label": "Coil the line", "done": false]]],
                              ["id": .string(steps["dock"]!), "subtasks": []]]]), "Coach reads the checklist before adding to it")
 
-    #expect(try Self.undo([receipt], by: host, heard, on: phone) == [.undone])
+    #expect(try Self.undo([receipt], by: host, heard, syncing: phone.sync) == ["update_node undone"])
     let knotNow = try Self.drawn(tree, on: phone)["Tie a bowline"]
     #expect(knotNow?["checklist"] == ["Identify the halyard"], "the name and both items it added go, and the person's own item stays")
   }
@@ -120,40 +135,85 @@ struct ToolHostTests {
     let linked = try host.run("connect", ["treeId": .string(tree), "nodeId": knot, "prerequisiteId": dock]).receipt
     let completed = try host.run("set_progress", ["treeId": .string(tree), "nodeId": dock, "status": "complete"]).receipt
 
-    #expect(try Self.undo([renamed, linked, created, completed], by: host, heard, on: phone) == [.undone, .undone, .undone, .undone])
+    #expect(try Self.undo([renamed, linked, created, completed], by: host, heard, syncing: phone.sync)
+      == ["update_node undone", "connect undone", "create_node undone", "set_progress undone"])
     #expect(try Self.drawn(tree, on: phone) == [
       "Leave the dock": ["color": "terracotta", "description": "", "links": [], "after": [], "done": false, "checklist": []],
       "Tie a bowline": ["color": "terracotta", "description": "Round the post.", "links": [], "after": [], "done": false, "checklist": []],
       "Sail with an instructor": ["color": "terracotta", "description": "", "links": [], "after": ["Leave the dock", "Tie a bowline"], "done": false,
                                   "checklist": []],
     ], "the description written after the rename stands")
-    #expect(try Self.undo([annotated], by: host, heard, on: phone) == [.undone])
+    #expect(try Self.undo([annotated], by: host, heard, syncing: phone.sync) == ["update_node undone"])
     #expect(try Self.drawn(tree, on: phone)["Tie a bowline"]?["description"] == "")
-    #expect(try Self.undo([renamed, completed], by: host, heard, on: phone) == [.unavailable, .unavailable], "each is taken back once")
+    #expect(try Self.undo([renamed, completed], by: host, heard, syncing: phone.sync) == ["update_node unavailable", "set_progress unavailable"],
+            "each is taken back once")
 
     _ = try host.run("set_progress", ["treeId": .string(tree), "nodeId": dock, "status": "complete"])
     let reset = try host.run("set_progress", ["treeId": .string(tree), "nodeId": dock, "status": "none"]).receipt
-    #expect(try Self.undo([reset], by: host, heard, on: phone) == [.undone])
+    #expect(try Self.undo([reset], by: host, heard, syncing: phone.sync) == ["set_progress undone"])
     #expect(try Self.drawn(tree, on: phone)["Leave the dock"]?["done"] == true, "a Reset taken back marks the step done again")
 
     let forgotten = try host.run("update_node", ["treeId": .string(tree), "nodeId": knot, "label": "Tie a reef knot"]).receipt
     try host.forget(try #require(forgotten))
-    #expect(try Self.undo([forgotten], by: host, heard, on: phone) == [.unavailable], "a receipt whose Undo is offered no longer takes nothing back")
+    #expect(try Self.undo([forgotten], by: host, heard, syncing: phone.sync) == ["update_node unavailable"],
+            "a receipt whose Undo is offered no longer takes nothing back")
     #expect(try Self.drawn(tree, on: phone)["Tie a reef knot"] != nil)
   }
 
-  @Test func anUndoTheServerSettlesIsToldOnceTheEngineHasSettledItAndOnce() throws {
+  @Test func anUndoTheServerSettlesIsToldOnceTheEngineHasSettledItAndAnUndoAskedAgainMeanwhileAsksNothing() throws {
     let (phone, tree, steps, host, heard) = try Self.sailing()
-    let renamed = try host.run("update_node", ["treeId": .string(tree), "nodeId": .string(steps["knot"]!), "label": "Tie a cleat hitch"]).receipt
+    let renamed = try #require(try host.run("update_node", ["treeId": .string(tree), "nodeId": .string(steps["knot"]!), "label": "Tie a cleat hitch"]).receipt)
     phone.sync()
-    try host.undo(try #require(renamed))
+    try host.undo(renamed)
+    try host.undo(renamed)
     try host.follow()
     #expect(heard.told.isEmpty, "the server settles the Undo of a write it holds")
-    phone.sync()
-    try host.follow()
-    try host.follow()
-    #expect(heard.told.map { $0.undo } == [.undone])
+    for _ in 0..<4 {
+      phone.sync()
+      try host.follow()
+    }
+    #expect(heard.told == ["update_node undone"])
     #expect(try Self.drawn(tree, on: phone)["Tie a bowline"] != nil)
+  }
+
+  @Test func aReleaseThatFailsLosesNoOutcomeAndLeavesItsActHeldForClose() throws {
+    let (engine, replica, runner) = Self.notedPhone()
+    let (tree, steps, host, heard) = try Self.planted(on: runner, syncing: engine.sync)
+    let start = replica.journaled
+    let renamed = try #require(try host.run("update_node", ["treeId": .string(tree), "nodeId": .string(steps["knot"]!), "label": "Tie a cleat hitch"]).receipt)
+    let marked = try #require(try host.run("set_progress", ["treeId": .string(tree), "nodeId": .string(steps["dock"]!), "status": "complete"]).receipt)
+    engine.sync()
+    try host.undo(renamed)
+    try host.undo(marked)
+    engine.sync()
+
+    replica.failNextRelease()
+    #expect(throws: CommitFailure.self) { try host.follow() }
+    #expect(heard.told == ["update_node undone"], "an Undo is told before its act is let go of")
+    try host.follow()
+    try host.follow()
+    #expect(heard.told == ["update_node undone", "set_progress undone"], "the Undo after the failed release stayed to be told, once")
+    try host.close()
+    #expect(try replica.stillHeld(since: start) == [], "the act the failed release left held goes at close")
+  }
+
+  @Test func aClosedConversationLeavesTheEngineHoldingNothingOfItsWritesOrTheirUndos() throws {
+    let (engine, replica, runner) = Self.notedPhone()
+    let (tree, steps, host, heard) = try Self.planted(on: runner, syncing: engine.sync)
+    let start = replica.journaled
+    _ = try host.run("create_node", ["treeId": .string(tree), "label": "Hoist the sail", "prerequisites": [.string(steps["dock"]!)]])
+    let renamed = try #require(try host.run("update_node", ["treeId": .string(tree), "nodeId": .string(steps["knot"]!), "label": "Tie a cleat hitch"]).receipt)
+    _ = try host.run("set_progress", ["treeId": .string(tree), "nodeId": .string(steps["dock"]!), "status": "complete"])
+    engine.sync()
+    try host.undo(renamed)
+    let open = RoadmapToolHost(runner: runner, about: tree) { _, _ in }
+    _ = try open.run("update_node", ["treeId": .string(tree), "nodeId": .string(steps["sail"]!), "label": "Sail alone"])
+
+    try host.close()
+    engine.sync()
+    try host.follow()
+    #expect(heard.told.isEmpty, "an Undo still settling is told no more")
+    #expect(try replica.stillHeld(since: start).count == 1, "only the write of a conversation still open stays held")
   }
 
   @Test func anUndoALaterWriteStandsInTheWayOfIsSkipped() throws {
@@ -168,7 +228,7 @@ struct ToolHostTests {
     }
     phone.sync()
 
-    #expect(try Self.undo([renamed, completed], by: host, heard, on: phone) == [.skipped, .skipped])
+    #expect(try Self.undo([renamed, completed], by: host, heard, syncing: phone.sync) == ["update_node skipped", "set_progress skipped"])
     let drawn = try Self.drawn(tree, on: phone)
     #expect(drawn["The person's title"] != nil)
     #expect(drawn["Leave the dock"]?["done"] == true)
@@ -179,7 +239,7 @@ struct ToolHostTests {
     let id = ID<RoadmapEntry>(RecordID(tree))
     let (dock, knot, sail) = (ID<RoadmapStep>(RecordID(steps["dock"]!)), ID<RoadmapStep>(RecordID(steps["knot"]!)), ID<RoadmapStep>(RecordID(steps["sail"]!)))
     let before = try StandingRoadmaps(reading: phone.runner)
-    let host = RoadmapToolHost(runner: phone.runner, about: tree, standing: { before }) { heard.told.append(($0, $1)) }
+    let host = RoadmapToolHost(runner: phone.runner, about: tree, standing: { before }) { heard.told.append("\($0) \($1.rawValue)") }
     for act in [AnyActAction<RoadmapRefusal>(ChangeStep(tree: id, step: knot, changes: .init(label: "Tie a cleat hitch"))),
                 AnyActAction(MarkStep.complete(tree: id, step: dock)), AnyActAction(ChangePrerequisites(tree: id, step: knot, add: [dock]))] {
       guard case .committed = try phone.runner.runComposed([act]) else { throw ContractError("the person's write was not taken") }
@@ -218,4 +278,74 @@ struct ToolHostTests {
     #expect(try Self.drawn(tree, on: phone) == before)
     #expect(phone.undoOffers().count == offers, "nothing reached the engine")
   }
+}
+
+// A phone's replica that keeps note of each act it journals for Undo, the Undos' own among them, and fails the next release
+// once armed: what a host leaves the engine holding, and a store that fails as an act is let go of.
+final class NotedReplica: Replica {
+  struct Noted {
+    var journaled: [String] = []
+    var failingRelease = false
+  }
+
+  let base: any Replica
+  let noted = Mutex(Noted())
+
+  init(_ base: any Replica) {
+    self.base = base
+  }
+
+  var journaled: Int { noted.withLock { $0.journaled.count } }
+
+  func failNextRelease() {
+    noted.withLock { $0.failingRelease = true }
+  }
+
+  // The acts journaled after the first `start` that the engine still holds, each let go of now: a release still finds it.
+  func stillHeld(since start: Int) throws -> [String] {
+    try noted.withLock { $0.journaled }.dropFirst(start).filter { try base.releaseReversibleAct($0) }
+  }
+
+  func commit<T>(_ scope: ScopeRef, _ body: (any CommitContext) throws -> (Gesture?, T)) throws -> (outcome: CommitOutcome?, value: T) {
+    try base.commit(scope, body)
+  }
+
+  func commitAct<T>(_ prepare: (any ActContext) throws -> (ActRequest?, T),
+                    segment: (T, Int, any CommitContext) throws -> Gesture) throws -> (outcome: ActCommitOutcome?, value: T) {
+    var undoable = false
+    let committed = try base.commitAct({ (context: any ActContext) throws -> (ActRequest?, T) in
+      let prepared = try prepare(context)
+      undoable = prepared.0?.undo != nil
+      return prepared
+    }, segment: segment)
+    if undoable, case .committed(let receipt)? = committed.outcome { noted.withLock { $0.journaled.append(receipt.gestureId) } }
+    return committed
+  }
+
+  func cancelHeld(_ gestureId: String) throws -> Bool { try base.cancelHeld(gestureId) }
+
+  func requestInverse(_ actId: String, slots: [ActUndo.Segment]?) throws -> InverseResult {
+    let result = try base.requestInverse(actId, slots: slots)
+    switch result {
+    case .cancelled(_, let inverse, _), .pending(_, let inverse, _), .settled(_, let inverse, _, _, _): noted.withLock { $0.journaled.append(inverse) }
+    case .unavailable: break
+    }
+    return result
+  }
+
+  func readInverseResult(_ requestId: String) throws -> InverseResult { try base.readInverseResult(requestId) }
+
+  func releaseReversibleAct(_ actId: String) throws -> Bool {
+    let failing = noted.withLock { (noted: inout Noted) -> Bool in
+      defer { noted.failingRelease = false }
+      return noted.failingRelease
+    }
+    if failing { throw CommitFailure(.storeFailure, "the release was not stored") }
+    return try base.releaseReversibleAct(actId)
+  }
+
+  func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T { try base.read(scope, body) }
+  func mintID(_ type: String) throws -> RecordID { try base.mintID(type) }
+  func physNow() throws -> Int64 { try base.physNow() }
+  @discardableResult func dismissNotice(_ id: String) throws -> Bool { try base.dismissNotice(id) }
 }

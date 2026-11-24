@@ -654,6 +654,14 @@ The roadmap tools an outside assistant reaches over MCP stay on the server as th
   an Issue. Whatever throws in an ability's call, the ability, the standing roadmap it reads or the
   room's door, throws out of the tool host, which reports nothing of it; the turn's engine reports
   it once, as `agent-host`, and ends the turn `failed` with `host-fault`, as it does for gym's Coach.
+- A write the device could not store differs by surface: on the web the room's session reports it
+  as `roadmap-replica-write` and the tool host answers `roadmap-not-ready`; on the iPhone the room's
+  act runner throws it out of the tool host, so the turn ends `failed` with `host-fault`, reported as
+  `agent-host`.
+- An Undo of a direct write runs outside a turn, so a failure of it is reported under the room's own
+  write-failure operation: on the web by the room's session, as `roadmap-replica-write`, and on the
+  iPhone, where the tool host throws it to its caller, by the wiring that calls it, as `roadmap_write`
+  with the write `coachUndo`.
 - The backend logs nothing of a turn but the pass it signed.
 - They are listed in the web's and the iPhone's observability notes when built.
 
