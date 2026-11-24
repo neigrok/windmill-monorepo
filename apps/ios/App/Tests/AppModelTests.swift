@@ -356,8 +356,8 @@ import SyncTesting
 
     await model.beginSignOut()
     let session = try #require(model.signOutSession)
-    #expect(session.unsent == 3)
-    #expect(AppModel.signOutMessage(unsent: session.unsent)
+    #expect(session.unsent == 3 && model.signOutChanges == 3)
+    #expect(AppModel.signOutMessage(unsent: model.signOutChanges)
             == "3 changes haven’t been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone.")
     connectivity.set(online: true)
     await model.finishSignOut(choice)
@@ -370,6 +370,90 @@ import SyncTesting
     try await roadmapSettled(model, sail.tree)
     #expect(try roadmaps(model) == [sail.tree])
     #expect(try marks() == (choice == .keep ? 3 : 0))
+  }
+
+  // Roadmap · iOS 10.8: the sign-out question counts what the person did, each act once. A journal page and a routine
+  // count as they always have, one change each, and a roadmap made, which writes its entry and its steps apart, counts
+  // as one change though the engine holds two entries for it.
+  @Test func theSignOutQuestionCountsEachActOnceSoARoadmapMadeIsOneChange() async throws {
+    let server = JournalModelTransport(), connectivity = SwitchedConnectivity()
+    let model = try LineageFlowTests().fixture(server, connectivity: connectivity)
+    defer { model.gym.stop() }
+    try await model.signIn(server.identity(email: "roadmap-acts@example.com"))
+    await model.runtime?.engine.start()
+    connectivity.set(online: false)
+    for _ in 0..<100 where model.runtime!.engine.status.online { try await Task.sleep(for: .milliseconds(5)) }
+    model.journal.type("A page written offline."); model.journal.done()
+    _ = try routine(model, name: "Offline routine")
+
+    await model.beginSignOut()
+    let before = try #require(model.signOutSession)
+    #expect(before.unsent >= 2 && model.signOutChanges == before.unsent)
+    await model.cancelSignOut()
+    #expect(model.signOutSession == nil && model.signOutChanges == 0)
+
+    guard case .committed = try #require(model.runtime).roadmapRunner.runAct(CreateRoadmap(title: "Learn to cook")) else {
+      Issue.record("Learn to cook was not made")
+      return
+    }
+    await model.beginSignOut()
+    let after = try #require(model.signOutSession)
+    #expect(after.unsent == before.unsent + 2 && model.signOutChanges == before.unsent + 1)
+    await model.cancelSignOut()
+  }
+
+  // Roadmap · iOS 10.7: a roadmap made and deleted on a phone signed out is not named at sign-in, though the engine counts
+  // it: added or discarded it stays deleted. Beside a roadmap that stands, the question names that one alone.
+  @Test func aRoadmapMadeAndDeletedSignedOutIsNotNamedAtSignIn() async throws {
+    let server = JournalModelTransport(), existing = try LineageFlowTests().fixture(server)
+    let owner = server.identity(email: "roadmap-deleted@example.com")
+    try await existing.signIn(owner)
+    let sail = try RoadmapFixture.plantLearnToSail(try #require(existing.runtime).roadmapRunner).tree
+    await existing.runtime?.engine.start()
+    try await roadmapSettled(existing, sail)
+    await existing.beginSignOut(); await existing.finishSignOut(.keep)
+
+    let local = try LineageFlowTests().fixture(server)
+    let runner = try #require(local.runtime).roadmapRunner
+    guard case .committed(let kept, _) = try runner.runAct(CreateRoadmap(title: "Learn to cook")),
+          case .committed(let gone, _) = try runner.runAct(CreateRoadmap(title: "Learn to knit")),
+          case .committed = try runner.runAct(DeleteRoadmap(tree: gone.tree)) else {
+      Issue.record("the roadmaps were not made, or one not deleted")
+      return
+    }
+    try await local.signIn(server.identity(email: owner.email))
+    #expect(local.sheet == .adoption && local.pendingAdoptions.map(\.product) == ["roadmap"])
+    #expect(local.pendingAdoptions.first?.counts[RoadmapEntry.type] == 2 && local.adoptionCounts[.roadmap]?[RoadmapEntry.type] == 1)
+    #expect(local.adoptionAlertMessage == "This phone has 1 roadmap from before you signed in. Your account already has roadmaps. Add it, or discard it from this phone.")
+    await local.adopt(.add, asked: local.pendingAdoptions)
+    await local.runtime?.engine.start()
+    try await roadmapSettled(local, kept.tree)
+    #expect(try roadmaps(local) == [sail, kept.tree])
+  }
+
+  // With no roadmap made signed out left standing, the roadmap work joins the account unasked, as the journal's does with
+  // no page written, and the roadmap deleted stays deleted.
+  @Test func roadmapWorkWithNoRoadmapStandingJoinsTheAccountUnasked() async throws {
+    let server = JournalModelTransport(), existing = try LineageFlowTests().fixture(server)
+    let owner = server.identity(email: "roadmap-none-standing@example.com")
+    try await existing.signIn(owner)
+    let sail = try RoadmapFixture.plantLearnToSail(try #require(existing.runtime).roadmapRunner).tree
+    await existing.runtime?.engine.start()
+    try await roadmapSettled(existing, sail)
+    await existing.beginSignOut(); await existing.finishSignOut(.keep)
+
+    let local = try LineageFlowTests().fixture(server)
+    let runner = try #require(local.runtime).roadmapRunner
+    guard case .committed(let gone, _) = try runner.runAct(CreateRoadmap(title: "Learn to knit")),
+          case .committed = try runner.runAct(DeleteRoadmap(tree: gone.tree)) else {
+      Issue.record("Learn to knit was not made and deleted")
+      return
+    }
+    try await local.signIn(server.identity(email: owner.email))
+    #expect(local.account == owner.account && local.sheet == nil && local.signInSession == nil)
+    await local.runtime?.engine.start()
+    try await roadmapSettled(local, sail)
+    #expect(try roadmaps(local) == [sail])
   }
 
   @Test func existingGymAloneSuppressesIntroductionAndWelcome() throws {

@@ -59,11 +59,15 @@ gym's and journal's scopes from its iOS registry, and roadmap's where the build 
 take `roadmapRunner`, which holds a removal for the engine's nine seconds. Writes made anonymously stay
 local until adoption. Occupied accounts ask one question naming every room's work by kind
 (`AdoptionQuestion`): workouts, routines, weigh-ins, movements, notes, journal pages and roadmaps, each room's other
-records as its changes, and what the account already holds of each room. One Add/Discard answers every room, persists
-against the exact counted work and completes together. Changed work asks again about the room that changed.
-Sign-in and sign-out flush the rooms, the Roadmap room's open note and band included, and release held deletes; the
-sign-out question counts every room's unconfirmed changes, roadmap's among them, and keeps dormant work only for its
-account. A finished sign-out also forgets which roadmap the room had open and each roadmap's view.
+records as its changes, and what the account already holds of each room. The roadmaps named are those made signed out
+that still stand (`AppModel.roadmapsMadeSignedOut`); with none standing, roadmap's work joins the account unasked, as the
+journal's does with no page written. One Add/Discard answers every room, persists against the exact counted work and
+completes together. Changed work asks again about the room that changed. Sign-in from signed out, sign-out and account
+deletion flush the rooms and then, past every check of the app's that could still refuse, the Roadmap room
+(`AppModel.beforeAccountChange()`): its open note is saved and its band leaves with its Undo, since the engine releases
+every held delete. The sign-out question counts every room's unconfirmed changes, each act once however many scopes it
+wrote (`AppModel.signOutChanges`, so a roadmap made is one change), and keeps dormant work only for its account. A
+finished sign-out also forgets which roadmap the room had open and each roadmap's view.
 
 Routine-removal reviews commit their proposal snapshot beside the Apply command in the replica's
 `rack:removalReceipts` device row. `AppRuntime.commandResultWrites` composes Journal's claim binding

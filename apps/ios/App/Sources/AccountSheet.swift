@@ -81,7 +81,7 @@ struct AccountSheet: View {
       .task(id: model.sheet) { if model.sheet == .you { await model.loadSignInMethods() } }
       .onChange(of: model.signOutSession.map(ObjectIdentifier.init)) { _, session in confirmSignOut = session != nil }
       .alert("Sign out?", isPresented: $confirmSignOut) {
-        if (model.signOutSession?.unsent ?? 0) == 0 {
+        if model.signOutChanges == 0 {
           Button("Sign out", role: .destructive) { finishSignOut(.keep) }
         } else {
           Button("Keep") { finishSignOut(.keep) }
@@ -89,7 +89,7 @@ struct AccountSheet: View {
         }
         Button("Cancel", role: .cancel, action: cancelSignOut)
       } message: {
-        Text(AppModel.signOutMessage(unsent: model.signOutSession?.unsent ?? 0))
+        Text(AppModel.signOutMessage(unsent: model.signOutChanges))
       }
       .background {
         AccountConfirmation(model: model, isPresented: model.identityTaken || model.sheet == .adoption || model.sheet == .discardAdoption).frame(width: 0, height: 0)

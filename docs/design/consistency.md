@@ -778,7 +778,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   nearest eight holds that one, so seven stand above it (`RoadmapAccount.guides`, the web's read alike).
   10.7 draws its third button *Cancel Sign-In*, where the Shell's 23i and the app say *Cancel sign-in*, and it is built
   as the Shell's, for the Shell's owner to rule; and 10.7 and 10.8 name Coach's conversations, which the phone cannot
-  make until Coach is built, so neither question names them.
+  make until Coach is built, so neither question names them. For the Shell's owner: with nothing unconfirmed, Sign
+  out says *Your pages and log stay in your account and leave this phone.* (16c), which speaks of pages and a log to a
+  person who may hold only roadmaps; 10.8 keeps 16c's words, so the line is the Shell's to reword for every room.
 - **Roadmap · iOS · what the Graph leaves for the boards.** The switch, the canvas, a selected step with its bar,
   *Next* with its menu, *Fit* and an empty roadmap are built in Debug builds from 04.1 to 04.5, 04.7 and S.2. To draw
   or rule: the boards draw *Learn to sail* from the top down by hand, and the canvas seats it where the web's layout
@@ -1785,7 +1787,7 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   movements, notes, journal pages, and on iOS roadmaps (Roadmap · iOS 10.7). Sets go with their workout; settings, movement names and Coach
   drafts are not named. The account line names what the account holds; *it* for one item, else
   *them*; the confirm title is *Discard {phrase}?* for one or two kinds, *Discard all of it?* for
-  three or more. One question answers both rooms (Shell iOS 23g–23j `94:5426`, `94:5455`, `94:5482`,
+  three or more. One question answers every room due (Shell iOS 23g–23j `94:5426`, `94:5455`, `94:5482`,
   `94:5511`; Gym Android 07.9 `1336:17333`, 07.10 `1336:17426`). iOS builds it
   (`AdoptionQuestion.swift`); Android does not (25). A room holding only unnamed kinds is not drawn:
   iOS counts its changes, also beside another room (*3 changes and 3 journal pages*), so the answer
