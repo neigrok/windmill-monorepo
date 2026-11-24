@@ -11,8 +11,9 @@ browser's replica, signed in and signed out, and exports from it. Gym does so fo
 from the browser's copy without waiting for the account (§2): it is a sign-in door when signed out and a live mirror of
 a phone's workout. The domain's part is built: the refusals of §4's one open workout on every surface, though a start
 that loses a race holds its sets in its notice and no surface recovers them yet; and §8's adoption, recovery and Coach
-onboarding import in the web's domain, which claims every file §8 names; nothing calls them on the web yet. Gym's Coach
-takes its turn in the browser. The build order lives in the Web as a device roadmap tree, which the dogfood tree
+onboarding import in the web's domain, which claims every file §8 names. Of them, the shell's hook before the seat changes
+(§3 Sign-in) saves each signed-out workout for adoption, an open one with its sets, with no rack to write first since the
+web has none yet; nothing else calls them on the web yet. Gym's Coach takes its turn in the browser. The build order lives in the Web as a device roadmap tree, which the dogfood tree
 (`t_9362d9bc883e0a1e`) opens from the node `web-device-parity`.
 
 **Scope:** What makes gym and journal on the web no different from their siblings on a phone: the

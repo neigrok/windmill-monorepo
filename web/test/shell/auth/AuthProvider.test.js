@@ -7,6 +7,7 @@ import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { syncSession } from '../../../src/platform/sync/session.js';
 import { roadmapRoutes } from '../../../src/products/roadmap/routes.js';
 import { journalRoutes } from '../../../src/products/journal/routes.js';
+import { gymRoutes } from '../../../src/products/gym/routes.js';
 import { PRODUCTS } from '../../../src/shell/products.js';
 import { ANONYMOUS_OWNER, LAPSED_SESSION, SYNC_STATUS } from '../../../src/products/roadmap/copy.js';
 
@@ -42,7 +43,8 @@ async function account(t) {
   t.mock.method(globalThis, 'fetch', async () => ({ ok: !!me, status: me ? 200 : 401, json: async () => ({ user: me }) }));
   const forgotten = [];
   t.mock.method(roadmapRoutes, 'forgetDevice', (change) => forgotten.push(change));
-  t.mock.method(syncSession, 'open', (options) => { engine.credentials = options.credentials; return Promise.resolve(engine); });
+  let opened;
+  t.mock.method(syncSession, 'open', (options) => { opened = options; engine.credentials = options.credentials; return Promise.resolve(engine); });
   t.mock.method(syncSession, 'getSnapshot', () => ({ engine, ready: true, online: true, error: false }));
   const prior = { engine: syncSession.engine, opening: syncSession.opening };
   syncSession.engine = engine;
@@ -57,7 +59,7 @@ async function account(t) {
   await engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0001', f: { title: 'pending' } }]);
   const replica = engine.device.activeReplica.id;
   const entries = structuredClone(engine.device.activeReplica.outbox);
-  return { env, get engine() { return engine; }, auth, get view() { return view; }, forgotten, replica, entries, broadcasts, async reload() {
+  return { env, get engine() { return engine; }, get opened() { return opened; }, auth, get view() { return view; }, forgotten, replica, entries, broadcasts, async reload() {
     view.unmount();
     await engine.close();
     engine = await BrowserSyncEngine.open(env.options);
@@ -152,6 +154,39 @@ test('each read of the account tells the engine whether the server answered, so 
   }
   assert.deepEqual(told, [['down', 'unreachable', 'ghost'], ['up', 'online', 'ghost'], ['failing', 'unreachable', 'ghost'], ['up', 'online', 'ghost']]);
   assert.equal(state.env.requests.filter(({ endpoint }) => endpoint !== 'hello').length, 0, 'the paused replica sent nothing of its own');
+});
+
+test('the seat-change hook runs before a sign-out finishes and before a sign-in binds the device, never at a refresh of the bound account', async (t) => {
+  const state = await account(t);
+  state.engine.online = false;
+  const seen = [];
+  t.mock.method(gymRoutes.sync, 'seatWillChange', async (engine) => {
+    const replica = engine.device.activeReplica.meta;
+    seen.push({ state: replica.state, account: replica.account ?? null, signingOut: Boolean(engine.device.meta.signOut) });
+  });
+  const forgets = t.mock.method(gymRoutes.sync, 'signOutForgets', () => { seen.push('forgets'); return null; });
+  await state.auth().refresh();
+  assert.deepEqual(seen, []);
+  const finished = state.auth().signOut();
+  await until(() => elementsOf(state.view.tree).some((node) => node.props.onDecision && node.props.question));
+  assert.deepEqual(seen, [], 'the question comes first');
+  await elementsOf(state.view.tree).find((node) => node.props.onDecision).props.onDecision('keep');
+  assert.equal(await finished, true);
+  await state.auth().signIn({ id: 'A', name: 'Ada' });
+  assert.deepEqual({ seen, forgets: forgets.mock.callCount(), status: state.auth().status, replica: state.engine.device.activeReplica.meta.state },
+    { seen: [{ state: 'bound', account: 'A', signingOut: true }, 'forgets', { state: 'anon', account: null, signingOut: false }],
+      forgets: 1, status: 'signed-in', replica: 'bound' });
+});
+
+test('a sign-in the engine resumes as it starts runs the seat-change hook in the shell’s preparation', async (t) => {
+  const state = await account(t);
+  const seen = [];
+  t.mock.method(gymRoutes.sync, 'seatWillChange', async () => { seen.push('seat'); });
+  await state.opened.prepare(state.engine);
+  assert.deepEqual(seen, []);
+  await state.engine.write(null, (device) => { device.meta.pendingSignIn = { account: 'A' }; });
+  await state.opened.prepare(state.engine);
+  assert.deepEqual(seen, ['seat']);
 });
 
 test('a different account after a lapse keeps its own replica and invokes roadmap account cleanup once', async (t) => {

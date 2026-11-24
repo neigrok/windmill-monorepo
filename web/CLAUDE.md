@@ -317,7 +317,11 @@ of what signing out discards from the tab (the journal's kept Talk take), and it
 `sync.signOutBegins(engine)` runs before the engine sends what the device holds, while the account's replica still takes
 a write: gym's Coach ends its running turn there. Its `sync.signOutForgets(engine)` names, as the sign-out is decided, the
 device rows the finished sign-out takes from the account's replica (`finishSignOut`'s `forgetDeviceRows`), in the write
-that finishes it, so a sign-out cancelled or failed keeps them: gym's Coach names its mark and its pictures. A product may
+that finishes it, so a sign-out cancelled or failed keeps them: gym's Coach names its mark and its pictures. A product's
+`sync.seatWillChange(engine)` runs before the seat changes: before a sign-in binds the device to an account (one the
+engine resumes as it starts included) and before a sign-out finishes, in rail order, each awaited for at most five seconds
+(`DeviceSeat.willChange`); one that throws or outlasts that is reported and the seat changes without it. Gym saves each
+signed-out workout for adoption there. A product may
 word its own question (`sync.signInWords`; `sync.signOutWords` for a sign-out whose work is all its own and that no
 notice joins): the shell then asks in those words as flow 50 draws roadmap's, a dialog from 744px and a page below, where
 Escape cancels, and a cancelled sign-in signs the account out and leaves the work from before on the device. Each due

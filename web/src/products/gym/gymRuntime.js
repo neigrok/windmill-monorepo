@@ -25,7 +25,8 @@ import { AcknowledgeRoutineRemoval, ApplyProposalKeepingReceipt, DismissProposal
   REMOVAL_RECEIPTS, removalReceipts } from './domain/proposals.js';
 import { exerciseDocument, proposalDocument, proposalsDocument, sessionDocument, setDocument, TrainingHistory } from './domain/trainingHistory.js';
 import { Session, SessionRules, SetRules, TrainingSet } from './domain/training.js';
-import { CorrectedSet, CorrectSession, CorrectSet, DeleteSet, ImportedSet, ImportSession } from './domain/trainingActions.js';
+import { AppendSet, CorrectedSet, CorrectSession, CorrectSet, DeleteSet, ImportedSet, ImportSession } from './domain/trainingActions.js';
+import { AdoptWorkout, SignedOutWorkout } from './domain/workoutAdoption.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
 import { REFUSALS } from './bodyweight/bodyweight.js';
 import { fixLoadFloorLine } from './fix.js';
@@ -37,7 +38,7 @@ import { fromDisplayUnit, weightUnit } from './units.js';
 const SCOPE = 'self/gym';
 const OPERATIONS = new Set(['routine-create', 'routine-save', 'exercise-create', 'exercise-rename',
   'preferences-save', 'note-save', 'note-reorder', 'bodyweight-save', 'set-correct', 'delete', 'undo',
-  'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'refusal']);
+  'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'workout-adopt', 'refusal']);
 const OUTCOMES = new Set(['saved-local', 'unchanged', 'failed', 'held', 'undone', 'closed', 'refused']);
 // What refused a write: the replica moved under the room, or the gym's rules, this device's or the server's.
 const REFUSED_BY = new Set(['not-writable', 'domain']);
@@ -367,6 +368,29 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
   });
   return {
     read,
+    // Before the seat changes (`routes.sync.seatWillChange`), each workout the anon replica holds is saved for adoption and
+    // an open one has its sets recorded with it, as the phones do; a bound replica holds none. Told once, when it saved
+    // something, was refused or failed, and the seat changes on whichever.
+    saveSignedOutWorkouts: () => boundary('workout-adopt', async () => {
+      const workouts = read((reader) => (reader.isAnonymous ? reader.repository(Session).all('drawn') : []));
+      if (workouts.length === 0) return;
+      const saved = () => read((reader) => reader.device(SignedOutWorkout.key));
+      const before = saved();
+      const refusals = [];
+      for (const workout of workouts) {
+        const outcome = await runner.run(AdoptWorkout(workout.id, 'prepare'));
+        if (outcome.kind === 'refused') refusals.push(outcome.refusal);
+      }
+      for (const workout of read(SignedOutWorkout.read).filter((copy) => copy.session.isOpen)) {
+        for (const set of workout.sets) {
+          if (read((reader) => reader.repository(TrainingSet).find(set.id, 'drawn')) !== null) continue;
+          const outcome = await runner.run(AppendSet(set).recorded);
+          if (outcome.kind === 'refused') refusals.push(outcome.refusal);
+        }
+      }
+      if (refusals.length > 0) throw gymRefusalError(refusals[0]);
+      if (!sameJson(before ?? null, saved() ?? null)) event('workout-adopt', 'saved-local');
+    }).catch(() => {}),
     workoutSave,
     workoutSaves: () => read((reader) => Object.keys(reader.device(WORKOUT_DRAFTS) ?? {}).map((key) => ({ key, ...workoutSave(key) }))),
     clearWorkoutSave: (key, expectedCommand = null) => boundary('session-correct', async () => {

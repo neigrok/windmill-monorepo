@@ -221,9 +221,10 @@ scope for the document, and the placeholder while `useSyncReplica` draws none, s
 and starts the engine. Each product's route table carries a `sync` group — `prepare(engine)`,
 `onPushResult`, `pendingDeviceWork`, `adoptDeviceRows`, `liveHint(engine, replica)`, `signedOutWork` — the record type a
 sign-in question counts, with the product's own words for it (`counted(n)`, `many`) —, `adoptionAnswer(engine, due)` and
-`adoptionCount(engine)` for a sign-in decision, and `signInWords(engine, due)` and `signOutWords(engine, question)` for a
-question the product words itself — and the session owner composes every group into the engine options;
-`prepare` runs before the first network request.
+`adoptionCount(engine)` for a sign-in decision, `signInWords(engine, due)` and `signOutWords(engine, question)` for a
+question the product words itself, and `seatWillChange(engine)`, which the shell runs before the seat changes
+(`web/CLAUDE.md`) — and the session owner composes every group into the engine options; `prepare` runs before the first
+network request.
 
 `pendingDeviceWork(product, rows)` identifies durable work for both sign-in and sign-out decisions.
 Sign-in adopts that work even without outbox entries, exposes its count as `due.pending`, and pins
