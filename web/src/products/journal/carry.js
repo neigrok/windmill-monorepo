@@ -2,10 +2,13 @@
 // engine's replica through the domain's actions (domain/carry.js). A seat's pages go only into the replica they belong
 // to, while it is active: an account's (`wm.journal.*.u.<id>`) into that account's bound replica, those written signed
 // out (`.anon`) into the anon replica. A run pins the engine's active binding as it starts, and the engine commits its
-// acts only while that binding stands: a sign-in or a sign-out between ends the run with every store whole, and the next
-// replica's run carries what is its. A store goes once the ledger in the replica records its pages, and only while it
-// holds the bytes that were read. The pages that bundle could not attribute (`.unclaimed`) stay in the browser's storage
-// until a signed-in person restores or discards them in Settings.
+// acts only while that binding stands: a sign-in or a sign-out between ends the run, and the next replica's run carries
+// what is still its. Each act's pages leave their stores as it commits, so a run that stops between acts leaves only
+// what is still owed, and a page is carried once, whichever seat comes next. Before the seat changes, the pages the
+// replica's ledger records leave their stores too (`settleSeat`), so a Discard of the replica, or the account's closure,
+// takes with it the old pages it counted, as the work they were carried into; the pages not yet carried, and the entries
+// that do not read, wait for that seat's next replica. The pages that bundle could not attribute (`.unclaimed`) stay in
+// the browser's storage until a signed-in person restores or discards them in Settings.
 
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { ActionRunner, EngineReplica } from '../../platform/domain-kit/runner.js';
@@ -17,7 +20,7 @@ import { syncSession } from '../../platform/sync/session.js';
 import { track as trackEvent } from '../../telemetry/beacon.js';
 import { countBucket } from '../../telemetry/countBucket.js';
 import { captureError } from '../../telemetry/sentry.js';
-import { OldStore, Seat, SeatPages } from './domain/carry.js';
+import { CarryLedger, OldStore, Seat, SeatPages } from './domain/carry.js';
 import { normalizePage } from './pages.js';
 
 const CARRY_LOCK = 'windmill-journal-carry';
@@ -61,21 +64,20 @@ export class OldStores {
       .flatMap((key) => [OldStore.read(key, storage.getItem(key) ?? '')].filter((store) => store !== null));
   }
 
-  // What is left of `store` once every page `done` names is carried (`OldStore.rest`), while it holds the bytes it was
-  // read with; answers whether it changed.
-  settle(store, done) {
-    const rest = store.rest(done);
-    if (rest.kind === 'keep' || this.storage.getItem(store.key) !== store.raw) return false;
-    if (rest.kind === 'forget') this.storage.removeItem(store.key);
-    else this.storage.setItem(store.key, rest.raw);
-    return true;
-  }
-
-  // `store` taken whole, entries that do not read included, while it holds the bytes it was read with.
-  discard(store) {
-    if (this.storage.getItem(store.key) !== store.raw) return false;
-    this.storage.removeItem(store.key);
-    return true;
+  // Each store of `seat` as it holds now, without its pages `done` names and its copies of the account's pages
+  // (`OldStore.rest`): deleted where nothing else is left, rewritten otherwise. A page another writer changed since it was
+  // carried has other words, so another digest, and stays, as does an entry that does not read. Answers the pages that
+  // left. Throws where the browser refuses its storage, the stores before the refusal settled.
+  settle(seat, done) {
+    const gone = [];
+    for (const store of this.read().filter((each) => each.seat.equals(seat))) {
+      const rest = store.rest(done);
+      if (rest.kind === 'keep') continue;
+      if (rest.kind === 'forget') this.storage.removeItem(store.key);
+      else this.storage.setItem(store.key, rest.raw);
+      gone.push(...rest.gone);
+    }
+    return gone;
   }
 
   // One time, for the leftovers of the journal's first bundle on the engine: the entries of each store whose carry that
@@ -125,6 +127,7 @@ export class CarryOver {
     this.binding = null;
     this.running = Promise.resolve();
     this.unreadTold = false;
+    this.clearTold = false;
   }
 
   // A run at once, and again whenever another binding becomes active: a sign-in or a sign-out, once its question is
@@ -153,37 +156,54 @@ export class CarryOver {
     return this.locks.request(CARRY_LOCK, { ifAvailable: true }, (lock) => (lock === null ? undefined : this.carry()));
   }
 
+  // The account's copies of its own pages go first: its pull brings them. Then the acts, each act's pages leaving their
+  // stores as it commits. An act the domain refuses or that fails ends the run, told, and one a sign-in or a sign-out
+  // overtakes ends it quietly; either way that act's pages and those after it stay owed to the next run.
   async carry() {
     const { engine } = this;
     const binding = engine.activeBinding();
     const seat = Seat.ofReplica(engine.device.activeReplica.meta);
     if (seat === null) return;
     await this.returnLeftovers();
-    const stores = this.readStores();
-    const pages = new SeatPages(seat, stores);
+    const pages = new SeatPages(seat, this.readStores());
     if (pages.stores.length === 0) return;
     const runner = runnerOf(engine);
+    let gone = this.settle(seat, new Set());
     let written = 0;
+    let owed = pages.pages.length;
+    let ended = null;
     try {
-      for (const parts of pages.carrying(PAGES_PER_ACT)) {
-        const outcome = await runner.runComposed(parts, { binding });
-        if (outcome.kind === 'refused') throw new Error('the journal carry was refused');
+      for (const act of pages.carrying(PAGES_PER_ACT)) {
+        const outcome = await runner.runComposed(act.parts, { binding });
+        if (outcome.kind === 'refused') {
+          ended = 'refused';
+          break;
+        }
         if (outcome.kind === 'committed') written += outcome.results.filter((result) => WROTE.has(result)).length;
+        owed -= act.pages.length;
+        gone += this.settle(seat, new Set(act.pages.map((page) => page.digest)));
       }
     } catch (error) {
-      if (error instanceof ReplicaChanged) return;
-      this.report('journal-migration', 'write', error);
-      this.tell(seat, 'failed', pages.pages.length);
-      return;
-    }
-    if (engine.activeBinding() !== binding) return;
-    let cleared = 0;
-    for (const store of pages.stores) {
-      try { if (this.stores.settle(store, () => true)) cleared += store.pages.length; }
-      catch (error) { this.report('journal-migration', 'clear', error); }
+      if (!(error instanceof ReplicaChanged)) {
+        this.report('journal-migration', 'write', error);
+        ended = 'failed';
+      }
     }
     if (written > 0) this.tell(seat, 'carried', written);
-    else if (cleared > 0) this.tell(seat, 'cleared', cleared);
+    else if (gone > 0) this.tell(seat, 'cleared', gone);
+    if (ended !== null) this.tell(seat, ended, owed);
+  }
+
+  // The seat's stores give up the pages `done` names (`OldStores.settle`), answering how many left them. A store the
+  // browser will not change is reported once a page load and settled by a later run.
+  settle(seat, done) {
+    try {
+      return this.stores.settle(seat, done).length;
+    } catch (error) {
+      if (!this.clearTold) this.report('journal-migration', 'clear', error);
+      this.clearTold = true;
+      return 0;
+    }
   }
 
   // Every store, none where the browser refuses its storage. A refusal, or an entry that does not read as a page, is
@@ -229,6 +249,22 @@ export class CarryOver {
   }
 }
 
+// Before the seat changes (a sign-in, a sign-out's Keep or Discard, the account's closure), the active seat's stores
+// give up every page its replica's ledger records, so a page carried there is never carried again into the next
+// replica, and a Discard takes the old pages it counted as the work they were carried into, and no other: the pages not
+// yet carried, and the entries that do not read, wait for that seat's next replica.
+export function settleSeat(engine, { stores = new OldStores(), track = trackEvent, report = reportFailure } = {}) {
+  if (!engine || engine.closed || engine.store instanceof MemoryStore) return;
+  const seat = Seat.ofReplica(engine.device.activeReplica.meta);
+  if (seat === null) return;
+  try {
+    const gone = stores.settle(seat, CarryLedger.of(engine.readDeviceRows('journal')[CarryLedger.key(seat)] ?? null));
+    if (gone.length > 0) track('journal_carry', { seat: seat.kind, outcome: 'cleared', pages: countBucket(gone.length) });
+  } catch (error) {
+    report('journal-migration', 'clear', error);
+  }
+}
+
 // The pages this browser kept that the bundle before the engine could not attribute, as Settings lists them: a day
 // each, oldest first, then each other page of the day. None where the browser refuses its storage.
 export function unclaimedPages(stores = new OldStores()) {
@@ -239,58 +275,53 @@ export function unclaimedPages(stores = new OldStores()) {
   }
 }
 
+// The domain refused an act of a restore: the pages it would have written wait where they were.
+class RestoreRefused extends Error {}
+
 // The unattributed pages written into the account's replica, which must be bound to `account` and stay so: each act
-// through the domain's runner, the stores going once they are written, each while it holds the bytes that were read and
-// keeping only its entries that do not read. Answers how many pages were restored: none where none waited any longer.
+// through the domain's runner, its pages leaving their stores as it commits, a store keeping its entries that do not
+// read. An account that changed, or an act the domain refuses, ends the restore with the pages not yet written where they
+// were. Answers how many pages were restored: none where none waited any longer.
 export async function restoreUnclaimedPages(account, { engine = syncSession.engine, stores = new OldStores(), track = trackEvent, report = reportFailure } = {}) {
+  const restored = new Set();
+  const tell = (outcome) => track('journal_unclaimed', { action: 'restore', outcome, pages: countBucket(restored.size) });
   try {
     const binding = engine.activeBinding();
     const { state, account: bound } = engine.device.activeReplica.meta;
-    if (state !== 'bound' || bound !== account) throw new Error('the account changed before the pages were restored');
-    const unclaimed = new SeatPages(Seat.unclaimed, stores.read());
+    if (state !== 'bound' || bound !== account) throw new ReplicaChanged();
     const runner = runnerOf(engine);
-    for (const parts of unclaimed.restoring(PAGES_PER_ACT)) {
-      const outcome = await runner.runComposed(parts, { binding });
-      if (outcome.kind === 'refused') throw new Error('the restore was refused');
+    for (const act of new SeatPages(Seat.unclaimed, stores.read()).restoring(PAGES_PER_ACT)) {
+      const outcome = await runner.runComposed(act.parts, { binding });
+      if (outcome.kind === 'refused') throw new RestoreRefused();
+      for (const page of stores.settle(Seat.unclaimed, new Set(act.pages.map((each) => each.digest)))) {
+        if (!page.copy) restored.add(page.digest);
+      }
     }
-    const settled = unclaimed.stores.filter((store) => stores.settle(store, () => true));
-    const restored = settled.length > 0 ? unclaimed.pages.length : 0;
-    track('journal_unclaimed', { action: 'restore', outcome: restored > 0 ? 'ok' : 'none', pages: countBucket(restored) });
-    return restored;
   } catch (error) {
-    report('journal-restore', 'restore', error);
-    track('journal_unclaimed', { action: 'restore', outcome: 'failed', pages: countBucket(0) });
+    if (error instanceof ReplicaChanged) tell('replica_changed');
+    else if (error instanceof RestoreRefused) tell('refused');
+    else {
+      report('journal-restore', 'restore', error);
+      tell('failed');
+    }
     throw error;
   }
+  tell(restored.size > 0 ? 'ok' : 'none');
+  return restored.size;
 }
 
-// The unattributed pages deleted from this browser's storage, each store while it holds the bytes that were read,
-// keeping only its entries that do not read; nothing is written to the engine. Answers how many pages went.
-export function dropUnclaimedPages({ stores = new OldStores(), track = trackEvent, report = reportFailure } = {}) {
+// The unattributed pages Settings listed (`unclaimedPages`, by their keys) deleted from this browser's storage, and no
+// other: a page that arrived since waits, as do the entries that do not read. Nothing is written to the engine. Answers
+// how many of the listed pages went.
+export function dropUnclaimedPages(listed, { stores = new OldStores(), track = trackEvent, report = reportFailure } = {}) {
   try {
-    const unclaimed = new SeatPages(Seat.unclaimed, stores.read());
-    const settled = unclaimed.stores.filter((store) => stores.settle(store, () => true));
-    const dropped = settled.length > 0 ? unclaimed.pages.length : 0;
+    const gone = stores.settle(Seat.unclaimed, new Set(listed)).filter((page) => !page.copy);
+    const dropped = new Set(gone.map((page) => page.digest)).size;
     track('journal_unclaimed', { action: 'discard', outcome: dropped > 0 ? 'ok' : 'none', pages: countBucket(dropped) });
     return dropped;
   } catch (error) {
     report('journal-discard', 'discard', error);
     track('journal_unclaimed', { action: 'discard', outcome: 'failed', pages: countBucket(0) });
     throw error;
-  }
-}
-
-// A sign-out's Discard or the account's closure took the account's replica, and with it what the carry wrote there: the
-// account's stores go too, so pages the person discarded do not return at the account's next sign-in. A Keep keeps the
-// replica, and the stores wait with it.
-export function forgetSeat({ previous = null } = {}, { engine = syncSession.engine, stores = new OldStores(), track = trackEvent, report = reportFailure } = {}) {
-  if (previous === null || !engine || engine.closed || engine.hasReplicaOf(previous)) return;
-  try {
-    const seat = Seat.of(previous);
-    const discarded = stores.read().filter((store) => store.seat.equals(seat) && stores.discard(store));
-    const pages = discarded.reduce((sum, store) => sum + store.pages.length, 0);
-    if (discarded.length > 0) track('journal_carry', { seat: seat.kind, outcome: 'discarded', pages: countBucket(pages) });
-  } catch (error) {
-    report('journal-migration', 'clear', error);
   }
 }

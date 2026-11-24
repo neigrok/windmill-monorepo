@@ -54,7 +54,7 @@ for (const action of ['restored', 'discarded']) {
     const other = await BrowserSyncEngine.open(env.options);
     t.after(() => other.close());
     if (action === 'restored') assert.equal(await restoreUnclaimedPages('A', { engine: other, track: () => {} }), 1);
-    else assert.equal(dropUnclaimedPages({ track: () => {} }), 1);
+    else assert.equal(dropUnclaimedPages(unclaimedPages().map((each) => each.key), { track: () => {} }), 1);
     await engine.refresh();
     const owed = claims(engine).length;
 
@@ -86,6 +86,15 @@ test('discarding pages shows the receipt, removes the stale offer and writes not
   assert.equal(data.size, 0);
   assert.equal(engine.revision, revision);
   assert.deepEqual(engine.device.activeReplica.entries(SCOPE), []);
+});
+
+test('discarding deletes the pages the row listed and leaves a page that arrived since', async (t) => {
+  const { data, run } = await setup(t);
+  const arrived = { ...page, day: '2026-09-28', body: 'arrived since' };
+  data.set('wm.journal.v2.pages.unclaimed.0123456789abcdef', JSON.stringify({ [arrived.day]: { page: arrived, needsPush: true, read: false } }));
+  await buttons(run)[1].props.onClick();
+  assert.equal(textOf(run.tree), 'Deleted from this browser.');
+  assert.deepEqual(unclaimedPages().map(({ day, body }) => ({ day, body })), [{ day: arrived.day, body: arrived.body }]);
 });
 
 test('a failed restore keeps the pages and offers a retry', async (t) => {

@@ -55,30 +55,39 @@ pending-work and adoption hooks and records claim receipts in the same transacti
 the replica (web-device-parity §5), through the domain's actions (`domain/carry.js`). A seat's pages go only into
 their own replica while it is active: an account's (`wm.journal.*.u.<id>`) into that account's bound replica, the
 pages written signed out (`.anon`) into the anon replica; a run starts on every load and again whenever another
-binding becomes active, under a browser lock a tab that finds taken leaves to the tab holding it, and is pinned to the
-engine's active binding, so a sign-in or a sign-out between ends it with every store whole. A day's page (an owed page
-before the account's copy, an owed page never read before one read, then the newer stamp) is claimed under an id its
-day and words derive, so carrying it twice writes it once, and joins the account's page of the day as every claim does,
-whether or not the replica has pulled it. A page of a day this browser already holds work of (a queued write, a claim
-or the editor's draft of the day), and each other page of the day with other words, is kept as a draft to recover, so
-a later save of the day cannot supersede it; words past a claim's bound become the editor's draft where its day is
-free, a draft to recover otherwise. An account's copies of its own pages are not carried: the pull
-brings them. The first act retires the first run's invitations for a seat with written pages, and each act records its
-pages last in the seat's ledger, the replica's device row `carry:<seat>`; a store goes once its acts are written, and
-only while it holds the bytes that were read. An entry that does not read stays in its store, reported once a load, and
-a browser that refuses its storage opens the journal all the same. A device held in memory carries nothing. A sign-out's
-Discard, or the account's closure, that takes an account's replica takes that account's stores too (`forgetSeat`, from
-`forgetDevice`); a Keep leaves them for its next sign-in.
+binding becomes active, once any sign-in or sign-out question is answered, under a browser lock a tab that finds taken
+leaves to the tab holding it, and is pinned to the engine's active binding, so a sign-in or a sign-out between two acts
+ends it. A day's page (an owed page before the account's copy, an owed page never read before one read, then the newer
+stamp) is claimed under an id its day and words derive, so carrying it twice writes it once, and joins the account's
+page of the day as every claim does, whether or not the replica has pulled it. A page of a day this browser already
+holds work of (a queued write, a claim or the editor's draft of the day), and each other page of the day with other
+words, is kept as a draft to recover, so a later save of the day cannot supersede it; words past a claim's bound become
+the editor's draft where its day is free, a draft to recover otherwise. An account's copies of its own pages are not
+carried: the pull brings them, and they leave the store at the run's start. The first act retires the first run's
+invitations for a seat with written pages, and each act records every page of it last in the seat's ledger, the
+replica's device row `carry:<seat>`. As each act commits, its pages leave their stores, so a run that stops between acts
+leaves only what is still owed, and no page reaches two replicas. A store is read afresh each time and gives up pages by
+their day and words: a page another writer changed since has other words and stays. An act the domain refuses, or one
+that fails, ends the run with its pages and those after it still in their stores. An entry that does not read (no
+calendar day, a stamp that does not read, words no digest can name, such as a lone surrogate) stays in its store,
+reported once a load, while the pages beside it carry, and a browser that refuses its storage opens the journal all the
+same. A device held in memory carries nothing. Before the seat changes (a sign-in, a sign-out's Keep or Discard, the
+account's closure), the route's `seatWillChange` (`settleSeat`) takes from the active seat's stores every page its
+replica's ledger records, so a Discard takes the old pages it counted, as the claims and drafts they were carried into,
+and no other: the pages not yet carried, and the entries that do not read, wait for that seat's next replica.
 
-The pages that bundle could not attribute (`.unclaimed`, and its first version's unscoped store) stay in the
-browser's storage, which is their only record, and the signed-in person decides in Settings: Restore claims them into
-the account's replica through the runner, joined onto that day's page as a claim is, each other page of a day as a draft
-to recover, and deletes each store once its acts are written; Discard deletes them and writes nothing to the engine. A
-sign-out leaves them for whoever is at the browser next, who sees the day and length of each, never the words. A
-browser that ran the journal's first bundle on the engine kept those pages and its migration's records in the engine's
-device metadata; the carry returns the pages to the browser's storage once, a store a page, drops from the old stores
-the entries those records show carried, and deletes the three keys in the engine's one door to its metadata, the
-journal's only write of the device rather than of a replica.
+The pages that bundle could not attribute (`.unclaimed`, the owed pages of its first version's unscoped store, and the
+pages returned from the engine's metadata below) stay in the browser's storage, which is their only record, and the
+signed-in person decides in Settings: Restore claims them into the account's replica through the runner, joined onto
+that day's page as a claim is, each other page of a day as a draft to recover, each act's pages leaving their stores as
+it commits; Discard deletes the pages Settings listed, and no page that arrived since, and writes nothing to the engine.
+The first version's unscoped store also cached an account's pages beside the writes it owed: those copies are neither
+listed nor restored, and go with their store. A sign-out leaves the unattributed pages for whoever is at the browser
+next, who sees the day and length of each, never the words. A browser that ran the journal's first bundle on the engine
+kept those pages and its migration's records in the engine's device metadata; the carry returns the pages to the
+browser's storage once, a store a page, drops from the old stores the entries those records show carried, and deletes
+the three keys in the engine's one door to its metadata, the journal's only write of the device rather than of a
+replica.
 
 Settings' export (`settings/journalExport.js`) is one Markdown file of the room's written pages as
 the room shows them, read from the replica: signed out the browser's own, and on a bound replica, once

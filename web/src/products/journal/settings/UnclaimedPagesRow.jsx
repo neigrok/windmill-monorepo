@@ -34,7 +34,7 @@ export function UnclaimedPagesRow({ account }) {
   const discard = () => {
     setPhase('working');
     try {
-      dropUnclaimedPages();
+      dropUnclaimedPages(waiting.map((page) => page.key));
       setWaiting([]);
       setPhase('done');
       setNote(t('journal.settings.discarded'));

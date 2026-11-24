@@ -125,9 +125,10 @@ The web logs a workout (R-2). It is no longer only a mirror.
 - **Writes** all go through the kit's runner. What the journal's bundle before the engine kept in a
   browser's storage is carried into the replica each seat's pages belong to, while that replica is
   active, as the domain's actions pinned to the engine's active binding, with a ledger in the
-  replica's device row `carry:<seat>`; a store goes only once the ledger records it. The pages that
-  bundle could not attribute stay in the browser's storage until a signed-in person restores them,
-  through the runner, or discards them, which writes nothing to the engine.
+  replica's device row `carry:<seat>`; a page leaves the browser's storage only once the ledger records
+  it, so it is carried once, whichever replica comes next. The pages that bundle could not attribute
+  stay in the browser's storage until a signed-in person restores them, through the runner, or
+  discards those listed, which writes nothing to the engine.
 - Echoes, nudges and Talk are the server's by nature on every surface (§6).
 
 ## §6 What stays a backend call

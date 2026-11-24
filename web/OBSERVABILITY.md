@@ -151,19 +151,23 @@ outcome; it and `journal-claim-reconcile` carry the error's stack, its message s
 The carry of what the journal's bundle before the engine kept in this browser's storage (`carry.js`) emits
 `journal_carry` with `seat` (`anon` or `account`, whose pages they are; `unclaimed` for those returned), `outcome` and
 `pages`, a count through `countBucket` (`0/1/2-5/6-20/21+`): `carried`, the pages a run wrote into the replica as claims
-or drafts to recover; `cleared`, a run that wrote nothing (every page already recorded in the ledger, or only the
-account's own copies) and deleted stores, the pages they held; `failed`, a run whose write failed, the pages it was
-carrying; `discarded`, the pages of an account's stores a sign-out's Discard or its closure took; `returned`, the
-unattributed pages the journal's first bundle on the engine had kept in the device's metadata, back in the browser's
-storage, once. A run that writes and deletes nothing emits nothing, so a browser whose stores hold nothing is silent.
+or drafts to recover; `cleared`, pages that left the stores while nothing was written, by a run (every page already
+recorded in the ledger, or only the account's own copies) or before the seat changed (`settleSeat`, the pages the
+replica's ledger records); `failed`, a run an act's write failed, and `refused`, a run an act the domain refused, each
+after the `carried` of the acts before it, the pages it left owed in their stores; `returned`, the unattributed pages the
+journal's first bundle on the engine had kept in the device's metadata, back in the browser's storage, once. A run that
+writes and deletes nothing emits nothing, so a browser whose stores hold nothing is silent, and a run a sign-in or a
+sign-out overtakes ends quietly, the pages it had not carried left in their stores. A refusal is an event, never an Issue.
 Sentry hears `journal-migration` with the error's stack and `stage`: `read` (the browser refused its storage, or an
 entry does not read as a page, which stays where it is; once a page load, no stack for an entry), `write` (an act
-failed; the stores stay whole), `clear` (a store would not delete; it is deleted at the next run) or `leftovers` (the
-return of the first bundle's metadata failed; it is tried again at the next run). A run a sign-in or a sign-out
-overtakes ends quietly, every store whole. Settings' unsent pages emit `journal_unclaimed` with `action` (`restore` or
-`discard`), `outcome` (`ok`, `none` where no page waited any longer, or `failed`) and `pages` through `countBucket`; a
-failure also reports `journal-restore` or `journal-discard` with the error's stack. No day, page body, scale, claim
-identifier, store key or account is reported.
+failed; its pages and those after it stay in their stores), `clear` (a store would not change; its carried pages leave
+it at the next run or before the seat changes; once a page load from a run) or `leftovers` (the return of the first
+bundle's metadata failed; it is tried again at the next run). Settings' unsent pages emit `journal_unclaimed` with
+`action` (`restore` or `discard`), `outcome` (`ok`; `none` where no page waited any longer; for a restore,
+`replica_changed` where the account changed before or while it wrote and `refused` where the domain refused an act,
+either leaving the pages not yet written where they were; or `failed`) and `pages` through `countBucket`. Only `failed`
+also reports `journal-restore` or `journal-discard` with the error's stack. No day, page body, scale, claim identifier,
+store key or account is reported.
 Settings' export emits `journal_export` with `outcome`: `ok`, `first_pull_timeout` (a bound replica's first pull of
 the journal did not end within 30 seconds), `replica_changed` (the account changed while it waited), `no_replica` (the
 browser holds no open replica) or `failed`, which alone also reports `journal-export` with the error's stack and `step`:

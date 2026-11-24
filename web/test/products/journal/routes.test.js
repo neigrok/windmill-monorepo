@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { journalRoutes } from '../../../src/products/journal/routes.js';
+import { CarryLedger, OldStore, Seat } from '../../../src/products/journal/domain/carry.js';
 import { EditorDraft, PendingClaim } from '../../../src/products/journal/domain/writing.js';
 import { registry } from '../../../src/platform/sync/schema.js';
 
@@ -14,7 +15,7 @@ test('journal registers a settings section, in the data zone beside the accountâ
 
 test('journal hands the engine its claim hooks, and a sign-in question counts its pages', () => {
   const { sync } = journalRoutes;
-  assert.deepEqual(Object.keys(sync).sort(), ['adoptDeviceRows', 'adoptionAnswer', 'adoptionCount', 'onPushResult', 'pendingDeviceWork', 'prepare', 'signedOutWork']);
+  assert.deepEqual(Object.keys(sync).sort(), ['adoptDeviceRows', 'adoptionAnswer', 'adoptionCount', 'onPushResult', 'pendingDeviceWork', 'prepare', 'seatWillChange', 'signedOutWork']);
   const document = { body: 'words', mood: null, energy: null, source: 'typed' };
   const pending = new PendingClaim({ day: '2026-10-01', claimId: 'c1', document });
   pending.edit({ ...document, body: 'later words' });
@@ -29,6 +30,24 @@ test('journal hands the engine its claim hooks, and a sign-in question counts it
   const { counted, ...nouns } = sync.signedOutWork;
   assert.deepEqual(nouns, { type: 'page', many: 'pages' });
   assert.deepEqual([counted(0), counted(1), counted(3)], ['0 pages', '1 page', '3 pages']);
+});
+
+test('before the seat changes, the old pages its replica\'s ledger records leave this browser\'s storage, and the rest wait', (t) => {
+  const key = 'wm.journal.v2.pages.u.A';
+  const entry = (day, body) => ({ [day]: { page: { day, body, mood: null, energy: null, source: 'typed', stamp: '' }, needsPush: true, read: false } });
+  const [carried] = OldStore.read(key, JSON.stringify(entry('2026-10-01', 'carried'))).pages;
+  const data = new Map([[key, JSON.stringify({ ...entry('2026-10-01', 'carried'), ...entry('2026-10-02', 'not carried yet') })]]);
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { get length() { return data.size; }, key: (index) => [...data.keys()][index] ?? null,
+    getItem: (name) => data.get(name) ?? null, setItem: (name, value) => data.set(name, value), removeItem: (name) => data.delete(name) } });
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
+    else delete globalThis.localStorage;
+  });
+  const engine = { closed: false, store: {}, device: { activeReplica: { meta: { state: 'bound', account: 'A' } } },
+    readDeviceRows: (product) => (product === 'journal' ? { [CarryLedger.key(Seat.of('A'))]: { pages: [carried.digest] } } : {}) };
+  journalRoutes.sync.seatWillChange(engine);
+  assert.deepEqual([...data.entries()], [[key, JSON.stringify(entry('2026-10-02', 'not carried yet'))]]);
 });
 
 test('only unwritten journal work is adopted without a personal-data question', () => {

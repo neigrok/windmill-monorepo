@@ -36,20 +36,38 @@ test('a store\'s key names whose pages it keeps, a replica whose pages it takes,
   assert.deepEqual(second.pages.map(fields), [{ day: '2026-09-01', body: 'second', mood: 3, energy: 2, source: 'typed' }]);
 });
 
-test('an entry that does not read stays as it is, and a store goes only once every page of it is carried', () => {
+test('an entry that does not read stays as it is, words no digest names among them, and a store gives up only the pages it is told', () => {
   const unread = { '2026-02-30': entry('2026-02-30', 'no such day')['2026-02-30'], '2026-09-03': { needsPush: true },
-    '2026-09-04': { page: { body: 'bad stamp', stamp: 'later' }, needsPush: true } };
-  const mixed = OldStore.read('wm.journal.v2.pages.anon', JSON.stringify({ ...entry('2026-09-01', 'kept'), ...unread }));
-  assert.equal(mixed.unreadable, 3);
-  assert.deepEqual(mixed.pages.map(fields), [{ day: '2026-09-01', body: 'kept', mood: null, energy: null, source: 'typed' }]);
-  assert.deepEqual(mixed.rest(() => false), { kind: 'keep' });
-  assert.deepEqual(mixed.rest(() => true), { kind: 'rewrite', raw: JSON.stringify(unread) });
-  const rewritten = OldStore.read(mixed.key, JSON.stringify(unread));
-  assert.deepEqual(rewritten.rest(() => true), { kind: 'keep' });
+    '2026-09-04': { page: { body: 'bad stamp', stamp: 'later' }, needsPush: true }, ...entry('2026-09-05', 'a lone \ud800 surrogate') };
+  const mixed = OldStore.read('wm.journal.v2.pages.anon', JSON.stringify({ ...entry('2026-09-01', 'carried'), ...entry('2026-09-02', 'owed'), ...unread }));
+  assert.equal(mixed.unreadable, 4);
+  assert.deepEqual(mixed.pages.map(fields), [
+    { day: '2026-09-01', body: 'carried', mood: null, energy: null, source: 'typed' },
+    { day: '2026-09-02', body: 'owed', mood: null, energy: null, source: 'typed' },
+  ]);
+  const [carried, owed] = mixed.pages;
+  assert.deepEqual(mixed.rest(new Set()), { kind: 'keep' });
+  assert.deepEqual(mixed.rest(new Set([carried.digest])), { kind: 'rewrite', raw: JSON.stringify({ ...entry('2026-09-02', 'owed'), ...unread }), gone: [carried] });
+  assert.deepEqual(mixed.rest(new Set([carried.digest, owed.digest])), { kind: 'rewrite', raw: JSON.stringify(unread), gone: [carried, owed] });
+  assert.deepEqual(OldStore.read(mixed.key, JSON.stringify(unread)).rest(new Set([carried.digest, owed.digest])), { kind: 'keep' });
 
-  assert.deepEqual(store('wm.journal.v2.pages.anon', entry('2026-09-01', 'kept')).rest(() => true), { kind: 'forget' });
+  const whole = store('wm.journal.v2.pages.anon', entry('2026-09-01', 'carried'));
+  assert.deepEqual(whole.rest(new Set([carried.digest])), { kind: 'forget', gone: whole.pages });
+  assert.deepEqual(OldStore.read('wm.journal.v2.pages.anon', '{}').rest(new Set()), { kind: 'forget', gone: [] });
   const garbled = OldStore.read('wm.journal.v2.pages.anon', '{not json');
-  assert.deepEqual({ pages: garbled.pages, unreadable: garbled.unreadable, rest: garbled.rest(() => true) }, { pages: [], unreadable: 1, rest: { kind: 'keep' } });
+  assert.deepEqual({ pages: garbled.pages, unreadable: garbled.unreadable, rest: garbled.rest(new Set([carried.digest])) }, { pages: [], unreadable: 1, rest: { kind: 'keep' } });
+});
+
+test('a page the browser did not owe is a copy of the account\'s own in an account\'s store and the first version\'s unscoped one, the person\'s writing elsewhere', () => {
+  const kept = [entry('2026-09-01', 'owed'), entry('2026-09-02', 'not owed', { owed: false })];
+  assert.deepEqual(['wm.journal.v2.pages.u.A', 'wm.journal.pages.u.A', 'wm.journal.pages', 'wm.journal.pages.unclaimed', 'wm.journal.v2.pages.unclaimed',
+    'wm.journal.v2.pages.unclaimed.0123456789abcdef', 'wm.journal.v2.pages.anon'].map((key) => store(key, ...kept).pages.map((page) => page.copy)), [
+    [false, true], [false, true], [false, true], [false, false], [false, false], [false, false], [false, false],
+  ]);
+  const unscoped = store('wm.journal.pages', ...kept);
+  assert.deepEqual(new SeatPages(Seat.unclaimed, [unscoped]).pages.map((page) => page.document.body), ['owed']);
+  assert.deepEqual(unscoped.rest(new Set()), { kind: 'rewrite', raw: JSON.stringify(entry('2026-09-01', 'owed')), gone: [unscoped.pages[1]] });
+  assert.deepEqual(unscoped.rest(new Set([unscoped.pages[0].digest])), { kind: 'forget', gone: unscoped.pages });
 });
 
 test('a seat keeps a day\'s page as the bundle kept it, and the others of the day with other words to recover', () => {
@@ -88,26 +106,32 @@ test('a seat\'s pages carry as claims under their own ids, retire the first run 
     const pages = new SeatPages(Seat.anon, [store('wm.journal.v2.pages.anon', entry('2026-09-01', 'one'), entry('2026-09-02', 'two'))]);
     const [act, ...rest] = pages.carrying(20);
     assert.deepEqual(rest, []);
-    assert.deepEqual(results(await a.runner.runComposed(act)), ['claimed', 'claimed', null, null]);
+    assert.deepEqual(act.pages, pages.pages);
+    assert.deepEqual(results(await a.runner.runComposed(act.parts)), ['claimed', 'claimed', null, null]);
     assert.deepEqual(claims(a), pages.pages.map((page) => ({ ...fields(page), claimId: page.claimId })));
     assert.deepEqual(a.drawn(JournalState).map((state) => state.fields()),
       [{ placeholder: 'retired', privacyLine: 'retired', firstPage: 'retired', scales: 'retired' }]);
     assert.deepEqual(a.engine.readDeviceRows('journal')[CarryLedger.key(Seat.anon)], { pages: pages.pages.map((page) => page.digest).sort() });
 
-    const again = await a.runner.runComposed(pages.carrying(20)[0]);
+    const again = await a.runner.runComposed(pages.carrying(20)[0].parts);
     assert.deepEqual(again, { kind: 'unchanged', results: ['held', 'held', null, null] });
     assert.equal(claims(a).length, 2);
   } finally { a.close(); }
 });
 
-test('a page the seat\'s ledger records is not written again though the replica holds no claim of it, and one recorded nowhere is', async () => {
+test('a page the seat\'s ledger records is not written again though the replica holds neither its claim nor its draft, and one recorded nowhere is', async () => {
   const a = await anonymous();
   try {
-    const pages = new SeatPages(Seat.anon, [store('wm.journal.v2.pages.anon', entry('2026-09-01', 'recorded'), entry('2026-09-02', 'new'))]);
-    const [recorded, fresh] = pages.pages;
-    results(await a.runner.runComposed([new RecordCarry(Seat.anon, [recorded.digest])]));
-    assert.deepEqual(results(await a.runner.runComposed(pages.carrying(20)[0])), ['held', 'claimed', null, null]);
+    const pages = new SeatPages(Seat.anon, [
+      store('wm.journal.pages.anon', entry('2026-09-01', 'an earlier recorded page of the day', { stamp: '1:0:legacy' })),
+      store('wm.journal.v2.pages.anon', entry('2026-09-01', 'recorded', { stamp: '2:0:legacy' }), entry('2026-09-02', 'new')),
+    ]);
+    const [recorded, other, fresh] = pages.pages;
+    assert.deepEqual([recorded, other, fresh].map((page) => page.document.body), ['recorded', 'an earlier recorded page of the day', 'new']);
+    results(await a.runner.runComposed([new RecordCarry(Seat.anon, [recorded.digest, other.digest])]));
+    assert.deepEqual(results(await a.runner.runComposed(pages.carrying(20)[0].parts)), ['held', 'held', 'claimed', null, null]);
     assert.deepEqual(claims(a).map((args) => args.claimId), [fresh.claimId]);
+    assert.equal(a.engine.readDeviceRows('journal')[other.draft.recoveryKey], undefined);
   } finally { a.close(); }
 });
 
@@ -117,16 +141,16 @@ test('the carry keeps a page of a day the replica holds as a draft to recover, a
     const today = a.runner.moment().today.text;
     assert.equal((await a.runner.run(new SavePage({ day: today, document: { body: 'written here', mood: null, energy: null, source: 'typed' } }))).kind, 'committed');
     const pages = new SeatPages(Seat.anon, [store('wm.journal.v2.pages.anon', entry(today, 'kept before'), entry('2026-09-01', 'a free day'))]);
-    assert.deepEqual(results(await a.runner.runComposed(pages.carrying(20)[0])), ['claimed', 'recovered', null, null]);
+    assert.deepEqual(results(await a.runner.runComposed(pages.carrying(20)[0].parts)), ['claimed', 'recovered', null, null]);
     const kept = pages.pages.find((page) => page.day.text === today);
     assert.deepEqual(a.engine.readDeviceRows('journal')[kept.draft.recoveryKey], kept.draft.json);
 
     const unclaimed = new SeatPages(Seat.unclaimed, [store('wm.journal.v2.pages.unclaimed', entry(today, 'kept before'))]);
-    const [join] = unclaimed.restoring(20)[0];
+    const [join] = unclaimed.restoring(20)[0].parts;
     assert.ok(join instanceof CarryPage);
     assert.deepEqual(results(await a.runner.runComposed([join])), ['held']);
     const elsewhere = new SeatPages(Seat.unclaimed, [store('wm.journal.v2.pages.unclaimed', entry(today, 'unattributed words'))]);
-    assert.deepEqual(results(await a.runner.runComposed(elsewhere.restoring(20)[0])), ['claimed']);
+    assert.deepEqual(results(await a.runner.runComposed(elsewhere.restoring(20)[0].parts)), ['claimed']);
     assert.deepEqual(claims(a).filter((args) => args.day === today).map((args) => args.body), ['written here', 'unattributed words']);
   } finally { a.close(); }
 });
@@ -140,7 +164,7 @@ test('an owed page of a day whose account page is pulled is still claimed, so th
     await a.sync();
     assert.equal(a.engine.device.activeReplica.entries(JOURNAL_SCOPE).length, 0);
     const pages = new SeatPages(Seat.of('A'), [store('wm.journal.v2.pages.u.A', entry(today, 'the account\'s page, then words written offline', { read: true }))]);
-    assert.deepEqual(results(await a.runner.runComposed(pages.carrying(20)[0])), ['claimed', null, null]);
+    assert.deepEqual(results(await a.runner.runComposed(pages.carrying(20)[0].parts)), ['claimed', null, null]);
     assert.deepEqual(claims(a).map((args) => args.body), ['the account\'s page, then words written offline']);
   } finally { a.close(); }
 });
@@ -150,7 +174,7 @@ test('words past a claim\'s bound stay to correct: the editor\'s draft where its
   try {
     const long = 'legacy writing '.repeat(10_000);
     const pages = new SeatPages(Seat.anon, [store('wm.journal.v2.pages.anon', entry('2026-09-01', long), entry('2026-09-02', `${long}again`), entry('2026-09-03', 'fits'))]);
-    assert.deepEqual(results(await a.runner.runComposed(pages.carrying(20)[0])), ['drafted', 'recovered', 'claimed', null, null]);
+    assert.deepEqual(results(await a.runner.runComposed(pages.carrying(20)[0].parts)), ['drafted', 'recovered', 'claimed', null, null]);
     const rows = a.engine.readDeviceRows('journal');
     const [first, second] = pages.pages;
     assert.deepEqual(rows[EditorDraft.key], first.draft.json);
@@ -164,12 +188,13 @@ test('an account seat carries only what the browser owed it, and acts hold a bou
   const account = new SeatPages(Seat.of('A'), [store('wm.journal.v2.pages.u.A', ...days.map((day, index) => entry(day, `page ${index}`, { owed: index % 2 === 0 })))]);
   assert.equal(account.pages.length, 12);
   const acts = account.carrying(5);
-  assert.deepEqual(acts.map((act) => act.map((part) => part.constructor.name)), [
+  assert.deepEqual(acts.map((act) => act.parts.map((part) => part.constructor.name)), [
     ['CarryPage', 'CarryPage', 'CarryPage', 'CarryPage', 'CarryPage', 'RetireFirstRun', 'RecordCarry'],
     ['CarryPage', 'CarryPage', 'CarryPage', 'CarryPage', 'CarryPage', 'RecordCarry'],
     ['CarryPage', 'CarryPage', 'RecordCarry'],
   ]);
-  assert.deepEqual(acts.flatMap((act) => act.at(-1).digests), account.pages.map((page) => page.digest));
+  assert.deepEqual(acts.map((act) => act.pages), [account.pages.slice(0, 5), account.pages.slice(5, 10), account.pages.slice(10)]);
+  assert.deepEqual(acts.map((act) => act.parts.at(-1).digests), acts.map((act) => act.pages.map((page) => page.digest)));
   const blank = new SeatPages(Seat.anon, [store('wm.journal.v2.pages.anon', entry('2026-09-01', '  ', { mood: 4 }))]);
-  assert.deepEqual(blank.carrying(5).map((act) => act.map((part) => part.constructor.name)), [['CarryPage', 'RecordCarry']]);
+  assert.deepEqual(blank.carrying(5).map((act) => act.parts.map((part) => part.constructor.name)), [['CarryPage', 'RecordCarry']]);
 });
