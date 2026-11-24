@@ -7,7 +7,7 @@ import { LocalDay } from '../../../platform/domain-kit/time.js';
 import { Violation } from '../../../platform/domain-kit/values.js';
 import { compareDocumentStamps, isDocumentStamp } from '../../../platform/sync/core/content.js';
 import { hashText } from '../../../platform/sync/core/encoding.js';
-import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { JcsError, jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { JOURNAL_SCOPE, JournalState, JournalStateValue, PageDocument, STATE_FIELDS } from './page.js';
 import { JournalRefusals } from './journalRules.js';
 import { EditorDraft, JournalWriteState, JournalWriting } from './writing.js';
@@ -17,6 +17,10 @@ import { EditorDraft, JournalWriteState, JournalWriting } from './writing.js';
 /** @typedef {import('../../../platform/domain-kit/reading.js').Reader} Reader */
 /** @typedef {{ ms: number, counter: number, actor: string }} DocumentStamp */
 /** @typedef {CarryPage | KeepAsDraft | RetireFirstRun | RecordCarry} CarryPart */
+// One act of a carry or a restore: the parts the runner composes, and the pages they write.
+/** @typedef {{ pages: OldPage[], parts: CarryPart[] }} CarryAct */
+// The pages a store gives up, by digest: carried, restored or discarded.
+/** @typedef {{ has(digest: string): boolean }} Settled */
 
 // web-device-parity §5: what the journal's bundle before the engine kept in this browser's storage, one store a key,
 // read as pages, and the actions that carry them into the replica. Only a browser that ran that bundle holds its
@@ -26,6 +30,10 @@ import { EditorDraft, JournalWriteState, JournalWriting } from './writing.js';
 // that bundle could not attribute (`.unclaimed`, the unscoped store of its first version, and the unattributed pages the
 // engine's device metadata once held, returned one page a key). The first version's keys lack `v2.`.
 const STORE_KEY = /^wm\.journal\.(?:v2\.)?pages(?:\.(anon|unclaimed(?:\.[0-9a-f]{16})?|u\.(.+)))?$/;
+
+// The first version's one store, kept before it scoped pages to an account: beside the writes it owed, it cached the
+// account's own pages, as an account's store does.
+const FIRST_UNSCOPED = 'wm.journal.pages';
 
 // The first version kept mood on 1–5 and energy on 1–3; the engine keeps both on 0–10.
 const FIRST_ENERGY = /** @type {Readonly<Record<number, number>>} */ (Object.freeze({ 1: 2, 2: 5, 3: 8 }));
@@ -69,30 +77,31 @@ export class Seat {
   /** @param {Seat} other */
   equals(other) { return this.kind === other.kind && this.account === other.account; }
 
-  // Every page of the signed-out and the unattributed stores is the person's own writing; of an account's, only those
-  // the browser owed the account, the rest being copies of its pages, which the engine's pull brings.
-  /** @param {OldPage} page */
-  carries(page) { return this.kind !== 'account' || page.owed; }
-
   get name() { return this.kind === 'account' ? `u.${this.account}` : this.kind; }
 }
 
 // One page a store kept: its day and words on the engine's scales, the stamp it was last written with, whether the
-// browser owed it to the account (`owed`) and had read the account's answer for its day (`read`).
+// browser owed it to the account (`owed`) and had read the account's answer for its day (`read`), whether it is only a
+// copy of the account's own page, which the engine's pull brings (`copy`), and its day and words named (`digest`): how
+// the ledger records it, and its claim's id, so writing it twice writes it once.
 export class OldPage {
-  /** @param {{ day: LocalDay, document: PageDocument, stamp: DocumentStamp, owed: boolean, read: boolean }} page */
-  constructor({ day, document: doc, stamp, owed, read }) {
+  /** @param {{ day: LocalDay, document: PageDocument, stamp: DocumentStamp, owed: boolean, read: boolean, copy: boolean, digest: string }} page */
+  constructor({ day, document: doc, stamp, owed, read, copy, digest }) {
     this.day = day;
     this.document = doc;
     this.stamp = stamp;
     this.owed = owed;
     this.read = read;
+    this.copy = copy;
+    this.digest = digest;
     Object.freeze(this);
   }
 
-  // One entry of a store, `first` where the store is of the first version, or null where it does not read as a page.
-  /** @param {string} day @param {any} entry @param {boolean} first */
-  static read(day, entry, first) {
+  // One entry of a store, `first` where the store is of the first version and `caches` where its pages the browser did not
+  // owe are copies of the account's, or null where it does not read as a page: no page, no calendar day, a stamp that does
+  // not read, or words no digest can name (a lone surrogate).
+  /** @param {string} day @param {any} entry @param {{ first: boolean, caches: boolean }} store */
+  static read(day, entry, { first, caches }) {
     const parsed = LocalDay.parse(day);
     const raw = entry?.page;
     if (parsed === null || raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
@@ -105,11 +114,16 @@ export class OldPage {
     const words = new PageDocument({ body: typeof raw.body === 'string' ? raw.body : '', source: raw.source === 'spoken' ? 'spoken' : 'typed',
       mood: first ? (mood !== null && mood >= 1 && mood <= 5 ? mood * 2 - 1 : null) : mood,
       energy: first ? (energy === null ? null : FIRST_ENERGY[energy] ?? null) : energy });
-    return new OldPage({ day: parsed, document: words, stamp, owed: Boolean(entry.needsPush), read: Boolean(entry.read) });
+    let digest;
+    try { digest = hashText(jcs([parsed.text, words.fields()])); }
+    catch (error) {
+      if (error instanceof JcsError) return null;
+      throw error;
+    }
+    const owed = Boolean(entry.needsPush);
+    return new OldPage({ day: parsed, document: words, stamp, owed, read: Boolean(entry.read), copy: caches && !owed, digest });
   }
 
-  // The page's day and words, named: how the ledger records it, and its claim's id, so writing it twice writes it once.
-  get digest() { return hashText(jcs([this.day.text, this.document.fields()])); }
   get claimId() { return `carry-${this.digest}`; }
   get draft() { return new EditorDraft({ day: this.day, document: this.document }); }
 
@@ -124,38 +138,33 @@ export class OldPage {
   }
 }
 
-// One store: its key, the bytes it held as read, its seat, its pages, and its entries that do not read as pages, which
-// stay as they are (`unread`, null where its bytes are no JSON object at all).
+// One store: its key, the bytes it held as read, its seat, its entries as they parsed (null where its bytes are no JSON
+// object at all) and those of them that read as pages. An entry that does not read stays as it is.
 export class OldStore {
-  /** @param {{ key: string, raw: string, seat: Seat, pages: OldPage[], unread: Record<string, Json> | null }} store */
-  constructor({ key, raw, seat, pages, unread }) {
+  /** @param {{ key: string, raw: string, seat: Seat, entries: Record<string, Json> | null, pages: OldPage[] }} store */
+  constructor({ key, raw, seat, entries, pages }) {
     this.key = key;
     this.raw = raw;
     this.seat = seat;
+    this.entries = entries;
     this.pages = Object.freeze([...pages]);
-    this.unread = unread;
     Object.freeze(this);
   }
 
-  // The store a key holds, or null for a key that is no journal store's.
+  // The store a key holds, or null for a key that is no journal store's. An account's store, and the first version's
+  // unscoped one, cached the account's own pages beside the writes the browser owed it.
   /** @param {string} key @param {string} raw */
   static read(key, raw) {
     const seat = Seat.ofKey(key);
     if (seat === null) return null;
     let entries;
     try { entries = JSON.parse(raw); } catch { entries = null; }
-    if (entries === null || typeof entries !== 'object' || Array.isArray(entries)) return new OldStore({ key, raw, seat, pages: [], unread: null });
+    if (entries === null || typeof entries !== 'object' || Array.isArray(entries)) return new OldStore({ key, raw, seat, entries: null, pages: [] });
     const first = !key.startsWith('wm.journal.v2.');
-    /** @type {OldPage[]} */
-    const pages = [];
-    /** @type {Record<string, Json>} */
-    const unread = {};
-    for (const [day, entry] of Object.entries(entries).sort(([a], [b]) => compareText(a, b))) {
-      const page = OldPage.read(day, entry, first);
-      if (page === null) unread[day] = entry;
-      else pages.push(page);
-    }
-    return new OldStore({ key, raw, seat, pages, unread });
+    const caches = seat.kind === 'account' || key === FIRST_UNSCOPED;
+    const pages = Object.entries(entries).sort(([a], [b]) => compareText(a, b))
+      .flatMap(([day, entry]) => [OldPage.read(day, entry, { first, caches })].filter((page) => page !== null));
+    return new OldStore({ key, raw, seat, entries, pages });
   }
 
   // A page the engine's device metadata once held unattributed, as a store of its own, under a key its day and words
@@ -173,22 +182,26 @@ export class OldStore {
   static isReturned(key) { return /^wm\.journal\.v2\.pages\.unclaimed\.[0-9a-f]{16}$/.test(key); }
 
   // How many of its entries do not read as pages; all of them count as one where its bytes do not read at all.
-  get unreadable() { return this.unread === null ? 1 : Object.keys(this.unread).length; }
+  get unreadable() { return this.entries === null ? 1 : Object.keys(this.entries).length - this.pages.length; }
 
-  // What is left of the store once every page `done` names is carried: nothing, its entries that do not read, or the
-  // store as it is while a page waits or its bytes do not read.
-  /** @param {(page: OldPage) => boolean} done @returns {{ kind: 'forget' } | { kind: 'rewrite', raw: string } | { kind: 'keep' }} */
+  // What is left of the store once it gives up its pages `done` names and its copies of the account's pages: nothing, or
+  // its other entries, those that do not read among them, as they were; the store as it is where it gives up nothing or
+  // its bytes do not read. Answers the pages it gives up.
+  /** @param {Settled} done @returns {{ kind: 'keep' } | { kind: 'forget', gone: OldPage[] } | { kind: 'rewrite', raw: string, gone: OldPage[] }} */
   rest(done) {
-    if (this.unread === null || !this.pages.every(done)) return { kind: 'keep' };
-    if (Object.keys(this.unread).length === 0) return { kind: 'forget' };
-    const raw = JSON.stringify(this.unread);
-    return raw === this.raw ? { kind: 'keep' } : { kind: 'rewrite', raw };
+    if (this.entries === null) return { kind: 'keep' };
+    const gone = this.pages.filter((page) => page.copy || done.has(page.digest));
+    const days = new Set(gone.map((page) => page.day.text));
+    const left = Object.entries(this.entries).filter(([day]) => !days.has(day));
+    if (left.length === 0) return { kind: 'forget', gone };
+    if (gone.length === 0) return { kind: 'keep' };
+    return { kind: 'rewrite', raw: JSON.stringify(Object.fromEntries(left)), gone };
   }
 }
 
 // One seat's pages, a day each: the page the bundle kept of the day across the seat's stores (`OldPage.isPreferredTo`,
 // the later store by key winning a tie), and each other page of the day with other words, kept for the person to
-// recover. A page the seat does not carry takes no part.
+// recover. A copy of the account's own page takes no part.
 export class SeatPages {
   /** @param {Seat} seat @param {readonly OldStore[]} stores every store read, of whichever seat */
   constructor(seat, stores) {
@@ -197,7 +210,7 @@ export class SeatPages {
     /** @type {Map<string, { kept: OldPage, others: OldPage[] }>} */
     const days = new Map();
     for (const store of this.stores) {
-      for (const page of store.pages.filter((each) => seat.carries(each))) {
+      for (const page of store.pages.filter((each) => !each.copy)) {
         const held = days.get(page.day.text);
         if (held === undefined) days.set(page.day.text, { kept: page, others: [] });
         else if (page.isPreferredTo(held.kept)) days.set(page.day.text, { kept: page, others: [...held.others, held.kept] });
@@ -216,24 +229,28 @@ export class SeatPages {
   // The acts that carry the seat's pages into its replica, `size` pages an act: a page kept for its day is claimed
   // where this browser holds no work of the day and kept as a draft to recover where it does, each other page of the day
   // is kept as a draft to recover, a page the seat's ledger records is not written again, the first act also retires the
-  // first run's invitations where a page has words, and each act records its pages in the ledger last, so the ledger
-  // and what it records land together.
-  /** @param {number} size @returns {CarryPart[][]} */
+  // first run's invitations where a page has words, and each act records every page of it in the ledger last, written
+  // or found held, so the ledger and what it records land together.
+  /** @param {number} size @returns {CarryAct[]} */
   carrying(size) {
     const parts = this.days.flatMap(({ kept, others }) => [new CarryPage(kept, this.seat, 'recover'),
       ...others.map((page) => new KeepAsDraft(page, this.seat))]);
     const written = parts.some((part) => part.page.document.isWritten);
-    return chunks(parts, size).map((chunk, index) => [...chunk, ...(index === 0 && written ? [new RetireFirstRun()] : []),
-      new RecordCarry(this.seat, chunk.map((part) => part.page.digest))]);
+    return chunks(parts, size).map((chunk, index) => {
+      const pages = chunk.map((part) => part.page);
+      const retire = index === 0 && written ? [new RetireFirstRun()] : [];
+      return { pages, parts: [...chunk, ...retire, new RecordCarry(this.seat, pages.map((page) => page.digest))] };
+    });
   }
 
   // The acts that restore the seat's pages into an account's replica, `size` pages an act: a page kept for its day is
   // claimed, joined onto the account's page of the day as a claim is, and each other page of the day is kept as a draft
-  // to recover. A restore keeps no ledger: the stores go once its acts are written.
-  /** @param {number} size @returns {CarryPart[][]} */
+  // to recover. A restore keeps no ledger: each act's pages leave their stores once it is written.
+  /** @param {number} size @returns {CarryAct[]} */
   restoring(size) {
-    return chunks(this.days.flatMap(({ kept, others }) => [new CarryPage(kept, this.seat, 'join'),
-      ...others.map((page) => new KeepAsDraft(page, this.seat))]), size);
+    const parts = this.days.flatMap(({ kept, others }) => [new CarryPage(kept, this.seat, 'join'),
+      ...others.map((page) => new KeepAsDraft(page, this.seat))]);
+    return chunks(parts, size).map((chunk) => ({ pages: chunk.map((part) => part.page), parts: chunk }));
   }
 }
 
@@ -357,9 +374,10 @@ export class RetireFirstRun {
   }
 }
 
-// The ledger of what the carry wrote of one seat's pages into a replica, the replica's device row `carry:<seat>`,
-// written in the act that writes them: each page by its digest. A store goes only once the ledger records every page of
-// it the seat carries (as roadmap-on-the-engine §8.2's INV-4 holds for roadmap). The row never leaves the device.
+// The ledger of what the carry took of one seat's pages into a replica, the replica's device row `carry:<seat>`, written
+// in the act that takes them: each page of the act by its digest, whether the act wrote it or found it held. A page
+// leaves its store only once the ledger records it (as roadmap-on-the-engine §8.2's INV-4 holds for roadmap). The row
+// never leaves the device.
 export class CarryLedger {
   /** @type {Set<string>} */
   #pages;
@@ -393,7 +411,7 @@ export class CarryLedger {
   get json() { return { pages: [...this.#pages].sort(compareText) }; }
 }
 
-// Pages written into the replica, recorded in their seat's ledger: the last part of every act that carries.
+// The pages of an act recorded in their seat's ledger: the last part of every act that carries.
 export class RecordCarry {
   refusals = JournalRefusals;
 

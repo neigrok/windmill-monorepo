@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
+import { BrowserSyncEngine, ReplicaChanged } from '../../../src/platform/sync/engine.js';
 import { syncSession } from '../../../src/platform/sync/session.js';
 import { hashText } from '../../../src/platform/sync/core/encoding.js';
-import { CarryOver, OldStores, dropUnclaimedPages, forgetSeat, restoreUnclaimedPages, unclaimedPages } from '../../../src/products/journal/carry.js';
+import { CarryOver, OldStores, dropUnclaimedPages, restoreUnclaimedPages, settleSeat, unclaimedPages } from '../../../src/products/journal/carry.js';
 import { CarryLedger, Seat } from '../../../src/products/journal/domain/carry.js';
 import { adoptDeviceRows, onSyncResult, pagesOf, pendingClaimWork, recoveredDrafts, savePage, SCOPE, watchClaims } from '../../../src/products/journal/pages.js';
 import { environment, until } from '../../platform/sync/fakes.js';
@@ -57,11 +57,26 @@ async function converge(engine) {
 }
 
 // A carry over `data` whose events and reports the test reads, started: it answers once its first run ends.
-async function carrying(engine, data, told = { events: [], reports: [] }) {
-  const carry = new CarryOver(engine, { stores: new OldStores(data), locks: null,
+async function carrying(engine, data, told = { events: [], reports: [] }, locks = null) {
+  const carry = new CarryOver(engine, { stores: new OldStores(data), locks,
     track: (name, props) => told.events.push([name, props]), report: (operation, stage) => told.reports.push([operation, stage]) });
   await carry.start();
   return carry;
+}
+
+// What the shell runs before the seat changes (`sync.seatWillChange`), over `data`.
+const seatWillChange = (engine, data, told = { events: [], reports: [] }) => settleSeat(engine, { stores: new OldStores(data),
+  track: (name, props) => told.events.push([name, props]), report: (operation, stage) => told.reports.push([operation, stage]) });
+
+// Every act the engine commits after the first `after` refused by the domain, as a part past its bound is.
+function refusingAfter(engine, after) {
+  const commitAct = engine.commitAct.bind(engine);
+  let acts = 0;
+  engine.commitAct = (prepare, segment, guard) => {
+    acts += 1;
+    if (acts <= after) return commitAct(prepare, segment, guard);
+    return commitAct((context) => prepare({ ...context, stage: () => ({ refused: 'too-large', detail: null }) }), segment, guard);
+  };
 }
 
 const claims = (engine) => engine.device.activeReplica.entries(SCOPE).flatMap((each) => (each.intent.cmd ? [each.intent.cmd.args] : []));
@@ -271,22 +286,202 @@ test('a run a sign-in overtakes writes nothing and leaves every store whole; eac
   } finally { engine.close(); }
 });
 
-test('a Discard that takes an account\'s replica takes its stores; a Keep leaves them for its next sign-in', async () => {
+test('before the seat changes the pages its replica\'s ledger records leave their stores, so a Discard takes those it counted and keeps the rest for the account\'s next sign-in', async () => {
   const { engine, env } = await setup();
-  const data = storage({ 'wm.journal.v2.pages.u.A': stored(entry('owed A')), 'wm.journal.v2.pages.u.B': stored(entry('owed B')) });
-  const events = [];
-  const forget = () => forgetSeat({ previous: 'A', next: null }, { engine, stores: new OldStores(data), track: (name, props) => events.push([name, props]) });
+  const told = { events: [], reports: [] };
+  const key = 'wm.journal.v2.pages.u.A';
+  const unread = { '2026-09-10': { page: { ...doc('a stamp that does not read', '2026-09-10'), stamp: 'later' }, needsPush: true, read: true } };
+  const carried = entry('carried', { date: '2026-09-20' });
+  const since = entry('written since in an old tab', { date: '2026-09-21' });
+  const data = storage({ [key]: stored(carried, unread) });
+  const { setItem, removeItem } = data;
+  data.setItem = () => { throw new Error('storage denied'); };
   try {
     env.transport.account = 'A'; await engine.signIn('A');
-    await engine.finishSignOut({ choice: 'keep' });
-    forget();
-    assert.equal(data.length, 2);
-    await engine.signIn('A');
-    await engine.finishSignOut({ choice: 'discard' });
-    forget();
-    assert.deepEqual([...data.data.keys()], ['wm.journal.v2.pages.u.B']);
-    assert.deepEqual(events, [['journal_carry', { seat: 'account', outcome: 'discarded', pages: '1' }]]);
+    const carry = await carrying(engine, data, told);
+    data.setItem = setItem;
+    data.setItem(key, stored(carried, since, unread));
+    data.removeItem = removeItem;
+    seatWillChange(engine, data, told);
+    assert.equal(data.data.get(key), stored(since, unread));
+    await engine.finishSignOut({ choice: 'discard' }); await carry.running;
+    assert.equal(data.data.get(key), stored(since, unread));
+    await engine.signIn('A'); await carry.running;
+    assert.deepEqual(claims(engine).map(({ body }) => body), ['written since in an old tab']);
+    assert.equal(data.data.get(key), JSON.stringify(unread));
+    assert.deepEqual(told, { reports: [['journal-migration', 'read'], ['journal-migration', 'clear']], events: [
+      ['journal_carry', { seat: 'account', outcome: 'carried', pages: '1' }],
+      ['journal_carry', { seat: 'account', outcome: 'cleared', pages: '1' }],
+      ['journal_carry', { seat: 'account', outcome: 'carried', pages: '1' }],
+    ] });
   } finally { engine.close(); }
+});
+
+test('a carry that fails leaves an account\'s owed pages, which its sign-out\'s Discard never counted, for its next sign-in', async () => {
+  const { engine, env } = await setup();
+  const told = { events: [], reports: [] };
+  const key = 'wm.journal.v2.pages.u.A';
+  const owed = stored(entry('owed one', { date: '2026-09-20' }), entry('owed two', { date: '2026-09-21' }));
+  const data = storage({ [key]: owed });
+  try {
+    env.transport.account = 'A'; await engine.signIn('A');
+    const transact = engine.store.transact;
+    engine.store.transact = async (change, options = {}) => {
+      if (!options.readonly) throw new Error('quota');
+      return transact.call(engine.store, change, options);
+    };
+    const carry = await carrying(engine, data, told);
+    engine.store.transact = transact;
+    seatWillChange(engine, data, told);
+    await engine.finishSignOut({ choice: 'discard' }); await carry.running;
+    assert.equal(data.data.get(key), owed);
+    await engine.signIn('A'); await carry.running;
+    assert.deepEqual(claims(engine).map(({ body }) => body), ['owed one', 'owed two']);
+    assert.equal(data.length, 0);
+    assert.deepEqual(told, { reports: [['journal-migration', 'write']], events: [
+      ['journal_carry', { seat: 'account', outcome: 'failed', pages: '2-5' }],
+      ['journal_carry', { seat: 'account', outcome: 'carried', pages: '2-5' }],
+    ] });
+  } finally { engine.close(); }
+});
+
+test('a sign-in between two acts leaves the signed-out stores only what is still owed, so no page reaches two replicas', async () => {
+  const { engine, env } = await setup();
+  const told = { events: [], reports: [] };
+  const key = 'wm.journal.v2.pages.anon';
+  const pages = Array.from({ length: 30 }, (_, index) => entry(`signed out ${index}`, { date: `2026-07-${String(index + 1).padStart(2, '0')}`, read: false }));
+  const data = storage({ [key]: stored(...pages) });
+  const commitAct = engine.commitAct.bind(engine);
+  let acts = 0;
+  engine.commitAct = async (...args) => {
+    acts += 1;
+    if (acts === 2) { env.transport.account = 'A'; await engine.signIn('A'); }
+    return commitAct(...args);
+  };
+  try {
+    const carry = await carrying(engine, data, told);
+    await carry.running;
+    engine.commitAct = commitAct;
+    assert.deepEqual(claims(engine).map(({ body }) => body), Array.from({ length: 20 }, (_, index) => `signed out ${index}`));
+    assert.equal(data.data.get(key), stored(...pages.slice(20)));
+    await engine.finishSignOut({ choice: 'keep' }); await carry.running;
+    assert.equal(data.length, 0);
+    env.transport.account = 'B'; await engine.signIn('B'); await carry.running;
+    assert.deepEqual(claims(engine).map(({ body }) => body), Array.from({ length: 10 }, (_, index) => `signed out ${index + 20}`));
+    assert.deepEqual(told, { reports: [], events: [
+      ['journal_carry', { seat: 'anon', outcome: 'carried', pages: '6-20' }],
+      ['journal_carry', { seat: 'anon', outcome: 'carried', pages: '6-20' }],
+    ] });
+  } finally { engine.close(); }
+});
+
+test('a signed-out page whose store would not change leaves it before a sign-in, so the sign-in\'s Discard does not bring it back', async () => {
+  const { engine, env } = await setup();
+  const told = { events: [], reports: [] };
+  const data = storage({ 'wm.journal.v2.pages.anon': stored(entry('signed out words', { read: false })) });
+  const { removeItem } = data;
+  try {
+    env.transport.account = 'A'; await engine.signIn('A');
+    await savePage(engine, doc('the account\'s page')); await converge(engine);
+    await engine.finishSignOut({ choice: 'keep' });
+    data.removeItem = () => { throw new Error('storage denied'); };
+    const carry = await carrying(engine, data, told);
+    data.removeItem = removeItem;
+    assert.equal(data.length, 1);
+    seatWillChange(engine, data, told);
+    assert.equal(data.length, 0);
+    assert.equal((await engine.signIn('A', { decisions: { journal: 'discard' } })).complete, true);
+    await carry.running;
+    await engine.finishSignOut({ choice: 'keep' }); await carry.running;
+    assert.equal(engine.device.activeReplica.meta.state, 'anon');
+    assert.deepEqual(claims(engine), []);
+    assert.deepEqual(told, { reports: [['journal-migration', 'clear']], events: [
+      ['journal_carry', { seat: 'anon', outcome: 'carried', pages: '1' }],
+      ['journal_carry', { seat: 'anon', outcome: 'cleared', pages: '1' }],
+    ] });
+  } finally { engine.close(); }
+});
+
+test('words no digest can name stay in their store unread while the pages beside them carry, and the unattributed pages beside them are listed', async () => {
+  const { engine } = await setup();
+  const told = { events: [], reports: [] };
+  const lone = entry('a lone \ud800 surrogate', { date: '2026-09-21', read: false });
+  const data = storage({ 'wm.journal.v2.pages.anon': stored(entry('fine', { date: '2026-09-20', read: false }), lone),
+    'wm.journal.v2.pages.unclaimed': stored(entry('unattributed', { date: '2026-09-20' }), lone) });
+  try {
+    await carrying(engine, data, told);
+    assert.deepEqual(claims(engine).map(({ body }) => body), ['fine']);
+    assert.equal(data.data.get('wm.journal.v2.pages.anon'), stored(lone));
+    assert.deepEqual(unclaimedPages(new OldStores(data)).map(({ day: date, body }) => ({ day: date, body })), [{ day: '2026-09-20', body: 'unattributed' }]);
+    assert.deepEqual(told, { reports: [['journal-migration', 'read']], events: [['journal_carry', { seat: 'anon', outcome: 'carried', pages: '1' }]] });
+  } finally { engine.close(); }
+});
+
+test('an act the domain refuses ends the run, told and not reported, its pages and those after it left owed in their store', async () => {
+  const { engine } = await setup();
+  const told = { events: [], reports: [] };
+  const key = 'wm.journal.v2.pages.anon';
+  const pages = Array.from({ length: 25 }, (_, index) => entry(`page ${index}`, { date: `2026-07-${String(index + 1).padStart(2, '0')}`, read: false }));
+  const data = storage({ [key]: stored(...pages) });
+  refusingAfter(engine, 1);
+  try {
+    await carrying(engine, data, told);
+    assert.equal(claims(engine).length, 20);
+    assert.equal(data.data.get(key), stored(...pages.slice(20)));
+    assert.deepEqual(told, { reports: [], events: [
+      ['journal_carry', { seat: 'anon', outcome: 'carried', pages: '6-20' }],
+      ['journal_carry', { seat: 'anon', outcome: 'refused', pages: '2-5' }],
+    ] });
+  } finally { engine.close(); }
+});
+
+test('no carry writes into a replica while its sign-out question stands; it runs once the question is cancelled', async () => {
+  const { engine, env } = await setup();
+  const told = { events: [], reports: [] };
+  const data = storage({ 'wm.journal.v2.pages.u.A': stored(entry('owed A')) });
+  try {
+    env.transport.account = 'A'; await engine.signIn('A');
+    engine.setOnline(false);
+    await engine.beginSignOut();
+    const carry = await carrying(engine, data, told);
+    assert.deepEqual(claims(engine), []);
+    assert.equal(data.length, 1);
+    await engine.cancelSignOut(); await carry.running;
+    assert.deepEqual(claims(engine).map(({ body }) => body), ['owed A']);
+    assert.equal(data.length, 0);
+    assert.deepEqual(told, { reports: [], events: [['journal_carry', { seat: 'account', outcome: 'carried', pages: '1' }]] });
+  } finally { engine.close(); }
+});
+
+test('a tab that finds another carrying opens without waiting for it, and the page is carried once', async () => {
+  const { engine, env } = await setup();
+  const data = storage({ 'wm.journal.v2.pages.anon': stored(entry('one', { read: false })) });
+  const held = new Map();
+  const locks = {
+    async request(name, { ifAvailable = false }, callback) {
+      if (held.has(name) && ifAvailable) return callback(null);
+      while (held.has(name)) await held.get(name);
+      let release;
+      held.set(name, new Promise((resolve) => { release = resolve; }));
+      try { return await callback({ name }); } finally { held.delete(name); release(); }
+    },
+  };
+  let open;
+  const gate = new Promise((resolve) => { open = resolve; });
+  const commitAct = engine.commitAct.bind(engine);
+  engine.commitAct = async (...args) => { await gate; return commitAct(...args); };
+  const second = await BrowserSyncEngine.open(env.options);
+  await second.start();
+  try {
+    const first = carrying(engine, data, undefined, locks);
+    let opened = false;
+    carrying(second, data, undefined, locks).then(() => { opened = true; });
+    await until(() => opened);
+    open(); await first;
+    await second.refresh();
+    assert.deepEqual(claims(second).map(({ body }) => body), ['one']);
+    assert.equal(data.length, 0);
+  } finally { second.close(); engine.close(); }
 });
 
 test('a device held in memory carries nothing, so the stores outlive no copy of theirs', async () => {
@@ -334,6 +529,33 @@ test('what the journal\'s first bundle on the engine left in the device\'s metad
   } finally { engine.close(); }
 });
 
+test('a page another tab puts in the metadata while its pages return is returned at the next run, and the pages returned before stay', async () => {
+  const { engine } = await setup();
+  const told = { events: [], reports: [] };
+  const page = (body, date) => ({ day: date, body, mood: null, energy: null, source: 'typed', stamp: '100:0:legacy' });
+  const returned = page('returned first', '2026-09-20');
+  const data = storage();
+  await engine.write(null, (device) => {
+    device.meta.journalUnclaimed = [returned];
+    device.meta.journalMigrationEntries = { [hashText(JSON.stringify(['anon', returned]))]: 'claim-1' };
+  });
+  const write = engine.write.bind(engine);
+  engine.write = async (...args) => {
+    engine.write = write;
+    await write(null, (device) => { device.meta.journalUnclaimed = [page('put there meanwhile', '2026-09-21')]; });
+    return write(...args);
+  };
+  try {
+    await carrying(engine, data, told);
+    assert.deepEqual(unclaimedPages(new OldStores(data)).map(({ body }) => body), ['returned first']);
+    assert.deepEqual(Object.keys(engine.device.meta).filter((key) => key.startsWith('journal')).sort(), ['journalMigrationEntries', 'journalUnclaimed']);
+    await carrying(engine, data, told);
+    assert.deepEqual(unclaimedPages(new OldStores(data)).map(({ body }) => body), ['returned first', 'put there meanwhile']);
+    assert.deepEqual(Object.keys(engine.device.meta).filter((key) => key.startsWith('journal')), []);
+    assert.deepEqual(told, { reports: [], events: [['journal_carry', { seat: 'unclaimed', outcome: 'returned', pages: '1' }]] });
+  } finally { engine.close(); }
+});
+
 test('unattributed pages wait in storage through sign-in, restore as claims that converge, and go from storage', async () => {
   const { engine, env } = await setup();
   const data = storage({ 'wm.journal.pages': stored(entry('unowned')) });
@@ -374,7 +596,7 @@ test('an oversized unattributed page restores for correction, once, without bloc
   } finally { engine.close(); }
 });
 
-test('a restore asks for the account the replica is bound to, and a discard deletes the pages without writing to the engine', async () => {
+test('a restore asks for the account the replica is bound to, told and not reported, and a discard deletes the pages it listed without writing to the engine', async () => {
   const { engine, env } = await setup();
   const unread = { invalid: entry('no day')[day] };
   const data = storage({ 'wm.journal.v2.pages.unclaimed': stored(entry('unowned'), unread) });
@@ -382,20 +604,75 @@ test('a restore asks for the account the replica is bound to, and a discard dele
   const told = { events: [], reports: [] };
   const options = { engine, stores, track: (name, props) => told.events.push([name, props]), report: (operation, stage) => told.reports.push([operation, stage]) };
   try {
-    await assert.rejects(restoreUnclaimedPages('A', options), /account changed/);
+    await assert.rejects(restoreUnclaimedPages('A', options), ReplicaChanged);
     env.transport.account = 'A'; await engine.signIn('A');
-    await assert.rejects(restoreUnclaimedPages('B', options), /account changed/);
+    await assert.rejects(restoreUnclaimedPages('B', options), ReplicaChanged);
     const revision = engine.revision;
-    assert.equal(dropUnclaimedPages(options), 1);
+    const listed = unclaimedPages(stores).map((page) => page.key);
+    assert.equal(dropUnclaimedPages(listed, options), 1);
     assert.equal(engine.revision, revision);
     assert.deepEqual([...data.data.entries()], [['wm.journal.v2.pages.unclaimed', JSON.stringify(unread)]]);
-    assert.equal(dropUnclaimedPages(options), 0);
-    assert.deepEqual(told, { reports: [['journal-restore', 'restore'], ['journal-restore', 'restore']], events: [
-      ['journal_unclaimed', { action: 'restore', outcome: 'failed', pages: '0' }],
-      ['journal_unclaimed', { action: 'restore', outcome: 'failed', pages: '0' }],
+    assert.equal(dropUnclaimedPages(listed, options), 0);
+    assert.deepEqual(told, { reports: [], events: [
+      ['journal_unclaimed', { action: 'restore', outcome: 'replica_changed', pages: '0' }],
+      ['journal_unclaimed', { action: 'restore', outcome: 'replica_changed', pages: '0' }],
       ['journal_unclaimed', { action: 'discard', outcome: 'ok', pages: '1' }],
       ['journal_unclaimed', { action: 'discard', outcome: 'none', pages: '0' }],
     ] });
+  } finally { engine.close(); }
+});
+
+test('a restore the account changes under writes nothing into the next account\'s replica, and one the domain refuses writes nothing; the pages wait', async () => {
+  const { engine, env } = await setup();
+  const key = 'wm.journal.v2.pages.unclaimed';
+  const data = storage({ [key]: stored(entry('unowned')) });
+  const told = { events: [], reports: [] };
+  const options = { engine, stores: new OldStores(data), track: (name, props) => told.events.push([name, props]), report: (operation, stage) => told.reports.push([operation, stage]) };
+  const commitAct = engine.commitAct.bind(engine);
+  try {
+    env.transport.account = 'A'; await engine.signIn('A');
+    engine.commitAct = async (...args) => {
+      engine.commitAct = commitAct;
+      await engine.finishSignOut({ choice: 'keep' });
+      env.transport.account = 'B'; await engine.signIn('B');
+      return commitAct(...args);
+    };
+    await assert.rejects(restoreUnclaimedPages('A', options), ReplicaChanged);
+    assert.equal(engine.device.activeReplica.meta.account, 'B');
+    assert.deepEqual(claims(engine), []);
+    refusingAfter(engine, 0);
+    await assert.rejects(restoreUnclaimedPages('B', options));
+    assert.deepEqual(claims(engine), []);
+    assert.equal(data.data.get(key), stored(entry('unowned')));
+    assert.deepEqual(told, { reports: [], events: [
+      ['journal_unclaimed', { action: 'restore', outcome: 'replica_changed', pages: '0' }],
+      ['journal_unclaimed', { action: 'restore', outcome: 'refused', pages: '0' }],
+    ] });
+  } finally { engine.close(); }
+});
+
+test('Settings\' Discard deletes the pages it listed and none that arrived since', async () => {
+  const data = storage({ 'wm.journal.v2.pages.unclaimed': stored(entry('listed', { date: '2026-09-20' })) });
+  const stores = new OldStores(data);
+  const events = [];
+  const listed = unclaimedPages(stores).map((page) => page.key);
+  data.setItem('wm.journal.v2.pages.unclaimed', stored(entry('listed', { date: '2026-09-20' }), entry('arrived since', { date: '2026-09-21' })));
+  data.setItem('wm.journal.v2.pages.unclaimed.0123456789abcdef', stored(entry('returned since', { date: '2026-09-22' })));
+  assert.equal(dropUnclaimedPages(listed, { stores, track: (name, props) => events.push([name, props]) }), 1);
+  assert.deepEqual(unclaimedPages(stores).map(({ body }) => body), ['arrived since', 'returned since']);
+  assert.deepEqual(events, [['journal_unclaimed', { action: 'discard', outcome: 'ok', pages: '1' }]]);
+});
+
+test('the first version\'s cached copies of an account\'s pages are neither listed nor restored, and go with their store', async () => {
+  const { engine, env } = await setup();
+  const data = storage({ 'wm.journal.pages': stored(entry('unsent before scoping', { date: '2026-09-20' }), entry('a cached copy', { date: '2026-09-21', owed: false })) });
+  const stores = new OldStores(data);
+  try {
+    assert.deepEqual(unclaimedPages(stores).map(({ body }) => body), ['unsent before scoping']);
+    env.transport.account = 'A'; await engine.signIn('A');
+    assert.equal(await restoreUnclaimedPages('A', { engine, stores, track: () => {} }), 1);
+    assert.deepEqual(claims(engine).map(({ body }) => body), ['unsent before scoping']);
+    assert.equal(data.length, 0);
   } finally { engine.close(); }
 });
 
