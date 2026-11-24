@@ -36,10 +36,6 @@ export class JournalError extends Error {
 }
 
 export const journalApi = {
-  async exportAll() {
-    return (await json(await call('/export'))).pages;
-  },
-
   // `pagesWritten` suppresses marks under the page floor, `firstEchoEver` is the once-ever card's only
   // source, and each match's `useful` is the server's to remember rather than a device's.
   async echoes(from, to) {

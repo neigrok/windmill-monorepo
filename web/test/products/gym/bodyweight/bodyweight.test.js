@@ -69,7 +69,7 @@ test('chartPointsOf and gapLabel — a dot per row in the display unit, and the 
 });
 
 test('saveRefusal — the log’s sentence where it refused, this device where its store failed, and the wordless fallback otherwise', () => {
-  assert.equal(saveRefusal(new GymRefusal('not-writable', { sentence: 'Sign in to save to your training log.' })), 'Sign in to save to your training log.');
+  assert.equal(saveRefusal(new GymRefusal('not-writable', { sentence: 'That wasn’t saved — the account on this browser changed.' })), 'That wasn’t saved — the account on this browser changed.');
   assert.equal(saveRefusal(new GymRefusal('invalid')), 'The log wouldn’t take this change as written.');
   assert.equal(saveRefusal(new CommitError('the device store did not commit', 'store', { cause: new DOMException('storage refused', 'QuotaExceededError') })), 'That weigh-in wasn’t saved — this device couldn’t store it.');
   assert.equal(saveRefusal(undefined), 'That weigh-in wasn’t saved — the log didn’t answer. Try again when you have signal.');
@@ -77,7 +77,7 @@ test('saveRefusal — the log’s sentence where it refused, this device where i
 
 test('deleteRefusal — this device where its store failed, and the brief’s sentence otherwise', () => {
   assert.equal(deleteRefusal(new CommitError('the device store did not commit', 'store', { cause: new DOMException('storage refused', 'QuotaExceededError') })), 'That weigh-in wasn’t deleted — this device couldn’t store it.');
-  assert.equal(deleteRefusal(new GymRefusal('not-writable', { sentence: 'Sign in to save to your training log.' })), 'That weigh-in wasn’t deleted. Try again in a moment.');
+  assert.equal(deleteRefusal(new GymRefusal('not-writable', { sentence: 'That wasn’t saved — the account on this browser changed.' })), 'That weigh-in wasn’t deleted. Try again in a moment.');
 });
 
 test('the decimal field accepts comma or point and validates through the domain', () => {

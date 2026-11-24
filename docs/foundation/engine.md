@@ -518,7 +518,10 @@ The engine applies:
 
 ### §2.5 Client: the local store
 
-The store MUST provide atomic, durable transactions spanning every table below.
+The store MUST provide atomic, durable transactions spanning every table below. One exception: a web device whose
+browser offers no store MAY hold its store in memory, atomic and kept as long as the page
+([Roadmap on the sync engine](roadmap-on-the-engine.md) E-5, [the web as a device](web-device-parity.md) §7). Each tab
+holding one is a device of its own, whose replicas sync through the server alone (§7.8).
 
 ```ts
 type DeviceMeta  = { forkGuard?: string, pendingSignIn?: { account: string } }  // one per local database
@@ -2493,7 +2496,8 @@ before its own result is recorded; its resend then carries another digest, the s
 ### §7.8 Multi-tab (web)
 
 - The leader holds `navigator.locks` lock `wm-sync@<store>:<replica>` and runs the sender, the
-  puller and the live socket. `<store>` is the IndexedDB version of the device store (§2.5).
+  puller and the live socket. `<store>` names the device store (§2.5): its IndexedDB version, or the
+  name of a store held in memory, which no other tab shares, so its tab leads alone and hears no other.
 - A tab requests the lock when it becomes visible. A hidden tab releases it once a peer announces
   it is visible.
 - Tabs post `hello {visible}`, `visible`, `hidden`, `bye`, `changed(scope, ids)`, `upgrade` and
@@ -2523,7 +2527,7 @@ before its own result is recorded; its resend then carries another digest, the s
   the person reloads.
   A bundle released before these names (store version 2) keeps its unversioned locks and its
   channel until its page closes, reading and writing nothing.
-- Every tab reads views from IndexedDB and commits through §7.1. Each publication of a tab's views, at open
+- Every tab reads views from its device store and commits through §7.1. Each publication of a tab's views, at open
   and after every change to the store, its own or a peer's, reads every scope of the active replica whole,
   whether or not anything in the tab observes it, so a read of a scope answers the rows the device stored for
   it: a scope a peer changed is read again, and one a peer brought to the device after the tab opened is read
@@ -3624,7 +3628,9 @@ stale, before the server reads that settle staleness ([gym ARCHITECTURE](../../b
 It is the only writer of `closedBy = stale`.
 
 - **`gym.start {id: ref<session>, routineId?: ref<routine>, startedAt: time, joinOpenSession}`.**
-  Clients send `joinOpenSession: true`.
+  A client sends `joinOpenSession: false`, and refuses its own start while a session it draws is open over the sets it
+  stores, a set held for deletion included (the gym domain's `StartSession`), so a start that loses a race with another
+  device's is refused `session-open`, the sets logged under it folded into that notice. The server's own doors join by default ([gym ARCHITECTURE](../../backend/products/gym/ARCHITECTURE.md) §3.2).
   1. A start receipt for `id` (the session it created or joined) names a session; with none, the
      caller's own session under `id`, alive or dead, does → ok. While that session is alive, the
      write map carries it with its `born`, and `from: id` if it is a different session.

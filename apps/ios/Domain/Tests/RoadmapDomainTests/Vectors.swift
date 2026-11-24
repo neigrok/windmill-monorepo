@@ -76,7 +76,7 @@ extension RoadmapTree {
       Metadata(title: try meta.optionalString("title"), guide: try meta.optionalString("guide"),
                guideInherited: try meta.optionalBool("guideInherited"), root: try meta.optionalString("root") ?? id,
                depth: try meta.optional("depth") { Int(try $0.asInteger()) }, visibility: try meta.optionalString("visibility"),
-               reach: try meta.optionalString("reach"))
+               reach: try meta.optionalString("reach"), forkedFrom: try meta.optionalString("forkedFrom"))
     }
     let read = try form.optional("read") { name in
       guard let read = Read(rawValue: try name.asString()) else { throw ContractError("no read state \(name)") }
@@ -159,7 +159,7 @@ extension RoadmapTree {
     let place: JSON = parent.map { ["tree": .string($0.tree), "step": .string($0.step)] } ?? .null
     let words: JSON = meta.map {
       ["title": .string($0.title), "guide": .string($0.guide), "guideInherited": .bool($0.guideInherited), "root": .string($0.root),
-       "depth": JSON($0.depth), "visibility": .string($0.visibility), "reach": .string($0.reach)]
+       "depth": JSON($0.depth), "visibility": .string($0.visibility), "reach": .string($0.reach), "forkedFrom": .of($0.forkedFrom)]
     } ?? .null
     let steps: [JSON] = nodes.map { step in
       let links: [JSON] = step.links.map { ["url": .string($0.url), "label": .string($0.label)] }

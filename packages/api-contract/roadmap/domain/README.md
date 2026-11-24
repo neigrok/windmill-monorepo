@@ -8,7 +8,7 @@ which fails on a file it neither claims nor names as a device's. Swift's domain 
 claims, by JCS, in `apps/ios/Domain/Tests/RoadmapDomainTests/`, the reads' files (`account`, `activity`, `board`, `diagnostics`, `graph`,
 `guides`, `landing`, `legend`, `pointers`, `progress`, `replica` and `search`), `rules.json`, `values.json`, and every
 `*-actions.json` (`roadmaps`, `steps`, `kinds`, `progress`, `workspace` and `landing`), each action case with its records
-reversed too. Its `CorpusTests.swift` names `undo.json` as waiting for its scenes, and fails on a file in neither list.
+reversed too, and the scenes of `undo.json` (`UndoTests.swift`). Its `CorpusTests.swift` fails on a file it does not claim.
 The pure reads below take normalized domain records; the actions, `values.json`
 and `rules.json` follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3 over engine
 rows and `../../sync/roadmap.registry.json` (see [Actions](#actions)). No operation reads storage,
@@ -47,10 +47,12 @@ ID byte order.
 | `roadmap` (`replica.json`) | One roadmap's records as a replica holds them, as the normalized tree | no |
 | `openings` (`replica.json`) | One tree's openings as `account` reads them, without reading every tree | no |
 | `list` (`replica.json`) | The person's own roots that stand, newest first by `updatedAt`, none received last, ID byte ties | no |
+| `listing` (`replica.json`) | One roadmap that stands, whoever owns it, as a list shows it, null for one that does not stand | no |
 
 `readRoadmap` (`roadmaps.js`) reads one roadmap from a device's replica: its tree scope's steps and links as
 `readTree` reads them, absent ones kept, each step with its `rc`, `ru` and the stamp of the subtree it owns;
-its meta with the server's `parent`, `depth`, `reach` and `guideInherited`, null where the scope holds none; its kinds; and, from its owner's
+its meta with the server's `parent`, `depth`, `reach`, `guideInherited` and `forkedFrom` (the roadmap a fork was copied from, null for
+one that is no fork), null where the scope holds none; its kinds; and, from its owner's
 overlay, the marks and pointers (a roadmap someone else owns takes no overlay). Its record in the person's
 list, where there is one, makes it `own`, says whether it is present and where it sits; without one the meta
 says where. A roadmap is read once the device holds the server's whole copy of it (`read`: the first pull of every
@@ -266,7 +268,7 @@ value equivalent to unset; `createdRecord`; or a product `command` with its evid
 | The landing note | none: device rows are the device's | — |
 
 **Scenes** (`undo.json`). `{steps}` → `{outcomes}`, run on the kit's harness over the reference server with roadmap's
-binding. A step is `{run: <action>, input, as?, on?}`, `{save: "StepNote", input: {tree, step, text}, as?}`, `{sync: true}`, `{advance: ms}`, `{undo | redo | read | cancelHeld:
+binding, and in Swift over the model server with `RoadmapServerRules`. A step is `{run: <action>, input, as?, on?}`, `{save: "StepNote", input: {tree, step, text}, as?}`, `{sync: true}`, `{advance: ms}`, `{undo | redo | read | cancelHeld:
 <role>}` (`subtree: true` gives a Redo the product's slots), `{device: <name>}` or `{inspect: {scope, t, fields}}`. An
 input names a role's result as `$role` or `$role.path`. Outcomes are a run's kind, a save's result kind, the `InverseResult` without its ids,
 `{cancelHeld}`, and an inspection's visible records, each id named by the first role holding it, any other minted id

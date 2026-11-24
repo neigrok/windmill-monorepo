@@ -364,6 +364,12 @@ public struct RoadmapAccount: Sendable {
       if let left = a.updatedAt, let right = b.updatedAt, left != right { return left > right }
       return a.id.utf8.lexicographicallyPrecedes(b.id.utf8)
     }
-    return newestFirst.map { ListedRoadmap(id: $0.id, title: locations[$0.id]?.title, counts: counts($0.id), updatedAt: $0.updatedAt) }
+    return newestFirst.compactMap { listing($0.id) }
+  }
+
+  // A roadmap that stands, whoever owns it, as a list shows it: what a reader's cover names a roadmap someone else shared by.
+  public func listing(_ id: String) -> ListedRoadmap? {
+    guard let tree = byId[id], locations[id]?.standing == .standing else { return nil }
+    return ListedRoadmap(id: tree.id, title: locations[id]?.title, counts: counts(id), updatedAt: tree.updatedAt)
   }
 }

@@ -9,6 +9,8 @@ struct WindmillApp: App {
   @State var introduction = false
   @State var launchLink = false
   @State var workoutLink = false
+  // A roadmap's address on the site that came before the model was ready, which it follows once it is.
+  @State var roadmapLink: URL?
   @UIApplicationDelegateAdaptor(OnboardingLaunchDelegate.self) var launchDelegate
   let settings: AppSettings
   let telemetry: AppTelemetry
@@ -58,7 +60,11 @@ struct WindmillApp: App {
       launchLink = true; introduction = false
       if url.scheme == "windmill", url.host == "workout" { workoutLink = true; model?.openActivityWorkout() }
     }
-    .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { _ in launchLink = true; introduction = false }
+    .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+      launchLink = true; introduction = false
+      guard let url = activity.webpageURL else { return }
+      if let model { model.open(roadmapLink: url) } else { roadmapLink = url }
+    }
     .onChange(of: scenePhase) { _, phase in
       model?.scenePhaseChanged(phase)
       if phase == .background { telemetry.event("app_backgrounded") }
@@ -89,6 +95,7 @@ struct WindmillApp: App {
           introduction = try OnboardingLaunch.shouldPresent(model: created, deepLink: launchLink || launchDelegate.deepLink)
         }
         if workoutLink { created.openActivityWorkout() }
+        if let roadmapLink { created.open(roadmapLink: roadmapLink) }
         WorkoutActivityIntentHandler.present(created)
         QuickActionHandler.present(created)
         model = created

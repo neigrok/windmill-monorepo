@@ -25,7 +25,10 @@ renaming in the bar, and a roadmap's delete asked once and held with *Undo*; Kin
 described, recolored and removed with *Undo*, at most six; and the Graph:
 the switch row's *Board | Graph*, the canvas with its discs, connectors and captions, one finger's pan and a pinch, a
 step selected with its bar in the band slot and its page from there, *Next* in that slot with its menu of the Up next
-steps, *Fit*, and an empty roadmap, without Find, a step that opens a roadmap's mark or Coach's composer.
+steps, *Fit*, and an empty roadmap, without Find, a step that opens a roadmap's mark or Coach's composer; and a roadmap's
+link: the person's own opening on its Board or its step, and anyone else's on a cover, on its Graph and its Board with the
+owner's progress, read-only step pages and History with *Copy Link*, Fork with its sign-in and its line with no
+connection, the copy arriving on its Board, and the links the phone cannot open.
 [Roadmap on iOS](../../foundation/roadmap-ios.md) §13 lists what is not built. The boards are on the Roadmap file's
 [Roadmap · iOS](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=648-2) page. Each board's
 caption names the SwiftUI element of every part, and each section ends with a NOTE of its stock parts, its

@@ -39,6 +39,10 @@ let insideRun = false;
  * @typedef {{ binding?: string | null }} ActGuard
  */
 /**
+ * A scope's views without their records, as a write reads them: what decides whether a notice still speaks.
+ * @typedef {Omit<ReadViews, 'drawn' | 'stored'>} ScopeMetadata
+ */
+/**
  * K-3 (engine §7.3 Undo of an act): what an Undo or a Redo answers.
  * @typedef {{ kind: 'cancelled', requestId: string, inverseActId: string, changed: boolean }
  *   | { kind: 'pending', requestId: string, inverseActId: string, localChanged: boolean }
@@ -60,6 +64,7 @@ let insideRun = false;
  *   opaqueID?(): string,
  *   physNow(): number,
  *   dismissNotice(id: string): Promise<boolean> | boolean,
+ *   dismissNotices?(scope: string, ids: string[], when: (metadata: ScopeMetadata) => boolean): Promise<boolean> | boolean,
  * }} Replica
  */
 
@@ -380,6 +385,17 @@ export class ActionRunner {
     return this.replica.cancelHeld(gestureId);
   }
 
+  // D-17: the notices `ids` names dismissed in one write, while `when` holds over the scope's metadata as that write reads
+  // it, so the rule that keeps a notice speaking is read where it is acted on; true iff any was dismissed.
+  /**
+   * @param {string} scope
+   * @param {string[]} ids
+   * @param {(metadata: ScopeMetadata) => boolean} when
+   */
+  async dismissNotices(scope, ids, when) {
+    return this.port('dismissNotices')(scope, ids, when);
+  }
+
   // K-3 (engine §7.3 Undo of an act): the inverse of an act opted into Undo. A wholly held act is cancelled in
   // place; otherwise the inverse is reserved at once and settles as its sources do.
   /**
@@ -419,7 +435,7 @@ export class ActionRunner {
   }
 
   /**
-   * @template {'requestInverse' | 'readInverseResult' | 'releaseReversibleAct'} K
+   * @template {'requestInverse' | 'readInverseResult' | 'releaseReversibleAct' | 'dismissNotices'} K
    * @param {K} name
    * @returns {NonNullable<Replica[K]>}
    */
@@ -631,5 +647,23 @@ export class EngineReplica {
   /** @param {string} id */
   dismissNotice(id) {
     return this.engine.dismissNotice(id);
+  }
+
+  // D-17 in one write: `when` is asked of the scope's metadata as that write reads it, and while it holds, every notice of
+  // `ids` the replica holds is dismissed; true iff any was. One the replica does not hold is left alone.
+  /**
+   * @param {string} scope
+   * @param {string[]} ids
+   * @param {(metadata: ScopeMetadata) => boolean} when
+   * @returns {Promise<boolean>}
+   */
+  dismissNotices(scope, ids, when) {
+    return this.engine.write(null, (/** @type {any} */ device) => {
+      const replica = device.activeReplica;
+      if (!when(this.engine.readMetadata(scope, replica))) return false;
+      const dismissed = replica.notices.filter((/** @type {{ id: string }} */ notice) => ids.includes(notice.id));
+      for (const notice of dismissed) notice.dismissed = true;
+      return dismissed.length > 0;
+    }, [scope]);
   }
 }

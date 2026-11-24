@@ -287,20 +287,10 @@ class EngineTraining(val engine: Engine, private val releaseIntent: (String) -> 
                 override val refusals = action.refusals
                 override fun load(read: Reader) = action.load(read)
                 override fun decide(loaded: StartSession.Loaded, ids: IDSource): Decision<Id<EngineSession>, GymRefusal> {
-                    val state = loaded.state
-                    val open = TrainingLog(state.drawn, state.drawnSets, state.catalogue, state.moment).open
-                    if (open != null && open.id != action.id) return Decision.Refuse(GymRefusal.predicted(Gym.Codes.sessionOpen, open.id.ref))
-                    if (requireRoutine && !loaded.prior && loaded.routine == null)
-                        return Decision.Refuse(GymRefusal.Gone(requireNotNull(action.routineId).ref, Refused.Path.predicted))
                     val decision = action.decide(loaded, ids)
-                    if (decision !is Decision.Write) return decision
-                    val command = requireNotNull(decision.plan.command)
-                    val explicit = object : ServerCommand {
-                        override val name = command.name
-                        override val args = command.args.obj() + ("joinOpenSession" to Json.of(false))
-                        override val specs = emptyList<ValueSpec>()
-                    }
-                    return Decision.Write(Plan(explicit, decision.plan.predictions), decision.result)
+                    if (decision is Decision.Write && requireRoutine && loaded.routine == null)
+                        return Decision.Refuse(GymRefusal.Gone(requireNotNull(action.routineId).ref, Refused.Path.predicted))
+                    return decision
                 }
             })
         } catch (refused: TrainingRefused) {

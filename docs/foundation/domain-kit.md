@@ -1239,14 +1239,17 @@ into one act through `runComposed` (§9.7).
 
 ### §9.4 Abilities
 
-An ability is one operation of a product's catalog, reached from every door its seat allows (gym Coach §2). Kotlin's kit
-holds what one is, in `Abilities.kt`: `Ability` with its
-`AbilityClass`, `AgentRule` and `AbilitySeats`, `Seat`, `Catalog` and `JsonSchema` with its `SchemaFault`; none names a
-product. Swift keeps the same types in `GymDomain/Coach/Catalog.swift` (`JSONSchema`), its `Catalog` generated from the file.
+An ability is one operation of a product's catalog, reached from every door its seat allows (gym Coach §2). The kit
+holds what one is, in Kotlin's `Abilities.kt` and Swift's `Abilities.swift`: `Ability` with its
+`AbilityClass`, `AgentRule` and `AbilitySeats`, `Seat`, `Catalog` and `JsonSchema` (Swift's `JSONSchema`) with its
+`SchemaFault`; none names a product, and a product's domain reaches them through the kit alone, never through another
+product's domain (§2.2).
 
 - `Catalog(document)` reads a product's `catalog.json` as JSON, because the kit loads no resource: the module that may
   read files passes the parsed document. A document that breaks the catalog's shape throws: a key it does not list, a word
-  outside `class`, `agent` or `seats`, a `since` that names no catalog version, two abilities of one name.
+  outside `class`, `agent` or `seats`, a `since` that names no catalog version, two abilities of one name. Swift reads no
+  document: a product's generator refuses a catalog of the wrong shape and writes it as Swift data into the product's
+  domain, gym's as `Catalog.gym` (`GymCatalogGen`).
 - `offered(seat)` leaves out a withheld ability, one marked `declared: false`, and one that needs an account for `anon`.
 - `JsonSchema(schema).fault(value)` answers the first fault or nil. It reads `type`, `enum`, `const`, `properties`,
   `required`, `additionalProperties: false`, `items`, `minItems`, `maxItems`, `uniqueItems`, `minLength`, `maxLength`,
@@ -2049,7 +2052,7 @@ stated here; ER-10 is the Kotlin engine owner's.
 | ER-15 | The engine's package meets §2.1–§2.4 as the layering tests read it: its modules and their kinds, its package dependency, each module's imports, tools 6.2 and language mode 6, its targets' settings, a constant-data manifest, no symbolic link, and `GRDB` from `SyncStore` only. | Swift engine §1.1 |
 | ER-16 | `Registry` makes public what the kit reads: per type, its identity class, life, cap and each field's kind, writer, domain, quantum and `parent`; per command, its arguments with their domains, and `predicts`. | engine §2.4 |
 | ER-17 | `SyncTesting` publicly offers `Record(confirmed: Row, registry:)`: a confirmed row that no outbox entry touches, as the engine's readers hand it to a product (visible by the registry's rule, nothing pending or held, each text merged as the row says), so a product's tests build a vector's records from the modules `<P>DomainTests` may import (§2.1). | engine §7.6, §9.1 |
-| ER-18 | `CommitOutcome.refused(code, detail:, notice:)`: `notice` names the notice a commit wrote while refusing its gesture (`too-large`), and is nil for every other refusal. The `Replica` port offers `dismissNotice(_ id:)`, which answers whether the active replica held the notice; one it does not hold is no failure. | engine §7.1 step 8, D-17 |
+| ER-18 | `CommitOutcome.refused(code, detail:, notice:)`: `notice` names the notice a commit wrote while refusing its gesture (`too-large`), and is nil for every other refusal. The `Replica` port offers `dismissNotice(_ id:)`, which answers whether the active replica held the notice; one it does not hold is no failure. The web's port also offers `dismissNotices(scope, ids, when)`, which dismisses several in one write only while `when` holds over the scope's metadata as that write reads it; the phones have no caller for it. | engine §7.1 step 8, D-17 |
 | ER-19 | `ActRequest.undo` journals an act; the `Replica` port offers `cancelHeld(gestureId) -> Bool` (the engine's held-only `undo`), `requestInverse(actId, slots:) -> InverseResult`, `readInverseResult(requestId)` and `releaseReversibleAct(actId)`. | engine §7.3 Undo of an act |
 
 ## Appendix A: Example: the gym routine editor

@@ -45,3 +45,16 @@ test('a units save the device cannot keep reverts to the units the store holds, 
   assert.equal(textOf(screen.tree.props.children),
     'UnitskglbA backfill, a correction, a routine target — typed in kg.Noteswhat you write for Coach›that setting didn’t save — this device couldn’t store it');
 });
+
+test('another tab’s sign-out leaves the section empty until the shell catches up, never the browser’s signed-out units', async (t) => {
+  t.after(() => spellWeightsIn(KG));
+  browserWith();
+  const { gym, screen, pressed } = await section(t, { units: 'lb' });
+  assert.deepEqual(pressed(), [['kg', false], ['lb', true]]);
+  gym.engine.setOnline(false);
+  await gym.engine.beginSignOut();
+  assert.equal((await gym.engine.finishSignOut({ choice: 'keep' })).complete, true);
+  await settle();
+  assert.deepEqual([gym.engine.getSnapshot().state, screen.tree], ['anon', null]);
+  assert.deepEqual(gym.engine.device.activeReplica.outbox, []);
+});

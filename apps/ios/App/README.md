@@ -368,7 +368,46 @@ step, which pushes the step's page. VoiceOver hears the
 canvas as one element, *Graph*, with the roadmap's progress and the hint that the Board lists every step, or under Fit
 that a tap brings the bars back. Left out until
 their screens are built: Find on the Graph,
-the mark and progress of a step that opens a roadmap, a proposal's changes and a reader's cover.
+the mark and progress of a step that opens a roadmap, and a proposal's changes.
+
+`Sharing/` is a roadmap's link and a shared roadmap's cover ([Roadmap on iOS](../../../docs/foundation/roadmap-ios.md) §3
+and §4, boards 09.4 to 09.11). The app claims the site's roadmap addresses in Debug builds alone: `project.yml` selects
+`Tools/Windmill-Debug-NO.entitlements` or `-YES` for Debug, each its Release twin with `applinks:windmill.works` added,
+and Release's carry no associated domain. A `RoadmapModel` is made in a role (`RoadmapModel.Role`): the owner's, with
+the links the room follows (`RoadmapLinks`), or a reader's, with the read of one roadmap someone else shared
+(`SharedRead`), whose acts all refuse at the model's write door. `WindmillApp` hands a browsing activity's address to
+`AppModel.open(roadmapLink:)`, once the model is made where the address came first, which switches to the Roadmap room,
+and `RoadmapLinks.follow(_:in:)` follows it (a `ClaimedLink` named by the domain's `RoadmapAddress`) once the room has
+read the phone's copy and the person's list has arrived, or no connection can bring it: their own roadmap opens on its
+Board, or with the page of the step it names pushed, and a subtree of theirs on the roadmap it stands in; an address
+that names no roadmap opens All Roadmaps; any other raises a `RoadmapCover` over the room as a full-screen cover
+(`RoadmapLinks.cover`), closing one that stands, which stays where it shows that same roadmap. A cover holds a room in
+the reader's role, which its `SharedRead` reads: the roadmap's tree scope, and each one above it as their metas name
+them, followed through the engine (`RoadmapCover.Sources`) and let go as the cover closes, with the owner's progress from
+the backend (`RoadmapSharing.progress`), or the steps' own seeds where that read fails, as the web's room falls back. The
+room's switch row (`SwitchRow`), Board, Graph, step page and History draw it, the `OpenRoadmap` offering no Complete,
+Reset or Delete, and the Board and the page leaving out what the boards do not draw there: swipes, the long-press menu,
+*Select Steps*, New Step, *Edit* and the workspace. Every screen on the cover's stack finds the cover in its environment,
+for Fork at its foot and the page's *Copy Link*, the step's share address on the pasteboard. A cover lands on the Graph,
+keeps no view on the phone, and opens the step its link names once. Its bar holds the close button, the roadmap's name
+over *Shared roadmap* and its progress, and the share's address in the system's share sheet. Until the copy holds the
+roadmap and the progress has answered it is its close button and a spinner; with no connection and no copy it says
+*Needs a connection* with *Try Again*, and asks again by itself when the connection returns; a roadmap read and holding
+nothing, or one the engine answers gone, says *This roadmap can’t be opened*, with *Sign In* signed out; and a copy that
+could not be read says *Couldn’t load this roadmap* with *Try Again*. `ForkFoot` stands at the foot of every screen of a
+cover but a subtree's, which the server does not fork, as the web offers no Fork there: Fork needs a connection, so with
+none it is dimmed and the band slot says *Forking needs a connection.*; it needs a session the phone can send as now, so
+signed out, while the session waits to be renewed, or when the server answers 401, the cover asks for the shell's
+sign-in, a sheet of its own (`AppModel.signIn(for:)`, `Sheet.roomSignIn`) that leaves the journal's offer to keep its
+pages as it was. A sign-in closed with no fresh session ends the fork; a fresh one follows the link again, so the
+person's own roadmap opens in the room, and on someone else's the fork runs. Fork asks the backend
+(`RoadmapSharing.fork`, one request id a cover, so a fork asked again answers the same copy) and shows *Forking…*,
+taking no second tap. The room opens the copy once its list holds it, on its Board with the band *Forked · N steps
+planted* and no Undo, and the cover closes then, or after fifteen seconds, leaving the room to open the copy when it
+lands. A fork that comes to nothing says *Couldn’t fork this roadmap. Try again.* in the band slot. `SharingRequests`
+makes the two requests over HTTP with the account's token; a 503 is the server busy, and a request given up is no
+failure. A step that owns a subtree stands on a cover as the domain reads it with that subtree unread, since the cover
+reads none of the server's `subtrees`.
 
 `Step/StepDraft.swift` is the step form's draft, which `newStep(from:)` and `edit(_:)` make and the model holds while the
 form is open: what a person sets of a step (its name, description and kind, the steps it requires, the steps it opens and
@@ -446,7 +485,15 @@ of the layout's shared fixture, read from the repository the build was made in a
 steps' ids are the phone's, with the first 120 of the fixture's 1,800 done steps marked, since signed out each mark's
 commit reads everything the phone has still to send; `-board roadmap-full` is a phone never signed in that holds *Every
 harbour in Europe*, as many steps as the registry lets a roadmap hold, each harbour entered Up next and its berth Locked
-behind it; and `-board roadmap-unreadable` opens the room over views it cannot make. A simulator launch with
+behind it; `-board roadmap-unreadable` opens the room over views it cannot make; and a shared roadmap's covers
+(`RoadmapFixture.prepareCover`): `-board roadmap-cover` has another account plant *Learn to sail*, complete three steps
+and make it public, signs the phone in to an account of its own and opens the roadmap's link, and
+`-board roadmap-cover-signed-out` opens it signed out; `-board roadmap-cover-offline` opens it with no connection;
+`-board roadmap-cover-private` and `roadmap-cover-private-signed-out` open the link to it left private; and
+`-board roadmap-cover-no-connection` opens a link with no connection to a roadmap the phone holds no copy of. On these
+boards the board's own requests stand in for the backend's (`RoadmapFixture.BoardSharing`): the owner's progress is
+read from the owner's phone, and a fork is made by another phone of the reader's account, so the copy arrives by sync;
+`-fork-held` leaves a fork unanswered. A simulator launch with
 `-graph-measures <path>` appends what the Graph measures of itself to that file, and with `-board-measures <path>` what
 the Board measures, one JSON line a measure; with
 `-graph-pinch <way>` it keeps a pinch's frames that way, and with `-graph-crowd <count>` it does so from that many

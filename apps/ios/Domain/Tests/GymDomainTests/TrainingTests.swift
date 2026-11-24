@@ -73,66 +73,37 @@ struct TrainingTests {
     #expect(throws: DecodeError.self) { try Session(Fields(type: Session.type, id: Self.sessionID.record, values: invalid)) }
   }
 
-  @Test func twoConcurrentStartsResolveToOneAuthoritativeSession() throws {
+  @Test func aStartWhileAWorkoutIsDrawnOpenIsRefusedOnThePhoneAndWritesNothing() throws {
     let a = Self.phone(), b = a.device()
+    let one = ID<Session>(RecordID("session1")), two = ID<Session>(RecordID("session2"))
+    _ = try Self.start(a, id: one); a.sync()
+    #expect(try b.runner.run(StartSession(id: two)).refusal == .sessionOpen(Refused(Gym.Codes.sessionOpen, subject: two.ref, path: .predicted)))
+    #expect(try b.runner.read(Gym.scope) { try $0.commands().isEmpty })
+    #expect(try b.drawn(Session.self).map(\.id) == [one])
+    _ = try a.runner.run(FinishSession(id: one)); a.sync()
+    #expect(try committed(b.runner.run(StartSession(id: two))) == two)
+  }
+
+  // Two phones start with no connection: the start the account takes first opens the workout, and the other is refused
+  // `session-open`, its sets folded into that notice, never into the open workout.
+  @Test func aStartThatLosesARaceIsRefusedAndItsSetsAreHeldInItsNotice() throws {
+    let a = Self.phone(), b = a.device(); try Self.exercise(a)
     let one = ID<Session>(RecordID("session1")), two = ID<Session>(RecordID("session2"))
     #expect(try Self.start(a, id: one) == one)
     #expect(try Self.start(b, id: two) == two)
-    #expect(try a.drawn(Session.self).map(\.id) == [one])
-    #expect(try b.drawn(Session.self).map(\.id) == [two])
-    #expect(try a.stored(Session.self).map(\.id) == [one])
-    #expect(try b.stored(Session.self).map(\.id) == [two])
-    a.sync()
-    #expect(try a.drawn(Session.self).map(\.id) == [one])
-    #expect(try b.drawn(Session.self).map(\.id) == [one])
-    #expect(try a.stored(Session.self).map(\.id) == [one])
-    #expect(try b.stored(Session.self).map(\.id) == [one])
-    #expect(try a.notices(GymRefusal.self).isEmpty && b.notices(GymRefusal.self).isEmpty)
-    #expect(try committed(b.runner.run(StartSession(id: ID(RecordID("session3"))))) == one)
-  }
-
-  @Test func joiningRewritesTheQueuedSetParentToTheAuthoritativeSessionID() throws {
-    let a = Self.phone(), b = a.device(); try Self.exercise(a)
-    let one = ID<Session>(RecordID("session1")), two = ID<Session>(RecordID("session2"))
-    _ = try Self.start(a, id: one); _ = try Self.start(b, id: two)
     let pending = Self.set(b, session: two)
-    _ = try b.runner.run(AppendSet(pending))
-    #expect(try b.drawn(TrainingSet.self).first?.sessionId == two)
+    #expect(try committed(b.runner.run(AppendSet(pending))) == pending.id)
+    let start = try #require(try b.runner.read(Gym.scope) { try $0.commands().first })
+    #expect(start.command.args["joinOpenSession"] == false)
     a.sync()
-    let admitted = try #require(try b.drawn(TrainingSet.self).first)
-    #expect(admitted.id == pending.id && admitted.sessionId == one && admitted.setNumber == 1)
-    #expect(try a.drawn(TrainingSet.self) == [admitted])
-    #expect(try a.notices(GymRefusal.self).isEmpty && b.notices(GymRefusal.self).isEmpty)
-  }
-
-  @Test func joinedStartReceiptReplaysAfterFinishAndClockRollback() throws {
-    let a = Self.phone(), b = a.device()
-    _ = try Self.start(a); a.sync()
-    let joinedId = ID<Session>("session2")
-    let action = StartSession(id: joinedId, startedAt: Instant(ms: Self.now))
-    #expect(try committed(b.runner.run(action)) == Self.sessionID)
-    a.sync()
-    _ = try a.runner.run(FinishSession(id: Self.sessionID)); a.sync()
-    let before = try a.drawn(Session.self)
-    b.clock.jump(ms: -SessionRules.maxClockAheadMs - 1)
-    #expect(try b.runner.run(action).receipt != nil)
-    a.sync()
-    #expect(try a.drawn(Session.self) == before && b.drawn(Session.self) == before)
-    #expect(try a.notices(GymRefusal.self).isEmpty && b.notices(GymRefusal.self).isEmpty)
-  }
-
-  @Test func aJoinedStartReceiptReplayedAfterDiscardDoesNotCreateANewSession() throws {
-    let a = Self.phone(), b = a.device()
-    let one = ID<Session>(RecordID("session1")), two = ID<Session>(RecordID("session2"))
-    _ = try Self.start(a, id: one); _ = try Self.start(b, id: two); a.sync()
-    _ = try a.runner.run(FinishSession(id: one)); a.sync()
-    _ = try a.runner.run(DiscardSession(one)); a.advance(ms: Constants.holdMs); a.sync()
-    #expect(try b.drawn(Session.self).isEmpty)
-    #expect(try committed(b.runner.run(StartSession(id: two))) == two)
-    #expect(try b.drawn(Session.self).map(\.id) == [two])
-    a.sync()
-    #expect(try a.drawn(Session.self).isEmpty && b.drawn(Session.self).isEmpty)
-    #expect(try b.notices(GymRefusal.self).isEmpty)
+    #expect(try a.drawn(Session.self).map(\.id) == [one] && b.drawn(Session.self).map(\.id) == [one])
+    #expect(try a.drawn(TrainingSet.self).isEmpty && b.drawn(TrainingSet.self).isEmpty)
+    #expect(try a.notices(GymRefusal.self).isEmpty)
+    let notice = try #require(try b.notices(GymRefusal.self).first)
+    #expect(try b.notices(GymRefusal.self).count == 1)
+    #expect(notice.refusal == .sessionOpen(Refused(Gym.Codes.sessionOpen, subject: two.ref, path: .notice)))
+    #expect(notice.notice.content.command?.args["id"] == two.json)
+    #expect(notice.values(of: pending.id.ref) == pending.fields)
   }
 
   @Test func aPendingStartAcceptsSetsAndSerialsAppearOnlyAfterAdmission() throws {

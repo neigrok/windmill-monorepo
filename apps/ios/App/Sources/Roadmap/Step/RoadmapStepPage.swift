@@ -6,7 +6,9 @@ import RoadmapDomain
 // what Reset would do; then the description and the step's shared links, what the step requires and opens, each row
 // opening its step, the person's workspace of it, and last the row that opens its History (03.12). Complete stands at
 // the foot of an Up next step, under the room's band, and the foot is away while Add Subtask has the keyboard; Edit raises
-// the step's form over the page, and the … menu holds Open in Graph, View Branch and Delete Step (03.7).
+// the step's form over the page, and the … menu holds Open in Graph, View Branch and Delete Step (03.7). On a reader's
+// cover (09.5b) the page has no Edit, no Complete or Reset and no workspace, and its menu holds Open in Graph, View Branch
+// and Copy Link.
 struct RoadmapStepPage: View {
   typealias Read = (step: RoadmapModel.OpenStep, open: RoadmapModel.OpenRoadmap)
 
@@ -23,6 +25,8 @@ struct RoadmapStepPage: View {
 
   let roadmap: RoadmapModel
   let step: String
+  // The cover the page stands on, for a reader; none in the person's own room.
+  @Environment(RoadmapCover.self) private var cover: RoadmapCover?
   @State private var last = LastRead()
   @State private var nameHeight = 0.0
   @State private var nameScrolledAway = false
@@ -66,7 +70,9 @@ struct RoadmapStepPage: View {
                               comment: "How many steps: beside Opens on a step's page, and Activity's row of the steps added within one minute"),
                 identifier: "roadmap-step-opens")
       }
-      StepWorkspaceSections(roadmap: roadmap, step: row.id, workspace: page.workspace, addingSubtask: $addingSubtask, addingLink: $addingLink)
+      if roadmap.owns {
+        StepWorkspaceSections(roadmap: roadmap, step: row.id, workspace: page.workspace, addingSubtask: $addingSubtask, addingLink: $addingLink)
+      }
       Section {
         NavigationLink(value: RoadmapModel.Visit.history(of: row.id)) {
           HStack(spacing: 12) {
@@ -85,17 +91,23 @@ struct RoadmapStepPage: View {
       }
       .navigationTitle(row.name).navigationBarTitleDisplayMode(.inline).toolbar(removing: nameScrolledAway ? nil : .title)
       .toolbar {
-        ToolbarItem(placement: .topBarTrailing) {
-          Button("Edit") { roadmap.edit(page) }.fontWeight(.semibold).accessibilityIdentifier("roadmap-step-edit")
+        if roadmap.owns {
+          ToolbarItem(placement: .topBarTrailing) {
+            Button("Edit") { roadmap.edit(page) }.fontWeight(.semibold).accessibilityIdentifier("roadmap-step-edit")
+          }
+          if #available(iOS 26.0, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
         }
         // The menu lists what this build can do to the step: a Locked step is offered no View Branch, as the web offers
-        // none, and the kept step no Delete. Attach a Roadmap and Copy Link wait for their screens.
-        if #available(iOS 26.0, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
+        // none, and the kept step no Delete. A reader's copies the step's share address. The owner's Attach a Roadmap and
+        // Copy Link wait for their screens.
         ToolbarItem(placement: .topBarTrailing) {
           Menu("More", systemImage: "ellipsis") {
             Button("Open in Graph", systemImage: "point.3.connected.trianglepath.dotted") { roadmap.openInGraph(row.id, from: .page) }
             if row.card.column != .locked {
               Button("View Branch", systemImage: "arrow.triangle.branch") { roadmap.viewBranch(of: row.id) }
+            }
+            if let cover {
+              Button("Copy Link", systemImage: "link") { cover.copyLink(of: row.id) }
             }
             if row.deletes {
               Divider()

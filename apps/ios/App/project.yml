@@ -81,6 +81,9 @@ targets:
         Debug:
           CODE_SIGN_IDENTITY: "-"
           WM_ROADMAP_ROOM_ENABLED: "YES"
+          # A roadmap's address on the site opens the Roadmap room (Roadmap on iOS §4), in Debug alone until the App ID
+          # carries the associated domain.
+          CODE_SIGN_ENTITLEMENTS: Tools/Windmill-Debug-$(WM_APPLE_SIGN_IN_ENABLED).entitlements
         Release:
           CODE_SIGN_IDENTITY: Apple Development
           CODE_SIGN_STYLE: Automatic

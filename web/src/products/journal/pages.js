@@ -47,6 +47,7 @@ function journalRunner(engine, expectedReplica = engine.activeReplica(), snapsho
     physNow: () => port.physNow(),
     cancelHeld: (id) => port.cancelHeld(id),
     dismissNotice: (id) => port.dismissNotice(id),
+    dismissNotices: (scope, ids, when) => port.dismissNotices(scope, ids, (metadata) => metadata.replica === expectedReplica && when(metadata)),
   }, engine.registry, deviceZone);
 }
 
@@ -98,8 +99,10 @@ export function claimGesture(doc, claimId = crypto.randomUUID()) {
 export async function savePage(engine, doc, expectedReplica = engine.activeReplica(), retirements = {}, priorDraft = null) {
   const action = new SavePage({ day: doc.day, document: doc, retiring: Object.keys(retirements) });
   const runner = journalRunner(engine, expectedReplica);
-  const notices = new Set(engine.observe(SCOPE).getSnapshot().notices
-    .filter((notice) => !notice.dismissed && notice.content.cmd?.args.day === doc.day).map((notice) => notice.id));
+  const observed = engine.observe(SCOPE);
+  const notices = observed.getSnapshot().notices
+    .filter((notice) => !notice.dismissed && notice.content.cmd?.args.day === doc.day).map((notice) => notice.id);
+  observed.release();
   const outcome = await runner.run({
     scope: SCOPE, refusals: action.refusals, load: (read) => {
       const retained = read.device(EditorDraft.key);
@@ -127,13 +130,12 @@ export async function savePage(engine, doc, expectedReplica = engine.activeRepli
   });
   const refusal = outcome.kind === 'refused' ? outcome.refusal : outcome.result?.refusal;
   if (refusal) throw Object.assign(new Error('journal-local-refusal'), { refusal });
-  if (notices.size) await engine.write(null, (device) => {
-    const replica = device.activeReplica;
-    if (replica.id !== expectedReplica) return;
-    const refusedClaim = Object.values(replica.deviceRows('journal')).some((row) => row?.day === doc.day && row.refusal);
-    if (refusedClaim) return;
-    for (const notice of replica.notices) if (notice.scope === SCOPE && notices.has(notice.id)) notice.dismissed = true;
-  }, [SCOPE]).catch(() => captureError('journal', 'journal-notice-cleanup', '', '/journal'));
+  if (!notices.length) return outcome;
+  // The day's words are kept, so the refusal notices it held before stop speaking, all in one write that reads whether a
+  // refused claim of the day still speaks for its words.
+  try {
+    await runner.dismissNotices(SCOPE, notices, ({ devices = {} }) => !JournalWriting.keepsRefusalNotices(devices, action.day));
+  } catch (error) { captureError('journal', 'journal-notice-cleanup', error?.stack ?? '', '/journal'); }
   return outcome;
 }
 
@@ -195,7 +197,7 @@ export function watchClaims(engine) {
           if (result.kind === 'refused') track('sync_commit', { outcome: 'failed' });
         }
       }
-    } catch { captureError('journal', 'journal-claim-reconcile', '', '/journal'); }
+    } catch (error) { captureError('journal', 'journal-claim-reconcile', error?.stack ?? '', '/journal'); }
     finally { running = false; }
   };
   engine.observe(SCOPE).subscribe(reconcile);

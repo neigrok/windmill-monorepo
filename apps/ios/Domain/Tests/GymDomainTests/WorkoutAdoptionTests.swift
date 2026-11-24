@@ -43,26 +43,22 @@ struct WorkoutAdoptionTests {
     let set = TrainingSet(id: h.runner.mint(TrainingSet.self), sessionId: id, exerciseId: SeedExercises.all.first!.id,
       weightKg: 20, reps: 5, completedAt: Instant(ms: TrainingTests.now))
     _ = try h.runner.run(AppendSet(set))
-    _ = try h.runner.run(AdoptWorkout(id, mode: .prepare))
+    #expect(try h.runner.run(AdoptWorkout(id, mode: .prepare)).refusal == nil)
     let snapshot = try h.runner.read(Gym.scope) { try SignedOutWorkout.read($0) }
     #expect(snapshot.count == 1 && snapshot[0].session.isOpen)
     #expect(snapshot[0].importAction.finishedAt == set.completedAt)
     #expect(snapshot[0].sets == [set])
-    #expect(try h.drawn(TrainingSet.self).isEmpty)
-    h.failNextCommit()
-    #expect(throws: (any Error).self) { try h.runner.run(AppendSet(set)) }
+    #expect(try h.drawn(TrainingSet.self) == [set])
     #expect(try h.runner.run(AdoptWorkout(id, mode: .prepare)).refusal == nil)
     #expect(try h.runner.read(Gym.scope) { try SignedOutWorkout.read($0) } == snapshot)
-    _ = try h.runner.run(AppendSet(set))
-    #expect(try h.drawn(TrainingSet.self) == [set])
     let start = try h.runner.read(Gym.scope) { try $0.commands().first }
     #expect(start?.command.args["joinOpenSession"] == false)
     #expect(try h.runner.run(AdoptWorkout(id, mode: .keep)).refusal != nil)
     #expect(try h.runner.read(Gym.scope) { try $0.commands().count } == 1)
   }
 
-  // The fold that replaces a joining start takes the proposals waiting on it: the copy holds them for the account, and what
-  // the turn wrote with them keeps its write and loses its guard on the plan.
+  // An open copy holds the proposals waiting on it for the account, which reissues them once it takes the workout; they stay
+  // queued behind the copy's start, which does not join, so a refused start folds them into its notice.
   @Test func anOpenCopyHoldsTheProposalsWaitingOnItAndAFinishedOneNone() throws {
     func signedOutWorkout() throws -> Harness {
       let h = Harness(registry: SyncSchema.registry, start: Instant(ms: WorkoutPlanTests.now), account: nil)
@@ -83,7 +79,7 @@ struct WorkoutAdoptionTests {
     let held = try #require(try h.runner.read(Gym.scope) { try SignedOutWorkout.read($0) }.first)
     #expect(held.proposals.map(\.id) == [proposal] && held.proposals[0].document == entries)
     #expect(try SignedOutWorkout(held.json) == held)
-    #expect(try h.stored(WorkoutProposal.self).isEmpty)
+    #expect(try h.stored(WorkoutProposal.self).map(\.id) == [proposal])
     #expect(try h.notices(GymRefusal.self).isEmpty)
 
     let finishing = try signedOutWorkout()
