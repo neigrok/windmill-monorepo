@@ -1,0 +1,367 @@
+{
+  "catalog": "roadmap/1",
+  "abilities": [
+    {
+      "name": "get_nodes",
+      "description": "Steps of one roadmap by exact id, in the order asked. A step the person deleted and can still bring back with Undo is not there.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "nodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The `nextCursor` of the page before. An answer past 16 KiB is paged; leave this out for the first page."
+          }
+        },
+        "required": [
+          "treeId",
+          "nodeIds"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "maxBytes": 16384
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "read some of your steps",
+      "ui": "step page"
+    },
+    {
+      "name": "find_nodes",
+      "description": "Steps of one roadmap that match every filter sent: a kind, a state, a text. `state: \"available\"` is the frontier, the steps the person can work on now. A step whose state is unknown, because it waits on a roadmap this device has not finished bringing, matches no state.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "kind": {
+            "type": "string",
+            "description": "A kind's id, as the roadmap's kinds name it."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "locked",
+              "available",
+              "complete"
+            ]
+          },
+          "query": {
+            "type": "string",
+            "description": "Text to find in a step's id, label or description, in any case."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The `nextCursor` of the page before. An answer past 16 KiB is paged; leave this out for the first page."
+          }
+        },
+        "required": [
+          "treeId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "maxBytes": 16384
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "searched your roadmap",
+      "ui": "Board search"
+    },
+    {
+      "name": "get_progress",
+      "description": "The steps of one roadmap the person has completed, each with the date this device holds of it. A step completed through the roadmap it opens, or done before dates were kept, has none.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The `nextCursor` of the page before. An answer past 16 KiB is paged; leave this out for the first page."
+          }
+        },
+        "required": [
+          "treeId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "maxBytes": 16384
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "read your progress",
+      "ui": "Board, Done"
+    },
+    {
+      "name": "get_diagnostics",
+      "description": "What is wrong with one roadmap's graph: cycles, links to steps that are missing, links from a step to itself, work masked by removed steps, and smells. Loops and dead ends among the roadmaps its steps open are reported among the roadmaps this device holds.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "The `nextCursor` of the page before. An answer past 16 KiB is paged; leave this out for the first page."
+          }
+        },
+        "required": [
+          "treeId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "maxBytes": 16384
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "checked your roadmap for problems",
+      "ui": "none"
+    },
+    {
+      "name": "list_trees",
+      "description": "One line for each roadmap the person owns: its title, its steps counted by state, the titles of its frontier and the date of its last completion.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string",
+            "description": "The `nextCursor` of the page before. An answer past 16 KiB is paged; leave this out for the first page."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "result": {
+        "maxBytes": 16384
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "read your roadmaps",
+      "ui": "roadmap switcher"
+    },
+    {
+      "name": "set_progress",
+      "description": "Mark one step done (`complete`) or not done (`none`). A step that opens a roadmap is complete when that roadmap is, and takes no mark.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "none"
+            ]
+          }
+        },
+        "required": [
+          "treeId",
+          "nodeId",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "result": {},
+      "class": "change",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "marked a step",
+      "ui": "step, Complete and Reset"
+    },
+    {
+      "name": "rename_node",
+      "description": "Change one step's title.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "treeId",
+          "nodeId",
+          "label"
+        ],
+        "additionalProperties": false
+      },
+      "result": {},
+      "class": "change",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "renamed a step",
+      "ui": "Rename step"
+    },
+    {
+      "name": "annotate_node",
+      "description": "Change one step's description, its web links, or both. What is sent replaces what the step holds; what is left out stays.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "url",
+                "label"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Every web link the step is to carry, in order."
+          }
+        },
+        "required": [
+          "treeId",
+          "nodeId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {},
+      "class": "change",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "changed a step's description or links",
+      "ui": "step, Description and Links"
+    },
+    {
+      "name": "create_node",
+      "description": "Add one step to a roadmap, after the prerequisites named.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "label": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "A kind's id, as the roadmap's kinds name it. Left out, the step takes terracotta, as the room's New step gives it."
+          },
+          "description": {
+            "type": "string"
+          },
+          "prerequisites": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The ids of the steps that come before it; none for a first step."
+          }
+        },
+        "required": [
+          "treeId",
+          "label",
+          "prerequisites"
+        ],
+        "additionalProperties": false
+      },
+      "result": {},
+      "class": "add",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "added a step",
+      "ui": "New step"
+    },
+    {
+      "name": "connect",
+      "description": "Add one link between two steps of a roadmap: `from` a prerequisite `to` the step it unlocks. A link that would close a loop is refused.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "treeId",
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      },
+      "result": {},
+      "class": "add",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "linked two steps",
+      "ui": "Graph, a link drawn between two steps"
+    }
+  ]
+}

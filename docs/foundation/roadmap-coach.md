@@ -7,8 +7,9 @@ roadmap nodes can cite them.
 ## §0 Status and scope
 
 **Status:** Specified, and approved by the owner on 2026-11-15, and again on 2026-11-17 as revised
-for roadmap on the sync engine (R-13) and Coach on the iPhone in the first release (R-14). Nothing
-is built. The roadmap's AI today is tending: a server-side agent that
+for roadmap on the sync engine (R-13) and Coach on the iPhone in the first release (R-14). Of Coach
+only its contract is built: the catalog, its limits and the format of its vectors (§3). The roadmap's
+AI today is tending: a server-side agent that
 edits a roadmap at once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person
 sees of Coach is ruled in the [design canon](../design/roadmap-coach.md); this document says how it
 is built. The build order lives in the Roadmap Coach roadmap tree, which the dogfood tree
@@ -79,9 +80,13 @@ address a step carries.
 ```text
 packages/api-contract/roadmap/
   catalog.json            the abilities Coach is offered (§4)
-  abilities/              vectors: a roadmap, an input, the result or the writes it must give
-  domain/                 vectors of a turn's opening and end, as gym's folder holds gym's
   limits.json             the caps the server enforces, for every client to check first (§6)
+  abilities/              vectors: the roadmaps, an input, and the result, the writes or the refusal
+                          they must give; its README.md has the format
+  check.py                the Coach contracts workflow's check of the three, and of each cap against
+                          the backend's
+  domain/                 roadmap's shared domain corpus, where a turn's opening and end are proven
+                          as gym's are (§9)
 web/src/products/roadmap/
   domain/                 the abilities, each a pure function of a roadmap and an input, with the
                           rules they share with the room's controls
@@ -113,9 +118,12 @@ apps/ios/Domain/Sources/RoadmapDomain/
 
 ## §4 The catalog
 
-`packages/api-contract/roadmap/catalog.json` has the shape and the vocabulary of gym's: each entry
-is `{name, description, input, result, class, agent, seats, phrase, ui}`, `class` is `read`, `add`,
-`change` or `remove`, and `agent` is `runs`, `proposes` or `withheld`. Catalog `roadmap/1` holds:
+`packages/api-contract/roadmap/catalog.json` has the shape and the vocabulary of gym's
+`catalog-3.json`: each entry is `{name, description, input, result, class, agent, seats, strict,
+phrase, ui}`, `class` is `read`, `add`, `change` or `remove`, and `agent` is `runs`, `proposes` or
+`withheld`. Catalog `roadmap/1` is the abilities below. The file holds every one of them but
+`get_tree` and `propose_roadmap_change`, whose inputs this document does not settle: the fields
+`get_tree` answers, and the shape of a proposal's changes (§7).
 
 | Ability | `class` | `agent` | Runs | What it does |
 |---|---|---|---|---|
@@ -137,8 +145,16 @@ is `{name, description, input, result, class, agent, seats, phrase, ui}`, `class
 - Withheld from Coach: creating, deleting, renaming and sharing a roadmap, its guide, the roadmaps a
   step opens, and removing or reordering kinds.
 - Every ability that `runs` and is not a `read` changes one step and removes nothing. That is the
-  shape of the catalog and not a check at run time. Removing, merging, splitting, unlinking, a new
-  kind, and anything touching two or more steps exist only as changes of a proposal.
+  shape of the catalog and not a check at run time; the catalog's check refuses an ability that
+  `runs` and is a `remove`. Removing, merging, splitting, unlinking, a new kind, and anything
+  touching two or more steps exist only as changes of a proposal.
+- Every ability's `seats` is `any`, since everything works signed out (§11). Every `strict` is
+  `false`, so a turn declares no tool strict to the provider; every input keeps to what each schema
+  check reads and strict mode accepts, so declaring one strict is one word.
+- An input names a roadmap as `treeId` and a step as `nodeId`, as the server's tools for an outside
+  assistant do. No cap of §6 is part of a schema, so a value past one reaches the ability, which
+  refuses it as `over-limit`. A read takes `cursor` for the page after the first (§5), and its
+  `result` carries `maxBytes`, 16384; the catalog states no more of an answer.
 - An ability's `agent` value is fixed in the catalog. Whether the person asked for exactly this
   change in this message, which the design's rule for a direct write requires, is the prompt's to
   judge. (R-8)
@@ -184,7 +200,8 @@ ability's result as data and never as instructions.
 - `get_diagnostics` is computed on the device, by a function held to the server's report by shared
   vectors. Loops and dead ends among the roadmaps that steps open are reported only among roadmaps
   the device holds.
-- A result is at most 16 KiB; a longer one is paged, never cut.
+- A result is at most 16 KiB of JSON text as UTF-8, the catalog's `maxBytes`; a longer one is paged,
+  never cut, and the next page is asked for by sending the page's `nextCursor` as `cursor`.
 - The tool host notes the stamp of every register a turn's context and reads returned. §7 uses them.
 
 ## §6 Writing
@@ -202,7 +219,9 @@ room's controls run. The ability and the host check first:
 4. **The server will take it.** The write is inside the caps of `limits.json`: a label of 200
    characters, a description of 16,000, 10,000 steps, 20,000 links, 32 web links a step with a label
    of 200 and an address of 2,048, an id of 128, 6 kinds with a label of 24 and a description of 80.
-   An over-cap write is refused on the device as `over-limit` and never sent.
+   An over-cap write is refused on the device as `over-limit` and never sent. Each cap in the file
+   names the constant of the backend's `domain/Command.h` and the declaration of roadmap's sync
+   registry it is, and the Coach contracts workflow fails when either differs.
 5. **The graph stays whole.** `connect` and `create_node` refuse a link that would close a cycle or
    name a step the roadmap does not hold. A web link's address is one the contract allows. A new
    step names a kind the roadmap has, or takes terracotta as the room's own control gives it.

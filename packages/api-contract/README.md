@@ -178,6 +178,35 @@ a plan as the input of the domain's `CreateRoadmap` and `ImportSteps`, and a roa
 [roadmap/plan/README.md](roadmap/plan/README.md) states the grammar and each file's shapes. Read as a test by
 `web/test/products/roadmap/paste/corpus.test.js`, which claims every file by name.
 
+## `roadmap/catalog.json`, `roadmap/limits.json` and `roadmap/abilities/`
+
+Roadmap Coach's abilities, which the web and the iPhone each run on the device's own copy of a roadmap
+([Roadmap Coach](../../docs/foundation/roadmap-coach.md) §3, §4, §6).
+
+- `catalog.json` is catalog `roadmap/1`, `{catalog, abilities}`, each entry with `name`, `description`, `input`,
+  `result`, `class`, `agent`, `seats`, `strict`, `phrase` and `ui`, so the domain kit's catalog types read it as they
+  read gym's. Every `seats` is `any`, since Coach works signed out, and every `strict` is `false`.
+- Every input is closed at every depth and keeps to the shared vocabulary: the keywords every schema check reads that
+  the provider's strict mode also accepts (`type`, `description`, `properties`, `required`, `additionalProperties`,
+  `items`, `enum`, `const`, `minItems` of 0 or 1 and `pattern`), with patterns of explicit classes. So declaring an
+  ability strict is one word. A cap of §6 is no keyword of an input: the ability refuses past it as `over-limit`.
+- `result` holds what the spec settles of an answer, and no more: a read's `maxBytes`, 16384, the most its JSON text
+  takes as UTF-8 (§5).
+- `limits.json` holds §6's caps, the ones the server enforces and every client checks first. Each names its `max`, its
+  `unit` (`characters`, counted as Unicode code points, or `items`), the constant of
+  `backend/products/roadmap/domain/Command.h` the backend's own doors hold to, and the declaration of
+  `sync/roadmap.registry.json` the sync engine admits Coach's writes by.
+- `abilities/` holds the ability vectors; [roadmap/abilities/README.md](roadmap/abilities/README.md) has their format.
+
+`check.py` holds the three in the Coach contracts workflow (`.github/workflows/coach.yml`), which runs when any of them,
+`Command.h` or the registry changes:
+
+- the catalog to the kit's shape and the shared vocabulary, with no ability that runs at once and removes (§4);
+- every vector to its format;
+- each cap to the backend's constant and the registry's declaration.
+
+`check_test.py`, run in the same step, breaks each rule once and holds the refusal's words.
+
 ## `roadmap-addresses.json`
 
 Where a roadmap and its steps open on the web, as what follows the app's origin: `/#/app/<treeId>` and
