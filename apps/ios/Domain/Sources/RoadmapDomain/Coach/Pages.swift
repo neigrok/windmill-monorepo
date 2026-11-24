@@ -32,6 +32,26 @@ final class ReadPages {
     }
   }
 
+  // What a page has taken, as its bytes count: what it carries beside its lists, and the bytes its lists' entries add,
+  // their own and a comma between two of one list.
+  struct Tally {
+    let lists: [String]
+    var beside: [Placed] = []
+    var listed = 0
+    var counts: [String: Int] = [:]
+
+    init(_ taken: [Placed], lists: [String]) {
+      self.lists = lists
+      for placed in taken { take(placed) }
+    }
+
+    mutating func take(_ placed: Placed) {
+      guard lists.contains(placed.under) else { return beside.append(placed) }
+      listed += placed.bytes + (counts[placed.under, default: 0] > 0 ? 1 : 0)
+      counts[placed.under, default: 0] += 1
+    }
+  }
+
   // The catalog's `result.maxBytes` of every read.
   static let maxBytes = 16384
   // The fields whose text or list can pass a page, filled in key order (rule 3).
@@ -83,24 +103,29 @@ final class ReadPages {
   // or, first on its page, is sent in parts.
   func page(from start: Position) -> JSON.Object {
     var taken: [Placed] = []
+    var tally = Tally([], lists: lists)
     var index = start.index
     if start.part > 1 {
       let parts = parts(index)
       let piece = Placed(under: entries[index].under, value: parts[start.part - 1])
       if start.part < parts.count { return page(taking: [piece], from: start, next: Position(index: index, part: start.part + 1)) }
       taken.append(piece)
+      tally.take(piece)
       index += 1
     }
     while index < entries.count {
       let entry = placed(index)
-      if bytes([entry], from: Position(index: index, part: 1), next: after(index)) > Self.maxBytes {
+      if bytes(Tally([entry], lists: lists), from: Position(index: index, part: 1), next: after(index)) > Self.maxBytes {
         if !taken.isEmpty { return page(taking: taken, from: start, next: Position(index: index, part: 1)) }
         return page(taking: [Placed(under: entry.under, value: parts(index)[0])], from: start, next: Position(index: index, part: 2))
       }
-      if bytes(taken + [entry], from: start, next: after(index)) > Self.maxBytes {
+      var grown = tally
+      grown.take(entry)
+      if bytes(grown, from: start, next: after(index)) > Self.maxBytes {
         return page(taking: taken, from: start, next: Position(index: index, part: 1))
       }
       taken.append(entry)
+      tally = grown
       index += 1
     }
     return page(taking: taken, from: start, next: nil)
@@ -112,7 +137,7 @@ final class ReadPages {
   func parts(_ index: Int) -> [JSON.Object] {
     if let known = partsAt[index] { return known }
     var parts = [placed(index).value]
-    if bytes([placed(index)], from: Position(index: index, part: 1), next: after(index)) > Self.maxBytes {
+    if bytes(Tally([placed(index)], lists: lists), from: Position(index: index, part: 1), next: after(index)) > Self.maxBytes {
       var count = 2
       for cuts in 0... {
         precondition(cuts < Self.recuts, "the parts of sequence object \(index) do not settle")
@@ -146,7 +171,7 @@ final class ReadPages {
       let frame = { (carrying: [Int], next: Position?) -> Int in
         var framed = base
         for field in carrying { framed[fields[field].key] = fields[field].empty }
-        return self.bytes([Placed(under: under, value: framed)], from: start, next: next)
+        return self.bytes(Tally([Placed(under: under, value: framed)], lists: self.lists), from: start, next: next)
       }
       let going = fields.indices.filter { part == 1 || sent[$0] < fields[$0].length }
       let rest = going.reduce(0) { $0 + fields[$1].bytes(from: sent[$1], to: fields[$1].length) }
@@ -200,16 +225,11 @@ final class ReadPages {
 
   // The canonical bytes of the page: its frame, with every list empty and a cursor as long as `next`'s, and each list
   // entry's own bytes, since a list's text is its entries' texts joined by commas between its brackets.
-  func bytes(_ taken: [Placed], from start: Position, next: Position?) -> Int {
-    var frame = self.frame(taken, from: start)
+  func bytes(_ tally: Tally, from start: Position, next: Position?) -> Int {
+    var frame = self.frame(tally.beside, from: start)
     for list in lists { frame[list] = .array([]) }
     if let next { frame["nextCursor"] = .string("\(next.index).\(next.part).\(String(repeating: "0", count: 16))") }
-    var bytes = JSON.object(frame).jcs.count
-    for list in lists {
-      let values = taken.filter { $0.under == list }
-      bytes += values.reduce(max(0, values.count - 1)) { $0 + $1.bytes }
-    }
-    return bytes
+    return JSON.object(frame).jcs.count + tally.listed
   }
 
   // What a page carries beside its lists: the header, and on the first page what it alone carries.

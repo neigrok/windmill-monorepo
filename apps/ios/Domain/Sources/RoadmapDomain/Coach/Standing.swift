@@ -284,17 +284,15 @@ struct StandingRoadmap {
     let follows = Self.follows(in: graph)
     let waiting = Self.followers(of: follows)
     var waits = follows.map(\.count)
-    // The steps that can come next, the first in the room's order last.
-    var ready: [Int] = waits.indices.filter { waits[$0] == 0 }.reversed()
+    var ready = SlotHeap(ascending: waits.indices.filter { waits[$0] == 0 })
     var placed = [Bool](repeating: false, count: ids.count)
     var order: [String] = []
-    while let slot = ready.popLast() {
+    while let slot = ready.pop() {
       placed[slot] = true
       order.append(ids[slot])
       for next in waiting[slot] {
         waits[next] -= 1
-        guard waits[next] == 0 else { continue }
-        ready.insert(next, at: ready.firstIndex { $0 < next } ?? ready.endIndex)
+        if waits[next] == 0 { ready.push(next) }
       }
     }
     let looped = ids.indices.filter { !placed[$0] }.map { ids[$0] }
@@ -339,5 +337,40 @@ struct StandingRoadmap {
     let count = { (state: State) in JSON(states.count { $0 == state }) }
     return ["total": JSON(states.count), "done": count(.complete), "available": count(.available), "locked": count(.locked),
             "unknown": count(.unknown)]
+  }
+}
+
+// The present steps that can come next in get_tree's order, the first in the room's order, the lowest slot, first: a
+// binary heap of slots.
+struct SlotHeap {
+  var slots: [Int]
+
+  // Slots in ascending order are a heap already.
+  init(ascending slots: [Int]) {
+    self.slots = slots
+  }
+
+  mutating func push(_ slot: Int) {
+    slots.append(slot)
+    var at = slots.count - 1
+    while at > 0, slots[(at - 1) / 2] > slots[at] {
+      slots.swapAt((at - 1) / 2, at)
+      at = (at - 1) / 2
+    }
+  }
+
+  mutating func pop() -> Int? {
+    guard let first = slots.first else { return nil }
+    slots.swapAt(0, slots.count - 1)
+    slots.removeLast()
+    var at = 0
+    while 2 * at + 1 < slots.count {
+      let left = 2 * at + 1
+      let child = left + 1 < slots.count && slots[left + 1] < slots[left] ? left + 1 : left
+      guard slots[child] < slots[at] else { break }
+      slots.swapAt(child, at)
+      at = child
+    }
+    return first
   }
 }
