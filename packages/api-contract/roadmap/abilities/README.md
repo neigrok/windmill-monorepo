@@ -90,6 +90,7 @@ running an ability:
 It does not run an ability, so it does not check what only running one shows: the order of a read, a step's state,
 prerequisites and unlock count, a cursor's digest or where a page is cut, a fold's colours, or which code a refusal is.
 Those are the executors' to claim. `../check_test.py` holds a broken case for each refusal `check.py` makes. The web's
-runner, `web/test/products/roadmap/domain/abilities/corpus.test.js`, claims the read abilities' files and compares each
-answer whole by canonical text; no executor claims the direct writes' files or the proposal's yet. The format holds no
-register stamps, so no case shows §7's `roadmap-changed` over a register.
+runner, `web/test/products/roadmap/domain/abilities/corpus.test.js`, claims the read abilities' files and the direct
+writes', drawing a write's new ids from the case's `ids`, and compares each answer whole by canonical text; no executor
+claims the proposal's yet. The format holds no register stamps, so no case shows §7's `roadmap-changed` over a
+register.

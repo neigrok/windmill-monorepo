@@ -231,7 +231,8 @@ Which link urls a person is shown on a node: a url as the server stores it, trim
 around it, and whether the web shows it — `http:`, `https:` or `mailto:`, in any case. The backend's
 `shownLinkUrl` (`backend/products/roadmap/domain/Command`, tested by `CommandTest`, which reads the file
 at run time; the image copies it in `backend/Dockerfile`) takes exactly the shown ones, and
-`web/test/products/roadmap/graph/tree/NodeWorkspace.test.js` proves `SAFE_URL` shows exactly those.
+`web/test/products/roadmap/domain/rules.test.js` proves `SAFE_URL`, the web domain's rule the room and Roadmap Coach
+read, shows exactly those.
 
 ## `roadmap-socket.json`
 

@@ -7,7 +7,7 @@ import './detail.css';
 import { track } from '../../../telemetry/beacon.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { hueOf } from '../theme.js';
-import { SAFE_URL } from '../graph/tree/NodeWorkspace.jsx';
+import { SAFE_URL } from '../domain/roadmapRules.js';
 import { StepWorkspace, StepHistory } from './StepWorkspace.jsx';
 import { deletionCost } from '../board/acts.js';
 import { StepFacts, offersCompletion, titleOf } from './StepFacts.js';

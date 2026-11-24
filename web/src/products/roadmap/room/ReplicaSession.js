@@ -21,11 +21,14 @@ import { ClearPointer, Complete, Reset, SetPointer } from '../domain/progress.js
 import { RoadmapChecks, RoadmapRefusals, RoadmapScopes } from '../domain/roadmapRules.js';
 import { DeleteRoadmap, SetVisibility, WriteRoadmap } from '../domain/roadmaps.js';
 import { HeldDeletion } from '../identity/HeldDeletion.js';
-import { ChangePrerequisites, ChangeStep, CreateStep, DeleteStep, ImportSteps, MoveStep } from '../domain/steps.js';
+import { ChangePrerequisites, ChangeStep, CreateStep, DeleteStep, ImportSteps, MoveStep, RoadmapStep } from '../domain/steps.js';
 import { AddStepLink, AddSubtask, ChangeSubtask, DeleteStepLink, DeleteSubtask, StepNote, StepNoteValue, Subtask } from '../domain/workspace.js';
 
 // An Undo or a Redo of a gesture that wrote nothing, or whose Undo had nothing to take back.
 const NOTHING_TO_TAKE_BACK = Object.freeze({ kind: 'unavailable' });
+
+// The fields of a step a gesture that changes it may carry, each written whole: its web links among them.
+const STEP_FIELDS = Object.freeze(['label', 'description', 'color', 'links']);
 
 // What the room says of a write the domain refused where it was made, in the words it says them today: a roadmap at its
 // cap and a link that would close a loop. Any other refusal says nothing, as a write that found nothing to change.
@@ -156,9 +159,9 @@ export class ReplicaSession {
     return receipt;
   }
 
-  // The domain's acts that make one of the room's gestures, the parts of its one act in order. A gesture on several
-  // steps is the act on each in turn; links to remove are each step's prerequisites, one act a step; a paste's new kinds
-  // follow its steps, whose colours name their hues.
+  // The domain's acts that make one of the room's gestures, the parts of its one act in order. A gesture that changes a
+  // step carries any of its fields (`STEP_FIELDS`); a gesture on several steps is the act on each in turn; links to remove
+  // are each step's prerequisites, one act a step; a paste's new kinds follow its steps, whose colours name their hues.
   actsOf(gesture) {
     const tree = this.treeId;
     const fields = (names) => Object.fromEntries(names.filter((name) => name in gesture).map((name) => [name, gesture[name]]));
@@ -169,9 +172,9 @@ export class ReplicaSession {
         ...(gesture.description ? { description: gesture.description } : {}) }, gesture.prerequisites ?? (gesture.parentId ? [gesture.parentId] : []), gesture.id)];
       case 'RenameNode':
       case 'DescribeNode':
-      case 'SetNodeColor': return [new ChangeStep(tree, gesture.id, fields(['label', 'description', 'color']))];
+      case 'SetNodeColor': return [new ChangeStep(tree, gesture.id, fields(STEP_FIELDS))];
       case 'EditNode': {
-        const changes = fields(['label', 'description', 'color']);
+        const changes = fields(STEP_FIELDS);
         const prerequisites = { add: gesture.addPrerequisites ?? [], remove: gesture.removePrerequisites ?? [] };
         return [
           ...(Object.keys(changes).length ? [new ChangeStep(tree, gesture.id, changes)] : []),
@@ -211,8 +214,8 @@ export class ReplicaSession {
   }
 
   // The owner's marks: each step's Complete or Reset, decided first; false where the domain refuses one, so the room
-  // marks nothing. A step whose pointer opens a standing roadmap is read so from the account, as the domain asks of its
-  // caller.
+  // marks nothing, else the marks' write once it has settled (`write`'s answer). A step whose pointer opens a standing
+  // roadmap is read so from the account, as the domain asks of its caller.
   markProgress(nodeIds, status) {
     const roadmap = this.roadmap();
     const opening = new Map(roadmap.account.openingsOf(this.treeId).map((each) => [each.node, each]));
@@ -220,8 +223,7 @@ export class ReplicaSession {
     const ids = Array.isArray(nodeIds) ? nodeIds : [nodeIds];
     const acts = ids.map((id) => (status === 'complete' ? Complete(this.treeId, id, { opensStanding: opensStanding(id) }) : Reset(this.treeId, id)));
     if (this.refusedOf(acts, 'mark')) return false;
-    this.settle(acts, 'mark');
-    return true;
+    return this.settle(acts, 'mark');
   }
 
   // A roadmap's name, out of the Undo stack as a rename is today. A subtree's name is its owning step's label, so a
@@ -385,6 +387,11 @@ export class ReplicaSession {
   // Every step the roadmap holds, present or deleted, so a new step never takes one's id.
   knownNodeIds() {
     return this.roadmap().account.trees.get(this.treeId)?.nodes.map((step) => step.id) ?? [];
+  }
+
+  // A new step's id, minted as the domain mints one, from the engine's random source, and none the roadmap holds.
+  mintStepId() {
+    return String(this.runner.mint(RoadmapStep, RoadmapScopes.tree(this.treeId)).record);
   }
 
   // The roadmap as the room's tree data, as the replica holds it now; one that stopped standing while the room is open

@@ -89,7 +89,8 @@ export function readStanding(copies, { listRead = true, ownerMarks = new Map() }
 const readings = new WeakMap();
 
 // What every ability reads of the standing roadmap: the account the domain reads over its trees, each roadmap's
-// completed steps as the room shows them, and the roadmaps whose completion waits on one the device has not brought.
+// completed steps as the room shows them, the steps under a delete the person can still undo, and the roadmaps whose
+// completion waits on one the device has not brought.
 export class StandingRoadmaps {
   /** @type {Map<string, { completed: string[], dates: { node: string, at: number | null }[] }>} */
   #progress = new Map();
@@ -108,8 +109,9 @@ export class StandingRoadmaps {
   }
 
   /** @param {Standing} standing */
-  constructor({ trees, listRead = true }) {
+  constructor({ trees, held = [], listRead = true }) {
     this.account = new RoadmapAccount(trees.map((tree) => new RoadmapTree(tree)));
+    this.held = held;
     this.listRead = listRead;
   }
 
@@ -201,7 +203,8 @@ export const STEP_LINE = Object.freeze(['id', 'label', 'kind', 'state', 'prerequ
 const SUMMARY_SCALARS = 160;
 
 // One roadmap as the room shows it, read whole: its present steps in the room's order, what each follows through removed
-// steps and what finishing it alone opens, the kind that owns each hue, what each step opens, and each step's state.
+// steps and what finishing it alone opens, the kind that owns each hue, what each step opens, each step's state, and the
+// steps under a delete the person can still undo, which it does not show.
 export class StandingRoadmap {
   /** @type {number[][] | null} */
   #follows = null;
@@ -221,6 +224,7 @@ export class StandingRoadmap {
     /** @type {Map<string, Opening>} */
     this.openings = new Map((roadmaps.account.openings.get(tree.id) ?? []).map((opening) => [opening.node, opening]));
     this.stateAt = this.states();
+    this.held = new Set(roadmaps.held.filter((each) => each.tree === tree.id).map((each) => each.step));
   }
 
   // §5: each present step's state by slot, the one the room shows, but `unknown` for an unfinished step whose opened
@@ -262,6 +266,14 @@ export class StandingRoadmap {
     const waiting = this.graph.ids.map(() => []);
     for (const [slot, prerequisites] of this.follows().entries()) for (const prerequisite of prerequisites) waiting[prerequisite]?.push(slot);
     return waiting;
+  }
+
+  // The step the room shows under `id`, undefined where it shows none: a step removed, or under a delete the person can
+  // still undo, among them.
+  /** @param {string} id */
+  shown(id) {
+    const slot = this.graph.slot.get(id);
+    return slot === undefined ? undefined : this.graph.nodes[slot];
   }
 
   /** @param {string} id */
