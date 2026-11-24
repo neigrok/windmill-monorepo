@@ -13,11 +13,13 @@ export function useNudge(account = null) {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Re-read whenever the signed-in account changes: these are one account's schedule and mailbox.
+  // Re-read whenever the signed-in account changes: these are one account's schedule and mailbox, and a signed-out seat
+  // has none to ask for.
   useEffect(() => {
     let cancelled = false;
     setSettings(null);
-    setLoading(true);
+    setLoading(account !== null);
+    if (account === null) return undefined;
     journalApi.nudge()
       .then((next) => { if (!cancelled) { setSettings(next); setLoading(false); } })
       .catch(() => { if (!cancelled) setLoading(false); });

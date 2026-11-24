@@ -139,10 +139,12 @@ emit `sync_commit` with bounded outcome labels; claim/save and first-run retirem
 gesture events. Domain refusals retain the complete input in a local editor draft and keep the
 editor's unsaved status; failed reconciliation emits a bounded `sync_commit` failure outcome.
 Post-commit notice-cleanup failures use `journal-notice-cleanup` and preserve the successful save
-outcome. Unreadable legacy data uses `journal-migration`, retains its source, and allows startup.
+outcome; it and `journal-claim-reconcile` carry the error's stack, its message struck. Unreadable legacy data
+uses `journal-migration`, retains its source, and allows startup.
 Settings' export emits `journal_export` with `outcome`: `ok`, `first_pull_timeout` (a bound replica's first pull of
 the journal did not end within 30 seconds), `replica_changed` (the account changed while it waited), `no_replica` (the
-browser holds no open replica) or `failed`, which alone also reports `journal-export`.
+browser holds no open replica) or `failed`, which alone also reports `journal-export` with the error's stack and `step`:
+`pages` (reading the pages), `file` (writing them as Markdown) or `download` (handing the file to the browser).
 Search by meaning emits `journal_search_meaning` each time its model comes up or does not for a search: `outcome`
 `ready`, `needs_connection` (the browser is offline, so the search says it needs a connection) or `failed`, which alone
 also reports `journal-search-meaning`. No page body, scales, date, claim identifier, search text or account is reported.

@@ -5,8 +5,9 @@ Pages live in the browser replica (`self/journal`) and change only through the e
 retirements, pending claims, editor drafts, content clocks, reconciliation and echo quotation
 comparisons. `pages.js` runs its actions and adapts `JournalRoom` to the web's flat page view
 (`pagesOf`, `corpus`), with durable refusal notices and editor drafts overlaid. `journalApi.js`
-holds the server features over the session cookie: echoes and nudges. `talk/` is Talk: the
-mic and its sheet, `talkStore.js`, which holds a refused take for the tab across the room being left
+holds the server features over the session cookie: echoes and nudges, which are the account's, so a
+signed-out seat asks for neither (`useEchoes` and `useNudge` read and poll only with an account).
+`talk/` is Talk: the mic and its sheet, `talkStore.js`, which holds a refused take for the tab across the room being left
 and forgets it at an account change, and `talkApi.js`, the transcription and the two reads a press
 makes before the microphone opens.
 
@@ -26,8 +27,9 @@ claim. Reconciliation requires both the result and a same-epoch, digest-checked 
 A reconciled save commits its complete prediction, content clock, retirements and pending removal
 in one transaction. Invalid writing stays in an editor draft; failed transactions retain the last
 durable state and the editor keeps newer input available for retry. Pending text takes precedence
-over older refusal notices; a save dismisses its day's earlier notices through the runner's replica
-port, unless a refused claim of that day still speaks for its words. Not now retires only the invitation.
+over older refusal notices; a save dismisses its day's earlier notices in one write through the
+runner's replica port (`dismissNotices`), which reads the journal's device rows and keeps them all while
+a refused claim of that day still speaks for its words. Not now retires only the invitation.
 
 Sign-in counts written days and preserves device-only drafts; the engine pins their bytes before
 Add or Discard. Device work without writing adopts automatically, including invitation state and
@@ -55,10 +57,12 @@ markers live in the engine's device metadata, so restoring and dropping unclaime
 migration's import write in the engine's device transaction rather than through the kit's runner,
 which writes only the active replica.
 
-Settings' export (`settings/journalExport.js`) is one Markdown file of the room's written pages,
-read from the replica: signed out the browser's own, and on a bound replica the account's once the
-engine's first pull of `self/journal` ends (it fails after 30 seconds without one). It asks the
-backend for nothing.
+Settings' export (`settings/journalExport.js`) is one Markdown file of the room's written pages as
+the room shows them, read from the replica: signed out the browser's own, and on a bound replica, once
+the engine's first pull of `self/journal` ends, the account's pages with this browser's unsent saves,
+refusal-held words and editor draft in their day's place. It fails after 30 seconds without that pull,
+and fails rather than export another account's pages when the account changes while it waits. It asks
+the backend for nothing.
 
 Search (`search/`) indexes the corpus on the device: words first, then meaning, bge-small-en-v1.5 q8
 in a worker on wasm, never WebGPU, which miscomputes the quantized model. The worker takes its
