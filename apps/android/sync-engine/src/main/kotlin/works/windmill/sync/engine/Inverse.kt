@@ -306,11 +306,15 @@ private fun ReplicaState.authoritative(act: ReversibleAct): Boolean = act.source
     entry.state == "acked" && source.accepted(meta["serverEpoch"]?.orNull()?.str()) != null
 }
 
-// A Redo of a cancellation waits while an entry its references name has no result yet.
-private fun ReplicaState.referencesAuthoritative(request: InverseRequest): Boolean = request.slots.filter { it.state == "waiting" }
-    .flatMap { (it.recipe as? SlotRecipe.Restore)?.operations.orEmpty() }
-    .flatMap { op -> when (op) { is PlannedOperation.Field -> op.reference?.waitsOn.orEmpty(); is PlannedOperation.CreateRecord -> op.reference.waitsOn; else -> emptyList() } }
-    .all { entry(it) == null }
+// A Redo of a cancellation waits while the replica holds no epoch, in which a waiting slot's references bind, and while an entry its
+// references name has no result yet.
+private fun ReplicaState.referencesAuthoritative(request: InverseRequest): Boolean {
+    val waiting = request.slots.filter { it.state == "waiting" }
+    if (meta["serverEpoch"]?.orNull() == null && waiting.isNotEmpty()) return false
+    return waiting.flatMap { (it.recipe as? SlotRecipe.Restore)?.operations.orEmpty() }
+        .flatMap { op -> when (op) { is PlannedOperation.Field -> op.reference?.waitsOn.orEmpty(); is PlannedOperation.CreateRecord -> op.reference.waitsOn; else -> emptyList() } }
+        .all { entry(it) == null }
+}
 
 // The receipts an act's sources own in the current epoch, in commit order, beside whether a source's history is lost.
 private class OwnedHistory(val lost: Boolean, val effects: List<EffectReceipt>) {
