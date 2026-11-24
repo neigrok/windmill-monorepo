@@ -131,6 +131,11 @@ public struct Followed: Sendable {
 public struct Counts: Sendable {
   public let done: Int
   public let total: Int
+
+  public init(done: Int, total: Int) {
+    self.done = done
+    self.total = total
+  }
 }
 
 // What each present step follows as it is read: its present parents and, through each absent step, what that step followed.

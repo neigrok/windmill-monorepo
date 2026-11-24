@@ -1984,5 +1984,437 @@
       ]
     },
     "expect": null
+  },
+  {
+    "name": "One tree’s openings with what a read elsewhere tells of the subtrees the device holds no copy of: each counts as it is told, complete once it has steps and every one is done, one with no steps not complete; a subtree the device has read counts from its copy whatever it is told, and one it is told nothing of stays unknown",
+    "input": {
+      "operation": "openings",
+      "trees": [
+        {
+          "id": "R",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {
+            "title": "R",
+            "guide": "",
+            "guideInherited": false,
+            "root": "R",
+            "depth": 0,
+            "visibility": "public",
+            "reach": "public"
+          },
+          "nodes": [
+            {
+              "id": "copy",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "copy",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S4"
+            },
+            {
+              "id": "done",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "done",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S1"
+            },
+            {
+              "id": "empty",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "empty",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S3"
+            },
+            {
+              "id": "half",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "half",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S2"
+            },
+            {
+              "id": "quiet",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "quiet",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S5"
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [
+            {
+              "node": "done",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 10,
+              "deviceAt": 9
+            },
+            {
+              "node": "half",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 10,
+              "deviceAt": 9
+            }
+          ],
+          "pointers": []
+        },
+        {
+          "id": "S2",
+          "present": true,
+          "read": "unread",
+          "parent": {
+            "tree": "R",
+            "step": "half"
+          },
+          "meta": null,
+          "nodes": [],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "S4",
+          "present": true,
+          "read": "loaded",
+          "parent": {
+            "tree": "R",
+            "step": "copy"
+          },
+          "meta": {
+            "title": "Ignored title",
+            "guide": "",
+            "guideInherited": false,
+            "root": "R",
+            "depth": 1,
+            "visibility": "public",
+            "reach": "public"
+          },
+          "nodes": [
+            {
+              "id": "s4",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "s4",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ],
+      "told": [
+        {
+          "tree": "S1",
+          "done": 5,
+          "total": 5
+        },
+        {
+          "tree": "S2",
+          "done": 1,
+          "total": 5
+        },
+        {
+          "tree": "S3",
+          "done": 0,
+          "total": 0
+        },
+        {
+          "tree": "S4",
+          "done": 4,
+          "total": 4
+        }
+      ],
+      "tree": "R"
+    },
+    "expect": [
+      {
+        "node": "copy",
+        "kind": "subtree",
+        "tree": "S4",
+        "status": "loaded",
+        "complete": false,
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "loop": false
+      },
+      {
+        "node": "done",
+        "kind": "subtree",
+        "tree": "S1",
+        "status": "unknown",
+        "complete": true,
+        "counts": {
+          "done": 5,
+          "total": 5
+        },
+        "loop": false
+      },
+      {
+        "node": "empty",
+        "kind": "subtree",
+        "tree": "S3",
+        "status": "unknown",
+        "complete": false,
+        "counts": {
+          "done": 0,
+          "total": 0
+        },
+        "loop": false
+      },
+      {
+        "node": "half",
+        "kind": "subtree",
+        "tree": "S2",
+        "status": "unread",
+        "complete": false,
+        "counts": {
+          "done": 1,
+          "total": 5
+        },
+        "loop": false
+      },
+      {
+        "node": "quiet",
+        "kind": "subtree",
+        "tree": "S5",
+        "status": "unknown",
+        "complete": false,
+        "counts": null,
+        "loop": false
+      }
+    ]
+  },
+  {
+    "name": "A roadmap's progress with what a read elsewhere tells of its subtrees: a step whose subtree is told complete is complete, dated by its own complete mark as that read dated it, stamped or not, else by its subtree's stamp; one told unfinished, or told nothing, sets its mark aside",
+    "input": {
+      "operation": "progress",
+      "trees": [
+        {
+          "id": "R",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {
+            "title": "R",
+            "guide": "",
+            "guideInherited": false,
+            "root": "R",
+            "depth": 0,
+            "visibility": "public",
+            "reach": "public"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "a",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S1"
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "b",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S2"
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "c",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S3"
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "d",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "e",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "e",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S4",
+              "branchStamp": "30:0:a"
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 50,
+              "deviceAt": 0,
+              "stamp": "0:0:"
+            },
+            {
+              "node": "b",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 45,
+              "deviceAt": 40,
+              "stamp": "40:0:a"
+            },
+            {
+              "node": "c",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 65,
+              "deviceAt": 60,
+              "stamp": "60:0:a"
+            },
+            {
+              "node": "d",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 75,
+              "deviceAt": 70,
+              "stamp": "70:0:a"
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "told": [
+        {
+          "tree": "S1",
+          "done": 2,
+          "total": 2
+        },
+        {
+          "tree": "S2",
+          "done": 1,
+          "total": 3
+        },
+        {
+          "tree": "S4",
+          "done": 3,
+          "total": 3
+        }
+      ],
+      "tree": "R"
+    },
+    "expect": {
+      "completed": [
+        "a",
+        "d",
+        "e"
+      ],
+      "dates": [
+        {
+          "node": "a",
+          "at": 50
+        },
+        {
+          "node": "d",
+          "at": 70
+        },
+        {
+          "node": "e",
+          "at": 30
+        }
+      ]
+    }
   }
 ]
