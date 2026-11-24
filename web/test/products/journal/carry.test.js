@@ -502,18 +502,6 @@ test('a tab that finds another carrying opens without waiting for it, and the pa
   } finally { second.close(); engine.close(); }
 });
 
-test('a device held in memory carries nothing, so the stores outlive no copy of theirs', async () => {
-  const env = environment();
-  env.options.registry = journalRegistry;
-  const engine = await BrowserSyncEngine.open({ ...env.options, inMemory: true });
-  const data = storage({ 'wm.journal.v2.pages.anon': stored(entry('kept on disk')) });
-  try {
-    await carrying(engine, data);
-    assert.deepEqual(claims(engine), []);
-    assert.equal(data.length, 1);
-  } finally { engine.close(); }
-});
-
 test('what the journal\'s first bundle on the engine left in the device\'s metadata returns to storage, once, and leaves the metadata', async () => {
   const { engine } = await setup();
   const told = { events: [], reports: [] };

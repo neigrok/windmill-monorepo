@@ -17,7 +17,7 @@
 // births (§5): a stranger, signed out and signed in, opening a public roadmap and its subtree by link, the card of the
 // step that owns it showing how far the subtree is, each followed on the live socket as the room opens it (a signed-in
 // reader's own overlay with it), and dropped as the signed-in one leaves; a private roadmap no stranger can read; a
-// browser that keeps nothing shown the room's load error (E-5 is not built); and a roadmap made at the birth door
+// browser that keeps nothing, which is not supported, shown the room's load error; and a roadmap made at the birth door
 // signed out, held in the browser's anon replica and joining at sign-in an account that holds none. The home card, the
 // landing and the room's switcher list the person's roadmaps: with the switch on from the device's copy, the account's
 // signed in and the browser's own signed out; with it off from the server's list, which holds none signed out. The
@@ -1156,8 +1156,8 @@ async function todaysAccountChoices(browser, { secret, session }, check, devices
 // by their link, signed out and signed in: the step's card shows how far the subtree is, as the server's read of the
 // owner's progress says (§7), the room follows each tree scope as it opens it, the signed-in reader's own overlay with it
 // (E-3) and the signed-out reader's none, and drops both as the person leaves. A private roadmap is in
-// no address for them, and the browser keeps none of it. A browser that keeps nothing is shown the room's load error, as
-// the web holds no replica in memory yet (E-5). A roadmap made signed out at the birth door lives in the browser's anon
+// no address for them, and the browser keeps none of it. A browser that keeps nothing is not supported (web-device-parity
+// §7) and is shown the room's load error. A roadmap made signed out at the birth door lives in the browser's anon
 // replica, the old stores untouched, and joins at sign-in an account that holds none, with no question.
 async function readersAndBirths(browser, { session, stranger, climber }, account, check, devices) {
   const owner = await OwnerDevice.open('readers-seed', session(account), account);
@@ -1222,7 +1222,7 @@ async function readersAndBirths(browser, { session, stranger, climber }, account
     }
   });
 
-  await check('E-5 is not built: a reader whose browser keeps nothing is shown the room’s load error for a public roadmap, and the bare roadmap door stays where it is', async () => {
+  await check('a browser that keeps nothing is not supported: a reader there is shown the room’s load error for a public roadmap, and the bare roadmap door stays where it is', async () => {
     const d = await Device.signedOut(browser);
     devices.push(d);
     await d.context.addInitScript(() => Object.defineProperty(window, 'indexedDB', { configurable: true, get: () => undefined }));

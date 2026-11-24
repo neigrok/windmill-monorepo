@@ -76,7 +76,7 @@ their day and words: a page another writer changed since has other words and sta
 that fails, ends the run with its pages and those after it still in their stores. An entry that does not read (no
 calendar day, a stamp that does not read, words no digest can name, such as a lone surrogate) stays in its store,
 reported once a load, while the pages beside it carry, and a browser that refuses its storage opens the journal all the
-same. A device held in memory carries nothing. Before the seat changes (a sign-in, a sign-out's Keep or Discard, the
+same. Before the seat changes (a sign-in, a sign-out's Keep or Discard, the
 account's closure), the route's `seatWillChange` (`settleSeat`) takes from the active seat's stores every page its
 replica's ledger records, so a Discard takes the old pages it counted, as the claims and drafts they were carried into,
 and no other: the pages not yet carried, and the entries that do not read, wait for that seat's next replica. An account's

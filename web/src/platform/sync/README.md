@@ -1,7 +1,8 @@
 # Browser sync engine
 
 `BrowserSyncEngine.open()` opens IndexedDB and returns stable local snapshots without a network
-request; `open({ inMemory: true })` holds the device in the tab instead (below). `start()` installs tab coordination
+request. A browser that offers no IndexedDB is not supported ([web-device-parity.md](../../../../docs/foundation/web-device-parity.md)
+§7): the open fails. `start()` installs tab coordination
 and lifecycle hooks, releases holds on the first tab, requests persistent storage and starts synchronization. Products and UI reach the engine through `session.js`;
 from this module they import only `ReplicaChanged`.
 
@@ -109,8 +110,8 @@ nothing more. `sessionReplica(account, syncReplica)` takes what a read of `/v1/m
 session last pushed for (null before its first accepted push), which the shell tells after each read. The engine keeps it
 until the next read or the sign-out that ends the session, and decides it at once if the seat is bound to `account`, else in
 the write that binds it there, a sign-in question's answer included, before the bound replica's first push names one of the
-store's own ids. A store that keeps the device past the page (its `durable`), whose active replica is bound to `account`
-and which holds and let go of no such replica was cleared by the browser
+store's own ids. A store whose active replica is bound to `account` and which holds and let go of no such replica was
+cleared by the browser
 ([web-device-parity.md](../../../../docs/foundation/web-device-parity.md) §7 Cleared). The write that finds it marks the
 store with that account (`device.meta.storeCleared`, `{ account }`) and emits `sync-store-cleared`, once: a reload, another
 tab and the next read find the mark, and a store is born after at most one clear. The snapshot's `storeCleared` says it to
@@ -138,17 +139,11 @@ after product cleanup succeeds, and replays it after reload. `recordAccountClosu
 session owner's closure of the bound account through the sign-out that ends it and any reload, until
 `clearAccountClosure(sessionId)`. The shell writes no engine state of its own: these calls are its only door.
 
-Two stores keep the engine's device behind one interface. `transact(change, { readonly, initialize, scopes })` runs
-`change` synchronously on the device in one transaction and answers `{ result, device, revision, changed, previous, active,
-measurement }`, a throw or a Promise from `change` committing nothing; `read(scopes)` is a read-only one, and
-`cleanup(limit)`, `reopen()`, `close()`, `coordination`, the name the tabs sharing the store lead and talk under
-(engine.md §7.8), and `durable`, whether it keeps the device past the page, complete it. `IndexedDBStore` (`store.js`)
-keeps the device durably for every tab of its version.
-`MemoryStore` (`memoryStore.js`) holds it in memory for as long as the page, for a browser that offers no IndexedDB
-(engine.md §2.5): its `coordination` is its own, so each tab holding one is a device of its own, leading its replica alone
-and syncing only through the server. Its reads share the committed values, frozen, and a write commits copies of what it changed, so a row keeps its identity
-while no write replaces it; `reopen` is the same device, as a restored page wants; it is never superseded and has no rows
-to clean up. The shell opens the engine on IndexedDB alone: where the browser refuses it, nothing opens in memory.
+`IndexedDBStore` (`store.js`) keeps the engine's device durably for every tab of its version.
+`transact(change, { readonly, initialize, scopes })` runs `change` synchronously on the device in one transaction and
+answers `{ result, device, revision, changed, previous, active, measurement }`, a throw or a Promise from `change`
+committing nothing; `read(scopes)` is a read-only one, and `cleanup(limit)`, `reopen()`, `close()` and `version`, the
+IndexedDB version the tabs sharing the store lead and talk under (engine.md §7.8), complete it.
 
 Each store mutation uses one strict-durability IndexedDB transaction. Indexed reads precede the
 synchronous read-and-commit callback inside that same transaction; it cannot await. Writes hydrate

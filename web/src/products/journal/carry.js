@@ -16,7 +16,6 @@ import { ActionRunner, EngineReplica } from '../../platform/domain-kit/runner.js
 import { FixedZone } from '../../platform/domain-kit/time.js';
 import { hashText } from '../../platform/sync/core/encoding.js';
 import { ReplicaChanged } from '../../platform/sync/engine.js';
-import { MemoryStore } from '../../platform/sync/memoryStore.js';
 import { syncSession } from '../../platform/sync/session.js';
 import { track as trackEvent } from '../../telemetry/beacon.js';
 import { countBucket } from '../../telemetry/countBucket.js';
@@ -143,10 +142,8 @@ export class CarryOver {
   }
 
   // A run at once, and again whenever another binding becomes active: a sign-in or a sign-out, once its question is
-  // answered. Answers once the first run ends, and never rejects, so the engine opens whatever the stores hold. A device
-  // held in memory carries nothing: the stores would outlive the only copy of their pages.
+  // answered. Answers once the first run ends, and never rejects, so the engine opens whatever the stores hold.
   start() {
-    if (this.engine.store instanceof MemoryStore) return Promise.resolve();
     this.engine.observeEngine(() => this.consider());
     this.consider();
     return this.running;
@@ -266,7 +263,7 @@ export class CarryOver {
 // replica, and a Discard takes the old pages it counted as the work they were carried into, and no other: the pages not
 // yet carried, and the entries that do not read, wait for that seat's next replica.
 export function settleSeat(engine, { stores = new OldStores(), track = trackEvent, report = reportFailure } = {}) {
-  if (!engine || engine.closed || engine.store instanceof MemoryStore) return;
+  if (!engine || engine.closed) return;
   const seat = Seat.ofReplica(engine.device.activeReplica.meta);
   if (seat === null) return;
   try {

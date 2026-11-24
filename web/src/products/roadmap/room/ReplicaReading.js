@@ -36,7 +36,7 @@ export const UNSHOWN = Object.freeze(['unkept', 'unopened', 'missing', 'unanswer
 
 // The engine the shell opens for this document, once it stands for the person whose device it is: `{ engine }`, or
 // `{ unshown }` saying why there is none to read or write through: `unkept` where it could not open, as in a browser that
-// keeps nothing (no replica held in memory stands in for one yet, E-5), and `unopened` where it did not stand within the
+// keeps nothing, which is not supported (web-device-parity §7), and `unopened` where it did not stand within the
 // bound or the caller stopped waiting. An engine that holds the browser's anonymous replica stands once the shell has said
 // whether someone is signed in (`signedIn`, null before), as a signed-in person's first visit holds that replica until the
 // engine binds their account; where the shell has not said within the bound, it stands as it is, so the device's own copy

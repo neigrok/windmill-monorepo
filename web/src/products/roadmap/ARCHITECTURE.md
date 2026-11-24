@@ -289,9 +289,9 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   a visit: the readings a sign-in or Try again runs share the room's note that it told. The copy could not open
   (`unkept`), did not open within `FIRST_COPY_MS` (`unopened`), holds no roadmap the person may read here (`missing`), or
   no answer came before the device held a whole copy (`unanswered`). A room that leaves while the engine takes a subscription drops it as it leaves, and the
-  engine keeps the roadmap closed when it answers. A browser that keeps nothing (no IndexedDB) has no copy to open: until
-  the web holds a replica in memory (E-5, [the web as a device](../../../../docs/foundation/web-device-parity.md) §7), a
-  reader there is shown the load error, in the words the approved room boards give a roadmap that cannot be loaded.
+  engine keeps the roadmap closed when it answers. A browser that keeps nothing (no IndexedDB) has no copy to open and is
+  not supported ([the web as a device](../../../../docs/foundation/web-device-parity.md) §7): a reader there is shown the
+  load error, in the words the approved room boards give a roadmap that cannot be loaded.
 - **Births.** A roadmap is born through the domain on the replica the engine holds active (`room/ReplicaBirth.js`): the
   blank birth and a pasted plan (`paste/NewTreeBirth.jsx`) and a quest (`quests/QuestShelf.jsx`) are `CreateRoadmap`, with
   a plan's legend of its own in place of the genesis kinds and the steps it brings done then marked, signed out in the

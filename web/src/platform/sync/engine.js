@@ -1,5 +1,4 @@
 import { IndexedDBStore, WriterSlice, frozen } from './store.js';
-import { MemoryStore } from './memoryStore.js';
 import { ProductNotices, ScopeObservation } from './observation.js';
 import { TabLeadership } from './leadership.js';
 import { HttpTransport, LiveChannel } from './transport.js';
@@ -112,12 +111,11 @@ export class BrowserSyncEngine {
     this.sessionRead = null;
   }
 
-  // `inMemory` holds the device in this tab alone (`MemoryStore`), for a browser that offers no store; else IndexedDB keeps it.
   static async open(options = {}) {
     let store;
     try {
-      store = options.store ?? await (options.inMemory ? MemoryStore : IndexedDBStore).open({ indexedDB: options.indexedDB,
-        keyRange: options.keyRange, name: options.name, newReplicaId: options.newReplicaId ?? replicaId });
+      store = options.store ?? await IndexedDBStore.open({ indexedDB: options.indexedDB, keyRange: options.keyRange,
+        name: options.name, newReplicaId: options.newReplicaId ?? replicaId });
       const engine = new BrowserSyncEngine({ ...options, store });
       await engine.refresh();
       return engine;
@@ -348,7 +346,7 @@ export class BrowserSyncEngine {
   async start() {
     if (this.started || this.closed) return;
     this.started = true;
-    try { this.coordination = new TabLeadership({ locks: this.navigator?.locks, store: this.store.coordination,
+    try { this.coordination = new TabLeadership({ locks: this.navigator?.locks, store: this.store.version,
       visible: this.visible, ...this.leadershipOptions,
       readReplica: () => this.refresh(), onLeader: (leader) => {
         this.leader = leader;
@@ -1330,13 +1328,13 @@ export class BrowserSyncEngine {
     await this.write(null, (device, ctx) => this.markCleared(device, ctx)).catch((error) => this.unheard(error));
   }
 
-  // The account a cleared store lost its work for, or null: a store that keeps the device past the page, whose active
-  // replica is bound to the account of the session owner's last read, and which neither holds nor let go of the replica that
-  // account's session last pushed for, was cleared by the browser (web-device-parity.md §7 Cleared).
+  // The account a cleared store lost its work for, or null: a store whose active replica is bound to the account of the
+  // session owner's last read, and which neither holds nor let go of the replica that account's session last pushed for,
+  // was cleared by the browser (web-device-parity.md §7 Cleared).
   clearedFor(device) {
     const read = this.sessionRead;
     const { state, account } = device.activeReplica.meta;
-    if (!read?.syncReplica || !this.store.durable || device.meta.storeCleared || state !== 'bound' || account !== read.account) return null;
+    if (!read?.syncReplica || device.meta.storeCleared || state !== 'bound' || account !== read.account) return null;
     return [...device.replicas.map(({ id }) => id), ...(device.meta.formerReplicas ?? [])].includes(read.syncReplica) ? null : account;
   }
 

@@ -518,10 +518,7 @@ The engine applies:
 
 ### §2.5 Client: the local store
 
-The store MUST provide atomic, durable transactions spanning every table below. One exception: a web device whose
-browser offers no store MAY hold its store in memory, atomic and kept as long as the page
-([Roadmap on the sync engine](roadmap-on-the-engine.md) E-5, [the web as a device](web-device-parity.md) §7). Each tab
-holding one is a device of its own, whose replicas sync through the server alone (§7.8).
+The store MUST provide atomic, durable transactions spanning every table below.
 
 ```ts
 type DeviceMeta  = { forkGuard?: string, pendingSignIn?: { account: string } }  // one per local database
@@ -2504,8 +2501,7 @@ before its own result is recorded; its resend then carries another digest, the s
 ### §7.8 Multi-tab (web)
 
 - The leader holds `navigator.locks` lock `wm-sync@<store>:<replica>` and runs the sender, the
-  puller and the live socket. `<store>` names the device store (§2.5): its IndexedDB version, or the
-  name of a store held in memory, which no other tab shares, so its tab leads alone and hears no other.
+  puller and the live socket. `<store>` is the IndexedDB version of the device store (§2.5).
 - A tab requests the lock when it becomes visible. A hidden tab releases it once a peer announces
   it is visible.
 - Tabs post `hello {visible}`, `visible`, `hidden`, `bye`, `changed(scope, ids)`, `upgrade` and

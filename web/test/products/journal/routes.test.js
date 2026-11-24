@@ -44,7 +44,7 @@ test('before the seat changes, the old pages its replica\'s ledger records leave
     if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
     else delete globalThis.localStorage;
   });
-  const engine = { closed: false, store: {}, device: { activeReplica: { meta: { state: 'bound', account: 'A' } } },
+  const engine = { closed: false, device: { activeReplica: { meta: { state: 'bound', account: 'A' } } },
     readDeviceRows: (product) => (product === 'journal' ? { [CarryLedger.key(Seat.of('A'))]: { pages: [carried.digest] } } : {}) };
   journalRoutes.sync.seatWillChange(engine);
   assert.deepEqual([...data.entries()], [[key, JSON.stringify(entry('2026-10-02', 'not carried yet'))]]);
