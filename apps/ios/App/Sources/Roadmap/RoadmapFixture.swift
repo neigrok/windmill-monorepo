@@ -112,16 +112,16 @@ enum RoadmapFixture {
     let requests = SharingRequests(baseURL: runtime.settings.baseURL, credential: {
       engine.status.authPaused ? nil : account().flatMap { runtime.tokens.token(for: $0) }
     }, online: { engine.status.online }, telemetry: telemetry)
-    var sources = RoadmapCover.Sources(follow: { try engine.subscribe($0) }, letGo: { try engine.unsubscribe($0) }, online: { engine.status.online },
-                                       signedIn: { engine.status.account != nil }, requests: requests, site: runtime.settings.baseURL)
     #if DEBUG && targetEnvironment(simulator)
-    guard let board = runtime.settings.board, board.hasPrefix("roadmap-cover") else { return sources }
-    let offline = board == "roadmap-cover-offline" || board == "roadmap-cover-no-connection"
-    sources = RoadmapCover.Sources(follow: { board == "roadmap-cover-no-connection" ? .subscribed : try engine.subscribe($0) },
-                                   letGo: { try engine.unsubscribe($0) }, online: { !offline && engine.status.online },
-                                   signedIn: { engine.status.account != nil }, requests: BoardSharing(), site: runtime.settings.baseURL)
+    if let board = runtime.settings.board, board.hasPrefix("roadmap-cover") {
+      let offline = board == "roadmap-cover-offline" || board == "roadmap-cover-no-connection"
+      return RoadmapCover.Sources(follow: { board == "roadmap-cover-no-connection" ? .subscribed : try engine.subscribe($0) },
+                                  letGo: { try engine.unsubscribe($0) }, online: { !offline && engine.status.online },
+                                  signedIn: { engine.status.account != nil }, requests: BoardSharing(), site: runtime.settings.baseURL)
+    }
     #endif
-    return sources
+    return RoadmapCover.Sources(follow: { try engine.subscribe($0) }, letGo: { try engine.unsubscribe($0) }, online: { engine.status.online },
+                                signedIn: { engine.status.account != nil }, requests: requests, site: runtime.settings.baseURL)
   }
 
   static func prepare(_ board: String, model: AppModel) async -> Bool {
