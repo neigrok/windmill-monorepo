@@ -56,11 +56,14 @@ for local replay verification; the final report contains no credential.
 `AppModel` coordinates one account, runtime and active replica for the rooms. The engine subscribes
 gym's and journal's scopes from its iOS registry, and roadmap's where the build carries the Roadmap room
 (`AppSettings.engineConfig`). Gym and Journal run their actions on the runtime's `runner`, which removes at once; roadmap's
-take `roadmapRunner`, which holds a removal for the engine's nine seconds. Gym and Journal writes made anonymously stay
-local until adoption. Occupied accounts ask one question naming both rooms' work by kind
-(`AdoptionQuestion`); one Add/Discard answers every room, persists against the exact counted work and
-completes together. Changed work asks again about the room that changed.
-Sign-out flushes both rooms, releases held deletes, and keeps dormant work only for its account.
+take `roadmapRunner`, which holds a removal for the engine's nine seconds. Writes made anonymously stay
+local until adoption. Occupied accounts ask one question naming every room's work by kind
+(`AdoptionQuestion`): workouts, routines, weigh-ins, movements, notes, journal pages and roadmaps, each room's other
+records as its changes, and what the account already holds of each room. One Add/Discard answers every room, persists
+against the exact counted work and completes together. Changed work asks again about the room that changed.
+Sign-in and sign-out flush the rooms, the Roadmap room's open note and band included, and release held deletes; the
+sign-out question counts every room's unconfirmed changes, roadmap's among them, and keeps dormant work only for its
+account. A finished sign-out also forgets which roadmap the room had open and each roadmap's view.
 
 Routine-removal reviews commit their proposal snapshot beside the Apply command in the replica's
 `rack:removalReceipts` device row. `AppRuntime.commandResultWrites` composes Journal's claim binding
@@ -108,7 +111,7 @@ once a step whose page, note or History is open goes, deleted here or by another
 is open is the open one no longer (`Visit.stands(in:)`), or once the last roadmap goes. It also holds the draft the step form stands
 open on (`draft`), which it lets go once the draft's roadmap is not the open one or the step it edits is gone, and the
 draft the note's screen stands open on (`note`, a `StepNoteDraft`), made as that screen is pushed and saved as it
-leaves the stack or the app leaves the front (`background()`), and the Guide sheet (`guide`, a
+leaves the stack, the app leaves the front or the account changes (`flush()`), and the Guide sheet (`guide`, a
 `GuideSheet`), which closes once its roadmap is not the open one. And it holds the view the switch row chose of
 each roadmap (`lens`, set by `show(_:)` and kept on the phone under `RoadmapModel.lastLens`, the Board until it is
 switched, as the web's `ViewPrefs` keeps it), the step selected on the Graph (`selected`, set by `select(_:)`, which goes
@@ -430,7 +433,10 @@ subtasks, the first checked, a note and one link, planted by the account's other
 the subtask *Ask about the tide table* to that step;
 `-board roadmap-guide` is *Learn to sail* with the guide 08.1 draws, `-board roadmap-guide-long` with a guide 15
 characters short of its limit, which ends as 08.3 draws it, and `-board roadmap-guide-above` is `roadmap-several` with
-that guide and *Become a day skipper*'s; `-board roadmap-many` is a phone never signed in that holds the nine roadmaps All Roadmaps draws,
+that guide and *Become a day skipper*'s; `-board roadmap-sign-in` leaves the phone signed out, its room holding no
+roadmap, beside the account `roadmap-fixture@example.com`, which holds *Learn to sail*; `-board roadmap-unconfirmed` is
+*Learn to sail* after the server stops answering, its last five steps completed on the phone, so the account has not
+confirmed them; `-board roadmap-many` is a phone never signed in that holds the nine roadmaps All Roadmaps draws,
 *Learn to sail* the one last open, listed in the order of their ids since no server has received them; `-board
 roadmap-handbook` is a phone never signed in that holds *Coastal navigation handbook*, the 5,000 steps, links and colours
 of the layout's shared fixture, read from the repository the build was made in and planted through the domain, so its

@@ -1009,8 +1009,9 @@ final class RoadmapModel {
     if let undo { forget(undo.gesture) }
   }
 
-  // The app left the front: a note open on its screen is saved as it stands, and the band goes with its Undo.
-  func background() {
+  // The engine lets go of every delete it holds, as the app leaves the front or the account changes: a note open on its
+  // screen is saved as it stands, and the band goes with its Undo.
+  func flush() {
     note?.save()
     endBand()
   }

@@ -3,8 +3,8 @@ import XCTest
 // The Roadmap room's flows on the simulator's boards: a step's workspace (Roadmap · iOS 03.2, 03.3, 03.10, 03.11, 03.14),
 // the step form's links (05.1, 05.8), the Board's Find, sort and filter, branch and several steps with Kinds (02.4 to
 // 02.12, 03.7, 06.1 to 06.5b), the Graph's (04.1 to 04.5, 04.7), then Activity and a step's History (01.13, 01.13b,
-// 03.12), the room's first read (01.5b), an Undo that brings nothing back (02.10d) and the Guide (08.1 to 08.5). The
-// canvas is one element, as
+// 03.12), the room's first read (01.5b), an Undo that brings nothing back (02.10d), the Guide (08.1 to 08.5) and a
+// roadmap made signed out joining the account at sign-in (10.7). The canvas is one element, as
 // VoiceOver hears it, so a step is tapped where the layout seats it: *Learn to sail* opens at the phone's working zoom
 // with the middle of its seats' box at the centre of what the bars leave, and each step stands a known way from that
 // centre (`packages/api-contract/roadmap/layout/learn-to-sail.json` pins the seats). The zoom floor is half the opening
@@ -752,5 +752,50 @@ import XCTest
     app.buttons["Discard"].tap()
     XCTAssertTrue(field.waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["roadmap-guide-text"].label.hasSuffix("Next Sunday, practise coming alongside the dock."))
+  }
+
+  // Roadmap · iOS 10.7, through the model server: a roadmap made on a phone signed out is named in the sign-in question
+  // of an account that holds a roadmap; Add joins it to the account, so the room holds both and the account has every
+  // change the phone made.
+  func testARoadmapMadeSignedOutJoinsTheAccountAtSignInOnAdd() {
+    let app = launch("roadmap-sign-in")
+    let name = app.textFields["roadmap-new-name"]
+    XCTAssertTrue(app.buttons["roadmap-new"].waitForExistence(timeout: 30))
+    app.buttons["roadmap-new"].tap()
+    XCTAssertTrue(name.waitForExistence(timeout: 10))
+    name.tap()
+    name.typeText("Learn to cook")
+    app.buttons["roadmap-new-create"].tap()
+    XCTAssertTrue(app.staticTexts["0 of 1 done"].waitForExistence(timeout: 10))
+
+    app.buttons["you"].tap()
+    XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 10))
+    app.buttons["email-sign-in"].tap()
+    let email = app.textFields["email-address"], code = app.textFields["email-code"]
+    XCTAssertTrue(email.waitForExistence(timeout: 5))
+    email.tap()
+    email.typeText("roadmap-fixture@example.com")
+    XCTAssertTrue(email.waitForValue("roadmap-fixture@example.com"))
+    app.buttons["Send code"].tap()
+    XCTAssertTrue(code.waitForExistence(timeout: 10))
+    code.tap()
+    code.typeText("482913")
+    let question = app.alerts["Add to your account?"]
+    XCTAssertTrue(question.waitForExistence(timeout: 30))
+    XCTAssertTrue(question.staticTexts[
+      "This phone has 1 roadmap from before you signed in. Your account already has roadmaps. Add it, or discard it from this phone."].exists)
+    XCTAssertTrue(question.buttons["Discard"].exists && question.buttons["Cancel sign-in"].exists)
+    question.buttons["Add"].tap()
+    XCTAssertTrue(question.waitForNonExistence(timeout: 15))
+
+    titleMenu("Learn to cook", item: "All Roadmaps…", in: app)
+    let rows = app.buttons.matching(identifier: "roadmap-listed")
+    XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier == %@ AND label == %@", "roadmap-listed", "Learn to sail, 3 of 8 done")).firstMatch
+      .waitForExistence(timeout: 30))
+    XCTAssertEqual(Set((0..<rows.count).map { rows.element(boundBy: $0).label }), ["Learn to cook, 0 of 1 done", "Learn to sail, 3 of 8 done"])
+    app.buttons["BackButton"].tap()
+    XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 10))
+    app.buttons["you"].tap()
+    XCTAssertTrue(app.staticTexts["Backed up"].waitForExistence(timeout: 30))
   }
 }

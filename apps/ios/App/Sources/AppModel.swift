@@ -370,7 +370,7 @@ final class AppModel {
 
   // Leaving releases every delete the engine holds, so the Roadmap room's band goes with its Undo, and a note open on its
   // screen is saved.
-  func background() { journal.background(); gym.background(); roadmap?.background() }
+  func background() { journal.background(); gym.background(); roadmap?.flush() }
 
   @discardableResult func flushRooms() -> Bool {
     if journal.dirty && !journal.save() { error = journal.error; return false }
@@ -742,6 +742,8 @@ final class AppModel {
     accountTransition = true; journal.editing = false
     defer { if authGeneration == generation { accountTransition = false } }
     if !flushRooms() { throw AppFailure(message: String(localized: "Save your work before signing in. Try again.")) }
+    // The engine releases every delete it holds as the account changes, so the Roadmap room's band goes with its Undo.
+    roadmap?.flush()
     if let current = account, !current.utf8.elementsEqual(identity.account.utf8) {
       try? await runtime.auth.logout(token: identity.token)
       throw AppFailure(message: Self.sameAccountRequired)
@@ -790,6 +792,7 @@ final class AppModel {
     journal.editing = false
     choose("sign_out", screen: "you")
     guard flushRooms() else { await refuseSignOut(error ?? Self.signOutFailed); return }
+    roadmap?.flush()
     accountTransition = true; signingOut = true
     defer { if authGeneration == generation { accountTransition = false; signingOut = false } }
     do {
@@ -841,6 +844,7 @@ final class AppModel {
     appleTicket = nil; signInMethods = []; accountEmail = ""; accountName = ""; appleLinkedReceipt = false
     email = ""; code = ""; codeSentAt = nil; appleReceiptEmail = ""
     keepDismissed = false; welcome = true; preferences.set(true, forKey: "roomWelcomeRequired"); preferences.removeObject(forKey: "lastRoom"); clearAdoptionAnswers(); refresh()
+    preferences.removeObject(forKey: RoadmapModel.lastOpen); preferences.removeObject(forKey: RoadmapModel.lastLens)
     preferences.set(false, forKey: "keepDismissed")
   }
 

@@ -765,8 +765,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   its limit.*, the Board's sentence; the rows are the system's 52 pt where the boards draw 44, the list's separators
   start at the words, and the sections stand the list's own distance apart; and every board of the page draws
   *History* and the Coach circle or composer, which are not built.
-- **Roadmap · iOS · what the Guide leaves for the boards.** The Guide is built in Debug builds from 08.1 to 08.5. To
-  draw or rule: no
+- **Roadmap · iOS · what the Guide and the account's questions leave for the boards.** The Guide is built in Debug
+  builds from 08.1 to 08.5, and the Shell's questions name roadmap's work as 10.7 and 10.8 draw. To draw or rule: no
   board draws the band after *Save*, and it is built as the room's receipt, *Guide saved*, or *Guide removed* for a
   blank draft, with *Undo* for six seconds, where the web keeps no Undo of a guide; a roadmap with no guide of its own
   under guides from above is not drawn, and it is built as 08.2's empty view with *Add Guide* over 08.5's sections;
@@ -774,6 +774,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the footer says who else reads the guide where the phone is signed in, as the web's phone does; 08.2's symbol is
   the system's empty view's size, larger than the board draws it, as on the room's other empty views; and the editor's
   text scrolls on under the sheet's bar, which the system blurs, where 08.3 starts it below the bar.
+  10.7 draws its third button *Cancel Sign-In*, where the Shell's 23i and the app say *Cancel sign-in*, and it is built
+  as the Shell's, for the Shell's owner to rule; and 10.7 and 10.8 name Coach's conversations, which the phone cannot
+  make until Coach is built, so neither question names them.
 - **Roadmap · iOS · what the Graph leaves for the boards.** The switch, the canvas, a selected step with its bar,
   *Next* with its menu, *Fit* and an empty roadmap are built in Debug builds from 04.1 to 04.5, 04.7 and S.2. To draw
   or rule: the boards draw *Learn to sail* from the top down by hand, and the canvas seats it where the web's layout
@@ -1777,7 +1780,7 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   `.claude/scratch/android-gym-figma-verify/owner-answers-12/post-publish-swap.js` swaps.
 - **12n · The sign-in decision names what the phone holds (owner ruling, 2026-10-22).** The words are
   7d's; the nouns are only the kinds present, in this order: workouts, routines, weigh-ins,
-  movements, notes, journal pages. Sets go with their workout; settings, movement names and Coach
+  movements, notes, journal pages, and on iOS roadmaps (Roadmap · iOS 10.7). Sets go with their workout; settings, movement names and Coach
   drafts are not named. The account line names what the account holds; *it* for one item, else
   *them*; the confirm title is *Discard {phrase}?* for one or two kinds, *Discard all of it?* for
   three or more. One question answers both rooms (Shell iOS 23g–23j `94:5426`, `94:5455`, `94:5482`,
@@ -1899,7 +1902,7 @@ Android. It and the product differ in these places.
 - **6x · The iOS sign-in decision names no conversations.** Signed-out Coach conversations are engine records, and
   they join the account or are deleted with the rest of the signed-out gym data (gym Coach §9.1). Android names them
   (`PhoneSignInCopy`, 07.15 `1902:35369`, 07.16 `1902:35444`). iOS `AdoptionQuestion.named` lists workouts, routines,
-  weigh-ins, movements, notes and journal pages, so a phone holding only conversations reads *N changes* and Discard
+  weigh-ins, movements, notes, journal pages and roadmaps, so a phone holding only conversations reads *N changes* and Discard
   deletes them unnamed. For iOS: `conversation` in `AdoptionQuestion.named`, which reads *This phone has 2 conversations
   from before you signed in. Your account already has training. Add them, or discard them from this phone.* and *Discard 2
   conversations?* / *They are deleted from this phone. You can’t undo this.*

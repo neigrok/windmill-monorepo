@@ -26,7 +26,8 @@ step selected with its bar in the band slot and its page from there, *Next* in t
 steps, *Fit*, and an empty roadmap, without Find, a step that opens a roadmap's mark or Coach's composer. Also built:
 the Guide from the title menu, read with the guides from above and the menu's count of them, *No guide yet* with *Add
 Guide*, the editor with its counter from 4,500 and its excess past 5,000 with *Save* dimmed, *Discard draft?*, and a
-save's *Undo* in the band.
+save's *Undo* in the band; and the Shell's sign-in question naming roadmaps made signed out and its sign-out question
+counting roadmap's unconfirmed changes, without Coach's conversations.
 [Roadmap on iOS](../../foundation/roadmap-ios.md) §13 lists what is not built. The boards are on the Roadmap file's
 [Roadmap · iOS](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=648-2) page. Each board's
 caption names the SwiftUI element of every part, and each section ends with a NOTE of its stock parts, its

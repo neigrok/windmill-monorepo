@@ -367,7 +367,9 @@ makes it false.
   field sets bold and italic alone, from the system's Format menu on iOS 26. The title menu's *Activity* and a step's
   *History* are the domain's read of the phone's copy (§3), and its *Guide* reads the roadmap's guide with the guides of
   the roadmaps above it, and writes the guide from one draft; the title menu has no *Share…* or *Export*, New
-  Roadmap starts a blank roadmap alone, from no plan or file, and All Roadmaps has no gallery. An Undo that brings
+  Roadmap starts a blank roadmap alone, from no plan or file, and All Roadmaps has no gallery. The shell's sign-in
+  question names the roadmaps made signed out and its sign-out question counts roadmap's unconfirmed changes; neither
+  names Coach's conversations. An Undo that brings
   nothing back says so in the band. The Graph draws the picture, pans and zooms it, selects a step and opens its page,
   lists the Up next steps under *Next*, brings the one chosen there or by *Open in Graph* into view, and shows the whole
   roadmap alone under

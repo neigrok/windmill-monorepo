@@ -825,6 +825,28 @@
         }
       }
     },
+    "%lld roadmaps" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld roadmap"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld roadmaps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld routines" : {
       "localizations" : {
         "en" : {
@@ -4752,6 +4774,9 @@
         }
       }
     },
+    "roadmaps" : {
+      "comment" : "What the account already has, in the sign-in question"
+    },
     "saved" : {
 
     },
@@ -4789,9 +4814,6 @@
       "comment" : "When a routine was last trained: trained 3 days ago"
     },
     "training" : {
-      "comment" : "What the account already has, in the sign-in question"
-    },
-    "training and journal pages" : {
       "comment" : "What the account already has, in the sign-in question"
     },
     "two short" : {

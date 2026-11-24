@@ -4,6 +4,7 @@ import UIKit
 import DomainKit
 import GymDomain
 import JournalDomain
+import RoadmapDomain
 import SyncAPI
 import SyncCore
 import SyncEngine
@@ -279,6 +280,96 @@ import SyncTesting
     model.sheet = .discardAdoption
     #expect(model.adoptionAlertTitle == "Discard 1 weigh-in?")
     #expect(model.adoptionAlertMessage == "It is deleted from this phone. You can’t undo this.")
+  }
+
+  // A roadmap stands confirmed on the phone once the server holds it, and the server has acknowledged every change the
+  // phone sent.
+  func roadmapSettled(_ model: AppModel, _ tree: ID<RoadmapEntry>) async throws {
+    let runtime = try #require(model.runtime)
+    for _ in 0..<1_000 {
+      let confirmed = try runtime.roadmapRunner.read(RoadmapEntry.scope) { try $0.confirmed(RoadmapEntry.self, tree) != nil }
+      let pending = try runtime.store.read { try $0.device().activeReplica.outbox.contains { $0.state != .acked } }
+      if confirmed && !pending { return }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    throw AppFailure(message: "The roadmap did not settle")
+  }
+
+  func roadmaps(_ model: AppModel) throws -> Set<ID<RoadmapEntry>> {
+    try Set(#require(model.runtime).roadmapRunner.read(RoadmapEntry.scope) { try $0.repository(RoadmapEntry.self).all(in: .drawn).map(\.id) })
+  }
+
+  // Roadmap · iOS 10.7: a roadmap made on a phone signed out is named in the sign-in question of an account that holds
+  // roadmaps. Add joins it to the account, which then holds it beside its own; Discard deletes it from the phone and
+  // leaves the account's own alone.
+  @Test(arguments: [LineageAnswer.add, .discard])
+  func aRoadmapMadeSignedOutIsNamedAtSignInAndAddJoinsItToTheAccount(answer: LineageAnswer) async throws {
+    let server = JournalModelTransport(), existing = try LineageFlowTests().fixture(server)
+    let owner = server.identity(email: "roadmap-adoption@example.com")
+    try await existing.signIn(owner)
+    let sail = try RoadmapFixture.plantLearnToSail(try #require(existing.runtime).roadmapRunner).tree
+    await existing.runtime?.engine.start()
+    try await roadmapSettled(existing, sail)
+    await existing.beginSignOut(); await existing.finishSignOut(.keep)
+
+    let recorder = TelemetryRecorder()
+    let local = try LineageFlowTests().fixture(server, telemetry: recorder)
+    guard case .committed(let made, _) = try #require(local.runtime).roadmapRunner.runAct(CreateRoadmap(title: "Learn to cook")) else {
+      Issue.record("Learn to cook was not made")
+      return
+    }
+    try await local.signIn(server.identity(email: owner.email))
+    #expect(local.account == nil && local.sheet == .adoption && local.pendingAdoptions.map(\.product) == ["roadmap"])
+    #expect(local.adoptionCounts[.roadmap]?[RoadmapEntry.type] == 1)
+    #expect(local.adoptionAlertMessage == "This phone has 1 roadmap from before you signed in. Your account already has roadmaps. Add it, or discard it from this phone.")
+    if answer == .discard {
+      await local.press(.discard, asked: local.pendingAdoptions)
+      #expect(local.adoptionAlertTitle == "Discard 1 roadmap?")
+    }
+    await local.adopt(answer, asked: local.pendingAdoptions)
+    #expect(local.account == owner.account && local.sheet == nil && local.pendingAdoptions.isEmpty)
+    await local.runtime?.engine.start()
+    try await roadmapSettled(local, sail)
+    if answer == .add { try await roadmapSettled(local, made.tree) }
+    #expect(try roadmaps(local) == (answer == .add ? [sail, made.tree] : [sail]))
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "room_adoption_answered" }.map(\.properties) } == [["room": "roadmap", "action": answer.rawValue]])
+  }
+
+  // Roadmap · iOS 10.8: roadmap changes the account has not confirmed are counted in the sign-out question. Keep leaves
+  // them on the phone until the account signs in here again, which sends them; Discard deletes them from the phone, so
+  // the account never has them. Either way the phone signed out holds none of the account's roadmaps.
+  @Test(arguments: [SignOutChoice.keep, .discard])
+  func roadmapChangesTheAccountHasNotConfirmedAreCountedAtSignOutAndKeptOrDiscarded(choice: SignOutChoice) async throws {
+    let server = JournalModelTransport(), connectivity = SwitchedConnectivity()
+    let model = try LineageFlowTests().fixture(server, connectivity: connectivity)
+    let owner = server.identity(email: "roadmap-sign-out@example.com")
+    try await model.signIn(owner)
+    let runner = try #require(model.runtime).roadmapRunner
+    let sail = try RoadmapFixture.plantLearnToSail(runner, done: [])
+    await model.runtime?.engine.start()
+    try await roadmapSettled(model, sail.tree)
+    connectivity.set(online: false)
+    for _ in 0..<100 where model.runtime!.engine.status.online { try await Task.sleep(for: .milliseconds(5)) }
+    for step in ["choose", "parts", "rig"] { try RoadmapFixture.complete(step, of: sail, by: runner) }
+    let marks = { try runner.read(sail.tree.overlay) { try $0.repository(StepMark.self).all(in: .drawn).count } }
+    #expect(try marks() == 3)
+
+    await model.beginSignOut()
+    let session = try #require(model.signOutSession)
+    #expect(session.unsent == 3)
+    #expect(AppModel.signOutMessage(unsent: session.unsent)
+            == "3 changes haven’t been confirmed by your account yet. Keep them on this phone until you sign in again, or discard them from this phone.")
+    connectivity.set(online: true)
+    await model.finishSignOut(choice)
+    #expect(model.account == nil && model.signOutSession == nil)
+    #expect(try roadmaps(model).isEmpty)
+
+    // The sign-out revoked the session, so the account signs in here again with a new one.
+    try await model.signIn(server.identity(email: owner.email))
+    await model.runtime?.engine.start()
+    try await roadmapSettled(model, sail.tree)
+    #expect(try roadmaps(model) == [sail.tree])
+    #expect(try marks() == (choice == .keep ? 3 : 0))
   }
 
   @Test func existingGymAloneSuppressesIntroductionAndWelcome() throws {

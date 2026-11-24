@@ -13,7 +13,9 @@ import SyncSchema
 // opened) and roadmap-first-read (*Learn to sail*, each pull of the signed-in phone answered three seconds late, so the
 // room's first read runs long). Of the Guide: roadmap-guide (*Learn to sail* with its guide, 08.1), roadmap-guide-long (a
 // guide 15 characters short of the limit, 08.3 and 08.4) and roadmap-guide-above (roadmap-several, with *Learn to sail*'s
-// guide and *Become a day skipper*'s, 08.5). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no
+// guide and *Become a day skipper*'s, 08.5). Of the account's questions: roadmap-sign-in (*Learn to sail* on an account the
+// phone is not signed in to, 10.7) and roadmap-unconfirmed (*Learn to sail*, five of whose steps the phone completes
+// after the server stops answering, 10.8). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no
 // order a server gave them; roadmap-handbook, the 5,000 steps the Graph's and the Board's budget is measured at;
 // roadmap-full, a roadmap at the steps the registry lets it hold; roadmap-undo-finds-nothing, *Learn to sail*, where
 // the engine keeps no Undo of a band's act by the time it is tapped (`undoFindsNothing(in:)`); and roadmap-empty, which
@@ -108,6 +110,7 @@ enum RoadmapFixture {
                      "roadmap-workspace": ["choose", "parts", "rig"], "roadmap-two-phones": ["choose", "parts", "rig"],
                      "roadmap-first-read": ["choose", "parts", "rig"], "roadmap-guide": ["choose", "parts", "rig"],
                      "roadmap-guide-long": ["choose", "parts", "rig"], "roadmap-guide-above": ["choose", "parts", "rig"],
+                     "roadmap-sign-in": ["choose", "parts", "rig"], "roadmap-unconfirmed": ["choose", "parts", "rig"],
                      "roadmap-all-done": ["choose", "parts", "rig", "read", "tie", "leave", "tri", "solo"]][board]
     // The guide each board's *Learn to sail* holds.
     let guide = ["roadmap-guide": Guides.sail, "roadmap-guide-above": Guides.sail, "roadmap-guide-long": Guides.long][board]
@@ -200,7 +203,20 @@ enum RoadmapFixture {
         state.pushesReceivedLaterMs = 0
         if board == "roadmap-first-read" { (state.pullsAnsweredBeforeHold, state.pullDelaySeconds) = (Int.max, 3) }
       }
+      guard board != "roadmap-sign-in" else { return true }
       try await model.signIn(identity)
+      // roadmap-unconfirmed: once the launched phone has pulled *Learn to sail*, the server stops answering what the phone
+      // sends, and the phone completes the last five steps.
+      if board == "roadmap-unconfirmed", let sail = planted, let runner = model.runtime?.roadmapRunner {
+        Task { @MainActor in
+          let steps = { (try? runner.read(sail.tree.tree) { try $0.repository(RoadmapStep.self).all(in: .drawn).count }) ?? 0 }
+          for _ in 0..<600 where steps() < 8 { try? await Task.sleep(for: .milliseconds(100)) }
+          server.state.withLock { $0.pushesUnansweredAfter = 3_600 }
+          for step in ["read", "tie", "leave", "tri", "solo"] {
+            do { try complete(step, of: sail, by: runner) } catch { NSLog("Roadmap fixture: %@", String(describing: error)) }
+          }
+        }
+      }
       if board == "roadmap-two-phones", let tree = planted?.tree {
         Task { @MainActor in
           let step = await openedStep(in: model)

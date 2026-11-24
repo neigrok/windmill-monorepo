@@ -1,7 +1,7 @@
 import XCTest
 
-// The Roadmap room's boards (Roadmap · iOS): its Board, a step's page, the step form, its roadmaps, its Guide, and its
-// door on Where to start? (Shell 02a).
+// The Roadmap room's boards (Roadmap · iOS): its Board, a step's page, the step form, its roadmaps, its Guide, the
+// account's questions that name its work, and its door on Where to start? (Shell 02a).
 final class RoadmapCaptures: DesignCapture {
   // 01.1: *Learn to sail* on its Board, as it arrives from its account.
   func testBoardAtRest() {
@@ -1017,6 +1017,57 @@ final class RoadmapCaptures: DesignCapture {
     captureBoard("08.5-roadmap-guides-from-above") { look in
       let app = guide(of: "roadmap-guide-above", item: "Guide · +1 from above", look)
       XCTAssertTrue(app.staticTexts["roadmap-guide-above"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 10.7: two roadmaps made on the phone signed out, then the sign-in question of an account that holds one.
+  func testSignInQuestionNamesRoadmaps() {
+    captureBoard("10.7-roadmap-sign-in-question") { look in
+      let app = launch("roadmap-sign-in", look)
+      XCTAssertTrue(app.buttons["roadmap-new"].waitForExistence(timeout: 30))
+      app.buttons["roadmap-new"].tap()
+      for name in ["Learn to cook", "Run a 10k"] {
+        let field = app.textFields["roadmap-new-name"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText(name)
+        app.buttons["roadmap-new-create"].tap()
+        XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 10))
+        if name == "Learn to cook" {
+          app.navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch.tap()
+          XCTAssertTrue(app.buttons["New Roadmap"].waitForExistence(timeout: 5))
+          app.buttons["New Roadmap"].tap()
+        }
+      }
+      app.buttons["you"].tap()
+      XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 10))
+      app.buttons["email-sign-in"].tap()
+      let email = app.textFields["email-address"]
+      XCTAssertTrue(email.waitForExistence(timeout: 5))
+      email.tap()
+      email.typeText("roadmap-fixture@example.com")
+      app.buttons["Send code"].tap()
+      let code = app.textFields["email-code"]
+      XCTAssertTrue(code.waitForExistence(timeout: 10))
+      code.tap()
+      code.typeText("482913")
+      XCTAssertTrue(app.alerts["Add to your account?"].waitForExistence(timeout: 30))
+      return app
+    }
+  }
+
+  // 10.8: the sign-out question over You, counting the five steps completed after the server stopped answering.
+  func testSignOutQuestionCountsRoadmapChanges() {
+    captureBoard("10.8-roadmap-sign-out-question") { look in
+      let app = launch("roadmap-unconfirmed", look)
+      XCTAssertTrue(app.staticTexts["8 of 8 done"].waitForExistence(timeout: 60))
+      app.buttons["you"].tap()
+      let signOut = app.buttons["sign-out"]
+      XCTAssertTrue(signOut.waitForExistence(timeout: 10))
+      for _ in 0..<6 where !signOut.isHittable { app.swipeUp(velocity: .slow) }
+      signOut.tap()
+      XCTAssertTrue(app.alerts["Sign out?"].waitForExistence(timeout: 30))
       return app
     }
   }
