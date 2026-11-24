@@ -3949,6 +3949,12 @@ no nudge surface. Transcription stays REST and creates no page: later voice text
 week/year/zoom are read models over pages; export stays its current REST door. None needs an
 extra synced type for first run, and native exposes no placeholder control for a deferred feature.
 
+**The web's carry.** A browser that ran the journal's bundle before the engine carries what that
+bundle kept into the replica each page's seat belongs to ([the web as a device](web-device-parity.md)
+§5), its owed pages as claims under ids their day and words derive, and records them in the device
+row `carry:<seat>` (`json`: the digests of the pages written) in the act that writes them. No phone
+writes or reads the row.
+
 **Codes:** `claim-conflict` (a different claim under the same receipt id); all other refusals use
 the engine's codes.
 

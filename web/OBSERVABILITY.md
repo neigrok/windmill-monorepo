@@ -133,14 +133,28 @@ as `gym.log.emptyTitle`) and `reason`, what broke — `key` (its owner's catalog
 `count`, the message's `other` branch with the value as given. No message text or argument value is
 reported. Outside production the translator throws instead.
 
-Journal reports migration, durable save, pending-claim reconciliation, invitation retirement and
-REST transport failures using static `journal-*` Sentry operation names. Migration and recovery
-emit `sync_commit` with bounded outcome labels; claim/save and first-run retirements use the engine's
+Journal reports durable save, pending-claim reconciliation, invitation retirement and REST transport failures using
+static `journal-*` Sentry operation names. Claim/save, first-run retirements and the carry's acts use the engine's
 gesture events. Domain refusals retain the complete input in a local editor draft and keep the
 editor's unsaved status; failed reconciliation emits a bounded `sync_commit` failure outcome.
 Post-commit notice-cleanup failures use `journal-notice-cleanup` and preserve the successful save
-outcome; it and `journal-claim-reconcile` carry the error's stack, its message struck. Unreadable legacy data
-uses `journal-migration`, retains its source, and allows startup.
+outcome; it and `journal-claim-reconcile` carry the error's stack, its message struck.
+The carry of what the journal's bundle before the engine kept in this browser's storage (`carry.js`) emits
+`journal_carry` with `seat` (`anon` or `account`, whose pages they are; `unclaimed` for those returned), `outcome` and
+`pages`, a count through `countBucket` (`0/1/2-5/6-20/21+`): `carried`, the pages a run wrote into the replica as claims
+or drafts to recover; `cleared`, a run that wrote nothing (every page already recorded in the ledger, or only the
+account's own copies) and deleted stores, the pages they held; `failed`, a run whose write failed, the pages it was
+carrying; `discarded`, the pages of an account's stores a sign-out's Discard or its closure took; `returned`, the
+unattributed pages the journal's first bundle on the engine had kept in the device's metadata, back in the browser's
+storage, once. A run that writes and deletes nothing emits nothing, so a browser whose stores hold nothing is silent.
+Sentry hears `journal-migration` with the error's stack and `stage`: `read` (the browser refused its storage, or an
+entry does not read as a page, which stays where it is; once a page load, no stack for an entry), `write` (an act
+failed; the stores stay whole), `clear` (a store would not delete; it is deleted at the next run) or `leftovers` (the
+return of the first bundle's metadata failed; it is tried again at the next run). A run a sign-in or a sign-out
+overtakes ends quietly, every store whole. Settings' unsent pages emit `journal_unclaimed` with `action` (`restore` or
+`discard`), `outcome` (`ok`, `none` where no page waited any longer, or `failed`) and `pages` through `countBucket`; a
+failure also reports `journal-restore` or `journal-discard` with the error's stack. No day, page body, scale, claim
+identifier, store key or account is reported.
 Settings' export emits `journal_export` with `outcome`: `ok`, `first_pull_timeout` (a bound replica's first pull of
 the journal did not end within 30 seconds), `replica_changed` (the account changed while it waited), `no_replica` (the
 browser holds no open replica) or `failed`, which alone also reports `journal-export` with the error's stack and `step`:

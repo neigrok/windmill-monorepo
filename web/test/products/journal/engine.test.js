@@ -3,12 +3,10 @@ import assert from 'node:assert/strict';
 import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { adoptDeviceRows, pendingClaimWork, recoveredDrafts, retireInvitation } from '../../../src/products/journal/pages.js';
 import { EditorDraft } from '../../../src/products/journal/domain/writing.js';
-import { syncSession } from '../../../src/platform/sync/session.js';
 import { ReconcileClaim } from '../../../src/products/journal/domain/writing.js';
 import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
 import { FixedZone } from '../../../src/platform/domain-kit/time.js';
-import { migratePages } from '../../../src/products/journal/migrate.js';
-import { pagesOf, savePage, watchClaims, onSyncResult, SCOPE, restoreUnclaimedPages, unclaimedPages } from '../../../src/products/journal/pages.js';
+import { pagesOf, savePage, watchClaims, onSyncResult, SCOPE } from '../../../src/products/journal/pages.js';
 import { environment, until } from '../../platform/sync/fakes.js';
 import { journalRegistry, journalProduct } from '../../platform/sync/oracle-adapters/journal.js';
 import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
@@ -17,12 +15,6 @@ import { push } from '../../../../packages/api-contract/sync/reference/server/pu
 
 const day = '2026-09-27';
 const doc = (body, date = day) => ({ day: date, body, mood: 0, energy: null, source: 'typed' });
-function storage(values = {}) {
-  const data = new Map(Object.entries(values));
-  return { data, get length() { return data.size; }, key: (index) => [...data.keys()][index],
-    getItem: (key) => data.get(key) ?? null, setItem: (key, value) => data.set(key, value), removeItem: (key) => data.delete(key) };
-}
-const entry = (body, needsPush = true, read = true, stamp = '100:0:legacy') => ({ page: { ...doc(body), stamp }, needsPush, read });
 async function setup({ watch = true } = {}) {
   const env = environment();
   env.timers.time = Date.parse(`${day}T12:00:00Z`);
@@ -88,124 +80,6 @@ test('an edit behind a delayed claim survives restart and reconciles after resul
   reopened.close();
 });
 
-test('migration imports caches and owed commands per account, anonymous work and v1 scales', async () => {
-  const { engine } = await setup();
-  const data = storage({
-    'wm.journal.v2.pages.u.A': JSON.stringify({ [day]: entry('owed A'), '2026-09-26': { ...entry('cached A', false), page: { ...doc('cached A', '2026-09-26'), stamp: '99:0:legacy' } } }),
-    'wm.journal.v2.pages.u.B': JSON.stringify({ [day]: entry('owed B') }),
-    'wm.journal.pages.anon': JSON.stringify({ [day]: { page: { ...doc('anon'), mood: 2, energy: 3, stamp: '' }, needsPush: true, read: false } }),
-  });
-  await migratePages(engine, data);
-  assert.equal(data.length, 0);
-  assert.equal(engine.device.dormantOf('A').entries(SCOPE)[0].intent.cmd.args.body, 'owed A');
-  assert.equal(engine.device.dormantOf('B').entries(SCOPE)[0].lineage, 'B');
-  const persisted = await engine.store.read();
-  assert.equal(persisted.device.dormantOf('A').confirmedRows(SCOPE).filter((row) => row.t === 'page').length, 2);
-  assert.equal(persisted.device.dormantOf('A').confirmedRow(SCOPE, 'journalState', 'journalState').f.scales[0], 'retired');
-  assert.equal(engine.observe(SCOPE).getSnapshot().drawn.find((row) => row.t === 'journalState').f.scales[0], 'retired');
-  assert.deepEqual(pagesOf(engine).map(({ body, mood, energy }) => ({ body, mood, energy })), [{ body: 'anon', mood: 3, energy: 8 }]);
-  engine.close();
-});
-
-test('a crash or blocked deletion after migration cannot enqueue or append the same page twice', async () => {
-  const { engine, env } = await setup();
-  const data = storage({ 'wm.journal.v2.pages.anon': JSON.stringify({ [day]: entry('one copy', true, false) }) });
-  data.removeItem = () => { throw new Error('storage denied'); };
-  assert.deepEqual(await migratePages(engine, data), { complete: false });
-  assert.equal(engine.device.activeReplica.entries(SCOPE).length, 1);
-  engine.close();
-  const reopened = await BrowserSyncEngine.open(env.options);
-  data.removeItem = (key) => data.data.delete(key);
-  await migratePages(reopened, data);
-  assert.equal(reopened.device.activeReplica.entries(SCOPE).length, 1);
-  assert.equal(data.length, 0);
-  reopened.close();
-});
-
-test('a changed legacy key imports only new entries after blocked cleanup and restart', async () => {
-  const { engine, env } = await setup();
-  const key = 'wm.journal.v2.pages.anon';
-  const data = storage({ [key]: JSON.stringify({ [day]: entry('one copy', true, false) }) });
-  data.removeItem = () => { throw new Error('storage denied'); };
-  assert.deepEqual(await migratePages(engine, data), { complete: false });
-  const original = engine.device.activeReplica.entries(SCOPE)[0].intent.cmd.args.claimId;
-  const receipts = (await engine.store.read()).device.meta.journalMigrationEntries;
-  assert.deepEqual(Object.values(receipts), [original]);
-  engine.close();
-  const reopened = await BrowserSyncEngine.open(env.options);
-  const nextDay = '2026-09-28';
-  data.setItem(key, JSON.stringify({ [day]: entry('one copy', true, false),
-    [nextDay]: { ...entry('new contribution', true, false), page: { ...doc('new contribution', nextDay), stamp: '100:0:legacy' } } }));
-  data.removeItem = (key) => data.data.delete(key);
-  await migratePages(reopened, data);
-  const claims = reopened.device.activeReplica.entries(SCOPE).map((row) => row.intent.cmd.args);
-  assert.deepEqual(claims.map(({ day, body }) => ({ day, body })), [
-    { day, body: 'one copy' }, { day: nextDay, body: 'new contribution' },
-  ]);
-  assert.equal(claims[0].claimId, original);
-  assert.deepEqual(Object.values((await reopened.store.read()).device.meta.journalMigrationEntries), claims.map((claim) => claim.claimId));
-  assert.equal(data.length, 0);
-  reopened.observe(SCOPE); watchClaims(reopened);
-  env.transport.account = 'A'; await reopened.start(); await until(() => reopened.leader);
-  await reopened.signIn('A'); await converge(reopened);
-  assert.equal(reopened.device.activeReplica.confirmedRow(SCOPE, 'page', day).x.body.text, 'one copy');
-  data.setItem(key, JSON.stringify({ [day]: entry('one copy', true, false),
-    [nextDay]: { ...entry('new contribution', true, false), page: { ...doc('new contribution', nextDay), stamp: '100:0:legacy' } },
-    '2026-09-29': { ...entry('cached only', false), page: { ...doc('cached only', '2026-09-29'), stamp: '100:0:legacy' } } }));
-  await migratePages(reopened, data);
-  assert.equal(reopened.device.anonReplica().entries(SCOPE).length, 1);
-  assert.equal(reopened.device.anonReplica().entries(SCOPE)[0].intent.cmd.args.body, 'cached only');
-  assert.equal(reopened.device.activeReplica.confirmedRow(SCOPE, 'page', day).x.body.text, 'one copy');
-  reopened.close();
-});
-
-test('migration keeps malformed entries and failed writes retryable while valid entries remain available', async () => {
-  const { engine } = await setup();
-  const data = storage({ 'wm.journal.v2.pages.anon': JSON.stringify({ [day]: entry('keep this'), invalid: entry('bad day') }) });
-  assert.deepEqual(await migratePages(engine, data), { complete: false });
-  assert.equal(data.length, 1); assert.equal(engine.device.activeReplica.entries(SCOPE).length, 1);
-  assert.equal(pagesOf(engine)[0].body, 'keep this');
-  const receipts = structuredClone(engine.device.meta.journalMigrationEntries);
-  data.setItem('wm.journal.v2.pages.anon', JSON.stringify({ [day]: entry('new writing') }));
-  const transact = engine.store.transact;
-  engine.store.transact = async () => { throw new Error('quota'); };
-  assert.deepEqual(await migratePages(engine, data), { complete: false });
-  assert.equal(data.length, 1); assert.equal(engine.device.activeReplica.entries(SCOPE).length, 1);
-  engine.store.transact = transact;
-  assert.deepEqual((await engine.store.read()).device.meta.journalMigrationEntries, receipts);
-  engine.close();
-});
-
-test('blocked legacy storage does not reject journal preparation', async () => {
-  const { engine } = await setup({ watch: false });
-  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-  Object.defineProperty(globalThis, 'localStorage', { configurable: true,
-    get() { throw new DOMException('blocked test storage', 'SecurityError'); } });
-  try { assert.deepEqual(await migratePages(engine), { complete: false }); }
-  finally {
-    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
-    else delete globalThis.localStorage;
-    engine.close();
-  }
-});
-
-test('migration preserves a distinct losing same-day source as recoverable writing', async () => {
-  const { engine } = await setup({ watch: false });
-  const data = storage({
-    'wm.journal.pages.anon': JSON.stringify({ [day]: entry('earlier source writing', true, false, '90:0:legacy') }),
-    'wm.journal.v2.pages.anon': JSON.stringify({ [day]: entry('newer source writing', true, false, '100:0:legacy') }),
-  });
-  try {
-    assert.deepEqual(await migratePages(engine, data), { complete: true });
-    assert.equal(data.length, 0);
-    assert.equal(pagesOf(engine)[0].body, 'newer source writing');
-    assert.deepEqual(recoveredDrafts(engine).map(({ day, body }) => ({ day, body })), [{ day, body: 'earlier source writing' }]);
-    assert.equal(engine.device.activeReplica.entries(SCOPE).length, 1);
-    await migratePages(engine, data);
-    assert.equal(recoveredDrafts(engine).length, 1);
-  } finally { engine.close(); }
-});
-
 test('a refused cross-day carry preserves the original dated draft as well as the new input', async () => {
   const { engine } = await setup({ watch: false });
   const original = new EditorDraft({ day: '2026-09-26', document: doc('old draft '.repeat(16000)) });
@@ -215,85 +89,6 @@ test('a refused cross-day carry preserves the original dated draft as well as th
     await assert.rejects(savePage(engine, doc(body), engine.activeReplica(), {}, original.json), /journal-local-refusal/);
     assert.equal(pagesOf(engine).find((page) => page.day === day).body, body);
     assert.deepEqual(recoveredDrafts(engine).map(({ day, body }) => ({ day, body })), [{ day: original.day.text, body: original.document.body }]);
-  } finally { engine.close(); }
-});
-
-test('a changed legacy source after blocked cleanup never appends a replacement snapshot twice', async () => {
-  const { engine, env } = await setup();
-  const key = 'wm.journal.v2.pages.anon';
-  const data = storage({ [key]: JSON.stringify({ [day]: entry('original words', true, false) }) });
-  data.removeItem = () => { throw new Error('blocked source cleanup'); };
-  try {
-    assert.deepEqual(await migratePages(engine, data), { complete: false });
-    data.setItem(key, JSON.stringify({ [day]: entry('corrected words', true, false, '101:0:legacy') }));
-    data.removeItem = (key) => data.data.delete(key);
-    assert.deepEqual(await migratePages(engine, data), { complete: true });
-    assert.deepEqual(engine.device.activeReplica.entries(SCOPE).map((row) => row.intent.cmd.args.body), ['original words']);
-    assert.deepEqual(recoveredDrafts(engine).map(({ day, body }) => ({ day, body })), [{ day, body: 'corrected words' }]);
-    env.transport.account = 'A'; await engine.signIn('A'); await converge(engine);
-    assert.equal(pagesOf(engine).find((page) => page.day === day).body, 'original words');
-    assert.equal(recoveredDrafts(engine)[0].body, 'corrected words');
-  } finally { engine.close(); }
-});
-
-test('unattributable legacy pages stay quarantined through binding and restore with receipt-protected claims', async () => {
-  const { engine, env } = await setup();
-  await migratePages(engine, storage({ 'wm.journal.pages': JSON.stringify({ [day]: entry('unowned') }) }));
-  assert.equal(unclaimedPages(engine).length, 1);
-  assert.equal(pagesOf(engine).length, 0);
-  env.transport.account = 'A'; await engine.signIn('A');
-  assert.equal(unclaimedPages(engine).length, 1);
-  assert.equal(await restoreUnclaimedPages('A', engine), 1);
-  assert.equal(unclaimedPages(engine).length, 0);
-  watchClaims(engine); await converge(engine);
-  assert.equal(pagesOf(engine)[0].body, 'unowned');
-  engine.close();
-});
-
-test('legacy oversized writing remains editable while valid pages migrate and first open completes', async () => {
-  const { engine, env } = await setup({ watch: false });
-  engine.close();
-  const body = 'legacy writing '.repeat(10_000);
-  const data = storage({ 'wm.journal.v2.pages.anon': JSON.stringify({
-    [day]: entry(body, true, false),
-    '2026-09-26': { ...entry('valid older page', true, false), page: { ...doc('valid older page', '2026-09-26'), stamp: '100:0:legacy' } },
-  }) });
-  const originalWindow = globalThis.window;
-  globalThis.window = { addEventListener() {} };
-  const session = new syncSession.constructor();
-  try {
-    await session.open({ ...env.options, prepare: (opened) => migratePages(opened, data) });
-    assert.equal(session.snapshot.ready, true);
-    assert.equal(session.snapshot.error, false);
-    assert.equal(session.engine.closed, false);
-    assert.equal(data.length, 0);
-    assert.deepEqual(pagesOf(session.engine).map(({ day, body }) => ({ day, body })), [
-      { day: '2026-09-26', body: 'valid older page' }, { day, body },
-    ]);
-    assert.deepEqual(session.engine.device.activeReplica.entries(SCOPE).map((row) => row.intent.cmd.args.body), ['valid older page']);
-    await savePage(session.engine, doc('corrected legacy writing'));
-    assert.equal(pagesOf(session.engine).find((page) => page.day === day).body, 'corrected legacy writing');
-    assert.deepEqual(recoveredDrafts(session.engine).map(({ day, body: writing }) => ({ day, body: writing })), [{ day, body }]);
-  } finally {
-    session.engine?.close();
-    if (originalWindow === undefined) delete globalThis.window;
-    else globalThis.window = originalWindow;
-  }
-});
-
-test('quarantine restores an oversized page for correction without blocking valid writing or repeating it', async () => {
-  const { engine, env } = await setup({ watch: false });
-  const body = 'quarantined writing '.repeat(8_000);
-  try {
-    await migratePages(engine, storage({ 'wm.journal.pages': JSON.stringify({ [day]: entry(body) }) }));
-    env.transport.account = 'A'; await engine.signIn('A');
-    assert.equal(await restoreUnclaimedPages('A', engine), 1);
-    assert.equal(unclaimedPages(engine).length, 0);
-    assert.equal(pagesOf(engine).find((page) => page.day === day).body, body);
-    assert.equal(engine.device.activeReplica.entries(SCOPE).length, 0);
-    assert.equal(await restoreUnclaimedPages('A', engine), 0);
-    await savePage(engine, doc('corrected quarantined writing'));
-    assert.equal(pagesOf(engine).find((page) => page.day === day).body, 'corrected quarantined writing');
   } finally { engine.close(); }
 });
 
@@ -351,18 +146,6 @@ test('Keep hides journal pending edits from another account and resumes them onl
   await engine.finishSignOut({ choice: 'keep' });
   env.transport.account = 'A'; await engine.signIn('A');
   assert.equal(pagesOf(engine)[0].body, 'edit A');
-  engine.close();
-});
-
-test('unread owed text survives a newer cached stamp while v1/v2 sources overlap', async () => {
-  const { engine } = await setup();
-  await migratePages(engine, storage({
-    'wm.journal.pages.u.A': JSON.stringify({ [day]: entry('cached older prose', false, true, '1000:0:legacy') }),
-    'wm.journal.v2.pages.u.A': JSON.stringify({ [day]: entry('unsent contribution', true, false, '') }),
-  }));
-  const command = engine.device.dormantOf('A').entries(SCOPE)[0].intent.cmd;
-  assert.equal(command.name, 'journal.claimPage');
-  assert.equal(command.args.body, 'unsent contribution');
   engine.close();
 });
 
