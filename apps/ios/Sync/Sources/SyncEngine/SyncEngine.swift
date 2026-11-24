@@ -629,7 +629,7 @@ final class EngineCore: Sendable {
     if let account = before?.account, tokens.token(for: account) != token { return .unreachable }
     let timing = Timing(send: send, recv: clock.wall.reading())
     guard case .answered(let answer) = reply else { return reply }
-    if let serverTime = answer.serverTime { _ = try? write { store, _ in try store.sample(serverTime: serverTime, timing: timing) } }
+    _ = try? write { store, _ in try store.hear(answer, timing: timing) }
     if let seat = try? seat(), answer.isUnauthenticated(for: seat.account) {
       _ = try? pauseAuth(seat.replica, sentUnder: token)
     }

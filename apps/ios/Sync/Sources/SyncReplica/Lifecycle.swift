@@ -325,10 +325,11 @@ public struct ReplicaLifecycle: Sendable {
     }
   }
 
-  // §9.2 a hello's answer to the replica: its offset sample (§10.4), then the pause of an answer handled as a 401, a hello
-  // served as anyone but the replica's account among them (§9.1).
+  // §9.2 a hello's answer to the replica: its offset sample (§10.4), the server's schema it records or forgets, then the
+  // pause of an answer handled as a 401, a hello served as anyone but the replica's account among them (§9.1).
   public func receive(_ hello: Answer<HelloResponse>, in replica: inout LoadedReplica, timing: Timing) {
     if let serverTime = hello.serverTime { replica.update { $0.sample(serverTime: serverTime, send: timing.send, recv: timing.recv) } }
+    replica.update { $0.hear(hello) }
     if hello.isUnauthenticated(for: replica.meta.account) { replica.update { $0.authPaused = true } }
   }
 

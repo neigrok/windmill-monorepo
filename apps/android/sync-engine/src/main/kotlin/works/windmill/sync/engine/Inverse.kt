@@ -110,15 +110,18 @@ private fun Engine.projectionOf(view: Map<RecordKey, Json>, operations: List<Pla
 }
 
 // The inverse act's own journal: each restore slot a source whose recipes put back what the inverse replaces, the values the inverted act
-// wrote (`forward`), never what a later local edit shows. A created record comes back by its life only where a write can bring it back, and
-// one the inverse creates goes again by its strict recipe; a product slot has no generic recipe, and its Redo is the product's. A
-// preimage's row is the one its restore writes over, anchored at the restore's ACK; a created record's keeps the record as `before` drew it.
+// wrote (`forward`), never what a later local edit shows. A life the slot takes away, a created record's among them, comes back only where
+// a write can bring it back, with the record as `before` drew it, and a record the inverse creates goes again by its strict recipe; a
+// product slot has no generic recipe, and its Redo is the product's. A preimage's row is the one its restore writes over, anchored at the
+// restore's ACK.
 private fun Engine.inverseJournal(inverseActId: String, slots: List<Pair<String, PlannedSlot>>, forward: Map<RecordSlot, Json>,
     before: Map<ScopeRef, Map<RecordKey, Json>>): ReversibleAct =
     ReversibleAct(inverseActId, true, slots.map { (localId, slot) ->
         val recipe = slot.recipe as? SlotRecipe.Restore ?: return@map SourceEntry(localId, slot.scope, emptyList(), emptyList())
         val taken = recipe.operations.mapNotNull { op -> when (op) {
-            is PlannedOperation.Field -> forward[op.target]?.let { Preimage(op.target, it) to Written(op.target, op.before) }
+            is PlannedOperation.Field -> forward[op.target]?.let { value ->
+                val takenAway = op.target.slot.kind == Slot.Kind.life && value == Json.of("alive")
+                Preimage(op.target, value, drawn = before.getValue(slot.scope)[op.target.key]?.takeIf { takenAway }?.drawnRecord()) to Written(op.target, op.before) }
             is PlannedOperation.CreatedRecord -> registry.type(op.record.key.type)!!.takeIf { it.identity == "keyed" || it.revivable }
                 ?.let { RecordSlot(op.record, Slot(Slot.Kind.life)).let { target ->
                     Preimage(target, Json.of("alive"), drawn = before.getValue(slot.scope)[target.key]?.drawnRecord()) to Written(target, Json.of("dead")) } }
@@ -397,24 +400,29 @@ internal fun ReplicaState.bindReferences(epoch: String?) {
 }
 
 // What one planned restore operation becomes: its wire form, a skip by its code the request counts, or nothing where the act never wrote
-// the target, so there is nothing to take back. Where a source's history is lost, an unowned target may be one it wrote, and skips.
+// the target, so there is nothing to take back. Where a source's history is lost, an unowned target may be one it wrote, and skips. A keyed
+// record's life brought back alive carries the values its preimage's record read, as the slot's projection draws them, to a server that
+// declares them.
 private sealed interface Bound {
     data class Sent(val operation: RestoreOperation) : Bound
     data class Skipped(val code: String) : Bound
 }
 
-private fun ReplicaState.bind(act: ReversibleAct?, history: OwnedHistory, op: PlannedOperation): Bound? {
+private fun ReplicaState.bind(registry: Registry, act: ReversibleAct?, history: OwnedHistory, op: PlannedOperation): Bound? {
     val epoch = meta["serverEpoch"]?.orNull()?.str()
     return when (op) {
         is PlannedOperation.Field -> {
-            if (op.reference != null) return expectedOf(op.reference)?.let { Bound.Sent(RestoreOperation.Field(op.target.key, op.target.slot, it, op.before)) }
-                ?: Bound.Skipped("reference-unbound")
+            val type = registry.type(op.target.key.type)!!
+            val declared = (meta["serverSchema"]?.long() ?: 0L) >= REVIVAL_VALUES_SCHEMA
+            val values = op.drawn?.takeIf { declared && type.revivesKeyed(op.target.slot, op.before) }?.let { CreationValues.revival(type, it) }?.takeUnless { it.isEmpty }
+            val sent = { expected: Expectation -> Bound.Sent(RestoreOperation.Field(op.target.key, op.target.slot, expected, op.before, values)) }
+            if (op.reference != null) return expectedOf(op.reference)?.let(sent) ?: Bound.Skipped("reference-unbound")
             val expected = history.latestOwned(op.target) ?: return if (history.lost) Bound.Skipped("history-changed") else null
             val preimage = act?.sourceEntries.orEmpty().flatMap { it.preimages }.firstOrNull { it.target == op.target }
             when {
                 (preimage?.epoch ?: epoch) != epoch -> Bound.Skipped("epoch-changed")
                 preimage == null || !unbroken(history, op.target.record, preimage.rowSeq) -> Bound.Skipped("history-changed")
-                else -> Bound.Sent(RestoreOperation.Field(op.target.key, op.target.slot, Expectation.Version(expected), op.before))
+                else -> sent(Expectation.Version(expected))
             }
         }
         is PlannedOperation.CreatedRecord -> when (val proof = history.createdFootprint(op.record)) {
@@ -445,7 +453,7 @@ internal fun Engine.materialize(replica: ReplicaState, request: InverseRequest) 
         val args: Json? = when {
             epoch == null -> null
             recipe is SlotRecipe.Restore -> {
-                val results = recipe.operations.map { op -> op to replica.bind(act, history, op) }
+                val results = recipe.operations.map { op -> op to replica.bind(registry, act, history, op) }
                 slot.skipped = recorded + results.mapNotNull { (it.second as? Bound.Skipped)?.code }
                 val sent = results.mapNotNull { (op, result) -> (result as? Bound.Sent)?.let { op to it.operation } }
                 slot.recipe = recipe.copy(operations = sent.map { it.first })

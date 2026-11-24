@@ -148,12 +148,14 @@ struct BatchWriter {
   func put(_ meta: ReplicaMeta, handle: ReplicaHandle) throws {
     try db.cachedStatement(sql: """
       UPDATE replica SET state = ?, account = ?, next_n = ?, hlc_ms = ?, hlc_counter = ?, hlc_high = ?, admitted_high = ?,
-        server_offset_ms = ?, offset_samples = ?, clock_reading = ?, server_epoch = ?, ack_through = ?, auth_paused = ?
+        server_offset_ms = ?, offset_samples = ?, clock_reading = ?, server_epoch = ?, ack_through = ?, auth_paused = ?,
+        server_schema = ?
       WHERE handle = ?
       """).execute(arguments: [
         meta.state.rawValue, meta.account, meta.nextN, meta.hlc.ms, Int64(meta.hlc.counter), meta.hlcHigh.text,
         meta.admittedHigh.text, meta.serverOffsetMs, Blob.of(.array(meta.offset.samples.map(\.json))),
-        meta.offset.clockReading.map { Blob.of($0.json) }, meta.serverEpoch, meta.ackThrough, meta.authPaused, handle.value,
+        meta.offset.clockReading.map { Blob.of($0.json) }, meta.serverEpoch, meta.ackThrough, meta.authPaused, meta.serverSchema,
+        handle.value,
       ])
   }
 

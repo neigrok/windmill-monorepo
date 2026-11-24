@@ -93,7 +93,7 @@ object Roadmap {
         listOf(
             "{",
             "  \"registry\": \"roadmap\",",
-            "  \"version\": 13,",
+            "  \"version\": 14,",
             "  \"minVersion\": 11,",
             "  \"products\": {",
             "    \"roadmap\": {",

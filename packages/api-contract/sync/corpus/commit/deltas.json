@@ -5106,6 +5106,515 @@
     }
   },
   {
+    "name": "a keyed put that makes a record present again writes every field it names, though its dead row in drawn still shows the value, so one sync brings the record back whole",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "tree/b_00000001": [
+                {
+                  "t": "link",
+                  "id": [
+                    "oak",
+                    "elm"
+                  ],
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "f": {
+                    "strength": [
+                      3,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Plan",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                },
+                {
+                  "t": "tag",
+                  "id": "elm",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Elm",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 3000,
+                  "ru": 3000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Oak",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                }
+              ]
+            },
+            "cursors": {
+              "tree/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+                "digest": "9a4454c37ab85f83e1391cfd05a559f3a864e686c15cd7d88e8e31bdd4aad30d",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "tree/b_00000001",
+          "changes": [
+            {
+              "op": "put",
+              "t": "link",
+              "id": [
+                "oak",
+                "elm"
+              ],
+              "present": false
+            }
+          ],
+          "deviceNow": 5000
+        },
+        {
+          "op": "commit",
+          "scope": "tree/b_00000001",
+          "changes": [
+            {
+              "op": "put",
+              "t": "link",
+              "id": [
+                "oak",
+                "elm"
+              ],
+              "f": {
+                "strength": 3
+              }
+            }
+          ],
+          "deviceNow": 5001
+        },
+        {
+          "op": "push",
+          "deviceNow": 6000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 7000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 5
+                },
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 6
+                }
+              ]
+            }
+          },
+          "deviceNow": 6000
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "tree/b_00000001"
+          ],
+          "deviceNow": 7000
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 8000,
+              "epoch": "ep-1",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "link",
+                      "id": [
+                        "oak",
+                        "elm"
+                      ],
+                      "life": [
+                        "alive",
+                        "5001:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "strength": [
+                          3,
+                          "5001:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 6,
+                      "rc": 1000,
+                      "ru": 7000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Nn0",
+                  "more": false,
+                  "seq": 6,
+                  "digest": "4368687d22bfe2375d7e0450568a8c9a9b3cdc27f25760e1c4737dde176f78fa",
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 7000
+        },
+        {
+          "op": "view",
+          "scope": "tree/b_00000001",
+          "withHeld": true
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "localIds": [
+            "g2/0"
+          ],
+          "retired": [],
+          "stamp": "5001:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "tree/b_00000001",
+              "d": [
+                {
+                  "t": "link",
+                  "id": [
+                    "oak",
+                    "elm"
+                  ],
+                  "life": [
+                    "dead",
+                    "5000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "gestureId": "g1",
+              "n": 1
+            },
+            {
+              "scope": "tree/b_00000001",
+              "d": [
+                {
+                  "t": "link",
+                  "id": [
+                    "oak",
+                    "elm"
+                  ],
+                  "life": [
+                    "alive",
+                    "5001:0:r_aaaaaaaaaaaa"
+                  ],
+                  "f": {
+                    "strength": [
+                      3,
+                      "5001:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "tree/b_00000001",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0"
+            }
+          ]
+        },
+        [
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "records": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "elm"
+              ],
+              "life": [
+                "alive",
+                "5001:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "5001:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {}
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 3,
+              "hlc": {
+                "ms": 5001,
+                "counter": 0
+              },
+              "hlcHigh": "5001:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "5001:0:r_aaaaaaaaaaaa",
+              "serverOffsetMs": 1000,
+              "offsetSamples": [
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 2,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 7000,
+                "mono": 7000,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "tree/b_00000001": [
+                {
+                  "t": "link",
+                  "id": [
+                    "oak",
+                    "elm"
+                  ],
+                  "life": [
+                    "alive",
+                    "5001:0:r_aaaaaaaaaaaa"
+                  ],
+                  "f": {
+                    "strength": [
+                      3,
+                      "5001:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 6,
+                  "rc": 1000,
+                  "ru": 7000
+                },
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Plan",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                },
+                {
+                  "t": "tag",
+                  "id": "elm",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Elm",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 3000,
+                  "ru": 3000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Oak",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                }
+              ]
+            },
+            "cursors": {
+              "tree/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Nn0",
+                "digest": "4368687d22bfe2375d7e0450568a8c9a9b3cdc27f25760e1c4737dde176f78fa",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g2/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ]
+    }
+  },
+  {
     "name": "a revive takes the born of a record dead in drawn",
     "input": {
       "device": {

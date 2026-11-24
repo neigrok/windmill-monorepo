@@ -318,11 +318,6 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 val active = engine.device.current()
                 if (allowed() && active.id == sentFor.first && active.account == sentFor.second) {
                     engine.onHello(response, RequestTiming(send, recv))
-                    engine.write(EngineOperation.hello) { replica ->
-                        if (response.unauthenticated(replica.account)) replica.meta = replica.meta.with("serverSchema" to null)
-                        else if (response.status == 200 && replica.account != null && response.body?.get("as") == Json.of(replica.account!!))
-                            response.body["schema"]?.let { replica.meta = replica.meta.with("serverSchema" to it) }
-                    }
                 }
             }
             else response.body?.get("serverTime")?.let { time -> engine.write(EngineOperation.hello) { engine.offset(it, time.long(), RequestTiming(send, recv)) } }

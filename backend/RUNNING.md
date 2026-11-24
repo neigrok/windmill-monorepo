@@ -335,10 +335,10 @@ cmake --build build-426 --target windmill_server
 ```
 
 Stop the engine server by its port and serve `./build-426/windmill_server` with the same command and
-database. The copied registries now require version 13; the app's version 12 is refused:
+database. The copied registries now require version 15; the app's version 14 is refused:
 
 ```sh
-curl -si "http://127.0.0.1:$WM_ENGINE_PORT/v1/sync/hello" -H 'Sync-Schema: 12'
+curl -si "http://127.0.0.1:$WM_ENGINE_PORT/v1/sync/hello" -H 'Sync-Schema: 14'
 # HTTP/1.1 426 Upgrade Required … {"epoch":"…","error":"upgrade-required","serverTime":…}
 ```
 

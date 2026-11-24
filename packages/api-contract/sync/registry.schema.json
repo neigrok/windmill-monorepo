@@ -309,7 +309,7 @@
           "const": true
         },
         "revivable": {
-          "description": "Minted and derived types: death is terminal unless revivable (D-8, §4.3).",
+          "description": "Minted and derived types: death is terminal unless revivable (D-8, §4.3). No other type is revivable (§2.4).",
           "type": "boolean"
         },
         "deadRows": {
@@ -403,6 +403,25 @@
             "properties": {
               "life": {
                 "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "identity": {
+                "enum": [
+                  "keyed",
+                  "singleton"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "revivable": {
+                "const": false
               }
             }
           }

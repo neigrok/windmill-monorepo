@@ -273,6 +273,7 @@ export class Registry {
       if (type.identity === 'singleton' && type.life) fail(`${type.type}: a singleton has no life`);
       if (type.hasBorn && !type.life) fail(`${type.type}: minted and derived types have life`);
       if (type.governs && !type.scope.startsWith('product:')) fail(`${type.type}: a governing type lives in a product scope`);
+      if (type.revivable && !type.hasBorn) fail(`${type.type}: only a minted or derived type is revivable`);
       if (type.revivable && type.deadRows !== 'keep') fail(`${type.type}: a revivable type keeps its dead rows`);
       if (type.governs && (type.identity !== 'minted' || type.revivable)) fail(`${type.type}: a governing type is minted and not revivable`);
       if (type.governs && type.idSpace !== 'global') fail(`${type.type}: a governing type's ids are global`);
