@@ -1269,7 +1269,7 @@ extension CommitPlanner {
   // the value the act left in each target, which a Redo writes back. A segment that writes nothing leaves none, and an
   // act left with none records nothing. Each ordinary entry still queued that a journaled preimage read over takes its
   // scope kind's capture command, so its ACK carries the receipt a restore's walk steps over; an entry already sent keeps
-  // its intent.
+  // its intent, and so does one the command would carry past a push alone.
   public func record(act actId: String, plan: UndoPlan?, receipts: [ActSegmentReceipt], in replica: inout LoadedReplica) throws {
     guard let plan else { return }
     var sources: [JournalSource] = []
@@ -1293,9 +1293,11 @@ extension CommitPlanner {
       for entry in replica.entries(touching: target.key, in: target.scope)
       where entry.isQueued && entry.intent.command == nil && !entry.gestureId.isSameID(as: actId)
         && entry.scope == target.scope && entry.intent.deltas.contains(where: { $0.key == target.key }) {
-        let capture = try captureCommand(of: target.scope)
+        var captured = entry.intent
+        captured.command = Command(name: try captureCommand(of: target.scope), args: [:])
+        guard PushRequest(widestFor: captured, of: replica.meta.replica, account: replica.meta.account).body.count <= limits.pushMaxBytes else { continue }
         replica.update(entry: entry.localId) { stored in
-          stored.intent.command = Command(name: capture, args: [:])
+          stored.intent = captured
           stored.predictions = [Projection(scope: stored.scope)]
         }
       }

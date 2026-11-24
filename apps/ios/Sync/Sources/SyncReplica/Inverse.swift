@@ -149,10 +149,7 @@ public struct Inverses: Sendable {
       (scope, Array(Set(replica.outbox.flatMap { $0.deltas(in: scope) }.map(\.key))).sorted())
     })
     let before = try views(of: scopes, in: replica)
-    let ordinary = { (entry: OutboxEntry) -> Bool in
-      guard let command = entry.intent.command else { return true }
-      return registry.command(command.name)?.engine == .capture
-    }
+    let ordinary = { (entry: OutboxEntry) -> Bool in registry.ownCommand(of: entry) == nil }
     let written: [(entry: OutboxEntry, scope: ScopeRef, delta: Delta)] = entries.filter(ordinary).flatMap { (entry: OutboxEntry) in
       entry.intent.deltas.map { (entry, entry.scope, $0) }
     }
