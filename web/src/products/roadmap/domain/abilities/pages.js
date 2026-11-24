@@ -4,7 +4,7 @@
 
 import { jcs, jcsBytes } from '../../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { hashText } from '../../../../platform/sync/core/encoding.js';
-import { AbilityCodes } from './standing.js';
+import { AbilityCodes } from './answers.js';
 
 /** @typedef {import('../../../../platform/domain-kit/values.js').Json} Json */
 /** @typedef {{ [key: string]: Json }} JsonObject */
@@ -30,6 +30,8 @@ export class Pages {
   #parts = new Map();
   /** @type {WeakMap<JsonObject, number>} */
   #bytes = new WeakMap();
+  /** @type {Map<number, string>} */
+  #digests = new Map();
 
   /** @param {{ lists: readonly string[], entries: readonly Entry[], read: Json, first?: JsonObject }} answer */
   constructor({ lists, entries, read, first = {} }) {
@@ -53,11 +55,15 @@ export class Pages {
   }
 
   // Rule 4: the first 16 hexadecimal digits of the SHA-256 of what the pages stand on, with the object the position is
-  // inside where it starts past that object's first part.
+  // inside where it starts past that object's first part. Every part of one object shares its digest.
   /** @param {Position} position */
   digest({ index, part }) {
-    const continues = part > 1 && index < this.entries.length ? this.value(index) : null;
-    return hashText(jcs({ read: this.read, continues })).slice(0, 16);
+    const inside = part > 1 && index < this.entries.length ? index : -1;
+    const known = this.#digests.get(inside);
+    if (known) return known;
+    const digest = hashText(jcs({ read: this.read, continues: inside < 0 ? null : this.value(inside) })).slice(0, 16);
+    this.#digests.set(inside, digest);
+    return digest;
   }
 
   // The page that starts at `start`. A part before its object's last takes the page alone (rule 2); otherwise whole
@@ -109,47 +115,53 @@ export class Pages {
   // The object at `index` cut into parts that each name `count`. Each part but the last fills its page as far as whole
   // Unicode scalars of text and whole elements of a list allow, its long fields in key order; part 1 carries every field
   // of the object, a long one empty where none of it fits, and a later part its `id` and the rest of each long field
-  // that goes on there.
+  // that goes on there. A part is measured as its frame, each long field empty, and the bytes of the pieces it carries,
+  // so cutting it costs what it holds.
   /** @param {number} index @param {number} count @returns {JsonObject[]} */
   cut(index, count) {
     const value = this.value(index);
     const under = this.under(index);
-    const long = LONG.filter((key) => typeof value[key] === 'string' || Array.isArray(value[key]));
-    const isText = (/** @type {string} */ key) => typeof value[key] === 'string';
-    const joined = (/** @type {string} */ key, /** @type {Json[]} */ pieces) => (isText(key) ? pieces.join('') : pieces);
-    /** @type {Map<string, Json[]>} */
-    const rest = new Map(long.map((key) => [key, isText(key) ? [...String(value[key])] : [.../** @type {Json[]} */ (value[key])]]));
+    const fields = LONG.flatMap((key) => {
+      const field = value[key];
+      return typeof field === 'string' || Array.isArray(field) ? [new LongField(key, field)] : [];
+    });
+    const longKeys = new Set(fields.map((field) => field.key));
+    // How many pieces of each field the parts before have carried.
+    const sent = new Map(fields.map((field) => [field, 0]));
     /** @type {JsonObject[]} */
     const parts = [];
     for (let part = 1; ; part++) {
       const start = { index, part };
       /** @type {JsonObject} */
-      const base = part === 1 ? Object.fromEntries(Object.entries(value).filter(([key]) => !long.includes(key)))
+      const base = part === 1 ? Object.fromEntries(Object.entries(value).filter(([key]) => !longKeys.has(key)))
         : value.id === undefined ? {} : { id: value.id };
       Object.assign(base, { part, parts: count });
-      const going = long.filter((key) => part === 1 || rest.get(key)?.length);
-      const last = { ...base, ...Object.fromEntries(going.map((key) => [key, joined(key, rest.get(key) ?? [])])) };
-      if (this.bytes([{ under, value: last }], start, this.after(index)) <= MAX_BYTES) return [...parts, last];
-      /** @type {JsonObject} */
-      const filled = { ...base, ...(part === 1 ? Object.fromEntries(long.map((key) => [key, joined(key, [])])) : {}) };
-      let carried = 0;
-      for (const key of long) {
-        const pieces = rest.get(key) ?? [];
-        if (!pieces.length) continue;
-        let low = 0;
-        for (let high = pieces.length; low < high;) {
-          const middle = (low + high + 1) >> 1;
-          const trial = { ...filled, [key]: joined(key, pieces.slice(0, middle)) };
-          if (this.bytes([{ under, value: trial }], start, { index, part: part + 1 }) <= MAX_BYTES) low = middle;
-          else high = middle - 1;
-        }
-        if (low > 0) filled[key] = joined(key, pieces.slice(0, low));
-        rest.set(key, pieces.slice(low));
-        carried += low;
-        if (low < pieces.length) break;
+      /** @param {LongField[]} carrying @param {Position | null} next */
+      const frame = (carrying, next) => this.bytes([{ under, value: { ...base, ...Object.fromEntries(carrying.map((field) => [field.key, field.empty])) } }],
+        start, next);
+      const going = fields.filter((field) => part === 1 || (sent.get(field) ?? 0) < field.length);
+      const rest = going.reduce((bytes, field) => bytes + field.bytes(sent.get(field) ?? 0, field.length), 0);
+      if (frame(going, this.after(index)) + rest <= MAX_BYTES) {
+        return [...parts, { ...base, ...Object.fromEntries(going.map((field) => [field.key, field.piece(sent.get(field) ?? 0, field.length)])) }];
       }
-      if (carried === 0) throw new Error(`sequence object ${index} has a part that carries nothing`);
-      parts.push(filled);
+      /** @type {{ field: LongField, from: number, to: number }[]} */
+      const carried = [];
+      let used = 0;
+      for (const field of fields) {
+        const from = sent.get(field) ?? 0;
+        if (from === field.length) continue;
+        const room = MAX_BYTES - used - frame(part === 1 ? fields : [...carried.map((run) => run.field), field], { index, part: part + 1 });
+        const to = field.fit(from, room);
+        if (to > from) {
+          carried.push({ field, from, to });
+          used += field.bytes(from, to);
+          sent.set(field, to);
+        }
+        if (to < field.length) break;
+      }
+      if (!carried.length) throw new Error(`sequence object ${index} has a part that carries nothing`);
+      parts.push({ ...base, ...(part === 1 ? Object.fromEntries(fields.map((field) => [field.key, field.empty])) : {}),
+        ...Object.fromEntries(carried.map(({ field, from, to }) => [field.key, field.piece(from, to)])) });
     }
   }
 
@@ -210,5 +222,48 @@ export class Pages {
     const bytes = jcsBytes(value).length;
     this.#bytes.set(value, bytes);
     return bytes;
+  }
+}
+
+// A long field of an object cut into parts: its pieces, whole Unicode scalars of a text or whole elements of a list, and
+// the canonical bytes of every run of them, which a text's quotes and a list's brackets and commas frame.
+class LongField {
+  /** @param {string} key @param {string | Json[]} value */
+  constructor(key, value) {
+    this.key = key;
+    this.text = typeof value === 'string';
+    /** @type {Json[]} */
+    this.pieces = this.text ? [...String(value)] : [.../** @type {Json[]} */ (value)];
+    this.length = this.pieces.length;
+    // The bytes of the first n pieces, by n; a scalar's own, its quotes left out.
+    this.sums = new Float64Array(this.length + 1);
+    for (const [at, piece] of this.pieces.entries()) this.sums[at + 1] = (this.sums[at] ?? 0) + jcsBytes(piece).length - (this.text ? 2 : 0);
+  }
+
+  // The bytes the pieces `from` to `to` add to the field held empty: their own, and a comma between two elements.
+  /** @param {number} from @param {number} to */
+  bytes(from, to) {
+    if (to <= from) return 0;
+    return (this.sums[to] ?? 0) - (this.sums[from] ?? 0) + (this.text ? 0 : to - from - 1);
+  }
+
+  // How far from `from` the pieces go within `room` bytes: the end of the longest run that fits.
+  /** @param {number} from @param {number} room */
+  fit(from, room) {
+    let to = from;
+    for (let high = this.length; to < high;) {
+      const middle = (to + high + 1) >> 1;
+      if (this.bytes(from, middle) <= room) to = middle;
+      else high = middle - 1;
+    }
+    return to;
+  }
+
+  get empty() { return this.text ? '' : []; }
+
+  /** @param {number} from @param {number} to @returns {Json} */
+  piece(from, to) {
+    const run = this.pieces.slice(from, to);
+    return this.text ? run.join('') : run;
   }
 }

@@ -145,13 +145,11 @@ export class ReplicaRoadmap {
       const shown = openingOf(opening, this.account.locate(opening.tree).title, told.get(opening.node));
       return [opening.node, opening.tree === id ? shown.inItsOwnTree() : shown];
     }));
-    const owners = new Set(new LegendRead(tree).result().owners.map((owner) => owner.id));
     const place = new TreePlace(location.place);
     return {
       id, title: location.title ?? '', guide: tree.meta?.guide ?? '', author: null,
       visibility: (place.subtree ? tree.meta?.reach : tree.meta?.visibility) ?? 'private', mine: this.held.get(id)?.record != null, place,
-      kinds: tree.kinds.filter((kind) => kind.present && owners.has(kind.id))
-        .map((kind) => ({ id: kind.id, hue: kind.hue, label: kind.label, description: kind.description })),
+      kinds: new LegendRead(tree).shown.map((kind) => ({ id: kind.id, hue: kind.hue, label: kind.label, description: kind.description })),
       nodes: graph.nodes.map((step) => {
         const pointer = tree.pointers.get(step.id);
         return {

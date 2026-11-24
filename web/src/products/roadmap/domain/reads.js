@@ -17,6 +17,9 @@ export class LegendRead {
     for (const kinds of this.byHue.values()) kinds.sort((a, b) => Stamp.compare(a.born, b.born) || compareText(a.id, b.id));
   }
 
+  // The kinds the legend shows: each that owns its hue, in authored order.
+  get shown() { return this.kinds.filter((kind) => this.byHue.get(kind.hue)?.[0] === kind); }
+
   result() {
     const hues = [...this.byHue].sort((a, b) => compareText(a[0], b[0]));
     return { ids: this.kinds.map((kind) => kind.id), owners: hues.map(([hue, kinds]) => ({ hue, id: kinds[0]?.id ?? '' })),

@@ -6,11 +6,12 @@
 import { compareText } from '../../../../platform/domain-kit/entities.js';
 import { diagnose, pointerDiagnostics } from '../diagnostics.js';
 import { selectNodes } from '../reads.js';
+import { AbilityCodes, refusal } from './answers.js';
 import { Pages } from './pages.js';
-import { AbilityCodes, STEP_LINE, StandingRoadmaps, refusal } from './standing.js';
+import { STEP_LINE, StandingRoadmaps } from './standing.js';
 
 /** @typedef {import('./standing.js').Standing} Standing */
-/** @typedef {import('./standing.js').AbilityAnswer} AbilityAnswer */
+/** @typedef {import('./answers.js').AbilityResponse} AbilityResponse */
 /** @typedef {import('./standing.js').StandingRoadmap} StandingRoadmap */
 /** @typedef {import('./pages.js').Entry} Entry */
 /** @typedef {import('./pages.js').JsonObject} JsonObject */
@@ -20,7 +21,7 @@ import { AbilityCodes, STEP_LINE, StandingRoadmaps, refusal } from './standing.j
 /** @typedef {{ treeId: string, cursor?: string }} RoadmapRequest */
 /** @typedef {{ cursor?: string }} TreesRequest */
 
-/** @param {Pages} pages @param {string | undefined} cursor @param {string} [id] @returns {AbilityAnswer} */
+/** @param {Pages} pages @param {string | undefined} cursor @param {string} [id] @returns {AbilityResponse} */
 function paged(pages, cursor, id) {
   const page = pages.at(cursor);
   return 'page' in page ? { result: page.page } : refusal(page.refused, id);
@@ -32,9 +33,9 @@ function stepEntries(roadmap, ids, fields) {
 }
 
 // `get_tree`: the roadmap's header, then its steps in get_tree's order, each with the fields asked for.
-/** @param {Standing} standing @param {TreeRequest} input @param {string | null} about @returns {AbilityAnswer} */
+/** @param {Standing} standing @param {TreeRequest} input @param {string | null} about @returns {AbilityResponse} */
 function getTree(standing, { treeId, fields = STEP_LINE, cursor }, about) {
-  const opened = new StandingRoadmaps(standing).open(treeId, about);
+  const opened = StandingRoadmaps.of(standing).open(treeId, about);
   if (!('roadmap' in opened)) return opened;
   const { roadmap } = opened;
   const order = roadmap.order();
@@ -44,13 +45,16 @@ function getTree(standing, { treeId, fields = STEP_LINE, cursor }, about) {
 
 // `get_nodes`: the steps by exact id, in the order asked. An id asked twice is malformed, and one the roadmap does not
 // show refuses the call, the first such in the order asked: a step under a delete the person can still undo among them.
-/** @param {Standing} standing @param {NodesRequest} input @param {string | null} about @returns {AbilityAnswer} */
+/** @param {Standing} standing @param {NodesRequest} input @param {string | null} about @returns {AbilityResponse} */
 function getNodes(standing, { treeId, nodeIds, fields = STEP_LINE, cursor }, about) {
-  const opened = new StandingRoadmaps(standing).open(treeId, about);
+  const opened = StandingRoadmaps.of(standing).open(treeId, about);
   if (!('roadmap' in opened)) return opened;
   const { roadmap } = opened;
-  const twice = nodeIds.find((id, index) => nodeIds.indexOf(id) !== index);
-  if (twice !== undefined) return refusal(AbilityCodes.invalidInput, twice);
+  const asked = new Set();
+  for (const id of nodeIds) {
+    if (asked.has(id)) return refusal(AbilityCodes.invalidInput, id);
+    asked.add(id);
+  }
   const unknown = nodeIds.find((id) => !roadmap.graph.slot.has(id));
   if (unknown !== undefined) return refusal(AbilityCodes.unknownStep, unknown);
   const steps = nodeIds.map((id) => roadmap.step(id, fields));
@@ -59,9 +63,9 @@ function getNodes(standing, { treeId, nodeIds, fields = STEP_LINE, cursor }, abo
 
 // `find_nodes`: the steps that match every filter sent, in the order of the domain's search: a kind the roadmap does not
 // have matches none, and a step whose state is unknown matches no state.
-/** @param {Standing} standing @param {FindRequest} input @param {string | null} about @returns {AbilityAnswer} */
+/** @param {Standing} standing @param {FindRequest} input @param {string | null} about @returns {AbilityResponse} */
 function findNodes(standing, { treeId, kind, state, query, fields = STEP_LINE, cursor }, about) {
-  const opened = new StandingRoadmaps(standing).open(treeId, about);
+  const opened = StandingRoadmaps.of(standing).open(treeId, about);
   if (!('roadmap' in opened)) return opened;
   const { roadmap } = opened;
   const found = selectNodes(roadmap.tree, { ...(query === undefined ? {} : { query }), ...(kind === undefined ? {} : { kind }) })
@@ -69,14 +73,14 @@ function findNodes(standing, { treeId, kind, state, query, fields = STEP_LINE, c
   return paged(new Pages({ lists: ['steps'], entries: stepEntries(roadmap, found, fields), read: found }), cursor, treeId);
 }
 
-// `get_progress`: each step the person has completed, in id byte order, with the date the domain's `progress` read gives
-// it, null where it gives none.
-/** @param {Standing} standing @param {RoadmapRequest} input @param {string | null} about @returns {AbilityAnswer} */
+// `get_progress`: each step the person has completed as the room shows it, in id byte order, with the date the domain's
+// `progress` read gives it, null where it gives none.
+/** @param {Standing} standing @param {RoadmapRequest} input @param {string | null} about @returns {AbilityResponse} */
 function getProgress(standing, { treeId, cursor }, about) {
-  const opened = new StandingRoadmaps(standing).open(treeId, about);
+  const opened = StandingRoadmaps.of(standing).open(treeId, about);
   if (!('roadmap' in opened)) return opened;
   const { roadmap } = opened;
-  const dates = new Map((roadmap.account.progress(treeId)?.dates ?? []).map(({ node, at }) => [node, at]));
+  const dates = new Map(roadmap.roadmaps.progress(treeId).dates.map(({ node, at }) => [node, at]));
   const completed = [...dates.keys()].sort(compareText);
   return paged(new Pages({ lists: ['completed'], entries: completed.map((id) => ({ under: 'completed', make: () => ({ id, at: dates.get(id) ?? null }) })),
     read: completed }), cursor, treeId);
@@ -85,9 +89,9 @@ function getProgress(standing, { treeId, cursor }, about) {
 // `get_diagnostics`: what is wrong with the roadmap's graph, from the domain's `diagnostics` read, and on a roadmap of the
 // person's own what the roadmaps its steps open come to, from its `pointers` read. Each list holds its first 50, and the
 // first page counts the rest of each.
-/** @param {Standing} standing @param {RoadmapRequest} input @param {string | null} about @returns {AbilityAnswer} */
+/** @param {Standing} standing @param {RoadmapRequest} input @param {string | null} about @returns {AbilityResponse} */
 function getDiagnostics(standing, { treeId, cursor }, about) {
-  const opened = new StandingRoadmaps(standing).open(treeId, about);
+  const opened = StandingRoadmaps.of(standing).open(treeId, about);
   if (!('roadmap' in opened)) return opened;
   const { roadmap } = opened;
   const found = diagnose(roadmap.graph);
@@ -103,7 +107,7 @@ function getDiagnostics(standing, { treeId, cursor }, about) {
     ] },
   };
   if (roadmap.tree.own) {
-    const pointers = pointerDiagnostics(roadmap.account, treeId);
+    const pointers = pointerDiagnostics(roadmap.roadmaps.account, treeId);
     lists.treeLoops = { omitted: pointers.treeLoopsOmitted, entries: pointers.treeLoops.map(({ node, path, pathOmitted }) => ({ node,
       path: path.map(({ tree, title }) => ({ treeId: tree, title })), ...(pathOmitted > 0 ? { pathOmitted } : {}) })) };
     lists.danglingPointers = { omitted: pointers.danglingPointersOmitted, entries: pointers.danglingPointers.map(({ node, tree }) => ({ node, treeId: tree })) };
@@ -116,17 +120,18 @@ function getDiagnostics(standing, { treeId, cursor }, about) {
 
 // `list_trees`: one row for each roadmap the person owns that stands, in the order of the domain's `list` read, newest
 // first: its title, its steps by state, the titles of its available steps in get_tree's order and its newest completion's
-// date. A roadmap the device has not finished bringing has its counts and frontier null, and while the device does not
-// hold the person's whole list the call is refused, so no roadmap of theirs goes unlisted.
-/** @param {Standing} standing @param {TreesRequest} input @returns {AbilityAnswer} */
+// date. A roadmap the device has not finished bringing has its counts, frontier and date null, and the title the device
+// holds of it, null where it holds none. While the device does not hold the person's whole list the call is refused, so
+// no roadmap of theirs goes unlisted.
+/** @param {Standing} standing @param {TreesRequest} input @returns {AbilityResponse} */
 function listTrees(standing, { cursor }) {
-  const roadmaps = new StandingRoadmaps(standing);
+  const roadmaps = StandingRoadmaps.of(standing);
   if (!roadmaps.listRead) return refusal(AbilityCodes.roadmapUnavailable);
   const rows = roadmaps.account.list();
   /** @param {{ id: string, title: string | null }} row @returns {JsonObject} */
   const line = ({ id, title }) => {
     const opened = roadmaps.open(id, null);
-    if (!('roadmap' in opened)) return { id, title, counts: null, frontier: null, lastCompletedAt: null };
+    if (!('roadmap' in opened)) return { id, title: title ?? roadmaps.account.trees.get(id)?.meta?.title ?? null, counts: null, frontier: null, lastCompletedAt: null };
     const { roadmap } = opened;
     const frontier = roadmap.order().filter((step) => roadmap.state(step) === 'available').map((step) => roadmap.tree.nodesById.get(step)?.label ?? '');
     return { id, title, counts: roadmap.counts, frontier, lastCompletedAt: roadmap.lastCompletedAt };

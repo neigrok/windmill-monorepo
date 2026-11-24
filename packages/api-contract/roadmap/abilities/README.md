@@ -19,7 +19,9 @@ answer:
     steps that are gone, and links from a step to itself.
   - `read: "unread"` is a roadmap the device has not finished bringing (§10), and `own` says whether the person owns it
     (§6, rule 2).
-  - For a roadmap the person only reads, `marks` are the owner's, as the room shows them.
+  - For a roadmap the person only reads, `marks` are the owner's, as the room shows them. On a step that owns a subtree
+    the device does not hold, a mark says what the server told the room of that subtree: `complete`, or `none` where it
+    is not; the step is `unknown` where it carries none.
 - `given.held`, which a case may leave out, lists the steps under a delete the person can still undo, as
   `{tree, step}`. Each is `present: false` in its tree (§6, rule 1).
 - `given.ids`, which a case may leave out, are the ids the tool host's random source gives, in the order it draws them:

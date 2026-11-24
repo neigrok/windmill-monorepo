@@ -63,8 +63,9 @@ and *gate* mean what the [Coach engine](coach-engine.md) defines. This document 
   and workspace, durable and usable offline.
 - **D-2 Standing roadmap.** A roadmap as the room shows it: the steps, links, kinds and marks on the
   screen. It is the copy, less a step under a delete the person can still undo, and with the marks
-  the room shows. For a reader those are the owner's, which the room read from the backend; Coach
-  reads what the room holds of them and asks for nothing.
+  the room shows. For a reader those are the owner's, which the room read from the backend, with what
+  the server said each subtree the roadmap's steps own has come to; Coach reads what the room holds
+  of them and asks for nothing.
 - **D-3 Direct write.** A change Coach makes at once, to one step, that removes nothing (§6).
 - **D-4 Receipt.** The record of a direct write: what changed, in at most eight words.
 - **D-5 Proposal.** A set of changes to one roadmap that Coach suggests and only the person applies
@@ -195,11 +196,16 @@ ability's result as data and never as instructions.
 - A step's state (locked, available, complete) is the one the room shows, from the function that
   derives it today, `UnlockRules.derive`, over the graph as the room draws it.
 - A step that opens another roadmap is complete when that roadmap is. Where the device has not
-  finished pulling the opened roadmap, the step's state is `unknown`. So is the state of
-  every step that waits on it. `find_nodes` with a state leaves unknown steps out, and counts by
-  state give them a count of their own.
-- A completion has a date only where the copy holds one. A step complete through the roadmap it
-  opens, and a step done since before dates were kept, have none and are given without one.
+  finished pulling the opened roadmap, or holds nothing of it, the step's state is `unknown`. So it
+  is where the opened roadmap's own completion waits on such a roadmap: it is not complete, and each
+  of its unfinished steps opens a roadmap whose completion the device cannot yet say, in turn. So is
+  the state of every unfinished step that waits on an unknown one, since each could change when the
+  roadmap arrives. On a roadmap the person only reads, a step that owns a subtree the device does not
+  hold stands as the server told the room of that subtree, and is unknown only where it told
+  nothing. `find_nodes` with a state leaves unknown steps out, and counts by state give them a count
+  of their own.
+- A completion has a date only where the copy holds one, as the domain's `progress` read gives it. A
+  step done since before dates were kept has none and is given without one.
 - `get_diagnostics` is computed on the device, by the domain's reads the server claims (§5.1).
   Loops and dead ends among the roadmaps that steps open are reported only among roadmaps the
   device holds.
@@ -256,7 +262,8 @@ step comes with, and `id` comes always; a call without `fields` is given the con
   lastCompletedAt}`. `counts` is `{total, done, available, locked, unknown}`, `frontier` the titles
   of its available steps in `get_tree`'s order, and `lastCompletedAt` the newest date its
   completions carry, or null where none carries one. A roadmap the device has not finished bringing
-  has its `counts` and `frontier` null. `id`, `title`, `total` and `done` are the server's names.
+  has its `counts`, `frontier` and `lastCompletedAt` null, and the `title` its copy holds, null where
+  the copy holds none. `id`, `title`, `total` and `done` are the server's names.
 
 ### §5.2 Pages
 
@@ -291,8 +298,10 @@ carries every list of its read, each with the entries that fall on it, and the f
 5. A cursor is checked in this order. One not of this form is `invalid-input`. One whose digest is
    not the read's now is `roadmap-changed`, and Coach reads again from the first page. One whose
    position the sequence does not hold, past its end or past the parts of its object, is
-   `invalid-input`. The cursor holds the position alone: each call sends its `fields` again, and a
-   call with other fields reads other objects, so its digest does not match.
+   `invalid-input`. The cursor holds the position alone, and each call sends its `fields` again.
+   `get_nodes` reads its objects whole, so a cursor sent with other fields does not match its digest;
+   the digest of `get_tree` and `find_nodes` holds their ids alone, so there a cursor sent with other
+   fields goes on from its position, each step that follows with the fields now asked for.
 
 ## §6 Writing
 
@@ -384,7 +393,7 @@ of the two that fails it. A refusal of a proposal also carries `at` (§7).
 | `invalid-input` | The input breaks the ability's schema, as the gate's Shape rule finds ([Coach engine](coach-engine.md) §6), or a rule of its input this document states: a change that breaks its op's row (§7), a cursor that is not one or points past its sequence (§5.2), an id asked twice (§5.1), an `annotate_node` that sends neither field |
 | `roadmap-unavailable` | The device has not finished bringing the roadmap; it can be asked again once it has (§10) |
 | `unknown-roadmap` | The roadmap is neither the conversation's nor one the person owns, and the device holds the whole list of theirs (§10) |
-| `roadmap-not-ready` | The call names a step under a delete the person can still undo |
+| `roadmap-not-ready` | A write or a proposal names a step under a delete the person can still undo; a read does not see such a step, and `get_nodes` naming one refuses it as `unknown-step` |
 | `not-owner` | The person does not own the roadmap, and a write or a proposal needs its owner |
 | `out-of-scope` | A direct write names a roadmap other than the conversation's |
 | `over-limit` | A value or a count would pass a cap of `limits.json`: a step's text or links, the roadmap's steps, links or kinds, or a proposal's changes, counted or as its record's bytes (§7) |
@@ -620,7 +629,8 @@ The roadmap tools an outside assistant reaches over MCP stay on the server as th
   shared path (§3).
 - Unexpected failures report to Sentry under the static names `roadmap-coach-turn`,
   `roadmap-coach-ability`, `roadmap-coach-apply` and `ai-call`. A refusal the person can act on is
-  an event, not an Issue.
+  an event, not an Issue. An ability that throws, as one handed an input the host should never send
+  does, is reported by the tool host under `roadmap-coach-ability`.
 - The backend logs nothing of a turn but the pass it signed.
 - They are listed in the web's and the iPhone's observability notes when built.
 

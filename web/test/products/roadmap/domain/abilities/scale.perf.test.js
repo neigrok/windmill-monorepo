@@ -84,3 +84,46 @@ test('find_nodes pages the steps a text matches within the cap, in the search\'s
   assert.deepEqual(steps, matched.map((index) => line(index, ['label', 'kind', 'state', 'prerequisites', 'unlockCount', 'summary'])));
   t.diagnostic(`find_nodes: ${steps.length} steps in ${pages} pages, the largest ${largest} bytes, in ${elapsed.toFixed(0)} ms (${(elapsed / pages).toFixed(1)} ms a page)`);
 });
+
+test('a step that follows 9,999 others with ids at their cap pages its prerequisites in parts, each part costing what it holds', (t) => {
+  const treeId = 't_00000000000000aa';
+  const id = (/** @type {number} */ index) => `s${String(index).padStart(127, '0')}`;
+  const nodes = [...Array.from({ length: 9_999 }, (_, index) => ({ id: id(index), label: `Step ${index}`, ord: String(index).padStart(5, '0') })),
+    { id: 'final', label: 'Cross', ord: '99999' }];
+  const standing = { trees: [{ id: treeId, own: true, meta: { title: 'Ten thousand steps' }, nodes,
+    edges: nodes.slice(0, -1).map((node) => ({ from: node.id, to: 'final', present: true })) }] };
+  const start = performance.now();
+  const { steps, pages, largest } = readAll((cursor) => ReadAbilities.get_nodes(standing, { treeId, nodeIds: ['final'], fields: ['prerequisites'],
+    ...(cursor ? { cursor } : {}) }, treeId));
+  const elapsed = performance.now() - start;
+  assert.deepEqual(steps, [{ id: 'final', prerequisites: nodes.slice(0, -1).map((node) => node.id) }]);
+  t.diagnostic(`get_nodes: one step's 9,999 prerequisites of 128 characters in ${pages} parts, the largest ${largest} bytes, in ${elapsed.toFixed(0)} ms `
+    + `(${(elapsed / pages).toFixed(1)} ms a page)`);
+});
+
+test('the device\'s roadmaps are read once a standing roadmap: 50 roadmaps of 2,000 steps cost their reading on the first call alone', (t) => {
+  const roadmap = (/** @type {number} */ index) => {
+    const treeId = `t_${index.toString(16).padStart(16, '0')}`;
+    const id = (/** @type {number} */ step) => `s${String(step).padStart(5, '0')}`;
+    const nodes = Array.from({ length: 2_000 }, (_, step) => ({ id: id(step), label: `Step ${step}`, ord: String(step).padStart(5, '0') }));
+    return { id: treeId, own: true, meta: { title: `Roadmap ${index}` }, nodes,
+      edges: nodes.slice(1).map((node, step) => ({ from: id(step), to: node.id, present: true })),
+      marks: nodes.slice(0, 600).map((node) => ({ node: node.id, status: 'complete', recordedAt: 1_800_000_000_000, deviceAt: 1_800_000_000_000 })) };
+  };
+  const standing = { trees: Array.from({ length: 50 }, (_, index) => roadmap(index + 1)) };
+  const treeId = standing.trees[0]?.id ?? '';
+  /** @param {() => unknown} read */
+  const timed = (read) => {
+    const start = performance.now();
+    const answer = read();
+    return { answer, ms: performance.now() - start };
+  };
+  const first = timed(() => ReadAbilities.get_tree(standing, { treeId }, treeId));
+  const list = timed(() => ReadAbilities.list_trees(standing, {}));
+  const again = timed(() => ReadAbilities.get_tree(standing, { treeId }, treeId));
+  const listAgain = timed(() => ReadAbilities.list_trees(standing, {}));
+  assert.deepEqual(again.answer, first.answer);
+  assert.deepEqual(listAgain.answer, list.answer);
+  t.diagnostic(`50 roadmaps of 2,000 steps: get_tree page 1 ${first.ms.toFixed(1)} ms, then list_trees page 1 ${list.ms.toFixed(1)} ms; `
+    + `read again, ${again.ms.toFixed(1)} ms and ${listAgain.ms.toFixed(1)} ms`);
+});

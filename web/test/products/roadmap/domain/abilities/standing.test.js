@@ -9,9 +9,10 @@ import { RoadmapProduct } from '../../../../../../packages/api-contract/sync/ref
 import { readStanding } from '../../../../../src/products/roadmap/domain/abilities/standing.js';
 import { ReadAbilities } from '../../../../../src/products/roadmap/domain/abilities/reads.js';
 import { Complete, SetPointer } from '../../../../../src/products/roadmap/domain/progress.js';
-import { CreateRoadmap } from '../../../../../src/products/roadmap/domain/roadmaps.js';
+import { CreateRoadmap, CreateSubtree } from '../../../../../src/products/roadmap/domain/roadmaps.js';
 import { GENESIS_KINDS, RoadmapScopes } from '../../../../../src/products/roadmap/domain/roadmapRules.js';
 import { DeleteStep } from '../../../../../src/products/roadmap/domain/steps.js';
+import { Opening } from '../../../../../src/products/roadmap/model/Opening.js';
 import { HeldRoadmap } from '../../../../../src/products/roadmap/room/ReplicaRoadmap.js';
 import { Harness } from '../../../../platform/domain-kit/harness.js';
 import { roadmapRegistry } from '../vectors.js';
@@ -88,6 +89,31 @@ test('a roadmap the person only reads carries the owner\'s marks the room shows,
     assert.deepEqual(ReadAbilities.get_tree(standing, { treeId: tree }, null), { refused: { code: 'unknown-roadmap', id: tree } });
     assert.deepEqual(ReadAbilities.get_tree(readStanding([reading], { listRead: false }), { treeId: tree }, null), { refused: { code: 'roadmap-unavailable', id: tree } },
       'while the device has not read the person\'s list, a roadmap outside it may yet be theirs');
+  } finally {
+    a.close();
+  }
+});
+
+test('a reader\'s step that owns a subtree stands as the server told the room of it, and is unknown where it told nothing', async () => {
+  const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
+  try {
+    const { tree, steps } = committed(await a.runner.runAct(new CreateRoadmap('Learn to sail', { steps: [
+      { key: 'knots', label: 'Knots' }, { key: 'sail', label: 'Sail with an instructor' },
+    ], links: [['knots', 'sail']] })));
+    const { subtree } = committed(await a.runner.runAct(new CreateSubtree(tree, steps.knots)));
+    const reading = held(a, tree, { own: false }).copy(roadmapRegistry);
+    /** @param {Opening | null} told */
+    const states = (told) => ReadAbilities.get_nodes(readStanding([reading], { ownerMarks: new Map([[tree, { completed: [], completedAt: {},
+      subtrees: new Map(told === null ? [] : [[steps.knots, told]]) }]]) }), { treeId: tree, nodeIds: [steps.knots, steps.sail], fields: ['state', 'opens'] }, tree);
+    const answer = (/** @type {string} */ knots, /** @type {string} */ sail) => ({ result: { steps: [
+      { id: steps.knots, state: knots, opens: subtree }, { id: steps.sail, state: sail, opens: null }] } });
+
+    assert.deepEqual(states(Opening.owned({ id: subtree, done: 2, total: 2, state: 'complete' })), answer('complete', 'available'));
+    assert.deepEqual(states(Opening.owned({ id: subtree, done: 1, total: 2, state: 'open' })), answer('available', 'locked'));
+    assert.deepEqual(states(Opening.owned({ id: 't_00000000000000ff', done: 2, total: 2, state: 'complete' })), answer('unknown', 'unknown'),
+      'a word of another subtree is no word of this one');
+    assert.deepEqual(states(new Opening({ treeId: subtree, read: false, owned: true })), answer('unknown', 'unknown'), 'a subtree the server counted nothing of');
+    assert.deepEqual(states(null), answer('unknown', 'unknown'));
   } finally {
     a.close();
   }
