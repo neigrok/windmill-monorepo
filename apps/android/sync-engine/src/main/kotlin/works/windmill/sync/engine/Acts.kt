@@ -113,7 +113,7 @@ private fun Engine.captureCommand(scope: ScopeRef): String = registry.commands.m
 // The act's journal record, from the segments that left an entry: one source entry each, in commit order, with the value the act left in
 // each target, which a Redo writes back. An act that left none records nothing. Each ordinary entry still held or ready that a journaled
 // preimage read over takes its scope kind's capture command, so its ACK carries the receipt a restore's walk steps over; an entry already
-// sent keeps its intent.
+// sent keeps its intent, and so does one the command would carry past a push alone.
 private fun Engine.recordAct(replica: ReplicaState, actId: String, plan: Map<Int, UndoPlan>, receipts: List<ActSegmentReceipt>) {
     val sources = plan.toSortedMap().mapNotNull { (index, segment) ->
         val localIds = receipts[index].localIds
@@ -128,7 +128,9 @@ private fun Engine.recordAct(replica: ReplicaState, actId: String, plan: Map<Int
         for (entry in replica.entries()) {
             val queued = entry.gestureId != actId && entry.state in setOf("held", "ready") && entry.intent.command == null
             if (!queued || entry.scope != target.scope || entry.intent.deltas.none { it.key == target.key }) continue
-            entry.intent = entry.intent.copy(command = Command(captureCommand(target.scope), Json.objectOf()))
+            val captured = entry.intent.copy(command = Command(captureCommand(target.scope), Json.objectOf()))
+            if (widestBytes(replica, captured) > pushMaxBytes) continue
+            entry.intent = captured
             entry.predictions = listOf(Projection(entry.scope, emptyList()))
         }
     }

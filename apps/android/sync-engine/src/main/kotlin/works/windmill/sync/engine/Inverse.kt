@@ -190,7 +190,7 @@ internal fun Engine.requestInverse(replica: ReplicaState, sourceActId: String, r
 // An act every entry of which is still held never reached the server: Undo cancels it in place, its dependents folded silently, and
 // reports whether anything drawn changed. The act leaves the journal, and its cancellation receipt keeps what a Redo needs.
 private fun Engine.cancelHeld(replica: ReplicaState, act: ReversibleAct, entries: List<Entry>): InverseResult {
-    val ordinary = { entry: Entry -> entry.intent.command?.let { registry.command(it.name)?.engine == "capture" } ?: true }
+    val ordinary = { entry: Entry -> registry.ownCommand(entry) == null }
     val scopes = entries.flatMap { entry -> entry.effects.map { it.scope } }.distinct()
     val before = scopes.associateWith { drawn(replica, it) }
     val written = entries.filter(ordinary).flatMap { entry -> entry.intent.deltas.map { Triple(entry, entry.scope, it) } }
