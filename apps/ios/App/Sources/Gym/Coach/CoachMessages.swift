@@ -112,7 +112,7 @@ struct CoachReading: Identifiable {
     var steps: [Step] = []
     var phrases: [String] = []
     for call in calls where call.outcome == .ok {
-      guard let ability = Catalog.ability(named: call.name) else { continue }
+      guard let ability = Catalog.gym.ability(named: call.name) else { continue }
       switch call.read {
       case .ids(let read): served.saw(read)
       case .counts(let tally): counted = counted + tally

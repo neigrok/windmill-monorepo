@@ -18,20 +18,16 @@ struct LandingTests {
     }
   }
 
+  // A read's case, or the act of clearing the note.
   static func decision(_ vector: Vector) throws -> JSON {
-    let corpus = ProductCorpus(RoadmapRules.book)
     let input = try vector.input.member("input")
-    switch try (vector.input["read"] ?? vector.input.member("action")).asString() {
+    switch try vector.input["read"]?.asString() {
     case "cannotLand": return ["result": CannotLand(try input.member("notices").asArray().map(Self.notice)).form]
     case "landing":
       let tree: ID<RoadmapEntry> = try input.id("tree")
-      return try corpus.read(vector, in: tree.tree) { (read: Reader) throws -> JSON in try LandingRead(of: tree, in: read).form }
-    case "ClearLanding":
-      let told = try input.member("told")
-      let act = ClearLanding(tree: try input.id("tree"), nodes: try told.ids("nodes"),
-                             edges: try (told["edges"]?.asArray() ?? []).map(RoadmapLink.init(ends:)), revived: try told.ids("revived"))
-      return try corpus.act(act, vector, result: { .null }, refusal: \.form)
-    case let name: throw ContractError("no landing read or action \(name)")
+      return try ProductCorpus(RoadmapRules.book).read(vector, in: tree.tree) { (read: Reader) throws -> JSON in try LandingRead(of: tree, in: read).form }
+    case nil: return try RoadmapAct.decision(vector)
+    case let name?: throw ContractError("no landing read \(name)")
     }
   }
 
