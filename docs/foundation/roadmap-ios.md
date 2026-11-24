@@ -61,8 +61,8 @@ Activity and the web demo.
 - `RoadmapDomain` is built on the kit's changes [Roadmap on the sync engine](roadmap-on-the-engine.md)
   §3 names: entities in a tree or an overlay scope, a gesture over several scopes, and Undo of an
   act.
-- The ability and catalog types Coach's executor needs live in gym's domain today. They move into
-  `DomainKit`, since one product's domain may not import another's.
+- The ability and catalog types Coach's executor needs live in `DomainKit`, since one product's domain
+  may not import another's.
 - `RoadmapDomain` and `RoadmapLayout` join the layering tests' world and the domain kit's table of
   layers, and neither imports the app.
 - The room joins the shell as its third room. The shell's sign-in and sign-out questions count
