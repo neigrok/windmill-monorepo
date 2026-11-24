@@ -106,7 +106,8 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
   it.*; `web/src/products/gym/errors.js` `failureReason`) and keeps *the log didn’t answer. Try again
   when you have signal* for its REST doors. The journal says *not saved — no room on this device*
   (`Canvas.jsx`) for every failed save, which claims a full store when the store may be closed or
-  failing instead. Confirm one storage sentence for both products.
+  failing instead. Confirm one storage sentence for both products. The Shell file's proposal (`368:645`,
+  boards 07 and 08) words a full store and any other store failure apart, for both products.
 - **7k · A guard read beside a write.** `../foundation/domain-kit.md` §8.3 rule 2 refuses a plan in
   which two operations name one record. Android's kit counts a `guardRead` among them (`Plans.kt`);
   iOS's counts only writing operations (`Translation.swift`); no iOS plan guards and writes one
@@ -1308,11 +1309,14 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 ## Gym
 
 - **The web as a device (owner, 2026-11-17).** [The web as a device](../foundation/web-device-parity.md) rules
-  full workout entry on the web and a gym room that opens signed out. Neither is drawn. To draw before it is
-  built: starting, logging, editing and finishing a workout on the web, with what stands in for a phone's Live
-  Activity; a workout open on another device; Coach during a workout and a workout proposal's card; the signed-out
-  gym room and its sign-in Add or Discard; and, for every room, a browser that keeps nothing and one whose saved
-  data was cleared.
+  full workout entry on the web and a gym room that opens signed out. Both are drawn as 🧪 proposals awaiting the
+  owner: the workout, another device, a stale plan edit, the room before its first pull, Coach during a workout and
+  the signed-out room with its sign-in in the Gym file's Web page (WD1–WD9, components `2150:11606`, READ ME
+  `2168:16052`); and, for every room, a browser that keeps nothing, is blocked, fails a write or was cleared in the
+  Shell file (`368:645`, READ ME `380:2404`). Each READ ME lists the questions the owner rules on approval. On
+  approval: the Gym file's START HERE · Gym web (`804:5811`) still says the phone owns live training, against R-2;
+  the 🚧 Plan / Routines / Training now boards (`1828:53034`, `1828:53151`, `1828:53298`, `1828:53416`) draw the
+  mirror's card that WD3.4 and WD4.1 replace and are archived.
 ### Sets · product direction
 
 Sets have no type on any surface. Targets are references: actual weight/reps remain independent for every set, including extra or
@@ -2086,6 +2090,17 @@ Android. It and the product differ in these places.
   session · …* and Coach's *… sessions* receipt (`Log.jsx`, `progress.js`, `coach.js`, `DateJump.jsx`).
 
 ### Figma reconciliation
+
+- **The web's desktop head.** The Gym file's 08W boards and the Shell file's board 20 draw the desktop head with the
+  brand mark and centred rooms; `chrome.css` hides the mark from 744 px and left-aligns the rooms. The storage
+  proposal (`368:645`) follows the code.
+- **The published Gym library lags its file** (last published 2026-09-25): its Web shell / Desktop lacks the mark and
+  bottom panel, and its Gym Tab, Set row, Set line, Editable number and Action band bind the retired Gym · Colour
+  collection. It needs the owner's Publish.
+- **Dialog and Toast in the Design System.** The Dialog pins Theme=Light on itself, so a Night board shows it light
+  until its mode is set; the Toast has no Neutral tone, which the web's `Toast tone="neutral"` has.
+- **The sign-in question's weight.** 7d asks for Add and Discard of equal weight; the web's `SyncDecisions.jsx`
+  draws Discard as ghost and Add as primary. The Gym proposal WD9 draws them equal; the owner rules on approval.
 
 - **Coach setup chrome.** The Design System's `iOS / Tab bar · Gym` (`118:93`) now draws Routines as
   `list.bullet.rectangle`, like the app; the Gym boards show it once the owner publishes the Design

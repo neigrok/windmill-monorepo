@@ -98,7 +98,50 @@ async function importWorkout(phone, sets) {
 /** @param {Harness} phone @param {Id<TrainingSetValue>} id */
 const recordOf = (phone, id) => phone.runner.read(Session.scope, (read) => read.repository(TrainingSet).record(id.record, 'drawn'));
 
-test('concurrent starts join one workout and rewrite the queued set parent before assigning its serial', async (t) => {
+test('a start while a workout is drawn open is refused on the device and writes nothing', async (t) => {
+  const a = await open(t);
+  const b = await a.device();
+  const other = new Id('session2', Session);
+  committed(await a.runner.run(StartSession({ id: sessionId, startedAt })));
+  await a.sync();
+  const refused = await b.runner.run(StartSession({ id: other }));
+  assert.equal(refused.kind, 'refused');
+  if (refused.kind !== 'refused') throw new Error('a second start was admitted');
+  assert.deepEqual(refusalForm(refused.refusal), { sessionOpen: { code: 'session-open', subject: { t: 'session', id: 'session2' }, detail: null, path: 'predicted' } });
+  assert.deepEqual(b.runner.read(Session.scope, (read) => read.commands()), []);
+  assert.deepEqual(b.drawn(Session).map((value) => value.id.record), ['session1']);
+  committed(await a.runner.run(FinishSession({ id: sessionId })));
+  await a.sync();
+  assert.deepEqual(committed(await b.runner.run(StartSession({ id: other }))).result, other);
+});
+
+// A set held for deletion has not been sent, so the account still counts it: the workout it keeps open refuses a start
+// here, as the account would, until the delete lands.
+test('a start beside a workout only a held delete keeps open is refused on the device until the delete lands', async (t) => {
+  const a = await open(t);
+  const other = new Id('session2', Session);
+  committed(await a.runner.run(StartSession({ id: sessionId, startedAt: new Instant(DEFAULT_NOW - SessionRules.staleAfterMs / 2) })));
+  const set = new TrainingSetValue(new Id('set00001', TrainingSet), sessionId, exerciseId, 80, 5, finishedAt);
+  committed(await a.runner.run(AppendSet(set)));
+  await a.sync();
+  await a.advance(SessionRules.staleAfterMs - 60_000);
+  committed(await a.runner.run(DeleteSet(set.id)));
+  assert.deepEqual(a.drawn(TrainingSet), []);
+  const refused = await a.runner.run(StartSession({ id: other }));
+  assert.deepEqual(refused.kind === 'refused' && refusalForm(refused.refusal),
+    { sessionOpen: { code: 'session-open', subject: { t: 'session', id: 'session2' }, detail: null, path: 'predicted' } });
+  assert.deepEqual(a.runner.read(Session.scope, (read) => read.commands()), []);
+  await a.advance(CONSTANTS.HOLD_MS);
+  await a.sync();
+  assert.deepEqual(committed(await a.runner.run(StartSession({ id: other }))).result, other);
+  await a.sync();
+  assert.deepEqual(a.drawn(Session).map((value) => value.id.record).sort(), ['session1', 'session2']);
+  assert.deepEqual(a.notices(GymRefusals), []);
+});
+
+// Two devices start with no connection: the start the account takes first opens the workout, and the other is refused
+// `session-open`, its sets folded into that notice, never into the open workout.
+test('a start that loses a race is refused session-open and its sets are held in its notice', async (t) => {
   const a = await open(t);
   const b = await a.device();
   const other = new Id('session2', Session);
@@ -106,15 +149,18 @@ test('concurrent starts join one workout and rewrite the queued set parent befor
   assert.deepEqual(committed(await b.runner.run(StartSession({ id: other }))).result, other);
   const set = new TrainingSetValue(new Id('set00001', TrainingSet), other, exerciseId, 80, 5, finishedAt);
   committed(await b.runner.run(AppendSet(set)));
-  assert.deepEqual(b.drawn(TrainingSet), [set]);
+  const [start] = b.runner.read(Session.scope, (read) => read.commands());
+  assert.equal(start?.command.args.joinOpenSession, false);
   await a.sync();
-  const admitted = new TrainingSetValue(set.id, sessionId, exerciseId, 80, 5, finishedAt, null, '', 1);
-  assert.deepEqual(a.drawn(TrainingSet), [admitted]);
-  assert.deepEqual(b.drawn(TrainingSet), [admitted]);
-  assert.deepEqual(a.drawn(Session), [new SessionValue(sessionId, finishedAt)]);
-  assert.deepEqual(b.drawn(Session), a.drawn(Session));
+  assert.deepEqual(a.drawn(Session).map((value) => value.id.record), ['session1']);
+  assert.deepEqual(b.drawn(Session).map((value) => value.id.record), ['session1']);
+  assert.deepEqual(a.drawn(TrainingSet), []);
+  assert.deepEqual(b.drawn(TrainingSet), []);
   assert.deepEqual(a.notices(GymRefusals), []);
-  assert.deepEqual(b.notices(GymRefusals), []);
+  const notices = b.notices(GymRefusals);
+  assert.equal(notices.length, 1);
+  assert.deepEqual(refusalForm(notices[0].refusal), { sessionOpen: { code: 'session-open', subject: { t: 'session', id: 'session2' }, detail: null, path: 'notice' } });
+  assert.deepEqual(notices[0].values(set.id.ref), set.fields());
 });
 
 test('a pending start, complete set and finish survive restart and settle without dropping accepted set details', async (t) => {

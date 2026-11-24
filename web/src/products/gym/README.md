@@ -1,7 +1,14 @@
 # Web gym sync
 
-The signed-in gym observes `self/gym` through the shell's browser engine, and every gym write goes
-through it: `useGymApi()` answers the engine API, or nothing before the engine is bound. Sessions and
+The gym room draws from whichever replica the shell's browser engine holds (`useSyncReplica`), and every gym write goes
+through it: `useGymApi()` answers the API over that replica, bound or anon, from the moment the engine opens, and
+nothing before. `GymApp` opens the training room on a bound replica without waiting for the account's answer, its
+session paused or not; a paused session is offered sign-in by the account seat beside the room. The room is keyed by the
+replica's binding, so a re-identify keeps it and what is typed in it. While the shell has settled an account the
+engine's replica is not bound to (another tab signed in someone else), the room is `Opening` until the shell catches up.
+Signed out, the room is the sign-in pitch. Shares, log shares, the connected log and Coach wait for an account the shell
+has settled (auth `status` is `signed-in`: online, or offline from its last answer); until then Coach, its History and
+the log share show the sign-in pitch, or `Opening` while the account has yet to answer, and no share is offered. Sessions and
 their sets are read-only live mirrors; backfills use `gym.importSession`. Routine and note editors
 retain their opening values and guard touched fields through kit drafts. A routine name, movement
 name or note title is written NFC-normalised, trimmed and at most 60 code points, and a blank one is
@@ -11,7 +18,7 @@ their release and restart. The room draws their Undo from the engine's `undoOffe
 still held when the room is drawn again is offered with the deadline it already had. The workout and log
 shares use their REST doors in `gymApi.js`; a Coach conversation delete is held on the room's own clock, then
 deletes the conversation's records, and when the room unmounts or the document hides it is dropped unsent and the
-conversation stays. The account gate remains in `GymApp`.
+conversation stays.
 
 Every local gym read and write uses the domain kit through `gymRuntime.js`. Training entities and rules live in
 `domain/training.js`; `trainingActions.js` owns imports, corrections, set deletion and the four phone-only
@@ -42,10 +49,16 @@ the commit moment and retire a held delete of that day. Preference saves write o
 
 Training facts use the engine's drawn view: held session and set deletes leave records, last times,
 progress and history immediately, and Undo restores them. Account capacity and empty-room stance
-use stored facts. The room also hides a delete while the engine is still storing the hold. A refused write
+use stored facts. The room also hides a delete while the engine is still storing the hold. Until the replica's first
+pull of `self/gym` completes (the engine's `firstPullComplete`, which every read's `firstPullComplete()` answers), the
+copy may hold part of the account's history: the runtime reads no last time (`lastTime` answers null, `lastSets` none)
+and the domain claims no record, and nothing is drawn in their place. A refused write
 is a `GymRefusal` (`errors.js`) carrying the engine's code, the sentence a screen shows
 and, for an overlap, the crossed session; `failureReason` finishes the sentence for any failure,
-naming this device when its store could not keep the write and the network only for a REST door.
+naming this device when its store could not keep the write and the network only for a REST door. A write whose replica
+changed under the room, a sign-in or a sign-out having moved the engine to another replica or bound the anon one in
+place, is refused `not-writable`, in words that ask no one to sign in; the API stands on the engine's binding, so a
+re-identify of the account's replica refuses nothing.
 
 Coach's records as the engine holds them live in `domain/coach/`: `conversation.js` holds the `thread` and `message`
 entities, a call's record and the receipt the calls derive; `turn.js` the writes of a turn (open, text, round, end,
@@ -120,7 +133,8 @@ in the catalog.
 ## Observability
 
 `gymRuntime.js` owns the gym telemetry boundary. Engine-backed writes emit first-party `gym_action` events with allowlisted `operation` and
-`outcome` only. Operations cover routine create/save, exercise create/rename, preferences save,
+`outcome` only, and a `refused` one also `code`: `not-writable` when the replica moved under the room, `domain` when the
+gym's rules refused it, this device's or the server's. Operations cover routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
 delete/Undo and refusal. Outcomes are `saved-local`, `unchanged`, `failed`, `held`, `undone`,
 `closed`, `refused`. A local save does not claim server admission. Unexpected boundary failures
@@ -139,15 +153,19 @@ Gym tests run through the existing `npm test`, `npm run test:sync` and `npm run 
 The full suite runs performance cases after the parallel test workers exit. Training reads cover
 250 and 1,000 populated workouts, counting domain reads: unchanged renders do no recomputation,
 and a replica change recomputes each read once. These render checks have no timing budget.
-The gym domain claims every corpus file but `recovery-actions.json`, which does not apply since the web holds no
-signed-out workout, and every vector in them, compared by JCS and with reversed record order; the weight ladder runs
-directly too. Nothing remains pending.
+The gym domain claims every corpus file but those of catalog/2, the server's turn wire and the words Coach's model
+reads, which the web never speaks or which are no vectors; it runs every vector it claims, compared by JCS and with
+reversed record order; the weight ladder runs directly too. Nothing remains pending.
 The proposal review reads `outOfDate` from `ProposalState` through the runtime's proposal document, never from the
 proposal's state alone: a pending proposal whose routine moved on the log, in an edit the log has not confirmed, or out
 of sight has no Apply and no Turn this down, and says so where they stood. Harness tests exercise adopted-workout Finish, held set deletion and Undo,
 failed commits, command refusals, raw receipt replay and additive correction recovery.
 Screen tests run over a real browser engine for a signed-in account (`gymAccount` in
-`test/products/gym/harness.mjs`) and assert what the account still owes the server. Shared training
+`test/products/gym/harness.mjs`) and assert what the account still owes the server. `boot.browser.test.js` boots the
+account provider, the sign-in door and the shell over a browser copy an earlier visit seeded, in Chromium: the room draws
+with `/v1/me` held and reports how long it took, keeps the room for a paused session, keeps the pitch signed out, keeps
+the room and what is typed in it through a re-identify, and draws `Opening`, never another tab's account, under the account
+this tab's shell has settled. Shared training
 reads run on web, Swift and Kotlin. The local stack checks domain reads over an actual disposable
 backend account and persisted browser-engine observations. Chromium acceptance has twelve checks: a phone replica's `gym.start`, set and `gym.finish`
 pushes arrive live; web routine edits, backfills, additive recovery, weigh-ins and unit changes converge; a held weigh-in delete can be

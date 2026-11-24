@@ -134,8 +134,8 @@ test('the record page’s block heads do not take the finish screen’s gold cla
 
 test('the chat is one room in the frame, and no session screen carries one', () => {
   const app = read('GymApp.jsx');
-  assert.equal(app.includes("{screen === 'coach' && <CoachRoom key={account?.id} log={log} />}"), true);
-  assert.equal(app.includes("{screen === 'thread' && <CoachRoom key={account?.id} log={log} threadId={threadIdOf(hash)} />}"), true);
+  assert.equal(app.includes("{signedIn && screen === 'coach' && <CoachRoom key={account?.id} log={log} />}"), true);
+  assert.equal(app.includes("{signedIn && screen === 'thread' && <CoachRoom key={account?.id} log={log} threadId={threadIdOf(hash)} />}"), true);
   for (const file of gymFiles()) {
     const source = fs.readFileSync(file, 'utf8');
     assert.equal(source.includes('<CoachRoom') && path.basename(file) !== 'GymApp.jsx', false, file);
@@ -204,7 +204,7 @@ test('the landing sells no panel, no plan behind Coach, and names the cap Coach 
 
 test('History is a room in the frame, and a conversation is the Coach room keyed by account', () => {
   const app = read('GymApp.jsx');
-  assert.equal(app.includes("{screen === 'threads' && <HistoryPage key={account?.id} log={log} />}"), true);
+  assert.equal(app.includes("{signedIn && screen === 'threads' && <HistoryPage key={account?.id} log={log} />}"), true);
   assert.equal(app.includes("['coach', 'thread', 'threads', 'notes'].includes(screen)"), true);
 });
 
@@ -261,12 +261,12 @@ test('workout rows read actual facts and collapse only an honest common scheme',
   assert.equal(source.includes('planFrozenLabel(session)'), true);
 });
 
-test('the shared workout is answered above the auth switch, and wears none of the app’s chrome', () => {
+test('the shared workout is answered above the replica’s door, and wears none of the app’s chrome', () => {
   const app = read('GymApp.jsx');
   const shared = app.indexOf('if (sharedToken || sharedLogToken) {');
-  const authSwitch = app.indexOf("status === 'loading'");
+  const authSwitch = app.indexOf("const door = replica?.state === 'bound'");
   assert.ok(shared > 0, 'GymApp has no shared branch');
-  assert.ok(shared < authSwitch, 'the shared branch resolves after the auth switch');
+  assert.ok(shared < authSwitch, 'the shared branch resolves before the replica’s door');
   assert.ok(app.indexOf('const sharedToken = sharedTokenOf(hash);') < shared);
   assert.ok(app.indexOf('useSignInDoorHost()') < shared);
 
@@ -333,7 +333,7 @@ test('the transient is the room’s, and the window’s own carries the Undo, no
 
 test('the history reader changes session identity without replacing the history index', () => {
   assert.equal(read('GymApp.jsx').includes("(screen === 'log' || screen === 'session') && <LogList"), true);
-  assert.equal(read('Log.jsx').includes('<SessionDetail key={selected} id={selected} log={log} embedded from={from} />'), true);
+  assert.equal(read('Log.jsx').includes('<SessionDetail key={selected} id={selected} log={log} signedIn={signedIn} embedded from={from} />'), true);
 });
 
 test('web correction uses plain numeric fields and validates their raw values', () => {

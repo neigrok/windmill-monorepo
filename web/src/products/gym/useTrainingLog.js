@@ -223,7 +223,7 @@ export function useTrainingLog() {
           ? backfillHref(workout.command.args.routineId ?? FREE_SESSION) : `${sessionHref(workout.sessionId)}/edit`;
         say(t('gym.app.workoutRefused', { sentence: workout.error.sentence }), { action: { label: t('gym.app.reviewWorkout'), run: () => { window.location.hash = href; } } });
       } else say(t('gym.app.changeRefused'));
-      gymStep('refusal', 'refused');
+      gymStep('refusal', 'refused', 'domain');
     }
   }, [records.notices, say, api]);
   useEffect(() => {

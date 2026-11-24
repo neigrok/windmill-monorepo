@@ -254,11 +254,7 @@ export class SaveRoutinePlan {
         if (loaded.catalogue.find(next.id) !== null) {
           return Decision.refuse(GymRefusals.ofRefused(new Refused('id-taken', next.id.ref, null, 'predicted')));
         }
-        plan.create(new Valid(next, loaded.moment));
-        if (next.equipment === 'dumbbell' && next.loadCount !== ExerciseValue.pairedLoadCount) {
-          const metadata = new ExerciseNameValue(new Id(next.id.record, ExerciseName), null, [], null, next.loadCount);
-          plan.create(new Valid(metadata, loaded.moment), { fields: ['loadCount'] });
-        }
+        createRoutineMovement(plan, new Valid(next, loaded.moment), loaded.moment);
         wrote = true;
         continue;
       }
@@ -321,6 +317,15 @@ export class SaveRoutinePlan {
       if (movement !== null) SetTarget.floored(entry.sets ?? [], movement, new Path('entries').plus(index).plus('sets'));
     });
   }
+}
+
+// A movement a routine brings: its record, and a dumbbell's count when it holds one dumbbell, not the pair.
+/** @param {Plan} plan @param {Valid<ExerciseValue>} value @param {import('../../../platform/domain-kit/time.js').Moment} moment */
+export function createRoutineMovement(plan, value, moment) {
+  plan.create(value);
+  const movement = value.value;
+  if (movement.equipment !== 'dumbbell' || movement.loadCount === ExerciseValue.pairedLoadCount) return;
+  plan.create(new Valid(new ExerciseNameValue(new Id(movement.id.record, ExerciseName), null, [], null, movement.loadCount), moment), { fields: ['loadCount'] });
 }
 
 /** @param {readonly Id<RoutineValue>[]} order */

@@ -323,13 +323,15 @@ notice joins): the shell then asks in those words as flow 50 draws roadmap's, a 
 Escape cancels, and a cancelled sign-in signs the account out and leaves the work from before on the device. Each due
 product is asked in turn. Account closure records a durable intent and discards that
 account's device data without a second question, recovering interrupted cleanup before ordinary auth refresh.
-`platform/sync/react.js` exports `useSyncEngine()`,
-`useSyncRecords(scope)` and `useSyncNotices(product)`. The anonymous journal uses record observations; Gym retains its account gate.
+`platform/sync/react.js` exports `useSyncReplica()`, `useSyncEngine()`,
+`useSyncRecords(scope)` and `useSyncNotices(product)`. The anonymous journal uses record observations; gym's room draws from
+the replica the engine holds without waiting for the account, and signed out is its sign-in pitch.
 Gym and journal records change only through the engine; their REST clients carry server features.
 The worker stages the shell and room dependencies listed by `offline-assets.json` in one verified
 cache generation before promoting it; a failed update retains the previous complete shell. The build
-enforces a 4 MiB precache budget. Neural search loads its worker and WASM runtime on first search use.
-API/model responses bypass the worker: its fetch handler declines them, and where the browser takes service
+enforces a 4 MiB precache budget. Neural search loads its worker and WASM runtime on first search use; the worker
+keeps the runtime in its asset cache and the weights in `windmill-models-v1` after that use, neither in the shell.
+API responses bypass the worker: its fetch handler declines them, and where the browser takes service
 worker routes the worker routes `/v1/` to the network at install, so a beacon or keepalive request a page sends
 as it hides never waits on the handler. Bounded network navigation falls back to the cached shell.
 Server features name their connection requirement in the offline state.

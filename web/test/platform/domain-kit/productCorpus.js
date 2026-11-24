@@ -56,7 +56,7 @@ export class ProductCorpus {
   }
 
   // A case's records in one scope as the kit's views, with its device rows: a single scene's under `records.device`, a
-  // scene of several scopes' under `device`. `ids` are minted in order.
+  // scene of several scopes' under `device`. `ids` are minted in order, opaque ones included.
   /** @param {Vector} vector @param {string} scope @param {(type: string) => import('../../../src/platform/domain-kit/entities.js').RecordID} mintId */
   views(vector, scope, mintId) {
     const { firstPullComplete = true } = vector.input;
@@ -64,7 +64,7 @@ export class ProductCorpus {
     const device = (vector.input.scopes === undefined ? records.device : vector.input.device) ?? {};
     const stored = viewRecords(records.stored ?? records.drawn);
     return Views.ofRecords(this.book.registry, { drawn: viewRecords(records.drawn), stored, confirmed: stored, spent: records.spent ?? [],
-      devices: device, firstPullComplete, replica: VECTOR_REPLICA, mintId });
+      devices: device, firstPullComplete, replica: VECTOR_REPLICA, mintId, opaqueID: () => String(mintId('an opaque identity')) });
   }
 
   /** @param {Vector} vector */

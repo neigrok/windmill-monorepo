@@ -23,7 +23,11 @@ import { TrainingHistory } from '../../../../src/products/gym/domain/trainingHis
 import { GymEstimate, Prefill, ProgressRecords, Readout, RestTarget, TrainingLog } from '../../../../src/products/gym/domain/trainingReads.js';
 import { GymUnits, WeightLadder } from '../../../../src/products/gym/domain/units.js';
 import { PlanChanges, PlanOperations, ReviseWorkoutPlan } from '../../../../src/products/gym/domain/workoutPlan.js';
-import { ApplyWorkoutProposal, DismissWorkoutProposal, ProposeWorkout, WorkoutProposal, WorkoutProposalState } from '../../../../src/products/gym/domain/workoutProposals.js';
+import { ApplyWorkoutProposal, DismissWorkoutProposal, ProposeWorkout, ReissueWorkoutProposal, WorkoutProposal, WorkoutProposalState } from '../../../../src/products/gym/domain/workoutProposals.js';
+import { AdoptWorkout, SignedOutWorkout } from '../../../../src/products/gym/domain/workoutAdoption.js';
+import { CoachRoutineImport, ImportCoachRoutineBatch } from '../../../../src/products/gym/domain/coachOnboarding.js';
+import { DiscardSignedOutWorkout, RecoverStrandedSets, SetFix, WorkoutFix, WorkoutRecovery } from '../../../../src/products/gym/domain/workoutRecovery.js';
+import { DomainNotice } from '../../../../src/platform/domain-kit/refusals.js';
 import { AbilityCall, CoachMessage, CoachThread, Picture, ReadServed } from '../../../../src/products/gym/domain/coach/conversation.js';
 import { BeginRound, DeleteConversation, EndTurn, ForgetRunningTurn, OpenTurn, RecoverMark, StreamTurnText, WithdrawTurn } from '../../../../src/products/gym/domain/coach/turn.js';
 import { Instant } from '../../../../src/platform/domain-kit/time.js';
@@ -48,16 +52,15 @@ const valuesFile = 'gym/domain/values.json';
 const ladderFile = 'gym-ladder.json';
 /** @type {string[]} */
 const pending = [];
-// The replica executor claims catalog/3's corpora; catalog/2's are the phones' and the server's until they retire (gym Coach
-// on the AI service §9), and the scripted turns are a wire the web never speaks.
+// The replica executor claims catalog/3's corpora; catalog/2's are the iPhone's and the server's until they retire (gym
+// Coach on the AI service §9), and the scripted turns are the server's turn wire. The web speaks neither, as Android does
+// not: its Coach runs on the device over catalog/3.
 const catalog = new Catalog(Contract.json('gym/catalog-3.json'));
 const abilityFiles = Contract.files('gym/abilities-3');
 /** @type {Record<string, string>} */
 const notApplicable = {
-  'gym/domain/recovery-actions.json': 'the web holds no signed-out workout: its gym opens behind the account gate',
-  'gym/domain/coach-onboarding-actions.json': 'the web carries no anonymous routine import door',
   ...Object.fromEntries(Contract.files('gym').filter((path) => path === 'gym/catalog.json' || path.startsWith('gym/abilities/'))
-    .map((path) => [path, 'catalog/2: the web executor runs catalog/3 alone'])),
+    .map((path) => [path, 'catalog/2, which the web never speaks: its executor runs catalog/3 alone'])),
   ...Object.fromEntries(Contract.files('gym').filter((path) => path.startsWith('gym/turns/')).map((path) => [path, 'the server turn wire, which the web never speaks'])),
   ...Object.fromEntries(Contract.files('gym').filter((path) => path.startsWith('gym/coach/'))
     .map((path) => [path, 'the words Coach\'s model reads are no vectors: coach/profile.test.js reads them'])),
@@ -400,6 +403,66 @@ const handlers = {
       case 'DismissWorkoutProposal': return corpus.decision(DismissWorkoutProposal(f.ref('id', WorkoutProposal)), vector, () => null, refusalForm);
       default: throw new Error(`unclaimed workout proposal action ${vector.input.action}`);
     }
+  },
+  // The review and its reasons, the fix editor's live line, ownership of a notice, and the adoption, stranded-set and
+  // discard decisions, each over the saved copies the scene lists under the device key.
+  'gym/domain/recovery-actions.json': (vector) => {
+    const input = vector.input.input;
+    const f = Fields.object(input);
+    /** @param {any} json */
+    const notice = (json) => new DomainNotice(json, book.registry, GymRefusals);
+    if (vector.input.read) return corpus.read(vector, Session.scope, (read) => {
+      const saved = SignedOutWorkout.read(read), log = new TrainingLog(read), catalogue = new Catalogue(read);
+      const rows = WorkoutRecovery.review(saved, (input.notices ?? []).map(notice), log, catalogue);
+      switch (vector.input.read) {
+        case 'WorkoutRecovery': return rows.map((row) => ({ id: row.id.json, reason: row.reason, retry: row.retry, noticeIds: [...row.noticeIds],
+          strandedSets: row.strandedSets.map((set) => set.id.json), refusal: row.refusal === null ? null : refusalForm(row.refusal), canFix: row.canFix }));
+        case 'owns': {
+          const copy = saved.find((workout) => workout.session.id.equals(f.ref('id', Session)));
+          assert.ok(copy, 'no saved copy under the case\'s id');
+          return copy.owns(notice(input.notice));
+        }
+        case 'WorkoutFix': {
+          const id = f.ref('id', Session);
+          const recovery = rows.find((row) => row.id.equals(id));
+          const copy = saved.find((workout) => workout.session.id.equals(id));
+          assert.ok(recovery || copy, 'no saved copy under the case\'s id');
+          let fix = recovery ? WorkoutFix.ofRecovery(recovery) : WorkoutFix.of(/** @type {SignedOutWorkout} */ (copy));
+          if (input.startedAt !== undefined) fix = fix.with({ startedAt: f.instant('startedAt') });
+          if (input.finishedAt !== undefined) fix = fix.with({ finishedAt: f.optionalInstant('finishedAt') });
+          if (input.sets !== undefined) {
+            fix = fix.with({ sets: input.sets.map((/** @type {any} */ { id: setId, ...fields }) =>
+              SetFix.of(TrainingSet.decode(Fields.values('set', setId, { ...fields, sessionId: id.json })))) });
+          }
+          const refusal = fix.refusal(log.moment, log.drawnSessions, catalogue);
+          return { landed: fix.landed, sets: fix.sets.map((set) => set.id.json), refusal: refusal === null ? null : refusalForm(refusal) };
+        }
+        default: throw new Error(`unclaimed recovery read ${vector.input.read}`);
+      }
+    });
+    if (vector.input.action === 'ReissueWorkoutProposal') {
+      const { id, ...fields } = input.proposal;
+      return corpus.decision(ReissueWorkoutProposal(WorkoutProposal.decode(Fields.values('workoutProposal', id, fields))), vector, (proposal) => proposal.json, refusalForm);
+    }
+    const id = f.ref('id', Session);
+    const revised = input.revised === undefined ? null : SignedOutWorkout.decode(input.revised);
+    switch (vector.input.action) {
+      case 'AdoptWorkout': return corpus.decision(AdoptWorkout(id, f.string('mode') === 'keep' ? 'keep' : 'restart', revised), vector, () => null, refusalForm);
+      case 'RecoverStrandedSets': return corpus.decision(RecoverStrandedSets(id, f.string('placement') === 'intoWorkout' ? 'intoWorkout' : 'separately', revised),
+        vector, () => null, refusalForm);
+      case 'DiscardSignedOutWorkout': return corpus.decision(DiscardSignedOutWorkout(id), vector, () => null, refusalForm);
+      default: throw new Error(`unclaimed recovery action ${vector.input.action}`);
+    }
+  },
+  'gym/domain/coach-onboarding-actions.json': (vector) => {
+    const input = vector.input.input;
+    const f = Fields.object(input);
+    assert.equal(vector.input.action, 'ImportCoachRoutineBatch', 'unclaimed onboarding action');
+    const routines = f.list('routines', (routine) => new CoachRoutineImport(routine.ref('id', Routine), routine.string('name'), routine.list('entries', RoutineEntry.decode)));
+    const movements = f.list('movements', (movement) => new ExerciseValue(movement.ref('id', Exercise), movement.string('name'), movement.string('pattern'),
+      movement.string('equipment'), movement.double('stepKg'), [], movement.int('loadCount')));
+    return corpus.decision(ImportCoachRoutineBatch({ replica: f.string('replica'), resultId: f.string('resultId'), fingerprint: f.string('fingerprint'),
+      receiptKey: f.string('receiptKey'), routines, movements }), vector, (receipt) => receipt.json, refusalForm);
   },
   'gym/domain/units.json': (vector) => unitsForm(vector.input),
   'gym/domain/notes-actions.json': (vector) => {

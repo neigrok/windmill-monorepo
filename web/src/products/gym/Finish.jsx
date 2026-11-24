@@ -17,7 +17,7 @@ import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
 import { useDomainRead } from './useDomainRead.js';
 
-export function FinishScreen({ id, log }) {
+export function FinishScreen({ id, log, signedIn = false }) {
   const api = useGymApi();
   const stored = useDomainRead((read) => {
     const sets = read.repository(TrainingSet).all('stored');
@@ -112,7 +112,7 @@ export function FinishScreen({ id, log }) {
         <KeepAsRoutine session={session} sets={sets} catalog={catalog} log={log} />
       )}
 
-      {!review.slight && <ShareWorkout sessionId={id} />}
+      {signedIn && !review.slight && <ShareWorkout sessionId={id} />}
     </section>
   );
 }
