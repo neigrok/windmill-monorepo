@@ -8,7 +8,7 @@ which fails on a file it neither claims nor names as a device's. Swift's domain 
 claims, by JCS, in `apps/ios/Domain/Tests/RoadmapDomainTests/`, the reads' files (`account`, `activity`, `board`, `diagnostics`, `graph`,
 `guides`, `landing`, `legend`, `pointers`, `progress`, `replica` and `search`), `rules.json`, `values.json`, and every
 `*-actions.json` (`roadmaps`, `steps`, `kinds`, `progress`, `workspace` and `landing`), each action case with its records
-reversed too. Its `CorpusTests.swift` names `undo.json` as waiting for its scenes, and fails on a file in neither list.
+reversed too, and the scenes of `undo.json` (`UndoTests.swift`). Its `CorpusTests.swift` fails on a file it does not claim.
 The pure reads below take normalized domain records; the actions, `values.json`
 and `rules.json` follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3 over engine
 rows and `../../sync/roadmap.registry.json` (see [Actions](#actions)). No operation reads storage,
@@ -268,7 +268,7 @@ value equivalent to unset; `createdRecord`; or a product `command` with its evid
 | The landing note | none: device rows are the device's | — |
 
 **Scenes** (`undo.json`). `{steps}` → `{outcomes}`, run on the kit's harness over the reference server with roadmap's
-binding. A step is `{run: <action>, input, as?, on?}`, `{save: "StepNote", input: {tree, step, text}, as?}`, `{sync: true}`, `{advance: ms}`, `{undo | redo | read | cancelHeld:
+binding, and in Swift over the model server with `RoadmapServerRules`. A step is `{run: <action>, input, as?, on?}`, `{save: "StepNote", input: {tree, step, text}, as?}`, `{sync: true}`, `{advance: ms}`, `{undo | redo | read | cancelHeld:
 <role>}` (`subtree: true` gives a Redo the product's slots), `{device: <name>}` or `{inspect: {scope, t, fields}}`. An
 input names a role's result as `$role` or `$role.path`. Outcomes are a run's kind, a save's result kind, the `InverseResult` without its ids,
 `{cancelHeld}`, and an inspection's visible records, each id named by the first role holding it, any other minted id

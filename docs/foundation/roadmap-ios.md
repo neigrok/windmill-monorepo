@@ -61,8 +61,8 @@ Activity and the web demo.
 - `RoadmapDomain` is built on the kit's changes [Roadmap on the sync engine](roadmap-on-the-engine.md)
   §3 names: entities in a tree or an overlay scope, a gesture over several scopes, and Undo of an
   act.
-- The ability and catalog types Coach's executor needs live in gym's domain today. They move into
-  `DomainKit`, since one product's domain may not import another's.
+- The ability and catalog types Coach's executor needs live in `DomainKit`, since one product's domain
+  may not import another's.
 - `RoadmapDomain` and `RoadmapLayout` join the layering tests' world and the domain kit's table of
   layers, and neither imports the app.
 - The room joins the shell as its third room. The shell's sign-in and sign-out questions count
@@ -377,8 +377,8 @@ makes it false.
   subtree's progress, so a step that owns one stands as the domain reads it with that subtree unread. The app's
   onboarding says roadmap is on the web.
 - `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
-  room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once: no Undo scene,
-  plan grammar or Coach executor.
+  room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once, and plays every
+  Undo scene: no plan grammar or Coach executor.
 - One SwiftUI `Canvas` in the room's Graph draws `RoadmapLayout`'s picture (`apps/ios/App/Sources/Roadmap/Graph/`).
   The budget of §5 is measured at 5,000 steps on a Mac's simulator alone, by `apps/ios/App/Tools/graph_bench.sh` on a
   Release-configuration build: the picture's time with its layout, the domain's read taken for it, the room's part of

@@ -1,9 +1,8 @@
-import DomainKit
 import SyncCore
 
-// The gym ability catalog (Coach §3) as the phone reads it: every ability's declaration, generated into
-// Catalog.generated.swift from packages/api-contract/gym/catalog.json, the agent rules that decide what a seat is offered,
-// and the JSON Schema check every call's input passes again on the phone (G-3).
+// §9.4 what an ability is: one operation of a product's catalog, the agent rules that decide what a seat is offered, and
+// the JSON Schema check every call's input passes again on the phone. A product's catalog is its `catalog.json` as Swift
+// data, generated into the product's domain; the kit names no product.
 
 public enum AbilityClass: String, Sendable {
   case read, add, change, remove
@@ -49,15 +48,23 @@ public struct Ability: Sendable {
   }
 }
 
-public enum Catalog {
-  public static func ability(named name: String) -> Ability? {
-    declared.first { $0.name.utf8.elementsEqual(name.utf8) }
+public struct Catalog: Sendable {
+  public let version: String
+  public let abilities: [Ability]
+
+  public init(version: String, abilities: [Ability]) {
+    self.version = version
+    self.abilities = abilities
   }
 
-  // §3.4, G-1 and G-2: a withheld ability is never offered, nor one no executor declares, and one that needs an account
-  // is not offered to `anon`.
-  public static func offered(seat: Seat) -> [Ability] {
-    declared.filter { $0.agent != .withheld && $0.declared && $0.admits(seat) }
+  public func ability(named name: String) -> Ability? {
+    abilities.first { $0.name.utf8.elementsEqual(name.utf8) }
+  }
+
+  // Coach §3.4, G-1 and G-2: a withheld ability is never offered, nor one no executor declares, and one that needs an
+  // account is not offered to `anon`.
+  public func offered(seat: Seat) -> [Ability] {
+    abilities.filter { $0.agent != .withheld && $0.declared && $0.admits(seat) }
   }
 }
 
