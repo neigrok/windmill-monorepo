@@ -27,7 +27,10 @@ unattributed pages from before the engine (web-device-parity §5): every sign-ou
 - **Open:** nothing tells the person that signing out forgets such data; saying so is a visible change and needs a
   design.
 - **Open:** which other data is in this situation, on each surface. Candidates:
-  - signed-out work on a shared device that the next person signs in over;
+  - signed-out work on a shared device that the next person signs in over. When the account holds nothing of a product,
+    the engine joins the device's signed-out work to it without asking (engine §7.10), so on a shared browser one
+    person's signed-out routines, workouts and weigh-ins join the next person's account and reach the server; when the
+    account holds something, the question asks, naming that work;
   - signed-out gym workouts saved for adoption that no sign-in took;
   - Coach's leftovers beside a replica.
 
