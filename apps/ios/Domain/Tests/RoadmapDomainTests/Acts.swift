@@ -54,7 +54,8 @@ struct RoadmapAct {
     case "ChangePrerequisites":
       self.init(ChangePrerequisites(tree: tree, step: try input.id("step"), add: try input.ids("add"), remove: try input.ids("remove")), result: { .null })
     case "ImportSteps":
-      let act = ImportSteps(tree: tree, imported: try ImportedSteps(form: input.member("imported")), under: try input.optionalID("under"))
+      let act = ImportSteps(tree: tree, imported: try ImportedSteps(form: input.member("imported")), under: try input.optionalID("under"),
+                            done: try input.optional("done") { try $0.asArray().map { try $0.asString() } } ?? [])
       self.init(act) { (planted: [(key: String, id: ID<RoadmapStep>)]) -> JSON in
         .object(JSON.Object(uniqueKeysWithValues: planted.map { ($0.key, $0.id.json) }))
       }

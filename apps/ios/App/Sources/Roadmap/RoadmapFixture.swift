@@ -25,8 +25,9 @@ import SyncSchema
 // sail*; roadmap-cover-offline, which opens it and has no connection; roadmap-cover-private and
 // roadmap-cover-private-signed-out, the link to a roadmap of that account's that is private; and
 // roadmap-cover-no-connection, a link with no connection and no copy on the phone. A launch can also name where the
-// Graph's measures go and how it keeps a pinch's frames (`graph(telemetry:)`), where the Board's go (`boardFrames()`), and
-// how long a band stands (`wait()`).
+// Graph's measures go and how it keeps a pinch's frames (`graph(telemetry:)`), where the Board's go (`boardFrames()`),
+// how long a band stands (`wait()`), and the file New Roadmap's A File is handed in place of the system's importer
+// (`chosenFile()`).
 enum RoadmapFixture {
   // The engine's views of every record of a type in a scope, visible or not, as the room's model takes them.
   static func records(_ runtime: AppRuntime) -> RoadmapModel.Records {
@@ -104,6 +105,42 @@ enum RoadmapFixture {
     }
     #endif
     return { try await Task.sleep(for: $0) }
+  }
+
+  // The boards' copied plan (Roadmap · iOS 01.8): *Summer cruise*, twelve steps under three headings, two done, four
+  // lines kept as notes.
+  static let summerCruise = """
+    Summer cruise
+    - [x] Pick the week
+    - [x] Book the boat
+      - Plan the route
+        Out by the north channel, back along the coast.
+        Two nights at anchor.
+        - Check the tides
+        - Mark the harbours
+    ## Galley
+    - Provision for five days
+      Water, fuel and food for four.
+    ## Crew
+    - Brief the crew
+      Watches, knots and the man-overboard drill.
+    ## Deck
+    - Cast off
+    """
+
+  // The file a launch names with `-roadmap-file` stands for the one the system's importer would hand New Roadmap: the
+  // boards' plan written under that name to the app's temporary folder, or, named `Sailing plan.md`, a file that cannot
+  // be read (01.8c). None where no launch names one, and in any build but a simulator's debug build.
+  static func chosenFile() -> URL? {
+    #if DEBUG && targetEnvironment(simulator)
+    let arguments = ProcessInfo.processInfo.arguments
+    guard let named = arguments.firstIndex(of: "-roadmap-file"), named + 1 < arguments.count else { return nil }
+    let file = URL.temporaryDirectory.appending(path: arguments[named + 1])
+    if arguments[named + 1] != "Sailing plan.md" { try? Data(summerCruise.utf8).write(to: file) }
+    return file
+    #else
+    return nil
+    #endif
   }
 
   // What a cover reads a shared roadmap through: the engine, and the backend's sharing requests with the account's token. On

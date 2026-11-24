@@ -45,7 +45,7 @@
         {"mark": "note", "nodeId": "terrain-renderer", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 8, "branches": 2, "done": 1},
-      "imperfections": {"notes": 1, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 1, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -72,7 +72,7 @@
       ],
       "gutter": [{"mark": "root", "nodeId": "ship-the-beta", "liberties": []}, {"mark": "step", "nodeId": "write-changelog", "liberties": []}],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -100,7 +100,7 @@
       ],
       "gutter": [{"mark": "step", "nodeId": "one", "liberties": []}, {"mark": "step", "nodeId": "two", "liberties": []}],
       "readout": {"steps": 3, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -128,7 +128,7 @@
       ],
       "gutter": [{"mark": "branch", "nodeId": "section", "liberties": []}, {"mark": "step", "nodeId": "a", "liberties": []}],
       "readout": {"steps": 3, "branches": 1, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -166,7 +166,7 @@
         {"mark": "step", "nodeId": "read-the-wind", "liberties": []}
       ],
       "readout": {"steps": 3, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -204,11 +204,11 @@
         {"mark": "step", "nodeId": "c", "liberties": []}
       ],
       "readout": {"steps": 6, "branches": 2, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
-    "name": "A name is clipped at 200 UTF-16 units, and its id at 40",
+    "name": "A name is clipped at 200 characters, and its id at 40",
     "input": {
       "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n- a",
       "kinds": [
@@ -237,11 +237,11 @@
       ],
       "gutter": [{"mark": "root", "nodeId": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "liberties": []}, {"mark": "step", "nodeId": "a", "liberties": []}],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
-    "name": "A name is never clipped inside a surrogate pair: it keeps one unit fewer",
+    "name": "A name counts characters as the domain does: 199 letters and an emoji are 200, kept whole",
     "input": {
       "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀tail\n- a",
       "kinds": [
@@ -251,12 +251,12 @@
       ]
     },
     "expect": {
-      "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀",
       "missingRoot": false,
       "nodes": [
         {
           "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-          "label": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "label": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀",
           "color": "terracotta",
           "prerequisites": [],
           "icon": "sparkles"
@@ -270,13 +270,13 @@
       ],
       "gutter": [{"mark": "root", "nodeId": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "liberties": []}, {"mark": "step", "nodeId": "a", "liberties": []}],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
-    "name": "The clip counts UTF-16 units, so 150 emoji keep 100",
+    "name": "The clip counts characters, so 250 emoji keep 200",
     "input": {
-      "text": "# 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\n- a",
+      "text": "# 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\n- a",
       "kinds": [
         {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
         {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
@@ -284,12 +284,12 @@
       ]
     },
     "expect": {
-      "title": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+      "title": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
       "missingRoot": false,
       "nodes": [
         {
           "id": "root",
-          "label": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+          "label": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
           "color": "terracotta",
           "prerequisites": [],
           "icon": "sparkles"
@@ -303,7 +303,7 @@
       ],
       "gutter": [{"mark": "root", "nodeId": "root", "liberties": []}, {"mark": "step", "nodeId": "a", "liberties": []}],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -327,7 +327,7 @@
       ],
       "gutter": [{"mark": null, "nodeId": null, "liberties": []}],
       "readout": {"steps": 1, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -340,7 +340,7 @@
       "kinds": [],
       "gutter": [{"mark": null, "nodeId": null, "liberties": []}],
       "readout": {"steps": 1, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -369,7 +369,7 @@
         {"mark": null, "nodeId": null, "liberties": []}
       ],
       "readout": {"steps": 1, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -411,7 +411,7 @@
         {"mark": "step", "nodeId": "open-thing", "liberties": []}
       ],
       "readout": {"steps": 8, "branches": 0, "done": 1},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -454,7 +454,7 @@
         {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 7, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 7, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -495,7 +495,7 @@
         {"mark": "step", "nodeId": "ascii-three", "liberties": []}
       ],
       "readout": {"steps": 3, "branches": 0, "done": 0},
-      "imperfections": {"notes": 3, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 3, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -537,7 +537,7 @@
         {"mark": "step", "nodeId": "x-half", "liberties": []}
       ],
       "readout": {"steps": 8, "branches": 0, "done": 2},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -574,7 +574,7 @@
         {"mark": "step", "nodeId": "step-5", "liberties": []}
       ],
       "readout": {"steps": 6, "branches": 0, "done": 1},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -611,7 +611,7 @@
         {"mark": "step", "nodeId": "b", "liberties": []}
       ],
       "readout": {"steps": 5, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -645,7 +645,7 @@
         {"mark": "step", "nodeId": "b", "liberties": []}
       ],
       "readout": {"steps": 4, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -681,7 +681,7 @@
         {"mark": "step", "nodeId": "d", "liberties": []}
       ],
       "readout": {"steps": 5, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -723,7 +723,7 @@
         {"mark": "step", "nodeId": "w", "liberties": []}
       ],
       "readout": {"steps": 8, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -757,7 +757,7 @@
         {"mark": "step", "nodeId": "c", "liberties": []}
       ],
       "readout": {"steps": 4, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -791,7 +791,7 @@
         {"mark": "step", "nodeId": "c", "liberties": []}
       ],
       "readout": {"steps": 4, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -825,7 +825,7 @@
         {"mark": "step", "nodeId": "c", "liberties": [{"type": "clamp", "indent": "ragged"}]}
       ],
       "readout": {"steps": 4, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 1, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 1, "renames": 0, "clips": 0}
     }
   },
   {
@@ -859,7 +859,7 @@
         {"mark": "step", "nodeId": "deep", "liberties": [{"type": "clamp", "indent": "jump"}]}
       ],
       "readout": {"steps": 4, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 1, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 1, "renames": 0, "clips": 0}
     }
   },
   {
@@ -904,10 +904,10 @@
           "liberties": [{"type": "clamp", "indent": "ragged"}, {"type": "clamp", "indent": "jump"}, {"type": "rename", "label": "a (2)"}]
         },
         {"mark": "note", "nodeId": "a-2", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "a-2", "liberties": [{"type": "note"}]}
+        {"mark": "note", "nodeId": "a-2", "liberties": []}
       ],
       "readout": {"steps": 4, "branches": 0, "done": 1},
-      "imperfections": {"notes": 2, "clamps": 2, "renames": 1}
+      "imperfections": {"notes": 1, "clamps": 2, "renames": 1, "clips": 0}
     }
   },
   {
@@ -946,7 +946,7 @@
         {"mark": "step", "nodeId": "f", "liberties": [{"type": "clamp", "indent": "ragged"}]}
       ],
       "readout": {"steps": 7, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 2, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 2, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1001,7 +1001,7 @@
         {"mark": "step", "nodeId": "back-at-level-0", "liberties": []}
       ],
       "readout": {"steps": 15, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1034,7 +1034,7 @@
         {"mark": "step", "nodeId": "b", "liberties": [{"type": "clamp", "indent": "ragged"}]}
       ],
       "readout": {"steps": 3, "branches": 0, "done": 0},
-      "imperfections": {"notes": 1, "clamps": 1, "renames": 0}
+      "imperfections": {"notes": 1, "clamps": 1, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1068,7 +1068,7 @@
         {"mark": "step", "nodeId": "c", "liberties": []}
       ],
       "readout": {"steps": 4, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 1, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 1, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1106,7 +1106,7 @@
         {"mark": "step", "nodeId": "d", "liberties": []}
       ],
       "readout": {"steps": 6, "branches": 1, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 1, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 1, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1142,7 +1142,7 @@
         {"mark": "step", "nodeId": "moment", "liberties": []}
       ],
       "readout": {"steps": 5, "branches": 2, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1174,7 +1174,7 @@
         {"mark": "step", "nodeId": "ship", "liberties": []}
       ],
       "readout": {"steps": 3, "branches": 1, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1237,7 +1237,7 @@
         {"mark": "step", "nodeId": "s8", "liberties": []}
       ],
       "readout": {"steps": 17, "branches": 8, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1265,7 +1265,7 @@
         {"mark": "step", "nodeId": "b", "liberties": []}
       ],
       "readout": {"steps": 5, "branches": 2, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1305,11 +1305,11 @@
         {"mark": "step", "nodeId": "c", "liberties": []}
       ],
       "readout": {"steps": 7, "branches": 3, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
-    "name": "A kind takes 24 units of a longer heading, so the same heading again does not bind it",
+    "name": "A kind takes 24 characters of a longer heading, so the same heading again does not bind it",
     "input": {
       "text": "P\n## A very long heading that goes past the cap\n- a\n## A very long heading that goes past the cap\n- b",
       "kinds": [
@@ -1355,11 +1355,11 @@
         {"mark": "step", "nodeId": "b", "liberties": []}
       ],
       "readout": {"steps": 5, "branches": 2, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 1}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 1, "clips": 0}
     }
   },
   {
-    "name": "A kind label is never clipped inside a surrogate pair",
+    "name": "A kind label counts characters: 23 letters and an emoji are 24, kept whole",
     "input": {
       "text": "P\n## kkkkkkkkkkkkkkkkkkkkkkk😀 and more\n- a",
       "kinds": [
@@ -1377,7 +1377,7 @@
         {"id": "a", "label": "a", "color": "terracotta", "prerequisites": ["kkkkkkkkkkkkkkkkkkkkkkk-and-more"]}
       ],
       "kinds": [
-        {"id": "build", "hue": "terracotta", "label": "kkkkkkkkkkkkkkkkkkkkkkk", "description": "", "source": "relabeled"},
+        {"id": "build", "hue": "terracotta", "label": "kkkkkkkkkkkkkkkkkkkkkkk😀", "description": "", "source": "relabeled"},
         {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
         {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
       ],
@@ -1387,7 +1387,7 @@
         {"mark": "step", "nodeId": "a", "liberties": []}
       ],
       "readout": {"steps": 3, "branches": 1, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1432,7 +1432,7 @@
         {"mark": null, "nodeId": null, "liberties": []}
       ],
       "readout": {"steps": 7, "branches": 3, "done": 0},
-      "imperfections": {"notes": 4, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 4, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1472,7 +1472,7 @@
         {"mark": "step", "nodeId": "c", "liberties": []}
       ],
       "readout": {"steps": 7, "branches": 3, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1508,7 +1508,7 @@
         {"mark": "step", "nodeId": "b", "liberties": []}
       ],
       "readout": {"steps": 5, "branches": 2, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1544,11 +1544,11 @@
         {"mark": "root", "nodeId": "root", "liberties": []},
         {"mark": "step", "nodeId": "step", "liberties": []},
         {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "step", "liberties": []},
         {"mark": "note", "nodeId": "step", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 3, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1585,7 +1585,7 @@
         {"mark": "note", "nodeId": "this-is-just-prose", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 1, "branches": 0, "done": 0},
-      "imperfections": {"notes": 2, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1620,9 +1620,9 @@
       "gutter": [
         {"mark": "root", "nodeId": "root", "liberties": []},
         {"mark": "step", "nodeId": "s", "liberties": []},
-        {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "s", "liberties": []},
+        {"mark": "note", "nodeId": "s", "liberties": []},
+        {"mark": "note", "nodeId": "s", "liberties": []},
         {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
         {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
         {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]},
@@ -1632,7 +1632,7 @@
         {"mark": "note", "nodeId": "s", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 10, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 7, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1670,12 +1670,12 @@
         {"mark": "note", "nodeId": "title", "liberties": [{"type": "note"}]},
         {"mark": "branch", "nodeId": "branch", "liberties": []},
         {"mark": "note", "nodeId": "branch", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "branch", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "branch", "liberties": []},
         {"mark": "step", "nodeId": "a", "liberties": []},
         {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 3, "branches": 1, "done": 0},
-      "imperfections": {"notes": 4, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 3, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1706,7 +1706,7 @@
         {"mark": "branch", "nodeId": "b-windmill-kind-sky", "liberties": []}
       ],
       "readout": {"steps": 3, "branches": 1, "done": 0},
-      "imperfections": {"notes": 1, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 1, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1749,7 +1749,7 @@
         {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 7, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 7, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1785,7 +1785,7 @@
         {"mark": "step", "nodeId": "foo-3", "liberties": [{"type": "rename", "label": "Foo (3)"}]}
       ],
       "readout": {"steps": 5, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 3}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 3, "clips": 0}
     }
   },
   {
@@ -1821,7 +1821,7 @@
         {"mark": "branch", "nodeId": "foo-2", "liberties": [{"type": "rename", "label": "Foo (2)"}]}
       ],
       "readout": {"steps": 5, "branches": 2, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 3}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 3, "clips": 0}
     }
   },
   {
@@ -1859,7 +1859,7 @@
         {"mark": "step", "nodeId": "caf-2-2", "liberties": [{"type": "rename", "label": "Café (2)"}]}
       ],
       "readout": {"steps": 6, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 1}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 1, "clips": 0}
     }
   },
   {
@@ -1901,7 +1901,7 @@
         {"mark": "step", "nodeId": "step-3", "liberties": []}
       ],
       "readout": {"steps": 8, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -1937,7 +1937,7 @@
         {"mark": "step", "nodeId": "b", "liberties": []}
       ],
       "readout": {"steps": 5, "branches": 2, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 1}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 1, "clips": 0}
     }
   },
   {
@@ -1985,7 +1985,7 @@
         {"mark": "step", "nodeId": "latin-2-mixed", "liberties": []}
       ],
       "readout": {"steps": 11, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2027,7 +2027,7 @@
         {"mark": "done", "nodeId": "done", "liberties": []}
       ],
       "readout": {"steps": 8, "branches": 0, "done": 1},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2069,7 +2069,7 @@
         {"mark": "step", "nodeId": "na-ve-caf", "liberties": []}
       ],
       "readout": {"steps": 8, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2111,7 +2111,7 @@
         {"mark": "step", "nodeId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "liberties": []}
       ],
       "readout": {"steps": 3, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2150,7 +2150,7 @@
         {"mark": "step", "nodeId": "narrow", "liberties": []}
       ],
       "readout": {"steps": 6, "branches": 1, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2182,7 +2182,7 @@
         {"mark": null, "nodeId": null, "liberties": []}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 1, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 1, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2221,7 +2221,7 @@
         {"mark": "note", "nodeId": "trailing", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 4, "branches": 1, "done": 0},
-      "imperfections": {"notes": 4, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 4, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2256,7 +2256,7 @@
         {"mark": "step", "nodeId": "padded", "liberties": []}
       ],
       "readout": {"steps": 3, "branches": 0, "done": 0},
-      "imperfections": {"notes": 3, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 3, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2293,7 +2293,7 @@
         {"mark": "branch", "nodeId": "feed", "liberties": []}
       ],
       "readout": {"steps": 5, "branches": 1, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2330,7 +2330,7 @@
         {"mark": "step", "nodeId": "d", "liberties": []}
       ],
       "readout": {"steps": 5, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2362,7 +2362,7 @@
         {"mark": null, "nodeId": null, "liberties": []}
       ],
       "readout": {"steps": 3, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2411,11 +2411,11 @@
         {"mark": "note", "nodeId": "terrain-renderer", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 8, "branches": 2, "done": 1},
-      "imperfections": {"notes": 1, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 1, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
-    "name": "A step name is not clipped, whatever its length",
+    "name": "A step name and a branch name past 200 characters keep 200, and their lines say so",
     "input": {
       "text": "Root\n- yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n## hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
       "kinds": [
@@ -2431,13 +2431,13 @@
         {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
         {
           "id": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
-          "label": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+          "label": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
           "color": "terracotta",
           "prerequisites": ["root"]
         },
         {
           "id": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
-          "label": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
+          "label": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
           "color": "terracotta",
           "prerequisites": ["root"]
         }
@@ -2449,11 +2449,11 @@
       ],
       "gutter": [
         {"mark": "root", "nodeId": "root", "liberties": []},
-        {"mark": "step", "nodeId": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy", "liberties": []},
-        {"mark": "branch", "nodeId": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh", "liberties": []}
+        {"mark": "step", "nodeId": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy", "liberties": [{"type": "clip"}]},
+        {"mark": "branch", "nodeId": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh", "liberties": [{"type": "clip"}]}
       ],
       "readout": {"steps": 3, "branches": 1, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 2}
     }
   },
   {
@@ -2491,10 +2491,240 @@
         {"mark": "root", "nodeId": "root", "liberties": []},
         {"mark": "step", "nodeId": "a", "liberties": []},
         {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": []}
+      ],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 1, "clamps": 0, "renames": 0, "clips": 0}
+    }
+  },
+  {
+    "name": "A description keeps 16,000 characters, and each note line it does not keep whole says so",
+    "input": {
+      "text": "Root\n- a\nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\noooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo\npppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\nqqqqqqqqqq\n- b",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {
+          "id": "a",
+          "label": "a",
+          "color": "terracotta",
+          "prerequisites": ["root"],
+          "description": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn\noooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo\nppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp"
+        },
+        {"id": "b", "label": "b", "color": "terracotta", "prerequisites": ["root"]}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}, {"type": "clip"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}, {"type": "clip"}]},
+        {"mark": "step", "nodeId": "b", "liberties": []}
+      ],
+      "readout": {"steps": 3, "branches": 0, "done": 0},
+      "imperfections": {"notes": 4, "clamps": 0, "renames": 0, "clips": 2}
+    }
+  },
+  {
+    "name": "An address past the step's 32nd, or past 2,048 characters, is kept as a note",
+    "input": {
+      "text": "Root\n- a\nhttps://example.com/1\nhttps://example.com/2\nhttps://example.com/3\nhttps://example.com/4\nhttps://example.com/5\nhttps://example.com/6\nhttps://example.com/7\nhttps://example.com/8\nhttps://example.com/9\nhttps://example.com/10\nhttps://example.com/11\nhttps://example.com/12\nhttps://example.com/13\nhttps://example.com/14\nhttps://example.com/15\nhttps://example.com/16\nhttps://example.com/17\nhttps://example.com/18\nhttps://example.com/19\nhttps://example.com/20\nhttps://example.com/21\nhttps://example.com/22\nhttps://example.com/23\nhttps://example.com/24\nhttps://example.com/25\nhttps://example.com/26\nhttps://example.com/27\nhttps://example.com/28\nhttps://example.com/29\nhttps://example.com/30\nhttps://example.com/31\nhttps://example.com/32\nhttps://example.com/33\nhttps://example.com/34\nhttps://example.com/llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {
+          "id": "a",
+          "label": "a",
+          "color": "terracotta",
+          "prerequisites": ["root"],
+          "description": "https://example.com/33\nhttps://example.com/34\nhttps://example.com/llllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll",
+          "links": [
+            "https://example.com/1",
+            "https://example.com/2",
+            "https://example.com/3",
+            "https://example.com/4",
+            "https://example.com/5",
+            "https://example.com/6",
+            "https://example.com/7",
+            "https://example.com/8",
+            "https://example.com/9",
+            "https://example.com/10",
+            "https://example.com/11",
+            "https://example.com/12",
+            "https://example.com/13",
+            "https://example.com/14",
+            "https://example.com/15",
+            "https://example.com/16",
+            "https://example.com/17",
+            "https://example.com/18",
+            "https://example.com/19",
+            "https://example.com/20",
+            "https://example.com/21",
+            "https://example.com/22",
+            "https://example.com/23",
+            "https://example.com/24",
+            "https://example.com/25",
+            "https://example.com/26",
+            "https://example.com/27",
+            "https://example.com/28",
+            "https://example.com/29",
+            "https://example.com/30",
+            "https://example.com/31",
+            "https://example.com/32"
+          ]
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
         {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 2, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 3, "clamps": 0, "renames": 0, "clips": 0}
+    }
+  },
+  {
+    "name": "A duplicate name near the bound keeps as much of itself as leaves room for its count",
+    "input": {
+      "text": "Root\n- zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz\n- zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {
+          "id": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+          "label": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+          "color": "terracotta",
+          "prerequisites": ["root"]
+        },
+        {
+          "id": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-2",
+          "label": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz (2)",
+          "color": "terracotta",
+          "prerequisites": ["root"]
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "liberties": []},
+        {
+          "mark": "step",
+          "nodeId": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-2",
+          "liberties": [
+            {
+              "type": "rename",
+              "label": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz (2)"
+            }
+          ]
+        }
+      ],
+      "readout": {"steps": 3, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 1, "clips": 0}
+    }
+  },
+  {
+    "name": "U+0000 is read as nothing, wherever it stands",
+    "input": {
+      "text": "Ro\u0000ot\n- a\u0000b\n\u0000\nno\u0000te",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "Root",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "Root", "color": "terracotta", "prerequisites": [], "icon": "sparkles"},
+        {"id": "ab", "label": "ab", "color": "terracotta", "prerequisites": ["root"], "description": "note"}
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": "root", "nodeId": "root", "liberties": []},
+        {"mark": "step", "nodeId": "ab", "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "note", "nodeId": "ab", "liberties": [{"type": "note"}]}
+      ],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 1, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2531,7 +2761,7 @@
         {"mark": "step", "nodeId": "same-3", "liberties": []}
       ],
       "readout": {"steps": 4, "branches": 0, "done": 1},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2563,7 +2793,7 @@
         {"mark": "step", "nodeId": "rest", "liberties": []}
       ],
       "readout": {"steps": 3, "branches": 0, "done": 1},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2597,11 +2827,11 @@
         {"mark": "step", "nodeId": "b", "liberties": []}
       ],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
-    "name": "In a marked file text before the first step is dropped",
+    "name": "In a marked file text before the first step is the first step's, before its own notes",
     "input": {
       "text": "# T\n<!-- windmill:roadmap -->\nstray prose\nhttps://a.example\n- A <!-- windmill:kind sky -->\nkept on A",
       "kinds": [
@@ -2613,7 +2843,17 @@
     "expect": {
       "title": "T",
       "missingRoot": false,
-      "nodes": [{"id": "a", "label": "A", "color": "sky", "prerequisites": [], "icon": "sparkles", "description": "kept on A"}],
+      "nodes": [
+        {
+          "id": "a",
+          "label": "A",
+          "color": "sky",
+          "prerequisites": [],
+          "icon": "sparkles",
+          "description": "stray prose\nkept on A",
+          "links": ["https://a.example"]
+        }
+      ],
       "kinds": [
         {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
         {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
@@ -2622,13 +2862,52 @@
       "gutter": [
         {"mark": null, "nodeId": null, "liberties": []},
         {"mark": null, "nodeId": null, "liberties": []},
-        {"mark": null, "nodeId": null, "liberties": []},
-        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a", "liberties": []},
         {"mark": "step", "nodeId": "a", "liberties": []},
         {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 1, "branches": 0, "done": 0},
-      "imperfections": {"notes": 1, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
+    }
+  },
+  {
+    "name": "A marked file whose text has no step after it keeps the text on one unnamed step",
+    "input": {
+      "text": "# T\n<!-- windmill:roadmap -->\nstray prose\nhttps://a.example",
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ]
+    },
+    "expect": {
+      "title": "T",
+      "missingRoot": false,
+      "nodes": [
+        {
+          "id": "root",
+          "label": "",
+          "color": "terracotta",
+          "prerequisites": [],
+          "icon": "sparkles",
+          "description": "stray prose",
+          "links": ["https://a.example"]
+        }
+      ],
+      "kinds": [
+        {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make", "source": "existing"},
+        {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out", "source": "existing"},
+        {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "source": "existing"}
+      ],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "note", "nodeId": "root", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "root", "liberties": []}
+      ],
+      "readout": {"steps": 1, "branches": 0, "done": 0},
+      "imperfections": {"notes": 1, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2663,11 +2942,11 @@
         {"mark": "step", "nodeId": "a", "liberties": []}
       ],
       "readout": {"steps": 1, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
-    "name": "A guide that never closes is not a guide: its lines are read",
+    "name": "A guide that never closes is not a guide: its lines are the first step's notes",
     "input": {
       "text": "# T\n<!-- windmill:roadmap -->\n<!-- windmill:guide -->\n> One step a week.\n- a step after all\n> said of it",
       "kinds": [
@@ -2686,7 +2965,7 @@
           "color": "terracotta",
           "prerequisites": [],
           "icon": "sparkles",
-          "description": "> said of it"
+          "description": "<!-- windmill:guide -->\n> One step a week.\n> said of it"
         }
       ],
       "kinds": [
@@ -2697,13 +2976,13 @@
       "gutter": [
         {"mark": null, "nodeId": null, "liberties": []},
         {"mark": null, "nodeId": null, "liberties": []},
-        {"mark": null, "nodeId": null, "liberties": []},
-        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "note", "nodeId": "a-step-after-all", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "a-step-after-all", "liberties": [{"type": "note"}]},
         {"mark": "step", "nodeId": "a-step-after-all", "liberties": []},
         {"mark": "note", "nodeId": "a-step-after-all", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 1, "branches": 0, "done": 0},
-      "imperfections": {"notes": 1, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 3, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2743,13 +3022,13 @@
         {"mark": "note", "nodeId": "a", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 1, "branches": 0, "done": 0},
-      "imperfections": {"notes": 3, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 3, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
-    "name": "In a marked file six entities are read back, in names and in kind labels alike, and no other",
+    "name": "In a marked file the entities of &, <, >, -, [ and whitespace are read back, in names and in kind labels alike, and no other",
     "input": {
-      "text": "# T\n<!-- windmill:roadmap -->\n- A &#38; B &#60;tag&#62; line&#10;break&#13; &#45; <!-- windmill:kind sky A &#45;&#45;&#62; B &#38; C&#10;D -->\n  - &#39; &#x26; &amp; &#038; stay",
+      "text": "# T\n<!-- windmill:roadmap -->\n- A &#38; B &#60;tag&#62; line&#10;break&#13; &#45; <!-- windmill:kind sky A &#45;&#45;&#62; B &#38; C&#10;D -->\n  - &#39; &#x26; &amp; &#038; stay\n  - &#91;x] boxed&#32;&#160; &#8232;",
       "kinds": []
     },
     "expect": {
@@ -2757,17 +3036,19 @@
       "missingRoot": false,
       "nodes": [
         {"id": "a-b-tag-line-break", "label": "A & B <tag> line\nbreak\r -", "color": "sky", "prerequisites": [], "icon": "sparkles"},
-        {"id": "39-x26-amp-038-stay", "label": "&#39; &#x26; &amp; &#038; stay", "color": "sky", "prerequisites": ["a-b-tag-line-break"]}
+        {"id": "39-x26-amp-038-stay", "label": "&#39; &#x26; &amp; &#038; stay", "color": "sky", "prerequisites": ["a-b-tag-line-break"]},
+        {"id": "x-boxed", "label": "[x] boxed \u00a0 \u2028", "color": "sky", "prerequisites": ["a-b-tag-line-break"]}
       ],
       "kinds": [{"id": "a-b-c-d", "hue": "sky", "label": "A --> B & C\nD", "description": "", "source": "added"}],
       "gutter": [
         {"mark": null, "nodeId": null, "liberties": []},
         {"mark": null, "nodeId": null, "liberties": []},
         {"mark": "step", "nodeId": "a-b-tag-line-break", "liberties": []},
-        {"mark": "step", "nodeId": "39-x26-amp-038-stay", "liberties": []}
+        {"mark": "step", "nodeId": "39-x26-amp-038-stay", "liberties": []},
+        {"mark": "step", "nodeId": "x-boxed", "liberties": []}
       ],
-      "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "readout": {"steps": 3, "branches": 0, "done": 0},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2804,7 +3085,7 @@
         {"mark": "step", "nodeId": "d", "liberties": []}
       ],
       "readout": {"steps": 4, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2832,7 +3113,7 @@
         {"mark": "step", "nodeId": "d-windmill-kind-sky", "liberties": []}
       ],
       "readout": {"steps": 4, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2849,7 +3130,7 @@
         {"mark": "step", "nodeId": "a", "liberties": []}
       ],
       "readout": {"steps": 1, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2866,7 +3147,107 @@
         {"mark": "step", "nodeId": "a", "liberties": []}
       ],
       "readout": {"steps": 1, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
+    }
+  },
+  {
+    "name": "In a marked file a step whose name is a kind marker alone is unnamed, and its marker is read",
+    "input": {
+      "text": "# T\n<!-- windmill:roadmap -->\n-  <!-- windmill:kind sky Sea -->\n  - [x]  <!-- windmill:kind gold -->\n  - <!-- windmill:kind sky -->",
+      "kinds": []
+    },
+    "expect": {
+      "title": "T",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "root", "label": "", "color": "sky", "prerequisites": [], "icon": "sparkles"},
+        {"id": "step", "label": "", "color": "gold", "prerequisites": ["root"], "status": "complete"},
+        {"id": "step-2", "label": "", "color": "sky", "prerequisites": ["root"]}
+      ],
+      "kinds": [{"id": "sea", "hue": "sky", "label": "Sea", "description": "", "source": "added"}],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "root", "liberties": []},
+        {"mark": "done", "nodeId": "step", "liberties": []},
+        {"mark": "step", "nodeId": "step-2", "liberties": []}
+      ],
+      "readout": {"steps": 3, "branches": 0, "done": 1},
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
+    }
+  },
+  {
+    "name": "A file of the second edition reads its name's entities, each quote as a line of a note and each address in angle brackets as a link",
+    "input": {
+      "text": "# &#32;Learn &#38; sail&#10;fast&#32;\n<!-- windmill:roadmap 2 -->\n- &#91;x] Rig the boat <!-- windmill:kind sky Sea -->\n  > - not a step\n  >\n  >   ## not a kind, its padding kept  \n  > https://example.com/not-a-link &#38;#38; &#13;&#10;\n  <mailto:crew@example.com>\n  <https://example.com/with&#32;space&#38;more>\n  https://example.com/plain\n  <not a link>\n  - [x] Read the wind",
+      "kinds": []
+    },
+    "expect": {
+      "title": " Learn & sail\nfast ",
+      "missingRoot": false,
+      "nodes": [
+        {
+          "id": "x-rig-the-boat",
+          "label": "[x] Rig the boat",
+          "color": "sky",
+          "prerequisites": [],
+          "icon": "sparkles",
+          "description": "- not a step\n\n  ## not a kind, its padding kept  \nhttps://example.com/not-a-link &#38; \r\n\n<not a link>",
+          "links": ["mailto:crew@example.com", "https://example.com/with space&more", "https://example.com/plain"]
+        },
+        {"id": "read-the-wind", "label": "Read the wind", "color": "sky", "prerequisites": ["x-rig-the-boat"], "status": "complete"}
+      ],
+      "kinds": [{"id": "sea", "hue": "sky", "label": "Sea", "description": "", "source": "added"}],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "x-rig-the-boat", "liberties": []},
+        {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": []},
+        {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": []},
+        {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": []},
+        {"mark": "note", "nodeId": "x-rig-the-boat", "liberties": [{"type": "note"}]},
+        {"mark": "done", "nodeId": "read-the-wind", "liberties": []}
+      ],
+      "readout": {"steps": 2, "branches": 0, "done": 1},
+      "imperfections": {"notes": 5, "clamps": 0, "renames": 0, "clips": 0}
+    }
+  },
+  {
+    "name": "A file of the first edition reads its quotes and angle brackets as they stand, and a list line under a step as a step",
+    "input": {
+      "text": "# Old file\n<!-- windmill:roadmap -->\n- Rig the boat <!-- windmill:kind sky -->\n  > quoted\n  - one\n  <mailto:crew@example.com>\n  https://example.com/plain",
+      "kinds": []
+    },
+    "expect": {
+      "title": "Old file",
+      "missingRoot": false,
+      "nodes": [
+        {"id": "rig-the-boat", "label": "Rig the boat", "color": "sky", "prerequisites": [], "icon": "sparkles", "description": "> quoted"},
+        {
+          "id": "one",
+          "label": "one",
+          "color": "sky",
+          "prerequisites": ["rig-the-boat"],
+          "description": "<mailto:crew@example.com>",
+          "links": ["https://example.com/plain"]
+        }
+      ],
+      "kinds": [],
+      "gutter": [
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": null, "nodeId": null, "liberties": []},
+        {"mark": "step", "nodeId": "rig-the-boat", "liberties": []},
+        {"mark": "note", "nodeId": "rig-the-boat", "liberties": [{"type": "note"}]},
+        {"mark": "step", "nodeId": "one", "liberties": []},
+        {"mark": "note", "nodeId": "one", "liberties": [{"type": "note"}]},
+        {"mark": "note", "nodeId": "one", "liberties": []}
+      ],
+      "readout": {"steps": 2, "branches": 0, "done": 0},
+      "imperfections": {"notes": 2, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -2887,7 +3268,7 @@
       "kinds": [],
       "gutter": [{"mark": "root", "nodeId": "plan", "liberties": []}, {"mark": "step", "nodeId": "a-38-b-windmill-kind-sky-sailing", "liberties": []}],
       "readout": {"steps": 2, "branches": 0, "done": 0},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -3050,7 +3431,7 @@
         {"mark": "note", "nodeId": "ship-the-first-fix-release", "liberties": [{"type": "note"}]}
       ],
       "readout": {"steps": 16, "branches": 2, "done": 0},
-      "imperfections": {"notes": 20, "clamps": 0, "renames": 0}
+      "imperfections": {"notes": 20, "clamps": 0, "renames": 0, "clips": 0}
     }
   },
   {
@@ -3091,10 +3472,10 @@
         {"mark": "step", "nodeId": "a-2", "liberties": [{"type": "rename", "label": "a (2)"}]},
         {"mark": "step", "nodeId": "jump", "liberties": [{"type": "clamp", "indent": "jump"}]},
         {"mark": "note", "nodeId": "jump", "liberties": [{"type": "note"}]},
-        {"mark": "note", "nodeId": "jump", "liberties": [{"type": "note"}]}
+        {"mark": "note", "nodeId": "jump", "liberties": []}
       ],
       "readout": {"steps": 9, "branches": 2, "done": 1},
-      "imperfections": {"notes": 2, "clamps": 1, "renames": 1}
+      "imperfections": {"notes": 1, "clamps": 1, "renames": 1, "clips": 0}
     }
   },
   {
@@ -3118,7 +3499,7 @@
         {"mark": "step", "nodeId": "a-2", "liberties": [{"type": "rename", "label": "a (2)"}]}
       ],
       "readout": {"steps": 5, "branches": 0, "done": 1},
-      "imperfections": {"notes": 0, "clamps": 0, "renames": 1}
+      "imperfections": {"notes": 0, "clamps": 0, "renames": 1, "clips": 0}
     }
   }
 ]
