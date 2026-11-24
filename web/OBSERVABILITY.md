@@ -175,8 +175,9 @@ bundle's metadata failed; it is tried again at the next run). Settings' unsent p
 `replica_changed` where the account changed before or while it wrote and `refused` where the domain refused an act,
 either leaving the pages not yet written where they were; or `failed`) and `pages` through `countBucket`. Every finished
 sign-out, Keep or Discard, forgets them (`forgetUnclaimedPages`, the journal's `forgetDevice`) and emits
-`journal_unclaimed` with `action` `forget`: `outcome` `ok` with the pages it deleted, counted as Settings lists them, or
-`failed` with `pages` `0` where the browser refused its storage, the stores before the refusal gone and the rest
+`journal_unclaimed` with `action` `forget`: `outcome` `ok` with the pages it deleted, counted as Settings lists them and
+with any the device's metadata still held, or `failed` with `pages` `0` where the browser refused its storage or the
+metadata's write failed, the stores before the refusal gone and the rest
 tried again at the next sign-out; a sign-out that finds none emits nothing. Only `failed` also reports
 `journal-restore`, `journal-discard` or `journal-forget` with the error's stack. No day, page body, scale, claim
 identifier, store key or account is reported.
