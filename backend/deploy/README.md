@@ -55,7 +55,7 @@ check the Web Deploy run of the last merge that touched the web and re-run it if
 | VPS runtime topology | `deploy/docker-compose.yml` |
 | Promote the candidate files, prove Caddy loaded them, verify both ledger databases and start their services (runs on the VPS) | `deploy/deploy-production.sh` |
 | Disk report, and by choice a clean of unused images, build cache and the journal beyond 200 MB (by hand) | `/.github/workflows/ops-disk.yml` |
-| Count how the roadmap's pointers between trees meet one owned subtree per step (by hand, never during a deploy; reads only) | `/.github/workflows/ops-subtree-inventory.yml` |
+| Count how the roadmap's pointers between trees meet one owned subtree per step, its roadmaps by visibility and its pointers alive with no `opens` (by hand, never during a deploy; reads only) | `/.github/workflows/ops-subtree-inventory.yml` |
 | Copy roadmap's rows for a rehearsal of its cutover, encrypted to the owner (by hand, with the owner's approval, never during a deploy; reads only), and its test | `/.github/workflows/ops-roadmap-copy.yml`, `test/deploy/ops_roadmap_copy_test.py` |
 | Roadmap's cutover onto the sync engine (by hand; it moved production in run 44846026848 and refuses there now), its host stages and their test, which also drives it against a local stack | `/.github/workflows/roadmap-cutover.yml`, `deploy/roadmap-cutover.sh`, `test/deploy/roadmap_cutover_test.py` |
 | Pause the site or lift the pause (by hand) | `/.github/workflows/ops-maintenance.yml` |
@@ -742,7 +742,12 @@ delete through one changed replay target, and applied removals must retain succe
 an older acknowledgement to replay. The proof advances the clock five hours before deleting the
 joined session, and checks successful callbacks, receipt replay and durable reload.
 
-## Count the roadmap's pointers between trees
+## Count the roadmap's pointers and visibility
+
+The inventory counts how the roadmap's pointers between trees meet one owned subtree per step, and,
+under `engine`, every alive roadmap of the sync engine by the visibility it reads as, roots and
+subtrees apart, with the pointers alive with no `opens` by the door that left them: an Undo's restore
+or a client's put ([SPEC.md](../SPEC.md#subtree-inventory)).
 
 Dispatch **Ops · subtree inventory** (`ops-subtree-inventory.yml`), never during a deploy: a deploy's
 migration alters `trees`, would wait behind the inventory's read, and would hold every roadmap read
