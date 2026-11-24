@@ -43,6 +43,7 @@ object Journal {
             "      \"device\": {",
             "        \"carry\": {",
             "          \"keyPattern\": \"^carry:[0-9a-f]{16}\$\",",
+            "          \"localOnly\": true,",
             "          \"value\": {",
             "            \"type\": \"json\"",
             "          }",

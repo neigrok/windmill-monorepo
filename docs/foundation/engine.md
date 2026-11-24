@@ -3962,7 +3962,7 @@ extra synced type for first run, and native exposes no placeholder control for a
 **The web's carry.** A browser that ran the journal's bundle before the engine carries what that
 bundle kept into the replica each page's seat belongs to ([the web as a device](web-device-parity.md)
 §5), its owed pages as claims under ids their day and words derive, and records them in the device
-row `carry:<seat>` (`json`: the digest of every page of each act, whether the act wrote it or found
+row `carry:<seat>` (`localOnly`, `json`: the digest of every page of each act, whether the act wrote it or found
 it held) in the act that carries them. No phone writes or reads the row.
 
 **Codes:** `claim-conflict` (a different claim under the same receipt id); all other refusals use
