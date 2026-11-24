@@ -126,9 +126,9 @@ public struct SignedOutWorkout: Equatable, Sendable {
   }
 }
 
-// `prepare` turns a signed-out workout into one import, or a non-joining start, before the replica changes hands.
-// `keep` imports the saved copy as finished at its last set; `restart` resubmits an open one's start with every set it
-// holds, in one plan, or refuses the whole retry. Both replay what the copy recorded and take a revised copy, whose
+// `prepare` turns a signed-out workout into one import, or a start, before the replica changes hands; a start an older
+// build queued joining is replaced by one that does not. `keep` imports the saved copy as finished at its last set;
+// `restart` resubmits an open one's start with every set it holds, in one plan, or refuses the whole retry. Both replay what the copy recorded and take a revised copy, whose
 // changed loads meet their floors and which replaces the saved one only when the retry is queued.
 public struct AdoptWorkout: Action {
   public enum Mode: Sendable { case prepare, keep, restart }

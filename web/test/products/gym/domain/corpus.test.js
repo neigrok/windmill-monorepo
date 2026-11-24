@@ -25,6 +25,7 @@ import { GymUnits, WeightLadder } from '../../../../src/products/gym/domain/unit
 import { PlanChanges, PlanOperations, ReviseWorkoutPlan } from '../../../../src/products/gym/domain/workoutPlan.js';
 import { ApplyWorkoutProposal, DismissWorkoutProposal, ProposeWorkout, ReissueWorkoutProposal, WorkoutProposal, WorkoutProposalState } from '../../../../src/products/gym/domain/workoutProposals.js';
 import { AdoptWorkout, SignedOutWorkout } from '../../../../src/products/gym/domain/workoutAdoption.js';
+import { CoachRoutineImport, ImportCoachRoutineBatch } from '../../../../src/products/gym/domain/coachOnboarding.js';
 import { DiscardSignedOutWorkout, RecoverStrandedSets, SetFix, WorkoutFix, WorkoutRecovery } from '../../../../src/products/gym/domain/workoutRecovery.js';
 import { DomainNotice } from '../../../../src/platform/domain-kit/refusals.js';
 import { AbilityCall, CoachMessage, CoachThread, Picture, ReadServed } from '../../../../src/products/gym/domain/coach/conversation.js';
@@ -51,15 +52,15 @@ const valuesFile = 'gym/domain/values.json';
 const ladderFile = 'gym-ladder.json';
 /** @type {string[]} */
 const pending = [];
-// The replica executor claims catalog/3's corpora; catalog/2's are the phones' and the server's until they retire (gym Coach
-// on the AI service §9), and the scripted turns are a wire the web never speaks.
+// The replica executor claims catalog/3's corpora; catalog/2's are the iPhone's and the server's until they retire (gym
+// Coach on the AI service §9), and the scripted turns are the server's turn wire. The web speaks neither, as Android does
+// not: its Coach runs on the device over catalog/3.
 const catalog = new Catalog(Contract.json('gym/catalog-3.json'));
 const abilityFiles = Contract.files('gym/abilities-3');
 /** @type {Record<string, string>} */
 const notApplicable = {
-  'gym/domain/coach-onboarding-actions.json': 'the web carries no anonymous routine import door',
   ...Object.fromEntries(Contract.files('gym').filter((path) => path === 'gym/catalog.json' || path.startsWith('gym/abilities/'))
-    .map((path) => [path, 'catalog/2: the web executor runs catalog/3 alone'])),
+    .map((path) => [path, 'catalog/2, which the web never speaks: its executor runs catalog/3 alone'])),
   ...Object.fromEntries(Contract.files('gym').filter((path) => path.startsWith('gym/turns/')).map((path) => [path, 'the server turn wire, which the web never speaks'])),
   ...Object.fromEntries(Contract.files('gym').filter((path) => path.startsWith('gym/coach/'))
     .map((path) => [path, 'the words Coach\'s model reads are no vectors: coach/profile.test.js reads them'])),
@@ -452,6 +453,16 @@ const handlers = {
       case 'DiscardSignedOutWorkout': return corpus.decision(DiscardSignedOutWorkout(id), vector, () => null, refusalForm);
       default: throw new Error(`unclaimed recovery action ${vector.input.action}`);
     }
+  },
+  'gym/domain/coach-onboarding-actions.json': (vector) => {
+    const input = vector.input.input;
+    const f = Fields.object(input);
+    assert.equal(vector.input.action, 'ImportCoachRoutineBatch', 'unclaimed onboarding action');
+    const routines = f.list('routines', (routine) => new CoachRoutineImport(routine.ref('id', Routine), routine.string('name'), routine.list('entries', RoutineEntry.decode)));
+    const movements = f.list('movements', (movement) => new ExerciseValue(movement.ref('id', Exercise), movement.string('name'), movement.string('pattern'),
+      movement.string('equipment'), movement.double('stepKg'), [], movement.int('loadCount')));
+    return corpus.decision(ImportCoachRoutineBatch({ replica: f.string('replica'), resultId: f.string('resultId'), fingerprint: f.string('fingerprint'),
+      receiptKey: f.string('receiptKey'), routines, movements }), vector, (receipt) => receipt.json, refusalForm);
   },
   'gym/domain/units.json': (vector) => unitsForm(vector.input),
   'gym/domain/notes-actions.json': (vector) => {

@@ -2,9 +2,7 @@
 
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
-v12/minimum-11 registry composition and reproduce each `expect` by JCS equality;
-`coach-onboarding-actions.json` runs in Swift and Kotlin and does not apply on the web (its row says why);
-every other file runs in all three.
+v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; every file runs in all three.
 `workout-plan-actions.json` and `workout-proposals-actions.json` hold the open workout's editable plan and its
 workout proposals. R118 metadata reads remain optional
 for legacy records. The pinned rule book covers ten entities, `WorkoutProposal` the newest; `RoutineCreation`
@@ -37,7 +35,7 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `notes-actions.json` | Idempotent Coach note saves, capacity and single-note moves across held deletes |
 | `bodyweight-actions.json` | Whole-day weigh-in saves, corrections and held deletes |
 | `routines-actions.json` | Guarded editor saves, atomic routine/catalogue plans, reorder, delete, ordered targets, frozen-plan decoding |
-| `coach-onboarding-actions.json` | One batch of preassigned routines and required custom movements with a transactional per-result replay receipt; Kotlin and Swift claim the cases, while web carries no anonymous import door |
+| `coach-onboarding-actions.json` | One batch of preassigned routines and required custom movements with a transactional per-result replay receipt; Swift, Kotlin and the web claim the cases |
 | `coach-conversation-actions.json` | A phone turn's records: `OpenTurn`, `EndTurn` with the receipt its calls derive, a call's record as the calls bound fills, and a read's week. Kotlin, Swift and the web (`web/src/products/gym/domain/coach/`) claim the cases |
 | `catalogue-actions.json` | Create (a dumbbell movement's count included), rename, seed overrides, aliases, byte-sensitive search, decoding failures |
 | `preferences-actions.json` | Draft preference saves and rest defaults |

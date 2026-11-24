@@ -6,7 +6,9 @@ them.
 
 ## §0 Status and scope
 
-**Status:** Specified, and approved by the owner on 2026-11-17; nothing is built. On the web, journal already reads and
+**Status:** Specified, and approved by the owner on 2026-11-17. Of it, the domain's part is built: the refusals of §4's
+one open workout on every surface, and §8's adoption, recovery and Coach onboarding import in the web's domain, which
+claims every file §8 names; nothing calls them on the web yet. On the web, journal already reads and
 writes the browser's replica, signed in and signed out. Gym does so for everything but a workout:
 it is a sign-in door when signed out, a live mirror of a phone's workout, and it waits for the
 account before it draws. Gym's Coach runs on the server. The build order lives in the Web as a
@@ -75,9 +77,9 @@ what the phones do before the replica changes:
   issued again;
 - at sign-out, what the browser forgets: Coach's leftovers beside the replica.
 
-The web ports workout adoption and recovery whole and claims `recovery-actions.json`. Signed-out
-Coach and the first-run conversation the phones have come with Coach's move; the web then claims
-`coach-onboarding-actions.json`.
+The web ports workout adoption and recovery whole and claims `recovery-actions.json`. Its domain
+holds the import of the first-run conversation's routines and claims `coach-onboarding-actions.json`;
+signed-out Coach and the conversation itself come with Coach's move.
 
 ## §4 A workout on the web
 
@@ -158,13 +160,13 @@ A phone always has its store. A browser can refuse one, lose one, or fill one.
 
 ## §8 The domain on the web
 
-- The web's kit gains the catalog and ability types and the collation rule its siblings have.
-- The web's gym domain gains workout adoption and recovery and the first-run conversation, and
-  claims the files it leaves out today: `recovery-actions.json`, `coach-onboarding-actions.json`,
-  and with Coach's move `coach-conversation-actions.json`, the catalog, the abilities and the
-  collation rules.
+- The web's kit has the catalog and ability types and the collation rule its siblings have.
+- The web's gym domain has workout adoption and recovery and the first-run conversation's import,
+  and claims `recovery-actions.json`, `coach-onboarding-actions.json`,
+  `coach-conversation-actions.json`, catalog/3 and its abilities, and the collation rules.
 - The list of files a surface leaves out is empty for the web, or names a file its own surface
-  cannot have, with the reason.
+  cannot have, with the reason. The web's names catalog/2 and the server's turn wire, which its
+  Coach never speaks, as Android's does, and the words Coach's model reads, which are no vectors.
 
 ## §9 Testing
 
@@ -203,7 +205,6 @@ Each is corrected in the change that makes it false:
 - the product log's line that native apps own workout entry and the web is a live mirror;
 - the gym room's README and mirror, and the web's rules file where it says gym keeps its account
   gate;
-- the sync folder's README and the domain kit's document, where they list what the web claims;
 - [Gym Coach on the AI service](gym-coach-on-ai-service.md) where it withholds the workout proposal
   from the web and keeps Coach closed during a workout;
 - the design ledger's entry that the web's mirror has no rack, and the Android task for the
