@@ -68,12 +68,13 @@ test('the room draws the replica this tab holds whether or not the account has a
   ]);
 });
 
-test('Coach, Notes and the log’s shares wait for an account the shell has settled while the room draws from the copy', async (t) => {
+test('Coach, Notes and the log’s shares wait for an account the shell has settled, and that the drawn replica is bound to, while the room draws from the copy', async (t) => {
   browserWith();
   await gymAccount(t);
   const { GymApp } = await loadScreen('products/gym/GymApp.jsx');
-  const roomOf = (status, hash) => {
-    const context = { status, user: status === 'signed-in' ? { id: 'A' } : null, account: status === 'signed-in' ? { id: 'A' } : null,
+  // `settled` is the account the shell's auth has settled; the replica the room draws is bound to A.
+  const roomOf = (status, hash, settled = 'A') => {
+    const context = { status, user: status === 'signed-in' ? { id: settled } : null, account: status === 'signed-in' ? { id: settled } : null,
       open() {}, lendHost() {} };
     const app = renderHook(t, () => GymApp({ hash, inShell: true }), { context });
     const room = elementsOf(app.tree).find((each) => each.type?.name === 'TrainingRoom');
@@ -91,4 +92,6 @@ test('Coach, Notes and the log’s shares wait for an account the shell has sett
     [['CoachDoor'], ['CoachDoor'], ['CoachDoor'], ['CoachDoor'], ['LogList signedIn=false'], ['LogList signedIn=false']]);
   assert.deepEqual(hashes.map((hash) => roomOf('signed-in', hash)),
     [['CoachRoom'], ['HistoryPage'], ['CoachRoom'], ['Notes'], ['LogShareScreen'], ['LogList signedIn=true']]);
+  assert.deepEqual(hashes.map((hash) => roomOf('signed-in', hash, 'B')),
+    [['Opening'], ['Opening'], ['Opening'], ['Opening'], ['Opening'], ['LogList signedIn=false']], 'B’s session never opens A’s Coach, Notes or shares');
 });

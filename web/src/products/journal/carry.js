@@ -288,10 +288,14 @@ export function forgetClosedAccount(account, { stores = new OldStores(), track =
 // A sign-out that finished, Keep or Discard (the shell's `forgetDevice`), forgets the pages the bundle before the engine
 // could not attribute, every store of them deleted whole, the entries that do not read and the first version's cached
 // copies among them: no account can be shown to own them (web-device-parity R-9), so the next person to sign in on this
-// browser is not offered them. Answers how many pages went, as Settings would have listed them.
-export function forgetUnclaimedPages({ stores = new OldStores(), track = trackEvent, report = reportFailure } = {}) {
+// browser is not offered them. The pages the journal's first bundle on the engine kept in the device's metadata and that
+// have not yet returned to storage (`returnLeftovers`) go first, so a carry run that returns them meanwhile returns them
+// into stores this then deletes. Answers how many pages went, as Settings would have listed them.
+export async function forgetUnclaimedPages({ engine = syncSession.engine, stores = new OldStores(), track = trackEvent, report = reportFailure } = {}) {
   try {
-    const forgotten = new Set(stores.forget(Seat.unclaimed).filter((page) => !page.copy).map((page) => page.digest)).size;
+    const kept = engine && !engine.closed ? engine.device.meta.journalUnclaimed ?? [] : [];
+    if (kept.length > 0) await engine.write(null, (device) => { delete device.meta.journalUnclaimed; });
+    const forgotten = kept.length + new Set(stores.forget(Seat.unclaimed).filter((page) => !page.copy).map((page) => page.digest)).size;
     if (forgotten > 0) track('journal_unclaimed', { action: 'forget', outcome: 'ok', pages: countBucket(forgotten) });
     return forgotten;
   } catch (error) {

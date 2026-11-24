@@ -211,6 +211,9 @@
   "gym.signedOutWork.workouts": "{count, plural, one {# workout} other {# workouts}}",
   "gym.signedOutWork.routines": "{count, plural, one {# routine} other {# routines}}",
   "gym.signedOutWork.weighIns": "{count, plural, one {# weigh-in} other {# weigh-ins}}",
+  "gym.signedOutWork.movements": "{count, plural, one {# movement} other {# movements}}",
+  "gym.signedOutWork.settings": "your settings",
+  "gym.signedOutWork.changes": "{count, plural, one {# change} other {# changes}}",
   "gym.signedOutWork.oneWorkout": "{name} · {day}",
   "gym.signedOutWork.since": "since {day}",
   "gym.signedOutWork.held": "training"

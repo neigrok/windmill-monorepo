@@ -19,5 +19,5 @@ test('rest targets are spelled as a clock, and off is a word', () => {
 test('a refusal speaks in the store’s own words, and finishes itself when there are none', () => {
   assert.equal(preferenceRefusal(new GymRefusal('not-writable', { sentence: 'That wasn’t saved — the account on this browser changed.' })), 'That wasn’t saved — the account on this browser changed.');
   assert.equal(preferenceRefusal(new CommitError('the device store did not commit', 'store', { cause: new DOMException('storage refused', 'QuotaExceededError') })), 'that setting didn’t save — this device couldn’t store it');
-  assert.equal(preferenceRefusal(null), 'that setting didn’t save — the log didn’t answer. Try again in a moment');
+  assert.equal(preferenceRefusal(new Error('an engine write that threw')), 'that setting didn’t save — this device couldn’t store it');
 });

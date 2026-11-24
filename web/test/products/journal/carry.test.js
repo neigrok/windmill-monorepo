@@ -612,7 +612,7 @@ test('every sign-out, Keep or Discard, forgets the unattributed pages, so the ne
   const signOut = async (choice) => {
     settleSeat(engine, options);
     assert.equal((await engine.finishSignOut({ choice })).complete, true);
-    forgetUnclaimedPages(options);
+    await forgetUnclaimedPages({ ...options, engine });
   };
   // What an old tab of the bundle before the engine writes, which no account can be shown to own.
   const unattributed = (body, date) => data.setItem('wm.journal.v2.pages.unclaimed', stored(entry(body, { date }), { invalid: entry('no day')[day] }));
@@ -634,13 +634,31 @@ test('every sign-out, Keep or Discard, forgets the unattributed pages, so the ne
     assert.deepEqual(unclaimedPages(stores), []);
     assert.deepEqual(bodies(pagesOf(engine)), [{ day: '2026-09-20', body: 'restored before the sign-out' }]);
     await signOut('keep');
-    forgetUnclaimedPages({ ...options, stores: new OldStores({ get length() { throw new Error('storage denied'); } }) });
+    await forgetUnclaimedPages({ ...options, engine, stores: new OldStores({ get length() { throw new Error('storage denied'); } }) });
     assert.deepEqual(told, { reports: [['journal-forget', 'forget']], events: [
       ['journal_unclaimed', { action: 'restore', outcome: 'ok', pages: '1' }],
       ['journal_unclaimed', { action: 'forget', outcome: 'ok', pages: '1' }],
       ['journal_unclaimed', { action: 'forget', outcome: 'ok', pages: '1' }],
       ['journal_unclaimed', { action: 'forget', outcome: 'failed', pages: '0' }],
     ] });
+  } finally { engine.close(); }
+});
+
+test('a sign-out forgets the unattributed pages the first bundle on the engine left in the device\'s metadata and that never returned to storage, so the next carry returns none for the next person', async () => {
+  const { engine, env } = await setup();
+  const data = storage();
+  const stores = new OldStores(data);
+  const told = { events: [], reports: [] };
+  const page = { day, body: 'left in the metadata', mood: null, energy: null, source: 'typed', stamp: '100:0:legacy' };
+  try {
+    env.transport.account = 'A'; await engine.signIn('A');
+    await engine.write(null, (device) => { device.meta.journalUnclaimed = [page]; });
+    assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+    assert.equal(await forgetUnclaimedPages({ engine, stores, track: (name, props) => told.events.push([name, props]), report: (operation, stage) => told.reports.push([operation, stage]) }), 1);
+    await carrying(engine, data, told);
+    assert.deepEqual({ meta: Object.keys(engine.device.meta).filter((key) => key.startsWith('journal')), unclaimed: unclaimedPages(stores), told }, {
+      meta: [], unclaimed: [], told: { reports: [], events: [['journal_unclaimed', { action: 'forget', outcome: 'ok', pages: '1' }]] },
+    });
   } finally { engine.close(); }
 });
 

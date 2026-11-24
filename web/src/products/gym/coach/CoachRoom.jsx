@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ArrowUpRight, BookOpen, ChevronRight, CircleCheck, History as HistoryIcon, ImageOff, ImagePlus, Plus, Smartphone, Square, WifiOff } from 'lucide-react';
-import { Dialog, Menu } from '../../../design-system/index.js';
+import { Button, Dialog, Menu, useMediaQuery } from '../../../design-system/index.js';
 import { Id } from '../../../platform/domain-kit/entities.js';
 import { useSyncEngine } from '../../../platform/sync/react.js';
 import { CoachThread } from '../domain/coach/conversation.js';
@@ -8,7 +8,7 @@ import { Note } from '../domain/notes.js';
 import { t } from '../i18n/index.js';
 import { COACH_HREF, NEW_ROUTINE_ID, NOTES_HREF, routineHref, shortDayLabel, THREADS_HREF, threadHref, timeLabel } from '../log.js';
 import { useDomainRead } from '../useDomainRead.js';
-import { coachWorkout } from './coach.js';
+import { COACH_TITLE, coachWorkout } from './coach.js';
 import { coachTurnsOf } from './coachTurns.js';
 import { conversationView } from './conversations.js';
 import { CoachProposalCard } from './CoachProposal.jsx';
@@ -29,6 +29,20 @@ export function useCoachTurns() {
   return { turns, snapshot };
 }
 
+
+// Coach's tab while no account is settled (WD8.3): what Coach does and the shell's sign-in, a door rather than a room. On
+// a narrow screen it stands in the reach band above the tab bar, its Sign in as wide as the column; wider, at the head of
+// the reading column.
+export function CoachDoor({ onSignIn }) {
+  const narrow = useMediaQuery('(max-width: 800px)');
+  return (
+    <section className="gym-coach-door">
+      <h1 className="gym-title">{COACH_TITLE}</h1>
+      <p className="gym-coach-door-line">{t('gym.coach.door.line')}</p>
+      <Button size={narrow ? 'lg' : 'md'} full={narrow} onClick={onSignIn}>{t('gym.coach.door.signIn')}</Button>
+    </section>
+  );
+}
 
 // The Coach room (08W): one conversation, or a fresh chat when `threadId` is null, with History beside it on a wide
 // screen. Coach stays closed while a workout is open.
@@ -321,7 +335,7 @@ export function WorkoutInProgress({ log }) {
   return <div className={`gym-coach-workout${showWorkout ? ' is-expanded' : ''}`}>
     <section className="gym-coach-workout-card" aria-label={t('gym.coach.workoutInProgress')}>
       <p className="gym-coach-workout-kicker">{t('gym.coach.workoutInProgress')}</p>
-      <p>{t('gym.coach.workoutOnPhone')}</p>
+      <p>{t('gym.coach.afterWorkout')}</p>
       <p className="gym-coach-workout-meta">{t('gym.coach.workoutMeta', { name: workout.name, started: <span>{workout.started}</span>, count: workout.count })}</p>
       <div className="gym-coach-workout-doors"><button type="button" onClick={viewWorkout}>{t('gym.coach.viewWorkout')}</button><a href={NOTES_HREF}>{t('gym.coach.notesDoor')}</a></div>
       <p className="gym-coach-workout-meta">{t('gym.coach.notesWhileTraining')}</p>

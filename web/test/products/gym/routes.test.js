@@ -135,8 +135,8 @@ test('gym registers its settings as one section, in the product zone and never b
 
 test('gym hands the engine its sign-in hooks: the saved workouts and the drafts the account refused are its device work', () => {
   const { sync } = gymRoutes;
-  assert.deepEqual(Object.keys(sync).sort(), ['adoptDeviceRows', 'adoptionAnswer', 'liveHint', 'onPushResult', 'pendingDeviceWork', 'prepare',
-    'seatWillChange', 'signInWork', 'signOutBegins', 'signOutForgets']);
+  assert.deepEqual(Object.keys(sync).sort(), ['adoptDeviceRows', 'liveHint', 'onPushResult', 'pendingDeviceWork', 'prepare',
+    'seatWillChange', 'signInWork', 'signOutBegins', 'signOutForgets'], 'gym answers no sign-in question by itself: it asks whenever the account holds gym records');
   const copy = { session: { id: 'copyA001' }, sets: [] };
   const rows = { 'rack:adoption': { copyA001: copy }, 'rack:workoutDrafts': { 'import:a': { status: 'accepted' }, 'correction:b': { status: 'refused' } },
     runningTurn: { message: 'm1' } };

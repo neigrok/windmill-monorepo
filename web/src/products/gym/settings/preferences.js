@@ -1,4 +1,4 @@
-import { failureReason, isStoreFailure } from '../errors.js';
+import { failureReason } from '../errors.js';
 import { t } from '../i18n/settings/index.js';
 
 export function restLabel(seconds) {
@@ -8,6 +8,5 @@ export function restLabel(seconds) {
 
 export function preferenceRefusal(error) {
   if (error?.sentence) return error.sentence;
-  if (isStoreFailure(error)) return t('gym.settings.notSaved', { reason: failureReason(error) });
-  return t('gym.settings.notSavedNoAnswer');
+  return t('gym.settings.notSaved', { reason: failureReason(error) });
 }

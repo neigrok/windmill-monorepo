@@ -72,7 +72,8 @@ export class SignedOutWorkout {
 
   // The workout a start the account refused `session-open` was logged as, from the notice that holds it: the start's
   // session as the start predicted it, finished where a finish folded into the notice says, and every set born in the
-  // notice as its last write there left it, a set deleted before the refusal left out. Null for a notice of anything else.
+  // notice as its last write there left it, a set deleted before the refusal left out. A workout deleted before the
+  // refusal keeps none of its sets. Null for a notice of anything else.
   /** @param {GymNotice} notice */
   static ofRefusedStart(notice) {
     const { code, content } = notice.notice;
@@ -81,13 +82,16 @@ export class SignedOutWorkout {
     const id = /** @type {RecordID} */ (start.args.id);
     /** @type {Json} */
     let finishedAt = null;
+    let deleted = false;
     /** @type {Map<string, { id: RecordID, alive: boolean }>} */
     const born = new Map();
     /** @param {NoticeContent} part */
     const walk = (part) => {
       if (part.cmd?.name === 'gym.finish' && sameJson(part.cmd.args.sessionId ?? null, id)) finishedAt = part.cmd.args.finishedAt ?? null;
       for (const delta of part.d ?? []) {
-        if (delta.t !== TrainingSet.type || delta.life === undefined) continue;
+        if (delta.life === undefined) continue;
+        if (delta.t === Session.type && sameJson(delta.id, id)) deleted = delta.life[0] === 'dead';
+        if (delta.t !== TrainingSet.type) continue;
         const key = jcs(delta.id);
         if (delta.life[0] === 'alive' && delta.life[1] === delta.born) born.set(key, { id: delta.id, alive: true });
         const set = born.get(key);
@@ -99,7 +103,7 @@ export class SignedOutWorkout {
     const routineId = start.args.routineId ?? null;
     const session = Session.decode(Fields.values(Session.type, id, { startedAt: start.args.startedAt ?? null, routineId, historyRoutineId: routineId,
       finishedAt, closedBy: finishedAt === null ? null : 'finish', ...notice.values({ t: Session.type, id }) }));
-    const sets = [...born.values()].filter((set) => set.alive)
+    const sets = deleted ? [] : [...born.values()].filter((set) => set.alive)
       .map((set) => TrainingSet.decode(Fields.values(TrainingSet.type, set.id, notice.values({ t: TrainingSet.type, id: set.id }))));
     return new SignedOutWorkout(session, sets);
   }

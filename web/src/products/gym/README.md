@@ -10,8 +10,9 @@ Signed out, the room is the room on the browser's anon replica (web-device-parit
 workouts and weigh-ins, saying nothing of where the work is kept (R-6). `seat.js`'s `useGymSeat()` answers the seat:
 `signedIn`, an account the shell has settled (auth `status` is `signed-in`: online, or offline from its last answer) that
 the drawn replica is bound to, and `anonymous`, the browser's own copy. Shares, log shares, the connected log, Coach and
-Notes wait for `signedIn`; until then Coach's tab, its History and Notes are Coach's door, a sentence and the shell's
-sign-in (WD8.3), or `Opening` while the account has yet to answer, and no share is offered. The past-workout form and a
+Notes wait for `signedIn`; until then Coach's tab, its History and Notes are Coach's door (`CoachDoor`, WD8.3), a sentence
+and the shell's sign-in at the head of the reading column, in the reach band above the tab bar on a narrow screen, or
+`Opening` while the account has yet to answer, and no share is offered. The past-workout form and a
 finished workout's corrections are server commands a signed-out replica never sends (R-5): `anonymous`, their doors are
 not drawn (Add past workout, Edit workout, a finished set's Fix, a routine's Log past), and their routes draw The log. The
 account's open workout runs on its page, `#/gym/workout` (`workout/`), whichever device started it; past workouts are
@@ -55,16 +56,21 @@ workout the anon replica holds for adoption (`AdoptWorkout` in `prepare`, kept u
 finished one becomes one import that supersedes its chain, an open one keeps a start that does not join, and an open one's
 sets the replacing start folded are recorded again with it (`AppendSet` as recorded). Each workout is one composed act on
 the API's binding, so it lands whole before the seat changes, or not at all when the seat moved first; one the domain
-refuses or that fails leaves the others to land, and a seat that moved ends the hook. A bound replica holds none. Every
+refuses or that fails leaves the others to land, and a seat that moved ends the hook. A copy an earlier sign-in saved of a
+workout deleted since goes with it, so a workout deleted signed out never comes back. A bound replica holds none. Every
 rack change is written as it is made, so no rack waits to be written first.
 The sign-in that follows (`routes.sync`): the saved workouts and the form drafts the account refused are gym's pending
 device work (`gymDeviceWork`; a pending draft's queued command is counted already), merged entry by entry into a dormant replica's own at a sign-in that joins it, the
-account's standing on an entry both hold (`adoptGymDeviceRows`). An account holding training of its own asks the shell's
-question (WD9), which counts the browser's workouts, routines and weigh-ins with what names each (`signInWork`) and tells
-the decision; work naming none of them, a movement or a setting, joins without a question (`adoptionAnswer`). From the
-engine's opening (`prepare`, `watchBrowserCopies`), whenever gym's scope moves on a bound replica holding copies, each
-proposal a copy held is issued again once the account holds its workout and every copy the account took whole is let go.
-A copy the account has not taken waits in The log's In this browser (`recovery/InThisBrowser.jsx`, WD9.3), signed in only,
+account's standing on an entry both hold (`adoptGymDeviceRows`). An account holding gym records of its own asks the
+shell's question (WD9) of any gym work the browser holds, and one holding none takes it without a question (engine
+§7.10). The question counts every kind the browser holds, each with what names it (`signInWork`): its workouts, routines
+and weigh-ins as WD9 draws them, and the movements it made or renamed and its settings in words of their own (*2
+movements*, *your settings*); work that draws none of them any longer, a workout made and deleted, it counts by its
+changes. It tells each step of the question. From the engine's opening (`prepare`, `watchBrowserCopies`), whenever gym's
+scope moves on a bound replica holding copies, each proposal a copy held is issued again once the account holds its
+workout, every copy the account took whole is let go, and so is every copy that holds no set and no proposal, which
+loses nothing. A copy the account has not taken, and that holds a set, waits in The log's In this browser
+(`recovery/InThisBrowser.jsx`, WD9.3), signed in only,
 at the head of the index from 801px and above the filters below: its title, when and how many sets, the review's reason
 (`WorkoutRecovery.review` over the engine's notices) in one sentence and its one answer, Keep as finished while the
 account's workout is open (`AdoptWorkout` keep, an open copy finished at its last set) or Add to your log once only the
@@ -72,8 +78,10 @@ retry stands (`AdoptWorkout` restart or keep, or a landed workout's stranded set
 away the notices it answers; *Adding…* while one is on its way; and Discard in its menu, held with Undo on the room's clock
 before `DiscardSignedOutWorkout`. A start that lost a race with another device's (spec §4, WD4.3) is refused
 `session-open` with its sets in its notice: the room saves them as a copy (`SaveRefusedStart`) and says so once, with
-View sets; a start that holds no set loses nothing and its notice is put away. The room's notice voice leaves every notice
-a copy owns, and every refused start, to In this browser.
+View sets; a start that holds no set, or whose workout was deleted before the refusal, loses nothing: its notice is put
+away and nothing is said. The room's notice voice leaves every notice a copy owns, and every refused start, to In this
+browser; a set the account refuses because its workout has finished is said in the iPhone's words, *This workout has
+already finished.*
 Correction and backfill helpers parse fields and arrange draft rows into domain inputs.
 `trainingReads.js` owns prefill, last time, records, the log's new bests (`ProgressRecords`, read by no web screen yet) and chart windows, and
 `trainingHistory.js` composes history, reviews and screen documents.
@@ -106,7 +114,8 @@ copy may hold part of the account's history: the runtime reads no last time (`la
 and the domain claims no record, and nothing is drawn in their place. A refused write
 is a `GymRefusal` (`errors.js`) carrying the engine's code, the sentence a screen shows
 and, for an overlap, the crossed session; `failureReason` finishes the sentence for any failure,
-naming this device when its store could not keep the write and the network only for a REST door. A write whose replica
+naming the network only for a REST door's (the server's answer, or fetch's `TypeError` for none) and this device for any
+other, a write its copy did not keep. A write whose replica
 changed under the room, a sign-in or a sign-out having moved the engine to another replica or bound the anon one in
 place, is refused `not-writable`, in words that ask no one to sign in; the API stands on the engine's binding, so a
 re-identify of the account's replica refuses nothing.
@@ -201,8 +210,7 @@ and once for each workout refused or failed, and never stopping the seat change)
 `closed`, `refused`. A copy's recovery ends in one `gym_recovery` with `outcome` (`saved` for a start that lost a race,
 `kept`, `retried`, `discarded`, `refused`, `failed`) and the review's `reason`; one that fails, a save of a refused start
 that fails and a held proposal the account refuses to issue again report `gym-workout-recover`. The sign-in question tells
-`gym_signin_decision` with `choice` (`add`, `discard`, `cancel`) and `count_bucket`, the workouts, routines and weigh-ins
-it counted as a bucket. A local save does not claim server admission. Unexpected boundary failures
+`gym_signin_decision` with `step` (`shown`, `add`, `discard`, `cancel`) and `count_bucket`, what it counted as a bucket. A local save does not claim server admission. Unexpected boundary failures
 report a static `gym-<operation>` to Sentry with the error's stack frames, never its message, IDs, names, bodies or field values;
 a `GymRefusal` is expected and reports nothing, and a store failure is the engine's to report.
 Engine telemetry owns transport, storage, authentication and admission failures. Refusal content stays on the device; the room announces
@@ -232,11 +240,14 @@ with `/v1/me` held and reports how long it took, keeps the room for a paused ses
 the room and what is typed in it through a re-identify and through a page restored from the back/forward cache, its scroll
 too, and draws `Opening`, never another tab's account, under the account this tab's shell has settled.
 `signedOut.browser.test.js` serves `/v1` from the engine's reference server, which a phone of the account (the domain
-harness) writes to as well: the signed-out room with its routines, workouts and weigh-ins and without the account's doors
-(WD8); a sign-in into an account holding training, its question in gym's count, Add joining the work and the open
+harness) writes to as well: the signed-out room with its routines, workouts and weigh-ins and without the account's doors,
+whose addresses draw The log or the workout as logged, no copy offered, and Coach's door where WD8.3 draws it at 1440 and
+390 (WD8); a sign-in into an account holding training, its question in gym's count, Add joining the work and the open
 workout the account cannot take kept as finished from In this browser (WD9.1, WD9.3); Discard after its confirmation
-(WD9.2); and a start that lost the race to the phone's, its toast and its sets kept (WD4.3). `WM_GYM_SHOTS` names a folder
-for their screenshots.
+(WD9.2); a question of movements and settings alone, whose Discard leaves the account's names and settings as they were;
+a workout deleted signed out, counted by its changes, whose start the account refuses after Add with nothing saved or
+said; and a start that lost the race to the phone's, its toast clear of the rack at 1440 and 390 and its sets kept
+(WD4.3). `WM_GYM_SHOTS` names a folder for their screenshots.
 `workout.browser.test.js` runs a workout in Chromium the same way: started from a routine and empty, a set logged and
 corrected, a plan edit, Finish and the discard; Log set tapped in two tabs on one offer logs one set and the second tap is
 quiet; a plan edit another tab made stale is refused with its draft kept, and Save mine writes it; a set logged with no

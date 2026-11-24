@@ -96,8 +96,8 @@ copies among them, so the next person to sign in on this browser is not offered 
 is in the account's replica by then, and a sign-in forgets nothing. A browser that ran the journal's first bundle on the engine
 kept those pages and its migration's records in the engine's device metadata; the carry returns the pages to the
 browser's storage once, a store a page, drops from the old stores the entries those records show carried, and deletes
-the three keys in the engine's one door to its metadata, the journal's only write of the device rather than of a
-replica.
+the three keys in the engine's one door to its metadata. A sign-out forgets the pages the metadata still holds, their
+return not yet done, before the stores. These are the journal's only writes of the device rather than of a replica.
 
 Settings' export (`settings/journalExport.js`) is one Markdown file of the room's written pages as
 the room shows them, read from the replica: signed out the browser's own, and on a bound replica, once

@@ -225,3 +225,13 @@
     border-radius: var(--radius-2xl) var(--radius-2xl) 0 0 !important; }
 }
 .gym-root .gym-coach-picture-remove { padding: 0; border: 0; background: transparent; color: var(--color-brand); font: 600 14px/20px var(--font-body); cursor: pointer; }
+
+/* Coach's door while no account is settled (WD8.3): the reading column at the head of the page; on a narrow screen it
+   stands in the reach band, 24px above the tab bar. */
+.gym-column.has-door { min-height: 100%; display: flex; flex-direction: column; }
+.gym-coach-door { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding-top: 36px; }
+.gym-coach-door-line { margin: 0; color: var(--gym-ink-dim); font: 400 16px/24px var(--font-body); }
+@media (max-width: 800px) {
+  .gym-column.has-door { justify-content: flex-end; padding-bottom: 24px; }
+  .gym-coach-door { padding-top: 0; }
+}

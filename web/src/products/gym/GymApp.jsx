@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Toast } from '../../design-system/index.js';
+import { Toast } from '../../design-system/index.js';
 import { useAppearance } from '../../shell/useAppearance.js';
 import { ProductSwitcher } from '../../shell/ProductSwitcher.jsx';
 import { navigate } from '../../shell/navigation.js';
@@ -9,8 +9,7 @@ import { AccountSeat } from '../../shell/auth/AccountSeat.jsx';
 import { useSignInDoor, useSignInDoorHost } from '../../shell/auth/SignInDoor.jsx';
 import { Backfill } from './backfill/Backfill.jsx';
 import { BodyweightScreen } from './bodyweight/Bodyweight.jsx';
-import { COACH_TITLE } from './coach/coach.js';
-import { CoachRoom } from './coach/CoachRoom.jsx';
+import { CoachDoor, CoachRoom } from './coach/CoachRoom.jsx';
 import { HistoryPage } from './coach/History.jsx';
 import { forgetRetiredCoach } from './coach/retiredCoach.js';
 import { FinishScreen } from './Finish.jsx';
@@ -118,17 +117,6 @@ function Opening() {
   return <p className="gym-quiet">{t('gym.app.opening')}</p>;
 }
 
-// Coach's tab while no account is settled (WD8.3): what Coach does, and the shell's sign-in.
-function CoachDoor({ onSignIn }) {
-  return (
-    <section className="gym-door">
-      <h1 className="gym-title">{COACH_TITLE}</h1>
-      <p className="gym-door-line">{t('gym.app.coachDoorLine')}</p>
-      <Button onClick={onSignIn}>{t('gym.app.signIn')}</Button>
-    </section>
-  );
-}
-
 // Shares, log shares, the connected log, Coach and Notes stay behind an account the shell has settled, online or offline
 // from its last answer; until then Coach's tab is its door, or the opening line while the account has yet to answer. The
 // rest draws from the replica, the browser's own copy signed out, and says nothing of where the work is kept (R-6).
@@ -140,6 +128,7 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
   useRefusedStarts(log);
   const screen = screenIn(hash, seat, status);
   const waitsForAccount = !signedIn && (COACH_SCREENS.has(screen) || screen === 'share-log');
+  const door = waitsForAccount && status === 'ghost';
   const historyPositions = React.useRef(new Map());
   const pagePositions = React.useRef(new Map());
   const content = React.useRef(null);
@@ -154,7 +143,7 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
     <div className="gym-room">
       <Chrome inShell={inShell} user={user} status={status} onSignIn={onSignIn} onSignOut={onSignOut} />
       <div ref={content} className="gym-scroll">
-        <main className={`gym-column${columnClass(screen)}`}>
+        <main className={`gym-column${door ? ' has-door' : columnClass(screen)}`}>
           {(screen === 'routines' || screen === 'proposal') && <RoutinesList log={log} reviewing={screen === 'proposal' ? proposalIdOf(hash) : null} anonymous={anonymous} />}
           {(screen === 'log' || screen === 'session') && <LogList log={log} signedIn={signedIn} anonymous={anonymous} positions={historyPositions.current} pagePositions={pagePositions.current} hash={screen === 'log' ? hash : new URLSearchParams(hash.split('?').slice(1).join('?')).get('from') ?? '#/gym/log'} sessionId={screen === 'session' ? sessionIdOf(hash) : null} fixSetId={fixSetIdOf(hash)} edit={/^#\/gym\/session\/[^/?]+\/edit(?:\?|$)/.test(hash)} />}
           {screen === 'bodyweight' && <BodyweightScreen log={log} />}
@@ -162,7 +151,7 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
           {screen === 'routine' && <RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />}
           {screen === 'finish' && <FinishScreen id={finishIdOf(hash)} log={log} signedIn={signedIn} />}
           {screen === 'backfill' && <Backfill key={hash} target={backfillTargetOf(hash)} from={backfillFromOf(hash)} log={log} />}
-          {waitsForAccount && (status === 'ghost' ? <CoachDoor onSignIn={onSignIn} /> : <Opening />)}
+          {waitsForAccount && (door ? <CoachDoor onSignIn={onSignIn} /> : <Opening />)}
           {signedIn && screen === 'coach' && <CoachRoom key={account?.id} log={log} />}
           {signedIn && screen === 'threads' && <HistoryPage key={account?.id} log={log} />}
           {signedIn && screen === 'thread' && <CoachRoom key={account?.id} log={log} threadId={threadIdOf(hash)} />}
