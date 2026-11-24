@@ -326,6 +326,13 @@ Json::Value legendJson(const LegendRead& legend) {
     entry["others"] = strings(collision.others);
     out["collisions"].append(entry);
   }
+  out["shown"] = Json::Value(Json::arrayValue);
+  for (const ShownHue& shown : legend.shown()) {
+    Json::Value entry(Json::objectValue);
+    entry["hue"] = shown.hue;
+    entry["id"] = shown.kind ? Json::Value(*shown.kind) : Json::Value(Json::nullValue);
+    out["shown"].append(entry);
+  }
   return out;
 }
 
