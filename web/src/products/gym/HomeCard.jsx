@@ -1,16 +1,7 @@
 import React from 'react';
-import { useAuth } from '../../shell/auth/AuthProvider.jsx';
 import { t } from './i18n/app/index.js';
 
-function cell({ signedIn }) {
-  if (signedIn) return { body: t('gym.home.signedInBody'), link: t('gym.home.signedInLink') };
-  return { body: t('gym.home.signedOutBody'), link: t('gym.home.signedOutLink') };
-}
-
 export function HomeCard() {
-  const { status } = useAuth();
-  const { body, link } = cell({ signedIn: status === 'signed-in' });
-
   return (
     <>
       <style>{CSS}</style>
@@ -19,8 +10,8 @@ export function HomeCard() {
           <span className="wm-ghc-dot" aria-hidden="true" />
           {t('gym.product.name')}
         </span>
-        <span className="wm-ghc-body">{body}</span>
-        <span className="wm-ghc-link">{link}</span>
+        <span className="wm-ghc-body">{t('gym.home.body')}</span>
+        <span className="wm-ghc-link">{t('gym.home.link')}</span>
       </a>
     </>
   );
