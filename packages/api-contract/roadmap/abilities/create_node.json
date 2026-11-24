@@ -1,0 +1,301 @@
+[
+  {
+    "case": "a new step is written as the room's CreateStep under the id the host mints, and answers it",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "k1x9q2m7p4z8w3r5"
+      ]
+    },
+    "call": {
+      "name": "create_node",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "label": "Hoist the sail",
+        "kind": "learn",
+        "prerequisites": [
+          "a"
+        ]
+      }
+    },
+    "expect": {
+      "writes": [
+        {
+          "action": "CreateStep",
+          "input": {
+            "tree": "t_0000000000000001",
+            "step": {
+              "label": "Hoist the sail",
+              "color": "olive"
+            },
+            "prerequisites": [
+              "a"
+            ],
+            "id": "k1x9q2m7p4z8w3r5"
+          }
+        }
+      ],
+      "result": {
+        "nodeId": "k1x9q2m7p4z8w3r5"
+      }
+    }
+  },
+  {
+    "case": "a kind the roadmap does not have is refused",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "k1x9q2m7p4z8w3r5"
+      ]
+    },
+    "call": {
+      "name": "create_node",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "label": "Race",
+        "kind": "sport",
+        "prerequisites": []
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "unknown-kind",
+        "id": "sport"
+      }
+    }
+  }
+]

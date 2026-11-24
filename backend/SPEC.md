@@ -650,7 +650,10 @@ committed before its connection dropped lands once. Only a room closing — `evi
 
 ### Bounds
 
-Declared once in `domain/Command.h`. The MCP surface tells a cap in the refusal past it and publishes
+Declared in `domain/Command.h` for the backend's own doors, and in roadmap's sync registry
+(`packages/api-contract/sync/roadmap.registry.json`) for what the sync engine admits.
+`packages/api-contract/roadmap/limits.json` holds the caps Roadmap Coach checks first, and the Coach contracts
+workflow fails when one differs from either. The MCP surface tells a cap in the refusal past it and publishes
 none in a tool's schema (`adapters/mcp/README.md`). Every length
 is counted in characters — Unicode code points, `codePointCount` — never bytes, and a refusal
 names each field over its cap and by how much. Text that is not valid UTF-8 (an overlong form, a
