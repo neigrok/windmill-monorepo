@@ -71,5 +71,5 @@ test('a refusal speaks in the store’s own words where it sent any, and finishe
   assert.equal(noteRefusal(new GymRefusal('invalid', { sentence: 'a note runs to 500 bytes' }), 'saved'), 'a note runs to 500 bytes');
   assert.equal(noteRefusal(new GymRefusal('cap', { sentence: '10 of 10 notes. Delete one to add another.' }), 'saved'), '10 of 10 notes. Delete one to add another.');
   assert.equal(noteRefusal(new CommitError('the device store did not commit', 'store', { cause: new DOMException('storage refused', 'QuotaExceededError') }), 'saved'), 'That note wasn’t saved — this device couldn’t store it.');
-  assert.equal(noteRefusal(undefined, 'deleted'), 'That note wasn’t deleted — the log didn’t answer. Try again when you have signal.');
+  assert.equal(noteRefusal(new Error('an engine write that threw'), 'deleted'), 'That note wasn’t deleted — this device couldn’t store it.');
 });

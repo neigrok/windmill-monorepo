@@ -4,6 +4,5 @@
   "gym.settings.units": "Units",
   "gym.settings.unitsLabel": "Weight units",
   "gym.settings.restOff": "off",
-  "gym.settings.notSaved": "that setting didn’t save — {reason}",
-  "gym.settings.notSavedNoAnswer": "that setting didn’t save — the log didn’t answer. Try again in a moment"
+  "gym.settings.notSaved": "that setting didn’t save — {reason}"
 }
