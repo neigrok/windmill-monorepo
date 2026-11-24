@@ -49,6 +49,8 @@ export class MemoryStore {
   constructor(held) {
     this.held = held;
     this.coordination = held.name;
+    // It keeps nothing past the page.
+    this.durable = false;
     this.closed = false;
   }
 

@@ -55,7 +55,7 @@ D-17) and resolves to true; one the active replica does not hold is left alone, 
 and reports nothing.
 
 `observeEngine` and `getSnapshot` expose replica/auth/upgrade state, the active replica's `binding` and bound `account`
-(null for the anon replica), and `connection`: `offline` while the
+(null for the anon replica), `storeCleared` (below), and `connection`: `offline` while the
 browser reports no network, `unreachable` after a request to the server got no answer or a 5xx answer
 and before one answers again, else `online`. The tab that makes a request tells the other tabs whether it
 was answered. The session owner's own requests count: `answered(answered)` takes whether one reached the server, and the
@@ -96,6 +96,16 @@ when it could not tell): a bound replica of another account pauses, as a 401 pau
 unpauses once none is held. The shell tells it what each read of `/v1/me` finds (at open and restore, on focus, on
 reconnection and every 20 s, outside a sign-out); the engine asks no one itself. The transaction that pauses or unpauses
 the active replica emits `sync-auth-paused` with `paused` or `released`, once.
+A write that lets a replica id go, one a re-identify replaced or a removed replica's, records it in
+`device.meta.formerReplicas`, so with the ids its replicas hold the store knows every id it has held, and a write that
+changes no id changes nothing more. `sessionReplica(account,
+syncReplica)` takes what a read of `/v1/me` for `account` answered as the replica its session last pushed for (null before
+its first accepted push), which the shell tells once that read has bound the seat. A store that keeps the device past the
+page (its `durable`), whose active replica is bound to `account` and which has held no such replica was cleared by the
+browser ([web-device-parity.md](../../../../docs/foundation/web-device-parity.md) §7 Cleared). The write that finds it
+marks the store (`device.meta.storeCleared`) and emits `sync-store-cleared`, once: a reload, another tab and the next read
+find the mark, and a store is born after at most one clear. The snapshot's `storeCleared` says it to every tab of the store
+from then on; no screen draws it yet.
 The engine stores no tokens. The shell owns the cookie session and pinned account decisions. Finished sign-out durably
 records cookie cleanup until the credentials port succeeds, and so does `cancelSignIn(account)`, which in the same write
 drops the pending sign-in; `cleanupCredentials()` runs the deletion owed. Sign-in drops a deletion owed for an earlier
@@ -120,8 +130,9 @@ session owner's closure of the bound account through the sign-out that ends it a
 Two stores keep the engine's device behind one interface. `transact(change, { readonly, initialize, scopes })` runs
 `change` synchronously on the device in one transaction and answers `{ result, device, revision, changed, previous, active,
 measurement }`, a throw or a Promise from `change` committing nothing; `read(scopes)` is a read-only one, and
-`cleanup(limit)`, `reopen()`, `close()` and `coordination`, the name the tabs sharing the store lead and talk under
-(engine.md §7.8), complete it. `IndexedDBStore` (`store.js`) keeps the device durably for every tab of its version.
+`cleanup(limit)`, `reopen()`, `close()`, `coordination`, the name the tabs sharing the store lead and talk under
+(engine.md §7.8), and `durable`, whether it keeps the device past the page, complete it. `IndexedDBStore` (`store.js`)
+keeps the device durably for every tab of its version.
 `MemoryStore` (`memoryStore.js`) holds it in memory for as long as the page, for a browser that offers no IndexedDB
 (engine.md §2.5): its `coordination` is its own, so each tab holding one is a device of its own, leading its replica alone
 and syncing only through the server. Its reads share the committed values, frozen, and a write commits copies of what it changed, so a row keeps its identity

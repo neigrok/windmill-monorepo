@@ -13,7 +13,8 @@ a phone's workout. The domain's part is built: the refusals of §4's one open wo
 that loses a race holds its sets in its notice and no surface recovers them yet; and §8's adoption, recovery and Coach
 onboarding import in the web's domain, which claims every file §8 names. Of them, the shell's hook before the seat changes
 (§3 Sign-in) saves each signed-out workout for adoption, an open one with its sets, with no rack to write first since the
-web has none yet; nothing else calls them on the web yet. Gym's Coach takes its turn in the browser. The build order lives in the Web as a device roadmap tree, which the dogfood tree
+web has none yet; nothing else calls them on the web yet. Gym's Coach takes its turn in the browser. The browser
+finds a store it cleared (§7) and records it once, with its event; no screen tells the person yet. The build order lives in the Web as a device roadmap tree, which the dogfood tree
 (`t_9362d9bc883e0a1e`) opens from the node `web-device-parity`.
 
 **Scope:** What makes gym and journal on the web no different from their siblings on a phone: the
@@ -160,7 +161,7 @@ A phone always has its store. A browser can refuse one, lose one, or fill one.
     session it was served through, the cookie's when the request sends one, else the bearer's.
     `GET /v1/me` answers it as `syncReplica`, `null` until that session's first accepted push
     ([backend/AUTH.md](../../backend/AUTH.md)). A new sign-in is a new session, so it starts at `null`.
-  - **What is no clear.** A re-identify gives the active replica a new id within one session (a
+  - **What is not a clear.** A re-identify gives the active replica a new id within one session (a
     push answered `replica-forked`, `replica-foreign` or `gap`, and an epoch change; engine §7.11),
     and `syncReplica` names the old id until the new one's first accepted push. So the browser
     tells a clear only when `syncReplica` is none of the replica ids its own store has held, and says

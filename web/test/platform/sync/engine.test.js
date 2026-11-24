@@ -1224,6 +1224,93 @@ test('a bound replica pauses once the session owner finds the browser holds anot
   engine.close();
 });
 
+test('the store remembers every replica id it lets go, one a re-identify replaced and a discarded replica\'s, through a reload', async () => {
+  const env = environment();
+  let engine = await open(env);
+  const anon = engine.activeReplica();
+  env.transport.account = 'A';
+  await engine.signIn('A');
+  const bound = engine.activeReplica();
+  await engine.write(null, (device, ctx) => reidentify(device.activeReplica, ctx));
+  const reidentified = engine.activeReplica();
+  assert.equal((await engine.finishSignOut({ choice: 'discard', counted: [] })).complete, true);
+  engine.close();
+  engine = await BrowserSyncEngine.open(env.options);
+  assert.deepEqual({ replicas: engine.device.replicas.map(({ id }) => id), former: engine.device.meta.formerReplicas },
+    { replicas: [anon], former: [bound, reidentified] });
+  engine.close();
+});
+
+test('a store the browser cleared is told once, by one of two tabs, and a reload and the next read find its mark', async () => {
+  const env = environment();
+  const cleared = () => env.events.filter(({ name }) => name === 'sync-store-cleared');
+  let a = await open(env);
+  env.transport.account = 'A';
+  await a.signIn('A'); await until(() => a.leader);
+  await a.commit('self/probe', card());
+  await a.send();
+  const pushedFor = a.activeReplica();
+  a.close();
+  await new Promise((resolve, reject) => Object.assign(env.indexedDB.deleteDatabase('wm-sync'), { onsuccess: resolve, onerror: reject }));
+  a = await open(env);
+  const b = await peer(env);
+  await a.signIn('A');
+  await until(() => b.activeReplica() === a.activeReplica());
+  assert.deepEqual({ a: a.getSnapshot().storeCleared, b: b.getSnapshot().storeCleared, told: cleared() }, { a: false, b: false, told: [] });
+  await Promise.all([a.sessionReplica('A', pushedFor), b.sessionReplica('A', pushedFor)]);
+  await until(() => b.getSnapshot().storeCleared);
+  await a.sessionReplica('A', pushedFor);
+  assert.deepEqual({ a: a.getSnapshot().storeCleared, told: cleared() }, { a: true, told: [{ name: 'sync-store-cleared', props: {} }] });
+  a.close(); b.close();
+  a = await open(env);
+  await a.sessionReplica('A', pushedFor);
+  assert.deepEqual({ storeCleared: a.getSnapshot().storeCleared, told: cleared().length, ids: JSON.stringify(env.events).includes('rp_'), failures: env.failures },
+    { storeCleared: true, told: 1, ids: false, failures: [] });
+  a.close();
+});
+
+const unknownReplica = `rp_${'f'.repeat(32)}`;
+const noClear = {
+  'the id a re-identify replaced, answered before the new one\'s first push': async (env) => {
+    const engine = await open(env);
+    env.transport.account = 'A'; await engine.signIn('A');
+    const old = engine.activeReplica();
+    await engine.write(null, (device, ctx) => reidentify(device.activeReplica, ctx));
+    return { engine, account: 'A', syncReplica: old };
+  },
+  'a new sign-in, whose session has pushed for no replica': async (env) => {
+    const engine = await open(env);
+    env.transport.account = 'A'; await engine.signIn('A');
+    return { engine, account: 'A', syncReplica: null };
+  },
+  'a store held in memory, a new device in every tab under one cookie': async (env) => {
+    const engine = await BrowserSyncEngine.open({ ...env.options, inMemory: true });
+    await engine.start();
+    env.transport.account = 'A'; await engine.signIn('A');
+    return { engine, account: 'A', syncReplica: unknownReplica };
+  },
+  'an answer for another account than the one the replica is bound to': async (env) => {
+    const engine = await open(env);
+    env.transport.account = 'A'; await engine.signIn('A');
+    return { engine, account: 'B', syncReplica: unknownReplica };
+  },
+  'a signed-out replica': async (env) => ({ engine: await open(env), account: 'A', syncReplica: unknownReplica }),
+  'the bound replica\'s own id, which its pushes carry': async (env) => {
+    const engine = await open(env);
+    env.transport.account = 'A'; await engine.signIn('A');
+    return { engine, account: 'A', syncReplica: engine.activeReplica() };
+  },
+};
+for (const [name, arrange] of Object.entries(noClear)) test(`no cleared store is told for ${name}`, async () => {
+  const env = environment();
+  const { engine, account, syncReplica } = await arrange(env);
+  await engine.sessionReplica(account, syncReplica);
+  assert.deepEqual({ storeCleared: engine.getSnapshot().storeCleared, marked: engine.device.meta.storeCleared,
+    told: env.events.filter(({ name }) => name === 'sync-store-cleared'), failures: env.failures },
+  { storeCleared: false, marked: undefined, told: [], failures: [] });
+  engine.close();
+});
+
 test('a gym Coach round sits beside runningTurn, and a build whose registry knows no runningRound still reads and clears runningTurn over it', async () => {
   const directory = new URL('../../../../packages/api-contract/sync/', import.meta.url);
   const read = (name) => JSON.parse(readFileSync(new URL(name, directory), 'utf8'));

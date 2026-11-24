@@ -138,6 +138,8 @@ export class IndexedDBStore {
     this.version = database.version;
     // The name the tabs sharing this store lead and talk under (engine.md §7.8): every tab of its version.
     this.coordination = database.version;
+    // It keeps the device past the page, until the browser clears it.
+    this.durable = true;
     this.generationRows = (generation) => keyRange.bound([generation], [generation, []]);
     this.closed = false;
     this.controls = null;
