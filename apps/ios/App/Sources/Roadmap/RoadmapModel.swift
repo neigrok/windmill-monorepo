@@ -411,11 +411,11 @@ final class RoadmapModel {
   // its read came to. A note's screen that leaves the stack, by Done, by Back or with its step, saves its draft.
   var path: [Visit] = [] {
     didSet {
+      if let inside, !path.contains(where: { $0.roadmap != nil }) { cameBack(from: inside) }
       if let note, !path.contains(.note(of: note.step.description)) {
         note.save()
         self.note = nil
       }
-      if let inside, !path.contains(where: { $0.roadmap != nil }) { cameBack(from: inside) }
       guard path.count > oldValue.count, let pushed = path.last else { return }
       switch pushed {
       case .roadmap(let tree, let door): wentIn(tree, by: door)
@@ -437,7 +437,10 @@ final class RoadmapModel {
   }
   // The person's own roadmaps, the most recent first.
   private(set) var roadmaps: [ListedRoadmap] = []
-  private(set) var band: Band?
+  // The band every screen on the stack stands on: one for the stack, kept by the root's room, which a roadmap gone into
+  // shows, ends and undoes as its own, so going in or back takes no Undo away while it stands.
+  var band: Band? { root.stackBand }
+  private(set) var stackBand: Band?
   // The delete question standing where it was asked.
   var question: Question?
   // The view the switch row chose of the open roadmap: its own on this phone, the Board until it is switched (the
@@ -485,9 +488,6 @@ final class RoadmapModel {
   // Each of the person's roadmaps' overlay records as the last read held them, which a roadmap gone into reads its
   // workspace from.
   @ObservationIgnored var overlays: [ID<RoadmapEntry>: [Record]] = [:]
-  // How many roadmaps deep the room stands: the root's room and a cover's are 0, a roadmap gone into one deeper than the
-  // room it was gone into from.
-  let depth: Int
   // The room of the roadmap gone into from this one, while its visit stands on this room's stack, and the room this one
   // was gone into from.
   var inside: RoadmapModel?
@@ -500,10 +500,9 @@ final class RoadmapModel {
 
   init(records: @escaping Records, runner: ActionRunner, phone: UserDefaults, telemetry: any Telemetry = NoopTelemetry(),
        wait: @escaping Wait = { try await Task.sleep(for: $0) }, graph: RoadmapGraph? = nil, boardFrames: BoardFrames = BoardFrames(),
-       role: Role = .owner(nil), depth: Int = 0) {
+       role: Role = .owner(nil)) {
     self.records = records; self.runner = runner; self.phone = phone; self.telemetry = telemetry; self.wait = wait
     self.role = role
-    self.depth = depth
     self.graph = graph ?? RoadmapGraph(telemetry: telemetry)
     self.boardFrames = boardFrames
     reading = BoardReading(telemetry: telemetry)
@@ -1056,9 +1055,10 @@ final class RoadmapModel {
   // back, a roadmap's delete or a workspace removal past its hold, an act the engine keeps no Undo of, or one whose every
   // restore a write elsewhere stood in the way of, says so in the band's place, with a warning (02.10d, 06.5c).
   func undo() {
+    guard root === self else { return root.undo() }
     guard let receipt = band, let undo = receipt.undo else { return }
     bandTime?.cancel()
-    band = nil
+    stackBand = nil
     do {
       var taken = false
       if undo.held { taken = try runner.cancelHeld(undo.gesture) }
@@ -1071,7 +1071,7 @@ final class RoadmapModel {
         }
       }
       try runner.release(undo.gesture)
-      if taken { removedKinds = removedKinds.filter { $0.value != undo.gesture } }
+      if taken { for room in rooms { room.removedKinds = room.removedKinds.filter { $0.value != undo.gesture } } }
       switch undo.act {
       case .step(let act): telemetry.event("roadmap_board_undo", properties: ["act": act, "outcome": taken ? "ok" : "unavailable"])
       case .workspace(let act):
@@ -1088,8 +1088,9 @@ final class RoadmapModel {
 
   // A band stands in place of the one showing, until its time is over.
   func show(_ band: Band) {
+    guard root === self else { return root.show(band) }
     endBand()
-    self.band = band
+    stackBand = band
     bandTime = Task { [weak self, wait] in
       guard (try? await wait(band.lasts)) != nil, !Task.isCancelled else { return }
       self?.endBand()
@@ -1099,16 +1100,17 @@ final class RoadmapModel {
   // The band leaves with its Undo untaken: its time is over, a newer one replaces it, the person sent it away or left
   // the app. The engine keeps nothing more for an Undo no one can ask.
   func endBand() {
+    guard root === self else { return root.endBand() }
     bandTime?.cancel()
-    let undo = band?.undo
-    band = nil
+    let undo = stackBand?.undo
+    stackBand = nil
     if let undo { forget(undo.gesture) }
   }
 
-  // The engine lets go of every delete it holds, as the app leaves the front or the account changes: a note open on its
-  // screen is saved as it stands, and the band goes with its Undo.
+  // The engine lets go of every delete it holds, as the app leaves the front or the account changes: a note open on the
+  // screen of any room on the stack is saved as it stands, the deepest first, and the band goes with its Undo.
   func flush() {
-    note?.save()
+    for room in rooms.reversed() { room.note?.save() }
     endBand()
   }
 

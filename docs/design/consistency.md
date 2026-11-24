@@ -857,16 +857,23 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   tap on it opens the menu and never goes in; the pasted row of someone else's roadmap says *Someone else’s · you can read
   it*, the web's words, since the phone's copy names no author, where 07.7 draws *By Maya · you can read it*; a pasted
   link to one of the person's own roadmaps chooses it as a tap on its row does, and one the phone has no copy of and no
-  connection to read says *Needs a connection* under the row, neither of which a board draws; Fork Roadmap's band after a
-  tap with no connection stands until the next tap, and a fork waits up to fifteen seconds for its copy to head the
-  list, saying *Forking…*, which no board draws; that band says *Forking needs a connection.*, the cover's sentence, where
-  07.12a draws it without its full stop; 07.5d draws *Night passage* before *Log 100 miles*, and the Board's Roadmap Order
-  keeps the roadmap's authored order between steps equally far, so *Log 100 miles* stands first; 07.2b draws the steps
-  under *Opens* *Locked · 1 to go* while both *Day skipper theory* and the step stand open behind them, which the room
-  counts *2 to go*; a roadmap gone into has no
-  *Export* in its … menu until Export is built;
-  and a reader's cover shows a step's subtree with no door, where §6 has a reader go into it as on the web: no board of
-  section 09 draws it.
+  connection to read says *Needs a connection* under the row, neither of which a board draws; a pasted link to a subtree
+  of the person's chooses it too, where the web's picker offers it no row, and one to the roadmap the step stands in is
+  refused with the dimmed row's *This roadmap*; a choice the room refuses says why under the list, *This roadmap is at its
+  limit.* or *Your choice couldn’t be saved. Try again.*, where the web says *Couldn’t change the tree. Try again.*; *None*
+  has no footer for a roadmap that cannot be found, whose name the form's Roadmap row gives as *Not found*; Fork
+  Roadmap's band after a tap with no connection stands until the next tap, and a fork waits up to fifteen seconds for its
+  copy to head the list, saying *Forking…*, which no board draws; that band says *Forking needs a connection.*, the
+  cover's sentence, where 07.12a draws it without its full stop; 07.5d draws *Night passage* before *Log 100 miles*, and
+  the Board's Roadmap Order keeps the roadmap's authored order between steps equally far, so *Log 100 miles* stands
+  first; 07.2b draws the steps under *Opens* *Locked · 1 to go* while both *Day skipper theory* and the step stand open
+  behind them, which the room counts *2 to go*; a roadmap gone into has no *Export* in its … menu until Export is built;
+  one the phone has yet to read waits with a spinner, and with no connection says *Needs a connection* over *This
+  roadmap isn’t on this iPhone.*, the cover's 09.11 words; a roadmap the stack already stands in is gone into no deeper,
+  its row going nowhere and its foot holding no control, so a loop is gone round once; the band is the stack's one, so a
+  band standing as a person goes in or comes back stands on over the screen reached with its Undo; none of these a board
+  draws; and a reader's cover shows a step's subtree with no door, where §6 has a reader go into it as on the web: no
+  board of section 09 draws it.
 - **Roadmap · iOS · what a pinch of a crowd shows while it moves.** On an iPhone 13 mini a pinch with the whole
   5,000-step handbook in view is given five sixths of its frames
   ([Roadmap on iOS](../foundation/roadmap-ios.md) §13). The room holds three ways to keep them (`GraphPinch`), each

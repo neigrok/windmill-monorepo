@@ -24,7 +24,7 @@ struct OpeningPill: View {
 // 07.8b, 07.11): one row that goes into the roadmap, its name over how far it is, and the footer that says what completes
 // the step, with what a Done mark set aside costs. The owner's row of a roadmap the step opens carries the … menu of 07.9,
 // and one that cannot be found pushes the attach list; a subtree's row has no menu, since nothing changes or detaches it.
-// On a reader's cover the row goes nowhere.
+// On a reader's cover the row goes nowhere, and so does a row whose roadmap already stands on the stack, as a loop's does.
 struct OpenedSection: View {
   let roadmap: RoadmapModel
   let row: RoadmapModel.Row
@@ -35,8 +35,10 @@ struct OpenedSection: View {
     Section {
       if roadmap.owns {
         // The … menu stands over the link, so a tap on it opens the menu and never goes in.
-        NavigationLink(value: roadmap.stacked(opening.leads ? .roadmap(opening.tree, by: .step) : .attach(to: row.id))) { label }
-          .accessibilityIdentifier("roadmap-step-roadmap")
+        Group {
+          if let visit { NavigationLink(value: roadmap.stacked(visit)) { label } }
+          else { label.accessibilityElement(children: .combine) }
+        }.accessibilityIdentifier("roadmap-step-roadmap")
           .overlay(alignment: .trailing) { if !opening.owned { menu.padding(.trailing, 6) } }
       } else {
         label.accessibilityElement(children: .combine).accessibilityIdentifier("roadmap-step-roadmap")
@@ -46,6 +48,13 @@ struct OpenedSection: View {
     } footer: {
       if let footer { Text(footer).foregroundStyle(RoadmapPalette.inkDim).accessibilityIdentifier("roadmap-step-roadmap-rule") }
     }.listRowBackground(RoadmapPalette.card)
+  }
+
+  // Where the owner's row leads: into the roadmap, to the attach list where it cannot be found, and nowhere where the
+  // roadmap stands on the stack already.
+  var visit: RoadmapModel.Visit? {
+    guard opening.leads else { return .attach(to: row.id) }
+    return roadmap.goesIn(to: opening) ? .roadmap(opening.tree, by: .step) : nil
   }
 
   var label: some View {
@@ -81,26 +90,31 @@ struct OpenedSection: View {
 }
 
 // The foot's one filled control on an Up next step that opens a roadmap (Roadmap · iOS 07.2, 07.5a to 07.5c, 07.11): Open
-// Roadmap or Open Subtree goes in, and Choose Roadmap pushes the attach list where the roadmap cannot be found.
+// Roadmap or Open Subtree goes in, and Choose Roadmap pushes the attach list where the roadmap cannot be found. A roadmap
+// that stands on the stack already is gone into no deeper, so the foot holds none.
 struct OpenedPrimary: View {
   let roadmap: RoadmapModel
   let row: RoadmapModel.Row
   let opening: RoadmapModel.Opened
 
   var body: some View {
-    Button {
-      if opening.leads { roadmap.goIn(row, by: .foot) } else { roadmap.path.append(.attach(to: row.id)) }
-    } label: {
-      Text(opening.primary).frame(maxWidth: .infinity)
-    }.buttonStyle(RoomPrimaryStyle(room: .roadmap)).padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
-      .accessibilityIdentifier("roadmap-open-roadmap")
+    if !opening.leads || roadmap.goesIn(to: opening) {
+      Button {
+        if opening.leads { roadmap.goIn(row, by: .foot) } else { roadmap.path.append(.attach(to: row.id)) }
+      } label: {
+        Text(opening.primary).frame(maxWidth: .infinity)
+      }.buttonStyle(RoomPrimaryStyle(room: .roadmap)).padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
+        .accessibilityIdentifier("roadmap-open-roadmap")
+    }
   }
 }
 
 // A roadmap gone into (Roadmap · iOS 07.3, 07.11b), pushed on the room's stack: its Board or its Graph under the switch
-// row and the root's foot, in a room of its own. Its bar has the system's Back, which names the roadmap gone in from, the
+// row and the stack's foot, in a room of its own. Its bar has the system's Back, which names the roadmap gone in from, the
 // roadmap's name over its progress, and its own verbs in a … menu: Guide, Kinds and Activity. Switching, New Roadmap,
-// Rename and Delete Roadmap are the root's, and a subtree has none of them either. Its sheets are its room's.
+// Rename and Delete Roadmap are the root's, and a subtree has none of them either. One the phone has yet to read waits
+// with a spinner, or with no connection says it is not on this iPhone, as a cover does (09.11); the room's first read is
+// the root's alone to tell.
 struct RoadmapInside: View {
   let roadmap: RoadmapModel
   let app: AppModel
@@ -114,21 +128,22 @@ struct RoadmapInside: View {
       .toolbar {
         if let selection = roadmap.selection, let open = roadmap.shown { BoardSelectionBar(roadmap: roadmap, selection: selection, open: open) }
       }.roomBar(.roadmap)
-      .modifier(RoomSheets(roadmap: roadmap, app: app))
   }
 
   @ViewBuilder var content: some View {
     switch roadmap.phase {
     case .open(let open): RoadmapViews(roadmap: roadmap, open: open).modifier(InsideTitle(roadmap: roadmap, open: open))
-    case .unread, .empty: RoadmapRoom.FirstRead(roadmap: roadmap)
-    case .failed:
-      ContentUnavailableView {
-        Label { Text("Couldn’t load this roadmap").foregroundStyle(RoadmapPalette.ink) } icon: { Image(systemName: "map").foregroundStyle(RoadmapPalette.inkDim) }
-      } description: {
-        Text("The copy on this iPhone couldn’t be read.").foregroundStyle(RoadmapPalette.inkDim)
-      } actions: {
-        Button("Try Again") { roadmap.root.retry() }.buttonStyle(RoomSecondaryStyle()).accessibilityIdentifier("roadmap-try-again")
+    case .unread, .empty:
+      if roadmap.root.links?.sources.online() == false {
+        ContentUnavailableView {
+          Label { Text("Needs a connection").foregroundStyle(RoadmapPalette.ink) } icon: { Image(systemName: "wifi.slash").foregroundStyle(RoadmapPalette.inkDim) }
+        } description: {
+          Text("This roadmap isn’t on this iPhone.").foregroundStyle(RoadmapPalette.inkDim)
+        }
+      } else {
+        ProgressView().controlSize(.large).tint(RoadmapPalette.inkDim).accessibilityIdentifier("roadmap-inside-reading")
       }
+    case .failed: RoadmapRoom.FailedRead(roadmap: roadmap)
     }
   }
 }

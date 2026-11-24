@@ -4,8 +4,8 @@ import RoadmapDomain
 import SyncCore
 
 // A step that opens a roadmap (Roadmap on iOS §6; Roadmap · iOS 04.6, 07.1 to 07.12b): the roadmap its pointer opens or the
-// subtree it owns, as the room shows it wherever the step stands; going into that roadmap and back on the room's one
-// stack, each roadmap gone into a room of its own; and a roadmap attached to a step, changed and detached, each with Undo.
+// subtree it owns, as the room shows it wherever the step stands, and a roadmap attached to a step, changed and detached,
+// each with Undo. Going into a roadmap and back is the room stack's (`RoomStack.swift`).
 extension RoadmapModel {
   // The roadmap a step opens as the room shows it: which roadmap, whether the step owns it as its subtree, the one of the
   // web's faces (`Opening.face`) the domain's read of it comes to, its name and how many of its steps are done.
@@ -39,13 +39,16 @@ extension RoadmapModel {
         else { .open }
     }
 
+    // The room's words for a roadmap a step opens that cannot be found: deleted, never on this phone, or not the person's.
+    static var notFound: String { String(localized: "Not found", comment: "A roadmap a step opens that cannot be found") }
+
     // Whether the step leads into the roadmap: not into one that cannot be found.
     var leads: Bool { face != .missing }
     var toGo: Int { total - done }
 
     // The roadmap's name where the room says it: the words for one that cannot be found, nothing for one unread.
     var name: String {
-      if face == .missing { return String(localized: "Not found", comment: "A roadmap a step opens that cannot be found") }
+      if face == .missing { return Self.notFound }
       return owned ? RoadmapModel.Row.name(of: title ?? "") : title.map { ListedRoadmap.name(of: $0) } ?? ""
     }
 
@@ -161,81 +164,35 @@ extension RoadmapModel {
     }
   }
 
-  // A screen as the room's one stack holds it: a visit made in the root's room or in a roadmap gone into, by how deep.
-  struct Stacked: Hashable {
-    let depth: Int
-    let visit: Visit
+  // A roadmap a step may open, by its name as the person's list or the room's copy holds it; none for one that cannot be
+  // found, which the room says as it says a step's (`Opened.notFound`).
+  func name(of roadmap: String) -> String? {
+    if let listed = root.roadmaps.first(where: { $0.id == roadmap }) { return listed.name }
+    let location = account.location(of: roadmap)
+    guard location.standing == .standing else { return nil }
+    return ListedRoadmap.name(of: location.title)
   }
 
-  // The rooms the person stands in, the root's first and each roadmap gone into after the one it was gone into from.
-  var rooms: [RoadmapModel] { Array(sequence(first: self) { $0.inside }) }
-
-  // The room's one stack: every room's visits, each room's after the visit that went into it. Set by the system, each
-  // room takes its own back, so a room whose visit is gone leaves with it.
-  var stack: [Stacked] {
-    get { rooms.flatMap { room in room.path.map { Stacked(depth: room.depth, visit: $0) } } }
-    set {
-      var room: RoadmapModel? = self
-      while let each = room {
-        let visits = newValue.filter { $0.depth == each.depth }.map(\.visit)
-        if visits != each.path { each.path = visits }
-        room = each.inside
-      }
-    }
-  }
-
-  func stacked(_ visit: Visit) -> Stacked { Stacked(depth: depth, visit: visit) }
-
-  func room(at depth: Int) -> RoadmapModel? { rooms.first { $0.depth == depth } }
-
-  // The person's own room, which the rooms gone into stand over: where their list is read and links are followed.
-  var root: RoadmapModel { outside?.root ?? self }
-
-  // A roadmap a step may open, by its name as the person's list or the room's copy holds it.
-  func name(of roadmap: String) -> String {
-    ListedRoadmap.name(of: root.roadmaps.first { $0.id == roadmap }?.title ?? account.location(of: roadmap).title)
-  }
-
-  // Into the roadmap a step opens (07.1b, 07.2, 07.11): its room is pushed on the stack over the screen gone in from.
-  func goIn(_ row: Row, by door: Visit.Door) {
-    guard owns, let opening = row.opening, opening.leads else { return }
-    path.append(.roadmap(opening.tree, by: door))
-  }
-
-  // A roadmap gone into: a room of its own over the copy this room reads, told as the web tells going in.
-  func wentIn(_ tree: String, by door: Visit.Door) {
-    let subtree = shown?.rows.values.contains { $0.opening.map { $0.owned && $0.tree.utf8.elementsEqual(tree.utf8) } == true } ?? false
-    let room = RoadmapModel(records: records, runner: runner, phone: phone, telemetry: telemetry, wait: wait,
-                            role: .inside(tree, subtree: subtree), depth: depth + 1)
-    room.outside = self
-    inside = room
-    let view = shown.map { self.view(of: $0).rawValue } ?? Lens.board.rawValue
-    if subtree { telemetry.event("roadmap_subtree_open", properties: ["door": door.rawValue, "view": view, "role": "owner"]) }
-    else { telemetry.event("roadmap_tree_open", properties: ["door": door.rawValue, "view": view]) }
-    room.observe()
-  }
-
-  // Back from a roadmap gone into: its room goes, a note open there saved and its band with it.
-  func cameBack(from room: RoadmapModel) {
-    room.flush()
-    inside = nil
-    guard case .inside(_, let subtree) = room.role else { return }
-    if subtree { telemetry.event("roadmap_subtree_back", properties: ["role": "owner"]) }
-    else { telemetry.event("roadmap_tree_back") }
+  // The root of the person's own roadmap a link names: a roadmap of their list, or a subtree that stands under one. None
+  // for a roadmap that is someone else's, or that the phone does not hold.
+  func ownRoot(of tree: String) -> String? {
+    guard account.trees.contains(where: { $0.own && $0.id.utf8.elementsEqual(tree.utf8) }),
+          let root = account.location(of: tree).place?.root else { return nil }
+    return roadmaps.contains { $0.id.utf8.elementsEqual(root.utf8) } ? root : nil
   }
 
   // Attach a Roadmap or Change Roadmap (07.6, 07.6c, 07.8): the step opens the roadmap chosen, in the person's overlay, with
-  // Undo for six seconds. A Done mark on the step is set aside, not lost. Answers whether it was written.
+  // Undo for six seconds. A Done mark on the step is set aside, not lost. Answers what the write came to.
   @discardableResult
-  func attach(_ roadmap: String, to row: Row) -> Bool {
-    guard case .open(let open) = phase else { return false }
+  func attach(_ roadmap: String, to row: Row) -> Written<Void> {
+    guard case .open(let open) = phase else { return .unchanged }
     let changing = row.opening != nil
-    let pointer = PointStep.set(tree: open.id, step: ID(RecordID(row.id)), opens: ID(RecordID(roadmap)))
-    guard let written = write(pointer, as: "pointer").committed else { return false }
+    let written = write(PointStep.set(tree: open.id, step: ID(RecordID(row.id)), opens: ID(RecordID(roadmap))), as: "pointer")
+    guard let receipt = written.committed?.receipt else { return written }
     let marked = open.tree.mark(on: row.id)?.isComplete == true
     telemetry.event("roadmap_tree_attach", properties: ["step": changing ? "change" : "attach", "mark": marked ? "kept" : "none"])
-    show(Band(.attached, of: written.receipt, act: .step(changing ? "change" : "attach")))
-    return true
+    show(Band(.attached, of: receipt, act: .step(changing ? "change" : "attach")))
+    return written
   }
 
   // Detach Roadmap, or None in the attach list (07.9, 07.10): the step opens no roadmap and is ordinary again, a Done mark

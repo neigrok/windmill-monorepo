@@ -255,21 +255,29 @@ domain's `OpeningRead`): the roadmap, whether the step owns it as its subtree, t
 person's, reads as missing), its name and count, and the words the Board's pill, the Graph's line, the page's Roadmap
 row, its status row, its footer and its foot say of it. A step that opens a roadmap is complete as the roadmap is, so it
 takes no *Complete* or *Reset*, and a Done mark made by hand is set aside while it opens one, which its footer says with
-the steps that lock again. Going in (`goIn(_:by:)`) pushes a `Visit.roadmap` on the room's path, and the room makes the
-roadmap a room of its own (`inside`, in the role `.inside`, a room deeper), which reads the phone's copy as the room it
-was gone in from last read it and holds its own Board, Graph, band, step pages and sheets; the root's stack is every
-room's path in turn (`stack`, each visit a `Stacked` by its depth), and a room whose visit leaves the stack goes, its note
-saved and its band with it. `NestedScreens.swift` is the pill (`OpeningPill`), the page's section (`OpenedSection`), with
-the owner's … menu of *Change Roadmap* and *Detach Roadmap* over the row, the foot's control (`OpenedPrimary`), and a
-roadmap gone into (`RoadmapInside`): Back, its name over its progress and a … menu of *Guide*, *Kinds* and *Activity*.
-`AttachRoadmap.swift` is the list a roadmap is attached from, pushed from the page as `Visit.attach` and from the step
-form's Roadmap row: the person's roadmaps found by name, the one the step stands in dimmed, the one it opens checked under
-*None*; a choice on the page runs `PointStep` at once (`attach(_:to:)`, `detach(_:)`), each with *Undo* for six seconds,
-and in the form sets the draft, which its save writes. A pasted link to one of the person's roadmaps chooses it; to
-someone else's, `PastedRoadmap` follows its tree scope through the engine while the list stands and names it above theirs
-with *Fork Roadmap*, which needs a connection, its band says so otherwise, and a session, signed out *Sign In to Fork*
-raising the shell's sign-in; to none they can read, the list says so under the pasted row. A reader's cover shows the
-section with no door and no menu, the subtree counted as the owner's progress tells it.
+the steps that lock again. `RoomStack.swift` is the room's one stack: going in (`goIn(_:by:)`) pushes a `Visit.roadmap`
+on the room's path, and the room makes the roadmap a room of its own (`inside`, in the role `.inside`, one deeper than the
+room it was gone into from, `outside`), which reads the phone's copy as that room last read it and holds its own Board,
+Graph, step pages and sheets. A roadmap a room on the stack already shows is gone into no deeper (`goesIn(to:)`), so a
+loop is gone round once. The root's stack is every room's path in turn (`stack`, each visit a `Stacked` by its depth),
+and a screen keeps the room it last found while it slides away (`RoadmapScreen`). A room whose visit leaves the stack
+goes, however many Back passes at once: each from the deepest first, its note saved and its Back told (`cameBack(from:)`),
+and the app leaving the front or the account changing saves the note of every room on the stack (`flush()`). The band is
+the stack's one, kept by the root's room, so going in or back leaves its Undo standing, and the sheets stand on the
+stack, raised by the room on top (`deepest`). `NestedScreens.swift` is the pill (`OpeningPill`), the page's section
+(`OpenedSection`), with the owner's … menu of *Change Roadmap* and *Detach Roadmap* over the row, the foot's control
+(`OpenedPrimary`), and a roadmap gone into (`RoadmapInside`): Back, its name over its progress and a … menu of *Guide*,
+*Kinds* and *Activity*; one the phone has yet to read waits with a spinner, or with no connection says *Needs a
+connection*. `AttachRoadmap.swift` is the list a roadmap is attached from, pushed from the page as `Visit.attach` and
+from the step form's Roadmap row: the person's roadmaps found by name, the one the step stands in dimmed, the one it opens
+checked under *None*; a choice on the page runs `PointStep` at once (`attach(_:to:)`, `detach(_:)`), each with *Undo* for
+six seconds, a refused one saying why under the list, and in the form sets the draft, which its save writes. A pasted link
+to one of the person's roadmaps or a subtree of one chooses it (`ownRoot(of:)`), and one to the roadmap the step stands in
+is refused in its row's words; to someone else's, `PastedRoadmap` follows its tree scope through the engine while the list
+stands and names it above theirs with *Fork Roadmap*, which needs a connection, its band says so otherwise, and a
+session, signed out *Sign In to Fork* raising the shell's sign-in; to none they can read, the list says so under the
+pasted row. A reader's cover shows the section with no door and no menu, the subtree counted as the owner's progress
+tells it.
 
 `Activity/RoadmapActivity.swift` is a roadmap's Activity and a step's History (boards 01.13, 01.13b, 01.15 and 03.12),
 each pushed on the room's stack, from the title menu's *Activity* and from a step page's *History*. Both show the

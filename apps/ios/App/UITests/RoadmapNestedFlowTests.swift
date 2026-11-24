@@ -1,9 +1,10 @@
 import XCTest
 
 // A step that opens a roadmap (Roadmap · iOS 07.1 to 07.12b, 05.1) on the simulator's nested boards: the pill and the
-// page's Roadmap section, going in by the page and by the swipe and coming back, attaching, changing and detaching from
-// the page with Undo, a roadmap set in the step form, the odd ends and a subtree, and forking a pasted link first, refused
-// with no connection and asking for a sign-in signed out.
+// page's Roadmap section, going in by the page and by the swipe and coming back, two rooms deep and back past both at once,
+// the step form raised over a roadmap gone into, attaching, changing and detaching from the page with Undo, a roadmap set
+// in the step form, the odd ends and a subtree, and forking a pasted link first, refused with no connection and asking for
+// a sign-in signed out.
 @MainActor final class RoadmapNestedFlowTests: XCTestCase {
   override func setUp() { continueAfterFailure = false }
 
@@ -67,6 +68,73 @@ import XCTest
     XCTAssertTrue(app.roadmapStep("Tie a bowline").waitForExistence(timeout: 10))
     back(app)
     XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
+  }
+
+  // Roadmap · iOS 07.3, 03.10: inside *Learn to sail*, *Tie a bowline* is given *Spanish B1*, which is gone into in turn;
+  // a note typed two rooms deep is saved by one Back to the root, held down, and reads so on the way back in.
+  func testANoteTwoRoomsDeepIsSavedByOneBackPastBoth() {
+    let app = launch("roadmap-nested")
+    page(of: "Learn to sail", in: app)
+    app.buttons["roadmap-open-roadmap"].tap()
+    XCTAssertTrue(app.navigationBars["Learn to sail"].waitForExistence(timeout: 10))
+    page(of: "Tie a bowline", in: app)
+    app.buttons["roadmap-step-more"].tap()
+    XCTAssertTrue(app.buttons["Attach a Roadmap"].waitForExistence(timeout: 5))
+    app.buttons["Attach a Roadmap"].tap()
+    XCTAssertTrue(attachRow("Spanish B1", in: app).waitForHittable(timeout: 10))
+    attachRow("Spanish B1", in: app).tap()
+    XCTAssertTrue(app.roadmapStepPage("Tie a bowline"))
+    XCTAssertTrue(roadmapRow(app).waitForHittable(timeout: 10) && roadmapRow(app).label.hasPrefix("Spanish B1"))
+    roadmapRow(app).tap()
+    XCTAssertTrue(app.navigationBars["Spanish B1"].waitForExistence(timeout: 10))
+    page(of: "Talk about last weekend", in: app)
+    app.buttons["roadmap-add-note"].tap()
+    let field = app.textViews["roadmap-note-field"]
+    XCTAssertTrue(field.waitForHittable(timeout: 10))
+    field.tap()
+    field.typeText("Practise at the market")
+
+    // Back held down lists the stack, and a finger lifted away from the list leaves it standing; the root's Board, chosen
+    // from it with the note still open, takes every room off the stack at once.
+    let back = app.navigationBars.firstMatch.buttons.element(boundBy: 0)
+    XCTAssertTrue(back.waitForHittable(timeout: 10))
+    back.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+      .press(forDuration: 1.2, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.03)))
+    let root = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier == %@", "Become a day skipper", "")).firstMatch
+    XCTAssertTrue(root.waitForHittable(timeout: 5))
+    root.tap()
+    XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
+
+    page(of: "Learn to sail", in: app)
+    app.buttons["roadmap-open-roadmap"].tap()
+    page(of: "Tie a bowline", in: app)
+    XCTAssertTrue(roadmapRow(app).waitForHittable(timeout: 10))
+    roadmapRow(app).tap()
+    page(of: "Talk about last weekend", in: app)
+    XCTAssertTrue(app.buttons["roadmap-note"].waitForLabel("Practise at the market"))
+  }
+
+  // Roadmap · iOS 07.3, 05.1: the step form raised from a step's page pushed over a roadmap gone into edits that roadmap's
+  // step, and Kinds from its … menu its kinds.
+  func testTheFormAndKindsRiseOverARoadmapGoneInto() {
+    let app = launch("roadmap-nested")
+    page(of: "Learn to sail", in: app)
+    app.buttons["roadmap-open-roadmap"].tap()
+    XCTAssertTrue(app.navigationBars["Learn to sail"].waitForExistence(timeout: 10))
+    app.buttons["roadmap-inside-more"].tap()
+    XCTAssertTrue(app.buttons["Kinds"].waitForExistence(timeout: 5))
+    app.buttons["Kinds"].tap()
+    XCTAssertTrue(app.navigationBars["Kinds"].waitForExistence(timeout: 10))
+    app.buttons["roadmap-kinds-close"].tap()
+    XCTAssertTrue(app.navigationBars["Kinds"].waitForNonExistence(timeout: 10))
+
+    page(of: "Tie a bowline", in: app)
+    app.buttons["roadmap-step-edit"].tap()
+    let name = app.textFields["roadmap-form-name"]
+    XCTAssertTrue(name.waitForExistence(timeout: 10) && name.waitForValue("Tie a bowline"))
+    app.buttons["roadmap-form-cancel"].tap()
+    XCTAssertTrue(name.waitForNonExistence(timeout: 10))
+    XCTAssertTrue(app.roadmapStepPage("Tie a bowline"))
   }
 
   // Roadmap · iOS 07.6 to 07.10: Attach a Roadmap lists the person's roadmaps, the one the step stands in dimmed; a choice

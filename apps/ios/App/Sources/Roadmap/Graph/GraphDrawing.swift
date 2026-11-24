@@ -146,7 +146,7 @@ nonisolated struct GraphDrawing: Equatable {
                      at: CGPoint(x: centre, y: caption.top + (Double(line) + 0.5) * Theme.Caption.linePx))
       }
       guard let below = opened[caption.id], let first = caption.lines.first else { continue }
-      let width = context.resolve(Text(verbatim: first).font(Self.captionFont)).measure(in: CGSize(width: Double.infinity, height: Double.infinity)).width
+      let width = Double(context.resolve(Text(verbatim: first).font(Self.captionFont)).measure(in: CGSize(width: Double.infinity, height: Double.infinity)).width)
       var mark = context.resolve(Image(systemName: "square.stack.3d.up"))
       mark.shading = .color(RoadmapPalette.inkDim)
       let side = Self.markSize

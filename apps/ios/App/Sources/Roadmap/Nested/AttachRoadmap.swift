@@ -10,10 +10,11 @@ import SyncEngine
 // row's Change Roadmap, or Choose Roadmap where its roadmap cannot be found, and from the step form's Roadmap row: the
 // person's own roadmaps, found by name in the bar's drawer, the one the step opens checked and the one it stands in
 // dimmed, since a step opens only another roadmap. A choice on the page is written at once and pops, with Undo in the
-// band; in the form it sets the draft, which the form's save writes. None, first where the step opens one, makes it
-// ordinary again, and its footer says what stays. A copied link can be pasted: to one of the person's roadmaps it chooses
-// that one; to one they can only read, that roadmap stands above theirs, to be forked first, which needs a connection and
-// an account; to none they can read, it says so where it was pasted.
+// band, and one the room refuses says why under the list; in the form it sets the draft, which the form's save writes.
+// None, first where the step opens one, makes it ordinary again, and its footer says what stays. A copied link can be
+// pasted: to one of the person's roadmaps or a subtree of one it chooses that one, and to the roadmap the step stands in
+// it is refused in that row's words; to one they can only read, that roadmap stands above theirs, to be forked first,
+// which needs a connection and an account; to none they can read, it says so where it was pasted.
 struct AttachRoadmap: View {
   let roadmap: RoadmapModel
   let step: String
@@ -23,6 +24,8 @@ struct AttachRoadmap: View {
   @Environment(AppModel.self) private var app: AppModel?
   @State private var query = ""
   @State private var pasted: PastedRoadmap?
+  // Why the last choice or paste came to nothing, said under the list.
+  @State private var refused: String?
 
   var body: some View {
     let rows = roadmap.root.roadmaps
@@ -38,9 +41,11 @@ struct AttachRoadmap: View {
               .foregroundStyle(RoadmapPalette.ink).frame(maxWidth: .infinity, alignment: .leading)
           }.accessibilityIdentifier("roadmap-attach-none")
         } footer: {
-          Text(String(localized: "\(roadmap.name(of: current)) stays. This step becomes ordinary.",
-                      comment: "The attach list's None: the roadmap the step opens now, which detaching leaves as it is"))
-            .foregroundStyle(RoadmapPalette.inkDim)
+          if let name = roadmap.name(of: current) {
+            Text(String(localized: "\(name) stays. This step becomes ordinary.",
+                        comment: "The attach list's None: the roadmap the step opens now, which detaching leaves as it is"))
+              .foregroundStyle(RoadmapPalette.inkDim)
+          }
         }.listRowBackground(RoadmapPalette.card)
       }
       if let pasted, case .readable(let title) = pasted.state, pasted.copy == nil {
@@ -73,7 +78,7 @@ struct AttachRoadmap: View {
           Text("A Copied Link").foregroundStyle(RoadmapPalette.ink)
         }
       } footer: {
-        if let refusal = pasted?.refusal { Text(refusal).foregroundStyle(RoadmapPalette.ink).accessibilityIdentifier("roadmap-attach-refusal") }
+        if let refusal = refused ?? pasted?.refusal { Text(refusal).foregroundStyle(RoadmapPalette.ink).accessibilityIdentifier("roadmap-attach-refusal") }
       }.listRowBackground(RoadmapPalette.card)
     }.listStyle(.insetGrouped).scrollContentBackground(.hidden)
       .background { RoadmapPalette.canvas.ignoresSafeArea() }
@@ -113,15 +118,22 @@ struct AttachRoadmap: View {
       .accessibilityIdentifier("roadmap-attach-row")
   }
 
-  // A roadmap chosen: the draft takes it, or the step opens it at once; either pops. The one it opens already pops alone.
+  // A roadmap chosen: the draft takes it, or the step opens it at once; either pops. The one it opens already pops alone,
+  // and a write the room refuses stays, saying why: a limit as the band says it, any other refusal as a choice not saved.
   func choose(_ tree: String) {
+    refused = nil
     if let draft {
       draft.roadmap = tree
       return dismiss()
     }
     guard tree != current else { return dismiss() }
-    guard let row = roadmap.shown?.step(step), roadmap.attach(tree, to: row) else { return }
-    dismiss()
+    guard let row = roadmap.shown?.step(step) else { return }
+    switch roadmap.attach(tree, to: row) {
+    case .committed, .unchanged: dismiss()
+    case .refused(.full): refused = RoadmapModel.Band.Says.refused(.full).words
+    case .refused: refused = String(localized: "Your choice couldn’t be saved. Try again.")
+    case .failed: break
+    }
   }
 
   // None: the draft lets go of its roadmap, or the step is detached at once; either pops.
@@ -134,17 +146,23 @@ struct AttachRoadmap: View {
     dismiss()
   }
 
-  // A link pasted: one to the person's own roadmap chooses it; any other is read through the engine, and a link that names
-  // no roadmap is refused where it was pasted.
+  // A link pasted: one to the person's own roadmap or a subtree of one chooses it, but the roadmap the step stands in,
+  // which the list dims, is refused; any other is read through the engine, and a link that names no roadmap is refused
+  // where it was pasted.
   func paste(_ url: URL?) {
     let tree = url.flatMap { ClaimedLink($0).address?.tree }
     pasted?.letGo()
-    if let tree, roadmap.root.roadmaps.contains(where: { $0.id == tree }) {
-      pasted = nil
-      roadmap.telemetry.event("roadmap_tree_attach", properties: ["step": "paste", "outcome": "own"])
-      return choose(tree)
+    (pasted, refused) = (nil, nil)
+    guard let tree, roadmap.root.ownRoot(of: tree) != nil else {
+      pasted = PastedRoadmap(tree, room: roadmap.root)
+      return
     }
-    pasted = PastedRoadmap(tree, room: roadmap.root)
+    roadmap.telemetry.event("roadmap_tree_attach", properties: ["step": "paste", "outcome": "own"])
+    guard tree != roadmap.shown?.listed.id else {
+      refused = String(localized: "This roadmap")
+      return
+    }
+    choose(tree)
   }
 }
 

@@ -133,6 +133,16 @@ import SyncTesting
       "This roadmap can’t be found. Choose another, or detach it.", "Choose Roadmap",
     ].joined(separator: " | "))
     #expect(try row("Skipper a day sail", in: model).opening?.leads == false)
+    #expect(model.name(of: "t_00000000000000ff") == nil && model.name(of: night.tree.description) == "Night sailing")
+
+    // Round the loop once: inside Learn to sail, the step that opens Become a day skipper, which the stack stands in
+    // already, goes no deeper.
+    model.goIn(try row("Learn to sail", in: model), by: .foot)
+    let inside = try #require(model.inside)
+    let back = try row("Sail solo", in: inside)
+    #expect(back.opening?.face == .loop && back.opening.map(inside.goesIn) == false)
+    inside.goIn(back, by: .foot)
+    #expect(inside.inside == nil && inside.path.isEmpty)
   }
 
   @Test func aSubtreeIsNamedByItsStepAndOffersNoChange() async throws {
@@ -153,6 +163,10 @@ import SyncTesting
     ].joined(separator: " | "))
     let draft = StepDraft(editing: try #require(model.shown?.page(of: day)), of: skipper, by: .page, in: model)
     #expect(draft.subtree?.name == "Skipper a day sail" && draft.roadmap == nil)
+
+    // A link to the subtree names one of the person's own, as a link to its root does; one the phone does not hold, none.
+    #expect([made.subtree.description, skipper.description, "t_00000000000000ff"].map { model.ownRoot(of: $0) }
+      == [skipper.description, skipper.description, nil])
   }
 
   @Test func goingInPushesTheRoadmapsRoomOnTheOneStackAndBackLetsItGo() async throws {
@@ -182,18 +196,107 @@ import SyncTesting
     await settle(model, on: engine) { self.find("Learn to sail", in: $0)?.opening?.done == 4 }
     #expect(inside.shown?.board.overall.done == 4 && inside.band?.says == .completed(step: "Read the wind", upNext: ["Leave the dock"], inPlace: true))
 
-    // The system's Back pops the step's page, then the roadmap: its room goes, with its band.
+    // The system's Back pops the step's page, then the roadmap: its room goes, and the band stands on with its Undo.
     model.stack = Array(model.stack.prefix(2))
     #expect(inside.path == [] && model.inside === inside)
     model.stack = Array(model.stack.prefix(1))
-    #expect(model.inside == nil && model.path == [.step(learn.id, by: .card)] && inside.band == nil)
+    #expect(model.inside == nil && model.path == [.step(learn.id, by: .card)])
+    #expect(model.band?.says == .completed(step: "Read the wind", upNext: ["Leave the dock"], inPlace: true))
     #expect(told(telemetry, ["roadmap_tree_open", "roadmap_tree_back"]) == ["roadmap_tree_open door=foot view=board", "roadmap_tree_back "])
+    model.undo()
+    engine.sync()
+    await settle(model, on: engine) { self.find("Learn to sail", in: $0)?.opening?.done == 3 }
 
     // Going in by the swipe, and the roadmap's room leaving with the roadmap switched.
     model.goIn(learn, by: .swipe)
     #expect(model.inside != nil)
     model.path = []
     #expect(model.inside == nil)
+  }
+
+  // *Spanish B1* beside them, which *Learn to sail*'s *Read the wind* opens, so a roadmap stands two rooms deep.
+  func spanish(under sail: CreateRoadmap.Result, by runner: ActionRunner) throws -> CreateRoadmap.Result {
+    let spanish = try RoadmapFixture.plant(RoadmapFixture.others[0], opening: sail.tree, by: runner)
+    let wind = try #require(sail.steps.first { $0.key == "read" }?.id)
+    guard case .committed = try runner.runAct(PointStep.set(tree: sail.tree, step: wind, opens: spanish.tree)) else {
+      throw AppFailure(message: "Read the wind opens no roadmap.")
+    }
+    return spanish
+  }
+
+  // Into *Learn to sail* from its step, and on into *Spanish B1* from *Read the wind*'s page, where *Order at a café*'s note
+  // stands open: the room two deep.
+  func twoDeep(_ model: RoadmapModel) throws -> (inside: RoadmapModel, deepest: RoadmapModel) {
+    let learn = try row("Learn to sail", in: model)
+    model.path = [.step(learn.id, by: .card)]
+    model.goIn(learn, by: .foot)
+    let inside = try #require(model.inside)
+    let wind = try row("Read the wind", in: inside)
+    inside.path = [.step(wind.id, by: .card)]
+    inside.goIn(wind, by: .foot)
+    let deepest = try #require(inside.inside)
+    let order = try row("Order at a café", in: deepest).id
+    deepest.path = [.step(order, by: .card), .note(of: order)]
+    return (inside, deepest)
+  }
+
+  @Test func backAcrossTwoRoomsLetsEachGoTheDeepestFirstWithItsNoteSavedAndTheBandStanding() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let telemetry = TelemetryRecorder()
+    let (model, sail, _) = try await skipper(on: engine, runner, memory, telemetry: telemetry)
+    let spanish = try spanish(under: sail, by: runner)
+    engine.sync()
+    await settle(model, on: engine) { $0.roadmaps.count == 3 && self.find("Learn to sail", in: $0)?.opening != nil }
+    let (inside, deepest) = try twoDeep(model)
+    #expect(deepest.depth == 2 && model.deepest === deepest && inside.deepest === deepest && deepest.root === model)
+
+    // An act two rooms deep shows its band on the stack's one band, and the note's words wait in its draft.
+    deepest.complete(try row("Talk about last weekend", in: deepest), by: .page)
+    #expect(model.band?.says == .completed(step: "Talk about last weekend", upNext: ["Tell a story"], inPlace: true))
+    try #require(deepest.note).text = "Practise at the market"
+
+    // The system's Back to the root's step page, past both rooms at once.
+    model.stack = Array(model.stack.prefix(1))
+    #expect(model.inside == nil && inside.inside == nil && inside.path.isEmpty && deepest.path.isEmpty && deepest.note == nil)
+    #expect(try runner.read(spanish.tree.overlay) { try $0.repository(StepNote.self).all(in: .drawn) }.map(\.text) == ["Practise at the market"])
+    #expect(told(telemetry, ["roadmap_tree_open", "roadmap_tree_back", "roadmap_board_workspace"]) == [
+      "roadmap_tree_open door=foot view=board", "roadmap_tree_open door=foot view=board",
+      "roadmap_board_workspace action=noteSave", "roadmap_tree_back ", "roadmap_tree_back ",
+    ])
+
+    // The band stood through Back, and its Undo still takes the act back.
+    #expect(model.band?.says == .completed(step: "Talk about last weekend", upNext: ["Tell a story"], inPlace: true))
+    model.undo()
+    engine.sync()
+    await settle(model, on: engine) { $0.roadmaps.first { $0.title == "Spanish B1" }?.counts?.done == 2 }
+  }
+
+  // The app leaving the front, and an account change, save a note open two rooms deep as the root's room saves its own.
+  @Test func aNoteTwoRoomsDeepIsSavedAsTheAppLeavesTheFrontAndAsTheAccountChanges() async throws {
+    let server = JournalModelTransport()
+    let app = try LineageFlowTests().fixture(server)
+    defer { app.gym.stop() }
+    try await app.signIn(server.identity(email: "roadmap-nested@example.com"))
+    let model = try #require(app.roadmap)
+    let runner = try #require(app.runtime).roadmapRunner
+    let sail = try RoadmapFixture.plantLearnToSail(runner)
+    let skipper = try RoadmapFixture.plant(RoadmapFixture.others[1], opening: sail.tree, by: runner).tree
+    let spanish = try spanish(under: sail, by: runner)
+    app.preferences.set(skipper.description, forKey: RoadmapModel.lastOpen)
+    await app.runtime?.engine.start()
+    model.roomOpened()
+    for _ in 0..<800 where model.roadmaps.count < 3 || find("Learn to sail", in: model)?.opening == nil { try await Task.sleep(for: .milliseconds(10)) }
+    let deepest = try twoDeep(model).deepest
+    let note = try #require(deepest.note)
+    let saved = { () throws -> [String] in try runner.read(spanish.tree.overlay) { try $0.repository(StepNote.self).all(in: .drawn) }.map(\.text) }
+
+    note.text = "Practise at the market"
+    app.background()
+    #expect(try saved() == ["Practise at the market"])
+    note.text = "Practise at the market, twice"
+    app.beforeAccountChange()
+    #expect(try saved() == ["Practise at the market, twice"])
   }
 
   @Test func attachingChangingAndDetachingEachTakeUndoAndADoneMarkIsSetAsideNotLost() async throws {
@@ -210,7 +313,7 @@ import SyncTesting
     await settle(model, on: engine) { $0.roadmaps.count == 3 }
 
     // Crew a weekend is Done by hand: attaching sets the mark aside, and Learn to sail locks again.
-    #expect(model.attach(sail.tree.description, to: try row("Crew a weekend", in: model)))
+    #expect(model.attach(sail.tree.description, to: try row("Crew a weekend", in: model)).committed != nil)
     #expect(model.band?.says == .attached && model.band?.undo?.act == .step("attach") && model.band?.lasts == .seconds(6))
     await settle(model, on: engine) { self.find("Crew a weekend", in: $0)?.opening != nil }
     #expect(try shown("Crew a weekend", in: model) == [
@@ -223,7 +326,7 @@ import SyncTesting
     #expect(try row("Crew a weekend", in: model).card.column == .done)
 
     // Change: Learn to sail's step opens Spanish B1, and Undo returns it to Learn to sail.
-    #expect(model.attach(spanish.tree.description, to: try row("Learn to sail", in: model)))
+    #expect(model.attach(spanish.tree.description, to: try row("Learn to sail", in: model)).committed != nil)
     await settle(model, on: engine) { self.find("Learn to sail", in: $0)?.opening?.tree == spanish.tree.description }
     model.undo()
     await settle(model, on: engine) { self.find("Learn to sail", in: $0)?.opening?.tree == sail.tree.description }
@@ -242,16 +345,17 @@ import SyncTesting
     ])
   }
 
-  // A roadmap detached and attached again reads as that roadmap at every read on the way, never as one not found. Known
-  // to fail where both acts reach the server in one push: the attach writes the pointer's life alone, since its `opens`
-  // equals what the dead record held, and the model server's row comes back alive with no `opens`, read as Not found.
+  // A roadmap detached and attached again reads as that roadmap at every read on the way, never as one not found. It
+  // fails every run, as both acts reach the server in one push: the engine's put diffs the revived pointer against its
+  // dead row and sends its life alone, so the row comes back alive with no `opens`, read as Not found. The engine's fix
+  // is the plan's node m1-reattach-a-detached-roadmap.
   @Test func aRoadmapDetachedAndAttachedAgainIsReadAsItselfThroughout() async throws {
     let (engine, runner, memory, suite) = phone()
     defer { memory.removePersistentDomain(forName: suite) }
     let (model, sail, _) = try await skipper(on: engine, runner, memory)
     model.detach(try row("Learn to sail", in: model))
     await settle(model, on: engine) { self.find("Learn to sail", in: $0)?.opening == nil }
-    #expect(model.attach(sail.tree.description, to: try row("Learn to sail", in: model)))
+    #expect(model.attach(sail.tree.description, to: try row("Learn to sail", in: model)).committed != nil)
     var faces: [String] = []
     let overlay = try #require(model.shown?.id).overlay
     let pointers = { () throws -> [String] in
@@ -268,7 +372,7 @@ import SyncTesting
       }
     }
     let after = try pointers()
-    withKnownIssue("the re-attached pointer comes back from the server with no opens", isIntermittent: true) {
+    withKnownIssue("the re-attached pointer comes back from the server with no opens") {
       #expect(Set(faces.dropFirst()) == ["open"], "\(faces) before \(before) after \(after)")
     }
   }

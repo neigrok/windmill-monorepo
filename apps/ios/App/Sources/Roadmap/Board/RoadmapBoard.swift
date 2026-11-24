@@ -169,7 +169,7 @@ struct RoadmapBoard: View {
       .listRowBackground(ZStack { chosen ? RoadmapPalette.raised : RoadmapPalette.card; if arrived { RoadmapPalette.accentSoft } }.roomMotion(arrived))
       .swipeActions(edge: .leading, allowsFullSwipe: false) {
         if row.completes && !selecting { Button("Complete", systemImage: "checkmark") { roadmap.complete(row, by: .swipe) }.tint(RoadmapPalette.act) }
-        if roadmap.owns, !selecting, row.opening?.leads == true {
+        if roadmap.owns, !selecting, let opening = row.opening, roadmap.goesIn(to: opening) {
           Button("Open", systemImage: "square.stack.3d.up") { roadmap.goIn(row, by: .swipe) }.tint(RoadmapPalette.accent)
         }
       }
