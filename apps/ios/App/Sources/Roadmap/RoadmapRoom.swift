@@ -2,19 +2,19 @@ import SwiftUI
 import UIKit
 import RoadmapDomain
 
-// The Roadmap room (Roadmap · iOS S.1, S.2, 01.3, 01.5, 01.5b, 01.5c, 02.10, 04.5, 04.7, 11.22a): one stack, the open
+// The Roadmap room (Roadmap · iOS S.1, S.2, 01.3, 01.5, 01.5b, 01.5c, 02.10, 04.5, 04.7, 07.3, 11.22a): one stack, the open
 // roadmap under its name with the switch row, its Board or its Graph, and at the foot the one band over New step. All
-// Roadmaps, Activity, a step's page, its note and its History are pushed on the stack, New Roadmap, the step form,
-// Kinds and the Guide are its sheets, and a reader's cover of a roadmap someone else shared stands over it full screen.
-// What the band says is announced and felt once, whichever screen stands over it. While the Graph's Fit stands, the bar,
-// the switch row and the foot are away; while several steps are selected the bar and the bottom toolbar are the
-// selection's.
+// Roadmaps, Activity, a step's page, its note and its History, the list a roadmap is attached from, and each roadmap gone
+// into with its own screens are pushed on the stack; New Roadmap, the step form, Kinds and the Guide are its sheets, and a
+// reader's cover of a roadmap someone else shared stands over it full screen. What the band says is announced and felt
+// once, whichever screen stands over it. While the Graph's Fit stands, the bar, the switch row and the foot are away;
+// while several steps are selected the bar and the bottom toolbar are the selection's.
 struct RoadmapRoom: View {
   @Bindable var roadmap: RoadmapModel
   let app: AppModel
 
   var body: some View {
-    NavigationStack(path: $roadmap.path) {
+    NavigationStack(path: Binding(get: { roadmap.stack }, set: { roadmap.stack = $0 })) {
       content
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background { RoadmapPalette.canvas.ignoresSafeArea() }
@@ -28,37 +28,15 @@ struct RoadmapRoom: View {
             ToolbarItem(placement: .topBarTrailing) { RoomAccountButton(action: app.openYou).disabled(app.editorReadOnly) }
           }
         }.roomBar(.roadmap)
-        .navigationDestination(for: RoadmapModel.Visit.self) { visit in
-          switch visit {
-          case .roadmaps: RoadmapsList(roadmap: roadmap)
-          case .activity: RoadmapActivity(roadmap: roadmap)
-          case .step(let step, _): RoadmapStepPage(roadmap: roadmap, step: step)
-          case .note: RoadmapNoteEditor(roadmap: roadmap)
-          case .history(let step): StepHistory(roadmap: roadmap, step: step)
-          }
+        .navigationDestination(for: RoadmapModel.Stacked.self) { stacked in
+          if let room = roadmap.room(at: stacked.depth) { RoadmapScreen(roadmap: room, visit: stacked.visit, app: app) }
         }
     }.onAppear { roadmap.roomOpened() }
+      .environment(app)
       .sheet(isPresented: Binding(get: { roadmap.naming }, set: { if !$0 { roadmap.cancelNaming() } })) { NewRoadmap(roadmap: roadmap) }
-      .sheet(item: Binding(get: { roadmap.draft }, set: { if $0 == nil { roadmap.draft?.cancel() } })) { draft in
-        RoadmapStepForm(roadmap: roadmap, draft: draft)
-      }
-      .sheet(isPresented: Binding(get: { roadmap.kindsDoor == .menu }, set: { if !$0 { roadmap.closeKinds() } })) { RoadmapKinds(roadmap: roadmap) }
-      .sheet(item: Binding(get: { roadmap.guide }, set: { if $0 == nil { roadmap.closeGuide() } })) { guide in
-        RoadmapGuide(roadmap: roadmap, sheet: guide, signedIn: app.account != nil)
-      }
+      .modifier(RoomSheets(roadmap: roadmap, app: app))
       .fullScreenCover(item: Binding(get: { roadmap.links?.cover }, set: { if $0 == nil { roadmap.links?.cover?.close(.closed) } })) { cover in
         RoadmapCoverScreen(cover: cover, app: app)
-      }
-      .sensoryFeedback(trigger: roadmap.band) { _, band in
-        switch band?.says {
-        case .completed, .created: .success
-        case .reset: .impact
-        case .unrestored: .warning
-        default: nil
-        }
-      }
-      .onChange(of: roadmap.band) { _, band in
-        if let band { UIAccessibility.post(notification: .announcement, argument: band.says.words) }
       }
   }
 
@@ -106,23 +84,51 @@ struct RoadmapRoom: View {
     }
   }
 
-  // The open roadmap in the view the room shows of it, the Board's first step for a roadmap with no step under either
-  // choice (04.7). On the Graph the band slot holds the selected step while no band stands there (04.2), and with none
-  // selected *Next* over the Up next steps, where there is one (04.1, 04.3). Fit leaves the Graph alone under the
-  // status bar (04.5). New step leaves the foot to Find's field while Find is up (02.5) and to the bottom toolbar while
-  // several steps are selected (02.10).
   func views(of open: RoadmapModel.OpenRoadmap) -> some View {
+    RoadmapViews(roadmap: roadmap, open: open).modifier(RoadmapTitle(roadmap: roadmap, open: open))
+  }
+}
+
+// One screen pushed on the room's stack, in the room it was pushed in: the root's, or a roadmap's gone into.
+struct RoadmapScreen: View {
+  let roadmap: RoadmapModel
+  let visit: RoadmapModel.Visit
+  let app: AppModel
+
+  var body: some View {
+    switch visit {
+    case .roadmaps: RoadmapsList(roadmap: roadmap)
+    case .activity: RoadmapActivity(roadmap: roadmap)
+    case .step(let step, _): RoadmapStepPage(roadmap: roadmap, step: step)
+    case .note: RoadmapNoteEditor(roadmap: roadmap)
+    case .history(let step): StepHistory(roadmap: roadmap, step: step)
+    case .attach(let step): AttachRoadmap(roadmap: roadmap, step: step)
+    case .roadmap: if let inside = roadmap.inside { RoadmapInside(roadmap: inside, app: app) }
+    }
+  }
+}
+
+// The open roadmap in the view the room shows of it, the Board's first step for a roadmap with no step under either
+// choice (04.7), in the root's room and in a roadmap gone into (07.3). On the Graph the band slot holds the selected step
+// while no band stands there (04.2), and with none selected *Next* over the Up next steps, where there is one (04.1, 04.3).
+// Fit leaves the Graph alone under the status bar (04.5). New step leaves the foot to Find's field while Find is up (02.5)
+// and to the bottom toolbar while several steps are selected (02.10).
+struct RoadmapViews: View {
+  let roadmap: RoadmapModel
+  let open: RoadmapModel.OpenRoadmap
+
+  var body: some View {
     let graph = roadmap.view(of: open) == .graph
     let fitted = graph && roadmap.graph.fitted
     let footed = !roadmap.reading.finds && roadmap.selection == nil
     return Group {
       if graph { RoadmapGraphCanvas(roadmap: roadmap, progress: open.board.overall.progress) }
       else { RoadmapBoard(roadmap: roadmap, open: open) }
-    }.underSwitchRow(roadmap, open: open, graph: graph, away: fitted).modifier(RoadmapTitle(roadmap: roadmap, open: open))
+    }.underSwitchRow(roadmap, open: open, graph: graph, away: fitted)
       .toolbarVisibility(fitted ? .hidden : .automatic, for: .navigationBar)
       .roadmapFoot(roadmap, away: fitted) {
         if graph, roadmap.band == nil {
-          if let selected = roadmap.selected.flatMap({ open.step($0) }) { GraphStepBar(row: selected) }
+          if let selected = roadmap.selected.flatMap({ open.step($0) }) { GraphStepBar(roadmap: roadmap, row: selected) }
           else if !open.upNext.isEmpty { GraphNextBar(roadmap: roadmap, rows: open.upNext) }
         }
         if footed {
@@ -131,6 +137,35 @@ struct RoadmapRoom: View {
             Button("New Step", systemImage: "plus") { roadmap.newStep(from: .foot) }.modifier(GlassCircle()).accessibilityIdentifier("roadmap-new-step")
           }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
         }
+      }
+  }
+}
+
+// The sheets a room raises over its screens, the root's and a roadmap's gone into alike: the step form, Kinds and the
+// Guide. What its band says is announced and felt once, whichever of its screens stands over it.
+struct RoomSheets: ViewModifier {
+  let roadmap: RoadmapModel
+  let app: AppModel
+
+  func body(content: Content) -> some View {
+    content
+      .sheet(item: Binding(get: { roadmap.draft }, set: { if $0 == nil { roadmap.draft?.cancel() } })) { draft in
+        RoadmapStepForm(roadmap: roadmap, draft: draft).environment(app)
+      }
+      .sheet(isPresented: Binding(get: { roadmap.kindsDoor == .menu }, set: { if !$0 { roadmap.closeKinds() } })) { RoadmapKinds(roadmap: roadmap) }
+      .sheet(item: Binding(get: { roadmap.guide }, set: { if $0 == nil { roadmap.closeGuide() } })) { guide in
+        RoadmapGuide(roadmap: roadmap, sheet: guide, signedIn: app.account != nil)
+      }
+      .sensoryFeedback(trigger: roadmap.band) { _, band in
+        switch band?.says {
+        case .completed, .created: .success
+        case .reset: .impact
+        case .unrestored: .warning
+        default: nil
+        }
+      }
+      .onChange(of: roadmap.band) { _, band in
+        if let band { UIAccessibility.post(notification: .announcement, argument: band.says.words) }
       }
   }
 }

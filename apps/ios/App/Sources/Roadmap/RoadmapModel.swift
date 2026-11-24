@@ -35,6 +35,10 @@ final class RoadmapModel {
     let resets: Bool
     // Delete is offered on every step but the one the roadmap keeps.
     let deletes: Bool
+    // The roadmap the step opens, or the subtree it owns, as the room shows it; none for an ordinary step.
+    let opening: Opened?
+    // The owner's Done mark on the step, which its opening sets aside until it is detached.
+    let marked: Bool
 
     var id: String { step.id }
   }
@@ -63,10 +67,11 @@ final class RoadmapModel {
 
   // A screen on the room's stack over the Board: All Roadmaps; a roadmap's Activity; a step's page with what opened it as
   // its event names it, a Board row, the web's card, a row of another step's page, the Graph's bar of the selected step,
-  // or a row of Activity; a step's note over its page; or a step's History.
+  // or a row of Activity; a step's note over its page; a step's History; the list a roadmap is attached to a step from; or
+  // the roadmap a step opens, gone into by a Board row's swipe, the step page's Roadmap row or its foot's button.
   enum Visit: Hashable {
     enum Door: String {
-      case card, step, graph, activity, link
+      case card, step, graph, activity, link, swipe, foot
     }
 
     case roadmaps
@@ -74,22 +79,31 @@ final class RoadmapModel {
     case step(String, by: Door)
     case note(of: String)
     case history(of: String)
+    case attach(to: String)
+    case roadmap(String, by: Door)
 
-    // The step whose page, note or History the screen is.
+    // The step whose page, note, History or attach list the screen is.
     var step: String? {
       switch self {
-      case .roadmaps, .activity: nil
-      case .step(let step, _), .note(let step), .history(let step): step
+      case .roadmaps, .activity, .roadmap: nil
+      case .step(let step, _), .note(let step), .history(let step), .attach(let step): step
       }
     }
 
-    // Whether the screen still has what it shows in the roadmap the room has open: Activity its roadmap, and a step's
-    // screens their step.
+    // The roadmap the screen has gone into.
+    var roadmap: String? {
+      guard case .roadmap(let roadmap, _) = self else { return nil }
+      return roadmap
+    }
+
+    // Whether the screen still has what it shows in the roadmap the room has open: Activity its roadmap, a step's screens
+    // their step, and a roadmap gone into a step that still leads into it.
     func stands(in open: OpenRoadmap) -> Bool {
       switch self {
       case .roadmaps: true
       case .activity(let roadmap): open.listed.id.utf8.elementsEqual(roadmap.utf8)
-      case .step(let step, _), .note(let step), .history(let step): open.step(step) != nil
+      case .step(let step, _), .note(let step), .history(let step), .attach(let step): open.step(step) != nil
+      case .roadmap(let roadmap, _): open.rows.values.contains { $0.opening.map { $0.leads && $0.tree.utf8.elementsEqual(roadmap.utf8) } == true }
       }
     }
   }
@@ -123,7 +137,7 @@ final class RoadmapModel {
     init?(_ listed: ListedRoadmap, in account: RoadmapAccount, workspaces: [ID<RoadmapStep>: StepWorkspace] = [:], owned: Bool = true) {
       guard let graph = account.graph(listed.id) else { return nil }
       let (tree, board, legend) = (graph.tree, BoardRead(graph), RoadmapLegend(graph.tree))
-      let openings = Dictionary(account.openings(of: listed.id).map { (Array($0.opening.node.utf8), $0.opening) }) { first, _ in first }
+      let openings = Dictionary(account.openings(of: listed.id).map { (Array($0.opening.node.utf8), $0) }) { first, _ in first }
       let owners = Dictionary(legend.entries.compactMap { (entry: RoadmapLegend.Entry) -> ([UInt8], Kind)? in
         entry.kind.map { (Array(entry.hue.utf8), $0) }
       }) { first, _ in first }
@@ -137,12 +151,14 @@ final class RoadmapModel {
       let kept = starting.count == 1 ? starting[0] : nil
       let rows = Dictionary(board.cards.compactMap { (card: BoardRead.Card) -> ([UInt8], Row)? in
         guard let held = tree.step(card.id) else { return nil }
-        let opening = openings[Array(card.id.utf8)]
+        let read = openings[Array(card.id.utf8)]
+        let opening = read.map { Opened($0, in: account, of: held) }
         return (Array(card.id.utf8), Row(
           step: held, card: card, kind: owners[Array(held.color.utf8)],
-          opensStanding: opening.map { $0.kind == .pointer && account.location(of: $0.tree).standing == .standing } ?? false,
-          completes: owned && card.column == .upNext && opening == nil, resets: owned && card.column == .done && opening == nil,
-          deletes: owned && (kept.map { !$0.utf8.elementsEqual(card.id.utf8) } ?? true)))
+          opensStanding: read.map { $0.opening.kind == .pointer && account.location(of: $0.opening.tree).standing == .standing } ?? false,
+          completes: owned && card.column == .upNext && read == nil, resets: owned && card.column == .done && read == nil,
+          deletes: owned && (kept.map { !$0.utf8.elementsEqual(card.id.utf8) } ?? true), opening: opening,
+          marked: owned && opening.map { $0.face != .complete } == true && tree.mark(on: held.id)?.isComplete == true))
       }) { first, _ in first }
       id = ID(RecordID(listed.id))
       self.listed = listed
@@ -163,6 +179,11 @@ final class RoadmapModel {
     }
 
     var everyStepDone: Bool { board.overall.total > 0 && board.overall.done == board.overall.total }
+
+    // Each step that opens a roadmap, with the line the Graph draws under its caption, empty where it draws none (04.6).
+    var graphLines: [String: String] {
+      Dictionary(rows.values.compactMap { (row: Row) -> (String, String)? in row.opening.map { (row.id, $0.line ?? "") } }) { first, _ in first }
+    }
 
     // The Up next steps in the Board's order, Roadmap Order: what the Graph's *Next* leads with and lists.
     var upNext: [Row] { groups.first { $0.id == .upNext }?.rows ?? [] }
@@ -194,10 +215,12 @@ final class RoadmapModel {
   }
 
   // Whom the room shows roadmaps to, given as it is made: their owner, whose own list it reads and who writes, with what a
-  // link raises over the room (`RoadmapLinks`, none where the room follows no link); or a reader of one roadmap someone
-  // else shared, which a cover reads into the room (`SharedRead`) and where every act refuses.
+  // link raises over the room (`RoadmapLinks`, none where the room follows no link); the owner in a roadmap gone into from
+  // another room (`outside`), whose read of the phone's copy it shows, and whether it is the subtree a step owns; or a
+  // reader of one roadmap someone else shared, which a cover reads into the room (`SharedRead`) and where every act refuses.
   enum Role {
     case owner(RoadmapLinks?)
+    case inside(String, subtree: Bool)
     case reader(SharedRead)
   }
 
@@ -280,6 +303,9 @@ final class RoadmapModel {
       case checked(ID<Subtask>, label: String)
       // A subtask or a link of a step's workspace deleted, by its words or its title.
       case deletedFromWorkspace(String)
+      // A roadmap attached to a step, or changed for another, and one detached, with whether the step's Done mark is back.
+      case attached
+      case detached(markBack: Bool)
       case refused(Limit)
       // An Undo that brought back nothing of what its receipt said.
       indirect case unrestored(Says)
@@ -389,8 +415,11 @@ final class RoadmapModel {
         note.save()
         self.note = nil
       }
+      if let inside, !path.contains(where: { $0.roadmap != nil }) { cameBack(from: inside) }
       guard path.count > oldValue.count, let pushed = path.last else { return }
       switch pushed {
+      case .roadmap(let tree, let door): wentIn(tree, by: door)
+      case .attach: telemetry.event("roadmap_tree_attach", properties: ["step": "open", "door": "page"])
       case .roadmaps: telemetry.event("roadmap_sheet", properties: ["step": "open"])
       case .step(let step, let door):
         guard case .open(let open) = phase, let row = open.step(step) else { return }
@@ -453,6 +482,16 @@ final class RoadmapModel {
   @ObservationIgnored var dayChanges: NotificationWatch?
   // Every view the room asked the engine for, kept so each stays live.
   @ObservationIgnored var views: [ViewKey: RecordsView] = [:]
+  // Each of the person's roadmaps' overlay records as the last read held them, which a roadmap gone into reads its
+  // workspace from.
+  @ObservationIgnored var overlays: [ID<RoadmapEntry>: [Record]] = [:]
+  // How many roadmaps deep the room stands: the root's room and a cover's are 0, a roadmap gone into one deeper than the
+  // room it was gone into from.
+  let depth: Int
+  // The room of the roadmap gone into from this one, while its visit stands on this room's stack, and the room this one
+  // was gone into from.
+  var inside: RoadmapModel?
+  @ObservationIgnored weak var outside: RoadmapModel?
   // The observation now live; one begun later ends the one before it.
   @ObservationIgnored var watch = 0
   @ObservationIgnored var reportedFailures: Set<String> = []
@@ -461,9 +500,10 @@ final class RoadmapModel {
 
   init(records: @escaping Records, runner: ActionRunner, phone: UserDefaults, telemetry: any Telemetry = NoopTelemetry(),
        wait: @escaping Wait = { try await Task.sleep(for: $0) }, graph: RoadmapGraph? = nil, boardFrames: BoardFrames = BoardFrames(),
-       role: Role = .owner(nil)) {
+       role: Role = .owner(nil), depth: Int = 0) {
     self.records = records; self.runner = runner; self.phone = phone; self.telemetry = telemetry; self.wait = wait
     self.role = role
+    self.depth = depth
     self.graph = graph ?? RoadmapGraph(telemetry: telemetry)
     self.boardFrames = boardFrames
     reading = BoardReading(telemetry: telemetry)
@@ -512,9 +552,9 @@ final class RoadmapModel {
     telemetry.event("roadmap_first_read", properties: ["step": "ended", "outcome": outcome])
   }
 
-  // The room is its owner's, who writes; a reader's writes nothing.
+  // The room is its owner's, who writes, in their own roadmaps and in one gone into; a reader's writes nothing.
   var owns: Bool {
-    guard case .owner = role else { return false }
+    if case .reader = role { return false }
     return true
   }
 
@@ -554,6 +594,7 @@ final class RoadmapModel {
     let current = watch
     do { try read() }
     catch { fail(error) }
+    inside?.observe()
     links?.followPending(in: self)
     withObservationTracking {
       for view in views.values { _ = view.state }
@@ -568,6 +609,7 @@ final class RoadmapModel {
   // Every listed roadmap is read with its tree scope and their overlay of it; while a view has yet to load, what is shown stays.
   func read() throws {
     if case .reader(let shared) = role { return try shared.read(into: self) }
+    if case .inside(let tree, _) = role { return try readInside(tree) }
     guard let list = try snapshot(RoadmapEntry.scope, RoadmapEntry.type) else { return }
     var trees: [RoadmapTree] = []
     var overlays: [ID<RoadmapEntry>: [Record]] = [:]
@@ -586,6 +628,7 @@ final class RoadmapModel {
     }
     views = views.filter { scopes.contains($0.key.scope) }
     guard loaded else { return }
+    self.overlays = overlays
     account = RoadmapAccount(trees)
     roadmaps = account.list()
     if let arrived = arriving, roadmaps.contains(where: { $0.id.utf8.elementsEqual(arrived.utf8) }) {
@@ -608,6 +651,19 @@ final class RoadmapModel {
     if links?.arrived(listed.id) == true { show(Band(forked: open.board.overall.total)) }
   }
 
+  // A roadmap gone into, as the room it was gone into from last read the phone's copy: the room shows it while it stands
+  // and is read, in the view the phone last switched it to.
+  func readInside(_ tree: String) throws {
+    guard let outside else { return }
+    (account, roadmaps, overlays) = (outside.account, outside.roadmaps, outside.overlays)
+    guard let listed = account.listing(tree),
+          let open = OpenRoadmap(listed, in: account, workspaces: try StepWorkspace.read(overlays[ID(RecordID(tree))] ?? [])) else {
+      phase = .unread
+      return
+    }
+    present(open, landing: (phone.dictionary(forKey: Self.lastLens)?[tree] as? String).flatMap { Lens(rawValue: $0) } ?? .board)
+  }
+
   // A roadmap read to be shown. Another opens with its Board at rest, Done folded unless every step is done, asking nothing
   // and choosing no steps, in the view it lands on, and with no step selected; one that opens on its Graph is told. On the
   // one shown, Done opens by itself once every step is done, and rests folded again once one is not.
@@ -627,7 +683,7 @@ final class RoadmapModel {
     phase = .open(open)
     guard view(of: open) == .graph else { return }
     if !again { viewOpened(open) }
-    graph.follow(open.graph, of: open.listed.id)
+    graph.follow(open.graph, of: open.listed.id, opened: open.graphLines)
   }
 
   // The switch row's choice: the open roadmap's view, kept for it on this phone. The Graph then follows the roadmap as
@@ -641,7 +697,7 @@ final class RoadmapModel {
     viewOpened(shown)
     guard view(of: shown) == .graph else { return boardFrames.opened() }
     graph.opened()
-    graph.follow(shown.graph, of: shown.listed.id)
+    graph.follow(shown.graph, of: shown.listed.id, opened: shown.graphLines)
   }
 
   // The view the open roadmap came to, told as the web tells its switch (§11): the switch row's choice, and a roadmap

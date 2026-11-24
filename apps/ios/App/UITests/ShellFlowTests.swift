@@ -334,9 +334,9 @@ import XCTest
     XCTAssertTrue(reset.exists && !complete.exists)
   }
 
-  // Roadmap · iOS 03.7 to 03.9: the … menu holds Open in Graph, View Branch and Delete Step, which asks on the … button
-  // with what the delete costs; answered, the room stands on the Board without the step, and the band's Undo brings it
-  // back. The roadmap's one starting step's menu has no Delete Step.
+  // Roadmap · iOS 03.7 to 03.9: the … menu holds Open in Graph, View Branch, Attach a Roadmap and Delete Step, which asks
+  // on the … button with what the delete costs; answered, the room stands on the Board without the step, and the band's
+  // Undo brings it back. The roadmap's one starting step's menu has no Delete Step.
   func testDeletingAStepFromItsPageAsksThereAndReturnsToTheBoard() {
     let app = launch("roadmap-learn-to-sail", takingUndo: true)
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
@@ -346,8 +346,8 @@ import XCTest
     XCTAssertEqual(more.label, "More")
     more.tap()
     XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["Open in Graph"].exists && app.buttons["View Branch"].exists)
-    for unbuilt in ["Attach a Roadmap", "Copy Link"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
+    XCTAssertTrue(app.buttons["Open in Graph"].exists && app.buttons["View Branch"].exists && app.buttons["Attach a Roadmap"].exists)
+    XCTAssertFalse(app.buttons["Copy Link"].exists)
     confirm.tap()
     XCTAssertTrue(app.staticTexts["Delete Read the wind?"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Removes this step · 1 branch resplices"].exists)

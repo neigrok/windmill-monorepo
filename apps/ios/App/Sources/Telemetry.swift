@@ -48,7 +48,8 @@ nonisolated enum TelemetryPrivacy {
     "roadmap_step_edit", "roadmap_board_edit", "roadmap_view_switch", "roadmap_graph_select", "roadmap_whats_next", "roadmap_graph_fit",
     "roadmap_board_workspace", "roadmap_board_menu", "roadmap_board_sort", "roadmap_board_filter", "roadmap_board_clear",
     "roadmap_board_branch", "roadmap_board_search", "roadmap_board_select", "roadmap_board_bulk", "roadmap_kinds", "roadmap_activity",
-    "roadmap_first_read", "roadmap_guide", "roadmap_link_opened", "roadmap_cover", "fork_attempt", "fork_claim"
+    "roadmap_first_read", "roadmap_guide", "roadmap_link_opened", "roadmap_cover", "fork_attempt", "fork_claim",
+    "roadmap_tree_open", "roadmap_tree_back", "roadmap_subtree_open", "roadmap_subtree_back", "roadmap_tree_attach"
   ]
   static let labels: [String: Set<String>] = [
     "room": ["journal", "gym", "roadmap"],
@@ -59,7 +60,7 @@ nonisolated enum TelemetryPrivacy {
     "action": ["rename", "equipment", "drafts_rejected", "save_routines", "sign_in", "shown", "screenshot", "describe", "goal", "just_log", "build_manually", "open_routine", "routines_saved", "keep_routines", "photo_selected", "photo_removed", "create", "update", "share", "apply", "reject", "open_gym", "open_journal", "open_roadmap", "dismiss_ink", "write", "done_writing", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "use_account", "create_account", "remove_apple", "retry", "inspect", "fix", "open", "connect", "manage", "hide", "select", "menu", "stage", "new_chat", "view_answer", "open_conversation", "delete_conversation", "retarget", "add_set", "remove_set", "swap", "add_movement", "remove_movement", "rest", "land", "complete", "reset", "delete", "editNote",
                "subtaskAdd", "subtaskToggle", "subtaskDelete", "linkOpen", "linkCancel", "linkAdd", "linkDelete", "noteSave", "undo",
                "openInGraph", "viewBranch", "clear", "copyLink"],
-    "outcome": ["signed_out", "unauthenticated", "busy", "answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked", "started", "saved", "not-offered", "seat-required", "invalid-input", "invalid-arguments", "load-floor", "result-too-large", "coach-turn-volume", "pending", "unavailable", "settled", "released", "adopted", "read", "left", "cleared"],
+    "outcome": ["signed_out", "unauthenticated", "busy", "answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked", "started", "saved", "not-offered", "seat-required", "invalid-input", "invalid-arguments", "load-floor", "result-too-large", "coach-turn-volume", "pending", "unavailable", "settled", "released", "adopted", "read", "left", "cleared", "own", "readable", "unreadable"],
     "reason": ["invalid", "too_large", "claim_conflict", "session-open", "session-overlap", "id-taken", "bad-instant", "too-many-sets", "invalid-set", "unknown-exercise", "session-finished", "unsent", "other", "last_root", "closed", "forked", "copy_late", "replaced", "refused", "device"],
     "cap": ["daily", "ceiling", "allowance"],
     "state": ["shown", "opened", "completed", "declined", "failed", "stopped", "interrupted"],
@@ -88,9 +89,11 @@ nonisolated enum TelemetryPrivacy {
     // room's first read, its spinner shown and how its wait ended. Of the Guide: whether guides from above apply as it
     // opens, how a draft began, a saved guide's length as a bucket, a draft gone past its limit, a save that wrote over a
     // guide written elsewhere, and why a save was not written: refused by the domain, or failed on the device.
-    "act": ["complete", "reset", "delete", "create", "edit", "subtaskToggle", "subtaskDelete", "linkDelete", "recolor", "removeKind", "guide"],
+    "act": ["complete", "reset", "delete", "create", "edit", "subtaskToggle", "subtaskDelete", "linkDelete", "recolor", "removeKind", "guide",
+            "attach", "change", "detach"],
     "step": ["confirm", "cancel", "held", "ask", "undo", "open", "switch", "search", "new", "rename", "saved", "discard", "pick", "close",
-             "start", "end", "recolor", "delete", "delete_refused", "kind", "unfold", "shown", "ended", "edit", "save", "tooLong", "conflict"],
+             "start", "end", "recolor", "delete", "delete_refused", "kind", "unfold", "shown", "ended", "edit", "save", "tooLong", "conflict",
+             "paste", "fork", "attach", "change", "detach"],
     "menu": ["sortFilter"],
     "sort": ["roadmap", "newest", "oldest"],
     "what": ["kinds"],
@@ -114,10 +117,14 @@ nonisolated enum TelemetryPrivacy {
     "prerequisites": ["true", "false"],
     "opens": ["true", "false"],
     "links": ["true", "false"],
+    "roadmap": ["true", "false"],
+    // Of a step that opens a roadmap: who went into a subtree, and whether a Done mark was set aside or came back.
+    "role": ["owner", "reader"],
+    "mark": ["kept", "none"],
     "budget": ["first_frame", "frames"],
     "steps": ["1-100", "101-1000", "1001-5000", "5001-10000"],
     "write": ["mark", "DeleteNode", "undo", "release", "createRoadmap", "title", "deleteRoadmap", "CreateNode", "EditNode", "workspace", "note",
-              "BulkRecolor", "BulkDelete", "AddKind", "RenameKind", "DescribeKind", "RecolorKind", "RemoveKind", "guide"],
+              "BulkRecolor", "BulkDelete", "AddKind", "RenameKind", "DescribeKind", "RecolorKind", "RemoveKind", "guide", "pointer"],
     "refusal": ["invalid", "gone", "taken", "tooLarge", "full", "roadmapGone", "unreachable", "notARoot", "stepOpensARoadmap", "depthLimit", "other", "startingStep", "noName", "loop"],
     "appearance": ["light", "dark", "system"],
     "method": ["GET", "POST", "PUT", "DELETE", "email", "apple"],

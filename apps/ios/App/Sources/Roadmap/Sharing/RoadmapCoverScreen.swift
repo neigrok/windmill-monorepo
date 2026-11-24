@@ -13,7 +13,7 @@ struct RoadmapCoverScreen: View {
   let app: AppModel
 
   var body: some View {
-    NavigationStack(path: Binding(get: { cover.room.path }, set: { cover.room.path = $0 })) {
+    NavigationStack(path: Binding(get: { cover.room.stack }, set: { cover.room.stack = $0 })) {
       content
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background { RoadmapPalette.canvas.ignoresSafeArea() }
@@ -30,11 +30,11 @@ struct RoadmapCoverScreen: View {
             }
           }
         }.roomBar(.roadmap)
-        .navigationDestination(for: RoadmapModel.Visit.self) { visit in
-          switch visit {
+        .navigationDestination(for: RoadmapModel.Stacked.self) { stacked in
+          switch stacked.visit {
           case .step(let step, _): RoadmapStepPage(roadmap: cover.room, step: step)
           case .history(let step): StepHistory(roadmap: cover.room, step: step)
-          case .roadmaps, .activity, .note: EmptyView()
+          case .roadmaps, .activity, .note, .attach, .roadmap: EmptyView()
           }
         }
     }.environment(cover)
@@ -103,7 +103,7 @@ struct RoadmapCoverScreen: View {
       .modifier(SharedTitle(name: open.listed.name, progress: open.board.overall.progress))
       .toolbarVisibility(fitted ? .hidden : .automatic, for: .navigationBar)
       .roadmapFoot(room, away: fitted) {
-        if graph, let selected = room.selected.flatMap({ open.step($0) }) { GraphStepBar(row: selected) }
+        if graph, let selected = room.selected.flatMap({ open.step($0) }) { GraphStepBar(roadmap: room, row: selected) }
       }
   }
 

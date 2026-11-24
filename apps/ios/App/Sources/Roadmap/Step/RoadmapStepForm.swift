@@ -3,9 +3,9 @@ import UIKit
 import RoadmapDomain
 import SyncCore
 
-// The step form (Roadmap · iOS 05.1, 05.5, 05.6a, 05.8, 05.10): a large sheet with its own stack over one draft. Name
-// and Description, then Kind, Requires and Opens, each pushed inside the sheet and bound to the draft, the links the
-// step shares, each sliding left for Delete, with Add Link raising the link form, and Delete Step on a step that may go. Cancel and Create or Save stand in the bar and are the form's only ways out: Cancel asks once
+// The step form (Roadmap · iOS 05.1, 05.5, 05.6a, 05.8, 05.10, 07.6): a large sheet with its own stack over one draft. Name
+// and Description, then Kind, Requires, Opens and Roadmap, each pushed inside the sheet and bound to the draft, the links
+// the step shares, each sliding left for Delete, with Add Link raising the link form, and Delete Step on a step that may go. Cancel and Create or Save stand in the bar and are the form's only ways out: Cancel asks once
 // on a changed draft, which a swipe down does not send away. A refusal is its section's footer in ink, announced as it
 // comes. The room's band stands at the sheet's foot, away while a field has the keyboard.
 struct RoadmapStepForm: View {
@@ -45,6 +45,7 @@ struct RoadmapStepForm: View {
           }.accessibilityIdentifier("roadmap-form-kind")
           list(.requires, "Requires").accessibilityIdentifier("roadmap-form-requires")
           list(.opens, "Opens").accessibilityIdentifier("roadmap-form-opens")
+          opened.accessibilityIdentifier("roadmap-form-roadmap")
         } footer: {
           if case .loop = draft.refusal { refusal }
           else if draft.moves { Text(draft.placement).foregroundStyle(RoadmapPalette.inkDim).accessibilityIdentifier("roadmap-form-placement") }
@@ -125,12 +126,26 @@ struct RoadmapStepForm: View {
     }
   }
 
+  // Roadmap (05.1, 05.8): the roadmap the step opens, or None, and the attach list it is chosen in. A step that owns a
+  // subtree names it, and the row stands disabled, as nothing changes a subtree.
+  @ViewBuilder var opened: some View {
+    if let subtree = draft.subtree {
+      row("Roadmap", value: subtree.name).disabled(true)
+    } else {
+      NavigationLink { AttachRoadmap(roadmap: roadmap, step: draft.step.description, draft: draft) } label: {
+        row("Roadmap", value: draft.roadmap.map { (tree: String) -> String in
+          ListedRoadmap.name(of: roadmap.root.roadmaps.first { $0.id == tree }?.title ?? roadmap.account.location(of: tree).title)
+        } ?? String(localized: "None", comment: "Nothing chosen: no step in the step form's Requires or Opens, and no roadmap in its Roadmap row or the attach list"))
+      }
+    }
+  }
+
   // Requires or Opens: the names of the steps chosen, or None, and the list they are chosen in. In a roadmap with no
   // other step the row stands disabled.
   func list(_ side: StepDraft.Side, _ title: LocalizedStringResource) -> some View {
     let names = draft.names(side)
     return NavigationLink { StepChoices(draft: draft, side: side) } label: {
-      row(title, value: names.isEmpty ? String(localized: "None", comment: "A step's form: no step is chosen in Requires or in Opens")
+      row(title, value: names.isEmpty ? String(localized: "None", comment: "Nothing chosen: no step in the step form's Requires or Opens, and no roadmap in its Roadmap row or the attach list")
         : names.formatted(.list(type: .and, width: .narrow)))
     }.disabled(!draft.offersSteps)
   }

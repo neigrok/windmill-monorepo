@@ -216,6 +216,9 @@
     "%@ saved" : {
       "comment" : "The band after a step's changes are saved: the step's name"
     },
+    "%@ stays. This step becomes ordinary." : {
+      "comment" : "The attach list's None: the roadmap the step opens now, which detaching leaves as it is"
+    },
     "%@ suggested this. Your past %@ workouts stay in the log." : {
       "localizations" : {
         "en" : {
@@ -243,6 +246,20 @@
         }
       },
       "shouldTranslate" : false
+    },
+    "%@ · %lld of %lld" : {
+      "comment" : "A Board row's pill: the roadmap a step opens, and how many of its steps are done, of how many",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$lld of %3$lld"
+          }
+        }
+      }
+    },
+    "%@ · No steps" : {
+      "comment" : "A Board row's pill: the roadmap a step opens, which has no steps"
     },
     "%@ · from above" : {
       "comment" : "A guide of a roadmap above this one: that roadmap's name"
@@ -649,6 +666,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$lld of %2$lld done"
+          }
+        }
+      }
+    },
+    "%lld of %lld done · Loops back" : {
+      "comment" : "The step page's Roadmap row: how many of the roadmap's steps are done, of how many, and that it leads back",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld done · Loops back"
           }
         }
       }
@@ -1088,6 +1116,20 @@
         }
       }
     },
+    "%lld to go in %@" : {
+      "comment" : "An Up next step's status: how many steps the roadmap it opens has to go, and its name",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld to go in %2$@"
+          }
+        }
+      }
+    },
+    "%lld to go in its subtree" : {
+      "comment" : "An Up next step's status: how many steps the subtree it owns has to go"
+    },
     "%lld up next" : {
       "comment" : "The title of Next's menu on the Graph: how many steps are Up next"
     },
@@ -1178,11 +1220,20 @@
     "90 days" : {
       "comment" : "A chart's window: its last 90 days, beside All"
     },
+    "A Copied Link" : {
+
+    },
     "A connected tool" : {
 
     },
     "A kind that steps wear can’t be removed." : {
 
+    },
+    "A loop with %@: this never completes." : {
+      "comment" : "The Roadmap section's footer: the roadmap the step stands in, which the roadmap it opens leads back to"
+    },
+    "A loop with %@: this never completes. Detach one side." : {
+      "comment" : "The Roadmap section's footer: the roadmap the step stands in, which the roadmap it opens leads back to"
     },
     "A movement is missing — fix its sets, then retry." : {
 
@@ -1203,6 +1254,9 @@
 
     },
     "A roadmap keeps one starting step" : {
+
+    },
+    "A roadmap with no steps isn’t done. Add its first." : {
 
     },
     "A routine change waits for your Apply; the rest lands at once." : {
@@ -1542,6 +1596,9 @@
     "Ask about your training" : {
 
     },
+    "Attach a Roadmap" : {
+
+    },
     "Back" : {
 
     },
@@ -1624,11 +1681,17 @@
     "Can’t be prerequisites" : {
 
     },
+    "Can’t complete yet" : {
+      "comment" : "An Up next step's status: the roadmap it opens has no steps or cannot be found"
+    },
     "Capsize drill" : {
 
     },
     "Change" : {
       "comment" : "A button that changes the email address"
+    },
+    "Change Roadmap" : {
+
     },
     "Changed" : {
       "comment" : "What a proposed change does to a movement or routine"
@@ -1658,6 +1721,9 @@
 
     },
     "Check your message or choose a different photo, then send again." : {
+
+    },
+    "Choose Roadmap" : {
 
     },
     "Choose a supported photo." : {
@@ -2062,6 +2128,9 @@
     "Deselect All" : {
 
     },
+    "Detach Roadmap" : {
+
+    },
     "Discard" : {
 
     },
@@ -2115,6 +2184,18 @@
 
     },
     "Done" : {
+
+    },
+    "Done because every step in %@ is done." : {
+      "comment" : "The Roadmap section's footer of a step its roadmap completed: the roadmap's name"
+    },
+    "Done because every step in this subtree is done." : {
+
+    },
+    "Done when every step in %@ is done." : {
+      "comment" : "The Roadmap section's footer: the roadmap the step opens"
+    },
+    "Done when every step in this subtree is done." : {
 
     },
     "Done writing" : {
@@ -2725,6 +2806,9 @@
         }
       }
     },
+    "Loops back" : {
+      "comment" : "The roadmap a step opens leads back to the roadmap the step stands in"
+    },
     "MAR" : {
       "comment" : "March in an echo's date stamp"
     },
@@ -2817,6 +2901,28 @@
         }
       }
     },
+    "Needs %@ +%lld, then every step in %@." : {
+      "comment" : "The Roadmap section's footer of a Locked step: the first step it still needs, how many more, and the roadmap it opens",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Needs %1$@ +%2$lld, then every step in %3$@."
+          }
+        }
+      }
+    },
+    "Needs %@ +%lld, then every step in this subtree." : {
+      "comment" : "The Subtree section's footer of a Locked step: the first step it still needs, and how many more",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Needs %1$@ +%2$lld, then every step in this subtree."
+          }
+        }
+      }
+    },
     "Needs %@ · %lld to go" : {
       "comment" : "A Locked step's reason: the step it still needs, and how many steps stand before it",
       "localizations" : {
@@ -2827,6 +2933,20 @@
           }
         }
       }
+    },
+    "Needs %@, then every step in %@." : {
+      "comment" : "The Roadmap section's footer of a Locked step: the step it still needs, and the roadmap it opens",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Needs %1$@, then every step in %2$@."
+          }
+        }
+      }
+    },
+    "Needs %@, then every step in this subtree." : {
+      "comment" : "The Subtree section's footer of a Locked step: the step it still needs"
     },
     "Needs a connection" : {
 
@@ -2928,6 +3048,9 @@
     "No points" : {
 
     },
+    "No roadmap you can read is at that address." : {
+
+    },
     "No roadmaps yet" : {
 
     },
@@ -2936,6 +3059,9 @@
     },
     "No sets in this workout." : {
 
+    },
+    "No steps" : {
+      "comment" : "The roadmap a step opens has no steps"
     },
     "No steps match" : {
 
@@ -2959,7 +3085,7 @@
 
     },
     "None" : {
-      "comment" : "A step's form: no step is chosen in Requires or in Opens"
+      "comment" : "Nothing chosen: no step in the step form's Requires or Opens, and no roadmap in its Roadmap row or the attach list"
     },
     "Not applied" : {
 
@@ -2972,6 +3098,9 @@
     },
     "Not finished" : {
 
+    },
+    "Not found" : {
+      "comment" : "A roadmap a step opens that cannot be found"
     },
     "Not on your log yet — retry to add it." : {
 
@@ -3063,6 +3192,12 @@
     "Open" : {
       "comment" : "A target of no sets: an open plan"
     },
+    "Open Roadmap" : {
+
+    },
+    "Open Subtree" : {
+
+    },
     "Open in Graph" : {
 
     },
@@ -3130,6 +3265,9 @@
       "comment" : "The introduction's page control: Page 2 of 4"
     },
     "Paste the full sign-in link or its token." : {
+
+    },
+    "Pasted link" : {
 
     },
     "Performed" : {
@@ -3429,6 +3567,15 @@
     "Roadmap Order" : {
 
     },
+    "Roadmap attached" : {
+
+    },
+    "Roadmap detached" : {
+
+    },
+    "Roadmap detached · your mark is back" : {
+
+    },
     "Room" : {
 
     },
@@ -3657,6 +3804,9 @@
     "Sign In" : {
 
     },
+    "Sign In to Fork" : {
+
+    },
     "Sign in" : {
 
     },
@@ -3738,6 +3888,12 @@
     "Sky" : {
       "comment" : "A step's colour, said where no kind names it"
     },
+    "Someone else’s roadmap? Fork it first — the copy is yours." : {
+
+    },
+    "Someone else’s · you can read it" : {
+
+    },
     "Something changed while you chose. Sign out again." : {
 
     },
@@ -3787,6 +3943,9 @@
 
     },
     "Subtasks" : {
+
+    },
+    "Subtree" : {
 
     },
     "Swap %@" : {
@@ -4044,6 +4203,15 @@
 
     },
     "This response has expired. Your draft is still on this phone." : {
+
+    },
+    "This roadmap" : {
+
+    },
+    "This roadmap can’t be found." : {
+
+    },
+    "This roadmap can’t be found. Choose another, or detach it." : {
 
     },
     "This roadmap can’t be opened" : {
@@ -4330,6 +4498,9 @@
     "Window" : {
       "comment" : "The chart's window picker, read by VoiceOver: the stretch of time the chart shows"
     },
+    "Won’t complete by itself" : {
+      "comment" : "An Up next step's status: the roadmap it opens leads back to this one"
+    },
     "Workout" : {
 
     },
@@ -4435,6 +4606,9 @@
     "You can’t undo this." : {
 
     },
+    "You have no other roadmaps yet." : {
+
+    },
     "You have used all of your AI allowance." : {
 
     },
@@ -4451,6 +4625,35 @@
 
     },
     "Your AI allowance has no room for this request." : {
+
+    },
+    "Your Done mark is set aside while it opens a roadmap, so %lld steps lock again." : {
+      "comment" : "The Roadmap section's footer of a step marked Done by hand: how many steps lock again while it opens a roadmap",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Your Done mark is set aside while it opens a roadmap, so %lld step locks again."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Your Done mark is set aside while it opens a roadmap, so %lld steps lock again."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Your Done mark is set aside while it opens a roadmap." : {
+
+    },
+    "Your Roadmaps" : {
 
     },
     "Your Windmill email" : {

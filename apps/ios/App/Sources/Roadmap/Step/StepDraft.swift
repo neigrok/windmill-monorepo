@@ -4,8 +4,8 @@ import DomainKit
 import RoadmapDomain
 import SyncCore
 
-// The step form's draft (Roadmap · iOS 05.1 to 05.8): what a person sets of a step before Create or Save writes it, as
-// one gesture through the room's write door. A new step takes its id as the form opens; a draft of a step starts from
+// The step form's draft (Roadmap · iOS 05.1 to 05.8, 07.6): what a person sets of a step before Create or Save writes it,
+// as one gesture through the room's write door. A new step takes its id as the form opens; a draft of a step starts from
 // what its page shows. What the form offers is read from the open roadmap as it stands: the six kinds, the steps a list
 // may take and the ones that would close a loop, and the group the step would land in. What a name, a description, a
 // link between steps and a link the step shares may be is the domain's, and so is every refusal of the save.
@@ -48,6 +48,8 @@ final class StepDraft: Identifiable {
     var opens: [StepID] = []
     // In the step's order: a link added joins at the end.
     var links: [SharedLink] = []
+    // The roadmap the step opens; none for an ordinary step, and none for one that owns a subtree, which no form changes.
+    var roadmap: String?
   }
 
   // A list's steps as it groups them: the ones chosen as it opened, every other step it may take, and the ones that
@@ -71,6 +73,8 @@ final class StepDraft: Identifiable {
   let base: Fields
   private(set) var fields: Fields
   private(set) var refusal: Refusal?
+  // The subtree the step owns, which the form names and changes nothing of.
+  private(set) var subtree: RoadmapModel.Opened?
   // Discard draft? stands over Cancel.
   var asksDiscard = false
 
@@ -93,7 +97,9 @@ final class StepDraft: Identifiable {
     isNew = false
     base = Fields(name: RoadmapModel.name(typed: page.row.step.label), description: page.row.step.description, kind: page.row.step.color,
                   requires: page.requires.map { StepID(RecordID($0.id)) }, opens: page.opens.map { StepID(RecordID($0.id)) },
-                  links: page.row.step.links.map { SharedLink(url: $0.url, label: $0.label) })
+                  links: page.row.step.links.map { SharedLink(url: $0.url, label: $0.label) },
+                  roadmap: page.row.opening.flatMap { $0.owned ? nil : $0.tree })
+    subtree = page.row.opening.flatMap { $0.owned ? $0 : nil }
     fields = base
   }
 
@@ -129,10 +135,17 @@ final class StepDraft: Identifiable {
     set { fields.kind = newValue }
   }
 
+  // The Roadmap row's choice, from the attach list.
+  var roadmap: String? {
+    get { fields.roadmap }
+    set { fields.roadmap = newValue }
+  }
+
   // Whether the draft holds anything a save would write.
   var isChanged: Bool {
     label != base.name || fields.description != base.description || fields.kind != base.kind
       || Set(fields.requires) != Set(base.requires) || Set(fields.opens) != Set(base.opens) || fields.links != base.links
+      || fields.roadmap != base.roadmap
   }
 
   // The links the step shares, as the draft holds them: every one, whatever its address, so a save drops none.
@@ -262,11 +275,11 @@ final class StepDraft: Identifiable {
   }
 
   // The draft's one save, as the acts of the domain it is, each reading what the ones before it wrote. A new step is
-  // created after the first step it requires, linked from each, and then leads to each step it opens. A step is changed
-  // in the fields that differ, as the web's edit is (`editGesture`), its shared links written whole where one was added
-  // or removed; the steps it opens no more let go of it; it takes
-  // and drops what it requires; and last it leads to the steps it newly opens, so the domain reads every loop over the
-  // links as they will stand.
+  // created after the first step it requires, linked from each, then leads to each step it opens, and last opens the
+  // roadmap chosen. A step is changed in the fields that differ, as the web's edit is (`editGesture`), its shared links
+  // written whole where one was added or removed; the steps it opens no more let go of it; it takes and drops what it
+  // requires; it leads to the steps it newly opens, so the domain reads every loop over the links as they will stand; and
+  // last it opens another roadmap, or none.
   var acts: [AnyActAction<RoadmapRefusal>] {
     let (tree, step) = (tree, step)
     let leads = { (follower: StepID) -> AnyActAction<RoadmapRefusal> in
@@ -276,7 +289,8 @@ final class StepDraft: Identifiable {
     if isNew {
       let made = RoadmapStep.Changes(label: label, color: fields.kind, description: fields.description, links: shared.isEmpty ? nil : shared)
       let create: [AnyActAction<RoadmapRefusal>] = [AnyActAction(CreateStep(tree: tree, step: made, prerequisites: fields.requires, id: step))]
-      return create + fields.opens.map(leads)
+      let opens = fields.roadmap.map { [AnyActAction<RoadmapRefusal>(PointStep.set(tree: tree, step: step, opens: DomainKit.ID(RecordID($0))))] } ?? []
+      return create + fields.opens.map(leads) + opens
     }
     var acts: [AnyActAction<RoadmapRefusal>] = []
     let changes = RoadmapStep.Changes(label: label == base.name ? nil : label, color: fields.kind == base.kind ? nil : fields.kind,
@@ -291,7 +305,10 @@ final class StepDraft: Identifiable {
     let taken = fields.requires.filter { !base.requires.contains($0) }
     let dropped = base.requires.filter { !fields.requires.contains($0) }
     if !taken.isEmpty || !dropped.isEmpty { acts.append(AnyActAction(ChangePrerequisites(tree: tree, step: step, add: taken, remove: dropped))) }
-    return acts + fields.opens.filter { !base.opens.contains($0) }.map(leads)
+    acts += fields.opens.filter { !base.opens.contains($0) }.map(leads)
+    guard fields.roadmap != base.roadmap else { return acts }
+    let pointer = fields.roadmap.map { PointStep.set(tree: tree, step: step, opens: DomainKit.ID(RecordID($0))) } ?? PointStep.clear(tree: tree, step: step)
+    return acts + [AnyActAction(pointer)]
   }
 
   // Create or Save: the draft's one write. Written, the form closes and the band holds its Undo; a new step's group
@@ -305,6 +322,10 @@ final class StepDraft: Identifiable {
     switch room.write(acts, as: write) {
     case .committed(_, let receipt):
       room.draft = nil
+      if fields.roadmap != base.roadmap {
+        let step = fields.roadmap == nil ? "detach" : base.roadmap == nil ? "attach" : "change"
+        room.telemetry.event("roadmap_tree_attach", properties: ["step": step, "door": "form"])
+      }
       if isNew {
         room.folded.remove(lands)
         room.reading.reveal(step.description)
@@ -315,6 +336,7 @@ final class StepDraft: Identifiable {
           "step": "saved", "name": String(label != base.name), "description": String(fields.description != base.description),
           "kind": String(fields.kind != base.kind), "prerequisites": String(Set(fields.requires) != Set(base.requires)),
           "opens": String(Set(fields.opens) != Set(base.opens)), "links": String(fields.links != base.links),
+          "roadmap": String(fields.roadmap != base.roadmap),
         ])
         room.show(RoadmapModel.Band(.saved(step: label), of: receipt, act: .step("edit")))
       }

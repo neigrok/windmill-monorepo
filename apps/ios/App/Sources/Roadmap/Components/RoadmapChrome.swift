@@ -78,6 +78,9 @@ extension RoadmapModel.Band.Says {
       return String(localized: "\(label) checked", comment: "The band after a subtask is checked: the subtask's words")
     case .deletedFromWorkspace(let name):
       return String(localized: "\(name) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title")
+    case .attached: return String(localized: "Roadmap attached")
+    case .detached(let markBack):
+      return markBack ? String(localized: "Roadmap detached · your mark is back") : String(localized: "Roadmap detached")
     case .refused(.keepsStartingStep): return String(localized: "A roadmap keeps one starting step")
     case .refused(.full): return String(localized: "This roadmap is at its limit.")
     // An Undo that brought nothing back (02.10d, 06.5c): a delete names what could not come back, one thing by its name
