@@ -79,8 +79,6 @@ document, its four implementations and its corpus, made before the registry is b
   account's overlay of it, so a reader's own marks stay in view once the server has them.
 - **E-4 The server's door in a tree.** A server-origin intent MAY be built in a tree scope and an
   overlay scope, reading the scope under its lock, as it can in a product scope today.
-- **E-5 A replica held in memory.** A device MAY run a replica it does not keep, for a reader whose
-  browser keeps nothing ([the web as a device](web-device-parity.md) §7).
 - **E-6 The composition.** The server's build, both schema generators, the three model servers and
   the deploy's version check take a third registry, and Android's client leaves roadmap's scopes
   alone.
@@ -238,8 +236,8 @@ Every gesture is an action on the domain kit, the same in each language.
   in no list, no count and no address.
 - **A reader** subscribes a readable roadmap when a person opens its link, signed in or not, and a
   subtree as the person goes in, and drops both on leaving. A signed-in reader's marks are their
-  own overlay (E-3). A reader whose browser keeps nothing reads into a replica held in memory
-  (E-5).
+  own overlay (E-3). A browser that keeps nothing is not supported ([the web as a device](web-device-parity.md)
+  §7).
 - **Dates.** The date a completion shows is the time the server received the mark. A mark the
   server has not received shows the device's time.
 - **Signed out**, a roadmap a person makes lives in the device's `anon` replica. At sign-in the
@@ -526,7 +524,7 @@ What changes is built only from boards marked ✅ Ready for dev:
   Board's groups and order, the legend and a hue two kinds wear, search, sort and filter, and
   diagnostics. JavaScript and Swift run every file, the server runs the reads it shares, and a rule lands as a
   vector first.
-- **The engine's corpus** gains E-1 to E-5 on its test product, and roadmap's commands and
+- **The engine's corpus** gains E-1 to E-4 on its test product, and roadmap's commands and
   consequences. All four implementations run it.
 - **Size.** Before the registry is fixed, the engine is measured on the server and on each client:
   one roadmap of 10,000 steps and 20,000 links; an account of several hundred roadmaps and

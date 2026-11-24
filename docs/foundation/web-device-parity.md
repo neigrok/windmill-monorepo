@@ -14,7 +14,8 @@ that loses a race holds its sets in its notice and no surface recovers them yet;
 onboarding import in the web's domain, which claims every file §8 names. Of them, the shell's hook before the seat changes
 (§3 Sign-in) saves each signed-out workout for adoption, an open one with its sets, with no rack to write first since the
 web has none yet; nothing else calls them on the web yet. Gym's Coach takes its turn in the browser. The browser
-finds a store it cleared (§7) and records it once, with its event; no screen tells the person yet. The build order lives in the Web as a device roadmap tree, which the dogfood tree
+counts a store it cleared (§7) once, with its event. A browser that cannot keep a copy is not supported (§7, R-7). The
+boards for a workout on the web and the signed-out gym are approved (R-10). The build order lives in the Web as a device roadmap tree, which the dogfood tree
 (`t_9362d9bc883e0a1e`) opens from the node `web-device-parity`.
 
 **Scope:** What makes gym and journal on the web no different from their siblings on a phone: the
@@ -128,7 +129,7 @@ The web logs a workout (R-2). It is no longer only a mirror.
   replica's device row `carry:<seat>`; a page leaves the browser's storage only once the ledger records
   it, so it is carried once, whichever replica comes next. The pages that bundle could not attribute
   stay in the browser's storage until a signed-in person restores them, through the runner, or
-  discards those listed, which writes nothing to the engine.
+  discards those listed, which writes nothing to the engine; every sign-out forgets them (R-9).
 - Echoes, nudges and Talk are the server's by nature on every surface (§6).
 
 ## §6 What stays a backend call
@@ -148,35 +149,24 @@ A read or a write outside this table that calls the backend is a defect.
 
 ## §7 A browser that cannot keep a copy
 
-A phone always has its store. A browser can refuse one, lose one, or fill one.
+A browser that refuses a store, blocks it or fills it is not supported (R-7). The shell shows its one line,
+"Couldn't open this device's saved work. Reload to try again.", and nothing more. The browser asks to keep its
+storage; where that is denied, nothing is shown.
 
-- **Refused.** Where the browser offers no store at all, the shell settles the account and opens
-  the rooms on a replica held in memory, through a store of the engine's own interface. Each tab is
-  then a device of its own. A signed-in room says a change is saved only once the server has it,
-  and sign-out offers no Keep. A signed-out room says it keeps nothing and offers sign-in.
-- **Blocked.** A store another tab holds during an upgrade is not refused: the page asks the person
-  to close other tabs or reload, and never opens in memory.
-- **A write that fails**, as when the browser's quota is full, keeps what was entered on the screen
-  and is reported.
-- **Cleared.** A browser clears the store with everything else a page can write, so the page cannot
-  tell. The backend remembers each session's replica, and a session that arrives with a new one is
-  told so. The browser then starts as a new device, and the person is told once that what this
-  browser had not sent is gone. It is never said that it can be recovered.
-  - **What the backend keeps.** Every push answered `200` records its replica as the replica of the
-    session it was served through, the cookie's when the request sends one, else the bearer's.
-    `GET /v1/me` reads its caller from the same header lines by the same rule (engine §9.1), so it
-    answers that session's replica as `syncReplica`, `null` until the session's first accepted push
-    ([backend/AUTH.md](../../backend/AUTH.md)). A new sign-in is a new session, so it starts at `null`.
-  - **What is not a clear.** A re-identify gives the active replica a new id within one session (a
-    push answered `replica-forked`, `replica-foreign` or `gap`, and an epoch change; engine §7.11),
-    and `syncReplica` names the old id until the new one's first accepted push. So the browser
-    tells a clear only when `syncReplica` is none of the replica ids its own store has held that a
-    session can still name (its replicas' and the latest it let go), and says nothing on `null`. A
-    browser on a replica held in memory is a new device in every tab under one cookie, and says
-    nothing.
-- **Persistence.** The browser asks to keep its storage. Where it is denied, nothing more is shown.
-- One turn of Coach a browser, which Coach's spec rules, does not hold across tabs of a browser
-  that keeps nothing.
+**Cleared.** A browser can clear a site's storage and keep its session cookie, so the page starts as a new device and
+every change it had not sent is gone. The backend remembers each session's replica, the browser counts a clear once,
+and nothing tells the person (R-7; [open problems](local-first-open-problems.md) LP-4).
+
+- **What the backend keeps.** Every push answered `200` records its replica as the replica of the session it was
+  served through, the cookie's when the request sends one, else the bearer's. `GET /v1/me` reads its caller from the
+  same header lines by the same rule (engine §9.1), so it answers that session's replica as `syncReplica`, `null`
+  until the session's first accepted push ([backend/AUTH.md](../../backend/AUTH.md)). A new sign-in is a new session,
+  so it starts at `null`.
+- **What is not a clear.** A re-identify gives the active replica a new id within one session (a push answered
+  `replica-forked`, `replica-foreign` or `gap`, and an epoch change; engine §7.11), and `syncReplica` names the old id
+  until the new one's first accepted push. So the browser counts a clear only when `syncReplica` is none of the
+  replica ids its own store has held that a session can still name (its replicas' and the latest it let go), and
+  says nothing on `null`.
 
 ## §8 The domain on the web
 
@@ -199,7 +189,6 @@ A phone always has its store. A browser can refuse one, lose one, or fill one.
     plan edited in two tabs;
   - a set logged after a cold start with no connection, sent when it returns;
   - Start and export before the first pull on a new browser;
-  - storage refused, blocked by another tab, full during a workout, and cleared;
   - sign-out with Keep and with Discard while a workout is open and Coach holds a picture;
   - a session that has expired with the gym room open;
   - search by meaning with no connection after a first use.
@@ -212,10 +201,8 @@ A phone always has its store. A browser can refuse one, lose one, or fill one.
   reached, a workout hidden. The two phones name some of these differently today; the web takes the
   iPhone's names.
 - It also emits: gym's sign-in decision, with its count as a bucket; how a signed-out workout's
-  recovery ended; a plan edit refused as stale; a room opened on a replica in memory; and a cleared
-  store the backend reported.
-- It reports to Sentry, under static names, a store that failed to open for a reason other than
-  refusal and a write that failed during a workout.
+  recovery ended; a plan edit refused as stale; and a cleared store the backend reported.
+- It reports to Sentry, under static names, a write that failed during a workout.
 - The web's observability document lists them.
 
 ## §11 What the build makes false
@@ -246,3 +233,7 @@ the iPhone offers no Undo for a delete, where Android and the web hold one.
 | R-4 | Whether this gates the iOS release | It does not; it runs alongside. (2026-11-17) |
 | R-5 | The web's past-workout and correction forms, signed out | Left out signed out; they appear after sign-in. (2026-11-17) |
 | R-6 | Whether a signed-out room says its work lives in this browser only | It says nothing. (2026-11-17) |
+| R-7 | A browser that cannot keep a copy (refused, blocked, full, cleared) | Not supported: no replica in memory and no screen for those states. The problems it leaves are gathered, for every surface, in [open problems](local-first-open-problems.md). (2026-11-25) |
+| R-8 | Whether revoking a session clears that device's copy | Not built: the server would have to remember revoked sessions ([open problems](local-first-open-problems.md) LP-1). (2026-11-25) |
+| R-9 | Data no account can be shown to own | Forgotten at sign-out, as the journal's pages from before the engine that no account claims are. (2026-11-25) |
+| R-10 | The boards for a workout on the web and the gym signed out | Approved as drawn (Gym file, Web page, WD1–WD9), the drawing answering the questions on their READ ME. (2026-11-25) |
