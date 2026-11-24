@@ -1911,6 +1911,9 @@
     "Couldn’t load this roadmap" : {
 
     },
+    "Couldn’t open the file." : {
+
+    },
     "Couldn’t read your connections." : {
 
     },
@@ -3958,6 +3961,9 @@
     "These routines couldn’t be saved. Your response is kept; try again." : {
 
     },
+    "These steps can’t be added." : {
+
+    },
     "They are deleted from this phone. You can’t undo this." : {
 
     },
@@ -4063,6 +4069,9 @@
 
     },
     "This response has expired. Your draft is still on this phone." : {
+
+    },
+    "This roadmap changed elsewhere." : {
 
     },
     "This roadmap is at its limit." : {
@@ -4899,6 +4908,9 @@
     },
     "yesterday" : {
       "comment" : "A day inside a sentence"
+    },
+    "“%@” is too large to read." : {
+      "comment" : "New Roadmap's footer when the file chosen is past the size the phone reads: the file's name"
     },
     "•" : {
       "shouldTranslate" : false

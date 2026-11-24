@@ -98,7 +98,7 @@ import SyncTesting
     model.nameRoadmap(from: .empty)
     let draft = try #require(model.newRoadmap)
 
-    draft.read("Summer cruise\n- [x] Pick the week\n- [x] Book the boat\n  - Plan the route\n    Out by the north channel.\n## Sea\n- Cast off", from: .paste)
+    await draft.read("Summer cruise\n- [x] Pick the week\n- [x] Book the boat\n  - Plan the route\n    Out by the north channel.\n## Sea\n- Cast off", from: .paste)
     let plan = try #require(draft.read?.plan)
     #expect(draft.name == "Summer cruise" && draft.creates)
     #expect([plan.readout.steps, plan.readout.branches, plan.readout.done, plan.imperfections.notes] as [Int] == [6, 1, 2, 1])
@@ -119,8 +119,9 @@ import SyncTesting
   }
 
   // A name typed before the plan arrives names the roadmap and the step that stands for the plan's own; Clear returns to
-  // Start from and takes back only a name the plan gave.
-  @Test func aTypedNameNamesThePlanAndClearTakesBackOnlyThePlansName() throws {
+  // Start from and takes back only a name the plan gave. A name is taken without the kit's whitespace around it, which
+  // is ECMAScript's, as the web takes one.
+  @Test func aTypedNameNamesThePlanAndClearTakesBackOnlyThePlansName() async throws {
     let (engine, runner, memory, suite) = phone()
     defer { memory.removePersistentDomain(forName: suite) }
     let telemetry = TelemetryRecorder()
@@ -128,27 +129,31 @@ import SyncTesting
     model.nameRoadmap(from: .menu)
     let draft = try #require(model.newRoadmap)
     draft.name = "My trip"
-    draft.read("Summer cruise\n- Cast off", from: .paste)
+    await draft.read("Summer cruise\n- Cast off", from: .paste)
     #expect(draft.name == "My trip" && draft.planting?.creation.title == "My trip" && draft.landing.map(\.label) == ["My trip", "Cast off"])
     draft.clear()
     #expect(draft.read == nil && draft.name == "My trip")
 
-    draft.name = ""
-    draft.read("- Cast off\n- Raise the sail", from: .paste)
+    draft.name = "\u{FEFF}"
+    await draft.read("- Cast off\n- Raise the sail", from: .paste)
     #expect(draft.name == "" && !draft.creates && draft.landing.map(\.label) == ["", "Cast off", "Raise the sail"])
-    draft.read("Summer cruise", from: .paste)
+    draft.name = ""
+    await draft.read("Summer cruise", from: .paste)
     draft.clear()
     #expect(draft.name == "" && !draft.creates)
     #expect(told(telemetry) == [
       "roadmap_sheet door=menu step=new", "roadmap_board_create door=import step=read", "roadmap_board_create door=import step=clear",
       "roadmap_board_create door=import step=read", "roadmap_board_create door=import step=read", "roadmap_board_create door=import step=clear",
     ])
+    #expect([RoadmapModel.name(typed: "\u{FEFF} Sail\u{3000}"), RoadmapModel.name(typed: "\u{85}Sail")] == ["Sail", "\u{85}Sail"])
     _ = engine
   }
 
-  // Roadmap · iOS 01.8c: a file is read as the web reads one, its byte order mark dropped; one that cannot be opened is
-  // said in Start from's footer by its name, reads nothing, and reports with no name.
-  @Test func aFileIsReadAsTheWebReadsOneAndOneThatCannotBeOpenedIsSaid() throws {
+  // Roadmap · iOS 01.8c: a file is read as the web reads one, its byte order mark dropped, and a file's title keeps its
+  // padding as the web plants it; one that cannot be opened, one past the bound and an importer that handed back none are
+  // each said in Start from's footer, a file by its name, and read nothing; the two failures report, their labels
+  // (`labels(of:)`) held in TelemetryTests.
+  @Test func aFileIsReadAsTheWebReadsOneAndOneThatCannotBeOpenedIsSaid() async throws {
     let (engine, runner, memory, suite) = phone()
     defer { memory.removePersistentDomain(forName: suite) }
     let telemetry = TelemetryRecorder()
@@ -159,16 +164,29 @@ import SyncTesting
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: folder) }
 
-    draft.read(file: .success(folder.appending(path: "Sailing plan.md")))
-    #expect(draft.read == nil && draft.unread == "Sailing plan.md")
+    await draft.read(file: .success(folder.appending(path: "Sailing plan.md")))
+    #expect(draft.read == nil && draft.unread == .unopened("Sailing plan.md"))
+    let large = folder.appending(path: "Large plan.md")
+    try Data(repeating: 0x61, count: NewRoadmapDraft.fileBound + 1).write(to: large)
+    await draft.read(file: .success(large))
+    #expect(draft.read == nil && draft.unread == .tooLarge("Large plan.md"))
+    await draft.read(file: .failure(CocoaError(.fileReadNoPermission)))
+    #expect(draft.read == nil && draft.unread == .importer)
     let file = folder.appending(path: "plan.md")
     try Data([0xEF, 0xBB, 0xBF] + Array("# Sailing\n- Rig the boat\n- Read the wind \u{FF}".utf8) + [0xFF]).write(to: file)
-    draft.read(file: .success(file))
+    await draft.read(file: .success(file))
     #expect(draft.unread == nil && draft.read?.source == .file && draft.name == "Sailing")
     #expect(draft.landing.map(\.label) == ["Sailing", "Rig the boat", "Read the wind \u{FF}\u{FFFD}"])
+    draft.clear()
+    try Data("# &#32;Sailing&#160;\n<!-- windmill:roadmap 2 -->\n- Rig the boat".utf8).write(to: file)
+    await draft.read(file: .success(file))
+    #expect(draft.name == " Sailing\u{A0}" && draft.planting?.creation.title == " Sailing\u{A0}")
     #expect(told(telemetry) == [
-      "roadmap_sheet door=menu step=new", "roadmap_board_create door=file step=unread", "client_error failure_kind=unexpected operation=roadmap_file",
-      "roadmap_board_create door=file step=read",
+      "roadmap_sheet door=menu step=new", "roadmap_board_create door=file step=unread",
+      "client_error failure_kind=unexpected operation=roadmap_file",
+      "roadmap_board_create door=file reason=too_large step=unread", "roadmap_board_create door=file step=unread",
+      "client_error failure_kind=unexpected operation=roadmap_file",
+      "roadmap_board_create door=file step=read", "roadmap_board_create door=file step=clear", "roadmap_board_create door=file step=read",
     ])
     _ = engine
   }

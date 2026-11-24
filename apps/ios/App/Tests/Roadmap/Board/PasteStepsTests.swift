@@ -120,4 +120,29 @@ import SyncTesting
       "roadmap_board_undo act=graft outcome=ok",
     ])
   }
+
+  // An Add the domain refuses leaves the read-back open and says why in the room's words: here the steps are read under
+  // a step the roadmap does not hold, as a step gone since the read would be. Add is not offered again, and the refusal is
+  // told.
+  @Test func anAddTheDomainRefusesKeepsTheReadBackOpenAndSaysWhy() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry, copied: nil)
+    try await learnToSail(model, on: engine, runner)
+    let open = try #require(model.shown)
+    let plan = RoadmapPlan(reading: "- Check the forecast\n- Plan the passage", over: [], into: true)
+    let graft = try #require(plan.graft(under: "zz", held: open.tree.nodes.map(\.id), liveKinds: []))
+    let pasted = PastedSteps(plan, grafted: graft, into: open, in: model)
+    model.pasting = pasted
+
+    pasted.add()
+    #expect(model.pasting === pasted && pasted.refusal?.label == "gone" && model.band == nil)
+    #expect(pasted.refusal?.pasteWords == "This roadmap changed elsewhere.")
+    #expect(told(telemetry).filter { $0.hasPrefix("roadmap_board_create") || $0.hasPrefix("roadmap_write_refused") } == [
+      "roadmap_write_refused refusal=gone write=ImportSubgraph", "roadmap_board_create door=paste refusal=gone step=refused",
+    ])
+    pasted.cancel()
+    #expect(model.pasting == nil)
+  }
 }

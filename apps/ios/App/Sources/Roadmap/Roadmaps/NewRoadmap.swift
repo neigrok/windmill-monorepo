@@ -5,8 +5,8 @@ import RoadmapDomain
 // New Roadmap (Roadmap · iOS 01.6, 01.8, 01.8c): a large sheet that names a roadmap, committed from its bar. A name alone
 // plants it blank with its one starting step; Start from fills it instead, from a plan on the clipboard through the
 // system's Paste button or from a `.md` or `.txt` file through the system's importer, each read back (01.8) before Create
-// plants it. A file the phone could not read is said in Start from's footer, and nothing is planted. Cancel, or the sheet
-// sent away, writes nothing.
+// plants it. A file the phone could not read, or past the bound it reads, is said in Start from's footer, and nothing is
+// planted. Cancel, or the sheet sent away, writes nothing.
 struct NewRoadmap: View {
   let draft: NewRoadmapDraft
   @State private var choosingFile = false
@@ -33,7 +33,7 @@ struct NewRoadmap: View {
             Button("Create") { draft.create() }.fontWeight(.semibold).disabled(!draft.creates).accessibilityIdentifier("roadmap-new-create")
           }
         }.roomBar(.roadmap)
-        .fileImporter(isPresented: $choosingFile, allowedContentTypes: Self.files) { draft.read(file: $0) }
+        .fileImporter(isPresented: $choosingFile, allowedContentTypes: Self.files) { chosen in Task { await draft.read(file: chosen) } }
     }.tint(RoadmapPalette.accent).presentationDetents([.large]).presentationDragIndicator(.visible)
   }
 
@@ -42,13 +42,13 @@ struct NewRoadmap: View {
     Section {
       LabeledContent {
         PasteButton(payloadType: String.self) { copied in
-          Task { @MainActor in draft.read(copied.joined(separator: "\n"), from: .paste) }
+          Task { @MainActor in await draft.read(copied.joined(separator: "\n"), from: .paste) }
         }.buttonBorderShape(.capsule).tint(RoadmapPalette.accent).accessibilityIdentifier("roadmap-new-paste")
       } label: {
         Text("A Copied Plan").foregroundStyle(RoadmapPalette.ink)
       }.listRowBackground(RoadmapPalette.card)
       Button {
-        if let file = RoadmapFixture.chosenFile() { draft.read(file: .success(file)) } else { choosingFile = true }
+        if let handed = draft.room.handedFile() { Task { await draft.read(file: .success(handed)) } } else { choosingFile = true }
       } label: {
         HStack {
           Text("A File").foregroundStyle(RoadmapPalette.ink)
@@ -60,10 +60,16 @@ struct NewRoadmap: View {
       Text("Start from").font(.footnote.weight(.semibold)).foregroundStyle(RoadmapPalette.inkDim).textCase(nil)
     } footer: {
       Group {
-        if let unread = draft.unread {
-          Text("Couldn’t read “\(unread)”.", comment: "New Roadmap's footer when the file chosen could not be read: the file's name")
+        switch draft.unread {
+        case .unopened(let name):
+          Text("Couldn’t read “\(name)”.", comment: "New Roadmap's footer when the file chosen could not be read: the file's name")
             .foregroundStyle(RoadmapPalette.ink)
-        } else {
+        case .tooLarge(let name):
+          Text("“\(name)” is too large to read.", comment: "New Roadmap's footer when the file chosen is past the size the phone reads: the file's name")
+            .foregroundStyle(RoadmapPalette.ink)
+        case .importer:
+          Text("Couldn’t open the file.").foregroundStyle(RoadmapPalette.ink)
+        case nil:
           Text("Create alone plants one step, named as the roadmap.").foregroundStyle(RoadmapPalette.inkDim)
         }
       }.accessibilityIdentifier("roadmap-new-footer")

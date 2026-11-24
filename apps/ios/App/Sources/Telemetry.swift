@@ -89,11 +89,11 @@ nonisolated enum TelemetryPrivacy {
     // room's first read, its spinner shown and how its wait ended.
     // Of a plan: New Roadmap's door, a copied plan or a file, as it was read back, cleared or could not be read, and the
     // roadmap made with its steps as a bucket under `count`; Paste Steps read back, added with its steps as a bucket,
-    // cancelled, undone, or reading nothing for an empty clipboard or a paste not allowed, and Settings opened from that
-    // band.
+    // refused with the domain's refusal, cancelled, undone, or reading nothing for an empty clipboard or a paste not
+    // allowed, and Settings opened from that band.
     "act": ["complete", "reset", "delete", "create", "edit", "subtaskToggle", "subtaskDelete", "linkDelete", "recolor", "removeKind", "graft"],
     "step": ["confirm", "cancel", "held", "ask", "undo", "open", "switch", "search", "new", "rename", "saved", "discard", "pick", "close",
-             "start", "end", "recolor", "delete", "delete_refused", "kind", "unfold", "shown", "ended", "read", "clear", "unread", "settings"],
+             "start", "end", "recolor", "delete", "delete_refused", "kind", "unfold", "shown", "ended", "read", "clear", "unread", "settings", "refused"],
     "menu": ["sortFilter"],
     "sort": ["roadmap", "newest", "oldest"],
     "what": ["kinds"],
@@ -119,6 +119,9 @@ nonisolated enum TelemetryPrivacy {
     "method": ["GET", "POST", "PUT", "DELETE", "email", "apple"],
     "day_kind": ["today"],
     "scope_kind": ["product", "tree", "overlay", "unknown"],
+    // A file New Roadmap could not read: its error's domain, and its code as a bucket.
+    "error_domain": ["cocoa", "posix", "other"],
+    "error_code": ["missing", "permission", "unreadable", "cancelled", "other"],
     // Why an Undo of an act skipped operations when it settled (`sync_inverse`): the engine's closed list, never a code
     // beyond it.
     "skip_reason": Set(InverseSkipReason.allCases.map(\.rawValue)),

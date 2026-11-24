@@ -268,12 +268,23 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
     #expect(TelemetryPrivacy.properties(["step": "saved", "door": "paste", "view": "board", "count": "2-5"]) ==
             ["step": .label("saved"), "door": .label("paste"), "view": .label("board"), "count": .label("2-5")])
+    #expect(TelemetryPrivacy.properties(["step": "refused", "door": "paste", "refusal": "gone"]) ==
+            ["step": .label("refused"), "door": .label("paste"), "refusal": .label("gone")])
+    #expect(TelemetryPrivacy.properties(["step": "unread", "door": "file", "reason": "too_large", "file": "Sailing plan.md"]) ==
+            ["step": .label("unread"), "door": .label("file"), "reason": .label("too_large")])
     #expect(TelemetryPrivacy.properties(["act": "graft", "outcome": "ok"]) == ["act": .label("graft"), "outcome": .label("ok")])
     #expect(TelemetryPrivacy.properties(["write": "ImportSubgraph", "refusal": "full"]) == ["write": .label("ImportSubgraph"), "refusal": .label("full")])
     for (operation, kind) in [("roadmap_plant", "refusal"), ("roadmap_plant", "marks"), ("roadmap_file", "unexpected")] {
       #expect(TelemetryPrivacy.properties(["operation": operation, "failure_kind": kind, "refusal": "invalid", "file": "Sailing plan.md"]) ==
               ["operation": .label(operation), "failure_kind": .label(kind), "refusal": .label("invalid")])
     }
+    for (domain, code) in [("cocoa", "missing"), ("posix", "permission"), ("other", "unreadable"), ("cocoa", "cancelled"), ("other", "other")] {
+      #expect(TelemetryPrivacy.properties(["operation": "roadmap_file", "error_domain": domain, "error_code": code, "message": "private-marker"]) ==
+              ["operation": .label("roadmap_file"), "error_domain": .label(domain), "error_code": .label(code)])
+    }
+    #expect(NewRoadmapDraft.labels(of: CocoaError(.fileReadNoSuchFile)) == ["error_domain": "cocoa", "error_code": "missing"])
+    #expect(NewRoadmapDraft.labels(of: POSIXError(.EACCES)) == ["error_domain": "posix", "error_code": "permission"])
+    #expect(NewRoadmapDraft.labels(of: URLError(.badURL)) == ["error_domain": "other", "error_code": "other"])
   }
 
   @Test func theStepFormTellsItsStepsByKindAndNothingOfTheStep() {

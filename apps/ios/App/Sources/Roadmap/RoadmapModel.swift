@@ -349,6 +349,8 @@ final class RoadmapModel {
   let wait: Wait
   // Where Paste Steps reads the copied text from.
   let clipboard: Clipboard
+  // The file a launch hands New Roadmap's A File in place of the system's importer, none in the app.
+  let handedFile: @MainActor () -> URL?
   // The Graph of the open roadmap: its picture, its camera and its captions.
   let graph: RoadmapGraph
   // What the Board measures of itself, where a launch asks for it.
@@ -451,8 +453,9 @@ final class RoadmapModel {
 
   init(records: @escaping Records, runner: ActionRunner, phone: UserDefaults, telemetry: any Telemetry = NoopTelemetry(),
        wait: @escaping Wait = { try await Task.sleep(for: $0) }, graph: RoadmapGraph? = nil, boardFrames: BoardFrames = BoardFrames(),
-       clipboard: Clipboard = .system) {
+       clipboard: Clipboard = .system, handedFile: @escaping @MainActor () -> URL? = { nil }) {
     self.records = records; self.runner = runner; self.phone = phone; self.telemetry = telemetry; self.wait = wait; self.clipboard = clipboard
+    self.handedFile = handedFile
     self.graph = graph ?? RoadmapGraph(telemetry: telemetry)
     self.boardFrames = boardFrames
     reading = BoardReading(telemetry: telemetry)
@@ -899,8 +902,8 @@ final class RoadmapModel {
   }
 
   // A name as the web's room takes one before the domain reads it (`NewTreeBirth.plant`, `ReplicaSession.renameTree`):
-  // without the blanks around it.
-  static func name(typed: String) -> String { typed.trimmingCharacters(in: .whitespacesAndNewlines) }
+  // without the kit's whitespace around it, which is ECMAScript's.
+  static func name(typed: String) -> String { TextSpec.trimmed(typed) }
 
   // Rename, committed in the bar's field: the open roadmap's name as the domain takes it. A name of blanks alone is
   // written as no name, and the roadmap then reads as one without a title. The room offers no Undo of a rename.

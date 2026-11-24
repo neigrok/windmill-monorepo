@@ -8,10 +8,11 @@ import SyncCore
 // roadmap by the plan grammar, which binds a heading to a kind the roadmap has or adds one and renames none, and read back
 // before anything is written, each step in the state it will land in under the roadmap's starting step. Add writes them
 // as one act, the domain's `ImportSteps` with the marks the plan brings done (R-15) and `CreateKind` for each kind it
-// adds, whose one Undo takes the paste back whole; Cancel writes nothing. The room looks at the clipboard before it
-// reads it, which asks the person nothing, so a clipboard with no text says so in the band; a read the person did not
-// allow says so with Settings.
-@MainActor
+// adds, whose one Undo takes the paste back whole; Cancel writes nothing. An Add the domain refuses leaves the sheet open
+// and says why under its counts. The room looks at the clipboard before it reads it, which asks the person nothing, so a
+// clipboard with no text says so in the band; a read the person did not allow says so with Settings. The text is read by
+// the grammar off the main actor.
+@Observable @MainActor
 final class PastedSteps: Identifiable {
   unowned let room: RoadmapModel
   // The roadmap the steps land in.
@@ -20,6 +21,8 @@ final class PastedSteps: Identifiable {
   let graft: RoadmapPlan.Graft
   // Each step in the state it will land in.
   let landing: [RoadmapPlan.Landing]
+  // What the domain refused Add for, which the sheet says; the same write would be refused again.
+  private(set) var refusal: RoadmapRefusal?
 
   init(_ plan: RoadmapPlan, grafted graft: RoadmapPlan.Graft, into open: RoadmapModel.OpenRoadmap, in room: RoadmapModel) {
     self.room = room
@@ -29,15 +32,26 @@ final class PastedSteps: Identifiable {
     landing = graft.landing(in: open.tree)
   }
 
-  // Add: the steps as one write. Written, the band says how many arrived, washed on the Board, with Undo for six seconds;
-  // refused at the roadmap's cap, the band says so. Either way the sheet closes.
+  // Add: the steps as one write. Written, the sheet closes and the band says how many arrived, washed on the Board, with
+  // Undo for six seconds; refused, the sheet stays open and says why; a commit that failed closes it, reported.
   func add() {
-    room.pasting = nil
-    guard let open = room.shown, open.id == tree, let written = room.write(graft.acts(in: tree), as: "ImportSubgraph").committed else { return }
-    let planted = written.result.first as? [(key: String, id: DomainKit.ID<RoadmapStep>)] ?? []
-    room.telemetry.event("roadmap_board_create", properties: ["step": "saved", "door": "paste", "view": room.view(of: open).rawValue,
-                                                              "count": RoadmapModel.bucket(landing.count)])
-    room.show(RoadmapModel.Band(.added(steps: landing.count), of: written.receipt, act: .step("graft"), arrived: planted.map(\.id.description)))
+    guard let open = room.shown, open.id == tree else {
+      room.pasting = nil
+      return
+    }
+    switch room.write(graft.acts(in: tree), as: "ImportSubgraph") {
+    case .committed(let result, let receipt):
+      room.pasting = nil
+      let planted = result.first as? [(key: String, id: DomainKit.ID<RoadmapStep>)] ?? []
+      room.telemetry.event("roadmap_board_create", properties: ["step": "saved", "door": "paste", "view": room.view(of: open).rawValue,
+                                                                "count": RoadmapModel.bucket(landing.count)])
+      room.show(RoadmapModel.Band(.added(steps: landing.count), of: receipt, act: .step("graft"), arrived: planted.map(\.id.description)))
+    case .refused(let refusal):
+      self.refusal = refusal
+      room.telemetry.event("roadmap_board_create", properties: ["step": "refused", "door": "paste", "refusal": refusal.label])
+    case .unchanged, .failed:
+      room.pasting = nil
+    }
   }
 
   // Cancel, or the sheet sent away: nothing is written.
@@ -66,13 +80,18 @@ extension RoadmapModel {
     guard shown != nil else { return }
     guard clipboard.holdsText() else { return unread(.noText, reason: "empty") }
     guard let text = await clipboard.text() else { return unread(.pasteRefused, reason: "denied") }
-    guard let open = shown else { return }
-    let kinds = open.legend.entries.map { (entry: RoadmapLegend.Entry) -> RoadmapPlan.Kind in
+    guard let read = shown else { return }
+    let kinds = read.legend.entries.map { (entry: RoadmapLegend.Entry) -> RoadmapPlan.Kind in
       RoadmapPlan.Kind(id: entry.kind?.id ?? "hue:\(entry.hue)", hue: entry.hue, label: entry.kind?.label ?? "", description: entry.kind?.description ?? "")
     }
-    let plan = RoadmapPlan(reading: text, over: kinds, into: true)
-    guard let graft = plan.graft(under: open.starting.first, held: open.tree.nodes.map(\.id), liveKinds: kinds) else { return unread(.noText, reason: "empty") }
-    pasting = PastedSteps(plan, grafted: graft, into: open, in: self)
+    let under = read.starting.first, held = read.tree.nodes.map(\.id)
+    let parsed = await Task.detached { () -> (plan: RoadmapPlan, graft: RoadmapPlan.Graft?) in
+      let plan = RoadmapPlan(reading: text, over: kinds, into: true)
+      return (plan, plan.graft(under: under, held: held, liveKinds: kinds))
+    }.value
+    guard let open = shown, open.id == read.id else { return }
+    guard let graft = parsed.graft else { return unread(.noText, reason: "empty") }
+    pasting = PastedSteps(parsed.plan, grafted: graft, into: open, in: self)
     telemetry.event("roadmap_board_create", properties: ["step": "open", "door": "paste", "view": view(of: open).rawValue])
   }
 
@@ -100,6 +119,10 @@ struct PasteStepsSheet: View {
         Section {
           PlanCounts(steps: pasted.landing.count, branches: pasted.plan.readout.branches, done: pasted.graft.done.count,
                      notes: pasted.plan.imperfections.notes)
+        } footer: {
+          if let refusal = pasted.refusal {
+            Text(refusal.pasteWords).foregroundStyle(RoadmapPalette.ink).accessibilityIdentifier("roadmap-paste-refused")
+          }
         }
         Section {
           ForEach(pasted.landing.indices, id: \.self) { index in PlannedStepRow(landing: pasted.landing[index]) }
@@ -112,9 +135,21 @@ struct PasteStepsSheet: View {
             Button("Cancel") { pasted.cancel() }.accessibilityIdentifier("roadmap-paste-cancel")
           }
           ToolbarItem(placement: .confirmationAction) {
-            Button("Add") { pasted.add() }.fontWeight(.semibold).accessibilityIdentifier("roadmap-paste-add")
+            Button("Add") { pasted.add() }.fontWeight(.semibold).disabled(pasted.refusal != nil).accessibilityIdentifier("roadmap-paste-add")
           }
         }.roomBar(.roadmap)
     }.tint(RoadmapPalette.accent).presentationDetents([.medium]).presentationDragIndicator(.visible)
+  }
+}
+
+extension RoadmapRefusal {
+  // Why Paste Steps' Add was refused, in the room's words: the band's for a roadmap at its cap, a roadmap changed elsewhere
+  // since the steps were read, its starting step or its kinds among what changed, or steps the domain cannot take.
+  @MainActor var pasteWords: String {
+    switch self {
+    case .full: RoadmapModel.Band.Says.refused(.full).words
+    case .gone, .roadmapGone, .taken, .stepOpensARoadmap: String(localized: "This roadmap changed elsewhere.")
+    default: String(localized: "These steps can’t be added.")
+    }
   }
 }

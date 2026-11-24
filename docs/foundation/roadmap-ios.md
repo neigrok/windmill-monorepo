@@ -216,13 +216,14 @@ makes a request, and none needs a connection or an account. The iPhone offers no
 - **Blank** plants one starting step, named as the roadmap.
 - **A plan** is text read by the web's plan grammar, ported to `RoadmapDomain`: the same text
   gives the same name, steps, links, kinds, done marks and counts on the iPhone as on the web.
-  It is read on the phone, and reading cannot fail: a line the grammar cannot place is kept as a
-  note on a step. The read-back shows the grammar's counts, and the plan's first steps in the
-  states the domain's reads give them over the plan as over a roadmap. The name field starts from
-  the plan's name where it is empty; a name typed names the roadmap and the step that stands for
-  the plan's name. Create runs `CreateRoadmap` with the plan's steps, links and kinds, then
-  `Complete` for each step the plan brings done. A file is decoded as the web decodes one, its
-  bytes as UTF-8 with a leading byte order mark dropped.
+  It is read on the phone, off the main actor, and reading cannot fail: a line the grammar cannot
+  place is kept as a note on a step. The read-back shows the grammar's counts, and the plan's first
+  steps in the states the domain's reads give them over the plan as over a roadmap. The name field
+  starts from the plan's name where it is empty, and left so plants the plan under its own name,
+  as the web does; a name typed names the roadmap and the step that stands for the plan's name.
+  Create runs `CreateRoadmap` with the plan's steps, links and kinds, then `Complete` for each step
+  the plan brings done. A file is decoded as the web decodes one, its bytes as UTF-8 with a
+  leading byte order mark dropped; the phone reads one of up to 2,000,000 bytes.
 - **The grammar's cases** live in `packages/api-contract/roadmap/plan/`: a text read to a plan,
   alone and into a roadmap that has kinds of its own; a plan to the input of `CreateRoadmap`, and
   to that of `ImportSteps` under a step (§7.2); a roadmap written to its Markdown (§7.3); and
@@ -241,8 +242,10 @@ binds a heading to a kind the roadmap has or adds one, and renames none (boards 
   kind the plan adds. The starting step is the first, in authored order, of the steps that follow
   nothing; a roadmap with none takes the steps at its root. Undo takes the paste back whole, its
   marks included.
-- It needs neither a connection nor an account. A roadmap too full for the steps refuses them
-  where the gesture is made (§3).
+- It needs neither a connection nor an account. An *Add* the domain refuses, a roadmap too full
+  for the steps among them, leaves the read-back open and says why there (§3).
+- The read-back reads the text over the roadmap's legend as the room shows it, the domain's
+  (`LegendRead.shown`), which the web's room seeds its legend from too.
 
 ### §7.3 Export
 

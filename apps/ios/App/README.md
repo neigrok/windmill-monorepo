@@ -203,15 +203,19 @@ by name; and + names a new one. Its last row on the board, the gallery, is left 
 sheet the title menu, All Roadmaps and *No roadmaps yet* all open, over its draft (`Roadmaps/NewRoadmapDraft.swift`): a
 name, held to the length the domain takes, *Cancel* and *Create*, and *Start from* (01.6) with *A Copied Plan*, the
 system's `PasteButton`, and *A File*, the system's `.fileImporter` for Markdown, by the identifier the Info.plist imports
-(`net.daringfireball.markdown`), and plain text. A file is read as the web reads one, its bytes as UTF-8 with a leading
-byte order mark dropped; one that cannot be opened is named in *Start from*'s footer (01.8c), reports, and reads
-nothing. A plan from either is read by `RoadmapPlan` over the genesis kinds and read back before anything is written
+(`net.daringfireball.markdown`), and plain text. A file is read off the main actor as the web reads one, its bytes as
+UTF-8 with a leading byte order mark dropped, up to 2,000,000 bytes; one that cannot be opened is named in *Start
+from*'s footer (01.8c), reports, and reads nothing, as does an importer that hands back none, and one past the bound is
+named there as too large to read. A plan from either is read by `RoadmapPlan` over the genesis kinds, off the main
+actor, and read back before anything is written
 (01.8): its counts (`Components/PlanReadBack.swift`, `PlanCounts`) and its first six steps in the states they will land
 in (`PlannedStepRow`, the domain's `Planting.landing`), with *Clear*, which returns to *Start from*. An empty name field
-takes the plan's name, a name typed names the roadmap and the step that stands for the plan's name, and Create plants
+takes the plan's name, which plants the plan under its own as the web does, a file's title with its padding; a name
+typed names the roadmap and the step that stands for the plan's name, and Create plants
 it, opens it and says what it planted in the band with no Undo (01.8b); a name alone plants a blank roadmap with its one
 starting step and opens it. A simulator launch that names `-roadmap-file` hands *A File* the boards' plan, or a file that
-cannot be read, in place of the system's importer (`RoadmapFixture.chosenFile()`). All of it works on the phone's copy,
+cannot be read, in place of the system's importer (`RoadmapFixture.chosenFile()`, which the app hands the room's model as
+`handedFile`). All of it works on the phone's copy,
 signed in or out.
 
 `Board/RoadmapBoard.swift` is the Board's list, its groups under headers that fold them, as the Board's reading keeps
@@ -240,10 +244,12 @@ Board's first frame and the frames each scroll is given, on a launch that names 
 holds text, which raises no prompt, and says *No text to paste* in the band where it holds none (02.16b); reads the text,
 which the system may ask the person to allow, and says *Paste not allowed* with *Settings*, which opens Windmill's page
 in Settings, where they did not (02.16c); and otherwise reads it into the open roadmap by `RoadmapPlan` over the
-roadmap's legend, grafted under its starting step, the first in authored order of the steps that follow nothing. A text
-that lands no step says *No text to paste* too. The read-back is a medium sheet of its counts and each step in the state
-it will land in (`Graft.landing(in:)`); *Add* writes the steps with the marks the text brings done and the kinds it adds
-as one act, and the band says *Added N steps* with *Undo* for six seconds over the steps washed in their groups; *Cancel*
+roadmap's legend, the domain's legend shown (`LegendRead.shown`), grafted under its starting step, the first in authored
+order of the steps that follow nothing, the grammar run off the main actor. A text that lands no step says *No text to
+paste* too. The read-back is a medium sheet of its counts and each step in the state it will land in
+(`Graft.landing(in:)`); *Add* writes the steps with the marks the text brings done and the kinds it adds as one act, and
+the band says *Added N steps* with *Undo* for six seconds over the steps washed in their groups; an *Add* the domain
+refuses leaves the sheet open, *Add* off, and says why under its counts in the room's words (`pasteWords`); *Cancel*
 writes nothing. The room reads the clipboard through a `Clipboard`, the system's in the app and a test's own in a test;
 the system's text is read off the main actor, which the system's question would otherwise hold until it is answered.
 

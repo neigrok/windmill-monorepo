@@ -18,7 +18,7 @@ import SyncSchema
 // holds none.
 // roadmap-unreadable cannot make its views. A launch can also name where the Graph's measures go and how it keeps a
 // pinch's frames (`graph(telemetry:)`), where the Board's go (`boardFrames()`), how long a band stands (`wait()`), and the
-// file New Roadmap's importer hands back (`chosenFile()`).
+// file New Roadmap's A File is handed in place of the system's importer (`chosenFile()`).
 enum RoadmapFixture {
   // The engine's views of every record of a type in a scope, visible or not, as the room's model takes them.
   static func records(_ runtime: AppRuntime) -> RoadmapModel.Records {

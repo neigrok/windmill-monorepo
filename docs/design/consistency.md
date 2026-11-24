@@ -696,12 +696,16 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   whose first steps differ from the board's for that reason. 01.8 draws the plan's steps in Sky, and they are built in
   the colour each will wear, for a plan with no kind of its own the first kind's, Terracotta. 01.8 draws one header, *Pasted plan*, and it is built for a
   file too, which is not pasted. 01.8 draws its four counts, each above zero, and 02.17 two: the counts are built shown
-  where they are above zero, *Steps* always. The read also counts the lines whose text the domain's bounds cut (a step's
-  name past 200 characters, a description past 16,000, an address past a step's 32nd or past 2,048, `clips`), which no
-  board, on the iPhone or the web's composer, has a row or a word for, and which are built without one. No board draws
-  Paste Steps over a text that lands no step, built as *No text to paste*, or over a roadmap too full for the steps,
-  built as the band's *This roadmap is at its limit.* with the sheet closed. A file whose bytes are not UTF-8 is read
-  as the web reads one, with U+FFFD in their place, so 01.8c is built for a file that could not be opened alone. Paste
+  where they are above zero, *Steps* always; *Lines kept as notes* counts notes alone, an address that became a link
+  none. The read also counts the lines whose text the domain's bounds cut (a step's name past 200 characters, a
+  description past 16,000, `clips`): the web composer's gutter words such a line *shortened to fit*, and no board, on the
+  iPhone or the web, has a row or a count for them, so the iPhone's read-back is built without one. No board draws Paste
+  Steps over a text that lands no step, built as *No text to paste*, or an *Add* the domain refuses, built with the sheet
+  left open, *Add* off, and under its counts the band's *This roadmap is at its limit.* at the cap, *This roadmap changed
+  elsewhere.* where its starting step, the roadmap or a kind changed since the read, and *These steps can’t be added.*
+  otherwise. A file whose bytes are not UTF-8 is read as the web reads one, with U+FFFD in their place, so 01.8c is built
+  for a file that could not be opened; no board draws a file past the 2,000,000 bytes the phone reads, built in 01.8c's
+  footer as *“Name” is too large to read.*, or an importer that handed back no file, built as *Couldn’t open the file.* Paste
   Steps is the + menu's item that 02.16 draws, which reads the clipboard itself once `UIPasteboard.hasStrings` says it
   holds text, so the system asks before it hands over another app's text (02.16c), where
   [Roadmap · iOS](ios/roadmap.md)'s stock parts name `PasteButton` for paste, as New Roadmap's *A Copied Plan* is; that
