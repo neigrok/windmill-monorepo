@@ -411,7 +411,6 @@ makes it false.
   a mark; a name with a line break breaks the file's first line; and steps on a loop are not
   written. In a file an export wrote, text before the first step is dropped, where §7.1 keeps
   every line. The cases of `write.json` and `read.json` pin each as it stands.
-- The domain's read of a roadmap carries no `forkedFrom`, which the gallery's row reads (§3).
 - Roadmaps that hold `unlisted` are not moved to private (R-9).
 - The app's Info.plist names no Markdown type (§7.3).
 
