@@ -1903,13 +1903,15 @@ type UndoRecipe =
   transaction gives each entry a journaled preimage read over that is still held or ready and carries no
   command its scope kind's one `engine: "capture"` command (none, or several, throws malformed): its ACK then
   carries the receipt the walk steps over, signed in or signed out. An entry already sent keeps its intent
-  (§7.2), its answer moves nothing, and a row it wrote breaks the walk (Materialize). A life's preimage also keeps
+  (§7.2), and so does one the command would carry past `PUSH_MAX_BYTES` alone (§7.4), since a person's own write
+  always lands: its answer moves nothing, and a row it wrote breaks the walk (Materialize). A life's preimage also keeps
   the record as read (`record`: its birth, field registers and texts), which a revival draws. An unset slot takes the target's
   `defaultValue`, the product's value equivalent to unset (`null` is a value); without one the act throws
   malformed. A named segment runs as one
   scoped intent: a segment with its own command needs `scopedEffects`, and any other gets its scope kind's
   one `engine: "capture"` command when it writes a delta (none, or several, throws malformed). A capture
-  command does not stop a retire (§7.1 step 4) from matching its removal.
+  command does not stop a retire (§7.1 step 4) from matching its removal, and an entry left with no delta and
+  only a capture command is empty: the fold that left it so ends it (Silent fold, §7.7 step 3).
 - **Record.** The act's transaction writes its `ReversibleAct` (§2.5), `actId` its gesture id: one source
   entry per named segment that left an entry, with its recipes, its preimages and the value the act left in
   each target (`written`). A segment that writes nothing leaves none, and an act left with none records
@@ -2007,8 +2009,8 @@ created record is created again (`createRecord`) only while wholly absent. A pen
 entry's ACK transaction to the version that entry wrote: from its receipt, or an ordinary entry's own delta
 stamp, which the restore's condition checks; a text without a receipt binds nothing (`unbound`). The slots
 wait while the replica holds no epoch, in which their references bind, so a Redo asked signed out draws its
-record at once and goes up once sign-in gives the replica an epoch; and they wait while an entry a reference
-names is queued. A reference left unbound, or whose entry ended without an
+record at once and goes up once the replica holds an epoch: at sign-in, the account's dormant replica's, or
+the first a fresh replica's pull takes (§7.5 step 1); and they wait while an entry a reference names is queued. A reference left unbound, or whose entry ended without an
 ACK, skips its operation `reference-unbound`, never substituting what is visible now. A cancellation of an
 act that ran a product command has no generic Redo: without `inverseSlots` it answers `{kind:
 'unavailable', requestId: null, reason: 'product-redo-required'}`. The receipt, and the acts whose sources
@@ -2034,8 +2036,8 @@ loop while state = bound ∧ ¬authPaused ∧ online:
           (no entry is numbered while a command entry is `sent`)
       an entry whose one-intent body, at that n and the current ackThrough, exceeds PUSH_MAX_BYTES
           is not numbered: it grew after commit (a restamp adds digits, a write map lengthens an
-          id, a capture command joins it), so it ends `refused` `too-large` by §7.7, with its
-          notice (an orphan with none of its own), and its dependents fold
+          id), so it ends `refused` `too-large` by §7.7, with its notice (an orphan with none of
+          its own), and its dependents fold
   POST push jcs({ replica, account, ackThrough, intents: sent entries by n })
       // the body is its jcs
   network error, or no answer by REQUEST_TIMEOUT_MS → backoff
@@ -2073,6 +2075,10 @@ server-requested wait: a 503's or a retry's retryAfterMs, from the response's re
          starts before it ends: a kick wakes the sender no earlier, and a leave (§7.3) attempts no
          push during it
 ```
+
+A round with nothing to push, no sent entry and no ready entry the sender would number before a held-back
+command entry or an inverse slot that cannot bind yet, asks the server nothing, not even a hello, and waits
+for a kick: a held entry's release, a commit, an undo, a pull's new epoch and a sign-in each are one.
 
 **What holds work back.** The Swift and Kotlin engines publish it as `SyncStatus`: `online`,
 `authPaused`, `upgradeRequired` and `failedPushes`, the records of the unsent entries of each scope

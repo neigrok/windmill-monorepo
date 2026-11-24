@@ -619,7 +619,17 @@ function plainReference() {
   assert.ok(sample.expect.returns.filter((returned) => returned?.intents).flatMap(({ intents }) => intents)
     .every((intent) => intent.gestureId !== 'g1' || intent.cmd === undefined));
   assert.equal(serverValue(session, 'acct:A/probe', 'card', CARD, (r) => r.f.title[0]), 'Second');
-  return [sample];
+
+  const queued = new Session(world()).local(plain, held, requestStep('g2', 9000), requestStep('g3', 9500));
+  queued.flush();
+  queued.pull(['self/probe']);
+  const receipted = queued.local({ op: 'readInverseResult', requestId: 'g6' })
+    .vector('a Redo whose change now reads an ordinary edit still queued when the held act read over it binds the version that edit\'s receipt accepted, and applies');
+  assert.deepEqual(receipted.expect.returns.at(-1), { kind: 'settled', requestId: 'g6', inverseActId: 'g5', changed: true, appliedCount: 1, skippedCount: 0 });
+  assert.equal(serverValue(queued, 'acct:A/probe', 'card', CARD, (r) => r.f.title[0]), 'Second');
+  assert.ok(receipted.expect.returns.filter((returned) => returned?.intents).flatMap(({ intents }) => intents)
+    .some((intent) => intent.gestureId === 'g1' && intent.cmd?.name === 'probe.capture'));
+  return [sample, receipted];
 }
 
 function ownCreation() {
@@ -1115,7 +1125,8 @@ function releasedBirth() {
 // that reads over an ordinary write still queued sends that entry with its scope kind's capture command, and the
 // walk follows its receipt: a tag born or renamed by an ordinary entry and removed before the entry went up comes back
 // as the device left it, signed in or signed out. An entry already sent keeps its intent: sent before the removal, or
-// answered and not yet pulled, its write still breaks the walk.
+// answered and not yet pulled, its write still breaks the walk; so does one the command would carry past a push alone.
+// A captured entry whose deltas fold away is empty, and ends as an ordinary entry would.
 function queuedOrdinaryWrites() {
   const elm = { scope: TREE, t: 'tag', id: 'elm' };
   const plainBirth = { op: 'commit', scope: TREE, deviceNow: 5000, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'Elm' } }] };
@@ -1146,7 +1157,7 @@ function queuedOrdinaryWrites() {
   const answered = new Session(world()).local(plainBirth);
   answered.flush();
   const answeredBirth = undone(answered.local(removal), 'g2', 'g4')
-    .vector('an Undo of a removal skips when the record\'s birth was an ordinary entry the server answered before the removal, whose answer proves nothing of the row it wrote');
+    .vector('an Undo of a removal skips when the record\'s birth was an ordinary entry the server answered before the removal and the device had not pulled, whose answer proves nothing of the row it wrote');
   assert.deepEqual(answeredBirth.expect.returns.at(-2), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: false, appliedCount: 0, skippedCount: 1 });
   assert.equal(labelOf(answeredBirth.expect.returns.at(-1)), null);
   assert.ok(!captured(answeredBirth, 'g1'));
@@ -1167,6 +1178,41 @@ function queuedOrdinaryWrites() {
   assert.deepEqual(sentRename.expect.returns.at(-2), { kind: 'settled', requestId: 'g5', inverseActId: 'g4', changed: false, appliedCount: 0, skippedCount: 1 });
   assert.equal(elmOnServer(sent).life[0], 'dead');
   assert.ok(!captured(sentRename, 'g2'));
+
+  const planted = { op: 'commit', scope: TREE, deviceNow: 5050, opts: { atomic: true }, changes: [{ op: 'update', t: 'tag', id: 'oak', f: { label: 'Pine' } },
+    ...['ash', 'elm', 'fir', 'yew', 'box', 'bay'].map((id) => ({ op: 'create', t: 'tag', id, f: { label: id.toUpperCase() } }))] };
+  const oakRemoval = { ...removal, segments: [{ scope: TREE, changes: [{ op: 'delete', t: 'tag', id: 'oak' }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: target(TREE, 'tag', 'oak', 'life') }] }] }] } } };
+  const tight = new Session(world(), { limits: { PUSH_MAX_BYTES: 1150 } }).local(planted, oakRemoval);
+  const outgrown = undone(tight, 'g2', 'g4')
+    .vector('an Undo of a removal skips when the device\'s own edit of the record, still unsent, would outgrow a push alone with the capture command: it keeps its intent and lands');
+  const oakOnServer = tight.state.rows[`tree:${BOARD}`][recordKeyOf('tag', 'oak')];
+  assert.deepEqual(outgrown.expect.returns.at(-2), { kind: 'settled', requestId: 'g4', inverseActId: 'g3', changed: false, appliedCount: 0, skippedCount: 1 });
+  assert.deepEqual([oakOnServer.life[0], oakOnServer.f.label[0]], ['dead', 'Pine']);
+  assert.ok(!captured(outgrown, 'g1'));
+
+  const relabel = { op: 'commitAct', deviceNow: 5100, segments: [{ scope: TREE, changes: [{ op: 'update', t: 'tag', id: 'elm', f: { label: 'Fir' } }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: target(TREE, 'tag', 'elm', 'field', 'label') }] }] }] } } };
+  const outboxIds = (sample) => (activeOf(sample).outbox ?? []).map(({ localId }) => localId);
+  const endsOf = (sample) => sample.expect.ended.filter(({ localId }) => ['g2/0', 'g3/0'].includes(localId));
+  const withdrawn = new Session(world()).local({ ...plainBirth, opts: { hold: true } }, rename, relabel, { op: 'undo', gestureId: 'g1', deviceNow: 5200 });
+  assert.equal(withdrawn.push(), null);
+  const silent = withdrawn.vector('a rename an act read over, and the act, both left with only their capture commands once the held birth they depend on is undone, end with it and send nothing');
+  assert.deepEqual(outboxIds(silent), []);
+  assert.deepEqual(endsOf(silent), [{ localId: 'g2/0', outcome: 'undone', event: 'silent-fold' }, { localId: 'g3/0', outcome: 'undone', event: 'silent-fold' }]);
+
+  const taken = new Session(world()).elsewhere({ scope: TREE, d: [{ t: 'tag', id: 'elm', born: st(4000, 0, OTHER), life: ['alive', st(4000, 0, OTHER)],
+    f: { label: ['Theirs', st(4000, 0, OTHER)] } }] }).local(plainBirth, { op: 'push', deviceNow: 5010 });
+  const request = taken.last();
+  taken.local(rename, relabel);
+  const pushed = push({ state: taken.state, registry, product, account: 'A', request, serverNow: 7000 });
+  taken.state = pushed.state;
+  taken.local({ op: 'pushResponse', deviceNow: 5300, response: pushed.response });
+  assert.equal(taken.push(), null);
+  const folded = taken.vector('a rename an act read over, and the act, both left with only their capture commands once the birth they depend on is refused, fold into its notice and send nothing');
+  assert.deepEqual(pushed.response.body.results.map(({ s, code }) => [s, code]), [['refused', 'id-taken']]);
+  assert.deepEqual(outboxIds(folded), []);
+  assert.deepEqual(endsOf(folded), [{ localId: 'g2/0', outcome: 'refused', event: 'fold', orphanOf: 'g1/0' }, { localId: 'g3/0', outcome: 'refused', event: 'fold', orphanOf: 'g1/0' }]);
 
   const anon = 'rp_00000000000000000000000000000009';
   const id = '2026-11-23';
@@ -1192,7 +1238,7 @@ function queuedOrdinaryWrites() {
   const dayOnServer = signedOut.state.rows['acct:A/probe'][recordKeyOf('day', id)];
   assert.deepEqual([dayOnServer.life[0], dayOnServer.f.score[0]], ['alive', 8]);
   assert.ok(captured(signedOutEdit, 'g2', 'probe.capture'));
-  return [queuedBirth, answeredBirth, queuedRename, sentRename, signedOutEdit];
+  return [queuedBirth, answeredBirth, queuedRename, sentRename, outgrown, silent, folded, signedOutEdit];
 }
 
 // An act made signed out never read what the account's dormant replica wrote meanwhile, and sign-in's Add numbers the

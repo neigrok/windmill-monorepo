@@ -12,6 +12,7 @@ import { moveEntry } from '../core/machines.js';
 import { compareSlots, creatableFault, inverseOutcomes, recipeFault, recordValues, restorableSlotFault, REVIVAL_VALUES_SCHEMA, revivalValues, revivesKeyed, sameRecord, sameSlot, valueIn, versionIn } from '../core/restore.js';
 import { recordKey } from '../core/rows.js';
 import { CommitError } from './commit.js';
+import { ownCommandOf } from './dependents.js';
 import { undo } from './hold.js';
 import { ordinalOf, settleRequest, settleSlot } from './journal.js';
 import { effectsOf } from './projections.js';
@@ -224,7 +225,7 @@ export function requestInverse(replica, ctx, sourceActId, replacement) {
 // folded silently, and reports whether anything drawn changed. The act leaves the journal.
 function cancelHeld(replica, ctx, act, entries) {
   const { registry } = ctx;
-  const ordinary = (entry) => entry.intent.cmd === undefined || registry.command(entry.intent.cmd.name)?.engine === 'capture';
+  const ordinary = (entry) => ownCommandOf(registry, entry) === undefined;
   const scopes = [...new Set(entries.flatMap((entry) => effectsOf(entry).map(({ scope }) => scope)))];
   const before = new Map(scopes.map((scope) => [scope, drawn(replica, registry, scope)]));
   const written = entries.filter(ordinary).flatMap((entry) => (entry.intent.d ?? []).map((delta) => ({ entry, scope: entry.scope, delta })));
@@ -515,10 +516,8 @@ function bound(replica, registry, act, history, op) {
 // its evidence, or skips whole. Settlement only removes operations and projections; a slot left with nothing to
 // send settles unnumbered.
 export function materialize(replica, ctx, request) {
-  if (request.state !== 'waiting') return;
+  if (!bindable(replica, request)) return;
   const act = replica.journal.find((candidate) => candidate.actId === request.sourceActId);
-  if (act && !authoritative(replica, act)) return;
-  if (!act && !referencesAuthoritative(replica, request)) return;
   const source = act ?? { sourceEntries: [] };
   const history = ownedHistory(replica, source);
   const epoch = replica.meta.serverEpoch;
@@ -584,6 +583,21 @@ function keepProjection(entry, operations) {
       return [next];
     });
   }
+}
+
+// Whether a waiting request binds now: once every source of its act is authoritative, or, for a Redo of a
+// cancellation, once its references are.
+function bindable(replica, request) {
+  if (request.state !== 'waiting') return false;
+  const act = replica.journal.find((candidate) => candidate.actId === request.sourceActId);
+  return act ? authoritative(replica, act) : referencesAuthoritative(replica, request);
+}
+
+// Whether an inverse slot's entry still stops numbering: its slot waits and its request cannot bind yet. Reads
+// the replica and changes nothing.
+export function waitsAtBarrier(replica, entry) {
+  const found = slotOf(replica, entry);
+  return found !== null && found.slot.state === 'waiting' && !bindable(replica, found.request);
 }
 
 // The sender's barrier (§7.4): an inverse slot not yet materialized is materialized now if it can be; one

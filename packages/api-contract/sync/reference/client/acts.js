@@ -3,6 +3,7 @@ import { mintId } from '../core/derive.js';
 import { jcs, sameJson } from '../core/jcs.js';
 import { recipeFault, recordValues, valueIn } from '../core/restore.js';
 import { recordKey } from '../core/rows.js';
+import { widestAloneBytes } from '../core/wire.js';
 import { CommitError, commitGesture } from './commit.js';
 import { acknowledgedWrites, stepOver } from './journal.js';
 import { drawn, stored } from './views.js';
@@ -74,8 +75,9 @@ function optedGesture(registry, scope, opts) {
 // The act's journal record, from the segments that left an entry: one source entry each, in commit order, with
 // the value the act left in each target, which a Redo writes back. Each ordinary entry still queued that a journaled
 // preimage read over takes its scope kind's capture command, so its ACK carries the receipt a restore's walk steps
-// over; an entry already sent keeps its intent.
-function recordAct(replica, registry, actId, plan, receipts) {
+// over; an entry already sent keeps its intent, and so does one the command would carry past a push alone.
+function recordAct(replica, ctx, actId, plan, receipts) {
+  const { registry } = ctx;
   if (plan === null) return;
   const sourceEntries = [];
   for (const [index, { scope, recipes, preimages }] of [...plan].sort(([a], [b]) => a - b)) {
@@ -95,7 +97,9 @@ function recordAct(replica, registry, actId, plan, receipts) {
     for (const entry of replica.entries(target.scope)) {
       const queued = entry.gestureId !== actId && ['held', 'ready'].includes(entry.state) && entry.intent.cmd === undefined;
       if (!queued || !(entry.intent.d ?? []).some((delta) => delta.t === target.t && sameJson(delta.id, target.id))) continue;
-      entry.intent.cmd = { name: captureCommandOf(registry, target.scope), args: {} };
+      const captured = { ...entry.intent, cmd: { name: captureCommandOf(registry, target.scope), args: {} } };
+      if (widestAloneBytes(replica.meta, captured) > (ctx.limits ?? CONSTANTS).PUSH_MAX_BYTES) continue;
+      entry.intent = captured;
       entry.predictions = [{ scope: entry.scope, d: [] }];
     }
   }
@@ -253,7 +257,7 @@ export class ActCommit {
       delete this.segment;
     }
     if (!this.wrote) return { outcome: null, value };
-    recordAct(working, ctx.registry, this.gestureId, this.undoPlan, this.receipts);
+    recordAct(working, ctx, this.gestureId, this.undoPlan, this.receipts);
     for (const key of ['meta', 'outbox', 'notices', 'device', 'journal']) replica[key] = working[key];
     ctx.ended.push(...this.ended);
     return { outcome: { gestureId: this.gestureId, segments: this.receipts, retired: [...this.retired], superseded: [...this.superseded],

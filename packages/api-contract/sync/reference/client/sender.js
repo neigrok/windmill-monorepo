@@ -9,7 +9,7 @@ import { InverseOutcomesError } from '../core/restore.js';
 import { stampsOf } from '../core/rows.js';
 import { bodyBytes, intentDigest } from '../core/wire.js';
 import { Dependents, scopedKey } from './dependents.js';
-import { applyInverseResult, checkInverseResult, passesBarrier, resolveReferences } from './inverse.js';
+import { applyInverseResult, checkInverseResult, passesBarrier, resolveReferences, waitsAtBarrier } from './inverse.js';
 import { retainOutcome, stepPreimagesOver } from './journal.js';
 import { epochChange, reidentify, renewActor } from './lifecycle.js';
 import { resolveIfCovered } from './puller.js';
@@ -36,6 +36,20 @@ function heldBack(replica, registry) {
     if (entry.state === 'held' || back.has(entry) || awaiting) sources.absorbEntry(entry);
   }
   return back;
+}
+
+// §7.4 whether a push would carry anything now, read without changing the replica: a sent entry to send again, or a
+// ready entry the sender would number before it stops at a held-back command entry or at an inverse slot that cannot
+// bind yet. A sender with nothing to send asks the server nothing, and waits for a kick.
+export function hasWorkToSend(replica, registry) {
+  if (replica.entries().some((entry) => entry.state === 'sent')) return true;
+  const back = heldBack(replica, registry);
+  for (const entry of replica.entries().filter((candidate) => candidate.state === 'ready')) {
+    if (waitsAtBarrier(replica, entry)) return false;
+    if (!back.has(entry)) return true;
+    if (entry.intent.cmd !== undefined) return false;
+  }
+  return false;
 }
 
 // Numbers ready entries in commit order up to PUSH_MAX_INTENTS and while the request body, its jcs,
