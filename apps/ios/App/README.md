@@ -194,8 +194,10 @@ and plays the band's haptic once, whichever screen stands over it. The foot's + 
 long press offers *New Step* and *Paste Steps* (02.16). Before the phone's copy is first read the room is its
 bar alone, the room capsule and the account, and a large spinner shows once the read has run half a second
 (`RoadmapRoom.FirstRead`, 01.5b), which is told, and how the wait ended: read, failed, or the room put away first; a read that fails says *Couldn’t load this roadmap* and *The copy on this iPhone
-couldn’t be read.* with *Try Again*, which asks the engine for every view anew (01.5c). The title's menu (`RoadmapTitle`,
-`.toolbarTitleMenu`) lists the three most recent roadmaps, each name over its progress and the open one checked, then
+couldn’t be read.* with *Try Again*, which asks the engine for every view anew (01.5c). The title's progress is joined by
+*Offline* while the engine's status says the phone has no connection (10.1). The title's menu (`RoadmapTitle`,
+`.toolbarTitleMenu`) leads with *N Set Aside* while a change is set aside (10.5a), then lists the three most recent
+roadmaps, each name over its progress and the open one checked, then
 *All Roadmaps…*, *New Roadmap*, *Guide*, *Kinds*, *Activity*, *Rename* and *Delete Roadmap*. *Rename* is the system's (`RenameButton` over a title that is a binding): the bar
 becomes one field, and its return key commits. A name the domain refuses leaves the old one; the field itself commits no
 empty name, so the old one stays there too; and a name of blanks alone is written empty, so the roadmap reads *Untitled
@@ -261,8 +263,9 @@ paste* too. The read-back is a medium sheet of its counts and each step in the s
 (`Graft.landing(in:)`); *Add* writes the steps with the marks the text brings done and the kinds it adds as one act, and
 the band says *Added N steps* with *Undo* for six seconds over the steps washed in their groups; an *Add* the domain
 refuses leaves the sheet open, *Add* off, and says why under its counts in the room's words (`pasteWords`); *Cancel*
-writes nothing. The room reads the clipboard through a `Clipboard`, the system's in the app and a test's own in a test;
-the system's text is read off the main actor, which the system's question would otherwise hold until it is answered.
+writes nothing. The room reads the clipboard through a `Clipboard`, which Set Aside's *Copy* writes to, the system's in
+the app and a test's own in a test; the system's text is read off the main actor, which the system's question would
+otherwise hold until it is answered.
 
 `Step/RoadmapStepPage.swift` is a step's page, pushed on the room's stack: one list under the step's name, which the bar
 takes once it has scrolled away; the status row, with the state, the kind's name (the hue's where no kind names it) and why
@@ -326,6 +329,30 @@ creation and a check for a completion, in its kind's colour, its name and its ti
 event tells with door activity; VoiceOver reads *Completed Rig the boat, 9:12*, and the fold *Added 12 steps, 8:02*. A
 roadmap with no step says *No activity yet*. History is the same read narrowed to the step, *Completed* and *Added* with
 their times under the step's name, and opens nothing. Opening either is told with what its read came to.
+
+`Landing/` is what the room says of a change that met one made elsewhere and the one list of what could not land
+([Roadmap on the sync engine](../../../docs/foundation/roadmap-on-the-engine.md) §6, boards 10.2 to 10.5c). The model
+reads sync beside its records through `RoadmapModel.Sync`: the engine's status for *Offline*, roadmap's `NoticesView`,
+which the person's own room holds so it stays live and observed, and a notice's dismissal; a reader's cover and a test
+that tells nothing of them read `Sync.none`. `LandingLines.swift` reads the domain's `LandingRead` of the roadmap each
+room shows, after every read, into the room's lines (`RoadmapModel.LandingLine`): a step the person made or linked that
+now follows something else through a step deleted elsewhere before their change landed, and a step their change brought
+back, the second once the server's revival has brought its name, since a step the phone knew only by its spent id holds
+no more than the change wrote until then. A line no board words, of a step that follows nothing past the deleted one or
+one whose removed step's name the note never kept, stays in the note untold. The root's room keeps the visit's lines
+(`landing`) and tells the next one waiting of the roadmap on top of the stack in the band, washing its step, while the
+room stands on screen in the foreground (`faces`) and no other band stands, so no receipt loses its Undo to it; the
+band's *Show* pushes the step's page, whose footer under the status row says the line for the rest of the visit, and
+tells it where the band has not yet. A line told is let go from the phone's note by the domain's `ClearLanding`, out of the
+Undo stack, so a later launch is quiet, and the note of a roadmap that leaves the person's list goes whole.
+`SetAside.swift` is the one list: roadmap's notices read through the domain's `CannotLand`, each change with words of the
+person's under the roadmap its notice's scope names and its reason, named by what it wrote or by the name the root's
+room last read this launch (`remembered`), the phone keeping nothing of a roadmap deleted elsewhere; a note goes by its
+step's name. Its sheet, from the title menu's first row, groups the changes by roadmap with the reason as the footer;
+a row's … menu and its trailing swipe offer *Copy*, every word the person wrote, and *Discard*, which asks nothing and
+dismisses the notice; *Discard All* asks once on its row; the sheet closes once the list holds nothing. Each change
+that cannot land is told once on this phone, by the ids of the notices it has told that the engine still holds
+(`RoadmapModel.toldNotices`).
 
 `Step/StepWorkspace.swift` is a step's private workspace as its page reads it, and its acts. `StepWorkspace.read(_:)`
 composes every step's workspace from one overlay's records, as the web's room does (`HeldRoadmap.workspace`): the

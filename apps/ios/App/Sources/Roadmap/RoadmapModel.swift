@@ -16,6 +16,18 @@ final class RoadmapModel {
   // How the room waits out a band's time.
   typealias Wait = @Sendable (Duration) async throws -> Void
 
+  // What the room reads of sync beside the records: whether the phone has a connection, which the bar's subtitle says
+  // (10.1), roadmap's notices of the person's changes that could not land, which Set Aside lists, and the dismissal of
+  // one, which its Discard is. A room that reads none, a reader's cover or a test that tells nothing of them, stands
+  // online with no notice.
+  struct Sync {
+    let online: @MainActor () -> Bool
+    let notices: @MainActor () throws -> [Notice]
+    let dismiss: @MainActor (String) throws -> Bool
+
+    static let none = Sync(online: { true }, notices: { [] }, dismiss: { _ in false })
+  }
+
   struct ViewKey: Hashable {
     let scope: ScopeRef
     let type: String
@@ -67,11 +79,12 @@ final class RoadmapModel {
 
   // A screen on the room's stack over the Board: All Roadmaps; a roadmap's Activity; a step's page with what opened it as
   // its event names it, a Board row, the web's card, a row of another step's page, the Graph's bar of the selected step,
-  // or a row of Activity; a step's note over its page; a step's History; the list a roadmap is attached to a step from; or
-  // the roadmap a step opens, gone into by a Board row's swipe, the step page's Roadmap row or its foot's button.
+  // a row of Activity, or the band's Show of a line told once; a step's note over its page; a step's History; the list a
+  // roadmap is attached to a step from; or the roadmap a step opens, gone into by a Board row's swipe, the step page's
+  // Roadmap row or its foot's button.
   enum Visit: Hashable {
     enum Door: String {
-      case card, step, graph, activity, link, swipe, foot
+      case card, step, graph, activity, link, swipe, foot, band
     }
 
     case roadmaps
@@ -275,7 +288,7 @@ final class RoadmapModel {
     case roadmap(ListedRoadmap, from: Place, openers: Openers?)
   }
 
-  // The one band at the room's foot: a receipt with its Undo, or a limit that refused a gesture.
+  // The one band at the room's foot: a receipt with its Undo, a limit that refused a gesture, or what the room tells once.
   struct Band: Equatable {
     enum Says: Equatable {
       // A step completed, the labels of the steps it brought up next, and whether it was completed in place, on its
@@ -317,6 +330,8 @@ final class RoadmapModel {
       case noText
       // The system was not allowed to hand Paste Steps the copied text.
       case pasteRefused
+      // A change of the person's that met one made elsewhere, told once with Show (10.2, 10.4).
+      case landed(LandingLine)
     }
 
     // A receipt's Undo: the gesture its act wrote, whether the engine holds that act, and the act it takes back.
@@ -376,6 +391,11 @@ final class RoadmapModel {
     // A fork's copy opened: said once, with no Undo, since the copy is the person's own and Delete Roadmap removes it.
     init(forked steps: Int) {
       says = .forked(steps: steps); undo = nil; arrived = []; lasts = RoadmapModel.bandLasts
+    }
+
+    // A landing line told, its step washed while the band stands, with no Undo, for six seconds.
+    init(landed line: LandingLine) {
+      says = .landed(line); undo = nil; arrived = [line.step]; lasts = RoadmapModel.bandLasts
     }
   }
 
@@ -491,6 +511,20 @@ final class RoadmapModel {
   // go as its delete is written, as the system's edit mode asks, and the copy follows a moment later. A read without the
   // kind ends it, and so does the delete's Undo, which may come before that read.
   var removedKinds: [RoadmapLegend.Subject: String] = [:]
+  // What the root's room tells once this visit, of the roadmap on top of the stack (`Landing/LandingLines.swift`).
+  var landing = Landing()
+  // The room stands before the person, on screen in an app in the foreground: only then is a line told.
+  var faces = false {
+    didSet { if faces { tellLanding() } }
+  }
+  // The one list of the changes that could not land, as the root's room last read roadmap's notices, its sheet, and
+  // Discard All's question standing on its row (`Landing/SetAside.swift`).
+  var setAside = SetAside()
+  var setAsideOpen = false
+  var asksDiscardAll = false
+  // Every roadmap the root's room has read this visit, as last read: what names a change set aside in a roadmap since
+  // deleted elsewhere, of which the phone keeps nothing.
+  @ObservationIgnored var remembered: [String: RoadmapTree] = [:]
   // Every roadmap the phone holds as the domain last read them together, which says what opens what.
   @ObservationIgnored var account = RoadmapAccount([])
   // A roadmap the room made, or brought back by Undo, which it opens once the list holds it.
@@ -516,12 +550,13 @@ final class RoadmapModel {
   @ObservationIgnored var reportedFailures: Set<String> = []
   @ObservationIgnored var bandTime: Task<Void, Never>?
   let role: Role
+  let sync: Sync
 
   init(records: @escaping Records, runner: ActionRunner, phone: UserDefaults, telemetry: any Telemetry = NoopTelemetry(),
        wait: @escaping Wait = { try await Task.sleep(for: $0) }, graph: RoadmapGraph? = nil, boardFrames: BoardFrames = BoardFrames(),
-       role: Role = .owner(nil), clipboard: Clipboard = .system, handedFile: @escaping @MainActor () -> URL? = { nil }) {
+       role: Role = .owner(nil), sync: Sync = .none, clipboard: Clipboard = .system, handedFile: @escaping @MainActor () -> URL? = { nil }) {
     self.records = records; self.runner = runner; self.phone = phone; self.telemetry = telemetry; self.wait = wait
-    self.role = role; self.clipboard = clipboard; self.handedFile = handedFile
+    self.role = role; self.sync = sync; self.clipboard = clipboard; self.handedFile = handedFile
     self.graph = graph ?? RoadmapGraph(telemetry: telemetry)
     self.boardFrames = boardFrames
     reading = BoardReading(telemetry: telemetry)
@@ -594,6 +629,14 @@ final class RoadmapModel {
     open.board.overall.total == 0 ? .board : lens
   }
 
+  // The bar's subtitle: the roadmap's progress, and Offline joined to it while the phone has no connection (10.1), the
+  // one sign of it, since every change is written on the phone first.
+  func subtitle(of open: OpenRoadmap) -> String {
+    let progress = open.board.overall.progress
+    guard !root.sync.online() else { return progress }
+    return String(localized: "\(progress) · Offline", comment: "The bar's subtitle while the phone has no connection: the roadmap's progress")
+  }
+
   // The room came to the front.
   func roomOpened() {
     telemetry.event("roadmap_room_opened")
@@ -606,16 +649,18 @@ final class RoadmapModel {
     observe()
   }
 
-  // Reads what the views hold, and again once any of them changes.
+  // Reads what the views and the person's own room's notices hold, and again once any of them changes.
   func observe() {
     watch += 1
     let current = watch
     do { try read() }
     catch { fail(error) }
+    if case .owner = role { readSetAside() }
     inside?.observe()
     links?.followPending(in: self)
     withObservationTracking {
       for view in views.values { _ = view.state }
+      if case .owner = role { _ = try? sync.notices() }
     } onChange: { [weak self] in
       Task { @MainActor [weak self] in
         guard let self, self.watch == current else { return }
@@ -648,7 +693,14 @@ final class RoadmapModel {
     guard loaded else { return }
     self.overlays = overlays
     account = RoadmapAccount(trees)
+    remembered.merge(trees.map { ($0.id, $0) }) { _, read in read }
+    let listed = roadmaps
     roadmaps = account.list()
+    // §6 The landing note of a roadmap gone from the person's list goes whole, so a roadmap that never opens again keeps
+    // no name of its steps on the phone, and no Undo of letting it go.
+    for gone in listed where !roadmaps.contains(where: { $0.id.utf8.elementsEqual(gone.id.utf8) }) {
+      if let written = write(ClearLanding(tree: ID(RecordID(gone.id))), as: "clearLanding").committed { forget(written.receipt.gestureId) }
+    }
     if let arrived = arriving, roadmaps.contains(where: { $0.id.utf8.elementsEqual(arrived.utf8) }) {
       phone.set(arrived, forKey: Self.lastOpen)
       arriving = nil
@@ -699,6 +751,7 @@ final class RoadmapModel {
       kindsDoor = nil
     }
     phase = .open(open)
+    hearLanding(of: open)
     guard view(of: open) == .graph else { return }
     if !again { viewOpened(open) }
     graph.follow(open.graph, of: open.listed.id, opened: open.graphLines)
@@ -1082,6 +1135,7 @@ final class RoadmapModel {
     } catch {
       report(error, write: "undo")
     }
+    tellLanding()
   }
 
   // A band stands in place of the one showing, until its time is over.
@@ -1091,8 +1145,14 @@ final class RoadmapModel {
     stackBand = band
     bandTime = Task { [weak self, wait] in
       guard (try? await wait(band.lasts)) != nil, !Task.isCancelled else { return }
-      self?.endBand()
+      self?.sendBandAway()
     }
+  }
+
+  // The band's time is over, or the person pulled it down: it leaves, and a landing line waiting takes its place.
+  func sendBandAway() {
+    endBand()
+    tellLanding()
   }
 
   // The band leaves with its Undo untaken: its time is over, a newer one replaces it, the person sent it away or left

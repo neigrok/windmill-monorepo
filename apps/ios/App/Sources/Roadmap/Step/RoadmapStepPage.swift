@@ -43,22 +43,24 @@ struct RoadmapStepPage: View {
 
   func content(_ page: RoadmapModel.OpenStep, in open: RoadmapModel.OpenRoadmap) -> some View {
     let row = page.row
+    let landed = roadmap.landed(on: row.id)
+    let says = !row.step.description.allSatisfy(\.isWhitespace) || row.step.links.contains { LinkAddress($0.url) != nil }
     return List {
       Section {
         status(page, in: open)
-        if !row.step.description.allSatisfy(\.isWhitespace) { Text(row.step.description).foregroundStyle(RoadmapPalette.ink) }
-        // A link the step shares, where its address is one the page opens.
-        ForEach(Array(row.step.links.enumerated()), id: \.offset) { link in
-          if let address = LinkAddress(link.element.url) {
-            StepLinkRow(title: link.element.label.nilIfEmpty ?? link.element.url, host: address.url.host(), opens: address.url)
-              .accessibilityIdentifier("roadmap-step-link")
-          }
-        }
+        if landed == nil { about(row) }
       } header: {
         Text(row.name).font(.largeTitle.bold()).foregroundStyle(RoadmapPalette.ink).textCase(nil)
           .onGeometryChange(for: Double.self) { $0.size.height } action: { nameHeight = $0 }
           .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 12, trailing: 4)).accessibilityIdentifier("roadmap-step-name")
+      } footer: {
+        // 10.3, 10.4: what the room tells once of the step stands under its status row, which tells it where the band has not.
+        if let landed {
+          Text(landed.footer).foregroundStyle(RoadmapPalette.inkDim).accessibilityIdentifier("roadmap-step-landed")
+            .onAppear { roadmap.pageShows(landed) }
+        }
       }.listRowBackground(RoadmapPalette.card)
+      if landed != nil && says { Section { about(row) }.listRowBackground(RoadmapPalette.card) }
       if let opening = row.opening { OpenedSection(roadmap: roadmap, row: row, opening: opening, open: open) }
       if !page.requires.isEmpty {
         let done = page.requires.count { $0.card.column == .done }
@@ -141,6 +143,18 @@ struct RoadmapStepPage: View {
           OpenedPrimary(roadmap: roadmap, row: row, opening: opening)
         }
       }
+  }
+
+  // What the step says of itself: its description, and each link it shares whose address is one the page opens. Under the
+  // status row, or in a card of its own below a footer that stands there.
+  @ViewBuilder func about(_ row: RoadmapModel.Row) -> some View {
+    if !row.step.description.allSatisfy(\.isWhitespace) { Text(row.step.description).foregroundStyle(RoadmapPalette.ink) }
+    ForEach(Array(row.step.links.enumerated()), id: \.offset) { link in
+      if let address = LinkAddress(link.element.url) {
+        StepLinkRow(title: link.element.label.nilIfEmpty ?? link.element.url, host: address.url.host(), opens: address.url)
+          .accessibilityIdentifier("roadmap-step-link")
+      }
+    }
   }
 
   // The status row: the state's symbol in the kind's colour, the state over its second line, and Reset on a Done step.

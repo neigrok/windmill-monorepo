@@ -175,9 +175,13 @@ final class AppModel {
     gym = GymModel(runner: runner, runtime: runtime, telemetry: telemetry, phone: preferences)
     roadmap = runtime.flatMap { (runtime: AppRuntime) -> RoadmapModel? in
       guard runtime.settings.roadmapRoom else { return nil }
+      // The room holds roadmap's notices view and the engine's status, so both stay live and observed.
+      let (engine, notices) = (runtime.engine, runtime.engine.notices("roadmap"))
+      let sync = RoadmapModel.Sync(online: { engine.status.online }, notices: { notices.notices }, dismiss: { try engine.dismissNotice($0) })
       return RoadmapModel(records: RoadmapFixture.records(runtime), runner: runtime.roadmapRunner, phone: preferences, telemetry: telemetry,
                           wait: RoadmapFixture.wait(), graph: RoadmapFixture.graph(telemetry: telemetry), boardFrames: RoadmapFixture.boardFrames(),
-                          role: .owner(RoadmapLinks(sources: RoadmapFixture.sources(runtime, telemetry: telemetry))), handedFile: RoadmapFixture.chosenFile)
+                          role: .owner(RoadmapLinks(sources: RoadmapFixture.sources(runtime, telemetry: telemetry))), sync: sync,
+                          handedFile: RoadmapFixture.chosenFile)
     }
     let lastRoom = Room(rawValue: preferences.string(forKey: "lastRoom") ?? "") ?? .journal
     selectedRoom = lastRoom == .roadmap && roadmap == nil ? .journal : lastRoom

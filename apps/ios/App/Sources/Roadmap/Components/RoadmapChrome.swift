@@ -2,9 +2,9 @@ import SwiftUI
 import UIKit
 import RoadmapDomain
 
-// The room's foot (Roadmap · iOS 01.8b, 01.11, 02.2, 02.16b, 02.16c, 02.18, 03.4, 03.6b, 03.9, 05.7, 05.10, 09.4): the one
-// band, a receipt with its Undo, a limit that refused a gesture, or what the room tells once, over the control the screen
-// keeps there. Every screen of the room stands on the same band, the step form too, whose foot is away while one of its
+// The room's foot (Roadmap · iOS 01.8b, 01.11, 02.2, 02.16b, 02.16c, 02.18, 03.4, 03.6b, 03.9, 05.7, 05.10, 09.4, 10.2,
+// 10.4): the one band, a receipt with its Undo, a limit that refused a gesture, or what the room tells once, a change that
+// met one made elsewhere with Show, over the control the screen keeps there. Every screen of the room stands on the same band, the step form too, whose foot is away while one of its
 // fields has the keyboard. Every screen of a reader's cover stands on Fork.
 struct RoadmapFoot<Control: View>: ViewModifier {
   let roadmap: RoadmapModel
@@ -18,17 +18,23 @@ struct RoadmapFoot<Control: View>: ViewModifier {
     content.reachBand {
       VStack(spacing: 0) {
         if !away, let band = roadmap.band {
-          if band.says == .pasteRefused {
+          switch band.says {
+          case .pasteRefused:
             // 02.16c: a paste not allowed leads to Windmill's page in Settings, where that choice lives.
             RoomTransient(message: band.says.words, room: .roadmap, actionTitle: String(localized: "Settings"), actionIdentifier: "roadmap-settings",
                           action: {
                             roadmap.openedSettings()
                             if let settings = URL(string: UIApplication.openSettingsURLString) { openURL(settings) }
-                          }, dismiss: { roadmap.endBand() }, type: .subheadline, actionWeight: .semibold)
+                          }, dismiss: { roadmap.sendBandAway() }, type: .subheadline, actionWeight: .semibold)
               .accessibilityIdentifier("roadmap-band")
-          } else {
+          case .landed(let line):
+            // 10.2, 10.4: a line told once opens its step's page.
+            RoomTransient(message: band.says.words, room: .roadmap, actionTitle: String(localized: "Show"), actionIdentifier: "roadmap-show",
+                          action: { roadmap.showLanded(line) }, dismiss: { roadmap.sendBandAway() }, type: .subheadline, actionWeight: .semibold)
+              .accessibilityIdentifier("roadmap-band")
+          default:
             RoomTransient(message: band.says.words, room: .roadmap, actionTitle: String(localized: "Undo"), actionIdentifier: "roadmap-undo",
-                          action: band.undo == nil ? nil : { roadmap.undo() }, dismiss: { roadmap.endBand() },
+                          action: band.undo == nil ? nil : { roadmap.undo() }, dismiss: { roadmap.sendBandAway() },
                           type: .subheadline, actionWeight: .semibold)
               .accessibilityIdentifier("roadmap-band")
           }
@@ -103,6 +109,7 @@ extension RoadmapModel.Band.Says {
       return markBack ? String(localized: "Roadmap detached · your mark is back") : String(localized: "Roadmap detached")
     case .refused(.keepsStartingStep): return String(localized: "A roadmap keeps one starting step")
     case .refused(.full): return String(localized: "This roadmap is at its limit.")
+    case .landed(let line): return line.band
     // An Undo that brought nothing back (02.10d, 06.5c): a delete names what could not come back, one thing by its name
     // and several steps by their count, and any other act could not be undone.
     case .unrestored(.deletedSteps(let count)):
