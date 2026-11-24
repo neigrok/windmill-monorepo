@@ -5,6 +5,7 @@ import { useGymRead } from '../../../src/products/gym/useGymRead.js';
 import { syncSession } from '../../../src/platform/sync/session.js';
 import { renderHook, settle } from './harness.mjs';
 
+
 test('retry reads again from loading; refresh reads again in place, keeping what is drawn until the new read lands', async (t) => {
   const reads = [];
   const read = () => new Promise((resolve, reject) => reads.push({ resolve, reject }));
@@ -53,7 +54,8 @@ test('a read that resolves null is absent, and a read that lands after a newer o
 test('sync invalidation refreshes projections in place and leaves ancillary REST reads alone', async (t) => {
   let records = { replica: 'account', drawn: [], stored: [], notices: [], firstPullComplete: true };
   const observation = { subscribe: () => () => {}, getSnapshot: () => records, release() {} };
-  const session = { engine: { observe: () => observation }, ready: true, signedIn: false };
+  const replica = Object.freeze({ state: 'anon', account: null, binding: 'anon' });
+  const session = { engine: { observe: () => observation, observeEngine: () => () => {}, getSnapshot: () => replica, activeBinding: () => replica.binding }, ready: true, signedIn: false };
   t.mock.method(syncSession, 'getSnapshot', () => session);
   const pending = [];
   const local = renderHook(t, () => useGymRead(() => new Promise((resolve, reject) => pending.push({ resolve, reject })), [], { sync: true }));

@@ -4,6 +4,7 @@ import { useHistory, useHistoryDates } from '../../../../src/products/gym/logboo
 import { syncSession } from '../../../../src/platform/sync/session.js';
 import { renderHook, settle } from '../harness.mjs';
 
+
 test('history appends once and a changed filter never draws or appends an old scope', async (t) => {
   const reads = [];
   const api = { ready: true, history: (query) => new Promise((resolve, reject) => reads.push({ query, resolve, reject })) };
@@ -57,7 +58,8 @@ test('date facets ignore date selection, track other filters and carry the local
 test('local history reacts to sync while a token-scoped REST reader keeps its existing request', async (t) => {
   let records = { replica: null, drawn: [], stored: [], notices: [], firstPullComplete: true };
   const observation = { subscribe: () => () => {}, getSnapshot: () => records, release() {} };
-  const session = { ready: true, signedIn: false, engine: { observe: () => observation } };
+  const replica = Object.freeze({ state: 'anon', account: null, binding: 'anon' });
+  const session = { ready: true, signedIn: false, engine: { observe: () => observation, observeEngine: () => () => {}, getSnapshot: () => replica, activeBinding: () => replica.binding } };
   t.mock.method(syncSession, 'getSnapshot', () => session);
   const calls = [];
   const api = { ready: true, live: true, history: async (query) => { calls.push(query); return { sessions: [{ id: String(calls.length) }], next: null }; } };
@@ -80,7 +82,8 @@ test('local history reacts to sync while a token-scoped REST reader keeps its ex
 test('a sync refresh preserves every loaded row past the projection page limit', async (t) => {
   let records = { replica: null, drawn: [], stored: [], notices: [], firstPullComplete: true };
   const observation = { subscribe: () => () => {}, getSnapshot: () => records, release() {} };
-  const session = { ready: true, signedIn: false, engine: { observe: () => observation } };
+  const replica = Object.freeze({ state: 'anon', account: null, binding: 'anon' });
+  const session = { ready: true, signedIn: false, engine: { observe: () => observation, observeEngine: () => () => {}, getSnapshot: () => replica, activeBinding: () => replica.binding } };
   t.mock.method(syncSession, 'getSnapshot', () => session);
   let rows = Array.from({ length: 320 }, (_, index) => ({ id: `workout-${index}`, startedAt: 320 - index }));
   const calls = [];
@@ -107,7 +110,8 @@ test('a sync refresh preserves every loaded row past the projection page limit',
 test('a refresh whose continuation stalls fails while retaining the loaded history', async (t) => {
   let records = { replica: null, drawn: [], stored: [], notices: [], firstPullComplete: true };
   const observation = { subscribe: () => () => {}, getSnapshot: () => records, release() {} };
-  const session = { ready: true, signedIn: false, engine: { observe: () => observation } };
+  const replica = Object.freeze({ state: 'anon', account: null, binding: 'anon' });
+  const session = { ready: true, signedIn: false, engine: { observe: () => observation, observeEngine: () => () => {}, getSnapshot: () => replica, activeBinding: () => replica.binding } };
   t.mock.method(syncSession, 'getSnapshot', () => session);
   const rows = Array.from({ length: 250 }, (_, index) => ({ id: String(index) }));
   let refresh = false;

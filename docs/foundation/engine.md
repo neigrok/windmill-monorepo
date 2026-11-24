@@ -617,6 +617,10 @@ type VersionReference = { kind: 'accepted', epoch: string | null, version: E7Ver
 - `DeviceMeta.forkGuard`: a random token for the whole local database, kept both in it and in
   storage excluded from device backups (iOS `isExcludedFromBackup`, Android `noBackupFilesDir`). Web
   runs no fork guard.
+- The browser engine's `DeviceMeta` also keeps `formerReplicas`, the latest 32 replica ids its store let go (one a
+  re-identify replaced, a removed replica's), which with its replicas' ids are every id a session can still name, and
+  `storeCleared`, its mark of a clear the backend reported, naming the account it was told for ([the web as a
+  device](web-device-parity.md) §7 Cleared).
 - `DeviceMeta.pendingSignIn`: an incomplete sign-in, resumed at the next engine start (§7.10).
 - `DeviceRow`: a product's own device work, which only its product reads and writes. The browser
   engine answers the active replica's rows of a product (`readDeviceRows(product)`, frozen, the same
@@ -1221,6 +1225,9 @@ The scope mutex is held until step R's transaction, or a fault path's (§6.6), e
    its result. `lastN` still reports durable `last_n`, even beyond the returned batch.
 6. **Prune.** In a request answered `200`, delete this replica's `sync_results` rows with
    `n ≤ min(ackThrough, last_n)`.
+7. **The session's replica.** In a request answered `200`, the session the push was served through
+   records its `replica`, which `GET /v1/me` answers ([the web as a device](web-device-parity.md)
+   §7, Cleared). A failure to record it is reported and changes no answer.
 
 `digest(intent) = sha256(jcs(intent))`. A client never resends an `n` whose result it recorded, so
 a missing row for `n ≤ last_n` means the store was forked or restored.
@@ -1599,8 +1606,8 @@ entries and predictions never enter it.
 `opts = {atomic, hold, guard, retire, supersede, cmd, predict, scopedPredict, local, gestureId}`. `commit` is a synchronous
 call on the local store. It MUST NOT be launched from a cancellable UI scope, and never awaits the
 network. It throws only before its local transaction commits, and every client API declares exactly
-three failures, told apart by where they arise (the browser engine's `commitAct` adds `ReplicaChanged` to
-an act its caller guards, Ordered local acts below):
+three failures, told apart by where they arise (the browser engine's `commit` and `commitAct` add
+`ReplicaChanged`, a write whose binding changed before it landed, Ordered local acts below):
 - *not writable*: step 1, the replica's state forbids writes;
 - *malformed*, a programming error: every throw of steps 2 to 10, the checks before step 2 included
   (a type outside the commit's scope, an `opts.gestureId` that an outbox entry or a notice of any
@@ -1804,12 +1811,13 @@ an earlier admitted intent.
 
 The browser engine's `commitAct(prepare, segment, {binding})` takes the `activeBinding()` (§7.12) its
 caller planned the act under, outside the transaction and across awaits, as a product's multi-step write
-does. In the write transaction, before the prepare callback runs, a binding that no longer stands
-throws `ReplicaChanged`, exported beside the engine, and the act writes nothing: a sign-in or a sign-out
-in between, in this tab or another, the sign-in that binds the anon replica in place included. The
-caller handles it, and the engine reports it as no failure.
-Without `binding` nothing is checked. The guard is the browser engine's; the Swift and Kotlin engines
-have none.
+does; without `binding`, and for every `commit`, it takes the one standing when the call is made, so a write
+the page's back/forward cache held while another tab moved the seat is guarded too. In the write
+transaction, before any callback runs, a binding that no longer stands throws `ReplicaChanged`, exported
+beside the engine, and the write lands nothing: a sign-in or a sign-out in between, in this tab or
+another, the sign-in that binds the anon replica in place included. The caller handles it, and the
+engine reports it as no failure and tells its commit's step `not-writable`. The guard is the browser
+engine's; the Swift and Kotlin engines have none.
 
 ### §7.2 Send order
 
@@ -2845,8 +2853,8 @@ it (§7.8).
 The browser engine adds `activeBinding()`: an opaque string that changes whenever the active replica or
 the account it is bound to changes, so a switch to another replica, a sign-in (the one that binds the
 anon replica in place, whose id stands, included) and a sign-out each change it, and a re-identify does
-not; null before the engine's first publication. An act planned under it commits only while it stands
-(§7.1 Ordered local acts). A pull's answer and its pages land only under the binding the pull was sent
+not; null before the engine's first publication. A commit made or an act planned under it lands only while
+it stands (§7.1 Ordered local acts). A pull's answer and its pages land only under the binding the pull was sent
 under, and the answer only under the replica id it was sent under as well; a frame lands only under the
 binding its live socket opened under, and a change of binding, another tab's included, closes that
 socket and ends every doubt (§7.9), so the socket opens again under the new one. An answer or frame
@@ -3006,7 +3014,9 @@ no longer holds is `authPaused` as a `401` would pause it, and a paused `anon` r
 the browser holds none. The session owner tells it what its reads of the account find, and that is
 what ends a paused `anon` replica's pause while no deletion is owed and no sign-in is pending: the
 web shell reads `/v1/me` once the engine opens or is restored, on focus, on reconnection and every
-20 s, outside a sign-out or an account closure. The engine asks no one itself. A frame's `as` never
+20 s, outside a sign-out or an account closure. The engine asks no one itself. Each of those reads also tells the browser
+engine whether the server answered (an answer under 500), as its own requests do, so a signed-out engine, which sends
+nothing of its own, knows when the server is out of reach while the browser reports itself online. A frame's `as` never
 deletes a credential: it may name a cookie a sign-in set before the sign-in recorded `pendingSignIn`.
 
 An HTTP request is checked in this order, and the first failing check answers:
@@ -3989,6 +3999,12 @@ no nudge surface. Transcription stays REST and creates no page: later voice text
 `source = spoken`, without audio in the engine. Search and threads are device computations;
 week/year/zoom are read models over pages; export stays its current REST door. None needs an
 extra synced type for first run, and native exposes no placeholder control for a deferred feature.
+
+**The web's carry.** A browser that ran the journal's bundle before the engine carries what that
+bundle kept into the replica each page's seat belongs to ([the web as a device](web-device-parity.md)
+§5), its owed pages as claims under ids their day and words derive, and records them in the device
+row `carry:<seat>` (`localOnly`, `json`: the digest of every page of each act, whether the act wrote it or found
+it held) in the act that carries them. No phone writes or reads the row.
 
 **Codes:** `claim-conflict` (a different claim under the same receipt id); all other refusals use
 the engine's codes.

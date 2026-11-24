@@ -1305,7 +1305,8 @@ planned the act, before the awaits of a multi-step write, and hands it to `commi
 only while that binding stands, and otherwise rejects the run with its `ReplicaChanged` before the act loads, so
 nothing of it is written: a sign-in or a sign-out in between cannot carry the act into another replica or
 account (engine §7.1 Ordered local acts). The runner passes the rejection through; the product decides what the
-act becomes. Without `binding` nothing is checked. Swift's and Kotlin's runners take no binding.
+act becomes. Without `binding` the engine checks the one standing when the run reaches it, as it does for every
+commit. Swift's and Kotlin's runners take no binding.
 
 ### §9.6 Undo of an act (K-3)
 
@@ -1392,6 +1393,8 @@ extension ActionRunner {
   when any part's plan holds, and one Undo carrying every part's recipes by their segment index (§9.6). An
   engine refusal at commit names its segment, and so its part. `cancelHeld` and `undo` take back every part.
 - **One binding.** On the web, `runComposed(parts, {binding})` guards the whole act as `runAct` does (§9.5).
+- **Actions as parts.** On the web, `scopedAct(action)` makes a one-scope action (§9.1) a part: it loads and mints in its
+  own scope, and its plan is the part's one segment, as `run` runs a reversible action.
 - The kit corpus's `run/composed.json` holds these over the real engine and the reference server.
 
 ## §10 Drafts

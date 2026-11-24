@@ -171,5 +171,149 @@
         ]
       }
     }
+  },
+  {
+    "case": "a roadmap the device has not finished bringing has its counts, frontier and date null, and the title the device holds",
+    "about": null,
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Read",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "A",
+              "icon": "i",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null,
+              "branchStamp": null
+            }
+          ],
+          "edges": [],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        },
+        {
+          "id": "t_0000000000000002",
+          "present": true,
+          "read": "unread",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Unread",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000002",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "A",
+              "icon": "i",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null,
+              "branchStamp": null
+            }
+          ],
+          "edges": [],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            }
+          ],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "call": {
+      "name": "list_trees",
+      "input": {}
+    },
+    "expect": {
+      "result": {
+        "trees": [
+          {
+            "id": "t_0000000000000001",
+            "title": "Read",
+            "counts": {
+              "total": 1,
+              "done": 1,
+              "available": 0,
+              "locked": 0,
+              "unknown": 0
+            },
+            "frontier": [],
+            "lastCompletedAt": 1800000000000
+          },
+          {
+            "id": "t_0000000000000002",
+            "title": "Unread",
+            "counts": null,
+            "frontier": null,
+            "lastCompletedAt": null
+          }
+        ]
+      }
+    }
   }
 ]

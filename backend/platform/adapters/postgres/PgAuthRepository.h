@@ -79,6 +79,7 @@ public:
   bool refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
                       const std::string& userAgent, const std::string& ip) override;
   void deleteSession(const std::string& digest) override;
+  Recorded recordSyncReplica(const std::string& sessionDigest, const UserId& account, const std::string& replica) override;
 
   std::vector<SessionRow> listSessions(const UserId& userId) override;
   std::optional<std::string> revokeSession(const UserId& userId, const std::string& sessionId) override;

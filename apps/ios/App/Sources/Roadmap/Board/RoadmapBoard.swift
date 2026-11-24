@@ -2,9 +2,9 @@ import SwiftUI
 import UIKit
 import RoadmapDomain
 
-// A roadmap's Board (Roadmap · iOS 01.1, 01.12, 02.1 to 02.15, 05.7, 09.5a): one list of the domain's groups, Up next
-// first, each folding under its header, as the Board's reading keeps them. A row opens its step's page, slides right for
-// Complete and left for Delete, and a long press lists Complete, Edit, Open in Graph, Select and Delete Step. A narrowed
+// A roadmap's Board (Roadmap · iOS 01.1, 01.12, 02.1 to 02.15, 05.7, 07.1, 07.1b, 07.5d, 09.5a): one list of the domain's
+// groups, Up next first, each folding under its header, as the Board's reading keeps them. A row opens its step's page,
+// slides right for Complete, or for Open into the roadmap its step opens, and left for Delete, and a long press lists Complete, Edit, Open in Graph, Select and Delete Step. A narrowed
 // Board says what it shows in its first rows, with Clear, and one left with nothing says why. Find's field stands at the
 // foot while Find is up. With no step yet, or with every step done, the Board says so. A step the form made, which the
 // reading shows, is scrolled to once the list holds it. While several steps are selected the list is in the system's
@@ -165,10 +165,13 @@ struct RoadmapBoard: View {
   // slides and presses for nothing.
   func row(_ row: RoadmapModel.Row, selecting: Bool, chosen: Bool) -> some View {
     let arrived = roadmap.band?.arrived.contains(row.id) == true
-    return RoadmapStepRow(row: row, door: .card, line: open.reason(row.card), excerpt: true)
+    return RoadmapStepRow(roadmap: roadmap, row: row, door: .card, line: open.reason(row.card), excerpt: true)
       .listRowBackground(ZStack { chosen ? RoadmapPalette.raised : RoadmapPalette.card; if arrived { RoadmapPalette.accentSoft } }.roomMotion(arrived))
       .swipeActions(edge: .leading, allowsFullSwipe: false) {
         if row.completes && !selecting { Button("Complete", systemImage: "checkmark") { roadmap.complete(row, by: .swipe) }.tint(RoadmapPalette.act) }
+        if roadmap.owns, !selecting, let opening = row.opening, roadmap.goesIn(to: opening) {
+          Button("Open", systemImage: "square.stack.3d.up") { roadmap.goIn(row, by: .swipe) }.tint(RoadmapPalette.accent)
+        }
       }
       .swipeActions(edge: .trailing, allowsFullSwipe: false) {
         if row.deletes && !selecting { Button("Delete", systemImage: "trash", role: .destructive) { roadmap.askDelete(row, by: .swipe) }.tint(nil) }

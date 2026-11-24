@@ -89,6 +89,7 @@ public enum Journal {
       "journal": [
         "codes": ["claim-conflict"],
         "device": [
+          "carry": ["keyPattern": "^carry:[0-9a-f]{16}$", "localOnly": true, "value": ["type": "json"]],
           "contentClock": [
             "keyPattern": "^contentClock$",
             "localOnly": true,

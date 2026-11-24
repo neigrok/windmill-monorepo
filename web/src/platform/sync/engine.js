@@ -36,6 +36,11 @@ const actorId = () => `r_${Array.from({ length: 12 }, () => '0123456789ABCDEFGHI
 
 // A tab whose store a newer bundle's upgrade closed reloads only between gestures: the page hidden, or no input this long.
 const RELOAD_IDLE_MS = 3000;
+// How many of the replica ids it let go a store keeps, the latest. A session names only an id its own pushes carried, and
+// while it is the browser's cookie the store lets that id go only by a re-identify, whose next push replays under the new
+// id; a sign-out ends the session. So a read can name only the last few let go, and the rest would only grow the head
+// record every write reads.
+const FORMER_REPLICAS_KEPT = 32;
 // The fields whose words a reload would lose while they hold the focus.
 const TEXT_FIELDS = new Set(['text', 'search', 'email', 'url', 'tel', 'password', 'number']);
 
@@ -43,11 +48,12 @@ const TEXT_FIELDS = new Set(['text', 'search', 'email', 'url', 'tel', 'password'
 // to. A sign-in or a sign-out changes it, the sign-in that binds the anon replica in place included (engine.md §7.12).
 const bindingOf = (replica) => JSON.stringify([replica.storageHandle, replica.meta.account ?? null]);
 
-// An act planned under one binding, committed after a sign-in or a sign-out changed it (engine.md §7.1 Ordered local
-// acts). It writes nothing; its caller decides what the act becomes.
+// A commit or an act issued (or planned) under one binding, landing after a sign-in or a sign-out changed it, as one the
+// back/forward cache held while another tab moved the seat does (engine.md §7.1 Ordered local acts). It writes nothing;
+// its caller decides what the write becomes.
 export class ReplicaChanged extends Error {
   constructor() {
-    super('the active binding changed since the act was planned');
+    super('the active binding changed since the write was issued');
     this.name = 'ReplicaChanged';
   }
 }
@@ -102,6 +108,8 @@ export class BrowserSyncEngine {
     this.started = false;
     this.upgradeRequired = false;
     this.revision = -1;
+    // What the session owner last read of the replica its account's session last pushed for (`sessionReplica`).
+    this.sessionRead = null;
   }
 
   // `inMemory` holds the device in this tab alone (`MemoryStore`), for a browser that offers no store; else IndexedDB keeps it.
@@ -128,13 +136,20 @@ export class BrowserSyncEngine {
   }
 
   // One transaction over the device. A failure of the store reports `storage` once and reaches the caller as a
-  // `CommitError` of kind `store`; the body's own throw is its caller's to report, and passes through unreported.
-  async write(operation, change, scopes = []) {
+  // `CommitError` of kind `store`; the body's own throw is its caller's to report, and passes through unreported. A write
+  // pinned to a `binding` lands only while that binding stands: otherwise the transaction throws `ReplicaChanged` before
+  // `change` runs and writes nothing. That refusal, or a body's own `ReplicaChanged` (a product's fence), tells the write's
+  // operation `not-writable`. While the page is in the back/forward cache a write waits for the restore that follows, and
+  // a restore that fails fails it as the store's failure, which the restore reported; once one has failed, a write fails
+  // at once, as a write the store did not commit.
+  async write(operation, change, scopes = [], { binding } = {}) {
+    if (this.suspended) await this.restored();
     let context;
     let answer;
     let thrown;
     try {
       answer = await this.store.transact((device, ensureScope) => {
+        if (binding !== undefined && bindingOf(device.activeReplica) !== binding) { thrown = new ReplicaChanged(); throw thrown; }
         context = this.context(device);
         context.ensureScope = ensureScope;
         // An inverse request that was waiting and settles in this transaction reports its counts, never an id.
@@ -142,8 +157,15 @@ export class BrowserSyncEngine {
         const waiting = new Set(requests().filter(({ state }) => state !== 'settled').map(({ requestId }) => requestId));
         // The active replica's pause starting or ending is told once, by the transaction that makes it (engine.md §9.1).
         const paused = device.activeReplica.meta.authPaused === true;
+        const holding = device.replicas.map(({ id }) => id);
         let result;
         try { result = change(device, context); } catch (error) { thrown = error; throw error; }
+        // The store remembers the replica ids it lets go, one a re-identify replaced and a removed replica's, the latest
+        // FORMER_REPLICAS_KEPT of them, so with the ids its replicas hold it knows every id a session can still name: a session
+        // that last pushed for none of them tells a cleared store (`sessionReplica`).
+        const kept = new Set(device.replicas.map(({ id }) => id));
+        const former = holding.filter((id) => !kept.has(id));
+        if (former.length) device.meta.formerReplicas = [...(device.meta.formerReplicas ?? []), ...former].slice(-FORMER_REPLICAS_KEPT);
         for (const request of requests()) {
           if (!waiting.has(request.requestId) || request.state !== 'settled') continue;
           context.telemetry.push({ event: 'sync-inverse', outcome: 'settled', applied: request.result.appliedCount, skipped: request.result.skippedCount });
@@ -153,7 +175,10 @@ export class BrowserSyncEngine {
         return result;
       }, { scopes: (device) => [...this.governingScopes(device), ...scopes] });
     } catch (error) {
-      if (error === thrown) throw error;
+      if (error === thrown) {
+        if (error instanceof ReplicaChanged && operation) this.telemetry.event(operation, { outcome: 'not-writable' });
+        throw error;
+      }
       if (this.superseded) this.refusedSinceSuperseded = true;
       if (!this.closed) this.telemetry.failure('storage');
       throw new CommitError('the device store did not commit', 'store', { cause: error });
@@ -200,7 +225,9 @@ export class BrowserSyncEngine {
     const replica = device.activeReplica;
     this.snapshot = frozen({ revision, replica: replica.id, state: replica.meta.state, account: replica.meta.account ?? null,
       binding: bindingOf(replica), authPaused: replica.meta.authPaused, upgradeRequired: this.upgradeRequired,
-      pendingSignIn: structuredClone(device.meta.pendingSignIn ?? null), connection: this.connection() });
+      pendingSignIn: structuredClone(device.meta.pendingSignIn ?? null),
+      storeCleared: replica.meta.state === 'bound' && device.meta.storeCleared?.account === replica.meta.account,
+      connection: this.connection() });
     for (const observation of [...this.views.values(), ...this.noticeViews.values()]) observation.refresh(replica);
     if (previous && previous.id !== replica.id) this.emit({ event: 'activeReplicaChanged', previous: previous.id, replica: replica.id });
     // A sign-in or a sign-out, another tab's in-place rebind included, ends every doubt and the socket opened for the binding
@@ -303,7 +330,8 @@ export class BrowserSyncEngine {
     return this.unreachable ? 'unreachable' : 'online';
   }
 
-  // Whether the server answers: the leader learns it from its own requests and tells the other tabs.
+  // Whether the server answers, learned from each request a tab makes, the engine's own and the session owner's reads of
+  // the account, and told to the other tabs: a signed-out engine sends nothing of its own, so the reads are all it hears.
   answered(answered, { told = false } = {}) {
     if (this.unreachable === !answered) return;
     this.unreachable = !answered;
@@ -495,8 +523,11 @@ export class BrowserSyncEngine {
   }
 
   // The read-and-commit body (§7.12) also reads, in its transaction, the product's device rows and the
-  // scope's reconciliation metadata. The body's own throw is the caller's (§7.1), unreported.
+  // scope's reconciliation metadata. The body's own throw is the caller's (§7.1), unreported. A commit lands only under
+  // the binding that stood when it was called, so one the back/forward cache held while another tab moved the seat
+  // throws `ReplicaChanged` and lands in no other seat.
   async commit(scope, changes, opts) {
+    const binding = this.activeBinding();
     let prepared, didPrepare = false;
     const result = await this.write('sync-commit', (device, ctx) => {
       const replica = device.activeReplica;
@@ -507,7 +538,7 @@ export class BrowserSyncEngine {
         }
         : changes;
       return commit(replica, ctx, scope, read, opts);
-    }, [scope]);
+    }, [scope], { binding });
     this.requestPersistence();
     this.kick();
     return result;
@@ -550,9 +581,10 @@ export class BrowserSyncEngine {
     return this.write(null, (device) => releaseReversibleAct(device.activeReplica, actId));
   }
 
-  // `binding` is the `activeBinding()` the caller planned the act under, across awaits outside this transaction: the act
-  // commits only while it stands, and otherwise throws `ReplicaChanged` before its prepare callback runs.
-  async commitAct(prepare, segment, { binding } = {}) {
+  // `binding` is the `activeBinding()` the caller planned the act under, across awaits outside this transaction, and the
+  // one standing when it is called where the caller names none: the act commits only while it stands, and otherwise
+  // throws `ReplicaChanged` before its prepare callback runs.
+  async commitAct(prepare, segment, { binding = this.activeBinding() } = {}) {
     if (typeof prepare !== 'function') {
       const segments = prepare;
       const options = segment ?? {};
@@ -562,7 +594,6 @@ export class BrowserSyncEngine {
     const act = new ActCommit();
     const scopes = [];
     const result = await this.write('sync-commit', (device, ctx) => {
-      if (binding !== undefined && bindingOf(device.activeReplica) !== binding) throw new ReplicaChanged();
       ctx.opaqueID = () => this.newGestureId();
       ctx.metadata = (replica, scope) => this.readMetadata(scope, replica, act.actor ?? ctx.actor);
       const result = act.advance(device.activeReplica, ctx, (context) => {
@@ -576,7 +607,7 @@ export class BrowserSyncEngine {
       });
       scopes.push(...act.prepared.request?.scopes ?? []);
       return result;
-    }, scopes);
+    }, scopes, { binding });
     this.requestPersistence(); this.kick();
     return result;
   }
@@ -1152,6 +1183,9 @@ export class BrowserSyncEngine {
           left.forgetScope(scope);
           delete left.known[scope];
         }
+        // A read told while a sign-in question stood is decided as the seat binds, before the bound replica's first push
+        // gives the session a replica this store holds.
+        this.markCleared(device, ctx);
         return result;
       });
       this.doubts.clear();
@@ -1257,6 +1291,8 @@ export class BrowserSyncEngine {
       this.signingOut = false;
       this.doubts.clear();
       this.peerScopes.clear();
+      // The read it kept was of the session this sign-out ends.
+      this.sessionRead = null;
       await this.cleanupCredentials();
       this.kick();
     }
@@ -1296,6 +1332,36 @@ export class BrowserSyncEngine {
       return true;
     });
     if (resumed) this.kick();
+  }
+
+  // What the session owner read of the replica `account`'s session last pushed for (`/v1/me`'s `syncReplica`, null before
+  // its first accepted push), kept until the next read or the sign-out that ends the session, and decided now if the seat
+  // is bound to `account`, else as a sign-in binds it (`markCleared`).
+  async sessionReplica(account, syncReplica) {
+    this.sessionRead = { account, syncReplica };
+    if (this.clearedFor(this.device) === null) return;
+    await this.write(null, (device, ctx) => this.markCleared(device, ctx)).catch((error) => this.unheard(error));
+  }
+
+  // The account a cleared store lost its work for, or null: a store that keeps the device past the page, whose active
+  // replica is bound to the account of the session owner's last read, and which neither holds nor let go of the replica that
+  // account's session last pushed for, was cleared by the browser (web-device-parity.md §7 Cleared).
+  clearedFor(device) {
+    const read = this.sessionRead;
+    const { state, account } = device.activeReplica.meta;
+    if (!read?.syncReplica || !this.store.durable || device.meta.storeCleared || state !== 'bound' || account !== read.account) return null;
+    return [...device.replicas.map(({ id }) => id), ...(device.meta.formerReplicas ?? [])].includes(read.syncReplica) ? null : account;
+  }
+
+  // A store is born after at most one clear and tells it once: the write that finds it marks the store with the account it
+  // was told for, which a reload, another tab and the next read find, and emits `sync-store-cleared`. The snapshot says it
+  // only while that account's seat is active. A write that fails was reported as `storage`, and the next read or sign-in
+  // tries again.
+  markCleared(device, ctx) {
+    const account = this.clearedFor(device);
+    if (account === null) return;
+    device.meta.storeCleared = { account };
+    ctx.telemetry.push({ event: 'sync-store-cleared' });
   }
 
   // The product cleanup a finished sign-out recorded (`finishSignOut`'s `deviceCleanup`) is done: its marker goes, unless a
@@ -1385,7 +1451,7 @@ export class BrowserSyncEngine {
     this.visibilityChanged = () => this.setVisible(this.document.visibilityState !== 'hidden');
     this.connectivityChanged = () => this.setOnline(this.navigator.onLine !== false);
     this.pageHidden = (event) => {
-      if (event.persisted) { this.close({ persisted: true }); return; }
+      if (event.persisted) { this.awaitRestore(); this.close({ persisted: true }); return; }
       if (this.coordination.lastTab()) this.leave().finally(() => this.close()).catch((error) => this.unheard(error));
       else this.close();
     };
@@ -1402,8 +1468,27 @@ export class BrowserSyncEngine {
     this.window?.addEventListener('pageshow', this.pageShown);
   }
 
+  // From the page entering the back/forward cache, or being shown again after a restore that failed, every write waits
+  // for the restore that follows: settled by that restore, or failed by the restore failing or the engine closing for good.
+  awaitRestore() {
+    if (this.restoration) return;
+    const restoration = {};
+    restoration.restored = new Promise((resolve, reject) => Object.assign(restoration, { resolve, reject }));
+    restoration.restored.catch(() => {});
+    this.restoration = restoration;
+  }
+
+  // What a write issued while the page is suspended waits on. Once a restore has failed the engine has given up until the
+  // page is shown again: the write fails at once, a write the store did not commit (web-device-parity.md §7).
+  restored() {
+    if (this.restoration) return this.restoration.restored;
+    this.telemetry.failure('storage');
+    return Promise.reject(new CommitError('the device store did not reopen', 'store'));
+  }
+
   async resume() {
     if (this.restoring) return this.restoring;
+    this.awaitRestore();
     this.restoring = (async () => {
       const generation = this.lifecycleGeneration;
       try {
@@ -1423,10 +1508,15 @@ export class BrowserSyncEngine {
         if (this.closed) return;
         this.announceScopes();
         this.emit({ event: 'restored' });
+        this.restoration.resolve();
+        this.restoration = null;
       } catch (error) {
         if (generation !== this.lifecycleGeneration) throw error;
         this.telemetry.failure('storage');
+        const failed = this.restoration;
+        this.restoration = null;
         this.close({ persisted: true });
+        failed.reject(new CommitError('the device store did not reopen', 'store', { cause: error }));
         this.emit({ event: 'restoreFailed' });
         throw error;
       } finally { this.restoring = null; }
@@ -1476,6 +1566,10 @@ export class BrowserSyncEngine {
     this.lifecycleGeneration++;
     this.suspended = persisted;
     this.closed = true;
+    if (!persisted) {
+      this.restoration?.reject(new CommitError('the device store closed', 'store'));
+      this.restoration = null;
+    }
     this.releaseSignOut?.(); this.releaseSignOut = null;
     this.timers.clearTimeout(this.reconcileTimer);
     this.timers.clearTimeout(this.cleanupTimer);

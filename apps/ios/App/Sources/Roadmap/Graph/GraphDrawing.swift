@@ -1,8 +1,9 @@
 import SwiftUI
 import RoadmapLayout
 
-// One frame of the Graph (Roadmap · iOS 04.1, 04.2, 04.4 and the kit's Graph node): the picture's connectors, discs
-// and captions as the camera holds them. Every seat, bow and caption box is the layout's; the forms are the kit's,
+// One frame of the Graph (Roadmap · iOS 04.1, 04.2, 04.4, 04.6 and the kit's Graph node): the picture's connectors, discs
+// and captions as the camera holds them, a step that opens a roadmap marked beside its caption with that roadmap's
+// progress under it. Every seat, bow and caption box is the layout's; the forms are the kit's,
 // each a share of the body the layout gives a step, so discs, rings and connectors grow with the zoom together. It
 // draws only what the camera holds: a connector whose curve's box and a disc whose reach miss the canvas are left out,
 // and each form is one path a colour, filled once. Two frames are equal when they draw the same.
@@ -23,6 +24,9 @@ nonisolated struct GraphDrawing: Equatable {
   static let connector = 2.0
   static let thinnestConnector = 0.2
   static let captionFont = Font.system(size: GraphPicture.captionSize, weight: .semibold)
+  // The stack mark before a caption of a step that opens a roadmap: the kit's 14 pt, 6 pt clear of the words.
+  static let markSize = 14.0
+  static let markGap = 6.0
 
   let picture: GraphPicture
   // The camera the picture is drawn under: the one a person moves, or the stop a held pinch keeps.
@@ -30,6 +34,8 @@ nonisolated struct GraphDrawing: Equatable {
   let captions: [Caption]
   // The selected step, by its place.
   let selected: Int?
+  // The steps that open a roadmap, with the line under each caption, empty where none is drawn.
+  let opened: [UTF16Text: String]
   // Each disc drawn as one square of its colour, in place of the kit's forms.
   let squared: Bool
 
@@ -37,10 +43,11 @@ nonisolated struct GraphDrawing: Equatable {
   // more than `crowd` steps in view. Then `held` draws the nearest of the pinch's stops, without captions, since the
   // layout seats them for the camera a person moves; and `coarse` squares the discs. `layered` draws as `live`: its
   // surface composites the canvas at every camera.
-  init(picture: GraphPicture, camera: GraphCamera, captions: [Caption], selected: Int?, pinched: GraphCamera.Pinched? = nil,
-       by pinch: GraphPinch = .live, crowd: Int = GraphPinch.crowd) {
+  init(picture: GraphPicture, camera: GraphCamera, captions: [Caption], selected: Int?, opened: [UTF16Text: String] = [:],
+       pinched: GraphCamera.Pinched? = nil, by pinch: GraphPinch = .live, crowd: Int = GraphPinch.crowd) {
     self.picture = picture
     self.selected = selected
+    self.opened = opened
     let way: GraphPinch = pinched != nil && pinch != .live && picture.steps(in: camera.holds()) > crowd ? pinch : .live
     squared = way == .coarse
     guard way == .held, let pinched else {
@@ -54,7 +61,7 @@ nonisolated struct GraphDrawing: Equatable {
 
   // A picture is what its steps make it, and a caption what it says and where.
   static func == (one: GraphDrawing, other: GraphDrawing) -> Bool {
-    one.camera == other.camera && one.selected == other.selected && one.squared == other.squared
+    one.camera == other.camera && one.selected == other.selected && one.squared == other.squared && one.opened == other.opened
       && one.picture.steps == other.picture.steps
       && one.captions.elementsEqual(other.captions) { (a: Caption, b: Caption) -> Bool in
         a.id == b.id && a.left == b.left && a.top == b.top && a.width == b.width && a.shown == b.shown && a.lines == b.lines
@@ -128,13 +135,25 @@ nonisolated struct GraphDrawing: Equatable {
                      with: .color(RoadmapPalette.ink), lineWidth: width)
     }
 
-    // A caption is drawn in the box the layout gave it, a line to each 20 pt, once it is past its wait.
+    // A caption is drawn in the box the layout gave it, a line to each 20 pt, once it is past its wait. A step that opens a
+    // roadmap wears the stack mark before its caption's first line and that roadmap's line under its last (04.6).
     for caption in captions where caption.shown {
       guard let place = picture.placeOf[caption.id] else { continue }
       let ink = nodes[place].tier == .locked ? RoadmapPalette.inkDim : RoadmapPalette.ink
+      let centre = caption.left + caption.width / 2
       for (line, text) in caption.lines.enumerated() {
         context.draw(Text(verbatim: text).font(Self.captionFont).foregroundStyle(ink),
-                     at: CGPoint(x: caption.left + caption.width / 2, y: caption.top + (Double(line) + 0.5) * Theme.Caption.linePx))
+                     at: CGPoint(x: centre, y: caption.top + (Double(line) + 0.5) * Theme.Caption.linePx))
+      }
+      guard let below = opened[caption.id], let first = caption.lines.first else { continue }
+      let width = Double(context.resolve(Text(verbatim: first).font(Self.captionFont)).measure(in: CGSize(width: Double.infinity, height: Double.infinity)).width)
+      var mark = context.resolve(Image(systemName: "square.stack.3d.up"))
+      mark.shading = .color(RoadmapPalette.inkDim)
+      let side = Self.markSize
+      context.draw(mark, in: CGRect(x: centre - width / 2 - Self.markGap - side, y: caption.top + (Theme.Caption.linePx - side) / 2, width: side, height: side))
+      if !below.isEmpty {
+        context.draw(Text(verbatim: below).font(.footnote).foregroundStyle(RoadmapPalette.inkDim),
+                     at: CGPoint(x: centre, y: caption.top + (Double(caption.lines.count) + 0.5) * Theme.Caption.linePx))
       }
     }
   }

@@ -429,7 +429,7 @@ Plain JS ESM with JSDoc types; every kit and domain file starts with `// @ts-che
 cd web
 node scripts/test.mjs test/platform/domain-kit && node --test test/domain-layering.test.js   # the kit corpus and the layering check
 npm run check:domain                                                                        # the types
-npm test && npm run build                                                                   # CI's gate (.github/workflows/web.yml): the suite, check:domain, then Vite
+npm test && npm run build                                                                   # CI's gate (.github/workflows/web.yml): check:domain, the suite, then Vite
 ```
 
 The first reports complete kit-corpus coverage and no layering findings.

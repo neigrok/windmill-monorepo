@@ -507,12 +507,14 @@ std::optional<StoredSession> PgAuthRepository::findSession(const std::string& di
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
-      "SELECT user_id::text, expires_ms FROM sessions WHERE token_hash = $1", digest);
+      "SELECT user_id::text, expires_ms, sync_replica FROM sessions WHERE token_hash = $1", digest);
   if (rows.empty()) return std::nullopt;
 
   const auto& row = rows[0];
+  const auto replica = row["sync_replica"];
   return StoredSession{UserId{row["user_id"].as<std::string>()},
-                       static_cast<UnixMs>(row["expires_ms"].as<long long>())};
+                       static_cast<UnixMs>(row["expires_ms"].as<long long>()),
+                       replica.is_null() ? std::nullopt : std::optional(replica.as<std::string>())};
 }
 
 bool PgAuthRepository::refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
@@ -533,6 +535,20 @@ void PgAuthRepository::deleteSession(const std::string& digest) {
   pqxx::work txn{*conn};
   txn.exec_params("DELETE FROM sessions WHERE token_hash = $1", digest);
   txn.commit();
+}
+
+SessionReplicas::Recorded PgAuthRepository::recordSyncReplica(const std::string& sessionDigest, const UserId& account,
+                                                              const std::string& replica) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const pqxx::result held = txn.exec_params(
+      "SELECT sync_replica FROM sessions WHERE token_hash = $1 AND user_id = $2::uuid FOR UPDATE", sessionDigest, account.str());
+  if (held.empty()) return Recorded::absent;
+  // A session already holding the replica is left untouched, so a push of the same replica writes no row.
+  if (!held[0]["sync_replica"].is_null() && held[0]["sync_replica"].as<std::string>() == replica) return Recorded::unchanged;
+  txn.exec_params("UPDATE sessions SET sync_replica = $2 WHERE token_hash = $1", sessionDigest, replica);
+  txn.commit();
+  return Recorded::changed;
 }
 
 std::vector<SessionRow> PgAuthRepository::listSessions(const UserId& userId) {

@@ -336,6 +336,10 @@ test('browser: settlement, subscription and network guards on real local connect
       const page = await context.newPage();
       await page.goto(site.origin);
       const baseline = (asked = { reach: 'reader' }) => page.evaluate((asked) => window.__roadmapProof.waitForBaseline({ treeId: 'wanted', timeoutMs: 80, ...asked }), asked);
+      // A live frame reaches the observer after the server sends it, and a pull's rows after the page has its reply, so what either changes is waited for.
+      const refusal = (label, asked) => waitForConfirmed(() => baseline(asked)
+        .then(() => false, (error) => /Timed out waiting for roadmap subscription baseline/.test(error.message)), (refused) => refused, { label });
+      const reported = (label, asked) => waitForConfirmed(() => baseline(asked).catch(() => null), (found) => found !== null, { label });
       const pulled = (answer, origin = site.origin) => {
         site.pull.answer = answer;
         return page.evaluate((url) => fetch(url, { method: 'POST', body: '{"scopes":[]}' }).then((reply) => reply.status), `${origin}/v1/sync/pull`);
@@ -355,18 +359,18 @@ test('browser: settlement, subscription and network guards on real local connect
       await follow('sub', ['self/overlay/wanted', 'tree/other']);
       await assert.rejects(baseline(), /Timed out waiting for roadmap subscription baseline/);
       await follow('sub', ['tree/wanted']);
-      assert.deepEqual(await baseline(), { treeId: 'wanted', reach: 'reader', generation: 3 });
+      assert.deepEqual(await reported('rows-pull-observed'), { treeId: 'wanted', reach: 'reader', generation: 3 });
       site.peers[peerIndex].send({ op: 'not-found', as: null, scope: 'tree/wanted' });
-      await waitForConfirmed(() => baseline().then(() => false, () => true), (refused) => refused, { label: 'live-refusal-observed' });
+      await refusal('live-refusal-observed');
       await follow('sub', ['tree/wanted']);
       assert.deepEqual(await baseline(), { treeId: 'wanted', reach: 'reader', generation: 4 });
       assert.equal(await pulled({ as: 'account', pages: [{ scope: 'tree/wanted', kind: 'rows', rows: [] }] }), 200);
-      await assert.rejects(baseline(), /Timed out waiting for roadmap subscription baseline/);
+      await refusal('account-pull-observed');
       assert.deepEqual(await baseline({}), { treeId: 'wanted', reach: null, generation: 4 });
       assert.equal(await pulled({ as: null, pages: [{ scope: 'tree/wanted', kind: 'not-found' }] }), 200);
-      await assert.rejects(baseline({}), /Timed out waiting for roadmap subscription baseline/);
+      await refusal('missing-pull-observed', {});
       assert.equal(await pulled(wantedRows), 200);
-      assert.deepEqual(await baseline(), { treeId: 'wanted', reach: 'reader', generation: 4 });
+      assert.deepEqual(await reported('rows-pull-observed'), { treeId: 'wanted', reach: 'reader', generation: 4 });
       await page.evaluate(async () => {
         window.live.close();
         await new Promise((resolve) => window.live.addEventListener('close', resolve, { once: true }));
