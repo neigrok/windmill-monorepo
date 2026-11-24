@@ -26,7 +26,7 @@ import SyncTesting
   }
 
   // The backend's sharing requests, answering what a test sets and keeping what was asked.
-  final class Sharing: RoadmapSharing {
+  @MainActor final class Sharing: RoadmapSharing {
     var progress: Result<OwnersProgress, SharingFailure> = .success(OwnersProgress(marks: []))
     var copy: Result<String, SharingFailure> = .failure(.failed)
     var asked: [String] = []

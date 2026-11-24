@@ -176,6 +176,12 @@ app and `WindmillTests` without the UI tests. Three UI shards, balanced on measu
 | `gym-journal` | `GymCoachFlowTests`, `GymAnonymousCoachFlowTests`, `GymWorkoutFlowTests`, `GymRecoveryFlowTests`, `JournalFlowTests`, `JournalIntegrationFlowTests`, `JournalEchoFlowTests`, `RoadmapNestedFlowTests` |
 | `shell-offline-system` | `OfflineFlowTests`, `OnboardingFlowTests`, `ShellFlowTests`, `RoadmapSharingFlowTests`, `WorkoutActivityFlowTests`, `WorkoutOutsideFlowTests` |
 
+A local Xcode newer than CI's 26.3 (Swift 6.2) accepts code that CI rejects:
+- **Nested test classes:** a class nested in a test suite that builds an App type in a stored property's default value
+  needs `@MainActor`, since the App's types are main-actor-isolated.
+- **Long `+` chains:** a long chain that mixes `CGFloat` and `Double` needs one type.
+- **`ID` inside an `Identifiable` type:** name it `DomainKit.ID`.
+
 Each test job builds its own App, and the packages job checks that the UI class partition stays complete. The opt-in
 classes stay out of it and keep their guards: the design capture suite in `App/UITests/DesignCapture/` (how to run and
 export it is in [the App README](App/README.md#design-captures)), and `NightlyFlowTests` and `GymNightlyFlowTests`,
