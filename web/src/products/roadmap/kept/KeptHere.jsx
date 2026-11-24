@@ -9,7 +9,7 @@ import { ErrorBoundary } from '../../../design-system';
 import { useAccountRowOffer } from '../../../shell/ProductSessions.jsx';
 import { useSyncEngine, useSyncNotices } from '../../../platform/sync/react.js';
 import { track } from '../../../telemetry/beacon.js';
-import { countBucket } from '../board/acts.js';
+import { countBucket } from '../../../telemetry/countBucket.js';
 import { reportRoadmapFailure } from '../reportFailure.js';
 import { t } from '../i18n/index.js';
 import { carriedKept } from '../domain/carry.js';

@@ -14,7 +14,7 @@ import { FixedZone } from '../../../platform/domain-kit/time.js';
 import { APP_LOCALE } from '../../../platform/i18n/index.js';
 import { syncSession } from '../../../platform/sync/session.js';
 import { track as beacon } from '../../../telemetry/beacon.js';
-import { countBucket } from '../board/acts.js';
+import { countBucket } from '../../../telemetry/countBucket.js';
 import { CarryNotes, OldStores } from '../carry/OldStores.js';
 import { carryLedgerOf, listedAs } from '../domain/carry.js';
 import { Roadmap, RoadmapMeta } from '../domain/roadmaps.js';

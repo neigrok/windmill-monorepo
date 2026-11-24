@@ -130,11 +130,3 @@ export function creationOutcome(tree, progress, query, id) {
     filterCleared,
   };
 }
-
-export function countBucket(n) {
-  if (n < 1) return '0';
-  if (n === 1) return '1';
-  if (n <= 5) return '2-5';
-  if (n <= 20) return '6-20';
-  return '21+';
-}
