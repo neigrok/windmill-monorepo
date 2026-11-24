@@ -117,6 +117,28 @@ export function ProposeWorkout({ id, sessionId, entries, summary }) {
   });
 }
 
+// A proposal a signed-out workout held, issued again once the account holds the workout: one standing under its id is
+// done, a workout the account does not hold is gone, and otherwise it is proposed as it was, against the plan stored now.
+/** @param {WorkoutProposalValue} saved */
+export function ReissueWorkoutProposal(saved) {
+  const proposing = ProposeWorkout({ id: saved.id, sessionId: saved.sessionId, entries: saved.document, summary: saved.summary });
+  return Object.freeze({
+    scope: WorkoutProposal.scope,
+    refusals: GymRefusals,
+    /** @param {Reader} read */
+    load(read) {
+      return { written: read.repository(WorkoutProposal).record(saved.id.record, 'stored') !== undefined,
+        confirmed: read.confirmed(Session, saved.sessionId) !== null, workout: proposing.load(read) };
+    },
+    /** @param {{ written: boolean, confirmed: boolean, workout: OpenWorkout }} loaded */
+    decide(loaded) {
+      if (loaded.written) return Decision.unchanged(saved.id);
+      if (!loaded.confirmed) return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-record', saved.sessionId.ref, null, 'predicted')));
+      return proposing.decide(loaded.workout);
+    },
+  });
+}
+
 // A workout proposal with its workout as this device stores it. Out of date, it can no longer be applied, by the first
 // that holds: a newer proposal replaced it, its workout is gone, its workout closed, the plan changed since it was made,
 // or a movement it changes was logged since.

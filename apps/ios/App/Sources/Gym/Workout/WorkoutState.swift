@@ -144,37 +144,21 @@ extension WorkoutPlan.Operation {
   }
 }
 
-struct StartWorkoutCommand: ServerCommand {
-  static let name = Gym.Commands.start
-  static let specs: [any ValueSpec] = []
-  let args: [String: JSON]
-  init(id: ID<Session>, routineId: ID<Routine>, at: Instant) {
-    args = ["id": id.json, "routineId": routineId.json, "startedAt": .of(at), "joinOpenSession": false]
-  }
-}
-
 // Every workout this phone starts follows a routine; one without arrives only from elsewhere, as a connected agent's.
 struct StartWorkout: Action {
   let id: ID<Session>
   let routineId: ID<Routine>
   var scope: ScopeRef { Gym.scope }
-  typealias Loaded = (state: TrainingState, routine: Routine?, prior: Bool, replica: String, anonymous: Bool)
-  func load(_ read: Reader) throws -> Loaded {
-    let loaded = try StartSession(id: id, routineId: routineId).load(read)
-    return (loaded.state, loaded.routine, loaded.prior, read.replica, read.isAnonymous)
-  }
+  var start: StartSession { StartSession(id: id, routineId: routineId) }
+  typealias Loaded = (start: StartSession.Loaded, replica: String, anonymous: Bool)
+  func load(_ read: Reader) throws -> Loaded { (try start.load(read), read.replica, read.isAnonymous) }
   func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<ID<Session>, GymRefusal> {
-    if loaded.prior { return .unchanged(id) }
-    guard let routine = loaded.routine else { return .refuse(.gone(routineId.ref, .predicted)) }
-    if loaded.state.drawn.contains(where: { SessionRules.drawn($0, sets: loaded.state.sets, now: loaded.state.moment.now).isOpen }) {
-      return .refuse(.sessionOpen(Refused(Gym.Codes.sessionOpen, subject: id.ref, path: .predicted)))
-    }
-    let at = loaded.state.moment.now
-    let value = Session(id: id, startedAt: at, routineId: routine.id, plan: SessionPlan(routine))
-    var plan = try Plan(running: StartWorkoutCommand(id: id, routineId: routine.id, at: at),
-                        predicting: [.create(Session.self, id, value.fields)])
+    if loaded.start.prior { return .unchanged(id) }
+    guard loaded.start.routine != nil else { return .refuse(.gone(routineId.ref, .predicted)) }
+    let decision = try start.decide(loaded.start, ids: ids)
+    guard case .write(var plan, let result) = decision else { return decision }
     plan.device(WorkoutActivityRecord.key, WorkoutActivityRecord(sessionID: id.description, replica: loaded.replica, anonymous: loaded.anonymous).json)
-    return .write(plan, id)
+    return .write(plan, result)
   }
 }
 

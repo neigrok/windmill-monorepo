@@ -148,9 +148,9 @@ Gym tests run through the existing `npm test`, `npm run test:sync` and `npm run 
 The full suite runs performance cases after the parallel test workers exit. Training reads cover
 250 and 1,000 populated workouts, counting domain reads: unchanged renders do no recomputation,
 and a replica change recomputes each read once. These render checks have no timing budget.
-The gym domain claims every corpus file but `recovery-actions.json`, which does not apply since the web holds no
-signed-out workout, and every vector in them, compared by JCS and with reversed record order; the weight ladder runs
-directly too. Nothing remains pending.
+The gym domain claims every corpus file but those of catalog/2, the server's turn wire and the words Coach's model
+reads, which the web never speaks or which are no vectors; it runs every vector it claims, compared by JCS and with
+reversed record order; the weight ladder runs directly too. Nothing remains pending.
 The proposal review reads `outOfDate` from `ProposalState` through the runtime's proposal document, never from the
 proposal's state alone: a pending proposal whose routine moved on the log, in an edit the log has not confirmed, or out
 of sight has no Apply and no Turn this down, and says so where they stood. Harness tests exercise adopted-workout Finish, held set deletion and Undo,

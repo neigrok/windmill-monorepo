@@ -126,9 +126,9 @@ public struct SignedOutWorkout: Equatable, Sendable {
   }
 }
 
-// `prepare` turns a signed-out workout into one import, or a non-joining start, before the replica changes hands.
-// `keep` imports the saved copy as finished at its last set; `restart` resubmits an open one's start with every set it
-// holds, in one plan, or refuses the whole retry. Both replay what the copy recorded and take a revised copy, whose
+// `prepare` turns a signed-out workout into one import, or a start, before the replica changes hands; a start an older
+// build queued joining is replaced by one that does not. `keep` imports the saved copy as finished at its last set;
+// `restart` resubmits an open one's start with every set it holds, in one plan, or refuses the whole retry. Both replay what the copy recorded and take a revised copy, whose
 // changed loads meet their floors and which replaces the saved one only when the retry is queued.
 public struct AdoptWorkout: Action {
   public enum Mode: Sendable { case prepare, keep, restart }
@@ -188,8 +188,9 @@ public struct AdoptWorkout: Action {
         case .unchanged: return .unchanged(())
         }
       } else if start.command.args["joinOpenSession"] != false {
-        let command = NonJoiningWorkoutStart(session: workout.session)
-        plan = try Plan(running: command, predicting: [.create(Session.self, id, workout.session.fields)])
+        let session = workout.session
+        plan = try Plan(running: StartSessionCommand(id: id, routineId: session.routineId, startedAt: session.startedAt),
+                        predicting: [.create(Session.self, id, session.fields)])
         plan.supersede([start.gestureId])
       }
     case .keep, .restart:
@@ -229,7 +230,8 @@ public struct AdoptWorkout: Action {
     }
     try SessionRules.instant(session.startedAt, rule: "session.startedAt", at: "startedAt")
     guard session.startedAt <= state.moment.now else { return .refuse(.badInstant(Refused(Gym.Codes.badInstant, subject: id.ref, path: .predicted))) }
-    var plan = try Plan(running: NonJoiningWorkoutStart(session: session), predicting: [.create(Session.self, id, session.fields)])
+    var plan = try Plan(running: StartSessionCommand(id: id, routineId: session.routineId, startedAt: session.startedAt),
+                        predicting: [.create(Session.self, id, session.fields)])
     var planned: [TrainingSet] = []
     for set in workout.sets {
       let valid = try Valid(set, at: state.moment)
@@ -257,16 +259,5 @@ public struct ReconcileAdoptedWorkouts: Action {
     var plan = Plan()
     plan.device(SignedOutWorkout.key, SignedOutWorkout.saved(loaded.1, replacing: []))
     return .write(plan)
-  }
-}
-
-struct NonJoiningWorkoutStart: ServerCommand {
-  static let name = Gym.Commands.start
-  static let specs: [any ValueSpec] = []
-  let args: [String: JSON]
-  init(session: Session) {
-    var args: [String: JSON] = ["id": session.id.json, "startedAt": .of(session.startedAt), "joinOpenSession": false]
-    if let id = session.routineId { args["routineId"] = id.json }
-    self.args = args
   }
 }

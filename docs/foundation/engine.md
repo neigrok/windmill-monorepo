@@ -3628,7 +3628,9 @@ stale, before the server reads that settle staleness ([gym ARCHITECTURE](../../b
 It is the only writer of `closedBy = stale`.
 
 - **`gym.start {id: ref<session>, routineId?: ref<routine>, startedAt: time, joinOpenSession}`.**
-  Clients send `joinOpenSession: true`.
+  A client sends `joinOpenSession: false`, and refuses its own start while it draws an open session (the gym domain's
+  `StartSession`), so a start that loses a race with another device's is refused `session-open`, the sets logged under it
+  folded into that notice. The server's own doors join by default ([gym ARCHITECTURE](../../backend/products/gym/ARCHITECTURE.md) §3.2).
   1. A start receipt for `id` (the session it created or joined) names a session; with none, the
      caller's own session under `id`, alive or dead, does → ok. While that session is alive, the
      write map carries it with its `born`, and `from: id` if it is a different session.

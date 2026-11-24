@@ -227,18 +227,45 @@ class TrainingRulesTests {
         assertEquals(Decision.Refuse(GymRefusal.Gone(setId.ref, Refused.Path.predicted)), decide(CorrectSet(old)))
     }
 
-    @Test fun startJoinsStoredOpenSessionOrPredictsDrawnRoutineSnapshot() {
-        val open = session()
-        val join = writing(decide(StartSession(Id("session2", Session), startedAt = Instant(SessionRules.maxInstantMs)), reader(listOf(row(open)))))
-        assertEquals(sessionId, join.result)
-        assertTrue(join.plan.predictions.isEmpty())
-        assertEquals(Json.objectOf("id" to Json.of("session2"), "startedAt" to Json.of(SessionRules.maxInstantMs), "joinOpenSession" to Json.of(true)), join.plan.command!!.args)
+    @Test fun startBesideADrawnOpenWorkoutIsRefusedAndOtherwisePredictsTheDrawnRoutineSnapshot() {
+        val other = Id("session2", Session)
+        assertEquals(Decision.Refuse(GymRefusal.predicted(Gym.Codes.sessionOpen, other.ref)),
+            decide(StartSession(other, startedAt = Instant(SessionRules.maxInstantMs)), reader(listOf(row(session())))))
         val drawn = routine.copy(name = "Unsynced plan", entries = listOf(entry.copy(sets = null)))
         val created = writing(decide(StartSession(sessionId, routineId), reader(listOf(row(routine)), listOf(row(drawn)))))
         assertEquals(listOf(Prediction.create(Session, sessionId, Session(sessionId, testMoment.now, routineId = routineId, plan = PlanSnapshot(drawn)).fields())), created.plan.predictions)
-        assertEquals(Gym.Commands.start, created.plan.command!!.name)
+        assertEquals(Json.objectOf("id" to sessionId.json, "startedAt" to Json.of(testMoment.now.ms), "joinOpenSession" to Json.of(false),
+            "routineId" to routineId.json), created.plan.command!!.args)
         val absentRoutine = writing(decide(StartSession(sessionId, routineId)))
         assertEquals(listOf(Prediction.create(Session, sessionId, Session(sessionId, testMoment.now).fields())), absentRoutine.plan.predictions)
+    }
+
+    // Two phones start with no connection: the start the account takes first opens the workout, and the other is refused
+    // `session-open`, its sets folded into that notice, never into the open workout.
+    @Test fun aStartThatLosesARaceIsRefusedAndItsSetsAreHeldInItsNotice() = runBlocking<Unit> {
+        SteppedEngine(SyncSchema.registry, testMoment.now.ms, rules = GymServerRules()).use { a ->
+            withActionContext { context ->
+                val b = a.device()
+                val phoneA = ActionRunner(a.replica, SyncSchema.registry, FixedZone(0), context)
+                val phoneB = ActionRunner(b.replica, SyncSchema.registry, FixedZone(0), context)
+                val other = Id("session2", Session)
+                assertTrue(phoneA.run(StartSession(sessionId)) is Outcome.Committed)
+                assertTrue(phoneB.run(StartSession(other)) is Outcome.Committed)
+                val set = trainingSet(completedAt = testMoment.now).copy(sessionId = other)
+                assertTrue(phoneB.run(AppendSet(set)) is Outcome.Committed)
+                a.sync()
+                for (phone in listOf(a, b)) {
+                    assertEquals(listOf(sessionId.record), phone.drawn(Session.scope, Session.type).map { it.id })
+                    assertEquals(emptyList<Any>(), phone.drawn(Session.scope, TrainingSet.type))
+                }
+                assertEquals(emptyList<Any>(), a.notices("gym"))
+                val notice = DomainNotice(b.notices("gym").single(), SyncSchema.registry, GymRefusal)
+                assertEquals(GymRefusal.SessionOpen(Refused(RefusalCode(Gym.Codes.sessionOpen), other.ref, path = Refused.Path.notice)), notice.refusal)
+                assertEquals(set.fields(), notice.values(set.id.ref))
+                val again = phoneB.run(StartSession(Id("session3", Session)))
+                assertEquals(GymRefusal.predicted(Gym.Codes.sessionOpen, Id("session3", Session).ref), (again as Outcome.Refused).refusal)
+            }
+        }
     }
 
     @Test fun startRecognizesOwnHeldAndDeadIdentitiesAndDefersFutureClockForReplay() {
