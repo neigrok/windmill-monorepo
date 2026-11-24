@@ -27,6 +27,24 @@ std::optional<UserId> callerOf(const drogon::HttpRequestPtr& req, AuthService& a
   return user->id;
 }
 
+sync::SentCredentials sentCredentialsOf(const drogon::HttpRequestPtr& req, AuthService& auth) {
+  return sync::SentCredentials::fromOccurrences(req->headerOccurrences(), [&auth](const std::string& token) { return auth.digestOf(token); });
+}
+
+SentCaller SentCaller::of(const sync::SentCredentials& sent, AuthService& auth, const SessionContext& ctx) {
+  std::optional<User> user;
+  const sync::Credential credential = sent.resolve([&auth, &ctx, &user](const std::string& digest) -> std::optional<UserId> {
+    user = auth.revalidate(digest, ctx);
+    return user ? std::optional(user->id) : std::nullopt;
+  });
+  if (credential.fails()) return SentCaller{credential, std::nullopt};
+  return SentCaller{credential, user};
+}
+
+SentCaller SentCaller::of(const drogon::HttpRequestPtr& req, AuthService& auth, const SessionContext& ctx) {
+  return of(sentCredentialsOf(req, auth), auth, ctx);
+}
+
 bool secretEqual(const std::string& a, const std::string& b) {
   if (a.size() != b.size()) return false;
   unsigned char diff = 0;

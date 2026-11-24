@@ -3,7 +3,6 @@
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/json/AiBudgetJson.h"
 #include "platform/adapters/http/JsonReply.h"
-#include "platform/domain/sync/Credentials.h"
 #include "platform/application/WriteObservation.h"
 
 namespace wm {
@@ -22,15 +21,8 @@ void AiAllowanceApi::get(const drogon::HttpRequestPtr& request,
     reply(response);
   };
   try {
-    std::optional<User> account;
-    const auto credential = sync::SentCredentials::fromOccurrences(request->headerOccurrences()).resolve(
-        [&](const std::string& token) -> std::optional<UserId> {
-          const auto user = auth_->authenticate(token);
-          if (!user) return std::nullopt;
-          account = user;
-          return user->id;
-        });
-    if (credential.fails() || !credential.servedAs() || !account) {
+    const std::optional<User> account = SentCaller::of(request, *auth_).user;
+    if (!account) {
       answer(error(drogon::k401Unauthorized, "Sign in to view your AI allowance.", "unauthenticated"));
       return;
     }

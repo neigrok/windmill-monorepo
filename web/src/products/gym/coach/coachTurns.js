@@ -48,7 +48,7 @@ export class CoachTurns {
     this.timers = timers;
     this.online = online;
     this.now = now;
-    // The field's words while the page stays, by the replica they were typed on: nothing of an unsent question is
+    // The field's words while the page stays, by the seat they were typed under: nothing of an unsent question is
     // written to the browser's storage, so a sign-out leaves none behind.
     this.drafts = new Map();
     this.tells = telemetry ?? new GymTurnTelemetry({ catalog: this.catalog });
@@ -66,11 +66,8 @@ export class CoachTurns {
     engine.observeEngine?.(() => { if (this.seatKey() !== this.seatHeld) this.leaveSeat(); });
   }
 
-  // The account the page's replica belongs to: the replica and its binding, so a sign-in in place changes it too.
-  seatKey() {
-    const replica = this.engine.device?.activeReplica;
-    return replica ? `${replica.id}|${replica.meta?.account ?? ''}` : String(this.engine.activeReplica());
-  }
+  // The seat the page draws: the engine's binding, which a sign-in in place changes and a re-identify keeps.
+  seatKey() { return this.engine.activeBinding(); }
 
   // The account in this page changed under Coach: a sign-out or a sign-in in this tab or another, or a session that ended
   // elsewhere. Nothing of the seat that left stays in the page: its pass, its allowance, its refusal, the field's words,
@@ -96,16 +93,16 @@ export class CoachTurns {
     for (const listener of this.listeners) listener();
   }
 
-  get replica() { return this.engine.activeReplica(); }
+  get binding() { return this.engine.activeBinding(); }
 
-  draft() { return this.drafts.get(this.replica) ?? ''; }
+  draft() { return this.drafts.get(this.binding) ?? ''; }
 
   setDraft(text) {
-    if (text) this.drafts.set(this.replica, text);
-    else this.drafts.delete(this.replica);
+    if (text) this.drafts.set(this.binding, text);
+    else this.drafts.delete(this.binding);
     this.publish({ draft: text });
   }
-  get seat() { return { kind: 'bound', key: this.replica }; }
+  get seat() { return { kind: 'bound', key: this.binding }; }
 
   // When the room first opens on this page: a turn a closed tab left in its last round is recovered, the pictures no
   // message claims go, and the allowance says whether a question could be asked.
@@ -125,7 +122,7 @@ export class CoachTurns {
   async endStale() {
     const { syncLive, serverNow } = this.engine.freshness(CoachMessage.scope);
     if (!syncLive || !Number.isFinite(serverNow)) return;
-    const runner = this.host.runnerOn(this.replica);
+    const runner = this.host.runnerOn(this.binding);
     const running = runner.read(CoachMessage.scope, (read) => read.repository(CoachMessage).all('drawn')
       .filter((message) => message.isCoach && message.state === 'running').map((message) => message.id));
     for (const id of running) {
@@ -152,8 +149,8 @@ export class CoachTurns {
 
   async settleLeftOpen(recover) {
     if (this.running) return;
-    const replica = this.replica;
-    const runner = this.host.runnerOn(replica);
+    const binding = this.binding;
+    const runner = this.host.runnerOn(binding);
     const named = runner.read(CoachMessage.scope, (read) => {
       const mark = Mark.read(read);
       if (mark.turnId === null) return null;
@@ -165,14 +162,14 @@ export class CoachTurns {
     if (named !== null && named.message === null && named.caughtUp) await runner.run(new ForgetRunningTurn(named.id));
     if (named !== null && named.message !== null && !named.own) await runner.run(new ForgetRunningTurn(named.id));
     if (named?.own && recover) {
-      const lease = new GymTurn({ thread: named.message.threadId, lifter: named.id, coach: named.id }, replica);
+      const lease = new GymTurn({ thread: named.message.threadId, lifter: named.id, coach: named.id }, binding);
       this.launch({ lease, question: '', picture: null }, true);
       await lease.held;
     }
     await this.sweepPictures(runner);
   }
 
-  async sweepPictures(runner = this.host.runnerOn(this.replica)) {
+  async sweepPictures(runner = this.host.runnerOn(this.binding)) {
     const swept = await runner.run(new ForgetUnclaimedPictures());
     if (swept.kind === 'refused') this.tells.fault('refusal', new Error('picture sweep held by an unreadable message'));
   }
@@ -192,8 +189,8 @@ export class CoachTurns {
   // under one lock, so another tab's recovery never meets a fresh turn before its lock is held.
   async open(question, picture, thread) {
     if (this.running) return this.refusing({ state: 'busy' });
-    const replica = this.replica;
-    const runner = this.host.runnerOn(replica);
+    const binding = this.binding;
+    const runner = this.host.runnerOn(binding);
     let turn;
     try {
       const row = picture && new CoachPictureRow(secureCallId(), picture.original, picture.model);
@@ -212,7 +209,7 @@ export class CoachTurns {
     }
     this.tells.started();
     this.setDraft('');
-    const lease = new GymTurn(turn, replica);
+    const lease = new GymTurn(turn, binding);
     this.launch({ lease, question, picture }, false);
     await lease.held;
     return turn;
@@ -318,7 +315,7 @@ export class CoachTurns {
       throw new Error('a conversation answering here stays');
     }
     let outcome;
-    try { outcome = await this.host.runnerOn(this.replica).run(new DeleteConversation(thread)); }
+    try { outcome = await this.host.runnerOn(this.binding).run(new DeleteConversation(thread)); }
     catch (error) {
       this.tells.deleted('failed');
       this.storageFault(error);
@@ -355,7 +352,7 @@ const OPENING = 'gym-opening';
 const EMPTY = Object.freeze({ draft: '', turn: null, stopping: false, refusal: null, fault: null, withdrawn: null, allowance: null, live: null });
 
 // The account's replica, read and written as Coach's turns are, with no page Coach to run them.
-function replicaRunner(engine) { return new GymTurnHost({ engine, zone: deviceZone }).runnerOn(engine.activeReplica()); }
+function replicaRunner(engine) { return new GymTurnHost({ engine, zone: deviceZone }).runnerOn(engine.activeBinding()); }
 
 // The open, refused as busy while the browser's mark names a turn its writer has not ended: one gym turn at a time
 // across a browser's tabs (gym Coach on the AI service §5).

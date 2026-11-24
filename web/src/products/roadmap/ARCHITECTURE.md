@@ -353,7 +353,9 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   - *Refusals and failures:* a write the domain refuses is said in the words of the room with the switch off where there are some (a roadmap at its
     cap, a link that would close a loop) and emits `roadmap_write_refused`; a mark it refuses marks nothing. One the
     store does not take reports `roadmap-replica-write`, its one report: the doors above it (the switcher's rename and
-    delete, the share dialog's visibility) hear a `BoundaryFailure` and say their own failure without reporting it.
+    delete, the share dialog's visibility) hear a `BoundaryFailure` and say their own failure without reporting it. One a
+    sign-in or a sign-out overtook, as one the back/forward cache held while another tab moved the seat, lands nothing
+    (the engine's `ReplicaChanged`) and `reportRoadmapFailure` reports it at no door.
   - Such a room draws no presence and hands its session neither to a reconnect nor to a claim of the device's trees: the
     engine reconnects, and its lineage rule takes what the device holds at sign-in.
 - **Export.** The row's Export writes the room's picture (below), here `ReplicaRoadmap.seed` and the owner's marks.

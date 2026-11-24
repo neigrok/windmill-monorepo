@@ -1,9 +1,9 @@
 #include "platform/ai_installations/AiInstallationApi.h"
 
+#include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
 #include "platform/adapters/json/AiBudgetJson.h"
 #include "platform/application/WriteObservation.h"
-#include "platform/domain/sync/Credentials.h"
 namespace wm {
 namespace {
 
@@ -63,18 +63,12 @@ AiInstallationApi::AiInstallationApi(std::shared_ptr<AiInstallations> installati
 AiInstallationAccess AiInstallationApi::resolve(const drogon::HttpRequestPtr& request, bool requireAccount,
                                                bool requireInstallation) const {
   AiInstallationAccess result;
-  const auto credential = sync::SentCredentials::fromOccurrences(request->headerOccurrences()).resolve(
-      [&](const std::string& token) -> std::optional<UserId> {
-        const auto account = auth_->authenticate(token);
-        if (!account) return std::nullopt;
-        result.account = account;
-        return account->id;
-      });
-  if (credential.fails() || (requireAccount && !credential.servedAs())) {
-    result.account.reset();
+  const SentCaller caller = SentCaller::of(request, *auth_);
+  if (caller.credential.fails() || (requireAccount && !caller.user)) {
     result.refusal = "unauthenticated";
     return result;
   }
+  result.account = caller.user;
   std::optional<std::string> installationToken;
   for (const auto& [name, value] : request->headerOccurrences()) {
     if (headerName(name) != "x-windmill-installation") continue;
@@ -96,18 +90,12 @@ AiInstallationAccess AiInstallationApi::resolve(const drogon::HttpRequestPtr& re
 
 AiPrincipalAccess AiInstallationApi::principal(const drogon::HttpRequestPtr& request) const {
   AiPrincipalAccess result;
-  const auto credential = sync::SentCredentials::fromOccurrences(request->headerOccurrences()).resolve(
-      [&](const std::string& token) -> std::optional<UserId> {
-        const auto account = auth_->authenticate(token);
-        if (!account) return std::nullopt;
-        result.account = account;
-        return account->id;
-      });
-  if (credential.fails()) {
-    result.account.reset();
+  const SentCaller caller = SentCaller::of(request, *auth_);
+  if (caller.credential.fails()) {
     result.refusal = "unauthenticated";
     return result;
   }
+  result.account = caller.user;
   if (result.account) return result;
   bool installationSent = false;
   for (const auto& [name, value] : request->headerOccurrences())

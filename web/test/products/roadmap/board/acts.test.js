@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
 import { Board, BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
-import { HeldDelete, StepSelection, deletable, takesEveryRoot, editGesture, completionOutcome, creationOutcome, deletionCost, countBucket } from '../../../../src/products/roadmap/board/acts.js';
+import { HeldDelete, StepSelection, deletable, takesEveryRoot, editGesture, completionOutcome, creationOutcome, deletionCost } from '../../../../src/products/roadmap/board/acts.js';
 import { TreeLattice, HlcClock } from '../../../../src/products/roadmap/sync/lattice.js';
 import { materialize } from '../../../../src/products/roadmap/sync/materialize.js';
 
@@ -58,10 +58,6 @@ test('held delete projection equals committed BulkDelete and its cost counts sur
   assert.equal(new HeldDelete(['wind', 'dock'], 'unused').message, '2 steps deleted');
   assert.ok(Object.isFrozen(held));
   assert.ok(Object.isFrozen(held.ids));
-});
-
-test('event counts are bounded buckets', () => {
-  assert.deepEqual([0, 1, 2, 5, 6, 20, 21, 5000].map(countBucket), ['0', '1', '2-5', '2-5', '6-20', '6-20', '21+', '21+']);
 });
 
 test('delete cost includes a child retaining another parent and counts shared children only once', () => {

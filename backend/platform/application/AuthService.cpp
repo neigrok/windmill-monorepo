@@ -326,6 +326,12 @@ std::optional<User> AuthService::revalidate(const std::string& digest, const Ses
   return user;
 }
 
+std::optional<std::string> AuthService::syncReplicaOf(const std::string& sessionDigest) {
+  if (sessionDigest.empty()) return std::nullopt;
+  const std::optional<StoredSession> session = repo_.findSession(sessionDigest);
+  return session ? session->syncReplica : std::nullopt;
+}
+
 void AuthService::signOut(const std::string& sessionSecret) {
   if (sessionSecret.empty()) return;
   const std::string digest = tokens_.digestOf(sessionSecret);

@@ -1,11 +1,10 @@
-// Unattributable unsent pages, waiting in quarantine (pages.js) and offered once to a signed-in
-// person. This surface may say the day and the length, never the words.
+// Unsent pages this browser kept before the engine that it could not attribute, waiting in its storage (carry.js) for a
+// signed-in person to restore or discard. This surface may say the day and the length, never the words.
 
 import React, { useState } from 'react';
-import { captureError } from '../../../telemetry/sentry.js';
 import { Button } from '../../../design-system';
 import { styles } from '../../../shell/settings/Section.jsx';
-import { dropUnclaimedPages, restoreUnclaimedPages, unclaimedPages } from '../pages.js';
+import { dropUnclaimedPages, restoreUnclaimedPages, unclaimedPages } from '../carry.js';
 import { t } from '../i18n/settings/index.js';
 
 function wordCount(body) {
@@ -27,21 +26,19 @@ export function UnclaimedPagesRow({ account }) {
       setPhase('done');
       setNote(taken ? t('journal.settings.restored', { count: taken }) : t('journal.settings.noLongerWaiting'));
     } catch {
-      captureError('journal', 'journal-restore', '', '/journal');
       setPhase('error');
       setNote(t('journal.settings.restoreFailed'));
     }
   };
 
-  const discard = async () => {
+  const discard = () => {
     setPhase('working');
     try {
-      await dropUnclaimedPages();
+      dropUnclaimedPages(waiting.map((page) => page.key));
       setWaiting([]);
       setPhase('done');
       setNote(t('journal.settings.discarded'));
     } catch {
-      captureError('journal', 'journal-discard', '', '/journal');
       setPhase('error');
       setNote(t('journal.settings.discardFailed'));
     }
@@ -54,7 +51,7 @@ export function UnclaimedPagesRow({ account }) {
         <p style={styles.calmLine}>{t('journal.settings.unsentBody', { count: waiting.length })}</p>
         <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}>
           {waiting.map((page) => (
-            <li key={page.day} style={{ ...styles.metaText, marginTop: 2 }}>
+            <li key={page.key} style={{ ...styles.metaText, marginTop: 2 }}>
               {t('journal.settings.unsentPage', { day: page.day, count: wordCount(page.body) })}
             </li>
           ))}
