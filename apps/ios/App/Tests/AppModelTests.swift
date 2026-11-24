@@ -747,6 +747,26 @@ import SyncTesting
     #expect(recorder.entries.withLock { $0.filter { $0.name == "appearance_chosen" }.map(\.properties) } == [["appearance": "dark"]])
   }
 
+  // Signing out, the Roadmap room keeps nothing of the account: neither the ids of the notices it told nor, in memory, a
+  // roadmap's name or a change set aside.
+  @Test func signOutLeavesTheRoadmapRoomNothingOfTheAccount() async throws {
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server)
+    defer { model.gym.stop() }
+    try await model.signIn(server.identity(email: "roadmap-signing-out@example.com"))
+    let room = try #require(model.roadmap)
+    _ = try RoadmapFixture.plantLearnToSail(try #require(model.runtime).roadmapRunner)
+    await model.runtime?.engine.start()
+    room.roomOpened()
+    for _ in 0..<800 where room.roadmaps.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+    model.preferences.set(["notice:g1/0"], forKey: RoadmapModel.toldNotices)
+    room.landed.listOpen = true
+    #expect(!room.landed.remembered.isEmpty)
+    await model.beginSignOut(); await model.finishSignOut(.keep)
+    #expect(model.account == nil)
+    #expect(model.preferences.object(forKey: RoadmapModel.toldNotices) == nil)
+    #expect(room.landed.remembered.isEmpty && !room.landed.listOpen && room.landed.told.isEmpty && room.landed.waiting.isEmpty)
+  }
+
   @Test func signOutKeepPreservesBothRoomsForTheirAccountOnly() async throws {
     let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server)
     let owner = server.identity(email: "gym-lineage@example.com")

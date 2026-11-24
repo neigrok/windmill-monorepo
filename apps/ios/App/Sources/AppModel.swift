@@ -405,8 +405,12 @@ final class AppModel {
   }
 
   // An account change no check of the app's can still refuse is under way: the engine releases every delete it holds, so
-  // the Roadmap room's open note is saved and its band leaves with its Undo, which would name a replica that goes.
-  func beforeAccountChange() { roadmap?.flush() }
+  // the Roadmap room's open note is saved and its band leaves with its Undo, which would name a replica that goes, and the
+  // room keeps nothing in memory of the account before: no line, no change set aside, no roadmap's name.
+  func beforeAccountChange() {
+    roadmap?.flush()
+    roadmap?.landed.forget()
+  }
 
   func start() async {
     guard let runtime else { return }
@@ -902,6 +906,7 @@ final class AppModel {
     email = ""; code = ""; codeSentAt = nil; appleReceiptEmail = ""
     keepDismissed = false; welcome = true; preferences.set(true, forKey: "roomWelcomeRequired"); preferences.removeObject(forKey: "lastRoom"); clearAdoptionAnswers(); refresh()
     preferences.removeObject(forKey: RoadmapModel.lastOpen); preferences.removeObject(forKey: RoadmapModel.lastLens)
+    preferences.removeObject(forKey: RoadmapModel.toldNotices); roadmap?.landed.forget()
     preferences.set(false, forKey: "keepDismissed")
   }
 

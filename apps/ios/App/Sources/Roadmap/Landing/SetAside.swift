@@ -128,14 +128,9 @@ extension RoadmapModel {
   static let toldNotices = "roadmapToldNotices"
 
   // Roadmap's notices read anew, after each change the room observes: the list as Set Aside shows it, which closes once
-  // it holds nothing. A read that fails keeps the list as it stands and reports once a launch.
+  // it holds nothing.
   func readSetAside() {
-    let notices: [Notice]
-    do { notices = try sync.notices() } catch {
-      guard reportedFailures.insert("kept-read").inserted else { return }
-      telemetry.failure("roadmap_kept", kind: "unexpected")
-      return
-    }
+    let notices = sync.notices()
     let read = CannotLand(notices.map { DomainNotice<RoadmapRefusal>($0, registry: SyncSchema.registry) })
     // Each change that cannot land is told once on this phone, and a notice no rule lists reports once a launch, by its
     // code, `other` where the code is not one a refusal is spelled as. The phone keeps the ids of the notices the engine
@@ -152,15 +147,15 @@ extension RoadmapModel {
     }
     let held = notices.map(\.id).sorted()
     if held != told.sorted() { phone.set(held, forKey: Self.toldNotices) }
-    let listed = SetAside(read, scopes: Dictionary(notices.map { ($0.id, $0.scope) }) { first, _ in first }, remembered: remembered)
-    if listed != setAside { setAside = listed }
-    if listed.groups.isEmpty && setAsideOpen { setAsideOpen = false }
+    let listed = SetAside(read, scopes: Dictionary(notices.map { ($0.id, $0.scope) }) { first, _ in first }, remembered: landed.remembered)
+    if listed != landed.setAside { landed.setAside = listed }
+    if listed.groups.isEmpty && landed.listOpen { landed.listOpen = false }
   }
 
   // 10.5a: the title menu's first row while a change is set aside opens the list.
   func openSetAside() {
-    setAsideOpen = true
-    telemetry.event("roadmap_kept", properties: ["step": "open", "count": Self.bucket(setAside.changes.count)])
+    landed.listOpen = true
+    telemetry.event("roadmap_kept", properties: ["step": "open", "count": Self.bucket(landed.setAside.changes.count)])
   }
 
   // 10.5c: Copy, in a change's … menu or its swipe, puts every word the person wrote on the pasteboard.
@@ -169,40 +164,42 @@ extension RoadmapModel {
     telemetry.event("roadmap_kept", properties: ["step": "copy", "reason": change.reason.rawValue, "outcome": "copied", "door": door.rawValue])
   }
 
-  // 10.5c: Discard, in a change's … menu or its swipe, asks nothing: the change leaves the phone.
+  // 10.5c: Discard, in a change's … menu or its swipe, asks nothing: the change leaves the phone. One the engine no longer
+  // held, discarded on another screen, leaves quietly.
   func discard(_ change: SetAside.Change, by door: Door) {
-    guard dismiss([change]) else { return }
+    guard dismiss([change]) == 1 else { return }
     telemetry.event("roadmap_kept", properties: ["step": "discard", "reason": change.reason.rawValue, "door": door.rawValue])
   }
 
   // 10.5b: Discard All asks once, on its row.
   func askDiscardAll() {
-    asksDiscardAll = true
-    telemetry.event("roadmap_kept", properties: ["step": "ask", "count": Self.bucket(setAside.changes.count)])
+    landed.asksDiscardAll = true
+    telemetry.event("roadmap_kept", properties: ["step": "ask", "count": Self.bucket(landed.setAside.changes.count)])
   }
 
   // The question's answer: Discard All takes every change listed from the phone; closed any other way, nothing goes.
   func answerDiscardAll(_ confirmed: Bool) {
-    guard asksDiscardAll else { return }
-    asksDiscardAll = false
-    let changes = setAside.changes
+    guard landed.asksDiscardAll else { return }
+    landed.asksDiscardAll = false
     guard confirmed else { return telemetry.event("roadmap_kept", properties: ["step": "cancel"]) }
-    guard dismiss(changes) else { return }
-    telemetry.event("roadmap_kept", properties: ["step": "discardAll", "count": Self.bucket(changes.count)])
+    guard let dismissed = dismiss(landed.setAside.changes), dismissed > 0 else { return }
+    telemetry.event("roadmap_kept", properties: ["step": "discardAll", "count": Self.bucket(dismissed)])
   }
 
-  // The engine lets go of the changes' notices, and the list of them at once; it closes once it holds nothing. A dismissal
-  // that fails keeps the list as it stands and reports.
-  func dismiss(_ changes: [SetAside.Change]) -> Bool {
+  // The engine lets go of the changes' notices, and the list of them at once; it closes once it holds nothing. Answers how
+  // many notices the engine let go, which leaves out one it no longer held; a dismissal that throws keeps the list as it
+  // stands, reports, and answers nil.
+  func dismiss(_ changes: [SetAside.Change]) -> Int? {
+    var dismissed = 0
     do {
-      for change in changes { _ = try sync.dismiss(change.id) }
+      for change in changes where try sync.dismiss(change.id) { dismissed += 1 }
     } catch {
       report(error, write: "dismissNotice")
-      return false
+      return nil
     }
-    setAside = setAside.leaving(Set(changes.map(\.id)))
-    if setAside.groups.isEmpty { setAsideOpen = false }
-    return true
+    landed.setAside = landed.setAside.leaving(Set(changes.map(\.id)))
+    if landed.setAside.groups.isEmpty { landed.listOpen = false }
+    return dismissed
   }
 }
 
@@ -215,7 +212,7 @@ struct SetAsideSheet: View {
   var body: some View {
     NavigationStack {
       List {
-        ForEach(roadmap.setAside.groups) { group in
+        ForEach(roadmap.landed.setAside.groups) { group in
           Section {
             ForEach(group.changes) { change in row(change) }
           } header: {
@@ -226,9 +223,9 @@ struct SetAsideSheet: View {
         }
         Section {
           Button("Discard All", role: .destructive) { roadmap.askDiscardAll() }.accessibilityIdentifier("roadmap-set-aside-discard-all")
-            .confirmationDialog(String(localized: "Discard \(roadmap.setAside.changes.count) changes?", locale: .copy,
+            .confirmationDialog(String(localized: "Discard \(roadmap.landed.setAside.changes.count) changes?", locale: .copy,
                                        comment: "The question Discard All asks in Set Aside: how many changes it discards"),
-                                isPresented: Binding(get: { roadmap.asksDiscardAll }, set: { if !$0 { roadmap.answerDiscardAll(false) } }),
+                                isPresented: Binding(get: { roadmap.landed.asksDiscardAll }, set: { if !$0 { roadmap.answerDiscardAll(false) } }),
                                 titleVisibility: .visible) {
               Button("Discard All", role: .destructive) { roadmap.answerDiscardAll(true) }
             } message: {
@@ -245,9 +242,9 @@ struct SetAsideSheet: View {
   // The sheet's close, the system's on iOS 26.
   @ViewBuilder var close: some View {
     if #available(iOS 26.0, *) {
-      Button(role: .close) { roadmap.setAsideOpen = false }.accessibilityIdentifier("roadmap-set-aside-close")
+      Button(role: .close) { roadmap.landed.listOpen = false }.accessibilityIdentifier("roadmap-set-aside-close")
     } else {
-      Button("Done") { roadmap.setAsideOpen = false }.accessibilityIdentifier("roadmap-set-aside-close")
+      Button("Done") { roadmap.landed.listOpen = false }.accessibilityIdentifier("roadmap-set-aside-close")
     }
   }
 

@@ -26,7 +26,7 @@ import SyncTesting
   // standing before the person; a band's time never ends unless a test ends it.
   func room(_ engine: SteppedEngine, _ runner: ActionRunner, _ memory: UserDefaults, telemetry: any Telemetry = NoopTelemetry(),
             copied: TelemetryBuffer<[String]>? = nil) -> RoadmapModel {
-    let sync = RoadmapModel.Sync(online: { true }, notices: { try engine.notices("roadmap") }, dismiss: { try engine.replica.dismissNotice($0) })
+    let sync = RoadmapModel.Sync(online: { true }, notices: { (try? engine.notices("roadmap")) ?? [] }, dismiss: { try engine.replica.dismissNotice($0) })
     let model = RoadmapModel(records: { scope, type in try engine.records(scope, type, .drawn, visibleOnly: false) }, runner: runner, phone: memory,
                              telemetry: telemetry, wait: { _ in try await Task.sleep(for: .seconds(3_600)) }, sync: sync,
                              clipboard: Clipboard(holdsText: { false }, text: { nil }, copy: { text in copied?.withLock { $0.append(text) } }))
@@ -81,10 +81,27 @@ import SyncTesting
     return try #require(open.groups.flatMap(\.rows).first { $0.step.label == label })
   }
 
-  // The line the band tells, where it tells one.
-  func told(_ model: RoadmapModel) -> RoadmapModel.LandingLine? {
+  // The line the band offers, where it offers one.
+  func offered(_ model: RoadmapModel) -> RoadmapModel.Landed.Line? {
     guard case .landed(let line)? = model.band?.says else { return nil }
     return line
+  }
+
+  // The line the band offers is drawn where the room's own screens stand, and so told, as the foot does once it can show
+  // the band.
+  func drawn(_ model: RoadmapModel) throws -> RoadmapModel.Landed.Line {
+    let line = try #require(offered(model))
+    #expect(model.drawsBand(away: false, inSheet: false))
+    #expect(model.seen(line))
+    return line
+  }
+
+  // The lines the phone's note says of a roadmap now, as the next visit would read them.
+  func noted(_ tree: DomainKit.ID<RoadmapEntry>, by runner: ActionRunner) throws -> Int {
+    try runner.read(tree.tree) { (scope: Reader) throws -> Int in
+      let read = try LandingRead(of: tree, in: scope)
+      return read.follows.count + read.cameBack.count
+    }
   }
 
   func events(_ telemetry: TelemetryRecorder) -> [String] {
@@ -123,31 +140,109 @@ import SyncTesting
     #expect(model.band?.says == .created(step: "Reefing basics", in: .locked))
     await shows(model, board: ["3 of 9", "upNext: Read the wind, Tie a bowline", "locked: Reefing basics, Leave the dock, Sail a triangle, Sail solo",
                                "done: Rig the boat, Name the boat parts, Choose a sailing course"], on: engine)
-    #expect(told(model) == nil)
-    model.sendBandAway()
+    #expect(offered(model) == nil)
+    model.endBand()
 
     engine.sync()
     await shows(model, board: ["3 of 8", "upNext: Reefing basics, Tie a bowline", "locked: Leave the dock, Sail a triangle, Sail solo",
                                "done: Rig the boat, Name the boat parts, Choose a sailing course"], on: engine)
     let step = draft.step.description
-    let line = try #require(told(model))
+    #expect(try noted(planted.tree, by: runner) == 1)
+    let line = try drawn(model)
+    #expect(try !model.seen(line) && noted(planted.tree, by: runner) == 0)
     #expect(model.band?.says.words == "Reefing basics synced · it now follows Name the boat parts")
     #expect(model.band?.arrived == [step] && model.band?.undo == nil && model.band?.lasts == .seconds(6))
     let made = try #require(model.shown?.tree.step(step)?.createdAt).date.formatted(.dateTime.day().month(.abbreviated))
-    #expect(model.landed(on: step)?.footer
-            == "Made on this phone on \(made). Read the wind was deleted on another device before it synced, so this step now follows Name the boat parts.")
+    #expect(model.lines(on: step).map(\.footer)
+            == ["Made on this phone on \(made). Read the wind was deleted on another device before it synced, so this step now follows Name the boat parts."])
 
     model.showLanded(line)
     #expect(model.path == [.step(step, by: .band)] && model.band == nil)
-    #expect(model.landed(on: step) == line)
+    #expect(model.lines(on: step) == [line])
 
     let next = room(engine, runner, memory)
     await shows(next, board: board(model), on: engine)
-    #expect(next.band == nil && next.landed(on: step) == nil)
+    #expect(next.band == nil && next.lines(on: step).isEmpty)
     #expect(events(telemetry) == [
       "roadmap_room_opened ", "roadmap_board_create door=foot step=open view=board", "roadmap_board_create column=locked step=saved",
       "roadmap_landing place=band rule=follows", "roadmap_board_step_open column=upNext door=band surface=document",
     ])
+  }
+
+  // A line is told only once its band is drawn where the person can see it. The step lands while New Roadmap stands over
+  // the room, then while the step form stands with a field holding the keyboard: the band offers the line, no foot draws it,
+  // and nothing is told, the phone's note keeping it. Once the field lets the keyboard go, the form's foot draws the band
+  // and the line is told, once.
+  @Test func aLineWaitsWhileNoOneCanSeeItsBandAndIsToldOnceItIsDrawn() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let planted = try learnToSail(on: engine, runner)
+    let other = engine.device()
+    engine.sync()
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    await shows(model, board: ["3 of 8", "upNext: Read the wind, Tie a bowline", "locked: Leave the dock, Sail a triangle, Sail solo",
+                               "done: Rig the boat, Name the boat parts, Choose a sailing course"], on: engine)
+    let wind = try #require(planted.steps.first { $0.key == "read" }?.id)
+    guard case .committed = try elsewhere(other).runAct(DeleteStep(tree: planted.tree, step: wind)),
+          case .committed = try runner.runAct(CreateStep(tree: planted.tree, step: RoadmapStep.Changes(label: "Reefing basics"), prerequisites: [wind])) else {
+      Issue.record("the delete and the step were not written")
+      return
+    }
+    other.leave()
+
+    model.nameRoadmap(from: .menu)
+    engine.sync()
+    await reads(model, on: engine) { offered(model) != nil }
+    let line = try #require(offered(model))
+    #expect(try !model.drawsBand(away: false, inSheet: false) && noted(planted.tree, by: runner) == 1)
+
+    model.newRoadmap?.cancel()
+    model.newStep(from: .foot)
+    #expect(model.draft != nil && offered(model) == line)
+    #expect(!model.drawsBand(away: false, inSheet: false) && !model.drawsBand(away: true, inSheet: true))
+    #expect(try noted(planted.tree, by: runner) == 1)
+    #expect(!events(telemetry).contains { $0.hasPrefix("roadmap_landing") })
+
+    #expect(model.drawsBand(away: false, inSheet: true))
+    #expect(model.seen(line) && !model.seen(line))
+    #expect(try noted(planted.tree, by: runner) == 0)
+    #expect(events(telemetry).filter { $0.hasPrefix("roadmap_landing") } == ["roadmap_landing place=band rule=follows"])
+  }
+
+  // Two steps made offline after a step another phone deleted land together: the band offers the first, and once its Show
+  // has opened the step's page the band offers the second, which the page's foot then draws.
+  @Test func twoLinesLandingTogetherAreEachOfferedInTurn() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let planted = try learnToSail(on: engine, runner)
+    let other = engine.device()
+    engine.sync()
+    let telemetry = TelemetryRecorder()
+    let model = room(engine, runner, memory, telemetry: telemetry)
+    await shows(model, board: ["3 of 8", "upNext: Read the wind, Tie a bowline", "locked: Leave the dock, Sail a triangle, Sail solo",
+                               "done: Rig the boat, Name the boat parts, Choose a sailing course"], on: engine)
+    let wind = try #require(planted.steps.first { $0.key == "read" }?.id)
+    guard case .committed = try elsewhere(other).runAct(DeleteStep(tree: planted.tree, step: wind)) else {
+      Issue.record("the other phone did not delete Read the wind")
+      return
+    }
+    other.leave()
+    for label in ["Reefing basics", "Heave to"] {
+      guard case .committed = try runner.runAct(CreateStep(tree: planted.tree, step: RoadmapStep.Changes(label: label), prerequisites: [wind])) else {
+        Issue.record("\(label) was not made")
+        return
+      }
+    }
+    engine.sync()
+    await reads(model, on: engine) { offered(model) != nil }
+    let first = try drawn(model)
+    model.showLanded(first)
+    #expect(model.path == [.step(first.step, by: .band)])
+    let second = try drawn(model)
+    #expect(Set([first.name, second.name]) == ["Reefing basics", "Heave to"])
+    #expect(try model.lines(on: second.step) == [second] && noted(planted.tree, by: runner) == 0)
+    #expect(events(telemetry).filter { $0.hasPrefix("roadmap_landing") } == ["roadmap_landing place=band rule=follows", "roadmap_landing place=band rule=follows"])
   }
 
   // Roadmap · iOS 10.4. Offline, the phone gives Tie a bowline a description while the account's other phone deletes it,
@@ -177,7 +272,7 @@ import SyncTesting
     let draft = try #require(model.draft)
     draft.description = "A loop that holds, tied with my eyes closed."
     draft.save()
-    model.sendBandAway()
+    model.endBand()
     engine.sync()
     let edited = { (room: RoadmapModel) -> Bool in room.shown?.tree.step(tie.description)?.description == "A loop that holds, tied with my eyes closed." }
     await reads(model, on: engine) { edited(model) }
@@ -185,7 +280,7 @@ import SyncTesting
     let elsewhereRoom = room(other, elsewhere(other), memory)
     await reads(elsewhereRoom, on: other) { edited(elsewhereRoom) }
     #expect(edited(elsewhereRoom) && board(elsewhereRoom) == atRest)
-    #expect(model.band == nil && model.landed(on: tie.description) == nil)
+    #expect(model.band == nil && model.lines(on: tie.description).isEmpty)
 
     guard case .committed = try elsewhere(other).runAct(DeleteStep(tree: planted.tree, step: triangle)) else {
       Issue.record("the other phone did not delete Sail a triangle")
@@ -198,12 +293,12 @@ import SyncTesting
                               as: "EditNode")
     #expect(changed.committed != nil)
     engine.sync()
-    await reads(model, on: engine) { told(model) != nil }
+    await reads(model, on: engine) { offered(model) != nil }
     #expect(board(model) == atRest)
-    let line = try #require(told(model))
+    let line = try drawn(model)
     #expect(line.rule == .cameBack && model.band?.arrived == [triangle.description])
     #expect(model.band?.says.words == "Sail a triangle is back · you edited it while it was removed elsewhere")
-    #expect(model.landed(on: triangle.description)?.footer == "Sail a triangle is back · you edited it while it was removed elsewhere")
+    #expect(model.lines(on: triangle.description).map(\.footer) == ["Sail a triangle is back · you edited it while it was removed elsewhere"])
     let back = { (room: RoadmapModel) -> Bool in room.shown?.tree.step(triangle.description)?.description == "Reach, tack and return." }
     await reads(elsewhereRoom, on: other) { back(elsewhereRoom) }
     #expect(back(elsewhereRoom) && board(elsewhereRoom) == atRest && elsewhereRoom.band == nil)
@@ -258,12 +353,12 @@ import SyncTesting
       return
     }
     engine.sync()
-    for _ in 0..<100 where model.setAside.changes.count < 2 || model.roadmaps.count > 1 {
+    for _ in 0..<100 where model.landed.setAside.changes.count < 2 || model.roadmaps.count > 1 {
       await engine.settleViews()
       model.observe()
     }
     #expect(model.roadmaps.map { $0.title ?? "" } == ["Learn to sail"])
-    let listed = model.setAside.groups.map { (group: SetAside.Group) -> [String] in
+    let listed = model.landed.setAside.groups.map { (group: SetAside.Group) -> [String] in
       ["\(group.name ?? "none"): \(group.reason.words)"] + group.changes.map { "\($0.title) · \($0.line) · \($0.text)" }
     }
     #expect(listed == [[
@@ -273,24 +368,24 @@ import SyncTesting
     ]])
 
     model.openSetAside()
-    #expect(model.setAsideOpen)
-    let (made, written) = (model.setAside.changes[0], model.setAside.changes[1])
+    #expect(model.landed.listOpen)
+    let (made, written) = (model.landed.setAside.changes[0], model.landed.setAside.changes[1])
     model.copy(made, by: .menu)
     #expect(copied.withLock { $0 } == ["Anchor at night\n\nDrop the hook in the lee of the island."])
     model.discard(made, by: .swipe)
-    #expect(model.setAside.changes == [written] && model.setAsideOpen)
+    #expect(model.landed.setAside.changes == [written] && model.landed.listOpen)
     #expect(try engine.notices("roadmap").map(\.id) == [written.id])
 
     model.askDiscardAll()
-    #expect(model.asksDiscardAll)
+    #expect(model.landed.asksDiscardAll)
     model.answerDiscardAll(false)
-    #expect(model.setAside.changes == [written])
+    #expect(model.landed.setAside.changes == [written])
     model.askDiscardAll()
     model.answerDiscardAll(true)
-    #expect(model.setAside.groups.isEmpty && !model.setAsideOpen && !model.asksDiscardAll)
+    #expect(model.landed.setAside.groups.isEmpty && !model.landed.listOpen && !model.landed.asksDiscardAll)
     #expect(try engine.notices("roadmap").isEmpty)
     model.observe()
-    #expect(model.setAside.groups.isEmpty)
+    #expect(model.landed.setAside.groups.isEmpty)
     #expect(events(telemetry) == [
       "roadmap_room_opened ", "roadmap_write_cannot_land reason=roadmapDeleted", "roadmap_write_cannot_land reason=roadmapDeleted",
       "roadmap_kept count=2-5 step=open", "roadmap_kept door=menu outcome=copied reason=roadmapDeleted step=copy",

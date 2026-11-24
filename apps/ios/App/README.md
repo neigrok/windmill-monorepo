@@ -334,25 +334,28 @@ their times under the step's name, and opens nothing. Opening either is told wit
 ([Roadmap on the sync engine](../../../docs/foundation/roadmap-on-the-engine.md) §6, boards 10.2 to 10.5c). The model
 reads sync beside its records through `RoadmapModel.Sync`: the engine's status for *Offline*, roadmap's `NoticesView`,
 which the person's own room holds so it stays live and observed, and a notice's dismissal; a reader's cover and a test
-that tells nothing of them read `Sync.none`. `LandingLines.swift` reads the domain's `LandingRead` of the roadmap each
-room shows, after every read, into the room's lines (`RoadmapModel.LandingLine`): a step the person made or linked that
-now follows something else through a step deleted elsewhere before their change landed, and a step their change brought
-back, the second once the server's revival has brought its name, since a step the phone knew only by its spent id holds
-no more than the change wrote until then. A line no board words, of a step that follows nothing past the deleted one or
-one whose removed step's name the note never kept, stays in the note untold. The root's room keeps the visit's lines
-(`landing`) and tells the next one waiting of the roadmap on top of the stack in the band, washing its step, while the
-room stands on screen in the foreground (`faces`) and no other band stands, so no receipt loses its Undo to it; the
-band's *Show* pushes the step's page, whose footer under the status row says the line for the rest of the visit, and
-tells it where the band has not yet. A line told is let go from the phone's note by the domain's `ClearLanding`, out of the
-Undo stack, so a later launch is quiet, and the note of a roadmap that leaves the person's list goes whole.
-`SetAside.swift` is the one list: roadmap's notices read through the domain's `CannotLand`, each change with words of the
-person's under the roadmap its notice's scope names and its reason, named by what it wrote or by the name the root's
-room last read this launch (`remembered`), the phone keeping nothing of a roadmap deleted elsewhere; a note goes by its
-step's name. Its sheet, from the title menu's first row, groups the changes by roadmap with the reason as the footer;
-a row's … menu and its trailing swipe offer *Copy*, every word the person wrote, and *Discard*, which asks nothing and
-dismisses the notice; *Discard All* asks once on its row; the sheet closes once the list holds nothing. Each change
-that cannot land is told once on this phone, by the ids of the notices it has told that the engine still holds
-(`RoadmapModel.toldNotices`).
+that tells nothing of them read `Sync.none`. The root's room keeps all of it in one `RoadmapModel.Landed` (`Landed.swift`),
+which an account change empties. Each room reads the domain's `LandingRead` of the roadmap it shows, after every read,
+into lines (`Landed.Line`): a step the person made or linked that now follows something else through a step deleted
+elsewhere before their change landed, and a step their change brought back, the second once the server's revival has
+brought its name, since a step the phone knew only by its spent id holds no more than the change wrote until then. A
+line no board words, of a step that follows nothing past the deleted one or one whose removed step's name the note never
+kept, stays in the note untold. One place offers the band the next line waiting of the roadmap on top of the stack
+(`offerLanding`), whenever the band frees, a line is heard, the room comes before the person (`faces`: on screen, in the
+foreground, under no sheet of the shell's) or the stack changes, and a landing band of a roadmap no longer on top leaves.
+The line is told only once its band is drawn (`seen`, from the band's own view): a foot draws the band only where it can
+be seen (`drawsBand`), not while it is away and, on the room's own screens, not under a sheet or a cover the room raised
+(`raisesSheet`). Its *Show* pushes the step's page, whose footer under the status row says the step's lines while its
+roadmap stands on the stack, and tells one the band has not yet. A line told is let go from the phone's note by the
+domain's `ClearLanding`, out of the Undo stack, so a later launch is quiet, and the note of a roadmap that leaves the
+person's list goes whole. `SetAside.swift` is the one list: roadmap's notices read through the domain's `CannotLand`, each
+change with words of the person's under the roadmap its notice's scope names and its reason, named by what it wrote or
+by the name the room last read since the account last changed (`Landed.remembered`), the phone keeping nothing of a
+roadmap deleted elsewhere; a note goes by its step's name. Its sheet, from the title menu's first row, groups the changes
+by roadmap with the reason as the footer; a row's … menu and its trailing swipe offer *Copy*, every word the person
+wrote, and *Discard*, which asks nothing and dismisses the notice; *Discard All* asks once on its row; the sheet closes
+once the list holds nothing. Each change that cannot land is told once on this phone, by the ids of the notices it has
+told that the engine still holds (`RoadmapModel.toldNotices`), which signing out and deleting the account clear.
 
 `Step/StepWorkspace.swift` is a step's private workspace as its page reads it, and its acts. `StepWorkspace.read(_:)`
 composes every step's workspace from one overlay's records, as the web's room does (`HeldRoadmap.workspace`): the

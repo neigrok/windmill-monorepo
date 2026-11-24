@@ -911,15 +911,17 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the person made into a step made before, built as 10.3's footer without *Made on this phone on …*, several steps
   deleted (*A and B were deleted …*) or followed (*… follows A and B*), or 10.4's page, whose footer is built as the band's
   own sentence, as the caption has it; lines that land together are told one by one by the band, each once no other band
-  stands, and a line waits behind a receipt so its *Undo* stands, which no board says; Set Aside's second line is drawn
+  stands, a line waits behind a receipt so its *Undo* stands, and a line waits while no one could see its band, under a
+  sheet or while a field holds the keyboard, which no board says; a step's lines stand under its status row while its
+  roadmap is on the stack, so a roadmap left and opened again keeps no footer, as on the web; Set Aside's second line is drawn
   for *New step* and *Note edited*, and built for the rest as *Step edited*, *New kind*, *Kind edited*, *New subtask*,
   *Subtask edited*, *New link*, *Link edited*, *Roadmap renamed* and *Guide edited*, and its footer for the reasons no
   board draws as *The roadmap reached its limit.*, *Editing access ended.* and *The combined note is too long.*, the
   web's reasons in 10.5b's form; *Discard All*'s question is built as *Discard 2 changes?* over *They’re removed from this
   iPhone.*, which no board draws; *Copy* takes a step's name and description, as 10.5c's caption has it, where the web's
   takes the description alone where there is one, for the web's owner to rule, and says nothing once it has copied; a
-  group's header is the roadmap's name as the room last read it since the app launched, since the phone keeps nothing of
-  a roadmap deleted elsewhere, so one deleted before the room read it this launch has no header, and a note goes by its
+  group's header is the roadmap's name as the room last read it since the app launched or the account changed, since the
+  phone keeps nothing of a roadmap deleted elsewhere, so one deleted before the room read it has no header, and a note goes by its
   step's name so read, else its first line; a change with no word of the person's, a mark, a pointer or a link between
   steps, is not listed, as on the web; a person whose last roadmap was deleted elsewhere stands on *No roadmaps yet*,
   which has no title menu and so no way to Set Aside; 10.5a draws *Share…* and *Export*, which wait for their screens; and
