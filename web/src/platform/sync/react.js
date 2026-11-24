@@ -32,14 +32,21 @@ export function useSyncEngine() {
   return session.signedIn && replica?.state === 'bound' ? replica.engine : null;
 }
 
+// The scope's snapshot of the replica this tab draws, held for the document; the placeholder while it draws none, so no
+// room draws another seat's records.
 export function useSyncRecords(scope) {
   const session = useSession();
+  const replica = useSyncReplica();
   const observation = useMemo(() => session.ready ? session.engine.observe(scope) : idle, [session.engine, session.ready, scope]);
-  return useSyncExternalStore(observation.subscribe, observation.getSnapshot, observation.getSnapshot);
+  const snapshot = useSyncExternalStore(observation.subscribe, observation.getSnapshot, observation.getSnapshot);
+  return replica ? snapshot : EMPTY;
 }
 
+// The product's notices in the replica this tab draws, the same way.
 export function useSyncNotices(product) {
   const session = useSession();
+  const replica = useSyncReplica();
   const observation = useMemo(() => session.ready ? session.engine.observeNotices(product) : quiet, [session.engine, session.ready, product]);
-  return useSyncExternalStore(observation.subscribe, observation.getSnapshot, observation.getSnapshot);
+  const snapshot = useSyncExternalStore(observation.subscribe, observation.getSnapshot, observation.getSnapshot);
+  return replica ? snapshot : NO_NOTICES;
 }

@@ -15,13 +15,17 @@ const missing = existsSync(join(web, 'public', weights)) ? false : 'the self-hos
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
   '.wasm': 'application/wasm', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json' };
 // Playwright's offline context leaves a service worker's own fetches online, so the server refuses everything while
-// `reachable` is false: what the page gets then came from the worker's caches.
+// `reachable` is false: what the page gets then came from the worker's caches. The build reports to a Sentry the test
+// answers, so a report the page sends is seen.
 let dist, server, browser, origin, reachable = true, refused = 0;
+const sentry = 'https://0123456789abcdef@sentry.test/1';
 
 const ready = missing ? Promise.resolve() : (async () => {
   dist = mkdtempSync(join(tmpdir(), 'wm-journal-search-'));
+  process.env.VITE_SENTRY_DSN = sentry;
   await build({ root: web, configFile: join(web, 'vite.config.js'), logLevel: 'error', publicDir: false,
     build: { outDir: dist, emptyOutDir: true } });
+  delete process.env.VITE_SENTRY_DSN;
   server = createServer((request, response) => {
     if (!reachable) { refused++; request.socket.destroy(); return; }
     const path = decodeURIComponent(request.url.split('?')[0]);
@@ -116,6 +120,25 @@ test('Chromium: before its first use, with no connection, search by meaning says
     await search(page, 'calm');
     await foot(page).filter({ hasText: 'Search by meaning needs a connection the first time' }).waitFor();
     assert.ok(refused > 0, 'the search reached for what it has not kept');
+  } finally { reachable = true; await context.close(); }
+});
+
+test('Chromium: signed out, with the server out of reach and the browser online, search by meaning says it needs a connection and reports nothing', { skip: missing, timeout: 60_000 }, async () => {
+  await ready;
+  const context = await browser.newContext();
+  const reports = [];
+  await context.route('https://sentry.test/**', (route) => { reports.push(route.request().url()); return route.fulfill({ status: 200, body: '{}' }); });
+  try {
+    const page = await journal(context);
+    await shellKept(page);
+    reachable = false;
+    refused = 0;
+    await page.reload();
+    await page.getByRole('textbox', { name: 'Write today' }).waitFor();
+    await search(page, 'calm');
+    await foot(page).filter({ hasText: 'Search by meaning needs a connection the first time' }).waitFor();
+    assert.deepEqual({ online: await page.evaluate(() => navigator.onLine), reached: refused > 0, reports },
+      { online: true, reached: true, reports: [] });
   } finally { reachable = true; await context.close(); }
 });
 

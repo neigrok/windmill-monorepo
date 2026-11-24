@@ -578,7 +578,8 @@ target_link_libraries(windmill_rotate_sync_epoch PRIVATE windmill_platform)
 add_executable(windmill_resum_sync_digests platform/infra/resum_sync_digests.cpp)
 target_link_libraries(windmill_resum_sync_digests PRIVATE windmill_product_sync)
 
-# Counts how the pointers between existing roadmap trees meet one owned subtree per step; it reads and never writes.
+# Counts how the pointers between existing roadmap trees meet one owned subtree per step, and the engine's roadmaps by
+# owner and visibility and its pointers alive with no `opens`; it reads and never writes.
 add_executable(windmill_subtree_inventory platform/infra/subtree_inventory.cpp)
 target_link_libraries(windmill_subtree_inventory PRIVATE windmill_roadmap)
 

@@ -162,8 +162,8 @@ test('Picker fixtures stay valid through removal and restoration and their full 
   assert.equal(resolved.id, '\0picker-beacon');
   const stub = await server.ssrLoadModule('\0picker-beacon');
   assert.deepEqual(Object.keys(stub).sort(), Object.keys(actualBeacon).sort());
-  const acts = await server.ssrLoadModule('/src/products/roadmap/board/acts.js');
-  assert.deepEqual([0, 1, 2, 6, 21].map(acts.countBucket), ['0', '1', '2-5', '6-20', '21+']);
+  const buckets = await server.ssrLoadModule('/src/telemetry/countBucket.js');
+  assert.deepEqual([0, 1, 2, 6, 21].map(buckets.countBucket), ['0', '1', '2-5', '6-20', '21+']);
 });
 
 for (const width of [390, 1440]) {

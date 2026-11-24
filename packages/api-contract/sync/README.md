@@ -50,8 +50,9 @@ compose the same ones (engine.md §2.4). The composed registries declare one `ve
 declare a product, type, command or refusal code twice. `reference/test/core/registry.test.js` checks
 all three. A product's registry joins `composition.json` in the change that binds the product on the
 server. The Swift engine composes them in `apps/ios/Sync/Sources/SyncSchema`, generated from these
-files: after editing a composed registry or `composition.json`, run `swift run SyncSchemaGen` in
-`apps/ios/Sync`. iOS CI fails while `SyncSchema` is stale. `composition.json` names gym, journal and roadmap;
+files: after editing a composed registry or `composition.json`, run `swift run SyncSchemaGen` and
+`swift test --filter SyncSchemaTests` (which pins each product's device rows) in `apps/ios/Sync`, and
+`python3 tools/schema_gen.py` in `apps/android`. iOS CI fails while `SyncSchema` is stale. `composition.json` names gym, journal and roadmap;
 its effective version is the version those registries share, not a second version stored on the
 composition manifest.
 

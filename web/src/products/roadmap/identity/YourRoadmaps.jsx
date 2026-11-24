@@ -5,7 +5,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { readNavigation, requestNavigation } from '../../../shell/navigation.js';
 import { track } from '../../../telemetry/beacon.js';
-import { countBucket } from '../board/acts.js';
+import { countBucket } from '../../../telemetry/countBucket.js';
 import { BoardToast } from '../board/BoardToast.jsx';
 import { LABELS } from '../copy.js';
 import { t } from '../i18n/index.js';

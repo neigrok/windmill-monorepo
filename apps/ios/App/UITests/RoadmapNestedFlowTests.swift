@@ -165,7 +165,11 @@ import XCTest
     undo.tap()
     XCTAssertTrue(roadmapRow(app).waitForNonExistence(timeout: 10))
 
+    // Back finds the Board scrolled as it was left, down to the Done group, with *Learn to sail* under the bar, where a
+    // tap lands on the bar; so the Board is brought back to its top first.
     back(app)
+    XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
+    app.collectionViews.firstMatch.swipeDown()
     page(of: "Learn to sail", in: app)
     app.buttons["roadmap-step-roadmap-more"].tap()
     XCTAssertTrue(app.buttons["Change Roadmap"].waitForExistence(timeout: 5) && app.buttons["Detach Roadmap"].exists)

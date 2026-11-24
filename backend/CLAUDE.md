@@ -48,8 +48,9 @@ process; it builds `windmill_server`, the harness-clocked `windmill_server_test_
 transport, for local runs). `rotate_sync_epoch.cpp` is the offline restore tool; its saved epoch
 pair makes a repeated rotation idempotent, `resum_sync_digests.cpp` is the offline tool that rewrites
 every alive scope's digest from its feed after a registry change (`deploy/README.md`),
-`subtree_inventory.cpp` counts how the roadmap's pointers between trees meet one owned subtree per step,
-reading only (`SPEC.md`, Subtree inventory), and `roadmap_adopt.cpp` runs roadmap's cutover onto the sync engine stage by
+`subtree_inventory.cpp` counts how the roadmap's pointers between trees meet one owned subtree per step, and the
+engine's roadmaps by owner and visibility and its pointers alive with no `opens`, reading only (`SPEC.md`, Subtree
+inventory), and `roadmap_adopt.cpp` runs roadmap's cutover onto the sync engine stage by
 stage, printing counts and verdicts alone (`products/roadmap/adoption/README.md`).
 
 ## How a product plugs in

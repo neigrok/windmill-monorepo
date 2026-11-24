@@ -1,3 +1,4 @@
+import { ReplicaChanged } from '../../platform/sync/engine.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { buildRetirement } from './sync/retirement.js';
 
@@ -5,8 +6,10 @@ import { buildRetirement } from './sync/retirement.js';
 export class BoundaryFailure extends Error {}
 
 // A static operation name and stack frames, never a message: V8 repeats the message at the head of the stack, so it goes first.
+// A write a sign-in or a sign-out overtook (`ReplicaChanged`, one the back/forward cache held among them) is no failure:
+// the engine told its commit `not-writable` and wrote nothing.
 export function reportRoadmapFailure(operation, error, tags, route = '#/app') {
-  if (error instanceof BoundaryFailure) return;
+  if (error instanceof BoundaryFailure || error instanceof ReplicaChanged) return;
   const stack = typeof error?.stack === 'string' ? error.stack.replace(`: ${error.message}`, '') : '';
   captureError('roadmap', operation, stack.trim() ? stack : new Error(operation).stack, route, tags);
 }

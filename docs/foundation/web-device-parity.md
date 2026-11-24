@@ -11,8 +11,10 @@ browser's replica, signed in and signed out, and exports from it. Gym does so fo
 from the browser's copy without waiting for the account (§2): it is a sign-in door when signed out and a live mirror of
 a phone's workout. The domain's part is built: the refusals of §4's one open workout on every surface, though a start
 that loses a race holds its sets in its notice and no surface recovers them yet; and §8's adoption, recovery and Coach
-onboarding import in the web's domain, which claims every file §8 names; nothing calls them on the web yet. Gym's Coach
-takes its turn in the browser. The build order lives in the Web as a device roadmap tree, which the dogfood tree
+onboarding import in the web's domain, which claims every file §8 names. Of them, the shell's hook before the seat changes
+(§3 Sign-in) saves each signed-out workout for adoption, an open one with its sets, with no rack to write first since the
+web has none yet; nothing else calls them on the web yet. Gym's Coach takes its turn in the browser. The browser
+finds a store it cleared (§7) and records it once, with its event; no screen tells the person yet. The build order lives in the Web as a device roadmap tree, which the dogfood tree
 (`t_9362d9bc883e0a1e`) opens from the node `web-device-parity`.
 
 **Scope:** What makes gym and journal on the web no different from their siblings on a phone: the
@@ -120,8 +122,13 @@ The web logs a workout (R-2). It is no longer only a mirror.
   the site and kept by the service worker's cache of assets after first use, and its weights are
   kept in a cache the worker names. Neither joins the offline shell, whose budget they exceed many
   times. Before first use, search by meaning says it needs a connection.
-- **Writes** all go through the kit's runner. Three go around it today: restoring unclaimed pages,
-  the migration of pages kept before the engine and the dropping of unclaimed pages.
+- **Writes** all go through the kit's runner. What the journal's bundle before the engine kept in a
+  browser's storage is carried into the replica each seat's pages belong to, while that replica is
+  active, as the domain's actions pinned to the engine's active binding, with a ledger in the
+  replica's device row `carry:<seat>`; a page leaves the browser's storage only once the ledger records
+  it, so it is carried once, whichever replica comes next. The pages that bundle could not attribute
+  stay in the browser's storage until a signed-in person restores them, through the runner, or
+  discards those listed, which writes nothing to the engine.
 - Echoes, nudges and Talk are the server's by nature on every surface (§6).
 
 ## §6 What stays a backend call
@@ -155,6 +162,18 @@ A phone always has its store. A browser can refuse one, lose one, or fill one.
   tell. The backend remembers each session's replica, and a session that arrives with a new one is
   told so. The browser then starts as a new device, and the person is told once that what this
   browser had not sent is gone. It is never said that it can be recovered.
+  - **What the backend keeps.** Every push answered `200` records its replica as the replica of the
+    session it was served through, the cookie's when the request sends one, else the bearer's.
+    `GET /v1/me` reads its caller from the same header lines by the same rule (engine §9.1), so it
+    answers that session's replica as `syncReplica`, `null` until the session's first accepted push
+    ([backend/AUTH.md](../../backend/AUTH.md)). A new sign-in is a new session, so it starts at `null`.
+  - **What is not a clear.** A re-identify gives the active replica a new id within one session (a
+    push answered `replica-forked`, `replica-foreign` or `gap`, and an epoch change; engine §7.11),
+    and `syncReplica` names the old id until the new one's first accepted push. So the browser
+    tells a clear only when `syncReplica` is none of the replica ids its own store has held that a
+    session can still name (its replicas' and the latest it let go), and says nothing on `null`. A
+    browser on a replica held in memory is a new device in every tab under one cookie, and says
+    nothing.
 - **Persistence.** The browser asks to keep its storage. Where it is denied, nothing more is shown.
 - One turn of Coach a browser, which Coach's spec rules, does not hold across tabs of a browser
   that keeps nothing.

@@ -252,7 +252,7 @@ export class RoadmapAccount {
     return [...this.trees.values()]
       .filter((tree) => tree.own && this.locate(tree.id).standing === 'standing' && this.locate(tree.id).place?.parent === null)
       .sort((a, b) => Number(a.updatedAt === null) - Number(b.updatedAt === null) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || compareText(a.id, b.id))
-      .map((tree) => this.listing(tree.id));
+      .flatMap((tree) => this.listing(tree.id) ?? []);
   }
 
   // A roadmap that stands, whoever owns it, as a list shows it: what a reader names a roadmap someone else shared by. Null

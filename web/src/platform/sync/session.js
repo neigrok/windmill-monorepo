@@ -21,8 +21,9 @@ class SyncSession {
     this.opening = (async () => {
       const engine = await BrowserSyncEngine.open(options);
       this.engine = engine;
+      // A page in the back/forward cache stays ready: its rooms keep the replica and its observations as they stand, and
+      // the engine holds their writes until it is restored. Only a restore that fails takes the rooms down.
       engine.onEvent(({ event }) => {
-        if (event === 'suspended') this.publish({ ready: false });
         if (event === 'restored') this.publish({ ready: true, error: false, online: engine.online });
         if (event === 'restoreFailed') this.publish({ ready: false, error: true });
       });

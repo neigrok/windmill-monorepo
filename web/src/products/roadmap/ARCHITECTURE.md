@@ -185,16 +185,18 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   shows its load error and Try again, as a failed read does. A roadmap the server does not serve, one the device holds
   nothing of, a hidden subtree (§5) and a root whose meta has not arrived (D-3) are in no address once the server has
   answered for it: the same load error.
-- **Shapes.** `room/ReplicaRoadmap.js` is the room's edge: each roadmap's records (`HeldRoadmap`) are read by the
-  domain's `readRoadmap` into a `RoadmapTree` (its steps, links, meta and kinds, and the owner's marks and pointers, a
-  mark dated by the server once no queued entry still changes its record, the snapshot's `pending`), the domain's
-  `RoadmapAccount` reads them, and the open roadmap comes out as the tree data `LatticeReading` hands on: present steps
-  in authored order, each following what `FollowGraph` reads it follows through absent steps (D-5), a step's `opening`
-  from the account's `openingsOf`, the kinds that own their hue (`LegendRead`), its name and `TreePlace` from where the
-  account locates it, the owner's marks with the dates `RoadmapAccount.progress` reads, the owner's workspace from the
-  overlay, the guides above from `RoadmapAccount.guides` (`useRoomGuide` asks the server nothing), and the switcher's
-  and the sheet's list in the order of `RoadmapAccount.list`. A reader's roadmap is read without its overlay: the room
-  shows a reader the owner's marks. It decides nothing: a rule it would need belongs in `domain/`.
+- **Shapes.** `room/ReplicaRoadmap.js` is the room's edge: each roadmap's records (`HeldRoadmap`: its tree scope as
+  drawn and as stored, which keeps a step under a delete the person can still undo, and `HeldRoadmap.copy` the readers
+  the domain takes them through) are read by the domain's `readRoadmap` into a `RoadmapTree` (its steps, links, meta and
+  kinds, and the owner's marks and pointers, a mark dated by the server once no queued entry still changes its record,
+  the snapshot's `pending`), the domain's `RoadmapAccount` reads them, and the open roadmap comes out as the tree data
+  `LatticeReading` hands on: present steps in authored order, each following what `FollowGraph` reads it follows through
+  absent steps (D-5), a step's `opening` from the account's `openingsOf`, the kinds that own their hue (`LegendRead`),
+  its name and `TreePlace` from where the account locates it, the owner's marks with the dates `RoadmapAccount.progress`
+  reads, the owner's workspace from the overlay, the guides above from `RoadmapAccount.guides` (`useRoomGuide` asks the
+  server nothing), and the switcher's and the sheet's list in the order of `RoadmapAccount.list`. A reader's roadmap is
+  read without its overlay: the room shows a reader the owner's marks. It decides nothing: a rule it would need belongs
+  in `domain/`.
 - **Following.** Each publication of an observed scope is read once it has reached every observation; a roadmap whose
   records did not change answers the reading it answered before. A changed one stands through the room's `onTreeChanged`;
   the owner's marks go to `RoomProgress.adoptRemote`, as another device's do, and the workspace and guides are seated
@@ -353,7 +355,9 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   - *Refusals and failures:* a write the domain refuses is said in the words of the room with the switch off where there are some (a roadmap at its
     cap, a link that would close a loop) and emits `roadmap_write_refused`; a mark it refuses marks nothing. One the
     store does not take reports `roadmap-replica-write`, its one report: the doors above it (the switcher's rename and
-    delete, the share dialog's visibility) hear a `BoundaryFailure` and say their own failure without reporting it.
+    delete, the share dialog's visibility) hear a `BoundaryFailure` and say their own failure without reporting it. One a
+    sign-in or a sign-out overtook, as one the back/forward cache held while another tab moved the seat, lands nothing
+    (the engine's `ReplicaChanged`) and `reportRoadmapFailure` reports it at no door.
   - Such a room draws no presence and hands its session neither to a reconnect nor to a claim of the device's trees: the
     engine reconnects, and its lineage rule takes what the device holds at sign-in.
 - **Export.** The row's Export writes the room's picture (below), here `ReplicaRoadmap.seed` and the owner's marks.

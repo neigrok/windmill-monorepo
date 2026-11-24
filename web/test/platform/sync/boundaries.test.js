@@ -33,14 +33,21 @@ test('no shell file writes the engine\'s state: it asks the engine', () => {
 });
 
 // Each of these still edits device rows inside the engine's own transaction (a product hook handed a replica, a commit
-// body, the journal's carry-over), which no public read replaces; the list only shrinks.
+// body), which no public read replaces; the list only shrinks.
 test('products reach device rows and replicas only through the engine, but for the files still to move', () => {
   const files = [...new Set(linesMatching(path.join(SRC, 'products'), [/\.deviceRows\(/, /\bdevice\.replicas\b/])
     .map((line) => line.split(':')[0]))].sort();
   assert.deepEqual(files, [
     'products/gym/gymRuntime.js',
     'products/journal/claims.js',
-    'products/journal/migrate.js',
     'products/journal/pages.js',
   ]);
+});
+
+// A product writes the device through its domain's actions and the engine's own calls. The one raw write left is the
+// journal's one-time return of what its first bundle on the engine kept in the device's metadata (journal/carry.js).
+test('no product writes the engine\'s device itself, but for the journal\'s one-time cleanup of its first bundle', () => {
+  const files = [...new Set(linesMatching(path.join(SRC, 'products'), [/\bengine\.write\(/, /\bmeta\.[A-Za-z]+\s*=[^=]/, /\bdelete\s+[\w.?]*\bmeta\./])
+    .map((line) => line.split(':')[0]))].sort();
+  assert.deepEqual(files, ['products/journal/carry.js']);
 });

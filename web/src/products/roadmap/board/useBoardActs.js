@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { HeldDelete, StepSelection, completionOutcome, creationOutcome, countBucket, deletable, editGesture, onceLanded, receiptUndo, recolorOutcome } from './acts.js';
+import { HeldDelete, StepSelection, completionOutcome, creationOutcome, deletable, editGesture, onceLanded, receiptUndo, recolorOutcome } from './acts.js';
+import { countBucket } from '../../../telemetry/countBucket.js';
 import { sharedKind } from '../model/bulkSelection.js';
 import { SkillTree } from '../model/SkillTree.js';
 import { UnlockRules, takesMark } from '../model/UnlockRules.js';

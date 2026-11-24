@@ -1239,11 +1239,13 @@ Indexes that exist because their query runs on every render: `trees_owner` (the 
 
 `windmill_subtree_inventory` (`platform/infra/subtree_inventory.cpp`) counts how the pointers between
 the stored trees meet a model in which each step owns at most one subtree and each subtree has one
-owning step. It reads `DATABASE_URL`, prints one JSON object of counts on stdout and nothing else, and
-never writes. A failure prints one fixed sentence on stderr and exits 2 without `DATABASE_URL`, 1
-otherwise. Its completion is `roadmap.subtree.inventory` (`OBSERVABILITY.md`). On production it runs
-inside the live server container through the **Ops · subtree inventory** workflow, which seals the
-counts to the owner's certificate before the public job log sees them (`deploy/README.md`).
+owning step, and, under `engine`, the sync engine's roadmaps by owner and visibility and its pointers
+alive with no `opens`. It reads `DATABASE_URL`, prints one JSON object of counts on stdout and nothing
+else, and never writes. A failure prints one fixed sentence on stderr and exits 2 without
+`DATABASE_URL`, 1 otherwise. Its completion is `roadmap.subtree.inventory` (`OBSERVABILITY.md`). On
+production it runs inside the live server container through the **Ops · subtree inventory** workflow,
+which seals the counts to the owner's certificate before the public job log sees them
+(`deploy/README.md`).
 
 The read is `PgTreeRepository::eachAccountsTrees`: one statement over `trees` and the present pointers
 in `tree_nodes`, read through `tree_nodes_pointers_idx`, in a `READ ONLY` transaction. A cursor fetches
@@ -1293,10 +1295,33 @@ socket's `subgraph` frame, MCP `create_node`, `update_nodes` and `import_subgrap
 owner's own tree, which keeps its pointers. A tend cannot set one. `tree_ops` does not record which
 door set a pointer: a frame's row is its headline deed, which never carries `opens`, so a frame or an
 `import_subgraph` graft that sets only a pointer leaves no row (Convergence), and a command's row
-carries the pointer under the `srv-` op id that MCP, tending and a removal's cascade share. The
-inventory counts no door.
+carries the pointer under the `srv-` op id that MCP, tending and a removal's cascade share. These
+counts name no door.
 
-What the inventory does not measure, because it is not in `trees` or `tree_nodes`:
+`engine` is read from the tables production serves, the engine's `roadmap_*` (`products/roadmap/sync/`),
+in a second transaction, `REPEATABLE READ READ ONLY`, so its two statements read one snapshot. It is a
+hand-run read of whole tables, so it sets `statement_timeout` to 60 s for itself, past the pool's 5 s: a
+large table is counted, not cut off, and a read past a minute fails like any other.
+
+- `visibility` — every roadmap whose `tree` record is alive, once, by whose it is: `house`, the roadmaps
+  of the house account (`kHouseAccount`, `domain/Access.h`), which owns every roadmap nobody owned
+  before roadmap's move onto the engine, the public demo among them, told apart by its product scope
+  key, as the gallery leaves it out; and `people`, every other account's. Within each, `roots` counts a
+  root by the `visibility` its meta holds, and `subtrees` counts a roadmap whose `tree` record holds a
+  `parent` by its `reach`, since only a root holds a visibility
+  (`docs/foundation/roadmap-on-the-engine.md` §4). Each splits into:
+  - `private`, `unlisted` and `public`. A subtree's `private` includes the subtrees whose owning step
+    is deleted, since that step's death writes their reach private.
+  - `unset`, no meta or a meta that holds none, which reads as private. Among roots it holds one whose
+    creation or fork is under way, which has no meta yet, stands nowhere and is hidden, and a fork's
+    copy whose visibility nobody has set since, as a fork writes none.
+  - `other`, any other value, which admission refuses.
+- `pointersWithoutOpens` — the `pointer` rows alive with no `opens` in an overlay that is alive, by the
+  door their life stamp's actor names: `restore` for the server's `srv`, as an Undo's restore that
+  wrote the life alone leaves it, and `clientPut` for any other actor, a client's put that revived the
+  pointer.
+
+What the counts beside `engine` do not measure, because it is not in `trees` or `tree_nodes`:
 
 - **The on-device store.** The web keeps each tree it holds, and the whole of every tree born signed
   out, in the browser's IndexedDB database `windmill-sync`, store `trees`: one record per tree with

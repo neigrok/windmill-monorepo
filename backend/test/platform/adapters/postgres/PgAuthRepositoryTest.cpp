@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -79,6 +80,36 @@ TEST(pg_auth_refresh_answers_whether_the_session_row_was_updated) {
   CHECK_FALSE(repo.refreshSession("pgtest-no-session", 9'000'000'000'001, 2, "", ""));
   REQUIRE(repo.findSession("pgtest-refresh").has_value());
   CHECK_EQ(repo.findSession("pgtest-refresh")->expiresAt, 9'000'000'000'001ULL);
+}
+
+TEST(pg_auth_a_session_keeps_the_replica_it_last_pushed_for_until_it_goes_and_only_its_account_records_one) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgAuthRepository repo{pgTestPool()};
+  repo.insertSession("pgtest-browser", UserId{kSam}, 9'000'000'000'000, "", "", 1);
+  repo.insertSession("pgtest-phone", UserId{kSam}, 9'000'000'000'000, "", "", 1);
+  const auto replicaOf = [&repo](const std::string& digest) -> std::optional<std::string> {
+    const std::optional<StoredSession> session = repo.findSession(digest);
+    if (!session) return "(no session)";
+    return session->syncReplica;
+  };
+  using Recorded = SessionReplicas::Recorded;
+
+  CHECK(replicaOf("pgtest-browser") == std::nullopt);
+  CHECK(repo.recordSyncReplica("pgtest-browser", UserId{kSam}, "rp_0000000000000000000000000000000a") == Recorded::changed);
+  CHECK(repo.recordSyncReplica("pgtest-browser", UserId{kSam}, "rp_0000000000000000000000000000000a") == Recorded::unchanged);
+  CHECK(replicaOf("pgtest-browser") == std::optional<std::string>("rp_0000000000000000000000000000000a"));
+  CHECK(replicaOf("pgtest-phone") == std::nullopt);
+  CHECK(repo.recordSyncReplica("pgtest-browser", UserId{kSam}, "rp_0000000000000000000000000000000b") == Recorded::changed);
+  CHECK(replicaOf("pgtest-browser") == std::optional<std::string>("rp_0000000000000000000000000000000b"));
+  CHECK(repo.recordSyncReplica("pgtest-no-session", UserId{kSam}, "rp_0000000000000000000000000000000a") == Recorded::absent);
+  CHECK(repo.recordSyncReplica("pgtest-phone", UserId{kEve}, "rp_0000000000000000000000000000000a") == Recorded::absent);
+  CHECK(replicaOf("pgtest-phone") == std::nullopt);
+
+  repo.deleteSession("pgtest-browser");
+  CHECK_FALSE(repo.findSession("pgtest-browser").has_value());
+  CHECK(repo.recordSyncReplica("pgtest-browser", UserId{kSam}, "rp_0000000000000000000000000000000c") == Recorded::absent);
+  CHECK_FALSE(repo.findSession("pgtest-browser").has_value());
 }
 
 namespace {

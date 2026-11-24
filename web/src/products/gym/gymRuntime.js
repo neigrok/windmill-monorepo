@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Decision } from '../../platform/domain-kit/actions.js';
+import { ActDecision, scopedAct } from '../../platform/domain-kit/acts.js';
 import { Draft } from '../../platform/domain-kit/drafts.js';
 import { DecodeError, Fields, Id, sameJson } from '../../platform/domain-kit/entities.js';
 import { Plan } from '../../platform/domain-kit/plans.js';
@@ -11,6 +12,7 @@ import { Instant, LocalDay, Moment } from '../../platform/domain-kit/time.js';
 import { Valid } from '../../platform/domain-kit/validation.js';
 import { Violation } from '../../platform/domain-kit/values.js';
 import { CommitError } from '../../../../packages/api-contract/sync/reference/client/commit.js';
+import { ReplicaChanged } from '../../platform/sync/engine.js';
 import { registry } from '../../platform/sync/schema.js';
 import { useSyncRecords, useSyncReplica } from '../../platform/sync/react.js';
 import { captureError } from '../../telemetry/sentry.js';
@@ -25,7 +27,8 @@ import { AcknowledgeRoutineRemoval, ApplyProposalKeepingReceipt, DismissProposal
   REMOVAL_RECEIPTS, removalReceipts } from './domain/proposals.js';
 import { exerciseDocument, proposalDocument, proposalsDocument, sessionDocument, setDocument, TrainingHistory } from './domain/trainingHistory.js';
 import { Session, SessionRules, SetRules, TrainingSet } from './domain/training.js';
-import { CorrectedSet, CorrectSession, CorrectSet, DeleteSet, ImportedSet, ImportSession } from './domain/trainingActions.js';
+import { AppendSet, CorrectedSet, CorrectSession, CorrectSet, DeleteSet, ImportedSet, ImportSession } from './domain/trainingActions.js';
+import { AdoptWorkout, SignedOutWorkout } from './domain/workoutAdoption.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
 import { REFUSALS } from './bodyweight/bodyweight.js';
 import { fixLoadFloorLine } from './fix.js';
@@ -37,7 +40,7 @@ import { fromDisplayUnit, weightUnit } from './units.js';
 const SCOPE = 'self/gym';
 const OPERATIONS = new Set(['routine-create', 'routine-save', 'exercise-create', 'exercise-rename',
   'preferences-save', 'note-save', 'note-reorder', 'bodyweight-save', 'set-correct', 'delete', 'undo',
-  'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'refusal']);
+  'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'workout-adopt', 'refusal']);
 const OUTCOMES = new Set(['saved-local', 'unchanged', 'failed', 'held', 'undone', 'closed', 'refused']);
 // What refused a write: the replica moved under the room, or the gym's rules, this device's or the server's.
 const REFUSED_BY = new Set(['not-writable', 'domain']);
@@ -57,16 +60,17 @@ export function gymStep(operation, outcome, code = null) {
   try { track('gym_action', code === null ? { operation, outcome } : { operation, outcome, code }); } catch { /* reporting cannot stop a save */ }
 }
 
-export function gymFailure(operation) {
+// A failure goes to Sentry under its static operation with the error's stack frames, never its message.
+export function gymFailure(operation, error) {
   if (!OPERATIONS.has(operation) && operation !== 'projection') return;
-  try { captureError('gym', `gym-${operation}`, '', '/gym'); } catch { /* reporting cannot stop a save */ }
+  try { captureError('gym', `gym-${operation}`, error?.stack ?? '', '/gym'); } catch { /* reporting cannot stop a save */ }
 }
 
 export const deviceZone = { offsetSeconds: (instant) => -new Date(instant.ms).getTimezoneOffset() * 60 };
 export const gymMoment = (now = Date.now()) => new Moment(new Instant(now), deviceZone);
 
 function reportUnreadablePlans(views, failure, checked = new WeakSet()) {
-  let unreadable = false;
+  let unreadable = null;
   for (const view of [views.drawn, views.stored]) for (const record of view.values()) {
     const register = record.f?.plan;
     if (record.t !== 'session' || register?.[0] == null || checked.has(register)) continue;
@@ -74,16 +78,16 @@ function reportUnreadablePlans(views, failure, checked = new WeakSet()) {
     try { PlanSnapshot.decode(register[0]); }
     catch (error) {
       if (!(error instanceof DecodeError)) throw error;
-      unreadable = true;
+      unreadable ??= error;
     }
   }
-  if (unreadable) failure('projection');
+  if (unreadable) failure('projection', unreadable);
 }
 
 function readGym(load, body, failure, checked) {
   try { return load((reader) => { reportUnreadablePlans(reader.views, failure, checked); return body(reader); }); }
   catch (error) {
-    if (!(error instanceof GymRefusal)) failure('projection');
+    if (!(error instanceof GymRefusal)) failure('projection', error);
     throw error;
   }
 }
@@ -228,7 +232,8 @@ export function noteDraft(note) {
     : Draft.opening(new NoteValue(id, note.title, note.body));
 }
 
-// A sign-in or a sign-out moved the engine off the replica the API stands on; nothing in it asks a person to sign in.
+// A sign-in or a sign-out moved the engine off the replica the API stands on, before a write or while it waited (the
+// engine's `ReplicaChanged`); nothing in it asks a person to sign in.
 const notWritable = () => new GymRefusal('not-writable', { sentence: t('gym.runtime.notWritable') });
 
 // The API stands on the engine's binding as it is made: the replica's storage and its account, which a re-identify keeps.
@@ -248,6 +253,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
       reportUnreadablePlans(views, failure, checkedPlans);
       return body(views);
     }),
+    commitAct: (prepare, segment) => port.commitAct(prepare, segment, { binding: owner }),
     read: (scope) => {
       const views = port.read(scope);
       checkOwner(views.binding);
@@ -261,10 +267,11 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
   const boundary = async (operation, body) => {
     try { return await body(); }
     catch (thrown) {
-      const error = thrown instanceof CommitError && thrown.kind === 'not-writable' ? notWritable() : thrown;
+      const moved = thrown instanceof ReplicaChanged || (thrown instanceof CommitError && thrown.kind === 'not-writable');
+      const error = moved ? notWritable() : thrown;
       if (error instanceof GymRefusal) event(operation, 'refused', error.code === 'not-writable' ? 'not-writable' : 'domain');
       else event(operation, 'failed');
-      if (!(error instanceof GymRefusal) && !isStoreFailure(error)) failure(operation);
+      if (!(error instanceof GymRefusal) && !isStoreFailure(error)) failure(operation, error);
       throw error;
     }
   };
@@ -367,6 +374,45 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
   });
   return {
     read,
+    // Before the seat changes (`routes.sync.seatWillChange`), each workout the anon replica holds is saved for adoption, an
+    // open one with its sets recorded again, as the phones do; a bound replica holds none. Each workout is one act on the
+    // API's binding, so it lands whole before the seat changes or not at all, and one the domain refuses or that fails
+    // leaves the others to land; a seat that moved refuses every act after it, so the first such refusal ends the hook.
+    // Told once when it saved something, and once for each workout refused or failed; the seat changes on whichever.
+    saveSignedOutWorkouts: async () => {
+      // An open copy's set as its adoption saves it: one the start it was logged on took with it, which the adoption
+      // superseded, is recorded again, and one the act still draws stands.
+      const recordedAgain = (set) => {
+        const append = scopedAct(AppendSet(set).recorded);
+        return { refusals: append.refusals,
+          load: (act) => ({ drawn: act.inScope(SCOPE, (reader) => reader.repository(TrainingSet).find(set.id, 'drawn') !== null), loaded: append.load(act) }),
+          decide: ({ drawn, loaded }, ids) => (drawn ? ActDecision.unchanged(null) : append.decide(loaded, ids)) };
+      };
+      const saved = () => read((reader) => reader.device(SignedOutWorkout.key));
+      const workouts = await boundary('workout-adopt', async () => read((reader) => {
+        if (!reader.isAnonymous) return [];
+        return reader.repository(Session).all('drawn').map((workout) => {
+          const adoption = AdoptWorkout(workout.id, 'prepare');
+          const copy = adoption.load(reader).workout;
+          return [scopedAct(adoption), ...(copy?.session.isOpen ? copy.sets.map(recordedAgain) : [])];
+        });
+      })).catch(() => []);
+      let savedAny = false;
+      for (const parts of workouts) {
+        try {
+          const changed = await boundary('workout-adopt', async () => {
+            const before = saved();
+            const outcome = await runner.runComposed(parts);
+            if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
+            return !sameJson(before ?? null, saved() ?? null);
+          });
+          if (changed) savedAny = true;
+        } catch (error) {
+          if (error.code === 'not-writable') break;
+        }
+      }
+      if (savedAny) event('workout-adopt', 'saved-local');
+    },
     workoutSave,
     workoutSaves: () => read((reader) => Object.keys(reader.device(WORKOUT_DRAFTS) ?? {}).map((key) => ({ key, ...workoutSave(key) }))),
     clearWorkoutSave: (key, expectedCommand = null) => boundary('session-correct', async () => {
