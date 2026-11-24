@@ -9,7 +9,7 @@ import { Decision, decision } from '../../platform/domain-kit/actions.js';
 import { Violation } from '../../platform/domain-kit/values.js';
 import { translate } from '../../platform/domain-kit/translation.js';
 import { JournalRoom, PageDocument } from './domain/page.js';
-import { EditorDraft, JournalWriteState, JournalWriting, PreserveEditorDraft, ReconcileClaim, RetireJournalInvitation, SavePage } from './domain/writing.js';
+import { EditorDraft, JournalWriting, PreserveEditorDraft, ReconcileClaim, RetireJournalInvitation, SavePage } from './domain/writing.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
 
@@ -47,6 +47,7 @@ function journalRunner(engine, expectedReplica = engine.activeReplica(), snapsho
     physNow: () => port.physNow(),
     cancelHeld: (id) => port.cancelHeld(id),
     dismissNotice: (id) => port.dismissNotice(id),
+    dismissNotices: (scope, ids, when) => port.dismissNotices(scope, ids, (metadata) => metadata.replica === expectedReplica && when(metadata)),
   }, engine.registry, deviceZone);
 }
 
@@ -130,11 +131,11 @@ export async function savePage(engine, doc, expectedReplica = engine.activeRepli
   const refusal = outcome.kind === 'refused' ? outcome.refusal : outcome.result?.refusal;
   if (refusal) throw Object.assign(new Error('journal-local-refusal'), { refusal });
   if (!notices.length) return outcome;
-  // The day's words are kept, so the refusal notices it held before stop speaking, through the runner's own door.
+  // The day's words are kept, so the refusal notices it held before stop speaking, all in one write that reads whether a
+  // refused claim of the day still speaks for its words.
   try {
-    const retires = runner.read(SCOPE, (read) => read.replica === expectedReplica && !new JournalWriteState(read, action.day).keepsRefusalNotices);
-    if (retires) for (const id of notices) await runner.replica.dismissNotice(id);
-  } catch { captureError('journal', 'journal-notice-cleanup', '', '/journal'); }
+    await runner.dismissNotices(SCOPE, notices, ({ devices = {} }) => !JournalWriting.keepsRefusalNotices(devices, action.day));
+  } catch (error) { captureError('journal', 'journal-notice-cleanup', error?.stack ?? '', '/journal'); }
   return outcome;
 }
 
@@ -196,7 +197,7 @@ export function watchClaims(engine) {
           if (result.kind === 'refused') track('sync_commit', { outcome: 'failed' });
         }
       }
-    } catch { captureError('journal', 'journal-claim-reconcile', '', '/journal'); }
+    } catch (error) { captureError('journal', 'journal-claim-reconcile', error?.stack ?? '', '/journal'); }
     finally { running = false; }
   };
   engine.observe(SCOPE).subscribe(reconcile);

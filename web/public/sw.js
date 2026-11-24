@@ -5,8 +5,9 @@ const SHELL_CACHE = 'windmill-shell-v2';
 const ASSET_CACHE = 'windmill-assets-v2';
 const ICON_CACHE = 'windmill-icons-v2';
 // Search by meaning's weights, kept after their first use and never staged with the shell. A model's weights live at
-// fixed addresses, so new bytes at an address it already serves take a new name here.
-const MODEL_CACHE = 'windmill-models-v1';
+// fixed addresses, so new bytes at an address it already serves take a new name here, and activation drops the old one.
+const MODEL_CACHE_PREFIX = 'windmill-models-';
+const MODEL_CACHE = `${MODEL_CACHE_PREFIX}v1`;
 // The copy the library kept for itself before this worker kept the weights.
 const LIBRARY_MODEL_CACHE = 'transformers-cache';
 const GENERATION_PREFIX = 'windmill-generation-';
@@ -26,15 +27,18 @@ self.addEventListener('install', (event) => {
 });
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
-    await caches.delete(LIBRARY_MODEL_CACHE).catch(() => {});
+    const names = await caches.keys().catch(() => []);
+    await Promise.all(names.filter((name) => name === LIBRARY_MODEL_CACHE || (name.startsWith(MODEL_CACHE_PREFIX) && name !== MODEL_CACHE))
+      .map((name) => caches.delete(name).catch(() => {})));
     await primeShell().catch(() => {});
     await self.clients.claim();
   })());
 });
 
+// Whether the browser kept the response; a refusal never reaches the reply.
 async function keep(cacheName, key, response) {
   const cache = await caches.open(cacheName).catch(() => null);
-  if (cache) await cache.put(key, response).catch(() => {});
+  return cache ? cache.put(key, response).then(() => true, () => false) : false;
 }
 
 async function kept(cacheName, key) {
@@ -161,12 +165,20 @@ async function hashedAsset(request) {
   }
 }
 
-// No deadline: weights are tens of megabytes, and the page waits on them only for search by meaning.
+// No deadline: weights are tens of megabytes, and the page waits on them only for search by meaning. A redirect is kept
+// nowhere: what answered is not the address asked for. Weights the browser would not keep are told to the pages, whose
+// search says so.
 async function modelFile(event) {
   const cached = await kept(MODEL_CACHE, event.request);
   if (cached) return cached;
   const response = await fetch(event.request);
-  if (response.ok) event.waitUntil(keep(MODEL_CACHE, event.request, response.clone()));
+  if (response.ok && !response.redirected) {
+    event.waitUntil(keep(MODEL_CACHE, event.request, response.clone()).then(async (stored) => {
+      if (stored) return;
+      const pages = await self.clients.matchAll({ type: 'window' }).catch(() => []);
+      for (const page of pages) page.postMessage({ type: 'model-not-kept' });
+    }));
+  }
   return response;
 }
 

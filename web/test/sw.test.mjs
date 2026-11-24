@@ -30,9 +30,11 @@ function boot({ fetches, openFails = false, putFails = false, matchFails = false
   };
   const caches = { open: async (name) => { if (fails(openFails, name)) throw quota(); return cacheFor(name); },
     keys: async () => [...stores.keys()], delete: async (name) => stores.delete(name) };
-  const listeners = new Map(), network = [], claimed = { count: 0 }, skipped = { count: 0 };
+  const listeners = new Map(), network = [], claimed = { count: 0 }, skipped = { count: 0 }, told = [];
+  // Two pages the worker controls; `told` holds what it posts them, by page, copied out of the worker's realm.
+  const pages = [0, 1].map((page) => ({ postMessage: (message) => told.push({ page, message: JSON.parse(JSON.stringify(message)) }) }));
   const self = { addEventListener: (type, listener) => listeners.set(type, listener), skipWaiting: () => { skipped.count++; },
-    clients: { claim: async () => { claimed.count++; } }, location: { origin: ORIGIN } };
+    clients: { claim: async () => { claimed.count++; }, matchAll: async ({ type }) => (type === 'window' ? pages : []) }, location: { origin: ORIGIN } };
   const fetchImpl = async (request, options) => {
     const key = keyOf(request); network.push({ key, options });
     return fetches ? fetches(key, options) : reply(key === '/offline-assets.json' ? '["/assets/app.js"]' : key);
@@ -41,7 +43,7 @@ function boot({ fetches, openFails = false, putFails = false, matchFails = false
     Response: class { constructor(body) { return reply(body); } },
     setTimeout: (callback, ms) => setTimeout(callback, Math.min(ms, timeout)), clearTimeout }), { filename: 'sw.js' });
   return {
-    network, claimed, skipped, stores,
+    network, claimed, skipped, stores, told,
     entries(name) { return [...(stores.get(name) ?? [])].map(([key, value]) => [key, value.body]); },
     async pointer() { return (await cacheFor(SHELL_CACHE).match(POINTER))?.json() ?? {}; },
     handle(url, { mode = 'no-cors', method = 'GET', destination = '' } = {}) {
@@ -161,6 +163,36 @@ test('model weights are kept in their own cache after first use and answer from 
   await assert.rejects(worker.handle(`${ORIGIN}/models/missing.onnx`), { name: 'TypeError', message: 'offline' });
 });
 
+test('weights the browser will not keep are still served, and every page the worker controls is told', async () => {
+  const weights = `${ORIGIN}/models/Xenova/bge-small-en-v1.5/onnx/model_quantized.onnx`;
+  for (const refusal of [{ putFails: (name) => name === 'windmill-models-v1' }, { openFails: (name) => name === 'windmill-models-v1' }]) {
+    const worker = boot({ ...refusal, fetches: (url) => reply(`WEIGHTS:${url}`) });
+    assert.deepEqual({ served: (await worker.handle(weights)).body, kept: worker.entries('windmill-models-v1'), told: worker.told }, {
+      served: 'WEIGHTS:/models/Xenova/bge-small-en-v1.5/onnx/model_quantized.onnx', kept: [],
+      told: [{ page: 0, message: { type: 'model-not-kept' } }, { page: 1, message: { type: 'model-not-kept' } }],
+    });
+  }
+  const keeping = boot({ fetches: (url) => reply(`WEIGHTS:${url}`) });
+  await keeping.handle(weights);
+  assert.deepEqual(keeping.told, []);
+});
+
+test('weights that answered from another address are served and kept nowhere', async () => {
+  const worker = boot({ fetches: () => reply('<html>sign in</html>', { redirected: true }) });
+  assert.equal((await worker.handle(`${ORIGIN}/models/Xenova/bge-small-en-v1.5/onnx/model_quantized.onnx`)).body, '<html>sign in</html>');
+  assert.deepEqual({ kept: worker.entries('windmill-models-v1'), told: worker.told }, { kept: [], told: [] });
+});
+
+test('every activation drops an older model cache, whether or not a new shell stages', async () => {
+  const worker = boot({ fetches: deployment('same') });
+  await worker.activate();
+  worker.stores.set('windmill-models-v0', new Map([['/models/model.onnx', reply('OLD-WEIGHTS')]]));
+  worker.stores.set('windmill-models-v1', new Map([['/models/model.onnx', reply('WEIGHTS')]]));
+  await worker.activate();
+  assert.deepEqual({ old: worker.stores.has('windmill-models-v0'), current: worker.entries('windmill-models-v1') },
+    { old: false, current: [['/models/model.onnx', 'WEIGHTS']] });
+});
+
 test('activation forgets the library\'s own copy of the weights and staging keeps the worker\'s', async () => {
   const kept = { '/models/model.onnx': reply('WEIGHTS') };
   const worker = boot({ fetches: deployment('new'), cached: { ...oldGeneration(), 'windmill-models-v1': kept, 'transformers-cache': kept } });
@@ -265,15 +297,15 @@ test('development modules refresh online and survive offline with the warmed she
 });
 
 function chunk(modules, imports = [], dynamicImports = [], assets = [], css = []) {
-  return { type: 'chunk', modules: Object.fromEntries(modules.map((name) => [`/web/src/${name}`, {}])), code: 'code', imports, dynamicImports,
-    viteMetadata: { importedAssets: new Set(assets), importedCss: new Set(css) } };
+  return { type: 'chunk', modules: Object.fromEntries(modules.map((name) => [name.startsWith('/') ? name : `/web/src/${name}`, {}])), code: 'code',
+    imports, dynamicImports, viteMetadata: { importedAssets: new Set(assets), importedCss: new Set(css) } };
 }
 test('precache follows the shell and room graph, excluding neural runtime and unrelated assets', () => {
   const bundle = {
     'assets/main.js': { ...chunk(['main.jsx'], [], ['assets/gym.js', 'assets/journal.js', 'assets/showcase.js']), isEntry: true },
     'assets/gym.js': chunk(['products/gym/GymApp.jsx'], [], [], [], ['assets/gym.css']),
-    'assets/journal.js': chunk(['products/journal/JournalApp.jsx'], [], ['assets/neural.js']),
-    'assets/neural.js': chunk(['products/journal/search/neural/neuralEmbedder.js'], [], [], ['assets/worker.js']),
+    'assets/journal.js': chunk(['products/journal/JournalApp.jsx', 'products/journal/search/neural/neuralEmbedder.js'], [], ['assets/neural.js']),
+    'assets/neural.js': chunk(['/web/node_modules/@huggingface/transformers/dist/transformers.web.js'], [], [], ['assets/worker.js']),
     'assets/showcase.js': chunk(['showcase/Showcase.jsx']),
     'assets/gym.css': { type: 'asset', source: 'style' }, 'assets/worker.js': { type: 'asset', source: 'runtime' },
     'assets/runtime.wasm': { type: 'asset', source: new Uint8Array(25 * 1024 * 1024) },

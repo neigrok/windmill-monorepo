@@ -152,6 +152,14 @@ export class PendingClaim {
     this.refusal = null;
   }
 
+  // The claims among the journal's device rows, in key order: the editor's drafts share the claims' prefix and are none.
+  /** @param {Record<string, Json>} rows */
+  static of(rows) {
+    return Object.entries(rows)
+      .filter(([key]) => key.startsWith('pendingClaim:') && key !== EditorDraft.key && !key.startsWith(EditorDraft.recoveryPrefix))
+      .sort(([a], [b]) => compareText(a, b)).map(([, value]) => PendingClaim.fromJSON(value));
+  }
+
   /** @param {Json} json */
   static fromJSON(json) {
     const fields = Fields.object(json, 'pendingClaim');
@@ -208,10 +216,7 @@ export class JournalWriteState {
     this.drawn = read.repository(Page).find(Id.ofDay(day, Page), 'drawn')?.document ?? null;
     this.state = read.repository(JournalState).find(new Id('journalState', JournalState), 'drawn') ?? new JournalStateValue();
     const devices = read.devices('pendingClaim:');
-    this.pending = Object.entries(devices).filter(([key]) => key !== EditorDraft.key && !key.startsWith(EditorDraft.recoveryPrefix)).sort(([a], [b]) => compareText(a, b))
-      .map(([, value]) => PendingClaim.fromJSON(value));
-    // A refused claim's notice keeps speaking after a later save of its day: the account has not taken those words.
-    this.keepsRefusalNotices = this.pending.some((claim) => claim.day.text === day.text && claim.refusal !== null);
+    this.pending = PendingClaim.of(devices);
     const draft = devices[EditorDraft.key];
     this.hasEditorDraft = draft !== undefined && EditorDraft.fromJSON(draft).day.text === day.text;
     this.commands = read.commands();
@@ -428,6 +433,12 @@ export const JournalWriting = Object.freeze({
   stamp(loaded, observed) {
     try { return ContentClock.advance({ clock: loaded.clock, observed, now: loaded.moment.now.ms, actor: loaded.actor }); }
     catch { throw new Violation('journal.contentClock', new Path('stamp'), { kind: 'custom', custom: 'exhausted' }); }
+  },
+  // A refused claim's notice keeps speaking after a later save of its day: the account has not taken those words.
+  /** @param {Record<string, Json>} rows the journal's device rows @param {DayInput} day */
+  keepsRefusalNotices(rows, day) {
+    const text = dayOf(day).text;
+    return PendingClaim.of(rows).some((claim) => claim.day.text === text && claim.refusal !== null);
   },
   /** @param {string} product @param {Record<string, Json>} rows */
   pendingWork(product, rows) {

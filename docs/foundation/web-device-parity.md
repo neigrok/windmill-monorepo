@@ -120,9 +120,8 @@ The web logs a workout (R-2). It is no longer only a mirror.
   the site and kept by the service worker's cache of assets after first use, and its weights are
   kept in a cache the worker names. Neither joins the offline shell, whose budget they exceed many
   times. Before first use, search by meaning says it needs a connection.
-- **Writes** all go through the kit's runner. Four go around it today: restoring unclaimed pages,
-  the migration of pages kept before the engine, a notice's dismissal and the dropping of unclaimed
-  pages.
+- **Writes** all go through the kit's runner. Three go around it today: restoring unclaimed pages,
+  the migration of pages kept before the engine and the dropping of unclaimed pages.
 - Echoes, nudges and Talk are the server's by nature on every surface (§6).
 
 ## §6 What stays a backend call

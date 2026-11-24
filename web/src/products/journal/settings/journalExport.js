@@ -3,7 +3,7 @@
 
 import { syncSession } from '../../../platform/sync/session.js';
 import { captureError } from '../../../telemetry/sentry.js';
-import { track } from '../../../telemetry/beacon.js';
+import { track as trackEvent } from '../../../telemetry/beacon.js';
 import { isWritten, normalizePage, pagesOf, SCOPE } from '../pages.js';
 import { t } from '../i18n/settings/index.js';
 
@@ -21,8 +21,8 @@ export function journalMarkdown(pages) {
   return `# ${t('journal.export.title')}\n\n${blocks.join('\n')}`;
 }
 
-// The room's written pages. Signed out they are the browser's own; a bound replica first finishes its first pull of the
-// journal, so the file holds the account's pages and not only what this browser wrote.
+// The room's written pages, as the room shows them. Signed out they are the browser's own; a bound replica first finishes
+// its first pull of the journal, so the file holds the account's pages, with what this browser holds in their day's place.
 export function exportedPages(engine, waitMs = 30_000) {
   const failure = (reason) => Object.assign(new Error('journal-export-wait'), { reason });
   if (!engine || engine.closed) return Promise.reject(failure('no_replica'));
@@ -50,22 +50,29 @@ export function exportedPages(engine, waitMs = 30_000) {
   });
 }
 
-export async function buildJournalArchive(engine = syncSession.engine) {
-  let pages;
-  try { pages = await exportedPages(engine); }
-  catch (error) {
-    track('journal_export', { outcome: error.reason ?? 'failed' });
-    if (!error.reason) captureError('journal', 'journal-export', '', '/app/settings');
+// Reading the pages, writing them as Markdown and handing the file to the browser: an expected wait or a replica gone is
+// its outcome alone, and anything else in any step is a failure reported with that step and the error's stack.
+export async function buildJournalArchive(engine = syncSession.engine, { track = trackEvent, report = captureError } = {}) {
+  let step = 'pages';
+  try {
+    const pages = await exportedPages(engine);
+    step = 'file';
+    const file = new Blob([journalMarkdown(pages)], { type: 'text/markdown' });
+    step = 'download';
+    const url = URL.createObjectURL(file);
+    try {
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'windmill-journal.md';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    } finally { URL.revokeObjectURL(url); }
+    track('journal_export', { outcome: 'ok' });
+    return { count: pages.length };
+  } catch (error) {
+    track('journal_export', { outcome: error?.reason ?? 'failed' });
+    if (!error?.reason) report('journal', 'journal-export', error?.stack ?? '', '/app/settings', { step });
     throw error;
   }
-  const url = URL.createObjectURL(new Blob([journalMarkdown(pages)], { type: 'text/markdown' }));
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = 'windmill-journal.md';
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-  track('journal_export', { outcome: 'ok' });
-  return { count: pages.length };
 }
