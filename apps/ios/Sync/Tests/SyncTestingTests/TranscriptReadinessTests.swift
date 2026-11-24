@@ -40,7 +40,7 @@ struct TranscriptReadinessTests {
     expected.sample(serverTime: 101, send: reading, recv: reading)
     expected.sample(serverTime: 102, send: reading, recv: reading)
     var valid = TranscriptOffsets(device(initial))
-    #expect(valid.record(device(expected), before: initial, readiness: 101, ordinary: 102, reading: reading).isEmpty)
+    #expect(valid.record(device(expected), before: initial, readiness: 101, ordinary: 102, reading: reading, readinessSchema: nil, heard: false).isEmpty)
     var ordinary = initial
     ordinary.sample(serverTime: 102, send: reading, recv: reading)
     let augmented = try valid.augment(device(ordinary).json)
@@ -50,7 +50,7 @@ struct TranscriptReadinessTests {
       var changed = initial
       for time in times { changed.sample(serverTime: Int64(time), send: reading, recv: reading) }
       var ledger = TranscriptOffsets(device(initial))
-      #expect(ledger.record(device(changed), before: initial, readiness: 101, ordinary: 102, reading: reading)
+      #expect(ledger.record(device(changed), before: initial, readiness: 101, ordinary: 102, reading: reading, readinessSchema: nil, heard: false)
         == ["\(replica) offset samples differ from the exact modeled exchanges"])
     }
   }
