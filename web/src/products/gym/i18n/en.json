@@ -656,7 +656,7 @@
   "gym.coach.receipt.thisWorkout": "Read this workout · {weeks, plural, one {# week} other {# weeks}}",
   "gym.recovery.title": "In this browser",
   "gym.recovery.meta": "{day}, {time} · {sets, plural, one {# set} other {# sets}}",
-  "gym.recovery.day": "{days, plural, =0 {Today} other {Yesterday}}",
+  "gym.recovery.day": "{day, select, today {Today} other {Yesterday}}",
   "gym.recovery.moreFor": "More for {name}",
   "gym.recovery.discard": "Discard workout",
   "gym.recovery.discarded": "Workout discarded.",

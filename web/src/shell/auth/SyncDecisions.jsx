@@ -7,9 +7,9 @@ import './sync-decisions.css';
 const WIDE = '(min-width: 744px)';
 
 // A sign-in question always has words, its product's or the shell's (`ProductQuestions.signInWords`), and is the account
-// decision below. So is a sign-out question its product words, but for one that a notice would add to: the shell's sign-out
-// question keeps its words and each notice's line, a product's `signOutNotice()` on what signing out discards from this tab,
-// with the download that keeps it.
+// decision below. A sign-out question its product words is too, unless a notice adds to it: the shell's sign-out question
+// then says each notice's line, a product's `signOutNotice()` on what signing out discards from this tab, with the download
+// that keeps it.
 export function SyncDecisions({ question, notices = [], busy, error, onDecision, onCancel }) {
   if (!question) return null;
   if (question.words && (question.kind === 'signed-out' || notices.length === 0)) {

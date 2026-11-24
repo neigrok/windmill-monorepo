@@ -34,7 +34,10 @@ export function useRefusedStarts(log) {
 export function InThisBrowser({ log, placement }) {
   const api = useGymApi();
   const records = useSyncRecords('self/gym');
-  const copies = useMemo(() => (api ? api.browserCopies() : []), [api, records]);
+  // A read that fails is the runtime's to report (`gym-projection`); The log stands without the section.
+  const copies = useMemo(() => {
+    try { return api ? api.browserCopies() : []; } catch { return []; }
+  }, [api, records]);
   const hidden = log.hidden('copy');
   const shown = copies.filter((copy) => !hidden.has(copy.id));
   const [answering, setAnswering] = useState(null);
@@ -74,7 +77,7 @@ export function InThisBrowser({ log, placement }) {
 // `Today`, `Yesterday`, or the day's date.
 function dayOf(ms) {
   const days = daysAgo(ms);
-  return days <= 1 ? t('gym.recovery.day', { days: Math.max(0, days) }) : shortDayLabel(ms);
+  return days <= 1 ? t('gym.recovery.day', { day: days <= 0 ? 'today' : 'yesterday' }) : shortDayLabel(ms);
 }
 
 // Why a copy waits, in one sentence; the web has no editor for a copy, so a sentence names no way out it cannot offer. A
