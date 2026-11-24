@@ -1818,7 +1818,7 @@ intent (§7.1 step 7), and the sender numbers ready entries in commit order, pas
 held-back entries (§7.4). An epoch change preserves those positions: old acknowledgements return
 ahead of later dependent edits and deletes, including entries already numbered before the change.
 Before its result, an entry changes only by a fold (§7.3, §7.7 step 3), a
-restamp or a write map (§7.7), or, never numbered, by the capture command a later act's preimage joins
+restamp or a write map (§7.7), or, while held or ready, by the capture command a later act's preimage joins
 to it (§7.3 Undo of an act, Capture), or ends before binding by a supersede (§7.1 step 4).
 
 ### §7.3 Hold, release, undo
@@ -1900,10 +1900,10 @@ type UndoRecipe =
   for one acknowledged later, while the act's source entry is still in the outbox. A preimage taken before
   the replica held an epoch takes the receipt's. So the Undo of a removal walks from a birth the device made,
   though the act that made it keeps no journal. An ordinary entry's answer carries no receipt, so the act's
-  transaction gives each entry a journaled preimage read over that was never numbered and carries no command
-  its scope kind's one `engine: "capture"` command (none, or several, throws malformed): its ACK then carries
-  the receipt the walk steps over, signed in or signed out. An entry already numbered keeps its intent (§7.2),
-  its answer moves nothing, and a row it wrote breaks the walk (Materialize). A life's preimage also keeps
+  transaction gives each entry a journaled preimage read over that is still held or ready and carries no
+  command its scope kind's one `engine: "capture"` command (none, or several, throws malformed): its ACK then
+  carries the receipt the walk steps over, signed in or signed out. An entry already sent keeps its intent
+  (§7.2), its answer moves nothing, and a row it wrote breaks the walk (Materialize). A life's preimage also keeps
   the record as read (`record`: its birth, field registers and texts), which a revival draws. An unset slot takes the target's
   `defaultValue`, the product's value equivalent to unset (`null` is a value); without one the act throws
   malformed. A named segment runs as one

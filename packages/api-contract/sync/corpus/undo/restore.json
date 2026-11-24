@@ -63022,7 +63022,7 @@
     }
   },
   {
-    "name": "an Undo of a removal skips when the device's own rename was sent before the record was removed and answered after: a numbered intent never changes",
+    "name": "an Undo of a removal skips when the device's own rename was sent before the record was removed and answered after: an intent on the wire never changes",
     "input": {
       "device": {
         "active": "rp_00000000000000000000000000000001",

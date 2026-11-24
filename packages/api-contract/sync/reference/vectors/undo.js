@@ -1112,10 +1112,10 @@ function releasedBirth() {
 }
 
 // An ordinary entry's answer carries no receipt, so a restore's walk cannot step over the row it wrote. An opted act
-// that reads over an ordinary write not yet numbered sends that entry with its scope kind's capture command, and the
+// that reads over an ordinary write still queued sends that entry with its scope kind's capture command, and the
 // walk follows its receipt: a tag born or renamed by an ordinary entry and removed before the entry went up comes back
-// as the device left it, signed in or signed out. An entry already numbered keeps its intent: sent before the removal,
-// or answered and not yet pulled, its write still breaks the walk.
+// as the device left it, signed in or signed out. An entry already sent keeps its intent: sent before the removal, or
+// answered and not yet pulled, its write still breaks the walk.
 function queuedOrdinaryWrites() {
   const elm = { scope: TREE, t: 'tag', id: 'elm' };
   const plainBirth = { op: 'commit', scope: TREE, deviceNow: 5000, changes: [{ op: 'create', t: 'tag', id: 'elm', f: { label: 'Elm' } }] };
@@ -1163,7 +1163,7 @@ function queuedOrdinaryWrites() {
   sent.flush();
   sent.pull([TREE]);
   const sentRename = undone(sent.local(rename, { op: 'push', deviceNow: 5060 }, removal), 'g3', 'g5')
-    .vector('an Undo of a removal skips when the device\'s own rename was sent before the record was removed and answered after: a numbered intent never changes');
+    .vector('an Undo of a removal skips when the device\'s own rename was sent before the record was removed and answered after: an intent on the wire never changes');
   assert.deepEqual(sentRename.expect.returns.at(-2), { kind: 'settled', requestId: 'g5', inverseActId: 'g4', changed: false, appliedCount: 0, skippedCount: 1 });
   assert.equal(elmOnServer(sent).life[0], 'dead');
   assert.ok(!captured(sentRename, 'g2'));
