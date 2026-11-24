@@ -51,4 +51,13 @@ struct AddressesTests {
     #expect(Self.read("/t/t_9362d9bc883e0a1e/") == RoadmapAddress(tree: "t_9362d9bc883e0a1e"))
     #expect(Self.read("/t/t_00000000000000aa#/app/t_9362d9bc883e0a1e?step=a%2Fb") == RoadmapAddress(tree: "t_9362d9bc883e0a1e", step: "a/b"))
   }
+
+  // The web reads a fragment's query between its first `?` and the next (`stepOf`), and its first `step`.
+  @Test func aStepIsReadAsTheWebReadsIt() {
+    #expect(Self.read("/t/t_9362d9bc883e0a1e#?step=a?b") == RoadmapAddress(tree: "t_9362d9bc883e0a1e", step: "a"))
+    #expect(Self.read("/#/app/t_9362d9bc883e0a1e?step=x?y") == RoadmapAddress(tree: "t_9362d9bc883e0a1e", step: "x"))
+    #expect(Self.read("/t/t_9362d9bc883e0a1e#?step=a&step=b") == RoadmapAddress(tree: "t_9362d9bc883e0a1e", step: "a"))
+    #expect(Self.read("/t/t_9362d9bc883e0a1e#?step=a+b") == RoadmapAddress(tree: "t_9362d9bc883e0a1e", step: "a b"))
+    #expect(Self.read("/t/t_9362d9bc883e0a1e#?step") == RoadmapAddress(tree: "t_9362d9bc883e0a1e", step: ""))
+  }
 }

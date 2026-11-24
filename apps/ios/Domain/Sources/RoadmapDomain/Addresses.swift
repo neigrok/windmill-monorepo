@@ -15,19 +15,19 @@ public struct RoadmapAddress: Equatable, Sendable {
 
   // The roadmap an address names, from its path and its fragment as they stand in it, still percent-encoded, read as
   // the web's router reads them: a fragment that is an app route wins over the path, and a share's fragment holds only
-  // the step. Nil where the address names no roadmap: another page of the site, or an id that is no tree's.
+  // the step. The fragment's query is what stands between its first `?` and the next, as the web splits it. Nil where the
+  // address names no roadmap: another page of the site, or an id that is no tree's.
   public init?(path: String, fragment: String?) {
-    let hash = fragment ?? ""
-    if hash.hasPrefix("/") {
-      let route = hash.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
-      guard route[0].hasPrefix("/app/") else { return nil }
-      self.init(tree: String(route[0].dropFirst("/app/".count)), step: route.count > 1 ? Self.step(in: route[1]) : nil)
+    let hash = (fragment ?? "").split(separator: "?", omittingEmptySubsequences: false)
+    let step = hash.count > 1 ? Self.step(in: hash[1]) : nil
+    if hash[0].hasPrefix("/") {
+      guard hash[0].hasPrefix("/app/") else { return nil }
+      self.init(tree: String(hash[0].dropFirst("/app/".count)), step: step)
       return
     }
     let parts = path.split(separator: "/", omittingEmptySubsequences: false)
     guard parts.count == 3 || (parts.count == 4 && parts[3].isEmpty), parts[0].isEmpty, parts[1] == "t" else { return nil }
-    let query = hash.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
-    self.init(tree: Self.decoded(parts[2], plusIsSpace: false), step: query.count > 1 ? Self.step(in: query[1]) : nil)
+    self.init(tree: Self.decoded(parts[2], plusIsSpace: false), step: step)
   }
 
   // The address a roadmap shared with the reader opens at, the share's: `/t/<tree>`, with its step.
