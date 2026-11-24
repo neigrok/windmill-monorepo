@@ -30,7 +30,7 @@
               "label": "Leave the dock",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a0",
               "status": "none",
               "description": "",
               "links": [],
@@ -45,7 +45,7 @@
               "label": "Tie a bowline",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a1",
               "status": "none",
               "description": "",
               "links": [],
@@ -60,7 +60,7 @@
               "label": "Sail with an instructor",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a2",
               "status": "none",
               "description": "",
               "links": [],
@@ -144,7 +144,7 @@
               "label": "Leave the dock",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a0",
               "status": "none",
               "description": "",
               "links": [],
@@ -159,7 +159,7 @@
               "label": "Tie a bowline",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a1",
               "status": "none",
               "description": "",
               "links": [],
@@ -174,7 +174,7 @@
               "label": "Sail with an instructor",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a2",
               "status": "none",
               "description": "",
               "links": [],
@@ -258,7 +258,7 @@
               "label": "Leave the dock",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a0",
               "status": "none",
               "description": "",
               "links": [],
@@ -273,7 +273,7 @@
               "label": "Tie a bowline",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a1",
               "status": "none",
               "description": "",
               "links": [],
@@ -288,7 +288,7 @@
               "label": "Sail with an instructor",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a2",
               "status": "none",
               "description": "",
               "links": [],
@@ -336,7 +336,157 @@
       }
     },
     "expect": {
-      "refused": "roadmap-not-ready"
+      "refused": {
+        "code": "roadmap-not-ready",
+        "id": "c"
+      }
+    }
+  },
+  {
+    "case": "a direct write to a roadmap the conversation is not about is out of its scope",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            }
+          ],
+          "kinds": [],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        },
+        {
+          "id": "t_0000000000000003",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to cook",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000003",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Boil an egg",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "call": {
+      "name": "set_progress",
+      "input": {
+        "treeId": "t_0000000000000003",
+        "nodeId": "a",
+        "status": "complete"
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "out-of-scope",
+        "id": "t_0000000000000003"
+      }
     }
   }
 ]

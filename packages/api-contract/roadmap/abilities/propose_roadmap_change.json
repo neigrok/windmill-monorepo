@@ -1,0 +1,1497 @@
+[
+  {
+    "case": "steps added in a chain by their refs, and a held step linked after the last; the record holds minted ids",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T",
+        "k1x9q2m7p4z8w3r5",
+        "t6v2n8c4j1b9h7d3"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "add_step",
+            "ref": "new:hoist",
+            "label": "Hoist the sail",
+            "prerequisites": [
+              "a"
+            ]
+          },
+          {
+            "op": "add_step",
+            "ref": "new:tack",
+            "label": "Tack",
+            "kind": "learn",
+            "prerequisites": [
+              "new:hoist"
+            ]
+          },
+          {
+            "op": "connect",
+            "nodeId": "c",
+            "prerequisiteId": "new:tack"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": []
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "add_step",
+            "nodeId": "k1x9q2m7p4z8w3r5",
+            "label": "Hoist the sail",
+            "prerequisites": [
+              "a"
+            ]
+          },
+          {
+            "op": "add_step",
+            "nodeId": "t6v2n8c4j1b9h7d3",
+            "label": "Tack",
+            "kind": "learn",
+            "prerequisites": [
+              "k1x9q2m7p4z8w3r5"
+            ]
+          },
+          {
+            "op": "connect",
+            "nodeId": "c",
+            "prerequisiteId": "t6v2n8c4j1b9h7d3"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "a merge folds one step into another and names what it removes",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "merge",
+            "nodeId": "c",
+            "removeId": "d",
+            "label": "Sail with an instructor or a friend"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": [
+          {
+            "nodeId": "d",
+            "label": "Sail with a friend",
+            "descriptionChars": 52,
+            "links": 1,
+            "done": false
+          }
+        ]
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "merge",
+            "nodeId": "c",
+            "removeId": "d",
+            "label": "Sail with an instructor or a friend"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "a split replaces a step with parts side by side, each under a minted id",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T",
+        "m3q8z1x6c2v9b4n7",
+        "f5h2k8d1s7a3g9j4"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "split",
+            "nodeId": "b",
+            "parts": [
+              {
+                "ref": "new:loop",
+                "label": "Make the loop"
+              },
+              {
+                "ref": "new:finish",
+                "label": "Pass the end round the line and back"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": [
+          {
+            "nodeId": "b",
+            "label": "Tie a bowline",
+            "descriptionChars": 0,
+            "links": 0,
+            "done": false
+          }
+        ]
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "split",
+            "nodeId": "b",
+            "parts": [
+              {
+                "nodeId": "m3q8z1x6c2v9b4n7",
+                "label": "Make the loop"
+              },
+              {
+                "nodeId": "f5h2k8d1s7a3g9j4",
+                "label": "Pass the end round the line and back"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "two kinds swap hues, since hues are held apart once every change has folded",
+    "about": null,
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "recolor_kind",
+            "kind": "learn",
+            "hue": "gold"
+          },
+          {
+            "op": "recolor_kind",
+            "kind": "milestone",
+            "hue": "olive"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": []
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "recolor_kind",
+            "kind": "learn",
+            "hue": "gold"
+          },
+          {
+            "op": "recolor_kind",
+            "kind": "milestone",
+            "hue": "olive"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "kinds left on one hue are refused at the change that put them there",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "recolor_kind",
+            "kind": "learn",
+            "hue": "gold"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "hue-taken",
+        "at": 0,
+        "id": "learn"
+      }
+    }
+  },
+  {
+    "case": "a link that closes a loop is refused at its change, after the changes before it fold",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off"
+          },
+          {
+            "op": "connect",
+            "nodeId": "a",
+            "prerequisiteId": "c"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "closes-cycle",
+        "at": 1,
+        "id": "a"
+      }
+    }
+  },
+  {
+    "case": "a ref named before a change gives it names no step",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "connect",
+            "nodeId": "c",
+            "prerequisiteId": "new:tack"
+          },
+          {
+            "op": "add_step",
+            "ref": "new:tack",
+            "label": "Tack"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "unknown-step",
+        "at": 0,
+        "id": "new:tack"
+      }
+    }
+  },
+  {
+    "case": "a field the op does not take is refused at its change",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off",
+            "hue": "sky"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "invalid-input",
+        "at": 0,
+        "id": "a"
+      }
+    }
+  }
+]

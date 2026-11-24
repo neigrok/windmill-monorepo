@@ -30,7 +30,7 @@
               "label": "Leave the dock",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a0",
               "status": "none",
               "description": "",
               "links": [],
@@ -45,7 +45,7 @@
               "label": "Tie a bowline",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a1",
               "status": "none",
               "description": "",
               "links": [],
@@ -60,7 +60,7 @@
               "label": "Sail with an instructor",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a2",
               "status": "none",
               "description": "",
               "links": [],
@@ -147,7 +147,7 @@
               "label": "Leave the dock",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a0",
               "status": "none",
               "description": "",
               "links": [],
@@ -162,7 +162,7 @@
               "label": "Tie a bowline",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a1",
               "status": "none",
               "description": "",
               "links": [],
@@ -177,7 +177,7 @@
               "label": "Sail with an instructor",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a2",
               "status": "none",
               "description": "",
               "links": [],
@@ -219,7 +219,10 @@
       }
     },
     "expect": {
-      "refused": "over-limit"
+      "refused": {
+        "code": "over-limit",
+        "id": "b"
+      }
     }
   }
 ]

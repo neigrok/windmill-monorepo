@@ -1,6 +1,7 @@
 {
   "backend": "backend/products/roadmap/domain/Command.h",
   "registry": "packages/api-contract/sync/roadmap.registry.json",
+  "web": "web/src/products/roadmap/domain/roadmapRules.js",
   "limits": {
     "id": {
       "max": 128,
@@ -12,13 +13,15 @@
       "max": 200,
       "unit": "characters",
       "backend": "kMaxNodeLabelLength",
-      "registry": "node.label"
+      "registry": "node.label",
+      "web": "label"
     },
     "description": {
       "max": 16000,
       "unit": "characters",
       "backend": "kMaxNodeDescriptionLength",
-      "registry": "node.description"
+      "registry": "node.description",
+      "web": "description"
     },
     "steps": {
       "max": 10000,
@@ -36,19 +39,22 @@
       "max": 32,
       "unit": "items",
       "backend": "kMaxNodeLinks",
-      "registry": "node.links"
+      "registry": "node.links",
+      "web": "links"
     },
     "webLinkLabel": {
       "max": 200,
       "unit": "characters",
       "backend": "kMaxLinkLabelLength",
-      "registry": "node.links.label"
+      "registry": "node.links.label",
+      "web": "linkLabel"
     },
     "webLinkAddress": {
       "max": 2048,
       "unit": "characters",
       "backend": "kMaxLinkUrlLength",
-      "registry": "node.links.url"
+      "registry": "node.links.url",
+      "web": "linkUrl"
     },
     "kinds": {
       "max": 6,
@@ -60,13 +66,15 @@
       "max": 24,
       "unit": "characters",
       "backend": "kMaxKindLabelLength",
-      "registry": "kind.label"
+      "registry": "kind.label",
+      "web": "kindLabel"
     },
     "kindDescription": {
       "max": 80,
       "unit": "characters",
       "backend": "kMaxKindDescriptionLength",
-      "registry": "kind.description"
+      "registry": "kind.description",
+      "web": "kindDescription"
     }
   }
 }

@@ -18,6 +18,7 @@ on:
       - 'packages/api-contract/roadmap/domain/*-actions.json'
       - 'packages/api-contract/sync/roadmap.registry.json'
       - 'backend/products/roadmap/domain/Command.h'
+      - 'web/src/products/roadmap/domain/roadmapRules.js'
       - '.github/workflows/coach.yml'
       - '!packages/api-contract/**/*.md'
   pull_request:
@@ -36,6 +37,7 @@ on:
       - 'packages/api-contract/roadmap/domain/*-actions.json'
       - 'packages/api-contract/sync/roadmap.registry.json'
       - 'backend/products/roadmap/domain/Command.h'
+      - 'web/src/products/roadmap/domain/roadmapRules.js'
       - '.github/workflows/coach.yml'
       - '!packages/api-contract/**/*.md'
   workflow_dispatch:
@@ -60,7 +62,7 @@ jobs:
         run: |
           python3 packages/api-contract/gym/strict.py
           python3 packages/api-contract/gym/strict_test.py
-      - name: Check Roadmap Coach's catalog and vectors, and its caps against the backend's
+      - name: Check Roadmap Coach's catalog and vectors, and its caps against the backend's and the web's
         run: |
           python3 packages/api-contract/roadmap/check.py
           python3 packages/api-contract/roadmap/check_test.py

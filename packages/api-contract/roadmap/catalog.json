@@ -2,8 +2,204 @@
   "catalog": "roadmap/1",
   "abilities": [
     {
+      "name": "get_tree",
+      "description": "A page of one roadmap. The first page opens with `tree`: its title, its kinds, its guide and how many steps it has. Then come its steps, each after the steps it follows; a step on a loop, or after one, comes last. A step whose state is unknown waits on a roadmap this device has not finished bringing. An answer goes on at `nextCursor`, and a step too long for one page comes in parts, `part` of `parts`, whose texts and lists join in order.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "id",
+                "label",
+                "kind",
+                "state",
+                "prerequisites",
+                "unlockCount",
+                "summary",
+                "description",
+                "links",
+                "opens"
+              ]
+            },
+            "description": "The fields each step comes with; `id` always does. Left out: id, label, kind, state, prerequisites, unlockCount, summary. `summary` is the description's first 160 characters, with … when it is longer."
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]{0,8})\\.[1-9][0-9]{0,8}\\.[0-9a-f]{16}$",
+            "description": "The `nextCursor` of the page before; leave it out for the first page."
+          }
+        },
+        "required": [
+          "treeId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "maxBytes": 16384,
+        "type": "object",
+        "properties": {
+          "tree": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "kinds": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "hue": {
+                      "type": "string",
+                      "enum": [
+                        "terracotta",
+                        "olive",
+                        "gold",
+                        "brick",
+                        "sky",
+                        "plum"
+                      ]
+                    },
+                    "description": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "hue",
+                    "description"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "guide": {
+                "type": "string"
+              },
+              "stepCount": {
+                "type": "integer"
+              },
+              "part": {
+                "type": "integer"
+              },
+              "parts": {
+                "type": "integer"
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "locked",
+                    "available",
+                    "complete",
+                    "unknown"
+                  ]
+                },
+                "prerequisites": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "unlockCount": {
+                  "type": "integer"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "links": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "opens": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "part": {
+                  "type": "integer"
+                },
+                "parts": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "steps"
+        ],
+        "additionalProperties": false
+      },
+      "class": "read",
+      "agent": "runs",
+      "seats": "any",
+      "strict": false,
+      "phrase": "read your roadmap",
+      "ui": "Board, Graph"
+    },
+    {
       "name": "get_nodes",
-      "description": "Steps of one roadmap by exact id, in the order asked. A step the person deleted and can still bring back with Undo is not there.",
+      "description": "Steps of one roadmap by exact id, in the order asked, each once. An id the roadmap does not hold refuses the call. A step the person deleted and can still bring back with Undo is not there. An answer goes on at `nextCursor`, and a step too long for one page comes in parts, `part` of `parts`.",
       "input": {
         "type": "object",
         "properties": {
@@ -18,9 +214,29 @@
             },
             "minItems": 1
           },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "id",
+                "label",
+                "kind",
+                "state",
+                "prerequisites",
+                "unlockCount",
+                "summary",
+                "description",
+                "links",
+                "opens"
+              ]
+            },
+            "description": "The fields each step comes with; `id` always does. Left out: id, label, kind, state, prerequisites, unlockCount, summary. `summary` is the description's first 160 characters, with … when it is longer."
+          },
           "cursor": {
             "type": "string",
-            "description": "The `nextCursor` of the page before. An answer past 16 KiB is paged; leave this out for the first page."
+            "pattern": "^(0|[1-9][0-9]{0,8})\\.[1-9][0-9]{0,8}\\.[0-9a-f]{16}$",
+            "description": "The `nextCursor` of the page before; leave it out for the first page."
           }
         },
         "required": [
@@ -30,7 +246,96 @@
         "additionalProperties": false
       },
       "result": {
-        "maxBytes": 16384
+        "maxBytes": 16384,
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "locked",
+                    "available",
+                    "complete",
+                    "unknown"
+                  ]
+                },
+                "prerequisites": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "unlockCount": {
+                  "type": "integer"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "links": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "opens": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "part": {
+                  "type": "integer"
+                },
+                "parts": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "steps"
+        ],
+        "additionalProperties": false
       },
       "class": "read",
       "agent": "runs",
@@ -41,7 +346,7 @@
     },
     {
       "name": "find_nodes",
-      "description": "Steps of one roadmap that match every filter sent: a kind, a state, a text. `state: \"available\"` is the frontier, the steps the person can work on now. A step whose state is unknown, because it waits on a roadmap this device has not finished bringing, matches no state.",
+      "description": "Steps of one roadmap that match every filter sent: a kind, a state, a text; with a text, the best match first. `state: \"available\"` is the frontier, the steps the person can work on now. A step whose state is unknown, because it waits on a roadmap this device has not finished bringing, matches no state. An answer goes on at `nextCursor`.",
       "input": {
         "type": "object",
         "properties": {
@@ -65,9 +370,29 @@
             "type": "string",
             "description": "Text to find in a step's id, label or description, in any case."
           },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "id",
+                "label",
+                "kind",
+                "state",
+                "prerequisites",
+                "unlockCount",
+                "summary",
+                "description",
+                "links",
+                "opens"
+              ]
+            },
+            "description": "The fields each step comes with; `id` always does. Left out: id, label, kind, state, prerequisites, unlockCount, summary. `summary` is the description's first 160 characters, with … when it is longer."
+          },
           "cursor": {
             "type": "string",
-            "description": "The `nextCursor` of the page before. An answer past 16 KiB is paged; leave this out for the first page."
+            "pattern": "^(0|[1-9][0-9]{0,8})\\.[1-9][0-9]{0,8}\\.[0-9a-f]{16}$",
+            "description": "The `nextCursor` of the page before; leave it out for the first page."
           }
         },
         "required": [
@@ -76,7 +401,96 @@
         "additionalProperties": false
       },
       "result": {
-        "maxBytes": 16384
+        "maxBytes": 16384,
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "locked",
+                    "available",
+                    "complete",
+                    "unknown"
+                  ]
+                },
+                "prerequisites": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "unlockCount": {
+                  "type": "integer"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "links": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "opens": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "part": {
+                  "type": "integer"
+                },
+                "parts": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "steps"
+        ],
+        "additionalProperties": false
       },
       "class": "read",
       "agent": "runs",
@@ -97,7 +511,8 @@
           },
           "cursor": {
             "type": "string",
-            "description": "The `nextCursor` of the page before. An answer past 16 KiB is paged; leave this out for the first page."
+            "pattern": "^(0|[1-9][0-9]{0,8})\\.[1-9][0-9]{0,8}\\.[0-9a-f]{16}$",
+            "description": "The `nextCursor` of the page before; leave it out for the first page."
           }
         },
         "required": [
@@ -127,7 +542,8 @@
           },
           "cursor": {
             "type": "string",
-            "description": "The `nextCursor` of the page before. An answer past 16 KiB is paged; leave this out for the first page."
+            "pattern": "^(0|[1-9][0-9]{0,8})\\.[1-9][0-9]{0,8}\\.[0-9a-f]{16}$",
+            "description": "The `nextCursor` of the page before; leave it out for the first page."
           }
         },
         "required": [
@@ -153,7 +569,8 @@
         "properties": {
           "cursor": {
             "type": "string",
-            "description": "The `nextCursor` of the page before. An answer past 16 KiB is paged; leave this out for the first page."
+            "pattern": "^(0|[1-9][0-9]{0,8})\\.[1-9][0-9]{0,8}\\.[0-9a-f]{16}$",
+            "description": "The `nextCursor` of the page before; leave it out for the first page."
           }
         },
         "required": [],
@@ -266,12 +683,11 @@
                 }
               },
               "required": [
-                "url",
-                "label"
+                "url"
               ],
               "additionalProperties": false
             },
-            "description": "Every web link the step is to carry, in order."
+            "description": "Every web link the step is to carry, in order; a label left out is empty."
           }
         },
         "required": [
@@ -362,6 +778,220 @@
       "strict": false,
       "phrase": "linked two steps",
       "ui": "Graph, a link drawn between two steps"
+    },
+    {
+      "name": "propose_roadmap_change",
+      "description": "Propose one to 100 changes to one roadmap. Nothing is written until the person reviews the proposal and applies it, and a newer proposal replaces the one waiting on this roadmap. Changes apply in order, and a step field takes a step's id or the `ref` an earlier change gave a new step. Each op takes exactly these fields, required before the semicolon:\nadd_step: ref, label; description, kind (else terracotta), prerequisites, links\nremove_step: nodeId. The steps after it follow its own prerequisites\nrename: nodeId, label\ndescribe: nodeId; description, links, at least one\nset_kind: nodeId, kind\nconnect, disconnect: nodeId, the step that waits; prerequisiteId, the step it waits on\nmerge: nodeId, kept; removeId, folded in and removed; label, description, the kept step's. Links of removeId move to nodeId\nsplit: nodeId, parts, two or more, each ref, label; description, kind, links. Each part follows the old step's prerequisites, precedes what it unlocked and takes its mark and, unless it names one, its kind\nset_progress: nodeId, status\nadd_kind: kind, a new id; label, hue; description\nrename_kind: kind, label\nrecolor_kind: kind, hue. Two kinds may swap hues; no two may end on one\nThe answer names each step the proposal removes, with what it holds.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "treeId": {
+            "type": "string",
+            "pattern": "^t_[0-9a-f]{16}$"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "add_step",
+                    "remove_step",
+                    "rename",
+                    "describe",
+                    "set_kind",
+                    "connect",
+                    "disconnect",
+                    "merge",
+                    "split",
+                    "set_progress",
+                    "add_kind",
+                    "rename_kind",
+                    "recolor_kind"
+                  ]
+                },
+                "nodeId": {
+                  "type": "string",
+                  "description": "A step's id, or the `ref` an earlier change gave a new step."
+                },
+                "ref": {
+                  "type": "string",
+                  "pattern": "^new:[a-z0-9][a-z0-9-]{0,31}$",
+                  "description": "The name a new step goes by in this proposal: new: and up to 32 lowercase letters, digits and hyphens."
+                },
+                "label": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "links": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "kind": {
+                  "type": "string",
+                  "description": "A kind's id; for add_kind, the new kind's."
+                },
+                "hue": {
+                  "type": "string",
+                  "enum": [
+                    "terracotta",
+                    "olive",
+                    "gold",
+                    "brick",
+                    "sky",
+                    "plum"
+                  ]
+                },
+                "prerequisites": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "description": "A step's id, or the `ref` an earlier change gave a new step."
+                  }
+                },
+                "prerequisiteId": {
+                  "type": "string",
+                  "description": "The step `nodeId` waits on. A step's id, or the `ref` an earlier change gave a new step."
+                },
+                "removeId": {
+                  "type": "string",
+                  "description": "The step a merge folds into `nodeId` and removes. A step's id, or the `ref` an earlier change gave a new step."
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "complete",
+                    "none"
+                  ]
+                },
+                "parts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "ref": {
+                        "type": "string",
+                        "pattern": "^new:[a-z0-9][a-z0-9-]{0,31}$"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "links": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "url": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "url"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "ref",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "description": "The steps a split makes, two or more."
+                }
+              },
+              "required": [
+                "op"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "treeId",
+          "changes"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "type": "object",
+        "properties": {
+          "proposalId": {
+            "type": "string"
+          },
+          "removes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "nodeId": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "descriptionChars": {
+                  "type": "integer"
+                },
+                "links": {
+                  "type": "integer"
+                },
+                "done": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "nodeId",
+                "label",
+                "descriptionChars",
+                "links",
+                "done"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "proposalId",
+          "removes"
+        ],
+        "additionalProperties": false
+      },
+      "class": "change",
+      "agent": "proposes",
+      "seats": "any",
+      "strict": false,
+      "phrase": "wrote a proposal for your roadmap",
+      "ui": "none"
     }
   ]
 }

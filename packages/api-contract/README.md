@@ -190,20 +190,24 @@ Roadmap Coach's abilities, which the web and the iPhone each run on the device's
   the provider's strict mode also accepts (`type`, `description`, `properties`, `required`, `additionalProperties`,
   `items`, `enum`, `const`, `minItems` of 0 or 1 and `pattern`), with patterns of explicit classes. So declaring an
   ability strict is one word. A cap of §6 is no keyword of an input: the ability refuses past it as `over-limit`.
-- `result` holds what the spec settles of an answer, and no more: a read's `maxBytes`, 16384, the most its JSON text
-  takes as UTF-8 (§5).
+- `result` is the JSON Schema of the answer, beside a read's `maxBytes`, 16384, the most its canonical text takes (§5.2).
+  `get_tree`, `get_nodes`, `find_nodes` and `propose_roadmap_change` state their answer whole; `get_progress`,
+  `get_diagnostics` and `list_trees` state only their `maxBytes`, and a direct write, whose writes are the room's own
+  actions, states none.
 - `limits.json` holds §6's caps, the ones the server enforces and every client checks first. Each names its `max`, its
   `unit` (`characters`, counted as Unicode code points, or `items`), the constant of
-  `backend/products/roadmap/domain/Command.h` the backend's own doors hold to, and the declaration of
-  `sync/roadmap.registry.json` the sync engine admits Coach's writes by.
+  `backend/products/roadmap/domain/Command.h` the backend's own doors hold to, the declaration of
+  `sync/roadmap.registry.json` the sync engine admits Coach's writes by, and, where the web's domain holds one, its spec
+  in `RoadmapSpecs` (`web/src/products/roadmap/domain/roadmapRules.js`).
 - `abilities/` holds the ability vectors; [roadmap/abilities/README.md](roadmap/abilities/README.md) has their format.
 
 `check.py` holds the three in the Coach contracts workflow (`.github/workflows/coach.yml`), which runs when any of them,
-`Command.h` or the registry changes:
+`Command.h`, the registry, `roadmapRules.js` or the domain's actions change:
 
-- the catalog to the kit's shape and the shared vocabulary, with no ability that runs at once and removes (§4);
-- every vector to its format;
-- each cap to the backend's constant and the registry's declaration.
+- the catalog to the kit's shape and the shared vocabulary, inputs and stated answers alike, with no ability that runs
+  at once and removes (§4);
+- every vector to its format, a read's pages and parts to §5.2's rules, and every refusal to a code of §6.1;
+- each cap to the backend's constant, the registry's declaration and the web's spec.
 
 `check_test.py`, run in the same step, breaks each rule once and holds the refusal's words.
 

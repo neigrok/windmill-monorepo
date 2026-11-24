@@ -30,7 +30,7 @@
               "label": "Leave the dock",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a0",
               "status": "none",
               "description": "",
               "links": [],
@@ -45,7 +45,7 @@
               "label": "Tie a bowline",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a1",
               "status": "none",
               "description": "",
               "links": [],
@@ -60,7 +60,7 @@
               "label": "Sail with an instructor",
               "icon": "",
               "color": "terracotta",
-              "ord": "",
+              "ord": "a2",
               "status": "none",
               "description": "",
               "links": [],
@@ -114,7 +114,10 @@
       }
     },
     "expect": {
-      "refused": "roadmap-unavailable"
+      "refused": {
+        "code": "roadmap-unavailable",
+        "id": "t_0000000000000002"
+      }
     }
   }
 ]
