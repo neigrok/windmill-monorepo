@@ -9,7 +9,7 @@ import { Decision, decision } from '../../platform/domain-kit/actions.js';
 import { Violation } from '../../platform/domain-kit/values.js';
 import { translate } from '../../platform/domain-kit/translation.js';
 import { JournalRoom, PageDocument } from './domain/page.js';
-import { EditorDraft, JournalWriting, PreserveEditorDraft, ReconcileClaim, RetireJournalInvitation, SavePage } from './domain/writing.js';
+import { EditorDraft, JournalWriteState, JournalWriting, PreserveEditorDraft, ReconcileClaim, RetireJournalInvitation, SavePage } from './domain/writing.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
 
@@ -98,8 +98,10 @@ export function claimGesture(doc, claimId = crypto.randomUUID()) {
 export async function savePage(engine, doc, expectedReplica = engine.activeReplica(), retirements = {}, priorDraft = null) {
   const action = new SavePage({ day: doc.day, document: doc, retiring: Object.keys(retirements) });
   const runner = journalRunner(engine, expectedReplica);
-  const notices = new Set(engine.observe(SCOPE).getSnapshot().notices
-    .filter((notice) => !notice.dismissed && notice.content.cmd?.args.day === doc.day).map((notice) => notice.id));
+  const observed = engine.observe(SCOPE);
+  const notices = observed.getSnapshot().notices
+    .filter((notice) => !notice.dismissed && notice.content.cmd?.args.day === doc.day).map((notice) => notice.id);
+  observed.release();
   const outcome = await runner.run({
     scope: SCOPE, refusals: action.refusals, load: (read) => {
       const retained = read.device(EditorDraft.key);
@@ -127,13 +129,12 @@ export async function savePage(engine, doc, expectedReplica = engine.activeRepli
   });
   const refusal = outcome.kind === 'refused' ? outcome.refusal : outcome.result?.refusal;
   if (refusal) throw Object.assign(new Error('journal-local-refusal'), { refusal });
-  if (notices.size) await engine.write(null, (device) => {
-    const replica = device.activeReplica;
-    if (replica.id !== expectedReplica) return;
-    const refusedClaim = Object.values(replica.deviceRows('journal')).some((row) => row?.day === doc.day && row.refusal);
-    if (refusedClaim) return;
-    for (const notice of replica.notices) if (notice.scope === SCOPE && notices.has(notice.id)) notice.dismissed = true;
-  }, [SCOPE]).catch(() => captureError('journal', 'journal-notice-cleanup', '', '/journal'));
+  if (!notices.length) return outcome;
+  // The day's words are kept, so the refusal notices it held before stop speaking, through the runner's own door.
+  try {
+    const retires = runner.read(SCOPE, (read) => read.replica === expectedReplica && !new JournalWriteState(read, action.day).keepsRefusalNotices);
+    if (retires) for (const id of notices) await runner.replica.dismissNotice(id);
+  } catch { captureError('journal', 'journal-notice-cleanup', '', '/journal'); }
   return outcome;
 }
 

@@ -210,6 +210,8 @@ export class JournalWriteState {
     const devices = read.devices('pendingClaim:');
     this.pending = Object.entries(devices).filter(([key]) => key !== EditorDraft.key && !key.startsWith(EditorDraft.recoveryPrefix)).sort(([a], [b]) => compareText(a, b))
       .map(([, value]) => PendingClaim.fromJSON(value));
+    // A refused claim's notice keeps speaking after a later save of its day: the account has not taken those words.
+    this.keepsRefusalNotices = this.pending.some((claim) => claim.day.text === day.text && claim.refusal !== null);
     const draft = devices[EditorDraft.key];
     this.hasEditorDraft = draft !== undefined && EditorDraft.fromJSON(draft).day.text === day.text;
     this.commands = read.commands();

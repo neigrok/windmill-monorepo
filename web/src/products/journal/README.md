@@ -26,7 +26,8 @@ claim. Reconciliation requires both the result and a same-epoch, digest-checked 
 A reconciled save commits its complete prediction, content clock, retirements and pending removal
 in one transaction. Invalid writing stays in an editor draft; failed transactions retain the last
 durable state and the editor keeps newer input available for retry. Pending text takes precedence
-over older refusal notices. Not now retires only the invitation.
+over older refusal notices; a save dismisses its day's earlier notices through the runner's replica
+port, unless a refused claim of that day still speaks for its words. Not now retires only the invitation.
 
 Sign-in counts written days and preserves device-only drafts; the engine pins their bytes before
 Add or Discard. Device work without writing adopts automatically, including invitation state and
@@ -49,7 +50,10 @@ opening. Valid entries can still migrate; oversized writing becomes an editable 
 Distinct overlapping sources and changed source snapshots remain recoverable without another
 appending claim. Unattributable pages stay quarantined until explicit restore, with alternatives
 marked `recovered` so restoring them retains a draft instead of appending it to the account.
-Migration's claim adapter translates the domain's validated plan.
+Migration's claim adapter translates the domain's validated plan. The quarantine and the migration's
+markers live in the engine's device metadata, so restoring and dropping unclaimed pages and the
+migration's import write in the engine's device transaction rather than through the kit's runner,
+which writes only the active replica.
 
 Settings' export (`settings/journalExport.js`) is one Markdown file of the room's written pages,
 read from the replica: signed out the browser's own, and on a bound replica the account's once the
