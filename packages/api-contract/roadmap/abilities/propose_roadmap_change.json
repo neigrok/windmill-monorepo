@@ -1,0 +1,3654 @@
+[
+  {
+    "case": "steps added in a chain by their refs, and an existing step linked after the last; the record holds minted ids",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T",
+        "k1x9q2m7p4z8w3r5",
+        "t6v2n8c4j1b9h7d3"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "add_step",
+            "ref": "new:hoist",
+            "label": "Hoist the sail",
+            "prerequisites": [
+              "a"
+            ]
+          },
+          {
+            "op": "add_step",
+            "ref": "new:tack",
+            "label": "Tack",
+            "kind": "learn",
+            "prerequisites": [
+              "new:hoist"
+            ]
+          },
+          {
+            "op": "connect",
+            "nodeId": "c",
+            "prerequisiteId": "new:tack"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": []
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "add_step",
+            "nodeId": "k1x9q2m7p4z8w3r5",
+            "label": "Hoist the sail",
+            "prerequisites": [
+              "a"
+            ]
+          },
+          {
+            "op": "add_step",
+            "nodeId": "t6v2n8c4j1b9h7d3",
+            "label": "Tack",
+            "kind": "learn",
+            "prerequisites": [
+              "k1x9q2m7p4z8w3r5"
+            ]
+          },
+          {
+            "op": "connect",
+            "nodeId": "c",
+            "prerequisiteId": "t6v2n8c4j1b9h7d3"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "a merge folds one step into another and names what it removes",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "merge",
+            "nodeId": "c",
+            "removeId": "d",
+            "label": "Sail with an instructor or a friend"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": [
+          {
+            "nodeId": "d",
+            "label": "Sail with a friend",
+            "descriptionChars": 52,
+            "links": 1,
+            "done": false
+          }
+        ]
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "merge",
+            "nodeId": "c",
+            "removeId": "d",
+            "label": "Sail with an instructor or a friend"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "a split replaces a step with parts side by side, each under a minted id",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T",
+        "k1x9q2m7p4z8w3r5",
+        "t6v2n8c4j1b9h7d3"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "split",
+            "nodeId": "b",
+            "parts": [
+              {
+                "ref": "new:loop",
+                "label": "Make the loop"
+              },
+              {
+                "ref": "new:finish",
+                "label": "Pass the end round the line and back"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": [
+          {
+            "nodeId": "b",
+            "label": "Tie a bowline",
+            "descriptionChars": 0,
+            "links": 0,
+            "done": false
+          }
+        ]
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "split",
+            "nodeId": "b",
+            "parts": [
+              {
+                "nodeId": "k1x9q2m7p4z8w3r5",
+                "label": "Make the loop"
+              },
+              {
+                "nodeId": "t6v2n8c4j1b9h7d3",
+                "label": "Pass the end round the line and back"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "two kinds do not swap hues: the change that takes a hue another kind wears is refused",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "recolor_kind",
+            "kind": "build",
+            "hue": "sky"
+          },
+          {
+            "op": "recolor_kind",
+            "kind": "learn",
+            "hue": "gold"
+          },
+          {
+            "op": "recolor_kind",
+            "kind": "milestone",
+            "hue": "olive"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "hue-taken",
+        "id": "learn",
+        "at": 1
+      }
+    }
+  },
+  {
+    "case": "a recolour repaints the steps that wear the kind's hue, and the fold is pinned",
+    "about": null,
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "recolor_kind",
+            "kind": "learn",
+            "hue": "sky"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": []
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "recolor_kind",
+            "kind": "learn",
+            "hue": "sky"
+          }
+        ]
+      },
+      "folded": {
+        "kinds": [
+          {
+            "id": "build",
+            "hue": "terracotta"
+          },
+          {
+            "id": "learn",
+            "hue": "sky"
+          },
+          {
+            "id": "milestone",
+            "hue": "gold"
+          }
+        ],
+        "steps": [
+          {
+            "id": "a",
+            "color": "sky"
+          },
+          {
+            "id": "b",
+            "color": "sky"
+          },
+          {
+            "id": "c",
+            "color": "terracotta"
+          },
+          {
+            "id": "d",
+            "color": "terracotta"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "a link that closes a loop is refused at its change, after the changes before it fold",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off"
+          },
+          {
+            "op": "connect",
+            "nodeId": "a",
+            "prerequisiteId": "c"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "closes-cycle",
+        "id": "a",
+        "at": 1
+      }
+    }
+  },
+  {
+    "case": "a ref named before a change gives it names no step",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "connect",
+            "nodeId": "c",
+            "prerequisiteId": "new:tack"
+          },
+          {
+            "op": "add_step",
+            "ref": "new:tack",
+            "label": "Tack"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "unknown-step",
+        "id": "new:tack",
+        "at": 0
+      }
+    }
+  },
+  {
+    "case": "a field the op does not take is refused at its change",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off",
+            "hue": "sky"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "invalid-input",
+        "id": "a",
+        "at": 0
+      }
+    }
+  },
+  {
+    "case": "a new kind goes by its ref until it is minted, as a new step does",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T",
+        "q0w8e2r6t4y1u9i3",
+        "k1x9q2m7p4z8w3r5"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "add_kind",
+            "ref": "new:sport",
+            "label": "Sport",
+            "hue": "sky"
+          },
+          {
+            "op": "set_kind",
+            "nodeId": "d",
+            "kind": "new:sport"
+          },
+          {
+            "op": "add_step",
+            "ref": "new:race",
+            "label": "Race",
+            "kind": "new:sport",
+            "prerequisites": [
+              "d"
+            ]
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": []
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "add_kind",
+            "kind": "q0w8e2r6t4y1u9i3",
+            "label": "Sport",
+            "hue": "sky"
+          },
+          {
+            "op": "set_kind",
+            "nodeId": "d",
+            "kind": "q0w8e2r6t4y1u9i3"
+          },
+          {
+            "op": "add_step",
+            "nodeId": "k1x9q2m7p4z8w3r5",
+            "label": "Race",
+            "kind": "q0w8e2r6t4y1u9i3",
+            "prerequisites": [
+              "d"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "a merge that names a step under a delete the person can still undo is not ready, naming that step",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": false,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "held": [
+        {
+          "tree": "t_0000000000000001",
+          "step": "d"
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "merge",
+            "nodeId": "c",
+            "removeId": "d"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "roadmap-not-ready",
+        "id": "d",
+        "at": 0
+      }
+    }
+  },
+  {
+    "case": "a record whose changes would pass 65,536 bytes is refused whole",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "describe",
+            "nodeId": "b",
+            "description": "水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水"
+          },
+          {
+            "op": "describe",
+            "nodeId": "c",
+            "description": "水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水水"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "over-limit"
+      }
+    }
+  },
+  {
+    "case": "a set of more than 100 changes is refused at the 101st",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 0"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 1"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 2"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 3"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 4"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 5"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 6"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 7"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 8"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 9"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 10"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 11"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 12"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 13"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 14"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 15"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 16"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 17"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 18"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 19"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 20"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 21"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 22"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 23"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 24"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 25"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 26"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 27"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 28"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 29"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 30"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 31"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 32"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 33"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 34"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 35"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 36"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 37"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 38"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 39"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 40"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 41"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 42"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 43"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 44"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 45"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 46"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 47"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 48"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 49"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 50"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 51"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 52"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 53"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 54"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 55"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 56"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 57"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 58"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 59"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 60"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 61"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 62"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 63"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 64"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 65"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 66"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 67"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 68"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 69"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 70"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 71"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 72"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 73"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 74"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 75"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 76"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 77"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 78"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 79"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 80"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 81"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 82"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 83"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 84"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 85"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 86"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 87"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 88"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 89"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 90"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 91"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 92"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 93"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 94"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 95"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 96"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 97"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 98"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 99"
+          },
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off 100"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "over-limit",
+        "at": 100
+      }
+    }
+  },
+  {
+    "case": "a new kind that takes a hue another kind wears is refused, naming its ref",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "add_kind",
+            "ref": "new:sport",
+            "label": "Sport",
+            "hue": "olive"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "hue-taken",
+        "id": "new:sport",
+        "at": 0
+      }
+    }
+  },
+  {
+    "case": "the Shape rule's refusal of a change carries that change's index",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off"
+          },
+          {
+            "op": "rename_step",
+            "nodeId": "b",
+            "label": "Bowline"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "invalid-input",
+        "id": "b",
+        "at": 1
+      }
+    }
+  },
+  {
+    "case": "a merge of a step into itself is malformed",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "merge",
+            "nodeId": "c",
+            "removeId": "c"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "invalid-input",
+        "id": "c",
+        "at": 0
+      }
+    }
+  },
+  {
+    "case": "a ref given twice is malformed at its second giving",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "add_step",
+            "ref": "new:hoist",
+            "label": "Hoist the sail"
+          },
+          {
+            "op": "add_step",
+            "ref": "new:hoist",
+            "label": "Hoist the jib"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "invalid-input",
+        "id": "new:hoist",
+        "at": 1
+      }
+    }
+  },
+  {
+    "case": "a step the proposal adds and then removes is named by its minted id",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T",
+        "k1x9q2m7p4z8w3r5"
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "add_step",
+            "ref": "new:hoist",
+            "label": "Hoist the sail"
+          },
+          {
+            "op": "remove_step",
+            "nodeId": "new:hoist"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": [
+          {
+            "nodeId": "k1x9q2m7p4z8w3r5",
+            "label": "Hoist the sail",
+            "descriptionChars": 0,
+            "links": 0,
+            "done": false
+          }
+        ]
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "add_step",
+            "nodeId": "k1x9q2m7p4z8w3r5",
+            "label": "Hoist the sail"
+          },
+          {
+            "op": "remove_step",
+            "nodeId": "k1x9q2m7p4z8w3r5"
+          }
+        ]
+      }
+    }
+  }
+]

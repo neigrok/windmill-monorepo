@@ -267,6 +267,29 @@ test('a pasted plan names a web link by its bare address, as the paste grammar r
   }
 });
 
+test('R-15: a pasted plan’s done steps arrive done, and its one Undo takes back the steps and their marks', async () => {
+  const { a, steps, reading, session, told, shown } = await gestures();
+  try {
+    const marked = () => [...reading.roadmap().marks.completed].map((id) => reading.roadmap().seed.nodes.find((step) => step.id === id)?.label ?? id).sort();
+    const pasted = session.dispatch({ kind: 'ImportSubgraph', nodes: [{ id: 'knots', label: 'Knots', color: 'gold', status: 'complete' }, { id: 'bowline', label: 'Bowline', color: 'gold' }],
+      edges: [{ from: steps.dock, to: 'knots' }, { from: 'knots', to: 'bowline' }], kinds: [] });
+    await pasted.act;
+    await until(() => 'Bowline' in shown() && marked().length === 1, 1000);
+    const landed = { shown: shown(), marked: marked() };
+    session.undo();
+    await session.redoStack.at(-1).inverse;
+    await until(() => !('Knots' in shown()) && marked().length === 0, 1000);
+    assert.deepEqual({ landed, undone: { shown: shown(), marked: marked() }, told }, {
+      landed: { shown: { 'Read the wind': [], 'Leave the dock': ['Read the wind'], 'Sail solo': [], Knots: ['Leave the dock'], Bowline: ['Knots'] }, marked: ['Knots'] },
+      undone: { shown: { 'Read the wind': [], 'Leave the dock': ['Read the wind'], 'Sail solo': [] }, marked: [] },
+      told: { said: [], events: [], statuses: 1 },
+    });
+  } finally {
+    reading.close();
+    a.close();
+  }
+});
+
 test('the legend’s gestures and a step’s pointer: a kind made, named, described and recoloured with the steps that wear it, removed, and a roadmap opened and closed', async () => {
   const { a, tree, steps, reading, session, told } = await gestures();
   try {

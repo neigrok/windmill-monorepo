@@ -1,0 +1,611 @@
+[
+  {
+    "case": "the frontier: the available steps, in the room's order",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "One step a weekend.",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "Practise it with your eyes closed, around a post and around your own waist, then untie it after it has held a load. A bowline makes a loop that will not slip or jam.",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Read the weather",
+              "icon": "",
+              "color": "plum",
+              "ord": "a3",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "e",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Reef the main",
+              "icon": "",
+              "color": "gold",
+              "ord": "a4",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "f",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Heave to",
+              "icon": "",
+              "color": "gold",
+              "ord": "a5",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "f",
+              "to": "e",
+              "present": true
+            },
+            {
+              "from": "e",
+              "to": "f",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ]
+    },
+    "call": {
+      "name": "find_nodes",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "state": "available"
+      }
+    },
+    "expect": {
+      "result": {
+        "steps": [
+          {
+            "id": "b",
+            "label": "Tie a bowline",
+            "kind": "learn",
+            "state": "available",
+            "prerequisites": [],
+            "unlockCount": 1,
+            "summary": "Practise it with your eyes closed, around a post and around your own waist, then untie it after it has held a load. A bowline makes a loop that will not slip or…"
+          },
+          {
+            "id": "d",
+            "label": "Read the weather",
+            "kind": null,
+            "state": "available",
+            "prerequisites": [],
+            "unlockCount": 0,
+            "summary": ""
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "text matches with ASCII letters in either case, the best match first",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "One step a weekend.",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "Practise it with your eyes closed, around a post and around your own waist, then untie it after it has held a load. A bowline makes a loop that will not slip or jam.",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Read the weather",
+              "icon": "",
+              "color": "plum",
+              "ord": "a3",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "e",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Reef the main",
+              "icon": "",
+              "color": "gold",
+              "ord": "a4",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "f",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Heave to",
+              "icon": "",
+              "color": "gold",
+              "ord": "a5",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "f",
+              "to": "e",
+              "present": true
+            },
+            {
+              "from": "e",
+              "to": "f",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ]
+    },
+    "call": {
+      "name": "find_nodes",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "query": "THE",
+        "fields": [
+          "label"
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "steps": [
+          {
+            "id": "a",
+            "label": "Leave the dock"
+          },
+          {
+            "id": "d",
+            "label": "Read the weather"
+          },
+          {
+            "id": "e",
+            "label": "Reef the main"
+          },
+          {
+            "id": "b",
+            "label": "Tie a bowline"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "a kind the roadmap does not have matches no step",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "One step a weekend.",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "Practise it with your eyes closed, around a post and around your own waist, then untie it after it has held a load. A bowline makes a loop that will not slip or jam.",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Read the weather",
+              "icon": "",
+              "color": "plum",
+              "ord": "a3",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "e",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Reef the main",
+              "icon": "",
+              "color": "gold",
+              "ord": "a4",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "f",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Heave to",
+              "icon": "",
+              "color": "gold",
+              "ord": "a5",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "f",
+              "to": "e",
+              "present": true
+            },
+            {
+              "from": "e",
+              "to": "f",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ]
+    },
+    "call": {
+      "name": "find_nodes",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "kind": "sport"
+      }
+    },
+    "expect": {
+      "result": {
+        "steps": []
+      }
+    }
+  }
+]

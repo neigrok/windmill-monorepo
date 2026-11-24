@@ -1,14 +1,16 @@
 import SwiftUI
+import UIKit
 import RoadmapDomain
 
-// The room's foot (Roadmap · iOS 01.11, 02.2, 03.4, 03.6b, 03.9, 05.7, 05.10, 09.4): the one band, a receipt with its Undo
-// or a limit that refused a gesture, over the control the screen keeps there. Every screen of the room stands on the same
-// band, the step form too, whose foot is away while one of its fields has the keyboard. Every screen of a reader's cover
-// stands on Fork.
+// The room's foot (Roadmap · iOS 01.8b, 01.11, 02.2, 02.16b, 02.16c, 02.18, 03.4, 03.6b, 03.9, 05.7, 05.10, 09.4): the one
+// band, a receipt with its Undo, a limit that refused a gesture, or what the room tells once, over the control the screen
+// keeps there. Every screen of the room stands on the same band, the step form too, whose foot is away while one of its
+// fields has the keyboard. Every screen of a reader's cover stands on Fork.
 struct RoadmapFoot<Control: View>: ViewModifier {
   let roadmap: RoadmapModel
   let away: Bool
   let control: Control
+  @Environment(\.openURL) private var openURL
   // The cover the screen stands on, for a reader; none in the person's own room.
   @Environment(RoadmapCover.self) private var cover: RoadmapCover?
 
@@ -16,10 +18,20 @@ struct RoadmapFoot<Control: View>: ViewModifier {
     content.reachBand {
       VStack(spacing: 0) {
         if !away, let band = roadmap.band {
-          RoomTransient(message: band.says.words, room: .roadmap, actionTitle: String(localized: "Undo"), actionIdentifier: "roadmap-undo",
-                        action: band.undo == nil ? nil : { roadmap.undo() }, dismiss: { roadmap.endBand() },
-                        type: .subheadline, actionWeight: .semibold)
-            .accessibilityIdentifier("roadmap-band")
+          if band.says == .pasteRefused {
+            // 02.16c: a paste not allowed leads to Windmill's page in Settings, where that choice lives.
+            RoomTransient(message: band.says.words, room: .roadmap, actionTitle: String(localized: "Settings"), actionIdentifier: "roadmap-settings",
+                          action: {
+                            roadmap.openedSettings()
+                            if let settings = URL(string: UIApplication.openSettingsURLString) { openURL(settings) }
+                          }, dismiss: { roadmap.endBand() }, type: .subheadline, actionWeight: .semibold)
+              .accessibilityIdentifier("roadmap-band")
+          } else {
+            RoomTransient(message: band.says.words, room: .roadmap, actionTitle: String(localized: "Undo"), actionIdentifier: "roadmap-undo",
+                          action: band.undo == nil ? nil : { roadmap.undo() }, dismiss: { roadmap.endBand() },
+                          type: .subheadline, actionWeight: .semibold)
+              .accessibilityIdentifier("roadmap-band")
+          }
         }
         if !away { control }
         if !away, let cover { ForkFoot(cover: cover) }
@@ -78,6 +90,14 @@ extension RoadmapModel.Band.Says {
       return String(localized: "\(label) checked", comment: "The band after a subtask is checked: the subtask's words")
     case .deletedFromWorkspace(let name):
       return String(localized: "\(name) deleted", comment: "The band while a delete is held: the name of the step or of the roadmap, a subtask's words or a link's title")
+    case .planted(let steps, let done):
+      if done == 0 { return String(localized: "Roadmap planted · \(steps) steps", locale: .copy, comment: "The band once a roadmap is planted from a plan: how many steps it holds") }
+      return String(localized: "Roadmap planted · \(steps) steps · \(done) already done", locale: .copy,
+                    comment: "The band once a roadmap is planted from a plan: how many steps it holds, and how many of them the plan brought done")
+    case .added(let steps):
+      return String(localized: "Added \(steps) steps", locale: .copy, comment: "The band once steps pasted into a roadmap are added: how many")
+    case .noText: return String(localized: "No text to paste", comment: "The band when Paste Steps finds no text on the clipboard")
+    case .pasteRefused: return String(localized: "Paste not allowed", comment: "The band when the system was not allowed to hand Paste Steps the copied text")
     case .attached: return String(localized: "Roadmap attached")
     case .detached(let markBack):
       return markBack ? String(localized: "Roadmap detached · your mark is back") : String(localized: "Roadmap detached")

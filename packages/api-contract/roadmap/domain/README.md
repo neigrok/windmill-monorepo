@@ -37,7 +37,7 @@ ID byte order.
 | `account` | Trees by ID with standing, place/path/title, counts, completion and openings; pointer-loop components | yes |
 | `progress` | Effective completed IDs and dates under openings, null for an unread/hidden tree | yes |
 | `guides` | Nearest eight nonempty guides including own, displayed farthest first, ID byte ties | yes |
-| `legend` | Authored kind IDs, hue owners and collisions | yes |
+| `legend` | Authored kind IDs, hue owners and collisions, and the legend shown, which a paste reads over: each hue's owner in the kinds' order, then each hue a present step wears that no kind claims, in the palette's order, with a null id | yes |
 | `search` | MCP node IDs, with independent kind/color filters and relevance order | yes |
 | `board` | Overall progress, query facts, three columns, folding and structured card reasons | no |
 | `diagnostics` | Bounded graph errors and warnings | yes |
@@ -220,7 +220,7 @@ Before the tree scope's first pull completes nothing has landed.
 | `MoveStep` | `{tree, step, below, siblings}` | `null`; `siblings` are the trunk parent's steps the layout names; the key between `below` and the next sibling, as a `revive`; a drop in place writes nothing |
 | `DeleteStep` | `{tree, step}` | `null`; held; the step's death alone |
 | `ChangePrerequisites` | `{tree, step, add, remove}` | `null`; a removed prerequisite followed through an absent step retires each link the step reaches it by; an added link is noted with the name of the step it comes from |
-| `ImportSteps` | `{tree, imported, under?}` | `{key: id}`; under `under`, each step the import has no prerequisite for follows it; the landing note takes the name of each step a link comes from |
+| `ImportSteps` | `{tree, imported, under?, done?}` | `{key: id}`; under `under`, each step the import has no prerequisite for follows it; the landing note takes the name of each step a link comes from; each key of `done` takes the person's `mark`, complete, in a segment of the same act in their overlay |
 | `CreateKind`, `ChangeKind`, `MoveKind`, `DeleteKind` | `{tree, kind: {hue, label?, description?}}`, `{tree, kind, changes}`, `{tree, kind, below}`, `{tree, kind}` | the kind's id, or `null` |
 | `RecolourKind` | `{tree, kind, hue}` | `null`; the command, predicting the kind's hue and every step the device holds wearing the old hue, present or not, by id; a kind the device knows as deleted is revived in a segment before it, and of one it knows only by its spent id it predicts the kind's hue alone, the server recolouring the steps |
 | `Complete`, `Reset` | `{tree, step, outOfOrder?, opensStanding?}`, `{tree, step}` | `null`; the step's `mark`; `opensStanding`, read by the caller from the account, says the step's pointer opens a standing roadmap |
@@ -261,7 +261,7 @@ value equivalent to unset; `createdRecord`; or a product `command` with its evid
 | Gesture | Undo | Redo |
 |---|---|---|
 | A change of a step or a kind, a move of either | `roadmap.restoreTree` of each changed field, and of the life where the device held the record as deleted; of a record it knows only by its spent id, the life alone (`dead`), its earlier values being the server's | writes the change back |
-| Create a step, a link, a kind; an import's steps and links | `createdRecord` of each, deleted again while its own writes are all that changed it; one act, so one Undo takes every chunk | revives the step, link or kind |
+| Create a step, a link, a kind; an import's steps and links | `createdRecord` of each, deleted again while its own writes are all that changed it, and of an import's marks `roadmap.restoreOverlay` of each `mark`, unset `{status: none, outOfOrder: false}`; one act, so one Undo takes every chunk and every mark | revives the step, link or kind |
 | Delete a step or a kind; remove a link | the life (`roadmap.restoreTree`); a step's delete is held, and an Undo in its hold cancels it in place | deletes it again |
 | A roadmap's title, guide or visibility | the field (`meta`, unset `""` and `private`); the server writes the branch's reach back | writes the change back |
 | Recolour a kind | the kind's `hue` and the `color` of each step that wore it; a revival before the command, its life; of a kind known only by its spent id, its life alone | writes them back |

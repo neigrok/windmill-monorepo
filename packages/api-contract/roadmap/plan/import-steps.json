@@ -204,9 +204,9 @@
     }
   },
   {
-    "name": "A done mark is not carried into a roadmap",
+    "name": "A step the plan brings done arrives done, one done under a step that is not included",
     "input": {
-      "text": "- [x] Rig the boat\n  - [X] Tie the knots\n- Read the wind",
+      "text": "- [x] Rig the boat\n  - [X] Tie the knots\n- Read the wind\n  - [x] Name the crew",
       "kinds": [
         {"id": "build", "hue": "terracotta", "label": "Build", "description": "Things you make"},
         {"id": "learn", "hue": "olive", "label": "Learn", "description": "Things you figure out"},
@@ -221,11 +221,13 @@
           "steps": [
             {"key": "rig-the-boat", "label": "Rig the boat", "icon": "", "color": "terracotta"},
             {"key": "tie-the-knots", "label": "Tie the knots", "icon": "", "color": "terracotta"},
-            {"key": "read-the-wind", "label": "Read the wind", "icon": "", "color": "terracotta"}
+            {"key": "read-the-wind", "label": "Read the wind", "icon": "", "color": "terracotta"},
+            {"key": "name-the-crew", "label": "Name the crew", "icon": "", "color": "terracotta"}
           ],
-          "links": [["rig-the-boat", "tie-the-knots"]]
+          "links": [["rig-the-boat", "tie-the-knots"], ["read-the-wind", "name-the-crew"]]
         },
-        "under": "start"
+        "under": "start",
+        "done": ["rig-the-boat", "tie-the-knots", "name-the-crew"]
       },
       "CreateKind": []
     }

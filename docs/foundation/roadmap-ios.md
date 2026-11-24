@@ -79,7 +79,7 @@ Activity and the web demo.
 - **Someone else's roadmap** is subscribed when its link is opened, signed in or not, shown in a
   cover of its own, and dropped when the cover closes. It never enters the room's list and does not
   reopen with no connection. The cover shows the owner's progress, read from the backend, and
-  offers no Complete and no workspace. A reader who wants a roadmap of their own forks it.
+  offers no Complete, no workspace and no Coach (Roadmap Coach R-15). A reader who wants a roadmap of their own forks it.
 - **Fork** is the server's, so it needs a connection and an account, and the copy arrives by sync.
 - **The public gallery** is the backend's list of public roadmaps, read a page at a time and shown
   in the order the backend ranks it. It needs a connection and no account, and nothing of it is
@@ -216,11 +216,14 @@ makes a request, and none needs a connection or an account. The iPhone offers no
 - **Blank** plants one starting step, named as the roadmap.
 - **A plan** is text read by the web's plan grammar, ported to `RoadmapDomain`: the same text
   gives the same name, steps, links, kinds, done marks and counts on the iPhone as on the web.
-  It is read on the phone, and reading cannot fail: a line the grammar cannot place is kept as a
-  note on a step. The read-back shows the grammar's counts, and the plan's first steps in the
-  states the domain's reads give them over the plan as over a roadmap. Create runs
-  `CreateRoadmap` with the plan's steps, links and kinds, then `Complete` for each step the plan
-  brings done.
+  It is read on the phone, off the main actor, and reading cannot fail: a line the grammar cannot
+  place is kept as a note on a step. The read-back shows the grammar's counts, and the plan's first
+  steps in the states the domain's reads give them over the plan as over a roadmap. The name field
+  starts from the plan's name where it is empty, and left so plants the plan under its own name,
+  as the web does; a name typed names the roadmap and the step that stands for the plan's name.
+  Create runs `CreateRoadmap` with the plan's steps, links and kinds, then `Complete` for each step
+  the plan brings done. A file is decoded as the web decodes one, its bytes as UTF-8 with a
+  leading byte order mark dropped; the phone reads one of up to 2,000,000 bytes.
 - **The grammar's cases** live in `packages/api-contract/roadmap/plan/`: a text read to a plan,
   alone and into a roadmap that has kinds of its own; a plan to the input of `CreateRoadmap`, and
   to that of `ImportSteps` under a step (§7.2); a roadmap written to its Markdown (§7.3); and
@@ -235,10 +238,14 @@ binds a heading to a kind the roadmap has or adds one, and renames none (boards 
 - The read-back shows the steps in the states they will land in, read by the domain over the
   roadmap as the paste would leave it. Nothing is written before Add.
 - Add runs, as one act with one Undo, the domain's `ImportSteps` under the roadmap's starting
-  step and `CreateKind` for each kind the plan adds. The starting step is the first, in authored
-  order, of the steps that follow nothing; a roadmap with none takes the steps at its root.
-- It needs neither a connection nor an account. A roadmap too full for the steps refuses them
-  where the gesture is made (§3).
+  step, with the person's mark on each step the plan brings done (R-15), and `CreateKind` for each
+  kind the plan adds. The starting step is the first, in authored order, of the steps that follow
+  nothing; a roadmap with none takes the steps at its root. Undo takes the paste back whole, its
+  marks included.
+- It needs neither a connection nor an account. An *Add* the domain refuses, a roadmap too full
+  for the steps among them, leaves the read-back open and says why there (§3).
+- The read-back reads the text over the roadmap's legend as the room shows it, the domain's
+  (`LegendRead.shown`), which the web's room seeds its legend from too.
 
 ### §7.3 Export
 
@@ -356,7 +363,8 @@ makes it false.
 - The app's third room exists only behind a build switch that is off in Release (`WM_ROADMAP_ROOM_ENABLED`), where it
   shows a roadmap's Board, its Graph and a step's page from the phone's copy, writes five gestures on a step, Create
   and Edit from the step form and Complete, Reset and Delete, each with its Undo, and makes, opens, renames and
-  deletes a roadmap from the title menu, All Roadmaps and New Roadmap. The Board finds steps by the domain's read,
+  deletes a roadmap from the title menu, All Roadmaps and New Roadmap, which starts one blank, from a copied plan or from
+  a `.md` or `.txt` file, each plan read back first (§7.1). The Board finds steps by the domain's read,
   orders them, narrows them to the kinds a person picks or to a step's branch, and selects several steps to recolor or
   delete, each as one gesture with its Undo; New Step at a roadmap's cap of steps is refused where it is tapped; and a
   roadmap's kinds are added, named, described, recolored and removed in the Kinds sheet, from the title menu and from
@@ -367,20 +375,20 @@ makes it false.
   field sets bold and italic alone, from the system's Format menu on iOS 26. A reader's cover shows what a step's
   subtree has come to and does not go into it. The title menu's *Activity* and a step's
   *History* are the domain's read of the phone's copy (§3), and its *Guide* reads the roadmap's guide with the guides of
-  the roadmaps above it, and writes the guide from one draft; the title menu has no *Share…* or *Export*, New
-  Roadmap starts a blank roadmap alone, from no plan or file, and All Roadmaps has no gallery. The shell's sign-in
-  question names the roadmaps made signed out and its sign-out question counts roadmap's unconfirmed changes; neither
-  names Coach's conversations. An Undo that brings
+  the roadmaps above it, and writes the guide from one draft; the title menu has no *Share…* or *Export*, and All
+  Roadmaps has no gallery. The foot's + held offers Paste Steps (§7.2). The shell's sign-in question names the roadmaps
+  made signed out and its sign-out question counts roadmap's unconfirmed changes; neither names Coach's conversations.
+  An Undo that brings
   nothing back says so in the band. The Graph draws the picture, pans and zooms it, selects a step and opens its page,
   lists the Up next steps under *Next*, brings the one chosen there or by *Open in Graph* into view, and shows the whole
   roadmap alone under
-  *Fit*; it has no Find and draws no proposal; no Coach is built, and the
-  Board has no pasted steps. A roadmap's link opens the room in Debug builds alone, whose entitlements claim the site's
-  addresses: Release's entitlements and the App ID carry no associated domain. The app's
-  onboarding says roadmap is on the web.
+  *Fit*; it has no Find and draws no proposal; no Coach is built. A roadmap's link opens the room in Debug builds alone,
+  whose entitlements claim the site's addresses: Release's entitlements and the App ID carry no associated domain. The
+  app's onboarding says roadmap is on the web.
 - `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
-  room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once, and plays every
-  Undo scene: no plan grammar or Coach executor.
+  room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once, plays every Undo scene,
+  and holds the plan grammar's read, its planting and grafting and its writer (`RoadmapDomain/Plan/`), held to every
+  case of `packages/api-contract/roadmap/plan/`: no Coach executor.
 - One SwiftUI `Canvas` in the room's Graph draws `RoadmapLayout`'s picture (`apps/ios/App/Sources/Roadmap/Graph/`).
   The budget of §5 is measured at 5,000 steps on a Mac's simulator alone, by `apps/ios/App/Tools/graph_bench.sh` on a
   Release-configuration build: the picture's time with its layout, the domain's read taken for it, the room's part of
@@ -401,24 +409,17 @@ makes it false.
   nineteen acts through it: `MarkStep` (Complete and Reset), `DeleteStep` and `DeleteRoadmap`, each with *Undo*, and
   `DeleteStep` composed for several steps chosen on the Board, with one *Undo*; `CreateStep`, `ChangeStep` and
   `ChangePrerequisites`, composed into the step form's one save with one *Undo*, and `ChangeStep` composed for several
-  steps recolored on the Board, with one *Undo*; `CreateRoadmap` for a blank roadmap and `WriteRoadmap` for a roadmap's
-  name, of which it keeps none, and for its guide, with *Undo*; of a roadmap's kinds `CreateKind`, `ChangeKind` and `RecolourKind`, of which it keeps
+  steps recolored on the Board, with one *Undo*; `CreateRoadmap` for a blank roadmap or a plan, then `MarkStep` for the
+  steps a plan brings done, and `WriteRoadmap` for a roadmap's name, of which it keeps none, and for its guide, with
+  *Undo*; `ImportSteps`, with the marks the pasted steps bring, and `CreateKind` for each kind they add, composed into
+  Paste Steps' *Add* with one *Undo*; of a roadmap's kinds `CreateKind`, `ChangeKind` and `RecolourKind`, of which it keeps
   none, and `DeleteKind`, which the engine does not hold, with *Undo* for six seconds; and of a step's workspace
   `ChangeSubtask`, with *Undo* of a subtask checked, `DeleteSubtask` and `DeleteStepLink`, each held with *Undo*, and
   `AddSubtask`, `AddStepLink` and the note's draft save, `SaveStepNote`, of which it keeps none; and `PointStep`, a roadmap
   attached to a step, changed and detached on its page, each with *Undo*, or set in the step form's one save. Every other
   action of the domain has no door in the room: `MoveKind`, `MoveStep`, a subtask's or a link's change of words and its move
   among them.
-- The plan grammar has no Swift port: the web's (`web/src/products/roadmap/paste/`) is its one
-  implementation, and the web alone runs its cases (`packages/api-contract/roadmap/plan/`).
-- The grammar's writer does not write every roadmap so that it reads back the same, as §7.3 needs.
-  A description is written raw, so a line of it that looks like a list item, a heading or an
-  address reads back as a step, a kind or a link; a name that begins like a checkbox reads back as
-  a mark; a name with a line break breaks the file's first line; and steps on a loop are not
-  written. In a file an export wrote, text before the first step is dropped, where §7.1 keeps
-  every line. The cases of `write.json` and `read.json` pin each as it stands.
 - Roadmaps that hold `unlisted` are not moved to private (R-9).
-- The app's Info.plist names no Markdown type (§7.3).
 
 ## §14 Rulings
 
@@ -438,3 +439,4 @@ makes it false.
 | R-12 | Whether sharing's requests move into synchronization | Decided when links and readers are built; until then the gallery, Fork and the owner's progress on a cover stay requests. (2026-11-21) |
 | R-13 | Quests on the iPhone | Not offered: New Roadmap starts a roadmap blank, from a copied plan or from a file. Quests return with a design of their own. (2026-11-23) |
 | R-14 | Which time Activity, History and the Board's Done order show | When the person did it: a step's birth and a mark's device time, the server's receipt only where the copy holds none, on the iPhone and on the web alike. (2026-11-23) |
+| R-15 | Whether steps pasted into a roadmap carry the plan's done marks | They do: a step the plan marks done (`- [x]`) arrives done, as when a new roadmap is planted from the same plan, so the read-back's count of steps already done is true, and Undo takes the paste back whole, marks included. On the web and the iPhone alike. (2026-11-24) |
