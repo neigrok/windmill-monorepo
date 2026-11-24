@@ -452,10 +452,10 @@ export class ReplicaReading {
     const whole = (scope) => scope.firstPullComplete && scope.loaded;
     const read = record === null ? !this.subscribing.has(RoadmapScopes.tree(id)) && whole(tree) : whole(tree) && whole(overlay);
     const known = this.holdings.get(id);
-    if (known && known.record === record && known.read === read && same(known.tree, tree.drawn) && same(known.overlay, overlay.drawn)
-      && same(known.queued, overlay.pending)) return known.held;
-    const held = new HeldRoadmap({ id, record, tree: tree.drawn, overlay: overlay.drawn, queued: overlay.pending, read });
-    this.holdings.set(id, { record, read, tree: tree.drawn, overlay: overlay.drawn, queued: overlay.pending, held });
+    if (known && known.record === record && known.read === read && same(known.tree, tree.drawn) && same(known.stored, tree.stored)
+      && same(known.overlay, overlay.drawn) && same(known.queued, overlay.pending)) return known.held;
+    const held = new HeldRoadmap({ id, record, tree: tree.drawn, stored: tree.stored, overlay: overlay.drawn, queued: overlay.pending, read });
+    this.holdings.set(id, { record, read, tree: tree.drawn, stored: tree.stored, overlay: overlay.drawn, queued: overlay.pending, held });
     return held;
   }
 

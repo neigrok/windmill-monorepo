@@ -602,5 +602,406 @@
         "id": "zz"
       }
     }
+  },
+  {
+    "case": "a step under a delete the person can still undo is not there to read",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Probe",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "A",
+              "icon": "i",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null,
+              "branchStamp": null
+            },
+            {
+              "id": "h",
+              "present": false,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "H",
+              "icon": "i",
+              "color": "terracotta",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null,
+              "branchStamp": null
+            }
+          ],
+          "edges": [],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            }
+          ],
+          "marks": [],
+          "pointers": []
+        }
+      ],
+      "held": [
+        {
+          "tree": "t_0000000000000001",
+          "step": "h"
+        }
+      ]
+    },
+    "call": {
+      "name": "get_nodes",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "nodeIds": [
+          "h"
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "unknown-step",
+        "id": "h"
+      }
+    }
+  },
+  {
+    "case": "a step opening a roadmap whose own completion waits on one the device has not brought is unknown",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Probe",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "s",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "S",
+              "icon": "i",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null,
+              "branchStamp": null
+            }
+          ],
+          "edges": [],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            }
+          ],
+          "marks": [],
+          "pointers": [
+            {
+              "node": "s",
+              "present": true,
+              "opens": "t_0000000000000002",
+              "setAt": null
+            }
+          ]
+        },
+        {
+          "id": "t_0000000000000002",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "B",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000002",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "B",
+              "icon": "i",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null,
+              "branchStamp": null
+            }
+          ],
+          "edges": [],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            }
+          ],
+          "marks": [],
+          "pointers": [
+            {
+              "node": "b",
+              "present": true,
+              "opens": "t_0000000000000003",
+              "setAt": null
+            }
+          ]
+        },
+        {
+          "id": "t_0000000000000003",
+          "present": true,
+          "read": "unread",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "C",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000003",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "C",
+              "icon": "i",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null,
+              "branchStamp": null
+            }
+          ],
+          "edges": [],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            }
+          ],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "call": {
+      "name": "get_nodes",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "nodeIds": [
+          "s"
+        ],
+        "fields": [
+          "state",
+          "opens"
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "steps": [
+          {
+            "id": "s",
+            "state": "unknown",
+            "opens": "t_0000000000000002"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "a reader's step that owns a subtree the device does not hold stands as the room shows it, by the mark the server told of it",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": false,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Probe",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "x",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "X",
+              "icon": "i",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "t_0000000000000003",
+              "branchStamp": null
+            },
+            {
+              "id": "y",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Y",
+              "icon": "i",
+              "color": "terracotta",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null,
+              "branchStamp": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "x",
+              "to": "y",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            }
+          ],
+          "marks": [
+            {
+              "node": "x",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": null
+            }
+          ],
+          "pointers": []
+        }
+      ]
+    },
+    "call": {
+      "name": "get_nodes",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "nodeIds": [
+          "x",
+          "y"
+        ],
+        "fields": [
+          "state"
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "steps": [
+          {
+            "id": "x",
+            "state": "complete"
+          },
+          {
+            "id": "y",
+            "state": "available"
+          }
+        ]
+      }
+    }
   }
 ]

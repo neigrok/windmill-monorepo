@@ -38,8 +38,11 @@ test('every event the roadmap emits has its row in OBSERVABILITY.md, and every r
   assert.deepEqual(inCode, documented);
 });
 
+// The pure domain reports nothing (domain-layering.test.js), so a name it spells, such as a Coach ability's refusal code,
+// is no operation.
 test('every Sentry operation the roadmap reports has its row in OBSERVABILITY.md, and every row still reports', () => {
-  const reported = namesIn(code, /'(roadmap-[a-z]+(?:-[a-z]+)*)'/g);
+  const reporting = sources.filter((source) => !source.path.startsWith(join('src', 'products', 'roadmap', 'domain'))).map((source) => source.text).join('\n');
+  const reported = namesIn(reporting, /'(roadmap-[a-z]+(?:-[a-z]+)*)'/g);
   const documented = namesIn(failuresTable, /^\| `(roadmap-[a-z-]+)` \|/gm);
   assert.deepEqual(reported, documented);
 });

@@ -337,5 +337,280 @@
         "id": "t_0000000000000009"
       }
     }
+  },
+  {
+    "case": "a step complete through the roadmap it opens is dated by that roadmap's newest completion",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Probe",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "A",
+              "icon": "i",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null,
+              "branchStamp": null
+            }
+          ],
+          "edges": [],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            }
+          ],
+          "marks": [],
+          "pointers": [
+            {
+              "node": "a",
+              "present": true,
+              "opens": "t_0000000000000002",
+              "setAt": null
+            }
+          ]
+        },
+        {
+          "id": "t_0000000000000002",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Opened",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000002",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "x",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "X",
+              "icon": "i",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null,
+              "branchStamp": null
+            }
+          ],
+          "edges": [],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            }
+          ],
+          "marks": [
+            {
+              "node": "x",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000500000,
+              "deviceAt": 1800000400000,
+              "stamp": "1800000400000:0:r_aaaaaaaaaaaa"
+            }
+          ],
+          "pointers": []
+        }
+      ]
+    },
+    "call": {
+      "name": "get_progress",
+      "input": {
+        "treeId": "t_0000000000000001"
+      }
+    },
+    "expect": {
+      "result": {
+        "completed": [
+          {
+            "id": "a",
+            "at": 1800000400000
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "a step complete through the roadmap it opens has no date where no mark of that roadmap carries a stamp",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Probe",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "A",
+              "icon": "i",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null,
+              "branchStamp": null
+            }
+          ],
+          "edges": [],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            }
+          ],
+          "marks": [],
+          "pointers": [
+            {
+              "node": "a",
+              "present": true,
+              "opens": "t_0000000000000002",
+              "setAt": null
+            }
+          ]
+        },
+        {
+          "id": "t_0000000000000002",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Opened",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000002",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "x",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "X",
+              "icon": "i",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null,
+              "branchStamp": null
+            }
+          ],
+          "edges": [],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            }
+          ],
+          "marks": [
+            {
+              "node": "x",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000500000,
+              "deviceAt": 1800000400000
+            }
+          ],
+          "pointers": []
+        }
+      ]
+    },
+    "call": {
+      "name": "get_progress",
+      "input": {
+        "treeId": "t_0000000000000001"
+      }
+    },
+    "expect": {
+      "result": {
+        "completed": [
+          {
+            "id": "a",
+            "at": null
+          }
+        ]
+      }
+    }
   }
 ]
