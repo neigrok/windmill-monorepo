@@ -27,13 +27,13 @@ import SyncTesting
 
   // The backend's sharing requests, answering what a test sets and keeping what was asked.
   final class Sharing: RoadmapSharing {
-    var marks: Result<[RoadmapTree.Mark], SharingFailure> = .success([])
+    var progress: Result<OwnersProgress, SharingFailure> = .success(OwnersProgress(marks: []))
     var copy: Result<String, SharingFailure> = .failure(.failed)
     var asked: [String] = []
 
-    func progress(of tree: String) async throws(SharingFailure) -> [RoadmapTree.Mark] {
+    func progress(of tree: String) async throws(SharingFailure) -> OwnersProgress {
       asked.append("progress \(tree)")
-      return try marks.get()
+      return try progress.get()
     }
 
     func fork(_ tree: String, request: String) async throws(SharingFailure) -> String {
@@ -161,7 +161,7 @@ import SyncTesting
     let owners = try RoadmapTree(id: sail.tree, listed: nil, tree: [], overlay: engine.drawn(sail.tree.overlay, StepMark.type)).marks
     let wind = try #require(sail.steps.first { $0.key == "read" }?.id.description)
     let (phone, sharing, telemetry) = (Phone(), Sharing(), TelemetryRecorder())
-    sharing.marks = .success(owners)
+    sharing.progress = .success(OwnersProgress(marks: owners))
     let owner = room(engine, memory, phone: phone, sharing: sharing, telemetry: telemetry)
     let cover = try cover("/t/\(sail.tree)#?step=\(wind)", over: owner)
     cover.open()
@@ -195,13 +195,13 @@ import SyncTesting
     let (phone, sharing, telemetry) = (Phone(), Sharing(), TelemetryRecorder())
     let owner = room(engine, memory, phone: phone, sharing: sharing, telemetry: telemetry)
 
-    (phone.online, sharing.marks) = (false, .failure(.offline))
+    (phone.online, sharing.progress) = (false, .failure(.offline))
     let offline = try cover("/t/t_00000000000000aa", over: owner)
     offline.open()
     await settle(engine, [offline.room]) { offline.state != .reading }
     #expect(offline.state == .needsConnection)
     phone.online = true
-    sharing.marks = .failure(.refused)
+    sharing.progress = .failure(.refused)
     offline.retry()
     await settle(engine, [offline.room]) { offline.state != .reading && sharing.asked.count == 2 }
     #expect(offline.state == .unopenable)
@@ -209,7 +209,7 @@ import SyncTesting
 
     let sail = try RoadmapFixture.plantLearnToSail(runner)
     engine.sync()
-    sharing.marks = .failure(.failed)
+    sharing.progress = .failure(.failed)
     let seeded = try cover("/t/\(sail.tree)", over: owner)
     seeded.open()
     await settle(engine, [seeded.room]) { seeded.state == .open }
@@ -342,6 +342,57 @@ import SyncTesting
     ])
   }
 
+  // The cover follows no subtree, so a step that owns one stands as the server's progress answer says its subtree has come
+  // to: Done, dated by the step's own mark as the server dated it, once every step inside is done, as the web's cover has
+  // it; and not Done while one is left, its mark set aside.
+  @Test func aCoverCountsEachSubtreeAsTheOwnersProgressTellsIt() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let sail = try RoadmapFixture.plantLearnToSail(runner, done: [])
+    let wind = try #require(sail.steps.first { $0.key == "read" }?.id)
+    guard case .committed(let made, _) = try runner.runAct(CreateSubtree(tree: sail.tree, step: wind)) else {
+      Issue.record("the subtree was not made")
+      return
+    }
+    for step in ["choose", "parts"] {
+      engine.advance(ms: 60_000)
+      try RoadmapFixture.complete(step, of: sail, by: runner)
+    }
+    engine.sync()
+    let owners = try RoadmapTree(id: sail.tree, listed: nil, tree: [], overlay: engine.drawn(sail.tree.overlay, StepMark.type)).marks
+    let derived = RoadmapTree.Mark(node: wind.description, status: "complete", outOfOrder: false, recordedAt: Instant(ms: 1_790_424_180_000),
+                                   deviceAt: Instant(ms: 0), stamp: .unset)
+    let (phone, sharing, telemetry) = (Phone(), Sharing(), TelemetryRecorder())
+    let owner = room(engine, memory, phone: phone, sharing: sharing, telemetry: telemetry)
+
+    sharing.progress = .success(OwnersProgress(marks: owners + [derived], subtrees: [RoadmapAccount.Told(tree: made.subtree.description, counts: Counts(done: 2, total: 2))]))
+    let done = try cover("/t/\(sail.tree)", over: owner)
+    done.open()
+    await settle(engine, [done.room]) { done.state == .open }
+    #expect(phone.followed == [sail.tree.tree])
+    #expect(board(done.room) == [
+      "Learn to sail 3 of 8",
+      "upNext: Rig the boat", "upNext: Tie a bowline",
+      "locked: Leave the dock", "locked: Sail a triangle", "locked: Sail solo",
+      "done: Read the wind", "done: Name the boat parts", "done: Choose a sailing course",
+    ])
+    let opening = try #require(done.room.account.openings(of: sail.tree.description).first)
+    #expect([opening.opening.tree, opening.opening.status.rawValue, String(opening.complete), "\(opening.counts?.done ?? -1) of \(opening.counts?.total ?? -1)"]
+      == [made.subtree.description, "unknown", "true", "2 of 2"])
+    done.close(.closed)
+
+    sharing.progress = .success(OwnersProgress(marks: owners + [derived], subtrees: [RoadmapAccount.Told(tree: made.subtree.description, counts: Counts(done: 1, total: 2))]))
+    let open = try cover("/t/\(sail.tree)", over: owner)
+    open.open()
+    await settle(engine, [open.room]) { open.state == .open }
+    #expect(board(open.room) == [
+      "Learn to sail 2 of 8",
+      "upNext: Rig the boat", "upNext: Read the wind", "upNext: Tie a bowline",
+      "locked: Leave the dock", "locked: Sail a triangle", "locked: Sail solo",
+      "done: Name the boat parts", "done: Choose a sailing course",
+    ])
+  }
+
   @Test func aSubtreesCoverOffersNoFork() async throws {
     let (engine, runner, memory, suite) = phone()
     defer { memory.removePersistentDomain(forName: suite) }
@@ -398,22 +449,32 @@ import SyncTesting
     ])
   }
 
-  @Test func theOwnersProgressIsReadFromTheServersAnswerEachMarkDatedAsThePhoneDatesOneAndARowItCannotReadLeftOut() throws {
+  @Test func theOwnersProgressIsReadFromTheServersAnswerEachMarkDatedAsThePhoneDatesOneEachSubtreeCountedAndARowItCannotReadLeftOut() throws {
     let answer = """
       {"marks": [
         {"node": "wind", "status": "complete", "at": "1790424000000:0:r_a", "markedAt": 1790424005000},
         {"node": "dock", "status": "none", "at": "1790424001000:2:r_a", "markedAt": 1790424006000, "outOfOrder": true},
+        {"node": "night", "status": "complete", "at": "0:0:", "markedAt": 1790424007000},
         {"node": "tie", "status": "complete", "at": "not a stamp"},
         {"status": "complete", "at": "1790424002000:0:r_a"}
-      ], "subtrees": []}
+      ], "subtrees": [
+        {"node": "night", "tree": "t_00000000000000b1", "done": 5, "total": 5},
+        {"node": "solo", "tree": "t_00000000000000b2", "done": 0, "total": 0},
+        {"node": "tri", "tree": "t_00000000000000b3", "done": 3},
+        {"node": "leave", "done": 1, "total": 2}
+      ]}
       """
-    let read = try RoadmapTree.Mark.owners(Data(answer.utf8))
-    #expect(read.unread == 2)
-    #expect(read.read.map { "\($0.node) \($0.status) \($0.outOfOrder) \($0.deviceAt?.ms ?? 0) \($0.recordedAt?.ms ?? 0) \($0.stamp?.description ?? "")" } == [
+    let read = try OwnersProgress(answer: Data(answer.utf8))
+    #expect(read.unread == 4)
+    #expect(read.marks.map { "\($0.node) \($0.status) \($0.outOfOrder) \($0.deviceAt?.ms ?? 0) \($0.recordedAt?.ms ?? 0) \($0.stamp?.description ?? "")" } == [
       "wind complete false 1790424000000 1790424005000 1790424000000:0:r_a",
       "dock none true 1790424001000 1790424006000 1790424001000:2:r_a",
+      "night complete false 0 1790424007000 0:0:",
     ])
-    #expect(throws: (any Error).self) { try RoadmapTree.Mark.owners(Data("[]".utf8)) }
+    #expect(read.subtrees.map { "\($0.tree) \($0.counts.done) of \($0.counts.total)" } == ["t_00000000000000b1 5 of 5", "t_00000000000000b2 0 of 0"])
+    // An answer of a server that counts no subtree reads with none.
+    #expect(try OwnersProgress(answer: Data(#"{"marks": []}"#.utf8)).subtrees.isEmpty)
+    #expect(throws: (any Error).self) { try OwnersProgress(answer: Data("[]".utf8)) }
   }
 }
 

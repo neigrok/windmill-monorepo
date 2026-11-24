@@ -361,7 +361,9 @@ that names no roadmap opens All Roadmaps; any other raises a `RoadmapCover` over
 (`RoadmapLinks.cover`), closing one that stands, which stays where it shows that same roadmap. A cover holds a room in
 the reader's role, which its `SharedRead` reads: the roadmap's tree scope, and each one above it as their metas name
 them, followed through the engine (`RoadmapCover.Sources`) and let go as the cover closes, with the owner's progress from
-the backend (`RoadmapSharing.progress`), or the steps' own seeds where that read fails, as the web's room falls back. The
+the backend (`RoadmapSharing.progress`, an `OwnersProgress`), or the steps' own seeds where that read fails, as the web's
+room falls back. The cover follows no subtree its steps own: the account counts each as that answer's `subtrees` row tells
+it (`RoadmapAccount(_:told:)`), so a step that owns one is Done once every step inside is, as on the web's cover. The
 room's switch row (`SwitchRow`), Board, Graph, step page and History draw it, the `OpenRoadmap` offering no Complete,
 Reset or Delete, and the Board and the page leaving out what the boards do not draw there: swipes, the long-press menu,
 *Select Steps*, New Step, *Edit* and the workspace. Every screen on the cover's stack finds the cover in its environment,
@@ -383,8 +385,7 @@ taking no second tap. The room opens the copy once its list holds it, on its Boa
 planted* and no Undo, and the cover closes then, or after fifteen seconds, leaving the room to open the copy when it
 lands. A fork that comes to nothing says *Couldn’t fork this roadmap. Try again.* in the band slot. `SharingRequests`
 makes the two requests over HTTP with the account's token; a 503 is the server busy, and a request given up is no
-failure. A step that owns a subtree stands on a cover as the domain reads it with that subtree unread, since the cover
-reads none of the server's `subtrees`.
+failure.
 
 `Step/StepDraft.swift` is the step form's draft, which `newStep(from:)` and `edit(_:)` make and the model holds while the
 form is open: what a person sets of a step (its name, description and kind, the steps it requires, the steps it opens and
@@ -495,7 +496,7 @@ and make it public, signs the phone in to an account of its own and opens the ro
 `-board roadmap-cover-private` and `roadmap-cover-private-signed-out` open the link to it left private; and
 `-board roadmap-cover-no-connection` opens a link with no connection to a roadmap the phone holds no copy of. On these
 boards the board's own requests stand in for the backend's (`RoadmapFixture.BoardSharing`): the owner's progress is
-read from the owner's phone, and a fork is made by another phone of the reader's account, so the copy arrives by sync;
+read from the owner's phone, each subtree counted as the owner's account reads it, and a fork is made by another phone of the reader's account, so the copy arrives by sync;
 `-fork-held` leaves a fork unanswered. A simulator launch with
 `-graph-measures <path>` appends what the Graph measures of itself to that file, and with `-board-measures <path>` what
 the Board measures, one JSON line a measure; with

@@ -333,18 +333,28 @@ enum RoadmapFixture {
   }
 
   // The backend's sharing requests on a cover's board, where the model server serves sync alone: the owner's progress read
-  // from the owner's own phone, and a fork made by another phone of the reader's account, whose copy reaches this phone by
-  // sync as the server's does. A launch with `-fork-held` leaves a fork unanswered, as one under way (09.7).
+  // from the owner's own phone, the subtrees its steps own counted as the owner's account reads them, and a fork made by
+  // another phone of the reader's account, whose copy reaches this phone by sync as the server's does. A launch with
+  // `-fork-held` leaves a fork unanswered, as one under way (09.7).
   final class BoardSharing: RoadmapSharing {
     var owner: AppRuntime?
     var reader: AppRuntime?
     var sent: ((AppRuntime) async throws -> Void)?
 
-    func progress(of tree: String) async throws(SharingFailure) -> [RoadmapTree.Mark] {
+    func progress(of tree: String) async throws(SharingFailure) -> OwnersProgress {
       guard let owner else { throw .failed }
       do {
-        let overlay = try owner.engine.read(ID<RoadmapEntry>(RecordID(tree)).overlay) { try $0.records(StepMark.type, in: .drawn) }
-        return try RoadmapTree(id: ID(RecordID(tree)), listed: nil, tree: [], overlay: overlay).marks
+        let held = { (roadmap: ID<RoadmapEntry>) throws -> RoadmapTree in
+          let records = try owner.engine.read(roadmap.tree) { scope in try RoadmapModel.treeTypes.flatMap { try scope.records($0, in: .drawn) } }
+          let overlay = try owner.engine.read(roadmap.overlay) { try $0.records(StepMark.type, in: .drawn) }
+          return try RoadmapTree(id: roadmap, listed: nil, tree: records, overlay: overlay)
+        }
+        let shared = try held(ID(RecordID(tree)))
+        let subtrees = try shared.nodes.compactMap(\.branch).map { (subtree: String) throws -> RoadmapTree in try held(ID(RecordID(subtree))) }
+        let account = RoadmapAccount([shared] + subtrees)
+        return OwnersProgress(marks: shared.marks, subtrees: subtrees.compactMap { (subtree: RoadmapTree) -> RoadmapAccount.Told? in
+          account.counts(subtree.id).map { RoadmapAccount.Told(tree: subtree.id, counts: $0) }
+        })
       } catch {
         throw .failed
       }

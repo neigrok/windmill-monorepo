@@ -257,7 +257,7 @@ carry steps, the roadmap's size as a bucket: 1-100, 101-1000 or 1001-5000. A sha
 requests of the backend, each `api_request_failed` with route /v1/trees under its operation where it fails and reported
 where nobody expects it, neither no connection nor a status the server answers on purpose: `roadmap_progress` for the
 owner's progress (`GET /v1/trees/{id}/progress`), and its failure_kind decode, reported too, for an answer that is not
-the contract's or holds a mark row it cannot read, which it leaves out; and `roadmap_fork` for Fork
+the contract's or holds a mark row or a subtree row it cannot read, which it leaves out; and `roadmap_fork` for Fork
 (`POST /v1/trees/{id}/fork`), decode for an answer that names no copy. A 503 is the server busy, told and never
 reported, and a request its asker gave up, as a cover that closed, tells nothing. `roadmap_subscribe`, failure_kind
 unexpected, says the engine threw as the cover followed a roadmap's scope, while the cover reads what the phone holds,

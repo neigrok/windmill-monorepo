@@ -376,8 +376,7 @@ makes it false.
   roadmap alone under
   *Fit*; it has no Find, no mark on a step that opens a roadmap, and draws no proposal; no Coach is built, and the
   Board has no pasted steps. A roadmap's link opens the room in Debug builds alone, whose entitlements claim the site's
-  addresses: Release's entitlements and the App ID carry no associated domain. A shared roadmap's cover reads no
-  subtree's progress, so a step that owns one stands as the domain reads it with that subtree unread. The app's
+  addresses: Release's entitlements and the App ID carry no associated domain. The app's
   onboarding says roadmap is on the web.
 - `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
   room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once, and plays every
