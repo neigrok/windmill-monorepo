@@ -59,7 +59,8 @@ Failures reach Sentry with kind `sync`, route `/sync` and no stack, under these 
 | `sync-observer` | A listener of the engine, of a scope's observation or of its events threw |
 | `sync-auth` | A sign-in whose hello did not answer as the account signing in, or that threw (a sign-out still open is no failure); a credential deletion the session owner's `clear` could not make |
 
-Storage denial is explicit; no volatile fallback replaces durable work. A write
+Storage denial is explicit; no volatile fallback replaces durable work. An engine opened in memory (`inMemory`, engine.md
+§2.5) reports as one on IndexedDB does, and its store never fails to open. A write
 the device's store cannot commit reports `storage` once and reaches its caller as a `CommitError` of
 kind `store`; an error a caller's read-and-commit function throws passes through unreported. The engine
 asks no one whose credential the browser holds: the shell tells it what each read of `/v1/me` finds (its

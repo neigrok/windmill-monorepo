@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { IndexedDBStore, WriterSlice } from '../../../src/platform/sync/store.js';
+import { MemoryStore } from '../../../src/platform/sync/memoryStore.js';
 import { commit } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { reidentify } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { registry } from './oracle-adapters/fixtures.js';
@@ -12,6 +13,94 @@ const context = (device) => ({ registry, device, actor: 'r_aaaaaaaaaaaa', device
   nextGestureId: () => 'gesture', ended: [], events: [], newReplicaId: () => 'rp_00000000000000000000000000000002' });
 const gesture = (device) => commit(device.activeReplica, context(device), 'self/probe',
   [{ op: 'create', t: 'card', id: 'card0001', f: { title: 'private words' } }], { hold: true });
+
+// The engine's store interface, which both stores keep: IndexedDB's, and the one held in memory. A second connection is a
+// `reopen` of the first, as another tab of IndexedDB's or a restored page of the memory store's opens it.
+for (const [kind, open] of [
+  ['IndexedDB', () => IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB: new IDBFactory(), newReplicaId: () => id })],
+  ['memory', () => MemoryStore.open({ newReplicaId: () => id })],
+]) {
+  test(`${kind}: concurrent read-and-commit transactions cannot overwrite each other`, async () => {
+    const first = await open();
+    const stores = [first, await first.reopen()];
+    await Promise.all(stores.map((store, index) => store.transact((device) => {
+      const rows = device.activeReplica.deviceRows('probe');
+      rows.rack = (rows.rack ?? 0) + 1;
+      commit(device.activeReplica, { ...context(device), nextGestureId: () => `g${index}` }, 'self/probe',
+        [{ op: 'create', t: 'card', id: `card000${index}`, f: { title: 'private words' } }]);
+    })));
+    const { device } = await stores[0].read();
+    assert.equal(device.activeReplica.deviceRows('probe').rack, 2);
+    assert.deepEqual(device.activeReplica.entries().map((entry) => entry.commitOrder), [1, 2]);
+    stores.forEach((store) => store.close());
+  });
+
+  test(`${kind}: a write edits only copies the store owns: a value handed in, an aborted edit or a swapped object never reaches the next write`, async () => {
+    const store = await open();
+    const held = { label: 'kept' };
+    await store.transact((device) => {
+      gesture(device);
+      device.activeReplica.deviceRows('probe').rack = held;
+    });
+    held.label = 'edited after the commit';
+    const rack = (device) => device.activeReplica.deviceRows('probe').rack;
+    assert.deepEqual(await store.transact((device) => structuredClone(rack(device))).then(({ result }) => result), { label: 'kept' });
+    await assert.rejects(store.transact((device) => {
+      device.activeReplica.outbox[0].state = 'ready';
+      rack(device).label = 'aborted';
+      throw new Error('abort');
+    }));
+    await store.transact((device) => {
+      const [entry] = device.activeReplica.outbox;
+      const original = structuredClone(entry);
+      entry.releaseAt = -1;
+      device.activeReplica.outbox = [original];
+    });
+    const { result } = await store.transact((device) => structuredClone({ rack: rack(device), entry: device.activeReplica.outbox[0] }));
+    assert.deepEqual(result.rack, { label: 'kept' });
+    assert.equal(result.entry.state, 'held');
+    assert.notEqual(result.entry.releaseAt, -1);
+    store.close();
+    const reopened = await store.reopen();
+    const { device } = await reopened.read();
+    assert.deepEqual([rack(device), device.activeReplica.outbox[0].state, device.activeReplica.outbox[0].releaseAt], [{ label: 'kept' }, 'held', result.entry.releaseAt]);
+    reopened.close();
+  });
+
+  test(`${kind}: re-identify keeps the replica's handle and its confirmed rows, through a reopen`, async () => {
+    const store = await open();
+    await store.transact((device) => device.activeReplica.putConfirmed('self/probe',
+      { t: 'card', id: 'card0001', seq: 1, rc: 1, ru: 1, life: ['alive', '1:0:srv'], born: '1:0:srv' }));
+    const before = await store.read();
+    await store.transact((device) => reidentify(device.activeReplica, context(device)));
+    store.close();
+    const after = await (await store.reopen()).read();
+    assert.deepEqual([after.device.activeReplica.storageHandle, after.device.activeReplica.id], [id, 'rp_00000000000000000000000000000002']);
+    assert.deepEqual(after.device.activeReplica.confirmed, before.device.activeReplica.confirmed);
+  });
+
+  test(`${kind}: throwing or asynchronous transaction callbacks persist nothing`, async () => {
+    const store = await open();
+    const before = (await store.read()).device.toJSON();
+    await assert.rejects(store.transact((device) => { gesture(device); throw new Error('abort'); }));
+    await assert.rejects(store.transact(async (device) => { gesture(device); }));
+    assert.deepEqual((await store.read()).device.toJSON(), before);
+    store.close();
+  });
+
+  test(`${kind}: reads share frozen rows, and a write that leaves a scope alone keeps its rows' identity`, async () => {
+    const store = await open();
+    await store.transact((device) => device.activeReplica.putConfirmed('self/probe', { t: 'card', id: 'card0001', seq: 1 }));
+    const rows = (await store.read()).device.activeReplica.confirmed['self/probe'];
+    assert.equal(Object.isFrozen(rows) && Object.values(rows).every(Object.isFrozen), true);
+    const write = await store.transact((device) => device.activeReplica.putConfirmed('tree/b_00000001', { t: 'tag', id: 'tag00001', seq: 1 }));
+    assert.equal(write.changed, true);
+    assert.equal((await store.read()).device.activeReplica.confirmed['self/probe'], rows);
+    const quiet = await store.transact((device) => device.activeReplica.confirmedRows('self/probe'));
+    assert.deepEqual([quiet.changed, quiet.revision], [false, write.revision]);
+    store.close();
+  });
+}
 
 test('an aborted IndexedDB commit restores every row, clock, outbox and device change after reopen', async () => {
   const indexedDB = new IDBFactory();
@@ -33,21 +122,6 @@ test('an aborted IndexedDB commit restores every row, clock, outbox and device c
   store.close();
 });
 
-test('concurrent tab read-and-commit transactions cannot overwrite each other', async () => {
-  const indexedDB = new IDBFactory();
-  const stores = await Promise.all([1, 2].map(() => IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => id })));
-  await Promise.all(stores.map((store, index) => store.transact((device) => {
-    const rows = device.activeReplica.deviceRows('probe');
-    rows.rack = (rows.rack ?? 0) + 1;
-    commit(device.activeReplica, { ...context(device), nextGestureId: () => `g${index}` }, 'self/probe',
-      [{ op: 'create', t: 'card', id: `card000${index}`, f: { title: 'private words' } }]);
-  })));
-  const { device } = await stores[0].read();
-  assert.equal(device.activeReplica.deviceRows('probe').rack, 2);
-  assert.deepEqual(device.activeReplica.entries().map((entry) => entry.commitOrder), [1, 2]);
-  stores.forEach((store) => store.close());
-});
-
 test('a store forgets the rows it held of a generation another tab let go', async () => {
   const indexedDB = new IDBFactory();
   const [kept, other] = await Promise.all([1, 2].map(() => IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => id })));
@@ -58,62 +132,6 @@ test('a store forgets the rows it held of a generation another tab let go', asyn
   assert.deepEqual((await kept.read(['self/probe'])).device.activeReplica.confirmedRows('self/probe'), []);
   assert.equal(kept.generations.has(generation), false);
   [kept, other].forEach((store) => store.close());
-});
-
-test('a write edits only copies the store owns: a value handed in, an aborted edit or a swapped object never reaches the next write', async () => {
-  const indexedDB = new IDBFactory();
-  const store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => id });
-  const held = { label: 'kept' };
-  await store.transact((device) => {
-    gesture(device);
-    device.activeReplica.deviceRows('probe').rack = held;
-  });
-  held.label = 'edited after the commit';
-  const rack = (device) => device.activeReplica.deviceRows('probe').rack;
-  assert.deepEqual(await store.transact((device) => structuredClone(rack(device))).then(({ result }) => result), { label: 'kept' });
-  await assert.rejects(store.transact((device) => {
-    device.activeReplica.outbox[0].state = 'ready';
-    rack(device).label = 'aborted';
-  }, { beforeCommit: ({ transaction }) => transaction.abort() }));
-  await store.transact((device) => {
-    const [entry] = device.activeReplica.outbox;
-    const original = structuredClone(entry);
-    entry.releaseAt = -1;
-    device.activeReplica.outbox = [original];
-  });
-  const { result } = await store.transact((device) => structuredClone({ rack: rack(device), entry: device.activeReplica.outbox[0] }));
-  assert.deepEqual(result.rack, { label: 'kept' });
-  assert.equal(result.entry.state, 'held');
-  assert.notEqual(result.entry.releaseAt, -1);
-  store.close();
-  const reopened = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB, newReplicaId: () => assert.fail('already initialized') });
-  const { device } = await reopened.read();
-  assert.deepEqual([rack(device), device.activeReplica.outbox[0].state, device.activeReplica.outbox[0].releaseAt], [{ label: 'kept' }, 'held', result.entry.releaseAt]);
-  reopened.close();
-});
-
-test('re-identify persists new metadata without changing confirmed row keys or bytes', async () => {
-  const store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB: new IDBFactory(), newReplicaId: () => id });
-  await store.transact((device) => device.activeReplica.putConfirmed('self/probe',
-    { t: 'card', id: 'card0001', seq: 1, rc: 1, ru: 1, life: ['alive', '1:0:srv'], born: '1:0:srv' }));
-  const before = await store.read();
-  let changes;
-  await store.transact((device) => reidentify(device.activeReplica, context(device)), { beforeCommit: ({ records }) => { changes = records; } });
-  const after = await store.read();
-  assert.equal(after.device.activeReplica.storageHandle, before.device.activeReplica.storageHandle);
-  assert.deepEqual(after.device.activeReplica.confirmed, before.device.activeReplica.confirmed);
-  assert.equal(after.device.activeReplica.id, 'rp_00000000000000000000000000000002');
-  assert.ok([...changes.keys()].some((key) => key.includes('confirmed') && key.includes(id)));
-  store.close();
-});
-
-test('throwing or asynchronous transaction callbacks persist nothing', async () => {
-  const store = await IndexedDBStore.open({ keyRange: IDBKeyRange, indexedDB: new IDBFactory(), newReplicaId: () => id });
-  const before = (await store.read()).device.toJSON();
-  await assert.rejects(store.transact((device) => { gesture(device); throw new Error('abort'); }));
-  await assert.rejects(store.transact(async (device) => { gesture(device); }));
-  assert.deepEqual((await store.read()).device.toJSON(), before);
-  store.close();
 });
 
 test('offline storage denial fails explicitly and never replaces durable work with an empty store', async () => {

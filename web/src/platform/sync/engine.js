@@ -1,4 +1,5 @@
 import { IndexedDBStore, WriterSlice, frozen } from './store.js';
+import { MemoryStore } from './memoryStore.js';
 import { ProductNotices, ScopeObservation } from './observation.js';
 import { TabLeadership } from './leadership.js';
 import { HttpTransport, LiveChannel } from './transport.js';
@@ -103,11 +104,12 @@ export class BrowserSyncEngine {
     this.revision = -1;
   }
 
+  // `inMemory` holds the device in this tab alone (`MemoryStore`), for a browser that offers no store; else IndexedDB keeps it.
   static async open(options = {}) {
     let store;
     try {
-      store = options.store ?? await IndexedDBStore.open({ indexedDB: options.indexedDB, keyRange: options.keyRange,
-        name: options.name, newReplicaId: options.newReplicaId ?? replicaId });
+      store = options.store ?? await (options.inMemory ? MemoryStore : IndexedDBStore).open({ indexedDB: options.indexedDB,
+        keyRange: options.keyRange, name: options.name, newReplicaId: options.newReplicaId ?? replicaId });
       const engine = new BrowserSyncEngine({ ...options, store });
       await engine.refresh();
       return engine;
@@ -318,7 +320,7 @@ export class BrowserSyncEngine {
   async start() {
     if (this.started || this.closed) return;
     this.started = true;
-    try { this.coordination = new TabLeadership({ locks: this.navigator?.locks, store: this.store.version,
+    try { this.coordination = new TabLeadership({ locks: this.navigator?.locks, store: this.store.coordination,
       visible: this.visible, ...this.leadershipOptions,
       readReplica: () => this.refresh(), onLeader: (leader) => {
         this.leader = leader;

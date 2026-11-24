@@ -1,8 +1,8 @@
 # Browser sync engine
 
 `BrowserSyncEngine.open()` opens IndexedDB and returns stable local snapshots without a network
-request. `start()` installs tab coordination and lifecycle hooks, releases holds on the first tab,
-requests persistent storage and starts synchronization. Products and UI reach the engine through `session.js`;
+request; `open({ inMemory: true })` holds the device in the tab instead (below). `start()` installs tab coordination
+and lifecycle hooks, releases holds on the first tab, requests persistent storage and starts synchronization. Products and UI reach the engine through `session.js`;
 from this module they import only `ReplicaChanged`.
 
 The registry composes the shared gym, journal and roadmap registries at version 13, minimum 11. The deterministic
@@ -109,6 +109,17 @@ The callback cannot await or call the engine again. The shell passes that exact 
 after product cleanup succeeds, and replays it after reload. `recordAccountClosure(account, sessionId)` keeps the
 session owner's closure of the bound account through the sign-out that ends it and any reload, until
 `clearAccountClosure(sessionId)`. The shell writes no engine state of its own: these calls are its only door.
+
+Two stores keep the engine's device behind one interface. `transact(change, { readonly, initialize, scopes })` runs
+`change` synchronously on the device in one transaction and answers `{ result, device, revision, changed, previous, active,
+measurement }`, a throw or a Promise from `change` committing nothing; `read(scopes)` is a read-only one, and
+`cleanup(limit)`, `reopen()`, `close()` and `coordination`, the name the tabs sharing the store lead and talk under
+(engine.md §7.8), complete it. `IndexedDBStore` (`store.js`) keeps the device durably for every tab of its version.
+`MemoryStore` (`memoryStore.js`) holds it in memory for as long as the page, for a browser that offers no IndexedDB
+(engine.md §2.5): its `coordination` is its own, so each tab holding one is a device of its own, leading its replica alone
+and syncing only through the server. Its reads share the committed values, frozen, and a write commits copies of what it changed, so a row keeps its identity
+while no write replaces it; `reopen` is the same device, as a restored page wants; it is never superseded and has no rows
+to clean up. The shell opens the engine on IndexedDB alone: where the browser refuses it, nothing opens in memory.
 
 Each store mutation uses one strict-durability IndexedDB transaction. Indexed reads precede the
 synchronous read-and-commit callback inside that same transaction; it cannot await. Writes hydrate
