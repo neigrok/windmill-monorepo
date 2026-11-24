@@ -37,7 +37,7 @@ ID byte order.
 | `account` | Trees by ID with standing, place/path/title, counts, completion and openings; pointer-loop components | yes |
 | `progress` | Effective completed IDs and dates under openings, null for an unread/hidden tree | yes |
 | `guides` | Nearest eight nonempty guides including own, displayed farthest first, ID byte ties | yes |
-| `legend` | Authored kind IDs, hue owners and collisions | yes |
+| `legend` | Authored kind IDs, hue owners and collisions, and the legend shown, which a paste reads over: each hue's owner in the kinds' order, then each hue a present step wears that no kind claims, in the palette's order, with a null id | yes |
 | `search` | MCP node IDs, with independent kind/color filters and relevance order | yes |
 | `board` | Overall progress, query facts, three columns, folding and structured card reasons | no |
 | `diagnostics` | Bounded graph errors and warnings | yes |
