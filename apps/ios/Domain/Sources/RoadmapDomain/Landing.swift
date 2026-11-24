@@ -29,10 +29,16 @@ public struct LandingRead: Sendable {
   public let cameBack: [ID<RoadmapStep>]
   public let note: LandingNote
 
-  // A device with no note tells nothing, so its roadmap's steps go unread: a room reads this after every change.
+  // A line comes from a step brought back, or from a link the note holds or one into a step it holds, out of a step whose
+  // delete has reached the device. Where the note holds none such, the roadmap's steps go unread: a room reads this after
+  // every change, and an entry no line can be said of stays in the note until its next write.
   public init(of tree: ID<RoadmapEntry>, in read: Reader) throws {
     let note = try LandingNote(of: tree, in: read)
-    guard !note.isEmpty else {
+    let deleted = read.repository(RoadmapStep.self)
+    let bridging = note.isEmpty ? [] : try read.repository(RoadmapLink.self).all(in: .drawn).filter { (link: RoadmapLink) -> Bool in
+      note.nodes.contains(link.to) || note.edges.contains(link)
+    }
+    guard try !note.revived.isEmpty || bridging.contains(where: { (link: RoadmapLink) throws -> Bool in try deleted.spentSeq(link.from) != nil }) else {
       (follows, cameBack, self.note) = ([], [], note)
       return
     }
