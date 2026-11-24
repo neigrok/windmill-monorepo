@@ -1,9 +1,11 @@
+import UIKit
 import XCTest
 
 // The Roadmap room's flows on the simulator's boards: a step's workspace (Roadmap · iOS 03.2, 03.3, 03.10, 03.11, 03.14),
 // the step form's links (05.1, 05.8), the Board's Find, sort and filter, branch and several steps with Kinds (02.4 to
 // 02.12, 03.7, 06.1 to 06.5b), the Graph's (04.1 to 04.5, 04.7), then Activity and a step's History (01.13, 01.13b,
-// 03.12), the room's first read (01.5b) and an Undo that brings nothing back (02.10d). The canvas is one element, as
+// 03.12), the room's first read (01.5b), an Undo that brings nothing back (02.10d), and plans: New Roadmap from a copied
+// plan or a file (01.6, 01.8 to 01.8c) and Paste Steps (02.16 to 02.18). The canvas is one element, as
 // VoiceOver hears it, so a step is tapped where the layout seats it: *Learn to sail* opens at the phone's working zoom
 // with the middle of its seats' box at the centre of what the bars leave, and each step stands a known way from that
 // centre (`packages/api-contract/roadmap/layout/learn-to-sail.json` pins the seats). The zoom floor is half the opening
@@ -653,5 +655,113 @@ import XCTest
     XCTAssertTrue(app.staticTexts["Couldn’t bring back Tie a bowline"].waitForExistence(timeout: 5))
     XCTAssertFalse(undo.exists)
     XCTAssertTrue(app.staticTexts["3 of 7 done"].exists && !app.roadmapStep("Tie a bowline").exists)
+  }
+
+  // The boards' copied plan, *Summer cruise* (RoadmapFixture.summerCruise), as a person copies it in another app.
+  static let summerCruise = """
+    Summer cruise
+    - [x] Pick the week
+    - [x] Book the boat
+      - Plan the route
+        Out by the north channel, back along the coast.
+        Two nights at anchor.
+        - Check the tides
+        - Mark the harbours
+    ## Galley
+    - Provision for five days
+      Water, fuel and food for four.
+    ## Crew
+    - Brief the crew
+      Watches, knots and the man-overboard drill.
+    ## Deck
+    - Cast off
+    """
+
+  // The counts a plan read back shows, each as VoiceOver hears its row: its words and its number.
+  func counts(_ app: XCUIApplication) -> [String] {
+    ["roadmap-plan-steps", "roadmap-plan-branches", "roadmap-plan-done", "roadmap-plan-notes"].compactMap { (identifier: String) -> String? in
+      let row = app.descendants(matching: .any)[identifier]
+      return row.exists ? row.label : nil
+    }
+  }
+
+  // The labels of the plan's steps New Roadmap or Paste Steps reads back, in order.
+  func planned(_ app: XCUIApplication) -> [String] {
+    let rows = app.descendants(matching: .any).matching(identifier: "roadmap-planned-step")
+    return (0..<rows.count).map { rows.element(boundBy: $0).label }
+  }
+
+  // Roadmap · iOS 01.6, 01.8, 01.8b and 01.8c, signed out: Start from offers a copied plan and a file; a file the phone
+  // cannot read is said in Start from's footer and plants nothing; a plan pasted through the system's Paste button is read
+  // back, named by its first line, with its counts and its first steps in the states they will land in; Create plants it
+  // with its done marks, opens it and says what it planted.
+  func testACopiedPlanIsReadBackAndPlantedAndAFileThatCannotBeReadIsSaid() {
+    UIPasteboard.general.string = Self.summerCruise
+    let app = launch("roadmap-empty", asking: ["-roadmap-file", "Sailing plan.md"])
+    let new = app.buttons["roadmap-new"], name = app.textFields["roadmap-new-name"], create = app.buttons["roadmap-new-create"]
+    XCTAssertTrue(new.waitForExistence(timeout: 30))
+    new.tap()
+    XCTAssertTrue(name.waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["Start from"].exists && app.staticTexts["A Copied Plan"].exists && app.buttons["roadmap-new-file"].exists)
+    XCTAssertTrue(app.staticTexts["Create alone plants one step, named as the roadmap."].exists && !create.isEnabled)
+
+    app.buttons["roadmap-new-file"].tap()
+    XCTAssertTrue(app.staticTexts["Couldn’t read “Sailing plan.md”."].waitForExistence(timeout: 5))
+    XCTAssertFalse(create.isEnabled || app.staticTexts["Pasted plan"].exists)
+
+    app.pastePlan()
+    XCTAssertTrue(app.staticTexts["Pasted plan"].waitForExistence(timeout: 10))
+    XCTAssertTrue(name.waitForValue("Summer cruise") && create.isEnabled)
+    XCTAssertEqual(counts(app), ["Steps, 12", "Branches, 3", "Already done, 2", "Lines kept as notes, 4"])
+    XCTAssertEqual(planned(app), ["Up next, Summer cruise", "Done, Pick the week", "Done, Book the boat", "Up next, Plan the route",
+                                  "Locked, Check the tides", "Locked, Mark the harbours"])
+    XCTAssertTrue(app.staticTexts["And 6 more."].exists)
+
+    create.tap()
+    XCTAssertTrue(app.staticTexts["Roadmap planted · 12 steps · 2 already done"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.navigationBars["Summer cruise"].waitForExistence(timeout: 10) && app.staticTexts["2 of 12 done"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["roadmap-undo"].exists || name.exists)
+    XCTAssertTrue(app.roadmapStep("Plan the route").exists && app.buttons["roadmap-group-locked"].exists)
+  }
+
+  // Roadmap · iOS 02.16 to 02.18, 02.16b and 02.16c, R-15: Paste Steps in the +'s long press says when the clipboard
+  // holds no text and when the system was not allowed to hand it over; allowed, it reads the copied list back under the
+  // roadmap's starting step in the states its steps will land in; Cancel writes nothing, Add writes them with the mark
+  // the list brings done, and Undo takes the paste back whole. Settings leads to Windmill's page in Settings.
+  func testPasteStepsReadsACopiedListBackAddsItWithItsMarkAndUndoTakesItBack() {
+    UIPasteboard.general.items = []
+    let app = launch("roadmap-learn-to-sail", takingUndo: true)
+    XCTAssertTrue(app.staticTexts["3 of 8 done"].waitForExistence(timeout: 30))
+    app.pasteSteps()
+    XCTAssertTrue(app.staticTexts["No text to paste"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["roadmap-undo"].exists || app.navigationBars["Paste Steps"].exists)
+
+    UIPasteboard.general.string = "## Day sail\n- [x] Check the forecast\n- Plan the passage\n- Brief the crew\n- Pack the boat"
+    app.pasteSteps(allowing: false)
+    XCTAssertTrue(app.staticTexts["Paste not allowed"].waitForExistence(timeout: 5) && app.buttons["roadmap-settings"].exists)
+    XCTAssertFalse(app.navigationBars["Paste Steps"].exists)
+
+    app.pasteSteps(allowing: true)
+    XCTAssertTrue(app.navigationBars["Paste Steps"].waitForExistence(timeout: 10))
+    // The medium sheet's list draws the rows on screen alone.
+    XCTAssertEqual(Array(planned(app).prefix(4)), ["Up next, Day sail", "Done, Check the forecast", "Locked, Plan the passage", "Locked, Brief the crew"])
+    XCTAssertEqual(counts(app), ["Steps, 5", "Branches, 1", "Already done, 1"])
+    app.buttons["roadmap-paste-cancel"].tap()
+    XCTAssertTrue(app.navigationBars["Paste Steps"].waitForNonExistence(timeout: 5) && app.staticTexts["3 of 8 done"].exists)
+
+    app.pasteSteps(allowing: true)
+    XCTAssertTrue(app.buttons["roadmap-paste-add"].waitForExistence(timeout: 10))
+    app.buttons["roadmap-paste-add"].tap()
+    XCTAssertTrue(app.staticTexts["Added 5 steps"].waitForExistence(timeout: 10) && app.buttons["roadmap-undo"].exists)
+    XCTAssertTrue(app.staticTexts["4 of 13 done"].waitForExistence(timeout: 5) && app.roadmapStep("Day sail").exists)
+    app.buttons["roadmap-undo"].tap()
+    XCTAssertTrue(app.staticTexts["3 of 8 done"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.roadmapStep("Day sail").exists)
+
+    UIPasteboard.general.string = "- Rig the boat"
+    app.pasteSteps(allowing: false)
+    XCTAssertTrue(app.buttons["roadmap-settings"].waitForExistence(timeout: 5))
+    app.buttons["roadmap-settings"].tap()
+    XCTAssertTrue(XCUIApplication(bundleIdentifier: "com.apple.Preferences").wait(for: .runningForeground, timeout: 10))
   }
 }

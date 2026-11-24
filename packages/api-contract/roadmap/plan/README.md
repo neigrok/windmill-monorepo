@@ -176,7 +176,7 @@ text plants, within the roadmap's cap of steps.
 
 A surface decides when a plan may be created and what it passes as typed. The web's composer offers it only while the
 text holds something other than whitespace, and shows its name field, and passes what it holds, only for a plan with no
-name.
+name. The iPhone's field starts from the plan's name where it is empty, and passes what it holds.
 
 ## Importing
 

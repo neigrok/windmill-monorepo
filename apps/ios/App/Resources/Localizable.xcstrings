@@ -1147,6 +1147,12 @@
     "90 days" : {
       "comment" : "A chart's window: its last 90 days, beside All"
     },
+    "A Copied Plan" : {
+
+    },
+    "A File" : {
+
+    },
     "A connected tool" : {
 
     },
@@ -1269,6 +1275,29 @@
         }
       }
     },
+    "Added %lld steps" : {
+      "comment" : "The band once steps pasted into a roadmap are added: how many",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Added %lld step"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Added %lld steps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Adding" : {
 
     },
@@ -1335,6 +1364,9 @@
 
     },
     "Already added once — discard this copy." : {
+
+    },
+    "Already done" : {
 
     },
     "Already on Windmill?" : {
@@ -1441,6 +1473,9 @@
     },
     "Also removes the step that opens it in %@" : {
       "comment" : "A roadmap's delete question: the one roadmap whose one step opens it"
+    },
+    "And %lld more." : {
+      "comment" : "Under a plan's first steps: how many more steps it brings"
     },
     "Answer in progress" : {
 
@@ -1553,6 +1588,9 @@
     },
     "Branch · %@" : {
       "comment" : "The Board's first row while it stays in a step's branch: the step's name"
+    },
+    "Branches" : {
+
     },
     "Brick" : {
       "comment" : "A step's colour, said where no kind names it"
@@ -1876,6 +1914,9 @@
     "Couldn’t read your connections." : {
 
     },
+    "Couldn’t read “%@”." : {
+      "comment" : "New Roadmap's footer when the file chosen could not be read: the file's name"
+    },
     "Couldn’t save the routine. Try again." : {
 
     },
@@ -1886,6 +1927,9 @@
 
     },
     "Create account" : {
+
+    },
+    "Create alone plants one step, named as the roadmap." : {
 
     },
     "Create movement" : {
@@ -2248,6 +2292,9 @@
     "Finishing…" : {
 
     },
+    "First steps" : {
+
+    },
     "Fit" : {
 
     },
@@ -2488,6 +2535,9 @@
     },
     "Light" : {
       "comment" : "An appearance the app can take: the light look"
+    },
+    "Lines kept as notes" : {
+
     },
     "Linked to %@" : {
 
@@ -2853,6 +2903,9 @@
     "No steps yet" : {
 
     },
+    "No text to paste" : {
+      "comment" : "The band when Paste Steps finds no text on the clipboard"
+    },
     "No tool can apply a proposal or edit a logged set." : {
 
     },
@@ -3036,7 +3089,16 @@
     "Page %lld of 4" : {
       "comment" : "The introduction's page control: Page 2 of 4"
     },
+    "Paste Steps" : {
+
+    },
+    "Paste not allowed" : {
+      "comment" : "The band when the system was not allowed to hand Paste Steps the copied text"
+    },
     "Paste the full sign-in link or its token." : {
+
+    },
+    "Pasted plan" : {
 
     },
     "Performed" : {
@@ -3335,6 +3397,62 @@
     },
     "Roadmap Order" : {
 
+    },
+    "Roadmap planted · %lld steps" : {
+      "comment" : "The band once a roadmap is planted from a plan: how many steps it holds",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Roadmap planted · %lld step"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Roadmap planted · %lld steps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Roadmap planted · %lld steps · %lld already done" : {
+      "comment" : "The band once a roadmap is planted from a plan: how many steps it holds, and how many of them the plan brought done",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Roadmap planted · %1$#@steps@ · %2$lld already done"
+          },
+          "substitutions" : {
+            "steps" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg step"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg steps"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "Room" : {
 
@@ -3654,6 +3772,9 @@
     "Start anywhere." : {
 
     },
+    "Start from" : {
+
+    },
     "Start workout" : {
 
     },
@@ -3665,6 +3786,9 @@
     },
     "Step" : {
       "comment" : "A movement's load step"
+    },
+    "Steps" : {
+
     },
     "Steps you add and complete show here." : {
 

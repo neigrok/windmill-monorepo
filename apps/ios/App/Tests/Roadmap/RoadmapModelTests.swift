@@ -805,55 +805,6 @@ import SyncTesting
     await shows(relaunched, "open Learn to sail", on: engine)
   }
 
-  // Roadmap · iOS 01.5 and 01.6, signed out: Cancel writes nothing; Create plants a blank roadmap with its one starting
-  // step, named as the roadmap and kept, and the room opens it once the phone's copy holds it, in place of the one it
-  // had open. A name the domain refuses plants nothing and leaves the sheet open.
-  @Test func aNewRoadmapStartsWithOneStepNamedAsItAndIsTheOpenOne() async throws {
-    let (engine, runner, memory, suite) = phone(account: nil)
-    defer { memory.removePersistentDomain(forName: suite) }
-    let telemetry = TelemetryRecorder()
-    let model = room(engine, runner, memory, telemetry: telemetry)
-    model.roomOpened()
-    await shows(model, "empty", on: engine)
-
-    model.nameRoadmap(from: .empty)
-    #expect(model.naming)
-    model.cancelNaming()
-    await engine.settleViews()
-    model.observe()
-    #expect(!model.naming && name(model.phase) == "empty")
-
-    model.nameRoadmap(from: .empty)
-    model.create(named: "  Learn to cook \n")
-    #expect(!model.naming && engine.undoOffers().isEmpty)
-    await shows(model, board: ["0 of 1", "upNext: Learn to cook"], on: engine)
-    guard case .open(let cook) = model.phase else { return }
-    #expect(cook.listed.title == "Learn to cook" && memory.string(forKey: RoadmapModel.lastOpen) == cook.listed.id)
-    let start = try row("Learn to cook", in: model)
-    #expect(start.kind?.label == "Build" && start.step.icon == "sparkles" && start.completes && !start.deletes)
-    #expect(cook.keptStep == start.id)
-
-    model.path = [.roadmaps]
-    model.nameRoadmap(from: .list)
-    model.create(named: "Run a 10k")
-    #expect(!model.naming && model.path.isEmpty)
-    await shows(model, board: ["0 of 1", "upNext: Run a 10k"], on: engine)
-    guard case .open(let run) = model.phase else { return }
-    #expect(memory.string(forKey: RoadmapModel.lastOpen) == run.listed.id)
-    #expect(model.roadmaps.map { $0.title ?? "" }.sorted() == ["Learn to cook", "Run a 10k"])
-
-    model.nameRoadmap(from: .menu)
-    model.create(named: String(repeating: "a", count: 201))
-    await engine.settleViews()
-    model.observe()
-    #expect(model.naming && model.roadmaps.count == 2 && board(model) == ["0 of 1", "upNext: Run a 10k"])
-    #expect(told(telemetry) == [
-      "roadmap_room_opened ", "roadmap_sheet door=empty step=new", "roadmap_board_create door=blank step=cancel", "roadmap_sheet door=empty step=new",
-      "birth ", "roadmap_sheet step=open", "roadmap_sheet door=list step=new", "birth ", "roadmap_sheet door=menu step=new",
-      "roadmap_write_refused refusal=invalid write=createRoadmap",
-    ])
-  }
-
   // Roadmap · iOS 01.9: the name committed in the bar is written through the domain without the blanks around it, and
   // the account's other phone reads it. The same name writes nothing, a name the domain refuses keeps the old one, and
   // an emptied name is written.

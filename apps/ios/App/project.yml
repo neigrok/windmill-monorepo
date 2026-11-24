@@ -117,6 +117,13 @@ targets:
         UILaunchScreen:
           UIColorName: shell/canvas
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: net.daringfireball.markdown
+            UTTypeDescription: Markdown
+            UTTypeConformsTo: [public.plain-text]
+            UTTypeTagSpecification:
+              public.filename-extension: [md, markdown]
+              public.mime-type: [text/markdown]
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         UIAppFonts:

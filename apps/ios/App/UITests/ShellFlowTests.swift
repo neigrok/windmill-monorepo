@@ -633,10 +633,10 @@ import XCTest
     return (0..<rows.count).map { rows.element(boundBy: $0).label }
   }
 
-  // Roadmap · iOS 01.5, 01.6 and 01.9 to 01.11, signed out and on the phone's copy alone: New Roadmap names one, Cancel
-  // writes nothing and Create plants it with its one step and opens it; Rename turns the bar into a field whose return
-  // commits; a relaunch opens the roadmap again; and Delete Roadmap asks once, leaves the room with no roadmap and Undo
-  // in the band, which brings it back.
+  // Roadmap · iOS 01.5, 01.6 and 01.9 to 01.11, signed out and on the phone's copy alone: New Roadmap names one beside
+  // Start from's copied plan and file, with no quest, Cancel writes nothing and Create plants it with its one step and
+  // opens it; Rename turns the bar into a field whose return commits; a relaunch opens the roadmap again; and Delete
+  // Roadmap asks once, leaves the room with no roadmap and Undo in the band, which brings it back.
   func testARoadmapIsMadeRenamedReopenedAndDeletedWithUndoSignedOut() {
     let app = launch("roadmap-empty", takingUndo: true)
     let new = app.buttons["roadmap-new"], name = app.textFields["roadmap-new-name"], create = app.buttons["roadmap-new-create"]
@@ -645,7 +645,8 @@ import XCTest
     XCTAssertTrue(name.waitForExistence(timeout: 10))
     XCTAssertEqual(name.placeholderValue, "Name your roadmap")
     XCTAssertTrue(app.navigationBars["New Roadmap"].exists && !create.isEnabled)
-    for unbuilt in ["Start from", "A Quest", "A Copied Plan", "A File"] { XCTAssertFalse(app.staticTexts[unbuilt].exists || app.buttons[unbuilt].exists) }
+    XCTAssertTrue(app.staticTexts["Start from"].exists && app.staticTexts["A Copied Plan"].exists && app.buttons["roadmap-new-file"].exists)
+    XCTAssertFalse(app.staticTexts["A Quest"].exists || app.buttons["A Quest"].exists, "The iPhone offers no quest (R-13)")
     app.buttons["roadmap-new-cancel"].tap()
     XCTAssertTrue(name.waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["No roadmaps yet"].exists)

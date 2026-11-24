@@ -218,9 +218,11 @@ makes a request, and none needs a connection or an account. The iPhone offers no
   gives the same name, steps, links, kinds, done marks and counts on the iPhone as on the web.
   It is read on the phone, and reading cannot fail: a line the grammar cannot place is kept as a
   note on a step. The read-back shows the grammar's counts, and the plan's first steps in the
-  states the domain's reads give them over the plan as over a roadmap. Create runs
-  `CreateRoadmap` with the plan's steps, links and kinds, then `Complete` for each step the plan
-  brings done.
+  states the domain's reads give them over the plan as over a roadmap. The name field starts from
+  the plan's name where it is empty; a name typed names the roadmap and the step that stands for
+  the plan's name. Create runs `CreateRoadmap` with the plan's steps, links and kinds, then
+  `Complete` for each step the plan brings done. A file is decoded as the web decodes one, its
+  bytes as UTF-8 with a leading byte order mark dropped.
 - **The grammar's cases** live in `packages/api-contract/roadmap/plan/`: a text read to a plan,
   alone and into a roadmap that has kinds of its own; a plan to the input of `CreateRoadmap`, and
   to that of `ImportSteps` under a step (§7.2); a roadmap written to its Markdown (§7.3); and
@@ -358,7 +360,8 @@ makes it false.
 - The app's third room exists only behind a build switch that is off in Release (`WM_ROADMAP_ROOM_ENABLED`), where it
   shows a roadmap's Board, its Graph and a step's page from the phone's copy, writes five gestures on a step, Create
   and Edit from the step form and Complete, Reset and Delete, each with its Undo, and makes, opens, renames and
-  deletes a roadmap from the title menu, All Roadmaps and New Roadmap. The Board finds steps by the domain's read,
+  deletes a roadmap from the title menu, All Roadmaps and New Roadmap, which starts one blank, from a copied plan or from
+  a `.md` or `.txt` file, each plan read back first (§7.1). The Board finds steps by the domain's read,
   orders them, narrows them to the kinds a person picks or to a step's branch, and selects several steps to recolor or
   delete, each as one gesture with its Undo; New Step at a roadmap's cap of steps is refused where it is tapped; and a
   roadmap's kinds are added, named, described, recolored and removed in the Kinds sheet, from the title menu and from
@@ -367,13 +370,13 @@ makes it false.
   it, subtasks, a note and links read live from their overlay on the phone's copy, each written by an act of the
   domain, and its History, and has no *Open Roadmap*, and its menu has no *Attach a Roadmap* or *Copy Link*; the note's
   field sets bold and italic alone, from the system's Format menu on iOS 26. The title menu's *Activity* and a step's
-  *History* are the domain's read of the phone's copy (§3); the title menu has no *Guide*, *Share…* or *Export*, New
-  Roadmap starts a blank roadmap alone, from no plan or file, and All Roadmaps has no gallery. An Undo that brings
+  *History* are the domain's read of the phone's copy (§3); the title menu has no *Guide*, *Share…* or *Export*, and
+  All Roadmaps has no gallery. The foot's + held offers Paste Steps (§7.2). An Undo that brings
   nothing back says so in the band. The Graph draws the picture, pans and zooms it, selects a step and opens its page,
   lists the Up next steps under *Next*, brings the one chosen there or by *Open in Graph* into view, and shows the whole
   roadmap alone under
   *Fit*; it has no Find, no mark on a step that opens a roadmap, and draws no proposal and no reader's cover; no link
-  or Coach is built, and the Board has no pasted steps. The app has no associated domain, and its onboarding says
+  or Coach is built. The app has no associated domain, and its onboarding says
   roadmap is on the web.
 - `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
   room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once, and the plan grammar's
@@ -396,11 +399,13 @@ makes it false.
   under all four and so cannot choose, and no phone has run the three. No older phone has measured the Graph, and a
   canvas that misses the budget on a phone reports it (§11).
 - Roadmap's runner holds a removal for the engine's nine seconds (`AppRuntime.roadmapRunner`), and the room runs
-  eighteen acts through it: `MarkStep` (Complete and Reset), `DeleteStep` and `DeleteRoadmap`, each with *Undo*, and
+  nineteen acts through it: `MarkStep` (Complete and Reset), `DeleteStep` and `DeleteRoadmap`, each with *Undo*, and
   `DeleteStep` composed for several steps chosen on the Board, with one *Undo*; `CreateStep`, `ChangeStep` and
   `ChangePrerequisites`, composed into the step form's one save with one *Undo*, and `ChangeStep` composed for several
-  steps recolored on the Board, with one *Undo*; `CreateRoadmap` for a blank roadmap and `WriteRoadmap` for a roadmap's
-  name, of which it keeps none; of a roadmap's kinds `CreateKind`, `ChangeKind` and `RecolourKind`, of which it keeps
+  steps recolored on the Board, with one *Undo*; `CreateRoadmap` for a blank roadmap or a plan, then `MarkStep` for the
+  steps a plan brings done, and `WriteRoadmap` for a roadmap's name, of which it keeps none; `ImportSteps`, with the
+  marks the pasted steps bring, and `CreateKind` for each kind they add, composed into Paste Steps' *Add* with one
+  *Undo*; of a roadmap's kinds `CreateKind`, `ChangeKind` and `RecolourKind`, of which it keeps
   none, and `DeleteKind`, which the engine does not hold, with *Undo* for six seconds; and of a step's workspace
   `ChangeSubtask`, with *Undo* of a subtask checked, `DeleteSubtask` and `DeleteStepLink`, each held with *Undo*, and
   `AddSubtask`, `AddStepLink` and the note's draft save, `SaveStepNote`, of which it keeps none. Every other action of
@@ -408,7 +413,6 @@ makes it false.
   among them.
 - The domain's read of a roadmap carries no `forkedFrom`, which the gallery's row reads (§3).
 - Roadmaps that hold `unlisted` are not moved to private (R-9).
-- The app's Info.plist names no Markdown type (§7.3).
 
 ## §14 Rulings
 

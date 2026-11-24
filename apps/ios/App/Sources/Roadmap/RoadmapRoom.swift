@@ -2,12 +2,12 @@ import SwiftUI
 import UIKit
 import RoadmapDomain
 
-// The Roadmap room (Roadmap · iOS S.1, S.2, 01.3, 01.5, 01.5b, 01.5c, 02.10, 04.5, 04.7, 11.22a): one stack, the open
-// roadmap under its name with the switch row, its Board or its Graph, and at the foot the one band over New step. All
-// Roadmaps, Activity, a step's page, its note and its History are pushed on the stack, and New Roadmap, the step form and
-// Kinds are its sheets. What the band says is announced and felt once, whichever screen stands over it. While the
-// Graph's Fit stands, the bar, the switch row and the foot are away; while several steps are selected the bar and the
-// bottom toolbar are the selection's.
+// The Roadmap room (Roadmap · iOS S.1, S.2, 01.3, 01.5, 01.5b, 01.5c, 02.10, 02.16, 04.5, 04.7, 11.22a): one stack, the
+// open roadmap under its name with the switch row, its Board or its Graph, and at the foot the one band over New step,
+// whose long press also offers Paste Steps. All Roadmaps, Activity, a step's page, its note and its History are pushed on
+// the stack, and New Roadmap, Paste Steps, the step form and Kinds are its sheets. What the band says is announced and
+// felt once, whichever screen stands over it. While the Graph's Fit stands, the bar, the switch row and the foot are
+// away; while several steps are selected the bar and the bottom toolbar are the selection's.
 struct RoadmapRoom: View {
   @Bindable var roadmap: RoadmapModel
   let app: AppModel
@@ -37,14 +37,15 @@ struct RoadmapRoom: View {
           }
         }
     }.onAppear { roadmap.roomOpened() }
-      .sheet(isPresented: Binding(get: { roadmap.naming }, set: { if !$0 { roadmap.cancelNaming() } })) { NewRoadmap(roadmap: roadmap) }
+      .sheet(item: Binding(get: { roadmap.newRoadmap }, set: { if $0 == nil { roadmap.newRoadmap?.cancel() } })) { NewRoadmap(draft: $0) }
+      .sheet(item: Binding(get: { roadmap.pasting }, set: { if $0 == nil { roadmap.pasting?.cancel() } })) { PasteStepsSheet(pasted: $0) }
       .sheet(item: Binding(get: { roadmap.draft }, set: { if $0 == nil { roadmap.draft?.cancel() } })) { draft in
         RoadmapStepForm(roadmap: roadmap, draft: draft)
       }
       .sheet(isPresented: Binding(get: { roadmap.kindsDoor == .menu }, set: { if !$0 { roadmap.closeKinds() } })) { RoadmapKinds(roadmap: roadmap) }
       .sensoryFeedback(trigger: roadmap.band) { _, band in
         switch band?.says {
-        case .completed, .created: .success
+        case .completed, .created, .planted, .added: .success
         case .reset: .impact
         case .unrestored: .warning
         default: nil
@@ -121,7 +122,15 @@ struct RoadmapRoom: View {
         if footed {
           HStack {
             Spacer()
-            Button("New Step", systemImage: "plus") { roadmap.newStep(from: .foot) }.modifier(GlassCircle()).accessibilityIdentifier("roadmap-new-step")
+            // 02.16: a tap is New Step, and a long press offers it above Paste Steps.
+            Menu {
+              Button("New Step", systemImage: "plus") { roadmap.newStep(from: .foot) }
+              Button("Paste Steps", systemImage: "list.clipboard") { Task { await roadmap.pasteSteps() } }.accessibilityIdentifier("roadmap-paste-steps")
+            } label: {
+              Label("New Step", systemImage: "plus")
+            } primaryAction: {
+              roadmap.newStep(from: .foot)
+            }.menuOrder(.fixed).modifier(GlassCircle()).accessibilityIdentifier("roadmap-new-step")
           }.padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
         }
       }

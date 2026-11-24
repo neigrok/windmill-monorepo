@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 // The Roadmap room's boards (Roadmap · iOS): its Board, a step's page, the step form, its roadmaps, and its door on
@@ -498,14 +499,114 @@ final class RoadmapCaptures: DesignCapture {
     }
   }
 
-  // 01.6: New Roadmap over the Board.
+  // 01.6: New Roadmap over the Board, a plan on the clipboard for the system's Paste button.
   func testNewRoadmap() {
     captureBoard("01.6-roadmap-new-roadmap") { look in
+      UIPasteboard.general.string = RoadmapFlowTests.summerCruise
       let app = titleMenu(of: "roadmap-several", look)
       app.buttons["New Roadmap"].tap()
       XCTAssertTrue(app.textFields["roadmap-new-name"].waitForExistence(timeout: 10))
       return app
     }
+  }
+
+  // 02.16: the foot's + held, its menu offering New Step and Paste Steps.
+  func testPlusHeld() {
+    captureBoard("02.16-roadmap-plus-held") { look in
+      let app = learnToSail(look)
+      app.buttons["roadmap-new-step"].press(forDuration: 1.0)
+      XCTAssertTrue(app.buttons["Paste Steps"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // 02.16b: Paste Steps over a clipboard that holds no text.
+  func testNothingToPaste() {
+    captureBoard("02.16b-roadmap-nothing-to-paste") { look in
+      UIPasteboard.general.items = []
+      let app = learnToSail(look)
+      app.pasteSteps()
+      XCTAssertTrue(app.staticTexts["No text to paste"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // 02.16c: Paste Steps the person did not allow, with Settings in the band.
+  func testPasteNotAllowed() {
+    captureBoard("02.16c-roadmap-paste-not-allowed") { look in
+      UIPasteboard.general.string = Self.daySail
+      let app = learnToSail(look)
+      app.pasteSteps(allowing: false)
+      XCTAssertTrue(app.staticTexts["Paste not allowed"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // 02.17: the copied list read back over the Board, a heading and the four steps under it.
+  func testPastedStepsReadBack() {
+    captureBoard("02.17-roadmap-pasted-steps-read-back") { look in
+      UIPasteboard.general.string = Self.daySail
+      let app = learnToSail(look)
+      app.pasteSteps(allowing: true)
+      XCTAssertTrue(app.navigationBars["Paste Steps"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 02.18: the five steps added, washed in their groups, with Undo in the band.
+  func testPastedStepsAdded() {
+    captureBoard("02.18-roadmap-pasted-steps-added") { look in
+      UIPasteboard.general.string = Self.daySail
+      let app = learnToSail(look)
+      app.pasteSteps(allowing: true)
+      XCTAssertTrue(app.buttons["roadmap-paste-add"].waitForExistence(timeout: 10))
+      app.buttons["roadmap-paste-add"].tap()
+      XCTAssertTrue(app.staticTexts["Added 5 steps"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.staticTexts["3 of 13 done"].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // The list 02.17 pastes: a heading and the four steps under it.
+  static let daySail = "## Day sail\n- Check the forecast\n- Plan the passage\n- Brief the crew\n- Pack the boat"
+
+  // 01.8: the boards' copied plan read back in New Roadmap, named by its first line.
+  func testPlanReadBack() {
+    captureBoard("01.8-roadmap-plan-read-back") { look in pastedPlan(look) }
+  }
+
+  // 01.8b: the plan planted, its Board open under the band that says what it planted.
+  func testPlanted() {
+    captureBoard("01.8b-roadmap-planted") { look in
+      let app = pastedPlan(look)
+      app.buttons["roadmap-new-create"].tap()
+      XCTAssertTrue(app.staticTexts["Roadmap planted · 12 steps · 2 already done"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.staticTexts["2 of 12 done"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 01.8c: a file the phone could not read, named in Start from's footer.
+  func testFileUnreadable() {
+    captureBoard("01.8c-roadmap-file-unreadable") { look in
+      UIPasteboard.general.string = RoadmapFlowTests.summerCruise
+      let app = titleMenu(of: "roadmap-several", look, asking: ["-roadmap-file", "Sailing plan.md"])
+      app.buttons["New Roadmap"].tap()
+      XCTAssertTrue(app.buttons["roadmap-new-file"].waitForExistence(timeout: 10))
+      app.buttons["roadmap-new-file"].tap()
+      XCTAssertTrue(app.staticTexts["Couldn’t read “Sailing plan.md”."].waitForExistence(timeout: 5))
+      return app
+    }
+  }
+
+  // New Roadmap over the Board with the boards' plan pasted through the system's Paste button and read back.
+  func pastedPlan(_ look: Look) -> XCUIApplication {
+    UIPasteboard.general.string = RoadmapFlowTests.summerCruise
+    let app = titleMenu(of: "roadmap-several", look)
+    app.buttons["New Roadmap"].tap()
+    app.pastePlan()
+    XCTAssertTrue(app.staticTexts["Pasted plan"].waitForExistence(timeout: 10))
+    return app
   }
 
   // 01.9: Rename has turned the bar into the system's field, the name selected.
@@ -535,8 +636,8 @@ final class RoadmapCaptures: DesignCapture {
   }
 
   // A roadmap on a board, *Learn to sail* unless named, with its title's menu open once its Board stands.
-  func titleMenu(of board: String, named roadmap: String = "Learn to sail", _ look: Look) -> XCUIApplication {
-    let app = launch(board, look)
+  func titleMenu(of board: String, named roadmap: String = "Learn to sail", _ look: Look, asking more: [String] = []) -> XCUIApplication {
+    let app = launch(board, look, arguments: more)
     // The roadmap's name leads the label of the bar's title, which the system reports as a button or as a text.
     let title = app.navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", roadmap)).firstMatch
     XCTAssertTrue(title.waitForExistence(timeout: 30))

@@ -251,6 +251,31 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
   }
 
+  @Test func aPlanTellsItsDoorAndItsStepsAsABucketAndNothingOfItsText() {
+    let events = ["birth", "roadmap_board_create", "roadmap_board_undo", "roadmap_write_refused"]
+    #expect(events.filter(TelemetryPrivacy.events.contains) == events)
+    for door in ["blank", "import", "file"] {
+      #expect(TelemetryPrivacy.properties(["door": door, "count": "6-20", "title": "private-marker", "text": "- private-marker"]) ==
+              ["door": .label(door), "count": .label("6-20")])
+    }
+    for (step, door) in [("read", "import"), ("read", "file"), ("clear", "import"), ("cancel", "file"), ("unread", "file"), ("open", "paste"),
+                         ("cancel", "paste"), ("settings", "paste")] {
+      #expect(TelemetryPrivacy.properties(["step": step, "door": door, "file": "Sailing plan.md"]) == ["step": .label(step), "door": .label(door)])
+    }
+    for reason in ["empty", "denied"] {
+      #expect(TelemetryPrivacy.properties(["step": "unread", "door": "paste", "reason": reason, "text": "private-marker"]) ==
+              ["step": .label("unread"), "door": .label("paste"), "reason": .label(reason)])
+    }
+    #expect(TelemetryPrivacy.properties(["step": "saved", "door": "paste", "view": "board", "count": "2-5"]) ==
+            ["step": .label("saved"), "door": .label("paste"), "view": .label("board"), "count": .label("2-5")])
+    #expect(TelemetryPrivacy.properties(["act": "graft", "outcome": "ok"]) == ["act": .label("graft"), "outcome": .label("ok")])
+    #expect(TelemetryPrivacy.properties(["write": "ImportSubgraph", "refusal": "full"]) == ["write": .label("ImportSubgraph"), "refusal": .label("full")])
+    for (operation, kind) in [("roadmap_plant", "refusal"), ("roadmap_plant", "marks"), ("roadmap_file", "unexpected")] {
+      #expect(TelemetryPrivacy.properties(["operation": operation, "failure_kind": kind, "refusal": "invalid", "file": "Sailing plan.md"]) ==
+              ["operation": .label(operation), "failure_kind": .label(kind), "refusal": .label("invalid")])
+    }
+  }
+
   @Test func theStepFormTellsItsStepsByKindAndNothingOfTheStep() {
     let events = ["roadmap_board_create", "roadmap_step_edit", "roadmap_board_edit", "roadmap_board_undo", "roadmap_write_refused", "roadmap_board_delete"]
     #expect(events.filter(TelemetryPrivacy.events.contains) == events)

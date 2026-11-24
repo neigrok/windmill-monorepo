@@ -18,7 +18,9 @@ Kinds*, *Requires* and *Opens* pushed inside the sheet, the *Links* the step sha
 draft?*, the created step shown on the Board and each save with its *Undo*, without its *Roadmap* row or Coach's
 composer; the room's roadmaps: the title menu with the three most recent, *All Roadmaps…*, *New Roadmap*, *Kinds*,
 *Activity*, *Rename* and *Delete Roadmap*, Activity with its days and its fold, All Roadmaps with its search and its
-swipe to Delete, New Roadmap for a blank roadmap,
+swipe to Delete, New Roadmap for a blank roadmap, from *A Copied Plan* or from *A File*, the plan read back before it is
+planted, *Roadmap planted* in the band and a file that can't be read, Paste Steps from the foot's + held with its
+read-back, the steps added with *Undo*, *No text to paste* and *Paste not allowed* with *Settings*,
 renaming in the bar, and a roadmap's delete asked once and held with *Undo*; Kinds: a roadmap's kinds added, named,
 described, recolored and removed with *Undo*, at most six; and the Graph:
 the switch row's *Board | Graph*, the canvas with its discs, connectors and captions, one finger's pan and a pinch, a
