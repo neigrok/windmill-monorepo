@@ -175,7 +175,7 @@ test('a direct write tells the room\'s Activity the row the room\'s own Board te
   }
 });
 
-test('update_node writes a step\'s fields and the items it adds to its checklist as one act, read back as the person\'s own, and one Undo takes back all of it', async () => {
+test('update_node writes a step\'s fields and the items it adds to its checklist as one structure act on the room\'s stack, read back as the person\'s own, and one Undo takes back all of it', async () => {
   const { a, tree, steps } = await sailing();
   try {
     const room = await openRoom(a, tree);
@@ -195,6 +195,32 @@ test('update_node writes a step\'s fields and the items it adds to its checklist
     assert.deepEqual({ label: room.reading.roadmap().seed.nodes.find((step) => step.id === steps.knot).label, checklist: checklist() },
       { label: 'Tie a bowline', checklist: [{ label: 'Identify the halyard', done: false }] }, 'the name and both items it added, and the person\'s own item stays');
     assert.deepEqual(told, [['roadmap_coach_write_undone', { ability: 'update_node', outcome: 'undone' }]]);
+    room.reading.close();
+  } finally {
+    a.close();
+  }
+});
+
+test('an update_node that only adds items keeps its Undo off the room\'s stack, as the room\'s own workspace edits do, so the person\'s next ⌘Z takes back their own act', async () => {
+  const { a, tree, steps } = await sailing();
+  try {
+    const room = await openRoom(a, tree);
+    const { tools } = coachOver(room, tree);
+    const checklist = () => (room.reading.roadmap().workspace[steps.knot]?.subtasks ?? []).map(({ label }) => label);
+    const label = () => room.reading.roadmap().seed.nodes.find((step) => step.id === steps.dock).label;
+    const persons = room.session.dispatch({ kind: 'RenameNode', id: steps.dock, label: 'Cast off' });
+    await persons.landed;
+
+    const { answer, receipt } = await tools.run('update_node', { treeId: tree, nodeId: steps.knot, subtasks: ['Check the shackle', 'Coil the line'] });
+    assert.deepEqual({ answer, stacked: room.session.undoStack, kept: room.session.kept }, { answer: { result: {} }, stacked: [persons], kept: [receipt.room] });
+    assert.deepEqual(checklist(), ['Check the shackle', 'Coil the line']);
+
+    room.session.undo();
+    await until(() => label() === 'Leave the dock', 1000);
+    assert.deepEqual({ label: label(), checklist: checklist() }, { label: 'Leave the dock', checklist: ['Check the shackle', 'Coil the line'] },
+      'the person\'s ⌘Z took back their own rename, and Coach\'s items stand');
+    assert.deepEqual(await undone(a, tools, receipt), ['undone']);
+    assert.deepEqual({ checklist: checklist(), kept: room.session.kept }, { checklist: [], kept: [] }, 'its own Undo takes them back');
     room.reading.close();
   } finally {
     a.close();

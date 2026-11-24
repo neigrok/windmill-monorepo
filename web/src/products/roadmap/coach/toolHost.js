@@ -103,14 +103,17 @@ export class RoadmapToolHost {
   }
 
   // A direct write handed to the room's door at once, as one act, answering the room's receipt of it, or null where the
-  // door refused it at once: a mark through its mark door, which keeps its Undo for this receipt, and any other write as
-  // the room's own gesture through its session, on the room's Undo stack.
+  // door refused it at once. A write of the person's own overlay alone keeps its Undo out of the room's stack, as the
+  // room's own marks and workspace edits are: a mark through its mark door, and items added to a checklist as the room's
+  // gesture kept for this receipt. A structure act is the room's gesture on its stack, the items it adds with it parts of
+  // the one act.
   handOver(writes) {
     precondition(writes.every(({ input }) => input.tree === this.session.treeId), 'a direct write reaches the room open on its roadmap');
     const [{ action, input }] = writes;
     const status = MARKS[action];
     if (status) return this.session.markUndoably(input.step, status);
-    return this.session.dispatch(gestureOf(writes));
+    const gesture = gestureOf(writes);
+    return writes.every((write) => write.action === 'AddSubtask') ? this.session.keepUndoably(gesture) : this.session.dispatch(gesture);
   }
 
   // Takes back one direct write by the room's Undo of its act, which spares anything written since: a structure act, and

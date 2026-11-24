@@ -363,8 +363,10 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   - *Roadmap Coach:* its tool host (`coach/toolHost.js`, Roadmap Coach §6) writes through these doors and no other: a
     direct write's structure act as the room's gesture (`CreateNode`, `EditNode`, which carries a step's web links and
     the labels of items it adds to the end of the step's checklist, `AddSubtask` parts of the same act, or `AddEdge`),
-    its receipt on the session's stack, and a mark through `markUndoably`, which decides and writes it as the
-    owner's marks and keeps its receipt out of the stack, so ⌘Z never reaches it, until it is reverted or the room closes.
+    its receipt on the session's stack. A write of the person's own overlay alone keeps its receipt out of the stack, as
+    the room's own marks and workspace edits are, so ⌘Z never reaches it, until it is reverted or the room closes: a
+    mark through `markUndoably`, which decides and writes it as the owner's marks, and items added to a checklist with no
+    change of the step through `keepUndoably`, which writes the gesture as `dispatch` does.
     A new step's id is drawn by `mintStepId`. A write the door refused, or wrote nothing of, is no success: the host
     answers `roadmap-not-ready` or `no-change` and lets its receipt go (`forget`), so the person's next ⌘Z reaches their own
     act. The Undo of either kind is `revert` of its receipt, which spares a later write of the same field, and a mark the

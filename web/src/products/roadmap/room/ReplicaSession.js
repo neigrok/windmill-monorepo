@@ -79,7 +79,7 @@ export class ReplicaSession {
     this.receiptVersion = 0;
     // Each gesture's receipt (`receiptOf`).
     this.undoStack = [];
-    // Each mark whose maker keeps its Undo (`markUndoably`), out of the stack.
+    // Each write of the person's own overlay whose maker keeps its Undo (`markUndoably`, `keepUndoably`), out of the stack.
     this.kept = [];
     // Each gesture taken back, `{ inverse }`: its act's Undo, once asked (null where there was none).
     this.redoStack = [];
@@ -173,11 +173,24 @@ export class ReplicaSession {
   // on the Undo stack at once, and its Undo waits for the act to be written. A gesture none of the acts applies to, or
   // one the domain refuses, is null, as a gesture nothing applies to is today.
   dispatch(gesture) {
-    const acts = this.actsOf(gesture);
-    if (acts.length === 0 || this.refusedOf(acts, gesture.kind)) return null;
-    const receipt = receiptOf(this.write(acts, gesture.kind));
-    this.undoStack.push(receipt);
-    this.dropRedo();
+    const receipt = this.receipted(this.actsOf(gesture), gesture.kind, this.undoStack);
+    if (receipt !== null) this.dropRedo();
+    return receipt;
+  }
+
+  // One of the room's gestures whose maker keeps its Undo out of the stack (Roadmap Coach's write of the person's own
+  // checklist alone, as the room's own workspace edits never enter the stack): decided and written as `dispatch` does,
+  // its receipt kept until it is reverted or forgotten, or the room closes.
+  keepUndoably(gesture) {
+    return this.receipted(this.actsOf(gesture), gesture.kind, this.kept);
+  }
+
+  // A write's acts, decided first and then written as one composed act, its receipt held where its Undo is asked:
+  // `held`, the stack or the receipts kept out of it. Null where no act applies or the domain refuses one.
+  receipted(acts, what, held) {
+    if (acts.length === 0 || this.refusedOf(acts, what)) return null;
+    const receipt = receiptOf(this.write(acts, what));
+    held.push(receipt);
     return receipt;
   }
 
@@ -260,11 +273,7 @@ export class ReplicaSession {
   // are, out of the Undo stack, its receipt kept until it is reverted or forgotten, or the room closes. Null where the
   // domain refuses it.
   markUndoably(nodeId, status) {
-    const acts = this.marksOf([nodeId], status);
-    if (this.refusedOf(acts, 'mark')) return null;
-    const receipt = receiptOf(this.write(acts, 'mark'));
-    this.kept.push(receipt);
-    return receipt;
+    return this.receipted(this.marksOf([nodeId], status), 'mark', this.kept);
   }
 
   // A roadmap's name, out of the Undo stack as a rename is today. A subtree's name is its owning step's label, so a
