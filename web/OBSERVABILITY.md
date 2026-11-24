@@ -142,7 +142,9 @@ outcome. Unreadable legacy data uses `journal-migration`, retains its source, an
 Settings' export emits `journal_export` with `outcome`: `ok`, `first_pull_timeout` (a bound replica's first pull of
 the journal did not end within 30 seconds), `replica_changed` (the account changed while it waited), `no_replica` (the
 browser holds no open replica) or `failed`, which alone also reports `journal-export`.
-No page body, scales, date, claim identifier or account is reported.
+Search by meaning emits `journal_search_meaning` each time its model comes up or does not for a search: `outcome`
+`ready`, `needs_connection` (the browser is offline, so the search says it needs a connection) or `failed`, which alone
+also reports `journal-search-meaning`. No page body, scales, date, claim identifier, search text or account is reported.
 
 Journal Talk emits `journal_talk_refused` each time the sheet says why Talk refused, with `code`, `reason` and
 `moment`. `code` is the allowance or voice route's code (`subject_exhausted`, `free_month_exhausted`,

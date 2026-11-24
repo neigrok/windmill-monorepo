@@ -1,9 +1,14 @@
 // A shell is promoted only after every required room asset is durable in the same generation.
-// API calls and model weights keep their own network doors. Cache refusal never fails a network reply.
+// API calls keep their own network door. Cache refusal never fails a network reply.
 
 const SHELL_CACHE = 'windmill-shell-v2';
 const ASSET_CACHE = 'windmill-assets-v2';
 const ICON_CACHE = 'windmill-icons-v2';
+// Search by meaning's weights, kept after their first use and never staged with the shell. A model's weights live at
+// fixed addresses, so new bytes at an address it already serves take a new name here.
+const MODEL_CACHE = 'windmill-models-v1';
+// The copy the library kept for itself before this worker kept the weights.
+const LIBRARY_MODEL_CACHE = 'transformers-cache';
 const GENERATION_PREFIX = 'windmill-generation-';
 const POINTER = '/offline-generation';
 const ICON_PATHS = [
@@ -21,6 +26,7 @@ self.addEventListener('install', (event) => {
 });
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
+    await caches.delete(LIBRARY_MODEL_CACHE).catch(() => {});
     await primeShell().catch(() => {});
     await self.clients.claim();
   })());
@@ -97,7 +103,7 @@ async function stageShell(urls) {
     // Preserve the immediately previous complete generation for pages still using its chunks.
     const names = await caches.keys().catch(() => []);
     await Promise.all(names.filter((entry) => entry.startsWith('windmill-')
-      && ![SHELL_CACHE, ASSET_CACHE, ICON_CACHE, name, previous.current].includes(entry))
+      && ![SHELL_CACHE, ASSET_CACHE, ICON_CACHE, MODEL_CACHE, name, previous.current].includes(entry))
       .map((entry) => caches.delete(entry).catch(() => {})));
     return true;
   } catch (error) {
@@ -110,7 +116,11 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin || url.pathname.startsWith('/v1/') || url.pathname.startsWith('/models/')) return;
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/v1/')) return;
+  if (url.pathname.startsWith('/models/')) {
+    event.respondWith(modelFile(event));
+    return;
+  }
   if (request.mode === 'navigate') {
     event.respondWith(navigation(request));
     return;
@@ -149,6 +159,15 @@ async function hashedAsset(request) {
     if (cached) return cached;
     throw error;
   }
+}
+
+// No deadline: weights are tens of megabytes, and the page waits on them only for search by meaning.
+async function modelFile(event) {
+  const cached = await kept(MODEL_CACHE, event.request);
+  if (cached) return cached;
+  const response = await fetch(event.request);
+  if (response.ok) event.waitUntil(keep(MODEL_CACHE, event.request, response.clone()));
+  return response;
 }
 
 async function icon(request) {

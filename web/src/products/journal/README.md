@@ -56,6 +56,16 @@ read from the replica: signed out the browser's own, and on a bound replica the 
 engine's first pull of `self/journal` ends (it fails after 30 seconds without one). It asks the
 backend for nothing.
 
+Search (`search/`) indexes the corpus on the device: words first, then meaning, bge-small-en-v1.5 q8
+in a worker on wasm, never WebGPU, which miscomputes the quantized model. The worker takes its
+onnxruntime-web runtime from the build, where Vite copies the package's wasm as a hashed asset, and
+its weights from `/models/`; `public/sw.js` keeps the runtime in its asset cache and the weights in
+`windmill-models-v1` after first use, and neither joins the offline shell. Offline before that first
+use, the search's foot says search by meaning needs a connection.
+`test/products/journal/search/neuralOffline.browser.test.js` builds the app and proves both in
+Chromium; it is skipped when `public/models` lacks the weights, which `npm run build`'s `prebuild`
+fetches.
+
 Echo quotations compare in NFC; saved writing retains its original bytes. The domain matcher
 returns whole-grapheme UTF-16 ranges in the current source, with segmentation supplied by the
 echoes boundary. Read rechecks that source before navigating, and equivalent quotation spellings

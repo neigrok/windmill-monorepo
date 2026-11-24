@@ -46,8 +46,10 @@ function boot({ fetches, openFails = false, putFails = false, matchFails = false
     async pointer() { return (await cacheFor(SHELL_CACHE).match(POINTER))?.json() ?? {}; },
     handle(url, { mode = 'no-cors', method = 'GET', destination = '' } = {}) {
       let answer = null;
-      listeners.get('fetch')({ request: { url, method, mode, destination }, respondWith: (value) => { answer = Promise.resolve(value); } });
-      return answer;
+      const waited = [];
+      listeners.get('fetch')({ request: { url, method, mode, destination }, respondWith: (value) => { answer = Promise.resolve(value); },
+        waitUntil: (value) => { waited.push(value); } });
+      return answer && answer.then(async (response) => { await Promise.all(waited); return response; });
     },
     install(addRoutes) { let waited; listeners.get('install')({ addRoutes, waitUntil: (value) => { waited = value; } }); return waited; },
     activate() { let waited; listeners.get('activate')({ waitUntil: (value) => { waited = value; } }); return waited; },
@@ -73,9 +75,9 @@ function oldGeneration() {
     'windmill-generation-old': { '/': reply('OLD-SHELL'), '/assets/old.js': reply('OLD-ASSET') } };
 }
 
-test('the worker declines API, model, foreign-origin and non-GET requests', () => {
+test('the worker declines API, foreign-origin and non-GET requests', () => {
   const worker = boot();
-  for (const url of ['/v1/gym/sessions', '/v1/socket', '/models/model.onnx']) assert.equal(worker.handle(`${ORIGIN}${url}`), null);
+  for (const url of ['/v1/gym/sessions', '/v1/socket']) assert.equal(worker.handle(`${ORIGIN}${url}`), null);
   assert.equal(worker.handle(`${ORIGIN}/`, { mode: 'navigate', method: 'POST' }), null);
   assert.equal(worker.handle('https://windmill.works.evil.example/assets/app.js'), null);
   assert.equal(worker.handle('https://fonts.example/font.woff2'), null);
@@ -139,6 +141,32 @@ test('hashed assets use complete generations before touching the network', async
   assert.deepEqual(worker.network, []);
   assert.equal((await worker.handle(`${ORIGIN}/assets/new.js`)).body, '/assets/new.js');
   assert.deepEqual(worker.entries(ASSET_CACHE), [['/assets/new.js', '/assets/new.js']]);
+});
+
+test('model weights are kept in their own cache after first use and answer from it with no connection', async () => {
+  let online = true;
+  const worker = boot({ fetches: (url) => {
+    if (!online) throw new TypeError('offline');
+    return url === '/models/missing.onnx' ? reply('missing', { ok: false, status: 404 }) : reply(`WEIGHTS:${url}`);
+  } });
+  const weights = `${ORIGIN}/models/Xenova/bge-small-en-v1.5/onnx/model_quantized.onnx`;
+  assert.equal((await worker.handle(weights)).body, 'WEIGHTS:/models/Xenova/bge-small-en-v1.5/onnx/model_quantized.onnx');
+  assert.equal((await worker.handle(`${ORIGIN}/models/missing.onnx`)).status, 404);
+  assert.deepEqual(worker.entries('windmill-models-v1'),
+    [['/models/Xenova/bge-small-en-v1.5/onnx/model_quantized.onnx', 'WEIGHTS:/models/Xenova/bge-small-en-v1.5/onnx/model_quantized.onnx']]);
+  online = false;
+  assert.equal((await worker.handle(weights)).body, 'WEIGHTS:/models/Xenova/bge-small-en-v1.5/onnx/model_quantized.onnx');
+  assert.deepEqual(worker.network.map(({ key }) => key),
+    ['/models/Xenova/bge-small-en-v1.5/onnx/model_quantized.onnx', '/models/missing.onnx']);
+  await assert.rejects(worker.handle(`${ORIGIN}/models/missing.onnx`), { name: 'TypeError', message: 'offline' });
+});
+
+test('activation forgets the library\'s own copy of the weights and staging keeps the worker\'s', async () => {
+  const kept = { '/models/model.onnx': reply('WEIGHTS') };
+  const worker = boot({ fetches: deployment('new'), cached: { ...oldGeneration(), 'windmill-models-v1': kept, 'transformers-cache': kept } });
+  await worker.activate();
+  assert.deepEqual(worker.entries('windmill-models-v1'), [['/models/model.onnx', 'WEIGHTS']]);
+  assert.equal(worker.stores.has('transformers-cache'), false);
 });
 
 test('icons use their cache while refreshing behind it', async () => {
