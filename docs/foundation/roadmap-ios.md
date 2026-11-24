@@ -376,8 +376,9 @@ makes it false.
   or Coach is built, and the Board has no pasted steps. The app has no associated domain, and its onboarding says
   roadmap is on the web.
 - `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
-  room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once: no Undo scene,
-  plan grammar or Coach executor.
+  room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once, and the plan grammar's
+  read, its planting and grafting and its writer (`RoadmapDomain/Plan/`), held to every case of
+  `packages/api-contract/roadmap/plan/`: no Undo scene or Coach executor.
 - One SwiftUI `Canvas` in the room's Graph draws `RoadmapLayout`'s picture (`apps/ios/App/Sources/Roadmap/Graph/`).
   The budget of §5 is measured at 5,000 steps on a Mac's simulator alone, by `apps/ios/App/Tools/graph_bench.sh` on a
   Release-configuration build: the picture's time with its layout, the domain's read taken for it, the room's part of
@@ -405,8 +406,6 @@ makes it false.
   `AddSubtask`, `AddStepLink` and the note's draft save, `SaveStepNote`, of which it keeps none. Every other action of
   the domain has no door in the room: `MoveKind`, `MoveStep`, a subtask's or a link's change of words and its move
   among them.
-- The plan grammar has no Swift port: the web's (`web/src/products/roadmap/paste/`) is its one
-  implementation, and the web alone runs its cases (`packages/api-contract/roadmap/plan/`).
 - The domain's read of a roadmap carries no `forkedFrom`, which the gallery's row reads (§3).
 - Roadmaps that hold `unlisted` are not moved to private (R-9).
 - The app's Info.plist names no Markdown type (§7.3).

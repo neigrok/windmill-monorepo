@@ -3,8 +3,9 @@
 Each JSON file holds `{name,input,expect}` cases of the plan grammar: a pasted text read to a plan, a plan turned into
 the input of the domain's `CreateRoadmap` and `ImportSteps` ([the domain corpus](../domain/README.md#actions)), and a
 roadmap written as Markdown and read back. The web's grammar (`web/src/products/roadmap/paste/planGrammar.js` and
-`graftPlan.js`) is its one implementation; the web corpus (`web/test/products/roadmap/paste/corpus.test.js`) claims
-every file by name and compares complete outputs. No operation reads storage, time, randomness or localization, and no
+`graftPlan.js`) and Swift's (`apps/ios/Domain/Sources/RoadmapDomain/Plan/`) implement it; the web corpus
+(`web/test/products/roadmap/paste/corpus.test.js`) and Swift's (`apps/ios/Domain/Tests/RoadmapDomainTests/Plan/`) each
+claim every file by name and compare complete outputs. No operation reads storage, time, randomness or localization, and no
 result holds a sentence: a surface words the values a case names. A rule changes here as a case first.
 
 | File | Operation | Input | Complete result |
@@ -18,7 +19,8 @@ result holds a sentence: a surface words the values a case names. A rule changes
 A kind is `{id, hue, label, description}`. A hue is one of `terracotta`, `olive`, `gold`, `brick`, `sky`, `plum`: the
 palette, in its order. A key written with `?` is absent where it has nothing to say, never `null`.
 
-Run from `web`: `node --test test/products/roadmap/paste/corpus.test.js`.
+Run from `web`: `node --test test/products/roadmap/paste/corpus.test.js`; from `apps/ios/Domain`:
+`swift test --filter RoadmapDomainTests.PlanCorpusTests`.
 
 ## Text
 
