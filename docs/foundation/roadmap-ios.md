@@ -407,12 +407,6 @@ makes it false.
   among them.
 - The plan grammar has no Swift port: the web's (`web/src/products/roadmap/paste/`) is its one
   implementation, and the web alone runs its cases (`packages/api-contract/roadmap/plan/`).
-- The grammar's writer does not write every roadmap so that it reads back the same, as §7.3 needs.
-  A description is written raw, so a line of it that looks like a list item, a heading or an
-  address reads back as a step, a kind or a link; a name that begins like a checkbox reads back as
-  a mark; a name with a line break breaks the file's first line; and steps on a loop are not
-  written. In a file an export wrote, text before the first step is dropped, where §7.1 keeps
-  every line. The cases of `write.json` and `read.json` pin each as it stands.
 - The domain's read of a roadmap carries no `forkedFrom`, which the gallery's row reads (§3).
 - Roadmaps that hold `unlisted` are not moved to private (R-9).
 - The app's Info.plist names no Markdown type (§7.3).

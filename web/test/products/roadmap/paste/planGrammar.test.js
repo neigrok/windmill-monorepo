@@ -56,7 +56,7 @@ test('the flagship document — every rule at once, asserted in full', () => {
       { mark: 'note', nodeId: 'terrain-renderer', liberties: [{ type: 'note' }] },
     ],
     readout: { steps: 8, branches: 2, done: 1 },
-    imperfections: { notes: 1, clamps: 0, renames: 0 },
+    imperfections: { notes: 1, clamps: 0, renames: 0, clips: 0 },
   });
 });
 
@@ -95,7 +95,7 @@ test('indent is dependency — 2-space, tab, and 4-space documents level identic
       ['a', ['root']],
       ['b', ['a']],
     ], doc);
-    assert.deepStrictEqual(parsed.imperfections, { notes: 0, clamps: 0, renames: 0 }, doc);
+    assert.deepStrictEqual(parsed.imperfections, { notes: 0, clamps: 0, renames: 0, clips: 0 }, doc);
   }
 });
 
@@ -193,7 +193,7 @@ test('prose becomes notes on the nearest step, bare URLs become links', () => {
   assert.equal(step.description, 'half a sentence\nanother aside');
   assert.deepStrictEqual(step.links, ['https://example.com/docs']);
   assert.deepStrictEqual(parsed.gutter.map((g) => [g.mark, g.liberties]), [['root', []], ['step', []], ['note', [{ type: 'note' }]], ['note', [{ type: 'note' }]], ['note', [{ type: 'note' }]]]);
-  assert.deepStrictEqual(parsed.imperfections, { notes: 3, clamps: 0, renames: 0 });
+  assert.deepStrictEqual(parsed.imperfections, { notes: 3, clamps: 0, renames: 0, clips: 0 });
 });
 
 test('only the root wears the birth icon — steps and branches arrive bare', () => {
@@ -212,14 +212,14 @@ test('mixed indent mid-document flattens visibly — a clamped liberty, never si
     ['c', ['root']],
   ]);
   assert.deepStrictEqual(parsed.gutter.map((g) => g.liberties), [[], [], [], [{ type: 'clamp', indent: 'ragged' }]]);
-  assert.deepStrictEqual(parsed.imperfections, { notes: 0, clamps: 1, renames: 0 });
+  assert.deepStrictEqual(parsed.imperfections, { notes: 0, clamps: 1, renames: 0, clips: 0 });
 });
 
 test('a weird indent jump clamps to the nearest real ancestor, visibly', () => {
   const parsed = parsePlan('Root\n- a\n  - b\n        - deep', KINDS);
   assert.deepStrictEqual(parsed.nodes.find((n) => n.id === 'deep').prerequisites, ['b']);
   assert.deepStrictEqual(parsed.gutter.map((g) => g.liberties), [[], [], [], [{ type: 'clamp', indent: 'jump' }]]);
-  assert.deepStrictEqual(parsed.imperfections, { notes: 0, clamps: 1, renames: 0 });
+  assert.deepStrictEqual(parsed.imperfections, { notes: 0, clamps: 1, renames: 0, clips: 0 });
 });
 
 test('duplicate names get " (2)" exhaustively — never a duplicate id', () => {
@@ -232,7 +232,7 @@ test('duplicate names get " (2)" exhaustively — never a duplicate id', () => {
     ['foo-3', 'Foo (3)'],
   ]);
   assert.deepStrictEqual(parsed.gutter.map((g) => g.liberties), [[], [], [{ type: 'rename', label: 'Foo (2)' }], [{ type: 'rename', label: 'Foo (2) (2)' }], [{ type: 'rename', label: 'Foo (3)' }]]);
-  assert.deepStrictEqual(parsed.imperfections, { notes: 0, clamps: 0, renames: 3 });
+  assert.deepStrictEqual(parsed.imperfections, { notes: 0, clamps: 0, renames: 3, clips: 0 });
 });
 
 test('distinct labels that slug alike still get distinct ids', () => {
@@ -242,7 +242,7 @@ test('distinct labels that slug alike still get distinct ids', () => {
     ['foo', 'Foo!'],
     ['foo-2', 'Foo?'],
   ]);
-  assert.deepStrictEqual(parsed.imperfections, { notes: 0, clamps: 0, renames: 0 });
+  assert.deepStrictEqual(parsed.imperfections, { notes: 0, clamps: 0, renames: 0, clips: 0 });
 });
 
 test('the all-notes worst case: one root and a pile of ¶, still plantable', () => {
@@ -271,7 +271,7 @@ test('empty text — the full worst-case shape', () => {
     ],
     gutter: [{ mark: null, nodeId: null, liberties: [] }],
     readout: { steps: 1, branches: 0, done: 0 },
-    imperfections: { notes: 0, clamps: 0, renames: 0 },
+    imperfections: { notes: 0, clamps: 0, renames: 0, clips: 0 },
   });
 });
 
@@ -313,7 +313,7 @@ test('serializePlan round-trips a parsePlan document — nodes and kinds land id
 
   assert.equal(markdown, [
     '# Learn WebGL',
-    '<!-- windmill:roadmap -->',
+    '<!-- windmill:roadmap 2 -->',
     '- Learn WebGL <!-- windmill:kind terracotta Basics -->',
     '  - Basics',
     '    - [x] Read the spec',
@@ -322,7 +322,7 @@ test('serializePlan round-trips a parsePlan document — nodes and kinds land id
     '  - Projects <!-- windmill:kind olive Projects -->',
     '    - Particle system',
     '      - Terrain renderer',
-    '        Just a stray thought',
+    '        > Just a stray thought',
   ].join('\n'));
 
   const reparsed = parsePlan(markdown, KINDS);
@@ -407,8 +407,8 @@ test('exports round-trip every root, completion, note, link and cross-kind prima
   const kinds = [{ id: 'sky', hue: 'sky', label: '', description: '' }];
   const markdown = serializePlan(tree, kinds);
   assert.equal(markdown, [
-    '# Learn to sail', '<!-- windmill:roadmap -->',
-    '- [x] Choose a course <!-- windmill:kind sky -->', '  Start nearby.', '  Check the dates.', '  https://example.com/course',
+    '# Learn to sail', '<!-- windmill:roadmap 2 -->',
+    '- [x] Choose a course <!-- windmill:kind sky -->', '  > Start nearby.', '  > Check the dates.', '  <https://example.com/course>',
     '  - [x] Read the wind <!-- windmill:kind olive -->',
     '    - Leave the dock <!-- windmill:kind sky -->',
     '- [x] Pack a bag <!-- windmill:kind gold -->',
@@ -534,7 +534,7 @@ test('marked exports preserve duplicate and comment-shaped labels without changi
   const kinds = [{ id: 'odd', hue: 'sky', label: 'A --> B & C\nD', description: '' }];
   const markdown = serializePlan(tree, kinds);
   assert.equal(markdown, [
-    '# Plan', '<!-- windmill:roadmap -->',
+    '# Plan', '<!-- windmill:roadmap 2 -->',
     '- Same <!-- windmill:kind sky A &#45;&#45;&#62; B &#38; C&#10;D -->',
     '  - Same',
     '    - Second &#60;!-- windmill:kind gold --&#62;',
@@ -558,8 +558,56 @@ test('an export declares its first hue even when the import target starts with a
   const markdown = serializePlan({ title: 'Plan', nodes: [
     { id: 'root', label: 'Start', color: 'terracotta', prerequisites: [] },
   ] }, []);
-  assert.equal(markdown, '# Plan\n<!-- windmill:roadmap -->\n- Start <!-- windmill:kind terracotta -->');
+  assert.equal(markdown, '# Plan\n<!-- windmill:roadmap 2 -->\n- Start <!-- windmill:kind terracotta -->');
   assert.deepEqual(parsePlan(markdown, [{ id: 'learn', hue: 'sky', label: 'Learning' }]).nodes, [
     { id: 'start', label: 'Start', color: 'terracotta', prerequisites: [], icon: 'sparkles' },
   ]);
+});
+
+// Roadmaps the domain accepts, drawn from text that looks like every line the grammar reads: each is written and read
+// back to the same steps, in the order the file writes them, with the same kinds, marks, descriptions and addresses.
+test('every roadmap the domain accepts reads back from its file as it was written', () => {
+  let seed = 0x5eed;
+  const random = () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const pick = (items) => items[Math.floor(random() * items.length)];
+  const pieces = ['a', 'Sail', ' ', '  ', '\t', ' ', '　', '﻿', ' ', ' ', '\r', '\n', '\r\n', '&', '&#38;', '&#10;', '<', '>',
+    '-->', '<!-- windmill:kind sky -->', ' <!-- windmill:kind gold Sea -->', '[x] ', '[ ]', '[', '- ', '* ', '1. ', '## ', '# ', '> ', '<a>',
+    'https://example.com/x', 'needs also: A', '😀', 'é', '\u0000'.replace('\u0000', 'z'), '#', '•'];
+  const text = (most) => Array.from({ length: Math.floor(random() * most) }, () => pick(pieces)).join('');
+  const hues = ['terracotta', 'olive', 'gold', 'brick', 'sky', 'plum'];
+  for (let round = 0; round < 300; round += 1) {
+    const kinds = hues.filter(() => random() < 0.5).map((hue, index) => ({ id: `k${index}`, hue, label: [...text(6)].slice(0, 24).join(''), description: '' }));
+    const nodes = Array.from({ length: 1 + Math.floor(random() * 8) }, (_, index) => ({
+      id: `s${index}`, label: [...text(8)].slice(0, 200).join(''), color: pick(hues), prerequisites: [],
+      description: random() < 0.5 ? text(10) : '', links: Array.from({ length: Math.floor(random() * 3) }, () => ({ url: `${pick(['https://', 'mailto:', 'www.', ''])}${text(4).trim() || 'x'}`, label: '' })),
+    }));
+    for (const [index, node] of nodes.entries()) if (index > 0 && random() < 0.7) node.prerequisites = [`s${Math.floor(random() * index)}`];
+    const done = nodes.filter(() => random() < 0.3).map((node) => node.id);
+    const title = [...text(6)].slice(0, 200).join('');
+    const file = serializePlan({ title, nodes }, kinds, done);
+    const read = parsePlan(file, []);
+
+    const written = [];
+    const childrenOf = (id) => nodes.filter((node) => node.prerequisites[0] === id);
+    const walk = (node) => { written.push(node); childrenOf(node.id).forEach(walk); };
+    nodes.filter((node) => node.prerequisites.length === 0).forEach(walk);
+    const named = (hue) => kinds.filter((kind) => kind.hue === hue).at(-1)?.label ?? '';
+    const shown = (node) => ({ label: node.label, color: node.color, done: done.includes(node.id), description: node.description || undefined,
+      links: node.links.map((link) => link.url.trim()).filter((url) => url !== '') });
+    assert.deepEqual({
+      title: read.title,
+      nodes: read.nodes.map((node) => ({ ...shown({ ...node, links: (node.links ?? []).map((url) => ({ url })) }), done: node.status === 'complete',
+        under: read.nodes.findIndex((other) => other.id === node.prerequisites[0]) })),
+      kinds: read.kinds.map((kind) => [kind.hue, kind.label]),
+    }, {
+      title,
+      nodes: written.map((node) => ({ ...shown(node), under: written.findIndex((other) => other.id === node.prerequisites[0]) })),
+      kinds: [...new Set(written.map((node) => node.color))].filter((hue) => named(hue) !== '').map((hue) => [hue, named(hue)]),
+    }, file);
+  }
 });

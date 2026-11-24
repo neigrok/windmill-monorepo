@@ -74,7 +74,8 @@ export function PasteComposer({ text, onTextChange, kinds, onKindsChange, parse,
       onPlant(parse);
       return;
     }
-    const roadmap = plantedRoadmap(parse, name);
+    // The name field shows only for a plan with no name of its own, so a name typed for an earlier text names no other.
+    const roadmap = plantedRoadmap(parse, parse.missingRoot ? name : '');
     if (roadmap === null) {
       nameRef.current?.focus();
       return;
