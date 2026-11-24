@@ -8,8 +8,9 @@ replica's binding, so a re-identify keeps it and what is typed in it. While the 
 engine's replica is not bound to (another tab signed in someone else), the room is `Opening` until the shell catches up.
 Signed out, the room is the sign-in pitch. Shares, log shares, the connected log and Coach wait for an account the shell
 has settled (auth `status` is `signed-in`: online, or offline from its last answer); until then Coach, its History and
-the log share show the sign-in pitch, or `Opening` while the account has yet to answer, and no share is offered. Sessions and
-their sets are read-only live mirrors; backfills use `gym.importSession`. Routine and note editors
+the log share show the sign-in pitch, or `Opening` while the account has yet to answer, and no share is offered. The
+account's open workout runs on its page, `#/gym/workout` (`workout/`), whichever device started it; past workouts are
+imported with `gym.importSession`. Routine and note editors
 retain their opening values and guard touched fields through kit drafts. A routine name, movement
 name or note title is written NFC-normalised, trimmed and at most 60 code points, and a blank one is
 refused before it is written;
@@ -21,16 +22,32 @@ deletes the conversation's records, and when the room unmounts or the document h
 conversation stays.
 
 Every local gym read and write uses the domain kit through `gymRuntime.js`. Training entities and rules live in
-`domain/training.js`; `trainingActions.js` owns imports, corrections, set deletion and the four phone-only
-actions. The web remains a live mirror and does not call StartSession, FinishSession or DiscardSession; AppendSet runs
-only before the seat changes, below.
+`domain/training.js`; `trainingActions.js` owns the training actions every surface runs: start, append, finish, discard,
+imports, corrections and set deletion.
+
+A workout on the web (web-device-parity §4) is those actions on the browser's copy, and `domain/workoutRack.js` holds
+what a phone keeps beside them: the four device rows a browser keeps for its open workout, keyed by the session —
+`movementOrder` (the movements in their order), `movement` (the one in hand), `rack` (its load and reps, whether the
+lifter set them, and the slot and plan entry that filled them) and `offer` (the id of the set Log set writes next).
+`WorkoutRack` settles them against the workout as it stands: the plan's movements, then any other one logged or added to
+a workout with no plan; the one in hand, else the latest set's; its rack, kept while its slot holds and filled again from
+`Prefill` once a set lands or the plan changes a rack the lifter did not set; and the set on offer, kept while the rack
+offers the same set. Every rack change reads the rows and writes them in one local write (`SettleRack`, `TurnRack`), so a
+tab never writes over another's. `LogRackSet` writes the set under the id the offer row holds — a second tap on one
+offer, in this tab or another, finds the set written and writes nothing — and refuses `stale` an offer the rows no
+longer hold. `ReviseWorkout` is `ReviseWorkoutPlan`, refused `stale` against any plan but the one its editor opened on,
+with the rows it leaves; `FinishWorkout` finishes and forgets the rows; a finished workout is discarded through the
+room's held delete. `StartWorkout` refuses a routine the log no longer draws, and otherwise is `StartSession`, which
+refuses a start beside an open workout. The page's clocks read the server's time (the device's corrected by its offset)
+on every animation frame while the tab is shown, from the workout's start and the latest set's time, never a count; the
+tab's title and favicon read them each time a timer fires.
 Before the shell signs in or finishes a sign-out (`routes.sync.seatWillChange`), `saveSignedOutWorkouts` saves each
 workout the anon replica holds for adoption (`AdoptWorkout` in `prepare`, kept under the device row `rack:adoption`): a
 finished one becomes one import that supersedes its chain, an open one keeps a start that does not join, and an open one's
 sets the replacing start folded are recorded again with it (`AppendSet` as recorded). Each workout is one composed act on
 the API's binding, so it lands whole before the seat changes, or not at all when the seat moved first; one the domain
-refuses or that fails leaves the others to land, and a seat that moved ends the hook. A bound replica holds none. The web
-holds no rack, so nothing of one is written first. Nothing on the web draws a signed-out workout yet; its recovery after
+refuses or that fails leaves the others to land, and a seat that moved ends the hook. A bound replica holds none. Every
+rack change is written as it is made, so no rack waits to be written first. Nothing on the web draws a signed-out workout yet; its recovery after
 sign-in is the domain's (`domain/workoutRecovery.js`) and no screen's.
 Correction and backfill helpers parse fields and arrange draft rows into domain inputs.
 `trainingReads.js` owns prefill, last time, records, the log's new bests (`ProgressRecords`, read by no web screen yet) and chart windows, and
@@ -142,7 +159,14 @@ in the catalog.
 
 ## Observability
 
-`gymRuntime.js` owns the gym telemetry boundary. Engine-backed writes emit first-party `gym_action` events with allowlisted `operation` and
+`gymRuntime.js` owns the gym telemetry boundary. A workout's steps tell the iPhone's events through `workoutStep`, its
+properties each one of a closed set of labels and never a name or an id of a workout, a routine or a movement:
+`gym_session_started` (`door`: `routine` or `empty`), `gym_set_logged`, `gym_session_finished`, `gym_workout_plan_changed`
+(one per kind of edit, `action`, `door: workout`), `gym_workout_adjusted` (`field`: `weight` or `reps`), each with
+`outcome` `ok`, `refused` (with `code`, and `reason: stale` for a plan another tab or device changed first) or `failed`;
+and from the screens `gym_rest_target_reached`, `gym_hidden_workout` (`action`: `hide`, or `open` with `door: bar`) and
+`gym_receipt_plan_saved`. Their unexpected failures report `gym-workout-start`, `gym-rack-settle`, `gym-rack-turn`,
+`gym-set-log`, `gym-plan-revise` and `gym-workout-finish`. Engine-backed writes otherwise emit first-party `gym_action` events with allowlisted `operation` and
 `outcome` only, and a `refused` one also `code`: `not-writable` when the replica moved under the room, `domain` when the
 gym's rules refused it, this device's or the server's. Operations cover routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
@@ -176,10 +200,15 @@ Screen tests run over a real browser engine for a signed-in account (`gymAccount
 account provider, the sign-in door and the shell over a browser copy an earlier visit seeded, in Chromium: the room draws
 with `/v1/me` held and reports how long it took, keeps the room for a paused session, keeps the pitch signed out, keeps
 the room and what is typed in it through a re-identify and through a page restored from the back/forward cache, its scroll
-too, and draws `Opening`, never another tab's account, under the account this tab's shell has settled. Shared training
+too, and draws `Opening`, never another tab's account, under the account this tab's shell has settled.
+`workout.browser.test.js` runs a workout in Chromium the same way: started from a routine and empty, a set logged and
+corrected, a plan edit, Finish and the discard; Log set tapped in two tabs on one offer logs one set; a plan edit another
+tab made stale is refused with its draft kept, and Save mine writes it; a set logged with no connection is kept through a
+reload and goes out once the reference server answers; the tab's title and favicon follow the rest clock of a workout
+another device started. `WM_WORKOUT_SHOTS` names a folder for the logging page at 1440 and 390. Shared training
 reads run on web, Swift and Kotlin. The local stack checks domain reads over an actual disposable
-backend account and persisted browser-engine observations. Chromium acceptance has twelve checks: a phone replica's `gym.start`, set and `gym.finish`
-pushes arrive live; web routine edits, backfills, additive recovery, weigh-ins and unit changes converge; a held weigh-in delete can be
+backend account and persisted browser-engine observations. Chromium acceptance has twelve checks: a phone replica's open workout draws the bar, its page
+continues it, the phone's set lands in its ledger and the phone's `gym.finish` closes it; web routine edits, backfills, additive recovery, weigh-ins and unit changes converge; a held weigh-in delete can be
 undone; proposal dismissal and routine removal settle with receipts; the cached log survives an offline reload.
 Seven product operations reach event intake and sync writes emit their log.
 Run domain-read and local-stack Playwright checks with:

@@ -1338,6 +1338,16 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   boards for it (`368:645`) are rejected. With the approval, the Gym file's START HERE · Gym web (`804:5811`), which says
   the phone owns live training, is rewritten, and the 🚧 Plan / Routines / Training now boards (`1828:53034`,
   `1828:53151`, `1828:53298`, `1828:53416`), which draw the mirror's card that WD3.4 and WD4.1 replace, are archived.
+  Where the build of WD1–WD6 parts from the boards:
+  - *Coach during a workout (WD7).* The index draws *This workout* alone and the narrow toolbar no Coach button, and the
+    receipt has no *Share with Coach*: Coach on the web takes no handed question yet. Coach's workout panel still says
+    *A mirror of your phone. Nothing here logs a set.* and reads a planned set's load as *last* (`coach/CoachRoom.jsx`,
+    `coach/coach.js`), though the web logs sets now.
+  - *Edit movement (WD3.1).* It opens the movement's record, which renames it; the web has no form for its equipment.
+  - *A stale plan edit (WD5.1).* The drawn heading, *{movement} changed in another tab.*, stands also when a phone or
+    Coach changed the plan.
+  - *The rest preference.* No board draws a control for the lifter's own rest target or rest sound on the web, so the web
+    reads them and writes neither; a movement's rest in this workout is Edit sets' *Rest*.
 ### Sets · product direction
 
 Sets have no type on any surface. Targets are references: actual weight/reps remain independent for every set, including extra or
@@ -1614,9 +1624,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     scrim reads #5e5c5b against the board's #6a6866.
   - *Proposal diff.* The review sheet writes a load change as *30kg → 32.5kg*, with no space before
     the unit (`ui/ReviewSheet.kt:384` over `presentation/Proposal.kt`); every other Android readout spaces it.
-  - *Web planned rows.* Android and iOS planned rows read the load the plan expects
-    (*100 kg total × max*); the web live mirror, which has no rack, still reads *last × max*
-    (`web/src/products/gym/log.js`).
+  - *Web planned rows.* Android, iOS and the web's workout page read a planned row at the load the plan expects
+    (*100 kg total × max*); Coach's workout panel on the web still reads *last × max* (`web/src/products/gym/coach/coach.js`).
 - **11w · An answer's proposal still arriving (designer, design brief QW2, task 103).** On the phone that ran a turn its
   proposal commits with its call, so the card stands with the answer. A conversation synced from another phone can land an
   answer before its proposal. Android then says *Reading proposal…* until a read misses, and until the miss settles draws

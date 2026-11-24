@@ -229,6 +229,22 @@ this device or the server's notice of one, carries `code: domain`. The room draw
 adds no event and no failure of its own. No workout or note content, identifiers, field values, refusal details or raw
 exception messages are reported.
 
+A workout on the web tells its steps under the iPhone's event names, through `workoutStep` in `gymRuntime.js`, whose
+properties are each one of a closed set of labels and never a name or an id of a workout, a routine or a movement, nor
+any load, rep or duration: `gym_session_started` (`screen: workout`, `door`: `routine` or `empty`), `gym_set_logged`
+(`screen: workout`; a second tap on an offer another tab already logged tells nothing), `gym_session_finished` (`screen:
+workout`), `gym_workout_plan_changed` (one per kind of edit a save makes, `action`: `retarget`, `add_set`, `remove_set`,
+`swap`, `add_movement`, `remove_movement` or `rest`, and `door: workout`) and `gym_workout_adjusted` (`screen: workout`,
+`field`: `weight` or `reps`), each with `outcome` `ok`, `refused` with `code` (`not-writable` or `domain`) and, for a plan
+another tab or device changed first, `reason: stale`, or `failed`. The page tells `gym_rest_target_reached` (`screen:
+workout`) once per rest as the clock crosses its target with the workout on screen, `gym_hidden_workout` (`action:
+hide` as the page is left with the workout open, `action: open` with `door: bar` from the bar over the tab rail) and the
+receipt `gym_receipt_plan_saved` (`outcome`) when Done saves the plan's changes to the routine. An unexpected failure of a
+workout's write reports to Sentry under a static `gym-workout-start`, `gym-rack-settle`, `gym-rack-turn`, `gym-set-log`,
+`gym-plan-revise` or `gym-workout-finish` with the error's stack frames; a refusal and a store failure report none, as
+above. A set's correction and a finished workout's discard keep their `gym_action` (`set-correct`, `delete`). Nothing the
+tab's title, favicon or pop-out window shows is reported.
+
 Proposal decisions run through the gym domain. Removal snapshots persist in the account replica
 until their outcome is visible; acknowledging one emits `gym_action` with `proposal-apply` and
 `closed`. Failed acknowledgment uses `gym-proposal-apply`; a storage failure remains engine-owned.

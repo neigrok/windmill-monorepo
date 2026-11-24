@@ -331,7 +331,8 @@ product's `forgetDevice` hears `closed` for it.
 `platform/sync/react.js` exports `useSyncReplica()`, `useSyncEngine()`,
 `useSyncRecords(scope)` and `useSyncNotices(product)`; records and notices follow the replica this tab draws, so no room
 draws another seat's while the shell catches up. The anonymous journal uses record observations; gym's room draws from
-the replica the engine holds without waiting for the account, and signed out is its sign-in pitch. A page restored from
+the replica the engine holds without waiting for the account, logs a workout on it as the phones do, and signed out is
+its sign-in pitch. A page restored from
 the back/forward cache keeps every room as it stood, and its writes wait for the engine's restore, landing only under the
 seat they were made under.
 Gym and journal records change only through the engine; their REST clients carry server features.

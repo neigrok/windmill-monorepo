@@ -267,7 +267,7 @@ test('the home’s empty stance and its new routine action read the store: a hel
   await settle();
   // The stance becomes true only once the release takes the delete into the store the home reads.
   assert.deepEqual(gym.owed(), ['ready delete routine routinePushA']);
-  assert.deepEqual(quiet(), ['No routines yet. Build the first one.']);
+  assert.deepEqual(quiet(), ['No routines yet.Build one, or start lifting and keep the workout as a routine after.']);
   assert.equal(build().length, 1, 'the store took it, and only now is the offer honest');
 });
 

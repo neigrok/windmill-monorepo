@@ -117,7 +117,7 @@ export function FinishScreen({ id, log, signedIn = false }) {
   );
 }
 
-// Discarding a workout is a durable held death: the session leaves the mirror at once,
+// Discarding a workout is a durable held death: the session leaves the log at once,
 // and the transient carries the way back until release.
 // There is no confirmation, because a dialog in front of an act that can be undone is ceremony.
 function ShortSession({ id, log }) {
@@ -143,7 +143,7 @@ function ShortSession({ id, log }) {
   );
 }
 
-function KeepAsRoutine({ session, sets, catalog, log }) {
+export function KeepAsRoutine({ session, sets, catalog, log }) {
   const api = useGymApi();
   const [name, setName] = useState(() => weekdayName(session.startedAt));
   const [offered, setOffered] = useState(true);

@@ -332,7 +332,6 @@ test('imports and corrections use atomic commands; offline reload retains the pe
   assert.equal((await resumed.session(imported.id)).sets[0].setNumber, undefined, 'serials belong to server admission');
   await resumed.correctSession(imported.id, { requestId: 'request00001', startedAt: 100, finishedAt: 900, routineName: 'Bench', sets: [{ ...imported.sets[0], setNumber: 1, reps: 6 }] });
   assert.equal((await resumed.session(imported.id)).sets[0].reps, 6);
-  for (const method of ['start', 'finish', 'logSet']) assert.equal(api[method], undefined);
 });
 
 test('training writes keep kilograms and preserve omitted versus explicitly cleared optional fields', async (t) => {

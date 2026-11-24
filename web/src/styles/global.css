@@ -143,3 +143,31 @@ a:hover {
 .wm-menu-item:hover {
   background: var(--surface-card);
 }
+/* A menu whose opener is its own heading: the trigger's words and glyph, centred under it. */
+.wm-menu-open.is-labelled {
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+  color: var(--text-primary);
+}
+.wm-menu-open.is-labelled + .wm-menu-list {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  min-width: 180px;
+}
+.wm-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.wm-menu-item > svg {
+  flex: none;
+  color: var(--text-secondary);
+}
+.wm-menu-item.is-danger,
+.wm-menu-item.is-danger > svg {
+  color: var(--color-danger);
+}

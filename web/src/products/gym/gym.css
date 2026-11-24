@@ -465,19 +465,6 @@ button.gym-set:focus-visible .gym-set-fix {
   color: var(--gym-ink-dim);
 }
 
-/* The mark of a session running somewhere else, never beside a control that could drive it. */
-.gym-live-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-full);
-  background: var(--set-done);
-  box-shadow: 0 0 10px var(--set-done-glow);
-}
-/* Emitted light does not exist on pietra, so the glow token has no light value and this draws none. */
-.gym-root[data-theme="light"] .gym-live-dot {
-  box-shadow: none;
-}
-
 /* Sheets cover the room independently of its content scroll. */
 .gym-sheet-catch {
   position: fixed;
@@ -690,90 +677,6 @@ button.gym-set:focus-visible .gym-set-fix {
 }
 .gym-detail-review:hover {
   text-decoration: underline;
-}
-
-/* ── The mirror, at the head of the routines home ─────────── */
-
-/* Read-only: nothing on it can drive the workout it shows, and it counts up. The digits are mono so
-   the clocks tick without the line breathing. */
-.gym-mirror {
-  padding: 14px 16px 15px;
-  border: 1px solid var(--color-brand);
-  border-radius: var(--radius-lg);
-  background: var(--color-brand-soft);
-}
-.gym-mirror-head {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 13.5px;
-  font-weight: 700;
-  color: var(--gym-ink);
-  font-variant-numeric: tabular-nums;
-  white-space: pre;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.gym-mirror-line {
-  margin: 9px 0 0;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  color: var(--gym-ink-dim);
-  font-variant-numeric: tabular-nums;
-  white-space: pre;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* The plan line in the readout formula, then the slots as rows: what landed in full ink, what is
-   still to come dim. Read-only, like everything on the mirror. */
-.gym-workout-clocks { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 10px 0; color: var(--gym-ink-dim); }
-.gym-workout-clock {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.gym-mirror-plan {
-  margin: 5px 0 0;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--gym-ink-faint);
-  font-variant-numeric: tabular-nums;
-  white-space: pre;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.gym-mirror-slots {
-  list-style: none;
-  margin: 6px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-}
-.gym-mirror-slot {
-  color: var(--gym-ink-faint);
-}
-.gym-mirror-slot.is-lifted {
-  color: var(--gym-ink);
-}
-/* Nothing running: the words, never a greyed control. */
-.gym-mirror-idle {
-  margin-bottom: 12px;
-}
-.gym-mirror-idle-line {
-  margin: 0 2px 2px 0;
-  font-size: 15px;
-  line-height: 1.5;
-  color: var(--gym-ink-dim);
 }
 
 /* ── Routines, and one of them under the hand ──────────────── */
