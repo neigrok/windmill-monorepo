@@ -115,8 +115,8 @@ and which holds and let go of no such replica was cleared by the browser
 store with that account (`device.meta.storeCleared`, `{ account }`) and emits `sync-store-cleared`, once: a reload, another
 tab and the next read find the mark, and a store is born after at most one clear. The snapshot's `storeCleared` says it to
 every tab of the store while that account's seat is active, and not to the signed-out seat or another account's; no screen
-draws it yet. A tab of a bundle older than `formerReplicas` that shares the store re-identifies without recording the id it
-let go, so a read before the new id's first accepted push tells a clear that did not happen.
+draws it yet. A tab of a bundle from before `formerReplicas` that shares the store re-identifies without recording the id
+it let go, so a read before the new id's first accepted push tells a clear that did not happen.
 The engine stores no tokens. The shell owns the cookie session and pinned account decisions. Finished sign-out durably
 records cookie cleanup until the credentials port succeeds, and so does `cancelSignIn(account)`, which in the same write
 drops the pending sign-in; `cleanupCredentials()` runs the deletion owed. Sign-in drops a deletion owed for an earlier
