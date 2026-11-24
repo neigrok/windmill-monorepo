@@ -202,3 +202,33 @@ test('Chromium: a page restored from the back/forward cache keeps the canvas, wh
     assert.deepEqual(await page.evaluate(() => window.issues ?? []), []);
   });
 });
+
+test('Chromium: a save the back/forward cache held while another tab signed A out and B in lands in no seat, told and never reported', async (t) => {
+  const { context, page } = await boot(t);
+  await withBrowserErrors(page, async () => {
+    await page.getByRole('textbox', { name: 'Write today' }).fill('Typed under A before the page was cached');
+    // The typed burst's save comes due while the engine is suspended.
+    await page.evaluate(() => {
+      window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+      return new Promise((resolve) => setTimeout(resolve, 800));
+    });
+    const other = await context.newPage();
+    await other.goto(`${origin}/journal-boot#/journal`);
+    await other.waitForFunction(() => window.entryReady);
+    await visit(other, 'B', { signOutFirst: true });
+    await other.close();
+    const restored = await page.evaluate(async () => {
+      const { syncSession } = await import('/src/platform/sync/session.js');
+      const { engine } = syncSession;
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+      await engine.restoring;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const { device } = await engine.store.read();
+      return { landed: device.replicas.flatMap((replica) => replica.entries('self/journal'))
+        .filter((entry) => entry.intent.cmd?.args.body?.includes('Typed under A')).length,
+      commits: (window.events ?? []).filter((event) => event.name === 'sync_commit').map((event) => event.props.outcome),
+      issues: window.issues ?? [] };
+    });
+    assert.deepEqual(restored, { landed: 0, commits: ['not-writable'], issues: [] });
+  });
+});

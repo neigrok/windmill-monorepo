@@ -43,11 +43,12 @@ const TEXT_FIELDS = new Set(['text', 'search', 'email', 'url', 'tel', 'password'
 // to. A sign-in or a sign-out changes it, the sign-in that binds the anon replica in place included (engine.md §7.12).
 const bindingOf = (replica) => JSON.stringify([replica.storageHandle, replica.meta.account ?? null]);
 
-// An act planned under one binding, committed after a sign-in or a sign-out changed it (engine.md §7.1 Ordered local
-// acts). It writes nothing; its caller decides what the act becomes.
+// A commit or an act issued (or planned) under one binding, landing after a sign-in or a sign-out changed it, as one the
+// back/forward cache held while another tab moved the seat does (engine.md §7.1 Ordered local acts). It writes nothing;
+// its caller decides what the write becomes.
 export class ReplicaChanged extends Error {
   constructor() {
-    super('the active binding changed since the act was planned');
+    super('the active binding changed since the write was issued');
     this.name = 'ReplicaChanged';
   }
 }
@@ -128,16 +129,20 @@ export class BrowserSyncEngine {
   }
 
   // One transaction over the device. A failure of the store reports `storage` once and reaches the caller as a
-  // `CommitError` of kind `store`; the body's own throw is its caller's to report, and passes through unreported. While
-  // the page is in the back/forward cache a write waits for the restore that follows, and a restore that fails fails it
-  // as the store's failure, which the restore reported.
-  async write(operation, change, scopes = []) {
-    if (this.suspended) await this.restoration.restored;
+  // `CommitError` of kind `store`; the body's own throw is its caller's to report, and passes through unreported. A write
+  // pinned to a `binding` lands only while that binding stands: otherwise the transaction throws `ReplicaChanged` before
+  // `change` runs and writes nothing. That refusal, or a body's own `ReplicaChanged` (a product's fence), tells the write's
+  // operation `not-writable`. While the page is in the back/forward cache a write waits for the restore that follows, and
+  // a restore that fails fails it as the store's failure, which the restore reported; once one has failed, a write fails
+  // at once, as a write the store did not commit.
+  async write(operation, change, scopes = [], { binding } = {}) {
+    if (this.suspended) await this.restored();
     let context;
     let answer;
     let thrown;
     try {
       answer = await this.store.transact((device, ensureScope) => {
+        if (binding !== undefined && bindingOf(device.activeReplica) !== binding) { thrown = new ReplicaChanged(); throw thrown; }
         context = this.context(device);
         context.ensureScope = ensureScope;
         // An inverse request that was waiting and settles in this transaction reports its counts, never an id.
@@ -163,7 +168,10 @@ export class BrowserSyncEngine {
         return result;
       }, { scopes: (device) => [...this.governingScopes(device), ...scopes] });
     } catch (error) {
-      if (error === thrown) throw error;
+      if (error === thrown) {
+        if (error instanceof ReplicaChanged && operation) this.telemetry.event(operation, { outcome: 'not-writable' });
+        throw error;
+      }
       if (this.superseded) this.refusedSinceSuperseded = true;
       if (!this.closed) this.telemetry.failure('storage');
       throw new CommitError('the device store did not commit', 'store', { cause: error });
@@ -507,8 +515,11 @@ export class BrowserSyncEngine {
   }
 
   // The read-and-commit body (§7.12) also reads, in its transaction, the product's device rows and the
-  // scope's reconciliation metadata. The body's own throw is the caller's (§7.1), unreported.
+  // scope's reconciliation metadata. The body's own throw is the caller's (§7.1), unreported. A commit lands only under
+  // the binding that stood when it was called, so one the back/forward cache held while another tab moved the seat
+  // throws `ReplicaChanged` and lands in no other seat.
   async commit(scope, changes, opts) {
+    const binding = this.activeBinding();
     let prepared, didPrepare = false;
     const result = await this.write('sync-commit', (device, ctx) => {
       const replica = device.activeReplica;
@@ -519,7 +530,7 @@ export class BrowserSyncEngine {
         }
         : changes;
       return commit(replica, ctx, scope, read, opts);
-    }, [scope]);
+    }, [scope], { binding });
     this.requestPersistence();
     this.kick();
     return result;
@@ -562,9 +573,10 @@ export class BrowserSyncEngine {
     return this.write(null, (device) => releaseReversibleAct(device.activeReplica, actId));
   }
 
-  // `binding` is the `activeBinding()` the caller planned the act under, across awaits outside this transaction: the act
-  // commits only while it stands, and otherwise throws `ReplicaChanged` before its prepare callback runs.
-  async commitAct(prepare, segment, { binding } = {}) {
+  // `binding` is the `activeBinding()` the caller planned the act under, across awaits outside this transaction, and the
+  // one standing when it is called where the caller names none: the act commits only while it stands, and otherwise
+  // throws `ReplicaChanged` before its prepare callback runs.
+  async commitAct(prepare, segment, { binding = this.activeBinding() } = {}) {
     if (typeof prepare !== 'function') {
       const segments = prepare;
       const options = segment ?? {};
@@ -574,7 +586,6 @@ export class BrowserSyncEngine {
     const act = new ActCommit();
     const scopes = [];
     const result = await this.write('sync-commit', (device, ctx) => {
-      if (binding !== undefined && bindingOf(device.activeReplica) !== binding) throw new ReplicaChanged();
       ctx.opaqueID = () => this.newGestureId();
       ctx.metadata = (replica, scope) => this.readMetadata(scope, replica, act.actor ?? ctx.actor);
       const result = act.advance(device.activeReplica, ctx, (context) => {
@@ -588,7 +599,7 @@ export class BrowserSyncEngine {
       });
       scopes.push(...act.prepared.request?.scopes ?? []);
       return result;
-    }, scopes);
+    }, scopes, { binding });
     this.requestPersistence(); this.kick();
     return result;
   }
@@ -1401,7 +1412,7 @@ export class BrowserSyncEngine {
     this.visibilityChanged = () => this.setVisible(this.document.visibilityState !== 'hidden');
     this.connectivityChanged = () => this.setOnline(this.navigator.onLine !== false);
     this.pageHidden = (event) => {
-      if (event.persisted) { this.close({ persisted: true }); return; }
+      if (event.persisted) { this.awaitRestore(); this.close({ persisted: true }); return; }
       if (this.coordination.lastTab()) this.leave().finally(() => this.close()).catch((error) => this.unheard(error));
       else this.close();
     };
@@ -1418,8 +1429,27 @@ export class BrowserSyncEngine {
     this.window?.addEventListener('pageshow', this.pageShown);
   }
 
+  // From the page entering the back/forward cache, or being shown again after a restore that failed, every write waits
+  // for the restore that follows: settled by that restore, or failed by the restore failing or the engine closing for good.
+  awaitRestore() {
+    if (this.restoration) return;
+    const restoration = {};
+    restoration.restored = new Promise((resolve, reject) => Object.assign(restoration, { resolve, reject }));
+    restoration.restored.catch(() => {});
+    this.restoration = restoration;
+  }
+
+  // What a write issued while the page is suspended waits on. Once a restore has failed the engine has given up until the
+  // page is shown again: the write fails at once, a write the store did not commit (web-device-parity.md §7).
+  restored() {
+    if (this.restoration) return this.restoration.restored;
+    this.telemetry.failure('storage');
+    return Promise.reject(new CommitError('the device store did not reopen', 'store'));
+  }
+
   async resume() {
     if (this.restoring) return this.restoring;
+    this.awaitRestore();
     this.restoring = (async () => {
       const generation = this.lifecycleGeneration;
       try {
@@ -1497,13 +1527,6 @@ export class BrowserSyncEngine {
     this.lifecycleGeneration++;
     this.suspended = persisted;
     this.closed = true;
-    // What a write waits on while the page is suspended: settled by the restore that follows, or failed by a close for good.
-    if (persisted && !this.restoration) {
-      const restoration = {};
-      restoration.restored = new Promise((resolve, reject) => Object.assign(restoration, { resolve, reject }));
-      restoration.restored.catch(() => {});
-      this.restoration = restoration;
-    }
     if (!persisted) {
       this.restoration?.reject(new CommitError('the device store closed', 'store'));
       this.restoration = null;

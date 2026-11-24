@@ -1,4 +1,5 @@
 import { syncSession } from '../../platform/sync/session.js';
+import { ReplicaChanged } from '../../platform/sync/engine.js';
 import { compareDocumentStamps } from '../../platform/sync/core/content.js';
 import { recordKey } from '../../../../packages/api-contract/sync/reference/core/rows.js';
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
@@ -25,11 +26,14 @@ export function adoptDeviceRows(product, incoming, kept) {
 const pendingClaimKey = (claimId) => `pendingClaim:${claimId}`;
 const deviceZone = { offsetSeconds: (instant) => -new Date(instant.ms).getTimezoneOffset() * 60 };
 
-function journalRunner(engine, expectedReplica = engine.activeReplica(), snapshot) {
+// The journal's runner over the engine, fenced on the binding (`activeBinding()`) its writer planned under: a write that
+// lands after a sign-in or a sign-out moved the seat, another tab's or the one that binds the anon replica in place
+// included, throws `ReplicaChanged` and writes nothing; a re-identify moves nothing.
+function journalRunner(engine, binding = engine.activeBinding(), snapshot) {
   const port = new EngineReplica(engine);
   return new ActionRunner({
     commit: (scope, body) => port.commit(scope, (views) => {
-      if (views.replica !== expectedReplica) throw new Error('journal-replica-changed');
+      if (views.binding !== binding) throw new ReplicaChanged();
       return body(views);
     }),
     read: (scope) => {
@@ -43,12 +47,12 @@ function journalRunner(engine, expectedReplica = engine.activeReplica(), snapsho
     physNow: () => port.physNow(),
     cancelHeld: (id) => port.cancelHeld(id),
     dismissNotice: (id) => port.dismissNotice(id),
-    dismissNotices: (scope, ids, when) => port.dismissNotices(scope, ids, (metadata) => metadata.replica === expectedReplica && when(metadata)),
+    dismissNotices: (scope, ids, when) => port.dismissNotices(scope, ids, (metadata) => metadata.binding === binding && when(metadata)),
   }, engine.registry, deviceZone);
 }
 
 export function journalRoom(engine, snapshot = engine.observe(SCOPE).getSnapshot()) {
-  return journalRunner(engine, engine.activeReplica(), snapshot).read(SCOPE, (read) => new JournalRoom(read));
+  return journalRunner(engine, engine.activeBinding(), snapshot).read(SCOPE, (read) => new JournalRoom(read));
 }
 export function normalizePage(raw) {
   const score = (value) => Number.isInteger(value) && value >= 0 && value <= 10 ? value : null;
@@ -85,9 +89,9 @@ export function pagesOf(engine, snapshot = engine.observe(SCOPE).getSnapshot()) 
   }
   return [...pages.values()].sort((a, b) => a.day < b.day ? -1 : a.day > b.day ? 1 : 0);
 }
-export async function savePage(engine, doc, expectedReplica = engine.activeReplica(), retirements = {}, priorDraft = null) {
+export async function savePage(engine, doc, binding = engine.activeBinding(), retirements = {}, priorDraft = null) {
   const action = new SavePage({ day: doc.day, document: doc, retiring: Object.keys(retirements) });
-  const runner = journalRunner(engine, expectedReplica);
+  const runner = journalRunner(engine, binding);
   const observed = engine.observe(SCOPE);
   const notices = observed.getSnapshot().notices
     .filter((notice) => !notice.dismissed && notice.content.cmd?.args.day === doc.day).map((notice) => notice.id);
@@ -136,8 +140,8 @@ export function recoveredDrafts(engine = syncSession.engine) {
     }).sort((a, b) => a.day.localeCompare(b.day) || a.key.localeCompare(b.key));
 }
 
-export async function retireInvitation(engine, field, expectedReplica = engine.activeReplica()) {
-  const outcome = await journalRunner(engine, expectedReplica).run(new RetireJournalInvitation({ field }));
+export async function retireInvitation(engine, field, binding = engine.activeBinding()) {
+  const outcome = await journalRunner(engine, binding).run(new RetireJournalInvitation({ field }));
   if (outcome.kind === 'refused') throw Object.assign(new Error('journal-local-refusal'), { refusal: outcome.refusal });
   return outcome;
 }

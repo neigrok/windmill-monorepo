@@ -509,7 +509,7 @@ test('a write while the page is suspended waits for the restore and lands in the
   engine.close();
 });
 
-test('a write waiting on a restore that fails fails as the store, and the next restore takes the writes after it', async () => {
+test('a write waiting on a restore that fails fails as the store; one issued after it fails at once, reported, and the next restore takes the writes after it', async () => {
   const env = environment(), dispatch = lifecycle(env), engine = await open(env);
   dispatch('pagehide');
   const waiting = engine.commit('self/probe', card());
@@ -519,12 +519,18 @@ test('a write waiting on a restore that fails fails as the store, and the next r
   await assert.rejects(engine.restoring, /storage blocked/);
   await assert.rejects(waiting, (error) => error instanceof CommitError && error.kind === 'store');
   assert.deepEqual(env.failures, ['storage']);
-  const later = engine.commit('self/probe', card('card0002'));
+  const settled = (promise) => promise.then(() => 'landed', (error) => `${error.constructor.name}:${error.kind}`);
+  const given = [settled(engine.commit('self/probe', card('card0002'))), settled(engine.signIn('A'))];
+  let answers = null;
+  Promise.all(given).then((each) => { answers = each; });
+  for (let turn = 0; turn < 5; turn++) await tick();
+  assert.deepEqual({ answers, failures: env.failures }, { answers: ['CommitError:store', 'CommitError:store'], failures: ['storage', 'storage', 'storage', 'auth'] });
   engine.store.reopen = reopen;
-  dispatch('pageshow'); await engine.restoring;
+  dispatch('pageshow');
+  const later = engine.commit('self/probe', card('card0003'));
+  await engine.restoring;
   assert.equal((await later).localIds.length, 1);
-  assert.deepEqual(engine.device.activeReplica.entries().map((entry) => entry.intent.d[0].id), ['card0002']);
-  assert.deepEqual(env.failures, ['storage']);
+  assert.deepEqual(engine.device.activeReplica.entries().map((entry) => entry.intent.d[0].id), ['card0003']);
   engine.close();
 });
 
@@ -535,6 +541,34 @@ test('a write waiting on a suspended page fails as the store when the engine clo
   engine.close();
   await assert.rejects(waiting, (error) => error instanceof CommitError && error.kind === 'store');
   assert.deepEqual(env.failures, []);
+});
+
+const seatMoves = {
+  'signs A out and B in': { seat: async (engine, env) => { env.transport.account = 'A'; await engine.signIn('A'); },
+    move: async (other, env) => { await other.finishSignOut({ choice: 'keep' }); env.transport.account = 'B'; await other.signIn('B'); } },
+  'binds the anon replica in place to B': { seat: (engine) => engine.commit('self/probe', card('card0009')),
+    move: async (other, env) => { env.transport.account = 'B'; assert.equal((await other.signIn('B')).complete, true); } },
+};
+for (const [name, { seat, move }] of Object.entries(seatMoves)) test(`a commit and an act the back/forward cache held while another tab ${name} land in no seat, tell not-writable and report nothing`, async () => {
+  const env = environment(), dispatch = lifecycle(env), engine = await open(env);
+  await seat(engine, env);
+  const replica = engine.activeReplica();
+  dispatch('pagehide');
+  const held = [engine.commit('self/probe', card('card0101')), engine.commitAct([{ scope: 'self/probe', changes: card('card0102') }])];
+  const other = await BrowserSyncEngine.open({ ...env.options, window: null, document: null });
+  await other.start();
+  await move(other, env);
+  other.close();
+  const told = { events: env.events.length, failures: env.failures.length };
+  dispatch('pageshow'); await engine.restoring;
+  const outcomes = await Promise.all(held.map((write) => write.then(() => 'landed', (error) => error.constructor.name)));
+  const landed = (await engine.store.read()).device.replicas
+    .flatMap((each) => each.entries().map((entry) => entry.intent.d[0].id)).filter((id) => ['card0101', 'card0102'].includes(id));
+  assert.deepEqual({ outcomes, landed, account: engine.getSnapshot().account, sameReplica: engine.activeReplica() === replica,
+    commits: env.events.slice(told.events).filter((event) => event.name === 'sync-commit'), failures: env.failures.slice(told.failures) },
+  { outcomes: ['ReplicaChanged', 'ReplicaChanged'], landed: [], account: 'B', sameReplica: name.includes('in place'),
+    commits: [{ name: 'sync-commit', props: { outcome: 'not-writable' } }, { name: 'sync-commit', props: { outcome: 'not-writable' } }], failures: [] });
+  engine.close();
 });
 
 test('an explicit close during a stalled restore cannot resurrect coordination or storage', async () => {
@@ -627,7 +661,7 @@ const bindingChanges = {
     change: (engine) => engine.signIn('A'), keepsReplica: true },
   'a sign-out': { before: (engine) => engine.signIn('A'), change: (engine) => engine.finishSignOut({ choice: 'keep' }), keepsReplica: false },
 };
-for (const [name, { before, change, keepsReplica }] of Object.entries(bindingChanges)) test(`an act planned before ${name} throws ReplicaChanged, writes and reports nothing, and one planned after it commits`, async () => {
+for (const [name, { before, change, keepsReplica }] of Object.entries(bindingChanges)) test(`an act planned before ${name} throws ReplicaChanged, writes nothing, reports no failure and tells its commit not-writable, and one planned after it commits`, async () => {
   const env = environment(), engine = await open(env);
   env.transport.account = 'A';
   await before(engine);
@@ -641,7 +675,7 @@ for (const [name, { before, change, keepsReplica }] of Object.entries(bindingCha
   await assert.rejects(engine.commitAct(() => { prepared++; return { request: { scopes: ['self/probe'], hold: false }, value: card() }; },
     (changes) => ({ changes }), { binding: planned.binding }), ReplicaChanged);
   assert.deepEqual({ prepared, device: (await engine.store.read()).device.toJSON(), events: env.events.slice(told.events), failures: env.failures.slice(told.failures) },
-    { prepared: 0, device: stored, events: [], failures: [] });
+    { prepared: 0, device: stored, events: [{ name: 'sync-commit', props: { outcome: 'not-writable' } }], failures: [] });
   const queued = engine.device.activeReplica.entries().map((entry) => entry.localId);
   const { outcome } = await engine.commitAct([{ scope: 'self/probe', changes: card() }], {}, { binding: engine.activeBinding() });
   assert.deepEqual(engine.device.activeReplica.entries().map((entry) => entry.localId), [...queued, ...outcome.segments[0].localIds]);

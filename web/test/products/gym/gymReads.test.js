@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { gymReadView, namedZone, createGymApi } from '../../../src/products/gym/gymRuntime.js';
+import { DecodeError } from '../../../src/platform/domain-kit/entities.js';
 import { exerciseDocument } from '../../../src/products/gym/domain/trainingHistory.js';
 import { gymAccount } from './harness.mjs';
 
@@ -44,7 +45,7 @@ test('malformed frozen plans report a static failure while unrelated reads stay 
   assert.deepEqual(await api.session('session_a'), { session: { id: 'session_a', startedAt: at, finishedAt: at + 3600000 },
     sets: [{ id: 'working_1', exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 8, note: '', completedAt: at + 1000 }] });
   assert.deepEqual(await api.notes(), [{ id: 'note_aaa', position: 0, title: 'Kept', body: 'Private' }]);
-  assert.deepEqual(failures, [['projection']]);
+  assert.deepEqual(failures.map(([operation, error]) => [operation, error instanceof DecodeError]), [['projection', true]]);
   assert.deepEqual(rows, before, 'reading leaves the stored plan intact');
 });
 

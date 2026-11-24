@@ -7,7 +7,7 @@ export const EVENTS = new Set(['sync-start', 'sync-commit', 'sync-release', 'syn
   'sync-digest-mismatch', 'sync-push-malformed', 'sync-refused', 'sync-writer', 'sync-store-cleared']);
 export const OPERATIONS = new Set(['storage', 'transport', 'live', 'leadership', 'observer', 'auth']);
 const OUTCOMES = new Set(['ok', 'denied', 'unavailable', 'pending', 'settled', 'paused', 'failed', 'acquired', 'released',
-  'superseded', 'reloaded']);
+  'superseded', 'reloaded', 'not-writable']);
 
 // The first `limit` reports of one kind in each minute, at most 100.
 function allowance(now, limit) {

@@ -27,7 +27,8 @@ only before the seat changes, below.
 Before the shell signs in or finishes a sign-out (`routes.sync.seatWillChange`), `saveSignedOutWorkouts` saves each
 workout the anon replica holds for adoption (`AdoptWorkout` in `prepare`, kept under the device row `rack:adoption`): a
 finished one becomes one import that supersedes its chain, an open one keeps a start that does not join, and an open one's
-sets the replacing start folded are recorded again with it (`AppendSet` as recorded). A bound replica holds none. The web
+sets the replacing start folded are recorded again with it (`AppendSet` as recorded). It is one composed act on the API's
+binding, so it lands whole before the seat changes, or not at all when the seat moved first. A bound replica holds none. The web
 holds no rack, so nothing of one is written first. Nothing on the web draws a signed-out workout yet; its recovery after
 sign-in is the domain's (`domain/workoutRecovery.js`) and no screen's.
 Correction and backfill helpers parse fields and arrange draft rows into domain inputs.
@@ -146,7 +147,7 @@ note save/reorder, bodyweight save, set/session correction, session import, prop
 delete/Undo, refusal and the save of signed-out workouts for adoption (`workout-adopt`, told only when it saved something,
 was refused or failed, and never stopping the seat change). Outcomes are `saved-local`, `unchanged`, `failed`, `held`, `undone`,
 `closed`, `refused`. A local save does not claim server admission. Unexpected boundary failures
-report a static `gym-<operation>` to Sentry, without exceptions, IDs, names, bodies or field values;
+report a static `gym-<operation>` to Sentry with the error's stack frames, never its message, IDs, names, bodies or field values;
 a `GymRefusal` is expected and reports nothing, and a store failure is the engine's to report.
 Engine telemetry owns transport, storage, authentication and admission failures. Refusal content stays on the device; the room announces
 unresolved notices.

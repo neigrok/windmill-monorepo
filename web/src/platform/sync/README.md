@@ -25,8 +25,8 @@ records.release(); // when the holder leaves the scope
 Its Promise resolves after the IndexedDB transaction commits; publication failures report separately and do not reject a durable save. The callback runs inside the
 transaction and must not return a Promise; its views carry `drawn`, `stored`, `now`, `replica`, the replica's
 `binding` (below), the product's `devices` rows and the scope's `firstPullComplete`. A rejection is one of §7.1's three failures, a
-`CommitError` of kind `not-writable`, `malformed` or `store`, or the callback's own throw, passed
-through unchanged. `newGestureId()` mints the id a caller passes as `opts.gestureId` when it must know it
+`CommitError` of kind `not-writable`, `malformed` or `store`, `ReplicaChanged` when its seat moved before it landed (below),
+or the callback's own throw, passed through unchanged. `newGestureId()` mints the id a caller passes as `opts.gestureId` when it must know it
 before the commit; the domain kit's runner (`src/platform/domain-kit/runner.js`) does.
 
 `observe(scope)` answers a hold on the scope's observation, with `getSnapshot`, `subscribe` and `release`.
@@ -63,9 +63,12 @@ shell tells it of each read of `/v1/me`, so a signed-out engine, which sends not
 out of reach. `onEvent` delivers active replica changes after durable commits and persisted-page
 suspension, restoration and restore failure.
 `activeBinding()` answers an opaque string that a sign-in or a sign-out changes, the sign-in that binds the anon
-replica in place included, and a re-identify does not (engine.md §7.12). `commitAct(prepare, segment, {binding})` commits
-an act only while the binding its caller planned it under stands: otherwise it throws `ReplicaChanged` in the write
-transaction, before its prepare callback runs, writes nothing and reports nothing (engine.md §7.1 Ordered local acts).
+replica in place included, and a re-identify does not (engine.md §7.12). `commit` lands only under the binding that stood
+when it was called, and `commitAct(prepare, segment, {binding})` only under the one its caller planned the act under, or the
+one standing when it was called where the caller names none: otherwise either throws `ReplicaChanged` in the write
+transaction, before any callback runs, writes nothing, reports no failure and tells its `sync-commit` `not-writable`
+(engine.md §7.1 Ordered local acts). So a write never lands in a seat a sign-in or a sign-out, another tab's included, put
+in place of the one it was made under.
 A pull's answer and its pages land the same way, only under the binding the pull was sent under, and a live frame only
 under the binding its socket opened under: a change of binding, another tab's included, closes the socket. One that a
 sign-in, a sign-out or a re-identify overtook applies nothing, pauses nothing and leaves the puller's backoff as it was
@@ -80,8 +83,10 @@ request that settles reports its applied and skipped counts.
 Persisted restores reopen IndexedDB and coordination with the same observations and listeners;
 the shell refreshes account state after restoration. While the page is in the back/forward cache the published views
 and observations stand and the session stays `ready`, so no room unmounts; a write waits for the restore that follows and
-lands in the reopened store, and fails as a `CommitError` of kind `store` when that restore fails (which reported
-`storage`) or the engine closes for good. A failed restore takes the rooms down (`ready: false, error: true`). Views and
+lands in the reopened store, a commit only under the binding it was issued under, and fails as a `CommitError` of kind
+`store` when that restore fails (which reported `storage`) or the engine closes for good. A failed restore takes the rooms
+down (`ready: false, error: true`), and the engine gives up until the page is shown again: a write issued meanwhile fails at
+once as a `CommitError` of kind `store` and reports `storage`, and the next `pageshow` restores again. Views and
 transport are injectable and product-neutral.
 
 HTTP goes to the `base` origin the engine's owner passes (same-origin when none) and uses the session

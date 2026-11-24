@@ -2,6 +2,7 @@ import { jcsBytes } from '../../../../../packages/api-contract/sync/reference/co
 import { JsonSchema } from '../../../platform/domain-kit/abilities.js';
 import { Id } from '../../../platform/domain-kit/entities.js';
 import { ActionRunner, EngineReplica } from '../../../platform/domain-kit/runner.js';
+import { ReplicaChanged } from '../../../platform/sync/engine.js';
 import { HostUnavailable } from '../../../platform/agent/turn.js';
 import { AbilityRefusals, CoachMessage, CoachThread, CoachTurnBounds, Conversation } from '../domain/coach/conversation.js';
 import { AbilityRequest, RecordShareCall, RunAbility, SERVER_RUN } from '../domain/coach/runAbility.js';
@@ -70,11 +71,14 @@ export class GymTurnHost {
     for (const listener of this.listeners) listener();
   }
 
+  // A write the engine refuses because the seat moved while it waited (`ReplicaChanged`) is the turn's seat ending too.
   runnerOn(replica) {
     const port = new EngineReplica(this.engine);
     const onSeat = (views) => { if (views.replica !== replica) throw new HostUnavailable('seat'); return views; };
     return new ActionRunner({
-      commit: (scope, body) => port.commit(scope, (views) => body(onSeat(views))),
+      commit: (scope, body) => port.commit(scope, (views) => body(onSeat(views))).catch((error) => {
+        throw error instanceof ReplicaChanged ? new HostUnavailable('seat') : error;
+      }),
       read: (scope) => onSeat(port.read(scope)),
       cancelHeld: (id) => port.cancelHeld(id),
       mintId: (type, taken) => port.mintId(type, taken),
