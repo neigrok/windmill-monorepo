@@ -2018,6 +2018,17 @@ Android. It and the product differ in these places.
 
 ### Native and web differences
 
+- **One sign-in question for every room due.** 12n and WD9's note ask one question naming every room due (*… 1 workout,
+  2 routines, 3 weigh-ins and 4 journal pages …*); the web asks each due product in turn, gym's and the journal's in the
+  shell's words and roadmap's in flow 50's.
+- **The confirmation of a sign-in a product words.** 7d's second confirmation is drawn for gym (WD9.2) and the journal
+  in the shell's words; flow 50 draws none for roadmap's *Add your roadmaps?*, whose Discard on the web now asks *Discard
+  all of it?* / *They are deleted from this browser. You can’t undo this.* Designer to draw roadmap's.
+- **In this browser has no editor.** WD9.3 draws a copy waiting on the account's open workout (*Keep as finished*) and
+  one the retry answers (*Add to your log*). The web has no Fix workout, so a copy refused for its times, its sets, its
+  movements or a spent id says why in one undrawn sentence (`gym.recovery.reason.*`) and offers Discard alone, held
+  with Undo as the room's deletes are. Designer to rule those sentences and whether the web gets the phones' editor.
+
 - **A retargeted line that moved, on the web.** A proposal's count is every line not kept and every kept line that moved, and the
   phones draw a move as *Order* on its row. The web never sees the base, so it marks the order only when the count holds more than
   its marked rows: one *order* row however many kept lines moved, and none when the only line that moved was also retargeted.
@@ -2119,8 +2130,12 @@ Android. It and the product differ in these places.
   collection. It needs the owner's Publish.
 - **Dialog and Toast in the Design System.** The Dialog pins Theme=Light on itself, so a Night board shows it light
   until its mode is set; the Toast has no Neutral tone, which the web's `Toast tone="neutral"` has.
-- **The sign-in question's weight.** 7d asks for Add and Discard of equal weight; the web's `SyncDecisions.jsx`
-  draws Discard as ghost and Add as primary. The approved WD9 draws them equal, so the web's question follows it.
+- **The sign-in question's dialog.** WD9 draws the shell's question 480 px wide with a 17 px Nunito title and medium
+  answers, and its answers start at the left; the web builds flow 50's `AccountDecision` for every product (540 px, the
+  28 px display title, large answers at the right, Cancel sign-in at the left). One of the two drawings follows the other.
+- **A list in the sign-in question.** WD9 writes *1 workout, 2 routines and 3 weigh-ins*; the web joins the kinds with
+  the locale's list rule, as roadmap's landing lines do, and English's rule writes *1 workout, 2 routines, and 3
+  weigh-ins*.
 
 - **Coach setup chrome.** The Design System's `iOS / Tab bar · Gym` (`118:93`) now draws Routines as
   `list.bullet.rectangle`, like the app; the Gym boards show it once the owner publishes the Design

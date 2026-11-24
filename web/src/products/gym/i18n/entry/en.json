@@ -213,5 +213,11 @@
   "gym.bodyweight.notSaved": "That weigh-in wasn’t saved — {reason}.",
   "gym.bodyweight.deleteFailed": "That weigh-in wasn’t deleted. Try again in a moment.",
   "gym.bodyweight.notDeleted": "That weigh-in wasn’t deleted — {reason}.",
-  "gym.common.apply": "Apply"
+  "gym.common.apply": "Apply",
+  "gym.signedOutWork.workouts": "{count, plural, one {# workout} other {# workouts}}",
+  "gym.signedOutWork.routines": "{count, plural, one {# routine} other {# routines}}",
+  "gym.signedOutWork.weighIns": "{count, plural, one {# weigh-in} other {# weigh-ins}}",
+  "gym.signedOutWork.oneWorkout": "{name} · {day}",
+  "gym.signedOutWork.since": "since {day}",
+  "gym.signedOutWork.held": "training"
 }

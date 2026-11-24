@@ -1,5 +1,6 @@
 // The engine holds set, routine, session, note and weigh-in deletes durably and offers their Undo
-// until its own deadline; the room's clock holds a Coach conversation's REST delete and a dropped draft line.
+// until its own deadline; the room's clock holds a Coach conversation's REST delete, a dropped draft line and the discard
+// of a copy In this browser holds.
 
 import { WEIGH_IN_DELETED } from './bodyweight/bodyweight.js';
 import { deletedLine } from './fix.js';
@@ -8,7 +9,7 @@ import { NOTE_DELETED } from './notes/notes.js';
 import { SESSION_DELETED } from './review.js';
 import { routineDeletedLine } from './routines.js';
 
-export const WITHHELD_KINDS = ['set', 'routine', 'session', 'thread', 'entry', 'note', 'bodyweight'];
+export const WITHHELD_KINDS = ['set', 'routine', 'session', 'thread', 'entry', 'note', 'bodyweight', 'copy'];
 
 // The record type each engine-held kind deletes, and back.
 export const HELD_TYPES = { set: 'set', routine: 'routine', session: 'session', note: 'note', bodyweight: 'weighin' };

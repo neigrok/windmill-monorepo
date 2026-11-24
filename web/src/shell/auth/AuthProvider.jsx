@@ -27,7 +27,6 @@ function remember(user) {
   try { localStorage.setItem(HINT_KEY, JSON.stringify(user ? { status: 'signed-in', user } : { status: 'ghost' })); }
   catch { captureError('auth', 'auth-hint-storage', '', '/auth'); }
 }
-const syncOf = (id) => PRODUCTS.find((product) => product.id === id)?.sync;
 // Every read of the account tells the engine whether the server answered, so a page whose engine sends nothing of its own,
 // as a signed-out one's, learns when the server is out of reach (the engine's `connection`). It answers `fetchMe`'s read.
 function readAccount(engine) {
@@ -234,9 +233,7 @@ export default function AuthProvider({ children }) {
     pending.current = { user: me, ...answers, revision };
     if (!result.complete) {
       const due = unanswered(result, answers)[0];
-      const count = due ? await productQuestions.adoptionCount(engine, due) : undefined;
-      const words = due ? await productQuestions.signInWords(engine, due) ?? null : null;
-      setQuestion(due ? { ...due, ...(count === undefined ? {} : { count: { ...due.count, [syncOf(due.product).signedOutWork.type]: count } }), words } : null);
+      setQuestion(due ? { ...due, words: await productQuestions.signInWords(engine, due) } : null);
       setError(!result.upgradeRequired && !result.due?.length);
       return;
     }
@@ -480,7 +477,6 @@ export default function AuthProvider({ children }) {
     </div>}
     {error && !question && !upgradeRequired && <div role="alert">{t('shell.auth.accountChangeFailed')}</div>}
     <SyncDecisions key={`${question?.product ?? 'signout'}:${question?.counted?.join('|') ?? ''}`} question={upgradeRequired ? null : question}
-      work={PRODUCTS.find((product) => product.id === question?.product)?.sync?.signedOutWork}
       notices={question ? productQuestions.signOutNotices() : []} busy={busy} error={error} onDecision={decide}
       onCancel={async () => {
         setBusy(true); setError(false);

@@ -36,7 +36,7 @@ test('bookmarked gym connection doors replace themselves with shared setup witho
   }
 });
 
-test('the room draws the replica this tab holds whether or not the account has answered, as long as its binding stands', async (t) => {
+test('the room draws the replica this tab holds whether or not the account has answered, the browser’s own copy signed out, as long as its binding stands', async (t) => {
   browserWith();
   const { GymApp } = await loadScreen('products/gym/GymApp.jsx');
   let session = null;
@@ -53,7 +53,6 @@ test('the room draws the replica this tab holds whether or not the account has a
     view.unmount();
     const room = drawn.find((each) => each.type?.name === 'TrainingRoom');
     if (room) return `room ${room.key}`;
-    if (drawn.some((each) => each.type?.name === 'SignInPitch')) return 'pitch';
     return drawn.some((each) => each.type?.name === 'Opening') ? 'opening' : 'nothing';
   };
   const bound = (account, replica = 'rp_wire1') => ({ replica, state: 'bound', account, binding: `["rp_handle","${account}"]` });
@@ -65,11 +64,11 @@ test('the room draws the replica this tab holds whether or not the account has a
   ], [
     'opening', 'room ["rp_handle","A"]', 'room ["rp_handle","A"]', 'room ["rp_handle","A"]',
     'room ["rp_handle","A"]', 'opening',
-    'opening', 'pitch', 'opening',
+    'room ["rp_anon",null]', 'room ["rp_anon",null]', 'opening',
   ]);
 });
 
-test('Coach and the log’s shares wait for an account the shell has settled while the room draws from the copy', async (t) => {
+test('Coach, Notes and the log’s shares wait for an account the shell has settled while the room draws from the copy', async (t) => {
   browserWith();
   await gymAccount(t);
   const { GymApp } = await loadScreen('products/gym/GymApp.jsx');
@@ -85,11 +84,11 @@ test('Coach and the log’s shares wait for an account the shell has settled whi
     app.unmount();
     return screens.map((each) => (each.type.name === 'LogList' ? `LogList signedIn=${each.props.signedIn}` : each.type.name));
   };
-  const hashes = ['#/gym/coach', '#/gym/coach/threads', '#/gym/coach/threads/thread0001', '#/gym/share-log', '#/gym/log'];
+  const hashes = ['#/gym/coach', '#/gym/coach/threads', '#/gym/coach/threads/thread0001', '#/gym/notes', '#/gym/share-log', '#/gym/log'];
   assert.deepEqual(hashes.map((hash) => roomOf('loading', hash)),
-    [['Opening'], ['Opening'], ['Opening'], ['Opening'], ['LogList signedIn=false']]);
+    [['Opening'], ['Opening'], ['Opening'], ['Opening'], ['Opening'], ['LogList signedIn=false']]);
   assert.deepEqual(hashes.map((hash) => roomOf('ghost', hash)),
-    [['SignInPitch'], ['SignInPitch'], ['SignInPitch'], ['SignInPitch'], ['LogList signedIn=false']]);
+    [['CoachDoor'], ['CoachDoor'], ['CoachDoor'], ['CoachDoor'], ['LogList signedIn=false'], ['LogList signedIn=false']]);
   assert.deepEqual(hashes.map((hash) => roomOf('signed-in', hash)),
-    [['CoachRoom'], ['HistoryPage'], ['CoachRoom'], ['LogShareScreen'], ['LogList signedIn=true']]);
+    [['CoachRoom'], ['HistoryPage'], ['CoachRoom'], ['Notes'], ['LogShareScreen'], ['LogList signedIn=true']]);
 });

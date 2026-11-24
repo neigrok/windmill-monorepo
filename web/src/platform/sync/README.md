@@ -236,10 +236,12 @@ while its binding stands; null while the engine is not open, and while the shell
 scope for the document, and the placeholder while `useSyncReplica` draws none, so no room draws another seat's records) and
 `useSyncNotices(product)` (the product's notices the same way). Records can observe the anonymous replica; only the session owner opens
 and starts the engine. Each product's route table carries a `sync` group — `prepare(engine)`,
-`onPushResult`, `pendingDeviceWork`, `adoptDeviceRows`, `liveHint(engine, replica)`, `signedOutWork` — the record type a
-sign-in question counts, with the product's own words for it (`counted(n)`, `many`) —, `adoptionAnswer(engine, due)` and
-`adoptionCount(engine)` for a sign-in decision, `signInWords(engine, due)` and `signOutWords(engine, question)` for a
-question the product words itself, and `seatWillChange(engine)`, which the shell runs before the seat changes
+`onPushResult`, `pendingDeviceWork`, `adoptDeviceRows`, `liveHint(engine, replica)`, `adoptionAnswer(engine, due)` for a
+sign-in decision the product answers itself, what a sign-in question in the shell's words counts — `signInWork(engine,
+due)`, its work kind by kind (`{ items: [{ label, detail? }], total, held, onStep }`), or `signedOutWork`, the record type
+it counts with the product's own words for it (`counted(n)`, `many`), and `adoptionCount(engine)` —,
+`signInWords(engine, due)` and `signOutWords(engine, question)` for a question the product words itself, and
+`seatWillChange(engine)`, which the shell runs before the seat changes
 (`web/CLAUDE.md`) — and the session owner composes every group into the engine options; `prepare` runs before the first
 network request.
 

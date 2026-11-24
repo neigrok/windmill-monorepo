@@ -5,7 +5,7 @@ import { Draft } from '../../platform/domain-kit/drafts.js';
 import { DecodeError, Fields, Id, sameJson } from '../../platform/domain-kit/entities.js';
 import { Plan } from '../../platform/domain-kit/plans.js';
 import { Placement, Reader, Views } from '../../platform/domain-kit/reading.js';
-import { Refused } from '../../platform/domain-kit/refusals.js';
+import { DomainNotice, Refused } from '../../platform/domain-kit/refusals.js';
 import { ActionRunner, EngineReplica } from '../../platform/domain-kit/runner.js';
 import { Remove } from '../../platform/domain-kit/standardActions.js';
 import { Instant, LocalDay, Moment } from '../../platform/domain-kit/time.js';
@@ -17,6 +17,7 @@ import { registry } from '../../platform/sync/schema.js';
 import { useSyncRecords, useSyncReplica } from '../../platform/sync/react.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
+import { countBucket } from '../../telemetry/countBucket.js';
 import { Bodyweight, DeleteWeighIn, WeighIn, WeighInValue } from './domain/bodyweight.js';
 import { Catalogue, CreateExercise, Exercise, ExerciseValue, RenameExercise, defaultStepKg } from './domain/catalogue.js';
 import { GymRefusals, RoutineRules } from './domain/gymRules.js';
@@ -28,10 +29,14 @@ import { AcknowledgeRoutineRemoval, ApplyProposalKeepingReceipt, DismissProposal
 import { exerciseDocument, proposalDocument, proposalsDocument, sessionDocument, setDocument, TrainingHistory } from './domain/trainingHistory.js';
 import { Session, SessionRules, SetRules, TrainingSet } from './domain/training.js';
 import { AppendSet, CorrectedSet, CorrectSession, CorrectSet, DeleteSet, ImportedSet, ImportSession } from './domain/trainingActions.js';
-import { AdoptWorkout, SignedOutWorkout } from './domain/workoutAdoption.js';
+import { AdoptWorkout, ReconcileAdoptedWorkouts, SignedOutWorkout } from './domain/workoutAdoption.js';
+import { DiscardSignedOutWorkout, RecoverStrandedSets, SaveRefusedStart, WorkoutFix, WorkoutRecovery } from './domain/workoutRecovery.js';
+import { ReissueWorkoutProposal } from './domain/workoutProposals.js';
+import { TrainingLog } from './domain/trainingReads.js';
 import { GymRefusal, isStoreFailure } from './errors.js';
 import { REFUSALS } from './bodyweight/bodyweight.js';
 import { fixLoadFloorLine } from './fix.js';
+import { agoLabel, daysAgo, NO_ROUTINE, shortDayLabel } from './log.js';
 import { t } from './i18n/entry/index.js';
 import { FULL_LINE } from './notes/notes.js';
 import { loadFloorLine, NAME_IT_TO_SAVE_IT } from './routines.js';
@@ -40,7 +45,7 @@ import { fromDisplayUnit, weightUnit } from './units.js';
 const SCOPE = 'self/gym';
 const OPERATIONS = new Set(['routine-create', 'routine-save', 'exercise-create', 'exercise-rename',
   'preferences-save', 'note-save', 'note-reorder', 'bodyweight-save', 'set-correct', 'delete', 'undo',
-  'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'workout-adopt', 'refusal']);
+  'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'workout-adopt', 'workout-recover', 'refusal']);
 const OUTCOMES = new Set(['saved-local', 'unchanged', 'failed', 'held', 'undone', 'closed', 'refused']);
 // What refused a write: the replica moved under the room, or the gym's rules, this device's or the server's.
 const REFUSED_BY = new Set(['not-writable', 'domain']);
@@ -58,6 +63,17 @@ function sameWorkoutCommand(left, right) {
 export function gymStep(operation, outcome, code = null) {
   if (!OPERATIONS.has(operation) || !OUTCOMES.has(outcome) || (outcome === 'refused') !== REFUSED_BY.has(code)) return;
   try { track('gym_action', code === null ? { operation, outcome } : { operation, outcome, code }); } catch { /* reporting cannot stop a save */ }
+}
+
+// How a copy's recovery ended (web-device-parity §10): `saved` when a start that lost a race keeps its sets, `kept`, `retried`
+// or `discarded` as the person answered the copy, `refused` or `failed` when the answer did not land, each with the reason
+// the copy waited for, a bounded label of the review's.
+const RECOVERY_OUTCOMES = new Set(['saved', 'kept', 'retried', 'discarded', 'refused', 'failed']);
+const RECOVERY_REASONS = new Set(['session-open', 'session-overlap', 'id-taken', 'bad-instant', 'too-many-sets', 'invalid-set',
+  'unknown-exercise', 'session-finished', 'unsent', 'other']);
+export function gymRecovery(outcome, reason) {
+  if (!RECOVERY_OUTCOMES.has(outcome) || !RECOVERY_REASONS.has(reason)) return;
+  try { track('gym_recovery', { outcome, reason }); } catch { /* reporting cannot stop a recovery */ }
 }
 
 // A failure goes to Sentry under its static operation with the error's stack frames, never its message.
@@ -238,7 +254,7 @@ const notWritable = () => new GymRefusal('not-writable', { sentence: t('gym.runt
 
 // The API stands on the engine's binding as it is made: the replica's storage and its account, which a re-identify keeps.
 // A sign-in or a sign-out changes it, the anon replica bound in place included, and every read and write then is refused.
-export function createGymApi(engine, { event = gymStep, failure = gymFailure, zone = deviceZone } = {}) {
+export function createGymApi(engine, { event = gymStep, recovered = gymRecovery, failure = gymFailure, zone = deviceZone } = {}) {
   const owner = engine.activeBinding();
   if (shownRemovals.get(engine)?.owner !== owner) shownRemovals.set(engine, { owner, proposals: new Map() });
   const shown = shownRemovals.get(engine).proposals;
@@ -261,6 +277,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
     },
     cancelHeld: (id) => port.cancelHeld(id),
     mintId: (type, taken) => port.mintId(type, taken),
+    opaqueID: () => port.opaqueID(),
     physNow: () => port.physNow(),
     dismissNotice: (id) => port.dismissNotice(id),
   }, engine.registry, zone);
@@ -372,6 +389,31 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
     return { proposal: outcome.kind === 'unchanged' && outcome.result
       ? { ...outcome.result, ...(observed?.createdAt === undefined ? {} : { createdAt: observed.createdAt }) } : observed };
   });
+  // Every notice of gym's scope as the domain reads it; the review hears only the live ones.
+  const recoveryNotices = () => engine.observe(SCOPE).getSnapshot().notices.map((notice) => new DomainNotice(notice, engine.registry, GymRefusals));
+  const reviewOf = (reader) => WorkoutRecovery.review(SignedOutWorkout.read(reader), recoveryNotices(), new TrainingLog(reader), new Catalogue(reader));
+  // A copy's answer (In this browser, WD9.3): its review row's actions, run in order, then the notices the row named put away,
+  // since the answer is theirs. Told as `gym_recovery` with the row's reason; a copy with no row is on its way and answers
+  // nothing.
+  const recover = (outcome, record, actionsOf) => (async () => {
+    const row = read((reader) => reviewOf(reader).find((each) => String(each.id.record) === record)) ?? null;
+    if (row === null) return false;
+    try {
+      for (const action of actionsOf(row)) {
+        const done = await runner.run(action);
+        if (done.kind === 'refused') throw gymRefusalError(done.refusal);
+      }
+      for (const id of row.noticeIds) await port.dismissNotice(id);
+      recovered(outcome, row.reason);
+      return true;
+    } catch (thrown) {
+      const moved = thrown instanceof ReplicaChanged || (thrown instanceof CommitError && thrown.kind === 'not-writable');
+      const error = moved ? notWritable() : thrown;
+      recovered(error instanceof GymRefusal ? 'refused' : 'failed', row.reason);
+      if (!(error instanceof GymRefusal) && !isStoreFailure(error)) failure('workout-recover', error);
+      throw error;
+    }
+  })();
   return {
     read,
     // Before the seat changes (`routes.sync.seatWillChange`), each workout the anon replica holds is saved for adoption, an
@@ -412,6 +454,60 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
         }
       }
       if (savedAny) event('workout-adopt', 'saved-local');
+    },
+    // In this browser (WD9.3): every copy saved for the account that it has not taken, oldest first, as its card draws it.
+    browserCopies: () => read((reader) => {
+      const rows = reviewOf(reader);
+      return SignedOutWorkout.read(reader).map((copy) => browserCopy(reader, copy, rows.find((row) => row.id.equals(copy.session.id)) ?? null))
+        .sort((a, b) => a.startedAt - b.startedAt);
+    }),
+    // Keep as finished: the copy imported as a workout of its own, an open one finished at its last set.
+    keepCopy: (record) => recover('kept', record, (row) => [AdoptWorkout(row.id, 'keep',
+      row.workout.session.isOpen ? WorkoutFix.ofRecovery(row).markFinished().workout : null)]),
+    // Add to your log: the review's retry, a landed workout's stranded sets back into it and those outside it a copy of their own.
+    retryCopy: (record) => recover('retried', record, (row) => (row.strandedSets.length > 0
+      ? [RecoverStrandedSets(row.id, 'intoWorkout'), RecoverStrandedSets(row.id, 'separately')]
+      : [AdoptWorkout(row.id, row.retry === 'restartWorkout' ? 'restart' : 'keep')])),
+    discardCopy: (record) => recover('discarded', record, (row) => [DiscardSignedOutWorkout(row.id)]),
+    // A start the account refused because another device's won the race (spec §4): its sets saved from the notice for the
+    // review, answered with how many the copy holds. A start that holds no set loses nothing: its notice is put away and
+    // nothing is said. Another tab's save, or a copy already saved, answers 0.
+    saveRefusedStart: async (noticeId) => {
+      const notice = recoveryNotices().find((each) => each.id === noticeId);
+      const copy = notice ? SignedOutWorkout.ofRefusedStart(notice) : null;
+      if (!notice || copy === null) return 0;
+      try {
+        const outcome = await runner.run(SaveRefusedStart(notice));
+        if (outcome.kind === 'committed') {
+          recovered('saved', 'session-open');
+          return copy.sets.length;
+        }
+        if (copy.sets.length === 0) await port.dismissNotice(noticeId);
+        return 0;
+      } catch (error) {
+        if (!(error instanceof ReplicaChanged) && !isStoreFailure(error)) failure('workout-recover', error);
+        return 0;
+      }
+    },
+    // Whether recovery answers a notice of the engine's, so the room says nothing else of it: a start refused because another
+    // device's won the race, or a refusal a saved copy owns, whose card names it.
+    recoveryAnswers: (notice) => read((reader) => {
+      const refusal = new DomainNotice(notice, engine.registry, GymRefusals);
+      return SignedOutWorkout.ofRefusedStart(refusal) !== null || SignedOutWorkout.read(reader).some((copy) => copy.owns(refusal));
+    }),
+    // The copies the account has taken (web-device-parity §3 Sign-in): each proposal a copy held issued again once the
+    // account holds its workout, then every copy taken whole let go. A reissue the account refuses but for a finished
+    // workout is a proposal lost, reported once per `lost`.
+    settleBrowserCopies: async (lost = new Set()) => {
+      const holding = read((reader) => SignedOutWorkout.read(reader)
+        .filter((copy) => copy.proposals.length > 0 && reader.confirmed(Session, copy.session.id) !== null));
+      for (const proposal of holding.flatMap((copy) => copy.proposals)) {
+        const outcome = await runner.run(ReissueWorkoutProposal(proposal));
+        if (outcome.kind !== 'refused' || outcome.refusal.kind === 'sessionFinished' || lost.has(String(proposal.id.record))) continue;
+        lost.add(String(proposal.id.record));
+        failure('workout-recover', new Error('workout-proposal-reissue-refused'));
+      }
+      await runner.run(ReconcileAdoptedWorkouts());
     },
     workoutSave,
     workoutSaves: () => read((reader) => Object.keys(reader.device(WORKOUT_DRAFTS) ?? {}).map((key) => ({ key, ...workoutSave(key) }))),
@@ -584,6 +680,104 @@ export function useGymApi() {
   const records = useSyncRecords(SCOPE);
   const ready = records.firstPullComplete || records.drawn.length > 0;
   return useMemo(() => replica ? { ...createGymApi(replica.engine), ready } : null, [replica, ready]);
+}
+
+// A workout's title on the device: the name it was logged under, else its routine's, else a free session's.
+function workoutTitle(reader, session) {
+  return session.name ?? (session.routineId === null ? null : reader.repository(Routine).find(session.routineId, 'drawn')?.name) ?? NO_ROUTINE;
+}
+
+// `today` and `yesterday` by name, an older day by its date.
+const dayOf = (ms) => (daysAgo(ms) <= 1 ? agoLabel(ms) : shortDayLabel(ms));
+
+// The one action that answers a copy's reason on the web, which has no editor for a copy: Keep as finished while the
+// account's workout is open, the retry once nothing refuses it but that it has not gone, and none for the rest, whose way
+// out is Discard. A landed workout's stranded sets have no Keep: their workout is on the log.
+function answerOf(row) {
+  if (row.reason === 'session-open') return row.strandedSets.length > 0 ? null : 'keep';
+  return row.reason === 'unsent' || row.reason === 'session-finished' ? 'retry' : null;
+}
+
+// A copy as In this browser draws it (WD9.3): its title, when it started, the sets it would move, whether they are a landed
+// workout's stranded sets, and while it waits on the person the review's reason and the action that answers it; one with
+// no reason is on its way.
+function browserCopy(reader, copy, row) {
+  const stranded = row !== null && row.strandedSets.length > 0;
+  return { id: String(copy.session.id.record), title: workoutTitle(reader, copy.session), startedAt: copy.session.startedAt.ms,
+    sets: stranded ? row.strandedSets.length : copy.sets.length, stranded, reason: row?.reason ?? null, answer: row === null ? null : answerOf(row) };
+}
+
+// What gym's signed-out work holds as the sign-in question counts it (web-device-parity §3 Sign-in): its workouts, routines
+// and weigh-ins, each with what names it, the noun for what the account holds, and the decision told as
+// `gym_signin_decision` with the count as a bucket. The engine's active replica is the anon one while the question stands.
+export function signInWork(engine, { told = track } = {}) {
+  const { workouts, routines, weighIns } = createGymApi(engine).read((reader) => ({
+    workouts: reader.repository(Session).all('drawn').sort((a, b) => a.startedAt.ms - b.startedAt.ms)
+      .map((session) => ({ title: workoutTitle(reader, session), at: session.startedAt.ms })),
+    routines: RoutineValue.ordered(reader.repository(Routine).all('drawn')).map((routine) => routine.name),
+    weighIns: reader.repository(WeighIn).all('drawn').map((entry) => {
+      const [year, month, date] = String(entry.id.record).split('-').map(Number);
+      return new Date(year, month - 1, date).getTime();
+    }).sort((a, b) => a - b),
+  }));
+  const since = (days) => t('gym.signedOutWork.since', { day: dayOf(days[0]) });
+  const items = [
+    workouts.length > 0 && { label: t('gym.signedOutWork.workouts', { count: workouts.length }),
+      detail: workouts.length === 1 ? t('gym.signedOutWork.oneWorkout', { name: workouts[0].title, day: dayOf(workouts[0].at) }) : since(workouts.map((each) => each.at)) },
+    routines.length > 0 && { label: t('gym.signedOutWork.routines', { count: routines.length }), detail: routines.join(' · ') },
+    weighIns.length > 0 && { label: t('gym.signedOutWork.weighIns', { count: weighIns.length }),
+      detail: weighIns.length === 1 ? dayOf(weighIns[0]) : since(weighIns) },
+  ].filter(Boolean);
+  const total = workouts.length + routines.length + weighIns.length;
+  return { items, total, held: t('gym.signedOutWork.held'),
+    onStep: (step) => {
+      if (['add', 'discard', 'cancel'].includes(step)) told('gym_signin_decision', { choice: step, count_bucket: countBucket(total) });
+    } };
+}
+
+// The device rows a sign-in or a sign-out counts as gym's work (engine §7.10): the workouts saved for adoption, and the
+// past-workout and correction drafts the account refused, which no queued command carries any longer.
+export function gymDeviceWork(product, rows) {
+  if (product !== 'gym') return [];
+  return [SignedOutWorkout.key, WORKOUT_DRAFTS].filter((key) => Object.values(rows[key] ?? {})
+    .some((entry) => key === SignedOutWorkout.key || entry?.status === 'refused'));
+}
+
+// Gym's rows when a sign-in joins the browser's work to the account's dormant replica (engine §7.10): the workouts saved for
+// adoption and the form drafts merged entry by entry, so neither side's is lost, the account's standing on an entry both
+// hold; every other row is the account's where it holds one.
+export function adoptGymDeviceRows(product, incoming, kept) {
+  if (product !== 'gym') return undefined;
+  const rows = { ...incoming, ...kept };
+  for (const key of [SignedOutWorkout.key, WORKOUT_DRAFTS]) {
+    if (incoming[key] != null || kept[key] != null) rows[key] = { ...incoming[key], ...kept[key] };
+  }
+  return rows;
+}
+
+// From the engine's opening for the document (`routes.sync.prepare`): whenever gym's scope moves on a bound replica holding
+// copies, the copies the account took are settled (`settleBrowserCopies`), so none outlives its workout's arrival whether
+// or not the room is open.
+export function watchBrowserCopies(engine, { failure = gymFailure } = {}) {
+  const lost = new Set();
+  let running = false;
+  let dirty = false;
+  const settle = async () => {
+    dirty = true;
+    if (running || engine.closed) return;
+    running = true;
+    try {
+      while (dirty && !engine.closed) {
+        dirty = false;
+        if (engine.getSnapshot().state !== 'bound' || !engine.readDeviceRows('gym')[SignedOutWorkout.key]) continue;
+        await createGymApi(engine, { failure }).settleBrowserCopies(lost);
+      }
+    } catch (error) {
+      if (!(error instanceof ReplicaChanged) && !(error instanceof GymRefusal) && !isStoreFailure(error)) failure('workout-recover', error);
+    } finally { running = false; }
+  };
+  engine.observe(SCOPE).subscribe(settle);
+  settle();
 }
 
 // A workout running on a phone keeps the mirror's sync close, until four idle hours close it.

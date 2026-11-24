@@ -1020,7 +1020,7 @@ async function accountChoices(browser, { session, empty }, account, check, devic
     await d.signIn(session(account));
     const { dialog, said } = await d.decision('Add your roadmaps?');
     assert.deepEqual(said, { lead: '2 roadmaps on this browser can join your account.', items: ['A quieter home', 'Learn to cook'],
-      notes: ['Choosing Discard removes these browser roadmaps.'], answers: ['Discard', 'Add'] }, 'the question names both roadmaps, Discard before Add');
+      notes: ['Choosing Discard removes these browser roadmaps.'], answers: ['Cancel sign-in', 'Discard', 'Add'] }, 'the question names both roadmaps, Cancel sign-in, then Discard and Add of equal weight');
     await shoot(d, 'decision-1440-add');
     await dialog.getByRole('button', { name: 'Add', exact: true }).click();
     await dialog.waitFor({ state: 'detached' });
@@ -1039,10 +1039,12 @@ async function accountChoices(browser, { session, empty }, account, check, devic
     await d.signIn(session(account));
     const { dialog, said } = await d.decision('Add your roadmaps?');
     assert.deepEqual(said, { lead: '1 roadmap on this browser can join your account.', items: ['A slower morning'],
-      notes: ['Choosing Discard removes this browser roadmap.'], answers: ['Add', 'Discard'] }, 'the page names the roadmap, Add over Discard');
+      notes: ['Choosing Discard removes this browser roadmap.'], answers: ['Add', 'Discard', 'Cancel sign-in'] }, 'the page names the roadmap, Add over Discard over Cancel sign-in');
     await shoot(d, 'decision-390-add');
     await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
-    await dialog.waitFor({ state: 'detached' });
+    const confirm = d.page.getByRole('dialog', { name: 'Discard all of it?', exact: true });
+    await confirm.getByRole('button', { name: 'Discard', exact: true }).click();
+    await confirm.waitFor({ state: 'detached' });
     assert.ok(await d.storeUntil((store) => JSON.stringify(replicasIn(store)) === JSON.stringify([['anon', 0], ['bound', 0]])),
       'the browser holds nothing of the discarded roadmap');
     await d.page.waitForFunction((tree) => Object.keys(localStorage).every((key) => !key.endsWith(`:${tree}`)), morning, { timeout: 10_000 });

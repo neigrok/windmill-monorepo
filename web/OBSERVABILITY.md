@@ -84,9 +84,11 @@ shell update reports the static `offline-shell-update` operation. A persisted pa
 reports storage failures and keeps its local records available for a retry.
 Add/Discard and sign-out emit `sync_signin`/`sync_signout` with `outcome: pending`; the engine reports
 completed transitions. A product that words its own question (`sync.signInWords`, `sync.signOutWords`) tells its steps
-through the words' `onStep` (roadmap's `roadmap_signin` and `roadmap_signout` below); the shell adds none of its own. A
-product's hook into a question that throws (`adoptionAnswer`, `adoptionCount`, `signInWords`, `signOutWords`, the words'
-`onStep`, `signOutNotice`, `signOutBegins`, `signOutForgets`) reports `auth-product-words`, and the shell asks as it would of a product that says nothing. A
+through the words' `onStep` (roadmap's `roadmap_signin` and `roadmap_signout` below), and so does one whose count a sign-in
+question in the shell's words carries (`sync.signInWork`, gym's `gym_signin_decision` below); the shell adds none of its
+own. A product's hook into a question that throws (`adoptionAnswer`, `adoptionCount`, `signInWork`, `signInWords`,
+`signOutWords`, the words' `onStep`, `signOutNotice`, `signOutBegins`, `signOutForgets`) reports `auth-product-words`, and
+the shell asks as it would of a product that says nothing. A
 product's hook before the seat changes (`sync.seatWillChange`) that throws or outlasts its five seconds reports
 `auth-seat-will-change`, and the seat changes without it. Escape
 on such a sign-in question cancels the sign-in: one write drops the pending sign-in and records the cookie's cleanup, a
@@ -217,7 +219,16 @@ and `outcome`, and for `refused` a `code`: `not-writable` or `domain`. Operation
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
 delete, Undo, refusal and `workout-adopt`, the hook before the seat changes saving each signed-out workout for adoption in
 an act of its own, told once when it saved something (`saved-local`) and once for each workout refused or failed. Outcomes are `saved-local`, `unchanged` (a clean draft or a rename to the
-name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`. A local save
+name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`.
+A sign-in question in gym's count (WD9) tells `gym_signin_decision` with `choice` (`add`, `discard`, `cancel`) and
+`count_bucket` (`0/1/2-5/6-20/21+`), the browser's workouts, routines and weigh-ins it counted. How a copy In this browser
+holds ended, a signed-out workout the account could not take or a start that lost a race, is one `gym_recovery` with
+`outcome` (`saved` as a lost race's sets are saved from its notice, `kept`, `retried` or `discarded` as the person answered
+it, `refused` or `failed` when the answer did not land) and `reason`, the review's bounded label (`session-open`,
+`session-overlap`, `id-taken`, `bad-instant`, `too-many-sets`, `invalid-set`, `unknown-exercise`, `session-finished`,
+`unsent`, `other`). An answer that fails, a save of a refused start that fails, and a proposal a copy held that the account
+refuses to issue again report `gym-workout-recover` with the error's stack frames; settling the copies the account took
+(`watchBrowserCopies`) reports the same name. A local save
 records durability, not server admission. Unexpected product boundary failures use static
 `gym-<operation>` Sentry names with the error's stack frames, never its message; projection failures use `gym-projection`. A malformed frozen plan
 reports that static operation at read and write boundaries and is omitted from the display; the
@@ -549,7 +560,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `auth-session` | An unexpected account refresh failure | The session's existing path |
 | `auth-credential-held` | Telling the engine whose credential a read of `/v1/me` found threw, its store having failed or closed underneath it (a store failure the engine reports as `sync-storage` too); once a page, stack frames only | The read goes on: the shell settles the account it read, and the engine hears the next read, 20 seconds on at most |
 | `auth-seat-will-change` | A product's hook before the seat changes (`sync.seatWillChange`, before a sign-in binds the device and before a sign-out finishes) threw (`outcome: failed`, its stack frames) or outlasted its five seconds (`outcome: timeout`), tagged `product`, the route table's id. Never a record, a count or an account | The seat changes without it: the next product's hook runs, then the sign-in or the sign-out; a write the late hook makes afterwards is refused by the binding it was issued under and writes nothing (gym's one act, `not-writable`) |
-| `auth-product-words` | A product's hook into an account-change question threw, tagged `question`: `adoption` (`adoptionAnswer`, the product's own answer to a sign-in question), `signin` (`signInWords` or `adoptionCount`, the sign-in question's words or its count of the product's records), `signout` (`signOutWords`), `step` (the words' `onStep`, a step of the question told to the product), `begin` (`signOutBegins`, what the product does as a sign-out begins, before the engine sends what the device holds), `forget` (`signOutForgets`, the device rows the product's finished sign-out takes) or `notice` (`signOutNotice`, the product's line on what signing out discards from this tab). Stack frames only: never the product's words, a count or an account | The shell asks as it would of a product that says nothing: the person answers the sign-in question, in the shell's words with the engine's count, and the sign-out question in the next product's words or the shell's, without that product's line or its step event, so signing in and out go on |
+| `auth-product-words` | A product's hook into an account-change question threw, tagged `question`: `adoption` (`adoptionAnswer`, the product's own answer to a sign-in question), `signin` (`signInWords`, `signInWork` or `adoptionCount`, the sign-in question's words or its count of the product's records), `signout` (`signOutWords`), `step` (the words' `onStep`, a step of the question told to the product), `begin` (`signOutBegins`, what the product does as a sign-out begins, before the engine sends what the device holds), `forget` (`signOutForgets`, the device rows the product's finished sign-out takes) or `notice` (`signOutNotice`, the product's line on what signing out discards from this tab). Stack frames only: never the product's words, a count or an account | The shell asks as it would of a product that says nothing: the person answers the sign-in question, in the shell's words with the engine's count, and the sign-out question in the next product's words or the shell's, without that product's line or its step event, so signing in and out go on |
 | `billing-subscription` | The subscription read (`GET /v1/subscription`), kind `billing`, under the tag `reason`: `server` for a 5xx, `shape` for a 200 that is not a SubscriptionResponse. A request lost and a 4xx report nothing | The page reads as holding no Windmill One until the next read, at the next focus |
 
 Expected answers are not Issues: a null receipt, a not-ready session on create or delete, a capacity or missing-tree

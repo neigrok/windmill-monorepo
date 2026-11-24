@@ -222,6 +222,33 @@ export class WorkoutFix {
   }
 }
 
+// A start that lost a race with another device's is refused `session-open`, and the sets logged under it live only in its
+// notice. This saves them as a copy under the device key, the start's workout with every set the notice holds, so the
+// review offers them; the notice stays, and names the copy's reason. A notice of anything else, one holding no set, a copy
+// already saved and a workout on the log save nothing.
+/** @param {GymNotice} notice */
+export function SaveRefusedStart(notice) {
+  return Object.freeze({
+    scope: Session.scope,
+    refusals: GymRefusals,
+    /** @param {Reader} read */
+    load(read) {
+      const workout = SignedOutWorkout.ofRefusedStart(notice);
+      return { workout, backup: SignedOutWorkout.read(read),
+        onLog: workout !== null && read.repository(Session).record(workout.session.id.record, 'stored') !== undefined };
+    },
+    /** @param {{ workout: SignedOutWorkout | null, backup: readonly SignedOutWorkout[], onLog: boolean }} loaded */
+    decide({ workout, backup, onLog }) {
+      if (workout === null || workout.sets.length === 0 || onLog || backup.some((copy) => copy.session.id.equals(workout.session.id))) {
+        return Decision.unchanged(null);
+      }
+      const plan = new Plan();
+      plan.device(SignedOutWorkout.key, SignedOutWorkout.saved(backup, [workout]));
+      return Decision.write(plan, null);
+    },
+  });
+}
+
 // Drops a saved copy the account has not taken, with every set it holds.
 /** @param {SessionId} id */
 export function DiscardSignedOutWorkout(id) {
