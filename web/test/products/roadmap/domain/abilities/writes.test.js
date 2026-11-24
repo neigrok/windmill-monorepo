@@ -143,7 +143,7 @@ test('a new step wears its kind\'s hue, terracotta where it names none, after ea
   ]);
 });
 
-test('a step that opens a roadmap takes neither mark, one whose roadmap is gone too, and a locked step may still be marked not done', () => {
+test('a step that opens a roadmap the device holds nothing of takes neither mark, and a locked step may still be marked not done', () => {
   const standing = { trees: [sailing({ pointers: [{ node: 'b', present: true, opens: 't_0000000000000009', setAt: null }],
     marks: [{ node: 'a', status: 'complete', recordedAt: null, deviceAt: null }, { node: 'c', status: 'complete', outOfOrder: true, recordedAt: null, deviceAt: null }] })] };
   assert.deepEqual(answers(standing, [
@@ -152,4 +152,23 @@ test('a step that opens a roadmap takes neither mark, one whose roadmap is gone 
     ['set_progress', { treeId: 't_0000000000000001', nodeId: 'c', status: 'none' }],
   ], 't_0000000000000001'), [{ refused: { code: 'opens-roadmap', id: 'b' } }, { refused: { code: 'opens-roadmap', id: 'b' } },
     { writes: [{ action: 'Reset', input: { tree: 't_0000000000000001', step: 'c' } }], result: {} }]);
+});
+
+test('a text the domain cannot store is malformed before any cap, naming the step the write names, and a blank address is the address rule\'s', () => {
+  const standing = { trees: [sailing()] };
+  const write = (/** @type {string} */ name, /** @type {any} */ input) => answers(standing, [[name, { treeId: 't_0000000000000001', ...input }]], 't_0000000000000001')[0];
+  assert.deepEqual([
+    write('annotate_node', { nodeId: 'b', description: `${'é'.repeat(16_001)}\u0000` }),
+    write('annotate_node', { nodeId: 'b', description: 'Round the post.', links: [{ url: 'https://example.org/\udfff' }] }),
+    write('annotate_node', { nodeId: 'b', links: Array.from({ length: 33 }, () => ({ url: 'https://example.org/knots', label: '\u0000' })) }),
+    write('create_node', { label: 'Hoist \ud83d', prerequisites: [] }),
+    write('create_node', { label: 'Hoist the sail', description: 'Main\u0000first.', prerequisites: [] }),
+    write('rename_node', { nodeId: 'b', label: 'Tie a \ud83d\ude00 bowline' }),
+    write('annotate_node', { nodeId: 'b', links: [{ url: '   ' }] }),
+  ], [
+    { refused: { code: 'invalid-input', id: 'b' } }, { refused: { code: 'invalid-input', id: 'b' } }, { refused: { code: 'invalid-input', id: 'b' } },
+    { refused: { code: 'invalid-input' } }, { refused: { code: 'invalid-input' } },
+    { writes: [{ action: 'ChangeStep', input: { tree: 't_0000000000000001', step: 'b', changes: { label: 'Tie a \ud83d\ude00 bowline' } } }], result: {} },
+    { refused: { code: 'address-not-allowed', id: 'b' } },
+  ]);
 });

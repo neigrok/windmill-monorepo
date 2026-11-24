@@ -352,15 +352,18 @@ The ability and the host check first:
    | `proposalBaseBytes` | 262144 | bytes | | `coachProposal.base` | |
 
    Characters are Unicode code points, and bytes those of a value's canonical text, as the engine
-   measures a field that is not text. The last three hold a proposal's record (§7).
+   measures a field that is not text. A value is measured as the domain stores it: an address after
+   its trim. The last three hold a proposal's record (§7).
 5. **The graph stays whole.** `connect` and `create_node` refuse a link that would close a cycle
    (`closes-cycle`) or name a step the roadmap does not hold (`unknown-step`). A web link's address
-   is one the contract allows (`address-not-allowed`). A new step names a kind the roadmap has
-   (`unknown-kind`), or takes terracotta as the room's own control gives it.
+   is one the contract allows (`address-not-allowed`). A new step names a kind the roadmap's legend
+   shows, as the room's own control offers them (`unknown-kind`), or takes terracotta as that control
+   gives it.
 6. **A new id is random.** The tool host mints a new step's id as the room's controls do, from a
    random source, so two devices that add a step offline never mint the same one. An ability call
    runs once, on the device, so nothing needs an id it could mint again.
-7. **Marks keep their rules.** A step that opens a roadmap takes no mark (`opens-roadmap`). A locked
+7. **Marks keep their rules.** A step that opens a roadmap takes no mark (`opens-roadmap`), one whose
+   roadmap no longer stands among them, as the room offers no mark on either. A locked
    step is not marked complete (`step-locked`): the room offers no Complete on it, and only an
    outside assistant's mark says it was done out of order (§14).
 8. **It changes something.** A write that sends what the step already holds, or a mark that already
@@ -368,16 +371,18 @@ The ability and the host check first:
 
 The check and the write run in one synchronous task, so nothing arriving from the server or from the
 person's hand comes between them. A door that answers that it wrote nothing is `roadmap-not-ready`
-or `no-change`, never success.
+or `no-change`, never success, and the write leaves nothing on the room's Undo stack, so the
+person's next Undo takes back their own act.
 
 - **INV-2.** Coach holds no door of its own to a roadmap. Every write it makes is one the room's own
   doors made, so it is saved, sent, retried, merged and refused exactly as the person's is.
 - A change Coach makes is the person's own on the wire and in the room's Activity; the receipt in
   the conversation is what says Coach made it. (R-7)
-- A direct write leaves a receipt and offers Undo in the room's band for 6 s. For a change to
-  structure, Undo reverts that one act and spares anything written since. For a mark, Undo marks the
-  step back, and a completion's first date is not restored. The means to undo live in the
-  process's memory.
+- A direct write leaves a receipt and offers Undo in the room's band for 6 s. Undo reverts that one
+  act and spares anything written since: for a change to structure, a later write of the same
+  field; for a mark, a mark the person has set on the step since, and otherwise the step's mark goes
+  back to what it was, a completion's first date not restored. An Undo a later write stood in the way
+  of is skipped, and says so. The means to undo live in the process's memory.
 - A message's receipts are final once its turn has ended. What became of a write afterwards, that it
   was undone or that the server refused it, is a record of its own (§9), so the receipt can read
   "Undone" on every device.
@@ -392,18 +397,18 @@ of the two that fails it. A refusal of a proposal also carries `at` (§7).
 
 | Code | Refused when |
 |---|---|
-| `invalid-input` | The input breaks the ability's schema, as the gate's Shape rule finds ([Coach engine](coach-engine.md) §6), or a rule of its input this document states: a change that breaks its op's row (§7), a cursor that is not one or points past its sequence (§5.2), an id asked twice (§5.1), an `annotate_node` that sends neither field |
+| `invalid-input` | The input breaks the ability's schema, as the gate's Shape rule finds ([Coach engine](coach-engine.md) §6), or a rule of its input this document states: a change that breaks its op's row (§7), a cursor that is not one or points past its sequence (§5.2), an id asked twice (§5.1), an `annotate_node` that sends neither field, a text a direct write sends that the domain cannot store, one that holds U+0000 or a lone surrogate, which names the step the write names, none for a new one |
 | `roadmap-unavailable` | The device has not finished bringing the roadmap; it can be asked again once it has (§10) |
 | `unknown-roadmap` | The roadmap is neither the conversation's nor one the person owns, and the device holds the whole list of theirs (§10) |
 | `roadmap-not-ready` | A write or a proposal names a step under a delete the person can still undo; a read does not see such a step, and `get_nodes` naming one refuses it as `unknown-step` |
 | `not-owner` | The person does not own the roadmap, and a write or a proposal needs its owner |
 | `out-of-scope` | A direct write names a roadmap other than the conversation's |
-| `over-limit` | A value or a count would pass a cap of `limits.json`: a step's text or links, the roadmap's steps, links or kinds, or a proposal's changes, counted or as its record's bytes (§7) |
+| `over-limit` | A value or a count would pass a cap of `limits.json`: a step's text or links, the roadmap's steps, links or kinds, or a proposal's changes, counted or as its record's bytes (§7). A direct write's refusal names the step whose value passes the cap, as the call names it, whether or not the roadmap holds it; none for a new step's text; and the roadmap where its count of steps or links is full, for `create_node` and `connect` alike |
 | `unknown-step` | A step the roadmap does not hold, or a ref no earlier change gave |
 | `closes-cycle` | A link, or a merge, would close a loop |
-| `unknown-kind` | A kind the roadmap does not have, or a ref no earlier `add_kind` gave |
+| `unknown-kind` | A kind the roadmap's legend does not show, one it does not have or one wearing a hue an earlier kind owns, or a ref no earlier `add_kind` gave |
 | `address-not-allowed` | A web link's address is not one `roadmap-link-urls.json` shows |
-| `opens-roadmap` | A mark on a step that opens a roadmap, which is complete when that roadmap is |
+| `opens-roadmap` | A mark on a step that opens a roadmap: it is complete when that roadmap is, or by its own mark where the roadmap it points to no longer stands, and the room offers no mark on it either way |
 | `step-locked` | A locked step marked complete: Coach completes what it needs first, or suggests that |
 | `hue-taken` | A kind would take a hue another kind wears, as the room's own recolour refuses |
 | `roadmap-changed` | A cursor from before the read changed (§5.2), or a proposal over a register that has moved since the turn read it (§7) |
@@ -622,17 +627,22 @@ The roadmap tools an outside assistant reaches over MCP stay on the server as th
     access state;
   - `roadmap_coach_turn`, with the turn's end state (§9), whether it was truncated, and its refusal
     code;
-  - `roadmap_coach_ability`, with the ability and its outcome or refusal code;
+  - `roadmap_coach_ability`, with the ability and its outcome or refusal code, told by the turn's
+    engine for each call it runs, as it tells gym's Coach's; the tool host tells none;
   - `roadmap_coach_stopped`, `roadmap_coach_picture_added`, `roadmap_proposal_review_opened`;
   - `roadmap_proposal_decided` (applied, rejected, stale, replaced) and
-    `roadmap_coach_write_undone`.
+    `roadmap_coach_write_undone`, which the tool host tells for each Undo of a direct write, since an
+    Undo runs outside a turn, with the ability and what the Undo came to once the engine has settled
+    it: `undone`, `skipped` where a later write stood in its way, or `unavailable` where the room no
+    longer holds the write.
 - A write Coach makes emits the product event and the Activity row the room's own control emits for
   the same change. Those are emitted by the controls today, so they move with the rules into the
   shared path (§3).
 - Unexpected failures report to Sentry under the static names `roadmap-coach-turn`,
-  `roadmap-coach-ability`, `roadmap-coach-apply` and `ai-call`. A refusal the person can act on is
-  an event, not an Issue. An ability that throws, as one handed an input the host should never send
-  does, is reported by the tool host under `roadmap-coach-ability`.
+  `roadmap-coach-apply`, `agent-host` and `ai-call`. A refusal the person can act on is an event, not
+  an Issue. Whatever throws in an ability's call, the ability, the standing roadmap it reads or the
+  room's door, throws out of the tool host, which reports nothing of it; the turn's engine reports
+  it once, as `agent-host`, and ends the turn `failed` with `host-fault`, as it does for gym's Coach.
 - The backend logs nothing of a turn but the pass it signed.
 - They are listed in the web's and the iPhone's observability notes when built.
 

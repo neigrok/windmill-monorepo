@@ -135,10 +135,10 @@ test('a gesture is the domain’s acts under one receipt: a step made under the 
     const edited = session.dispatch({ kind: 'EditNode', id: steps.solo, label: 'Sail alone', addPrerequisites: [steps.dock] });
     assert.equal(typeof await edited.act, 'string');
     assert.deepEqual(shown(), { 'Tie a bowline': ['Read the wind'], 'Read the wind': [], 'Leave the dock': ['Read the wind'], 'Sail alone': ['Leave the dock'] });
-    assert.equal(session.revert(made), true);
+    assert.ok(session.revert(made) instanceof Promise, 'its Undo, once the engine settles it');
     assert.equal(session.revert(made), false);
     await until(() => !('Tie a bowline' in shown()), 1000);
-    assert.equal(session.revert(edited), true);
+    assert.ok(session.revert(edited) instanceof Promise);
     await until(() => 'Sail solo' in shown() && shown()['Sail solo'].length === 0, 1000);
     assert.deepEqual({ shown: shown(), told, nothing: session.dispatch({ kind: 'BulkRecolor', nodeIds: [], color: 'sky' }) },
       { shown: { 'Read the wind': [], 'Leave the dock': ['Read the wind'], 'Sail solo': [] }, told: { said: [], events: [], statuses: 0 }, nothing: null });

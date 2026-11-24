@@ -30,6 +30,22 @@ const NOTHING_TO_TAKE_BACK = Object.freeze({ kind: 'unavailable' });
 // The fields of a step a gesture that changes it may carry, each written whole: its web links among them.
 const STEP_FIELDS = Object.freeze(['label', 'description', 'color', 'links']);
 
+// A write's receipt: the act it wrote, once it has (null where it wrote nothing), and its parts' results once it was
+// taken (null where it was not).
+function receiptOf(written) {
+  return Object.freeze({ act: written.then(({ act }) => act), landed: written.then(({ complete, results }) => (complete ? results : null)) });
+}
+
+// §5 Undo: what an Undo or a Redo came to, once the engine answers: `applied` where it changed what the device holds,
+// `skipped` where it changed nothing, a write the device had not seen standing in its way, `unavailable` where there was
+// nothing to take back, and `pending` while the engine still settles it.
+export function inverseOutcome(result) {
+  if (result === null || result.kind === 'unavailable') return 'unavailable';
+  if (result.kind === 'pending') return 'pending';
+  const applied = result.kind === 'settled' ? result.appliedCount > 0 : result.changed;
+  return applied ? 'applied' : 'skipped';
+}
+
 // What the room says of a write the domain refused where it was made, in the words it says them today: a roadmap at its
 // cap and a link that would close a loop. Any other refusal says nothing, as a write that found nothing to change.
 function limitWords(refusal) {
@@ -61,13 +77,20 @@ export class ReplicaSession {
     this.ready = true;
     this.closed = false;
     this.receiptVersion = 0;
-    // Each gesture's receipt, `{ act, landed }`: the id of the act it wrote, once it has (null where it wrote nothing),
-    // and its parts' results once it was taken (null where it was not).
+    // Each gesture's receipt (`receiptOf`).
     this.undoStack = [];
+    // Each mark whose maker keeps its Undo (`markUndoably`), out of the stack.
+    this.kept = [];
     // Each gesture taken back, `{ inverse }`: its act's Undo, once asked (null where there was none).
     this.redoStack = [];
-    // Each Undo or Redo the engine is still settling, by its request: `undo` or `redo`.
+    // Each Undo or Redo the engine is still settling, by its request: what it was (`undo` or `redo`), and how to hand on
+    // its result once it has settled.
     this.settling = new Map();
+    // Each receipt's Undo, by the receipt, once the engine has settled it (`trackInverse`).
+    this.undone = new WeakMap();
+    // The act of each Undo a revert waits on, kept until the engine settles it: the engine forgets an Undo whose act it
+    // let go of.
+    this.reverting = new Set();
     this.heldAct = null;
     // The last picture of the roadmap the room was shown (`treeData`).
     this.shown = null;
@@ -152,8 +175,7 @@ export class ReplicaSession {
   dispatch(gesture) {
     const acts = this.actsOf(gesture);
     if (acts.length === 0 || this.refusedOf(acts, gesture.kind)) return null;
-    const written = this.write(acts, gesture.kind);
-    const receipt = Object.freeze({ act: written.then(({ act }) => act), landed: written.then(({ complete, results }) => (complete ? results : null)) });
+    const receipt = receiptOf(this.write(acts, gesture.kind));
     this.undoStack.push(receipt);
     this.dropRedo();
     return receipt;
@@ -213,17 +235,32 @@ export class ReplicaSession {
     }
   }
 
-  // The owner's marks: each step's Complete or Reset, decided first; false where the domain refuses one, so the room
-  // marks nothing, else the marks' write once it has settled (`write`'s answer). A step whose pointer opens a standing
-  // roadmap is read so from the account, as the domain asks of its caller.
-  markProgress(nodeIds, status) {
+  // Each step's Complete or Reset. A step whose pointer opens a standing roadmap is read so from the account, as the
+  // domain asks of its caller.
+  marksOf(nodeIds, status) {
     const roadmap = this.roadmap();
     const opening = new Map(roadmap.account.openingsOf(this.treeId).map((each) => [each.node, each]));
     const opensStanding = (id) => opening.get(id)?.kind === 'pointer' && roadmap.account.locate(opening.get(id).tree).standing === 'standing';
-    const ids = Array.isArray(nodeIds) ? nodeIds : [nodeIds];
-    const acts = ids.map((id) => (status === 'complete' ? Complete(this.treeId, id, { opensStanding: opensStanding(id) }) : Reset(this.treeId, id)));
+    return nodeIds.map((id) => (status === 'complete' ? Complete(this.treeId, id, { opensStanding: opensStanding(id) }) : Reset(this.treeId, id)));
+  }
+
+  // The owner's marks, out of the Undo stack, decided first; false where the domain refuses one, so the room marks nothing.
+  markProgress(nodeIds, status) {
+    const acts = this.marksOf(Array.isArray(nodeIds) ? nodeIds : [nodeIds], status);
     if (this.refusedOf(acts, 'mark')) return false;
-    return this.settle(acts, 'mark');
+    this.settle(acts, 'mark');
+    return true;
+  }
+
+  // One step's mark whose maker keeps its Undo (Roadmap Coach's direct write): decided and written as the owner's marks
+  // are, out of the Undo stack, its receipt kept until it is reverted or forgotten, or the room closes. Null where the
+  // domain refuses it.
+  markUndoably(nodeId, status) {
+    const acts = this.marksOf([nodeId], status);
+    if (this.refusedOf(acts, 'mark')) return null;
+    const receipt = receiptOf(this.write(acts, 'mark'));
+    this.kept.push(receipt);
+    return receipt;
   }
 
   // A roadmap's name, out of the Undo stack as a rename is today. A subtree's name is its owning step's label, so a
@@ -303,14 +340,36 @@ export class ReplicaSession {
     this.undoStack.push(Object.freeze({ act: this.reapply(undone) }));
   }
 
-  // Takes back what the receipt wrote, leaving alone anything written since, and drops it from the stack; Redo cannot
-  // bring it back.
+  // Takes back what the receipt wrote, leaving alone anything written since, and lets the receipt go; Redo cannot bring
+  // it back. False where the room holds no such receipt, else its Undo once the engine has settled it (`inverseOutcome`):
+  // one the server settles waits for the server, and its act is kept until then, or until the room closes.
   revert(receipt) {
-    const index = this.undoStack.indexOf(receipt);
-    if (index === -1) return false;
-    this.undoStack.splice(index, 1);
-    this.dropRedo();
-    this.inverse(receipt).then((inverse) => this.release(inverse?.inverseActId ?? null));
+    if (!this.letGo(receipt)) return false;
+    return this.inverse(receipt).then(async (inverse) => {
+      const act = inverse?.inverseActId ?? null;
+      if (act !== null) this.reverting.add(act);
+      const settled = (await this.undone.get(receipt)) ?? null;
+      if (this.reverting.delete(act)) await this.release(act);
+      return settled;
+    });
+  }
+
+  // A receipt whose write wrote nothing, let go, so the next Undo reaches the act before it.
+  forget(receipt) {
+    if (this.letGo(receipt)) receipt.act.then((act) => this.release(act));
+  }
+
+  // A receipt out of the stack, or out of the marks kept for their Undo: false where the room holds it in neither.
+  letGo(receipt) {
+    const stacked = this.undoStack.indexOf(receipt);
+    if (stacked !== -1) {
+      this.undoStack.splice(stacked, 1);
+      this.dropRedo();
+      return true;
+    }
+    const kept = this.kept.indexOf(receipt);
+    if (kept === -1) return false;
+    this.kept.splice(kept, 1);
     return true;
   }
 
@@ -328,8 +387,8 @@ export class ReplicaSession {
     } catch (error) {
       this.report('roadmap-replica-write', error, { write: 'undo' });
     }
+    if (result) this.undone.set(done, this.trackInverse('undo', result));
     await this.release(act);
-    if (result) this.trackInverse('undo', result);
     return result?.kind === 'unavailable' ? null : result;
   }
 
@@ -346,31 +405,29 @@ export class ReplicaSession {
     } catch (error) {
       this.report('roadmap-replica-write', error, { write: 'redo' });
     }
-    await this.release(inverse.inverseActId);
     if (result) this.trackInverse('redo', result);
+    await this.release(inverse.inverseActId);
     return result && result.kind !== 'unavailable' ? result.inverseActId : null;
   }
 
-  // §5 Undo: what an Undo or a Redo came to, told to the intake once the engine knows: `applied` where it changed what
-  // the device holds, `skipped` where it changed nothing, a write the device had not seen standing in its way, and
-  // `unavailable` where there was nothing to take back. One the engine still settles is told once it has. The person is
-  // shown nothing of a skip yet.
+  // §5 Undo: what an Undo or a Redo came to (`inverseOutcome`), told to the intake once the engine knows, as soon as it
+  // is asked, so one the engine still settles is followed from then on and told once it has; answers its result once
+  // settled. The person is shown nothing of a skip yet.
   trackInverse(action, result) {
-    if (result.kind === 'pending') {
-      this.settling.set(result.requestId, action);
-      return;
-    }
-    const applied = result.kind === 'settled' ? result.appliedCount > 0 : result.changed;
-    this.track('roadmap_undo', { action, outcome: result.kind === 'unavailable' ? 'unavailable' : applied ? 'applied' : 'skipped' });
+    const outcome = inverseOutcome(result);
+    if (outcome === 'pending') return new Promise((resolve) => this.settling.set(result.requestId, { action, resolve }));
+    this.track('roadmap_undo', { action, outcome });
+    return Promise.resolve(result);
   }
 
   // The replica changed: each Undo or Redo that has settled since it was asked is told.
   followInverses() {
-    for (const [requestId, action] of this.settling) {
+    for (const [requestId, { action, resolve }] of this.settling) {
       const result = this.runner.inverseResult(requestId);
       if (result.kind === 'pending') continue;
       this.settling.delete(requestId);
       this.trackInverse(action, result);
+      resolve(result);
     }
   }
 
@@ -408,7 +465,9 @@ export class ReplicaSession {
     this.closed = true;
     this.ready = false;
     this.heldAct = null;
-    for (const done of this.undoStack.splice(0)) done.act.then((act) => this.release(act));
+    for (const done of [...this.undoStack.splice(0), ...this.kept.splice(0)]) done.act.then((act) => this.release(act));
+    for (const act of this.reverting) this.release(act);
+    this.reverting.clear();
     this.dropRedo();
   }
 }

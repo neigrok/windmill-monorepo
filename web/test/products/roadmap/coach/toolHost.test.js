@@ -1,17 +1,19 @@
 // Roadmap Coach's tool host over a room open on a real engine's copy: each direct write through the room's own door, what
-// the door wrote and did not, the Undo of each kind of write, and what the host tells and reports.
+// the door wrote and did not, the Undo of each kind of write and what it came to, and, under the platform's turn engine,
+// who tells each call and reports what throws.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { RoadmapProduct } from '../../../../../packages/api-contract/sync/reference/roadmap/product.js';
 import { Harness } from '../../../platform/domain-kit/harness.js';
 import { until } from '../../../platform/sync/fakes.js';
 import { roadmapRegistry } from '../domain/vectors.js';
+import { TurnRunner } from '../../../../src/platform/agent/turn.js';
 import { RoadmapToolHost, WriteReceipt } from '../../../../src/products/roadmap/coach/toolHost.js';
 import { readStanding } from '../../../../src/products/roadmap/domain/abilities/standing.js';
 import { CreateRoadmap } from '../../../../src/products/roadmap/domain/roadmaps.js';
 import { RoadmapScopes } from '../../../../src/products/roadmap/domain/roadmapRules.js';
-import { BoundaryFailure } from '../../../../src/products/roadmap/reportFailure.js';
 import { HeldRoadmap } from '../../../../src/products/roadmap/room/ReplicaRoadmap.js';
 import { ReplicaReading } from '../../../../src/products/roadmap/room/ReplicaReading.js';
 
@@ -31,7 +33,8 @@ async function sailing() {
   return { a, tree, steps };
 }
 
-// A room opened on the device's copy of `treeId`, following it, with its session where the room's writes reach for it.
+// A room opened on the device's copy of `treeId`, following it, with its session where the room's writes reach for it and
+// what the session tells kept.
 async function openRoom(a, treeId) {
   const said = [];
   const room = { sessionRef: { current: null } };
@@ -41,7 +44,10 @@ async function openRoom(a, treeId) {
     repository: { loadProgress: async () => assert.fail('an owner reads their own marks'), loadActivity: async () => [] } });
   assert.notEqual(await reading.read({ signal: new AbortController().signal }), null);
   reading.follow({ onTree() {}, onProgress() {}, onWorkspace() {}, onGuides() {}, onLanding() {}, onActivity() {} });
-  return { reading, session: room.sessionRef.current, said };
+  const session = room.sessionRef.current;
+  const roomTold = [];
+  session.track = (name, props) => roomTold.push([name, props]);
+  return { reading, session, said, roomTold };
 }
 
 // The standing roadmap as the room shows it now (Roadmap Coach D-2).
@@ -50,14 +56,22 @@ function standingOf(reading) {
   return readStanding([...roadmap.held.values()].map((held) => held.copy(roadmapRegistry)), { listRead: roadmap.listRead });
 }
 
-// The tool host of a conversation about `about`, over the room's session and what the room shows, with what it tells and
-// reports kept.
+// The tool host of a conversation about `about`, over the room's session and what the room shows, with what it tells kept.
 function coachOver({ session, reading }, about, collaborators = {}) {
   const told = [];
-  const reported = [];
-  const tools = new RoadmapToolHost({ session, standing: () => standingOf(reading), about, track: (name, props) => told.push([name, props]),
-    report: (...failure) => reported.push(failure), ...collaborators });
-  return { tools, told, reported };
+  const tools = new RoadmapToolHost({ session, standing: () => standingOf(reading), about, track: (name, props) => told.push([name, props]), ...collaborators });
+  return { tools, told };
+}
+
+// Each Undo asked, once the engine has settled it: the server settles an Undo, so the phone syncs until each has, a few
+// rounds at most.
+async function undone(a, tools, ...receipts) {
+  const answers = Promise.all(receipts.map((receipt) => tools.undo(receipt)));
+  let settled = false;
+  answers.then(() => { settled = true; });
+  for (let round = 0; round < 5 && !settled; round += 1) await a.sync();
+  assert.ok(settled, 'every Undo settled');
+  return answers;
 }
 
 // The room's steps as it draws them, by label: each step's colour, words, web links and prerequisites, by label too.
@@ -78,18 +92,17 @@ test('each direct write lands through the room\'s own door, as the person\'s wou
     const minted = created.answer.result.nodeId;
     assert.match(minted, /^[0-9a-z]{16}$/);
     assert.deepEqual(created, { answer: { result: { nodeId: minted } },
-      receipt: new WriteReceipt({ ability: 'create_node', treeId: tree, nodeId: minted, undo: { act: created.receipt.undo.act } }) });
+      receipt: new WriteReceipt({ ability: 'create_node', treeId: tree, nodeId: minted, room: room.session.undoStack[0] }) });
     const runs = [
       await tools.run('rename_node', { treeId: tree, nodeId: steps.knot, label: 'Tie a cleat hitch' }),
       await tools.run('annotate_node', { treeId: tree, nodeId: steps.knot, description: 'Round the post.', links: [{ url: 'https://example.org/cleat' }] }),
       await tools.run('connect', { treeId: tree, nodeId: minted, prerequisiteId: steps.knot }),
       await tools.run('set_progress', { treeId: tree, nodeId: steps.dock, status: 'complete' }),
     ];
-    assert.deepEqual(runs.map(({ answer, receipt }) => ({ answer, receipt: { ...receipt, undo: 'act' in receipt.undo ? 'act' : receipt.undo } })), [
-      { answer: { result: {} }, receipt: { ability: 'rename_node', treeId: tree, nodeId: steps.knot, undo: 'act' } },
-      { answer: { result: {} }, receipt: { ability: 'annotate_node', treeId: tree, nodeId: steps.knot, undo: 'act' } },
-      { answer: { result: {} }, receipt: { ability: 'connect', treeId: tree, nodeId: minted, undo: 'act' } },
-      { answer: { result: {} }, receipt: { ability: 'set_progress', treeId: tree, nodeId: steps.dock, undo: { mark: 'none' } } },
+    assert.deepEqual(runs, [
+      ...[['rename_node', steps.knot], ['annotate_node', steps.knot], ['connect', minted]].map(([ability, nodeId], index) => ({ answer: { result: {} },
+        receipt: new WriteReceipt({ ability, treeId: tree, nodeId, room: room.session.undoStack[index + 1] }) })),
+      { answer: { result: {} }, receipt: new WriteReceipt({ ability: 'set_progress', treeId: tree, nodeId: steps.dock, room: room.session.kept[0] }) },
     ]);
     assert.deepEqual(drawn(room.reading), {
       'Leave the dock': { color: 'terracotta', description: '', links: [], after: [], done: true },
@@ -97,17 +110,16 @@ test('each direct write lands through the room\'s own door, as the person\'s wou
       'Sail with an instructor': { color: 'terracotta', description: '', links: [], after: ['Leave the dock', 'Tie a cleat hitch'], done: false },
       'Hoist the sail': { color: 'olive', description: '', links: [], after: ['Leave the dock', 'Tie a cleat hitch'], done: false },
     });
-    assert.equal(room.session.undoStack.length, 4, 'each structure act stands on the room\'s own stack, where its ⌘Z reaches it');
-    assert.deepEqual(told, ['create_node', 'rename_node', 'annotate_node', 'connect', 'set_progress']
-      .map((ability) => ['roadmap_coach_ability', { ability, outcome: 'ok' }]));
-    assert.deepEqual(room.said, []);
+    assert.deepEqual({ stacked: room.session.undoStack.length, kept: room.session.kept.length }, { stacked: 4, kept: 1 },
+      'each structure act stands on the room\'s own stack, where its ⌘Z reaches it, and the mark out of it, as the room\'s marks are');
+    assert.deepEqual({ told, said: room.said }, { told: [], said: [] }, 'the turn\'s engine tells each call; the host tells none');
     room.reading.close();
   } finally {
     a.close();
   }
 });
 
-test('Undo takes back each kind of write: a structure act reverted, sparing what was written since, and a mark marked back', async () => {
+test('Undo takes back each kind of write by the room\'s Undo of its act, sparing what was written since, and is taken once', async () => {
   const { a, tree, steps } = await sailing();
   try {
     const room = await openRoom(a, tree);
@@ -117,52 +129,66 @@ test('Undo takes back each kind of write: a structure act reverted, sparing what
     const { receipt: annotated } = await tools.run('annotate_node', { treeId: tree, nodeId: steps.knot, description: 'Round the post.' });
     const { receipt: linked } = await tools.run('connect', { treeId: tree, nodeId: steps.knot, prerequisiteId: steps.dock });
     const { receipt: completed } = await tools.run('set_progress', { treeId: tree, nodeId: steps.dock, status: 'complete' });
-    told.length = 0;
 
-    assert.equal(await tools.undo(renamed), true);
-    assert.equal(await tools.undo(linked), true);
-    assert.equal(await tools.undo(created), true);
-    assert.equal(await tools.undo(completed), true);
-    const settled = () => {
-      const shown = drawn(room.reading);
-      return 'Tie a bowline' in shown && !('Hoist the sail' in shown) && shown['Tie a bowline'].after.length === 0 && !shown['Leave the dock'].done;
-    };
-    await until(settled, 1000);
+    assert.deepEqual(await undone(a, tools, renamed, linked, created, completed), ['undone', 'undone', 'undone', 'undone']);
     assert.deepEqual(drawn(room.reading), {
       'Leave the dock': { color: 'terracotta', description: '', links: [], after: [], done: false },
       'Tie a bowline': { color: 'terracotta', description: 'Round the post.', links: [], after: [], done: false },
       'Sail with an instructor': { color: 'terracotta', description: '', links: [], after: ['Leave the dock', 'Tie a bowline'], done: false },
     }, 'the description written after the rename stands');
-
-    assert.equal(await tools.undo(annotated), true);
-    await until(() => drawn(room.reading)['Tie a bowline'].description === '', 1000);
-    assert.equal(await tools.undo(renamed), false, 'a structure act is taken back once');
+    assert.deepEqual(await undone(a, tools, annotated), ['undone']);
+    assert.equal(drawn(room.reading)['Tie a bowline'].description, '');
+    assert.deepEqual(await undone(a, tools, renamed, completed), ['unavailable', 'unavailable'], 'each is taken back once');
 
     await tools.run('set_progress', { treeId: tree, nodeId: steps.dock, status: 'complete' });
     const { receipt: reset } = await tools.run('set_progress', { treeId: tree, nodeId: steps.dock, status: 'none' });
-    assert.deepEqual(reset.undo, { mark: 'complete' });
-    assert.equal(await tools.undo(reset), true);
-    assert.equal(drawn(room.reading)['Leave the dock'].done, true, 'a mark marked back');
-    assert.equal(await tools.undo(reset), false, 'a mark that already stands is not written again');
-    assert.deepEqual(told.filter(([event]) => event === 'roadmap_coach_write_undone'), [
-      ...['rename_node', 'connect', 'create_node', 'set_progress', 'annotate_node'].map((ability) => [ability, 'undone']),
-      ['rename_node', 'unavailable'], ['set_progress', 'undone'], ['set_progress', 'unavailable'],
-    ].map(([ability, outcome]) => ['roadmap_coach_write_undone', { ability, outcome }]));
+    assert.deepEqual(await undone(a, tools, reset), ['undone']);
+    assert.equal(drawn(room.reading)['Leave the dock'].done, true, 'a Reset taken back marks the step done again');
+    assert.deepEqual(told, [...['rename_node', 'connect', 'create_node', 'set_progress', 'annotate_node'].map((ability) => [ability, 'undone']),
+      ['rename_node', 'unavailable'], ['set_progress', 'unavailable'], ['set_progress', 'undone']]
+      .map(([ability, outcome]) => ['roadmap_coach_write_undone', { ability, outcome }]));
+    assert.deepEqual({ stacked: room.session.undoStack.length, kept: room.session.kept.length }, { stacked: 0, kept: 1 }, 'the Complete before the Reset still keeps its Undo');
     room.reading.close();
   } finally {
     a.close();
   }
 });
 
-test('a door that wrote nothing is no-change or roadmap-not-ready, never a success, and leaves no receipt', async () => {
+test('an Undo a later write stands in the way of is skipped and says so: a title the person wrote since, and a mark they set since', async () => {
+  const { a, tree, steps } = await sailing();
+  try {
+    const room = await openRoom(a, tree);
+    const { tools, told } = coachOver(room, tree);
+    const { receipt: renamed } = await tools.run('rename_node', { treeId: tree, nodeId: steps.knot, label: 'Coach\'s title' });
+    await room.session.dispatch({ kind: 'RenameNode', id: steps.knot, label: 'The person\'s title' }).landed;
+    const { receipt: completed } = await tools.run('set_progress', { treeId: tree, nodeId: steps.dock, status: 'complete' });
+    assert.equal(room.session.markProgress(steps.dock, 'none'), true);
+    assert.equal(room.session.markProgress(steps.dock, 'complete'), true);
+    await a.sync();
+
+    assert.deepEqual(await undone(a, tools, renamed, completed), ['skipped', 'skipped']);
+    const knot = room.reading.roadmap().seed.nodes.find((step) => step.id === steps.knot);
+    assert.deepEqual({ label: knot.label, done: room.reading.roadmap().marks.completed.has(steps.dock) }, { label: 'The person\'s title', done: true });
+    assert.deepEqual(told, [['rename_node', 'skipped'], ['set_progress', 'skipped']].map(([ability, outcome]) => ['roadmap_coach_write_undone', { ability, outcome }]));
+    assert.deepEqual(room.roomTold.filter(([name]) => name === 'roadmap_undo'), [['roadmap_undo', { action: 'undo', outcome: 'skipped' }], ['roadmap_undo', { action: 'undo', outcome: 'skipped' }]],
+      'the room tells the same of each');
+    room.reading.close();
+  } finally {
+    a.close();
+  }
+});
+
+test('a door that wrote nothing is no-change or roadmap-not-ready, never a success, and leaves nothing on the room\'s Undo stack', async () => {
   const { a, tree, steps } = await sailing();
   try {
     const room = await openRoom(a, tree);
     const before = standingOf(room.reading);
-    const { tools, told } = coachOver(room, tree, { standing: () => before });
+    const { tools } = coachOver(room, tree, { standing: () => before });
     await room.session.dispatch({ kind: 'RenameNode', id: steps.knot, label: 'Tie a cleat hitch' }).landed;
-    await room.session.markProgress(steps.dock, 'complete');
+    assert.equal(room.session.markProgress(steps.dock, 'complete'), true);
     await room.session.dispatch({ kind: 'AddEdge', from: steps.dock, to: steps.knot }).landed;
+    await until(() => room.reading.roadmap().marks.completed.has(steps.dock), 1000);
+    const persons = [...room.session.undoStack];
 
     assert.deepEqual([
       await tools.run('rename_node', { treeId: tree, nodeId: steps.knot, label: 'Tie a cleat hitch' }),
@@ -177,8 +203,11 @@ test('a door that wrote nothing is no-change or roadmap-not-ready, never a succe
     assert.deepEqual(await tools.run('annotate_node', { treeId: tree, nodeId: steps.sail, description: 'With a skipper.' }),
       { answer: { refused: { code: 'roadmap-not-ready', id: steps.sail } }, receipt: null }, 'a write the device could not store');
     assert.equal(drawn(room.reading)['Sail with an instructor'].description, '');
-    assert.deepEqual(told, [['rename_node', 'no-change'], ['set_progress', 'no-change'], ['connect', 'roadmap-not-ready'], ['annotate_node', 'roadmap-not-ready']]
-      .map(([ability, outcome]) => ['roadmap_coach_ability', { ability, outcome }]));
+    assert.deepEqual({ stacked: room.session.undoStack, kept: room.session.kept }, { stacked: persons, kept: [] });
+
+    room.session.undo();
+    await until(() => room.reading.roadmap().seed.nodes.find((step) => step.id === steps.knot).prerequisites.length === 0, 1000);
+    assert.equal(drawn(room.reading)['Tie a cleat hitch'].after.length, 0, 'the person\'s next ⌘Z takes back their own link');
     room.reading.close();
   } finally {
     a.close();
@@ -195,10 +224,12 @@ test('a refusal writes nothing: an input outside the ability\'s schema never rea
     assert.deepEqual([
       await tools.run('set_progress', { treeId: tree, nodeId: steps.dock, status: 'done' }),
       await tools.run('set_progress', { treeId: tree, nodeId: steps.sail, status: 'complete' }),
+      await tools.run('rename_node', { treeId: tree, nodeId: steps.knot, label: 'Tie a \ud800 bowline' }),
       await tools.run('get_nodes', { treeId: tree, nodeIds: [steps.sail], fields: ['state'] }),
     ], [
       { answer: { refused: { code: 'invalid-input' } }, receipt: null },
       { answer: { refused: { code: 'step-locked', id: steps.sail } }, receipt: null },
+      { answer: { refused: { code: 'invalid-input', id: steps.knot } }, receipt: null },
       { answer: { result: { steps: [{ id: steps.sail, state: 'locked' }] } }, receipt: null },
     ]);
 
@@ -208,21 +239,54 @@ test('a refusal writes nothing: an input outside the ability\'s schema never rea
     const rebuilding = coachOver(room, tree, { standing: () => readStanding(pulling.map((held) => held.copy(roadmapRegistry))) });
     assert.deepEqual(await rebuilding.tools.run('rename_node', { treeId: tree, nodeId: steps.knot, label: 'Tie a cleat hitch' }),
       { answer: { refused: { code: 'roadmap-unavailable', id: tree } }, receipt: null });
-    assert.equal(entries(), queued, 'nothing reached the engine');
-    assert.deepEqual([...told, ...rebuilding.told], [['set_progress', 'invalid-input'], ['set_progress', 'step-locked'], ['get_nodes', 'ok'], ['rename_node', 'roadmap-unavailable']]
-      .map(([ability, outcome]) => ['roadmap_coach_ability', { ability, outcome }]));
+    assert.deepEqual({ entries: entries(), told: [...told, ...rebuilding.told], stacked: room.session.undoStack.length },
+      { entries: queued, told: [], stacked: 0 }, 'nothing reached the engine');
     room.reading.close();
   } finally {
     a.close();
   }
 });
 
-test('an ability that throws on what it was handed reports once under its static name, is told as failed, and throws on judged', async () => {
+// A turn of the platform's engine whose one round calls `name` with `input` through the tool host, as a roadmap turn's host
+// hands a call over, with what the engine and the host tell and report kept.
+async function turnOver(tools, name, input) {
+  const story = JSON.parse(readFileSync(new URL('../../../../../packages/api-contract/agent/turns/text.json', import.meta.url), 'utf8'));
+  const told = [];
+  const reported = [];
+  let round = 0;
+  const profile = { ...story.profile, groups: [], refusals: { ...story.profile.refusals, 'no-change': 'no-change.' },
+    tools: [{ name, description: name, input: { type: 'object', additionalProperties: true }, countsAsWrite: true }] };
+  const runner = new TurnRunner({
+    ai: { clearPass() {}, connected: () => true, text: async () => (round++ === 0
+      ? { event: 'ended', data: { stop: 'tool_calls', message: { role: 'assistant', parts: [{ toolCall: { id: 'c1', name, input } }], carry: 'c' } } }
+      : { event: 'ended', data: { stop: 'completed', message: { role: 'assistant', parts: [{ text: 'Done' }], carry: 'c' } } }) },
+    telemetry: { turn() {}, ability: (event) => told.push(['ability', event]), failure: (operation, error) => reported.push([operation, error]) },
+    runtime: { now: () => 0, newId: () => `call-${round}`, withLock: (_, options, body) => body(true) },
+    host: { open: async () => ({ ...story.host.open, lease: 'lease' }), beginRound: async () => {}, text: async () => {}, end: async () => {}, check: async () => null,
+      execute: async (lease, identity, call) => {
+        const { answer } = await tools.run(call.name, call.input);
+        return 'refused' in answer ? { ok: false, code: answer.refused.code } : { ok: true, content: JSON.stringify(answer.result) };
+      } },
+  });
+  const end = await runner.run(story.input, profile);
+  return { end, told, reported };
+}
+
+test('the turn\'s engine tells each call once and reports a throw once, the ability\'s or the room\'s door\'s; the host tells and reports nothing of a call', async () => {
+  const roadmap = { id: 't_0000000000000001', own: true, meta: { title: 'Learn to sail' }, nodes: [{ id: 'a', label: 'Leave the dock' }] };
+  const told = [];
+  const host = (collaborators) => new RoadmapToolHost({ session: { treeId: roadmap.id }, standing: () => ({ trees: [roadmap] }), about: roadmap.id,
+    track: (name, props) => told.push([name, props]), ...collaborators });
   const thrown = new TypeError('an input the host should never send');
-  const { tools, told, reported } = coachOver({ session: { treeId: 't_0000000000000001' }, reading: null }, 't_0000000000000001', {
-    standing: () => ({ trees: [] }), abilities: { set_progress: () => { throw thrown; } } });
-  await assert.rejects(tools.run('set_progress', { treeId: 't_0000000000000001', nodeId: 'a', status: 'complete' }),
-    (error) => error instanceof BoundaryFailure && error.cause === thrown);
-  assert.deepEqual(reported, [['roadmap-coach-ability', thrown, { ability: 'set_progress' }]]);
-  assert.deepEqual(told, [['roadmap_coach_ability', { ability: 'set_progress', outcome: 'failed' }]]);
+  const broken = new TypeError('the door broke');
+
+  const refused = await turnOver(host({}), 'rename_node', { treeId: roadmap.id, nodeId: 'a', label: 'Leave the dock' });
+  const throwing = await turnOver(host({ abilities: { rename_node: () => { throw thrown; } } }), 'rename_node', { treeId: roadmap.id, nodeId: 'a', label: 'Cast off' });
+  const door = await turnOver(host({ session: { treeId: roadmap.id, dispatch: () => { throw broken; } } }), 'rename_node', { treeId: roadmap.id, nodeId: 'a', label: 'Cast off' });
+  assert.deepEqual([refused, throwing, door].map(({ end, told: engine, reported }) => ({ state: end.state, code: end.code, engine, reported })), [
+    { state: 'completed', code: null, engine: [['ability', { name: 'rename_node', outcome: 'refused', code: 'no-change' }]], reported: [] },
+    { state: 'failed', code: 'host-fault', engine: [], reported: [['agent-host', thrown]] },
+    { state: 'failed', code: 'host-fault', engine: [], reported: [['agent-host', broken]] },
+  ]);
+  assert.deepEqual(told, []);
 });

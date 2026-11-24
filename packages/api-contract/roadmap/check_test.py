@@ -207,7 +207,31 @@ class VectorsTest(Rows):
             self.vector('set_progress', 0, lambda case, c: case['expect']['writes'][0].update(action='DeleteStep'), ": writes `DeleteStep`, where §6 gives set_progress ['Complete', 'Reset']"),
             self.vector('set_progress', 0, lambda case, c: case['expect']['writes'][0].update(input={'tree': 't_0000000000000001', 'node': 'b'}), ': a `Complete` whose input is not of the shape the domain\'s cases give it'),
             self.vector('create_node', 0, lambda case, c: case['expect'].update(result={'nodeId': 'zzzzzzzzzzzzzzzz'}), ': a new step whose id is not the one id minted'),
-            self.vector('rename_node', 1, lambda case, c: case.update(expect={'writes': [{'action': 'ChangeStep', 'input': {}}], 'result': {}}), ': an input past a cap of limits.json that is not refused as `over-limit`'),
+            self.vector('rename_node', 1, lambda case, c: case.update(expect={'writes': [{'action': 'ChangeStep', 'input': {}}], 'result': {}}), ': an input past a cap of limits.json that is not refused as `over-limit`, nor by a rule §6 checks before the caps'),
+            self.vector('rename_node', 1, lambda case, c: case['expect']['refused'].update(code='unknown-step'), ': an input past a cap of limits.json that is not refused as `over-limit`, nor by a rule §6 checks before the caps'),
+            self.vector('rename_node', 0, lambda case, c: case['call']['input'].update(label='Tie a\x00bowline'), ': a text the domain cannot store that is not refused as `invalid-input`'),
+            self.vector('annotate_node', 0, lambda case, c: case['call']['input']['links'][0].update(label='Knots \udc00'), ': a text the domain cannot store that is not refused as `invalid-input`'),
+        ], 'check_vectors')
+
+    # A roadmap whose count of steps or links is full, too large to hold as a vector of its own.
+    @staticmethod
+    def full(case, steps=0, links=0):
+        tree = case['given']['trees'][0]
+        tree['nodes'] += [{**tree['nodes'][0], 'id': f's{index}'} for index in range(steps)]
+        tree['edges'] += [{'from': 's0', 'to': f's{index}', 'present': True} for index in range(links)]
+
+    def test_a_full_count_of_steps_or_links_is_over_limit_naming_the_roadmap(self):
+        contract = check.Contract.read()
+        create, link = contract.files['create_node'][0], contract.files['connect'][0]
+        self.full(create, steps=10_000 - 3)
+        self.full(link, steps=1, links=20_000 - 2)
+        for case in (create, link): case['expect'] = {'refused': {'code': 'over-limit', 'id': 't_0000000000000001'}}
+        self.assertEqual(contract.check_vectors(), sum(len(cases) for cases in contract.files.values()))
+        self.refused([
+            (lambda c: (self.full(c.files['create_node'][0], steps=10_000 - 3), c.files['create_node'][0].update(expect={'refused': {'code': 'over-limit'}})),
+             f'abilities/create_node.json · {create["case"]}: an `over-limit` that names none, where §6.1 names `t_0000000000000001`'),
+            (lambda c: c.files['create_node'][0].update(expect={'refused': {'code': 'over-limit', 'id': 't_0000000000000001'}}),
+             f'abilities/create_node.json · {create["case"]}: `over-limit` for a call that passes no cap of limits.json'),
         ], 'check_vectors')
 
     def test_a_proposal_other_than_section_7_mints_is_refused(self):
@@ -236,6 +260,7 @@ class VectorsTest(Rows):
             self.vector('set_progress', 0, lambda case, c: case.update(expect={'refused': {'code': 'out-of-scope'}}), ': `out-of-scope` for a write to the conversation\'s roadmap'),
             self.vector('set_progress', 0, lambda case, c: case.update(expect={'refused': {'code': 'roadmap-not-ready', 'id': 'b'}}), ': `roadmap-not-ready` that names no held step'),
             self.vector('set_progress', 0, lambda case, c: case.update(expect={'refused': {'code': 'over-limit'}}), ': `over-limit` for a call that passes no cap of limits.json'),
+            self.vector('rename_node', 1, lambda case, c: case['expect']['refused'].update(id='t_0000000000000001'), ': an `over-limit` that names `t_0000000000000001`, where §6.1 names `b`'),
             self.vector('set_progress', 2, lambda case, c: case['expect']['refused'].update(at=0), ': an `at` on a refusal of no proposal'),
         ], 'check_vectors')
 

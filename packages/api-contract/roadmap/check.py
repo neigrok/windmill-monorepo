@@ -39,6 +39,14 @@ MARK = ({'node', 'status', 'outOfOrder', 'recordedAt', 'deviceAt'}, {'stamp'})
 POINTER = ({'node', 'present', 'opens'}, {'setAt'})
 # The codes that refuse a whole call, before any change of a proposal folds (§7).
 CALL_CODES = {'not-owner', 'roadmap-unavailable', 'unknown-roadmap'}
+# The codes §6 refuses a write with before its caps: the roadmap and whether the write may reach it (rules 1 to 3), and
+# the rules of its input.
+BEFORE_CAPS = CALL_CODES | {'invalid-input', 'roadmap-not-ready', 'out-of-scope'}
+# A text the domain cannot store: one that holds U+0000 or a lone surrogate (§6.1, `invalid-input`).
+UNSTORABLE = re.compile('[\x00\ud800-\udfff]')
+# The white space the domain trims from either end of an address before it measures it, ECMAScript's `trim`, which
+# Python's `strip` reads otherwise.
+TRIM = '\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'
 
 def refuse(where, reason):
     raise ValueError(f'{where}: {reason}')
@@ -386,7 +394,8 @@ class Contract:
         code = expect['refused'].get('code') if isinstance(expect.get('refused'), dict) else None
         found = fault(case['call']['input'], ability['input'], 'input')
         if found and code != 'invalid-input': refuse(where, found)
-        if self.over_cap(ability, case['call']['input']) and code not in ('over-limit', 'invalid-input'): refuse(where, 'an input past a cap of limits.json that is not refused as `over-limit`')
+        if self.over_cap(ability, case['call']['input']) and code not in BEFORE_CAPS | {'over-limit'}: refuse(where, 'an input past a cap of limits.json that is not refused as `over-limit`, nor by a rule §6 checks before the caps')
+        if self.unstorable(ability, case['call']['input']) and code not in BEFORE_CAPS: refuse(where, 'a text the domain cannot store that is not refused as `invalid-input`')
         if 'refused' in expect: return self.check_refusal(ability, case, where, found)
         kind = 'proposal' if ability['agent'] == 'proposes' else 'read' if ability['class'] == 'read' else 'write'
         wanted = {'read': [['result']], 'proposal': [['proposal', 'result'], ['folded', 'proposal', 'result']], 'write': [['result', 'writes']]}[kind]
@@ -436,13 +445,35 @@ class Contract:
         caps = self.limits['limits']
         return self.change_over(changes) is not None or len(changes) > caps['proposalChanges']['max'] or len(canonical(changes, ability['name'])) > caps['proposalChangesBytes']['max']
 
+    # A value is measured as the domain stores it: an address after its trim, every text in Unicode code points.
     def step_over(self, fields, kind=False):
         caps = {name: limit['max'] for name, limit in self.limits['limits'].items()}
         def text(value, cap): return isinstance(value, str) and len(value) > caps[cap]
         if kind: return text(fields.get('label'), 'kindLabel') or text(fields.get('description'), 'kindDescription')
         links = fields.get('links') if isinstance(fields.get('links'), list) else []
+        def address(link): return link.get('url').strip(TRIM) if isinstance(link.get('url'), str) else None
         return (text(fields.get('label'), 'label') or text(fields.get('description'), 'description') or len(links) > caps['webLinks']
-                or any(isinstance(link, dict) and (text(link.get('url'), 'webLinkAddress') or text(link.get('label'), 'webLinkLabel')) for link in links))
+                or any(isinstance(link, dict) and (text(address(link), 'webLinkAddress') or text(link.get('label'), 'webLinkLabel')) for link in links))
+
+    # Whether a direct write sends a text the domain cannot store.
+    def unstorable(self, ability, fields):
+        if ability['agent'] != 'runs' or ability['class'] == 'read': return False
+        links = fields.get('links') if isinstance(fields.get('links'), list) else []
+        texts = [fields.get('label'), fields.get('description')] + [value for link in links if isinstance(link, dict) for value in (link.get('url'), link.get('label'))]
+        return any(isinstance(text, str) and UNSTORABLE.search(text) for text in texts)
+
+    # Whether a direct write would pass its roadmap's caps of steps or links (§6 rule 4), counted alive as the engine
+    # counts them: each step present or under a delete the person can still undo, and each live link.
+    def count_over(self, ability, case):
+        input = case['call']['input']
+        tree = next((tree for tree in case['given']['trees'] if tree['id'] == input.get('treeId')), None)
+        if tree is None or ability['name'] not in ('create_node', 'connect'): return False
+        held = {each['step'] for each in case['given'].get('held', []) if each['tree'] == tree['id']}
+        steps = sum(1 for node in tree['nodes'] if node['present'] or node['id'] in held)
+        links = sum(1 for edge in tree['edges'] if edge['present'])
+        adding = (1, len(set(input.get('prerequisites', [])))) if ability['name'] == 'create_node' else (0, 1)
+        caps = self.limits['limits']
+        return steps + adding[0] > caps['steps']['max'] or links + adding[1] > caps['links']['max']
 
     # The index of the first change that sends a value past a cap, or None.
     def change_over(self, changes):
@@ -467,9 +498,14 @@ class Contract:
         if code == 'not-owner' and (tree is None or tree['own']): refuse(where, '`not-owner` for a roadmap the person owns')
         if code == 'out-of-scope' and case['about'] in (None, input.get('treeId')): refuse(where, '`out-of-scope` for a write to the conversation\'s roadmap')
         if code == 'roadmap-not-ready' and refusal.get('id') not in {held['step'] for held in given.get('held', [])}: refuse(where, '`roadmap-not-ready` that names no held step')
-        if code == 'over-limit' and not self.over_cap(ability, input): refuse(where, '`over-limit` for a call that passes no cap of limits.json')
+        if code == 'over-limit' and not (self.over_cap(ability, input) or self.count_over(ability, case)): refuse(where, '`over-limit` for a call that passes no cap of limits.json')
         if ability['agent'] != 'proposes':
             if 'at' in refusal: refuse(where, 'an `at` on a refusal of no proposal')
+            if code == 'over-limit':
+                named = None if ability['name'] == 'create_node' else input.get('nodeId')
+                wanted = named if self.step_over(input) else input.get('treeId')
+                def said(id): return f'`{id}`' if id is not None else 'none'
+                if refusal.get('id') != wanted: refuse(where, f'an `over-limit` that names {said(refusal.get("id"))}, where §6.1 names {said(wanted)}')
             return
         changes = input.get('changes') if isinstance(input.get('changes'), list) else []
         count = self.limits['limits']['proposalChanges']['max']

@@ -28,7 +28,8 @@ answer:
   for `create_node`, the new step's; for a proposal, the proposal's own and then one for each ref, in the order the
   changes give them (§7).
 - `call` names the file's ability and gives its input. The input stands inside the ability's `input` schema, but in a
-  case that expects `invalid-input`.
+  case that expects `invalid-input`. A text of an input may hold U+0000 or a lone surrogate, escaped in the file, where a
+  case shows a direct write refusing text the domain cannot store.
 - `expect` is one of:
   - `{"result": …}` for a read: its answer, inside the ability's `result` schema, whose canonical text is at most its
     `result.maxBytes`;
@@ -83,8 +84,13 @@ running an ability:
   steps its changes remove, each as the given roadmap holds it until a change names it; and a recolour pins `folded`;
 - a refusal's code is one of §6.1, and holds to what the case gives: `unknown-roadmap` for a roadmap not given,
   `roadmap-unavailable` for one unread, `not-owner` for one the person does not own, `out-of-scope` for a write outside
-  `about`, `roadmap-not-ready` naming a held step, and `over-limit` for a call that passes a cap. An input that passes a
-  cap must be refused as `over-limit`. `at` is on a proposal's refusal of a change alone, and where §7 fixes it, as for
+  `about`, `roadmap-not-ready` naming a held step, and `over-limit` for a call that passes a cap: a value, measured as the
+  domain stores it, or a direct write's count of the roadmap's steps or links. An input that passes a cap must be refused
+  as `over-limit`, or by a rule §6 checks before the caps, and a direct write that sends a text the domain cannot store as
+  `invalid-input`. A direct write's `over-limit` names the step whose value passes, none for a new step's text, and the
+  roadmap where its count is full. A roadmap whose count is full is too large to hold as a case: `../check_test.py` builds
+  one to hold the check to that rule, and the web's `web/test/products/roadmap/domain/abilities/writes.test.js` holds its
+  executor. `at` is on a proposal's refusal of a change alone, and where §7 fixes it, as for
   the count of changes, the Shape rule's `changes[k]` and the first value past a cap, it is that.
 
 It does not run an ability, so it does not check what only running one shows: the order of a read, a step's state,
