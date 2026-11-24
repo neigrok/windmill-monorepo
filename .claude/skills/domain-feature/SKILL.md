@@ -353,7 +353,7 @@ cd apps/android
 ./gradlew :domain-kit-testing:test :domain-kit-testing:corpus :domain-kit-testing:layering :sync-testing:layering   # the kit corpus and both layering tasks
 ```
 
-The first prints `Gym corpus: <claimed>/<all> files, <n> cases, <n> ability cases (…), … explicitly not applicable (catalog/2, the turn wire, the words), no unclaimed file`; the second `kit corpus: <n>/<n> files, <n>/<n>
+The first prints `Gym corpus: <claimed>/<all> files, <n> cases, <n> ability cases (…), … explicitly not applicable (catalog/2, the turn wire, the words, the refused start), no unclaimed file`; the second `kit corpus: <n>/<n> files, <n>/<n>
 vectors` and `layering: 5 deterministic modules, … compiled classes, 0 findings`. `./gradlew build` (CI,
 `.github/workflows/android.yml`) runs all of it, with `ANDROID_SENTRY_DSN` set.
 
