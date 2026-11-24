@@ -65,6 +65,33 @@ test('a save planned under the signed-out seat that comes due after a sign-in bo
   engine.close();
 });
 
+test('a claim reconcile a sign-out overtakes is refused as the seat change it is, told not-writable and reported as no failure', async (t) => {
+  const { env, engine } = await setup({ watch: false });
+  await savePage(engine, doc('signed out page'));
+  env.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, true);
+  const write = engine.write.bind(engine);
+  let release, waiting = 0;
+  const held = new Promise((resolve) => { release = resolve; });
+  t.mock.method(engine, 'write', async (operation, ...rest) => {
+    if (operation === 'sync-commit') { waiting++; await held; }
+    return write(operation, ...rest);
+  });
+  const reported = [];
+  watchClaims(engine, { report: (error) => reported.push(error) });
+  for (let turn = 0; turn < 6 && waiting === 0; turn++) { await engine.send(); await until(() => !engine.sending); await engine.pull(); }
+  assert.equal(waiting, 1, 'the reconcile waits on its write');
+  t.mock.restoreAll();
+  assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+  const told = env.events.length;
+  release();
+  await until(() => env.events.slice(told).some((event) => event.name === 'sync-commit'));
+  assert.deepEqual({ account: engine.getSnapshot().account, reported, failures: env.failures,
+    commits: env.events.slice(told).filter((event) => event.name === 'sync-commit') },
+  { account: null, reported: [], failures: [], commits: [{ name: 'sync-commit', props: { outcome: 'not-writable' } }] });
+  engine.close();
+});
+
 test('anonymous autosaves supersede per day; offline restart retains the full latest document', async () => {
   const { engine, env } = await setup();
   await savePage(engine, doc('first'));

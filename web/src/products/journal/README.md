@@ -22,7 +22,9 @@ catches up. A page restored from the back/forward cache keeps the canvas, what w
 due while the page was suspended lands once the engine is restored, unless another tab moved the seat meanwhile: what is
 typed belongs to the seat it was typed under (its binding, which a re-identify keeps), so that save is refused
 (`ReplicaChanged`) and lands in no other seat. `test/products/journal/boot.browser.test.js` boots the shell over a seeded
-browser copy in Chromium and proves all three.
+browser copy in Chromium and proves all three. A save a seat change refuses, this tab's own sign-in included, leaves its
+words on the screen, unsaved: only the person's next change saves them, under the seat that stands
+(`test/products/journal/browser.test.js`).
 
 Typing shows at once and commits 600 ms after the last keystroke, one save for the burst. A mood or
 energy change, the page hiding and the editor unmounting save a staged body at once; a local day
@@ -31,7 +33,8 @@ change carries it into today and saves it.
 An anonymous save, or typing before an account's first read without a confirmed page, queues a
 receipt-protected contribution claim. Anonymous replacements retain cumulative retirements.
 Binding and terminal refusals retain edits under the original receipt; they cannot enqueue a new
-claim. Reconciliation requires both the result and a same-epoch, digest-checked covering pull.
+claim. Reconciliation requires both the result and a same-epoch, digest-checked covering pull; one a sign-in or a sign-out
+overtakes is refused (`ReplicaChanged`), reports nothing and runs again for the next seat.
 A reconciled save commits its complete prediction, content clock, retirements and pending removal
 in one transaction. Invalid writing stays in an editor draft; failed transactions retain the last
 durable state and the editor keeps newer input available for retry. Pending text takes precedence
@@ -76,7 +79,9 @@ reported once a load, while the pages beside it carry, and a browser that refuse
 same. A device held in memory carries nothing. Before the seat changes (a sign-in, a sign-out's Keep or Discard, the
 account's closure), the route's `seatWillChange` (`settleSeat`) takes from the active seat's stores every page its
 replica's ledger records, so a Discard takes the old pages it counted, as the claims and drafts they were carried into,
-and no other: the pages not yet carried, and the entries that do not read, wait for that seat's next replica.
+and no other: the pages not yet carried, and the entries that do not read, wait for that seat's next replica. An account's
+closure then deletes every store of its seat, carried or not, the entries that do not read among them (the route's
+`forgetDevice`, which the shell tells `closed`): the account no longer exists.
 
 The pages that bundle could not attribute (`.unclaimed`, the owed pages of its first version's unscoped store, and the
 pages returned from the engine's metadata below) stay in the browser's storage, which is their only record, and the

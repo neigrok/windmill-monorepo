@@ -712,6 +712,30 @@ test('Chromium: midnight carries a staged body into today and sends it at once',
   } finally { await context.close(); }
 });
 
+test('Chromium: words a sign-in refuses stay on the screen unsaved, and reach the account only when the person types again', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    const page = await open(context, 'journal-seat-refusal', null, { carry: true });
+    const textbox = page.getByRole('textbox', { name: 'Body' });
+    await textbox.fill('first words');
+    await page.waitForFunction(() => Number(document.querySelector('main').dataset.saveTick) === 1);
+    const seen = () => page.evaluate(async () => {
+      const { pagesOf } = await import('/src/products/journal/pages.js');
+      return { typed: document.querySelector('textarea').value, state: document.querySelector('main').dataset.saveState,
+        account: engine.getSnapshot().account, stored: pagesOf(engine).map(({ body }) => body) };
+    });
+    await textbox.fill('first words, and more');
+    await page.evaluate(async () => { window.helloAs = 'A'; await engine.signIn('A'); });
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 1500)));
+    assert.deepEqual(await seen(), { typed: 'first words, and more', state: 'unsaved', account: 'A', stored: ['first words'] });
+    await textbox.press('End');
+    await textbox.pressSequentially(' again');
+    await page.waitForFunction(() => Number(document.querySelector('main').dataset.saveTick) === 2);
+    assert.deepEqual(await seen(), { typed: 'first words, and more again', state: 'offline', account: 'A', stored: ['first words, and more again'] });
+  } finally { await context.close(); }
+});
+
 test('Chromium: unmounting the editor sends the staged body', async () => {
   await ready;
   const context = await browser.newContext();

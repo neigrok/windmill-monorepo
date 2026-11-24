@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { BrowserSyncEngine, ReplicaChanged } from '../../../src/platform/sync/engine.js';
 import { syncSession } from '../../../src/platform/sync/session.js';
 import { hashText } from '../../../src/platform/sync/core/encoding.js';
-import { CarryOver, OldStores, dropUnclaimedPages, restoreUnclaimedPages, settleSeat, unclaimedPages } from '../../../src/products/journal/carry.js';
+import { CarryOver, OldStores, dropUnclaimedPages, forgetClosedAccount, restoreUnclaimedPages, settleSeat, unclaimedPages } from '../../../src/products/journal/carry.js';
 import { CarryLedger, Seat } from '../../../src/products/journal/domain/carry.js';
 import { adoptDeviceRows, onSyncResult, pagesOf, pendingClaimWork, recoveredDrafts, savePage, SCOPE, watchClaims } from '../../../src/products/journal/pages.js';
 import { environment, until } from '../../platform/sync/fakes.js';
@@ -315,6 +315,24 @@ test('before the seat changes the pages its replica\'s ledger records leave thei
       ['journal_carry', { seat: 'account', outcome: 'carried', pages: '1' }],
     ] });
   } finally { engine.close(); }
+});
+
+test('an account\'s closure deletes every page this browser kept of its seat, carried or not and read or not, and no other seat\'s', () => {
+  const told = { events: [], reports: [] };
+  const unread = { '2026-09-10': { page: { ...doc('a stamp that does not read', '2026-09-10'), stamp: 'later' }, needsPush: true, read: true } };
+  const others = {
+    'wm.journal.v2.pages.u.B': stored(entry('B\'s page')),
+    'wm.journal.v2.pages.anon': stored(entry('written signed out')),
+    'wm.journal.v2.pages.unclaimed': stored(entry('nobody\'s to say')),
+  };
+  const data = storage({ ...others, 'wm.journal.v2.pages.u.A': stored(entry('owed to A'), unread),
+    'wm.journal.pages.u.A': stored(entry('owed to A in the first version', { date: '2026-09-26' })) });
+  const options = { stores: new OldStores(data), track: (name, props) => told.events.push([name, props]),
+    report: (operation, stage) => told.reports.push([operation, stage]) };
+  forgetClosedAccount('A', options);
+  forgetClosedAccount('A', { ...options, stores: new OldStores({ get length() { throw new Error('storage denied'); } }) });
+  assert.deepEqual({ left: Object.fromEntries(data.data), told }, { left: others, told: {
+    events: [['journal_carry', { seat: 'account', outcome: 'cleared', pages: '2-5' }]], reports: [['journal-migration', 'clear']] } });
 });
 
 test('a carry that fails leaves an account\'s owed pages, which its sign-out\'s Discard never counted, for its next sign-in', async () => {

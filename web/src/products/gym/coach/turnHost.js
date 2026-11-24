@@ -27,13 +27,14 @@ export class TurnRecordRefused extends Error {
   constructor(code) { super(`the turn's record refused its own write: ${code}`); this.name = 'TurnRecordRefused'; this.code = code; }
 }
 
-// One turn's records and the replica it opened on: the engine's lease. Every write runs on that replica alone, so a
-// write that outlives a change of account lands on no other.
+// One turn's records and the seat it opened on, the engine's binding (`activeBinding()`): the engine's lease. Every write
+// runs under that binding alone, so a write that outlives a change of account lands on no other, and a re-identify, which
+// keeps the binding, keeps the turn's seat.
 export class GymTurn {
-  /** @param {import('../domain/coach/turn.js').Turn} turn @param {string} replica */
-  constructor(turn, replica) {
+  /** @param {import('../domain/coach/turn.js').Turn} turn @param {string} binding */
+  constructor(turn, binding) {
     this.turn = turn;
-    this.replica = replica;
+    this.binding = binding;
     this.turnId = /** @type {string} */ (turn.coach.record);
     this.opened = false;
     this.withdrawn = false;
@@ -71,10 +72,11 @@ export class GymTurnHost {
     for (const listener of this.listeners) listener();
   }
 
-  // A write the engine refuses because the seat moved while it waited (`ReplicaChanged`) is the turn's seat ending too.
-  runnerOn(replica) {
+  // Reads and writes under `binding` alone: one under another is the turn's seat ending, as is a write the engine refuses
+  // because the seat moved while it waited (`ReplicaChanged`).
+  runnerOn(binding) {
     const port = new EngineReplica(this.engine);
-    const onSeat = (views) => { if (views.replica !== replica) throw new HostUnavailable('seat'); return views; };
+    const onSeat = (views) => { if (views.binding !== binding) throw new HostUnavailable('seat'); return views; };
     return new ActionRunner({
       commit: (scope, body) => port.commit(scope, (views) => body(onSeat(views))).catch((error) => {
         throw error instanceof ReplicaChanged ? new HostUnavailable('seat') : error;
@@ -104,7 +106,7 @@ export class GymTurnHost {
   }
 
   async run(lease, action) {
-    const runner = this.runnerOn(lease.replica);
+    const runner = this.runnerOn(lease.binding);
     return this.answered(await runner.run(action), runner, lease);
   }
 
@@ -118,7 +120,7 @@ export class GymTurnHost {
     if (lease === null) throw new HostUnavailable('gone');
     lease.hold();
     this.answering({ message: lease.turn.coach, text: '' });
-    const runner = this.runnerOn(lease.replica);
+    const runner = this.runnerOn(lease.binding);
     const workout = runner.read(CoachMessage.scope, (read) => new TrainingLog(read).open?.id ?? null);
     const reads = [...Object.entries(CONTEXT_INPUTS), ...(workout ? [['get_session', { sessionId: workout.json, review: false }]] : [])];
     const context = [];
@@ -149,7 +151,7 @@ export class GymTurnHost {
     this.next = null;
     if (lease === null) return null;
     lease.hold();
-    const runner = this.runnerOn(lease.replica);
+    const runner = this.runnerOn(lease.binding);
     const read = await runner.run(new RecoverMark());
     if (read.kind === 'refused' || read.result.turnId !== turnId) return null;
     const mark = read.result;
@@ -241,7 +243,7 @@ export class GymTurnHost {
     this.stopTrailing(lease);
     lease.withdrawn = true;
     try {
-      const runner = this.runnerOn(lease.replica);
+      const runner = this.runnerOn(lease.binding);
       await this.answered(await runner.run(new WithdrawTurn(lease.turn)), runner, lease);
       lease.threadStands = runner.read(CoachMessage.scope, (read) => read.repository(CoachThread).find(lease.turn.thread, 'drawn') !== null);
     } finally {

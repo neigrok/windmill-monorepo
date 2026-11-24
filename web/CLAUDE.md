@@ -326,7 +326,8 @@ word its own question (`sync.signInWords`; `sync.signOutWords` for a sign-out wh
 notice joins): the shell then asks in those words as flow 50 draws roadmap's, a dialog from 744px and a page below, where
 Escape cancels, and a cancelled sign-in signs the account out and leaves the work from before on the device. Each due
 product is asked in turn. Account closure records a durable intent and discards that
-account's device data without a second question, recovering interrupted cleanup before ordinary auth refresh.
+account's device data without a second question, recovering interrupted cleanup before ordinary auth refresh: each
+product's `forgetDevice` hears `closed` for it, and the journal deletes every old page of that account's seat.
 `platform/sync/react.js` exports `useSyncReplica()`, `useSyncEngine()`,
 `useSyncRecords(scope)` and `useSyncNotices(product)`; records and notices follow the replica this tab draws, so no room
 draws another seat's while the shell catches up. The anonymous journal uses record observations; gym's room draws from

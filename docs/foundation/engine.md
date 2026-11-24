@@ -610,10 +610,10 @@ type VersionReference = { kind: 'accepted', epoch: string | null, version: E7Ver
 - `DeviceMeta.forkGuard`: a random token for the whole local database, kept both in it and in
   storage excluded from device backups (iOS `isExcludedFromBackup`, Android `noBackupFilesDir`). Web
   runs no fork guard.
-- The browser engine's `DeviceMeta` also keeps `formerReplicas`, every replica id its store let go (one a
-  re-identify replaced, a removed replica's), which with its replicas' ids are every id it has held, and
-  `storeCleared`, its mark of a clear the backend reported ([the web as a device](web-device-parity.md) §7
-  Cleared).
+- The browser engine's `DeviceMeta` also keeps `formerReplicas`, the latest 32 replica ids its store let go (one a
+  re-identify replaced, a removed replica's), which with its replicas' ids are every id a session can still name, and
+  `storeCleared`, its mark of a clear the backend reported, naming the account it was told for ([the web as a
+  device](web-device-parity.md) §7 Cleared).
 - `DeviceMeta.pendingSignIn`: an incomplete sign-in, resumed at the next engine start (§7.10).
 - `DeviceRow`: a product's own device work, which only its product reads and writes. The browser
   engine answers the active replica's rows of a product (`readDeviceRows(product)`, frozen, the same

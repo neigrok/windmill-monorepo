@@ -102,15 +102,21 @@ unpauses once none is held. The shell tells it what each read of `/v1/me` finds 
 reconnection and every 20 s, outside a sign-out); the engine asks no one itself. The transaction that pauses or unpauses
 the active replica emits `sync-auth-paused` with `paused` or `released`, once.
 A write that lets a replica id go, one a re-identify replaced or a removed replica's, records it in
-`device.meta.formerReplicas`, so with the ids its replicas hold the store knows every id it has held, and a write that
-changes no id changes nothing more. `sessionReplica(account,
-syncReplica)` takes what a read of `/v1/me` for `account` answered as the replica its session last pushed for (null before
-its first accepted push), which the shell tells once that read has bound the seat. A store that keeps the device past the
-page (its `durable`), whose active replica is bound to `account` and which has held no such replica was cleared by the
-browser ([web-device-parity.md](../../../../docs/foundation/web-device-parity.md) §7 Cleared). The write that finds it
-marks the store (`device.meta.storeCleared`) and emits `sync-store-cleared`, once: a reload, another tab and the next read
-find the mark, and a store is born after at most one clear. The snapshot's `storeCleared` says it to every tab of the store
-from then on; no screen draws it yet.
+`device.meta.formerReplicas`, which keeps the latest 32: a session names only an id its own pushes carried, and while it
+is the browser's cookie the store lets that id go only by a re-identify, which its next push replays under the new id, so
+with the ids its replicas hold the store knows every id a session can still name. A write that changes no id changes
+nothing more. `sessionReplica(account, syncReplica)` takes what a read of `/v1/me` for `account` answered as the replica its
+session last pushed for (null before its first accepted push), which the shell tells after each read. The engine keeps it
+until the next read or the sign-out that ends the session, and decides it at once if the seat is bound to `account`, else in
+the write that binds it there, a sign-in question's answer included, before the bound replica's first push names one of the
+store's own ids. A store that keeps the device past the page (its `durable`), whose active replica is bound to `account`
+and which holds and let go of no such replica was cleared by the browser
+([web-device-parity.md](../../../../docs/foundation/web-device-parity.md) §7 Cleared). The write that finds it marks the
+store with that account (`device.meta.storeCleared`, `{ account }`) and emits `sync-store-cleared`, once: a reload, another
+tab and the next read find the mark, and a store is born after at most one clear. The snapshot's `storeCleared` says it to
+every tab of the store while that account's seat is active, and not to the signed-out seat or another account's; no screen
+draws it yet. A tab of a bundle older than `formerReplicas` that shares the store re-identifies without recording the id it
+let go, so a read before the new id's first accepted push tells a clear that did not happen.
 The engine stores no tokens. The shell owns the cookie session and pinned account decisions. Finished sign-out durably
 records cookie cleanup until the credentials port succeeds, and so does `cancelSignIn(account)`, which in the same write
 drops the pending sign-in; `cleanupCredentials()` runs the deletion owed. Sign-in drops a deletion owed for an earlier

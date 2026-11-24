@@ -374,11 +374,12 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
   });
   return {
     read,
-    // Before the seat changes (`routes.sync.seatWillChange`), each workout the anon replica holds is saved for adoption and
-    // an open one has its sets recorded with it, as the phones do; a bound replica holds none. It is one act on the API's
-    // binding, so it lands whole before the seat changes or not at all. Told once, when it saved something, was refused or
-    // failed, and the seat changes on whichever.
-    saveSignedOutWorkouts: () => boundary('workout-adopt', async () => {
+    // Before the seat changes (`routes.sync.seatWillChange`), each workout the anon replica holds is saved for adoption, an
+    // open one with its sets recorded again, as the phones do; a bound replica holds none. Each workout is one act on the
+    // API's binding, so it lands whole before the seat changes or not at all, and one the domain refuses or that fails
+    // leaves the others to land; a seat that moved refuses every act after it, so the first such refusal ends the hook.
+    // Told once when it saved something, and once for each workout refused or failed; the seat changes on whichever.
+    saveSignedOutWorkouts: async () => {
       // An open copy's set as its adoption saves it: one the start it was logged on took with it, which the adoption
       // superseded, is recorded again, and one the act still draws stands.
       const recordedAgain = (set) => {
@@ -387,19 +388,31 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
           load: (act) => ({ drawn: act.inScope(SCOPE, (reader) => reader.repository(TrainingSet).find(set.id, 'drawn') !== null), loaded: append.load(act) }),
           decide: ({ drawn, loaded }, ids) => (drawn ? ActDecision.unchanged(null) : append.decide(loaded, ids)) };
       };
-      const parts = read((reader) => {
-        if (!reader.isAnonymous) return [];
-        const adoptions = reader.repository(Session).all('drawn').map((workout) => AdoptWorkout(workout.id, 'prepare'));
-        const sets = adoptions.map((adoption) => adoption.load(reader).workout).filter((copy) => copy?.session.isOpen).flatMap((copy) => copy.sets);
-        return [...adoptions.map(scopedAct), ...sets.map(recordedAgain)];
-      });
-      if (parts.length === 0) return;
       const saved = () => read((reader) => reader.device(SignedOutWorkout.key));
-      const before = saved();
-      const outcome = await runner.runComposed(parts);
-      if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
-      if (!sameJson(before ?? null, saved() ?? null)) event('workout-adopt', 'saved-local');
-    }).catch(() => {}),
+      const workouts = await boundary('workout-adopt', async () => read((reader) => {
+        if (!reader.isAnonymous) return [];
+        return reader.repository(Session).all('drawn').map((workout) => {
+          const adoption = AdoptWorkout(workout.id, 'prepare');
+          const copy = adoption.load(reader).workout;
+          return [scopedAct(adoption), ...(copy?.session.isOpen ? copy.sets.map(recordedAgain) : [])];
+        });
+      })).catch(() => []);
+      let savedAny = false;
+      for (const parts of workouts) {
+        try {
+          const changed = await boundary('workout-adopt', async () => {
+            const before = saved();
+            const outcome = await runner.runComposed(parts);
+            if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
+            return !sameJson(before ?? null, saved() ?? null);
+          });
+          if (changed) savedAny = true;
+        } catch (error) {
+          if (error.code === 'not-writable') break;
+        }
+      }
+      if (savedAny) event('workout-adopt', 'saved-local');
+    },
     workoutSave,
     workoutSaves: () => read((reader) => Object.keys(reader.device(WORKOUT_DRAFTS) ?? {}).map((key) => ({ key, ...workoutSave(key) }))),
     clearWorkoutSave: (key, expectedCommand = null) => boundary('session-correct', async () => {

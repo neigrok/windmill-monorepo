@@ -144,6 +144,8 @@ export default function AuthProvider({ children }) {
     settle(null, { signedOut: true });
     channel.current?.postMessage({ type: 'signed-out' });
   }, [settle]);
+  // A product's `forgetDevice` hears `closed` when the departing account was closed: its closure stays recorded until this
+  // cleanup is done, through a reload too.
   const cleanupDevice = useCallback(async (engine, next = null, navigation = null) => {
     const change = engine.device.meta.deviceCleanup;
     if (!change) return;
@@ -151,7 +153,8 @@ export default function AuthProvider({ children }) {
       roomOwnership.current.scopeTicket = dataScope.begin(next ? { kind: 'account', id: next } : { kind: 'anonymous' });
     roomOwnership.current.blocked = true;
     flushSync(() => setRoomChanging(true));
-    await seat.finishDeviceCleanup({ previous: change.previous, next, ...(navigation ? { navigation } : {}) });
+    const closed = engine.device.meta.closingAccount?.account === change.previous;
+    await seat.finishDeviceCleanup({ previous: change.previous, next, ...(closed ? { closed } : {}), ...(navigation ? { navigation } : {}) });
     await engine.clearDeviceCleanup(change);
   }, [seat, dataScope]);
   const finishSignOut = useCallback(async (options, next = null, navigation = null) => {
@@ -278,8 +281,8 @@ export default function AuthProvider({ children }) {
     }
     if (me) {
       await bind(me, pending.current?.user.id === me.id ? pending.current : {}, confirmedRevision);
-      // The replica the session last pushed for, told once the seat is bound to its account, the only seat a cleared store is
-      // found under (web-device-parity.md §7 Cleared).
+      // The replica the session last pushed for: the engine keeps it and finds a cleared store under the account's seat, now
+      // or once a sign-in question's answer binds it (web-device-parity.md §7 Cleared).
       await engine.sessionReplica(me.id, read.syncReplica);
       return me;
     }

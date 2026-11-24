@@ -344,6 +344,25 @@ test('an explicit sign-out broadcast still clears roadmap work instead of becomi
   assert.equal(state.engine.device.activeReplica.meta.state, 'anon');
 });
 
+test('an account closed here tells each product its departure was a closure', async (t) => {
+  const state = await account(t);
+  let me = { id: 'A', name: 'Ada' };
+  t.mock.method(globalThis, 'fetch', async (url, init = {}) => {
+    const answer = (status, body = {}) => ({ ok: status < 300, status, json: async () => body });
+    const path = new URL(url, 'https://windmill.works').pathname;
+    if (path === '/v1/sessions') return answer(200, { sessions: [{ id: 's1', current: true }] });
+    if (path === '/v1/me' && init.method === 'DELETE') return answer(200, { closingOn: '2026-12-24', closesMs: 1 });
+    if (path === '/v1/auth/logout') { me = null; return answer(200); }
+    return me ? answer(200, { user: me, signInMethods: [] }) : answer(401);
+  });
+  const closing = state.auth().closeAccount('A');
+  await until(() => state.engine.device.meta.signOut);
+  state.env.timers.advance(state.engine.limits.SIGNOUT_FLUSH_MS);
+  await closing;
+  assert.deepEqual({ forgotten: state.forgotten, status: state.auth().status, closing: state.engine.device.meta.closingAccount ?? null },
+    { forgotten: [{ previous: 'A', next: null, closed: true }], status: 'ghost', closing: null });
+});
+
 test('a tab that missed sign-out broadcast recognizes the completed replica transition on refresh', async (t) => {
   const state = await account(t);
   await state.engine.finishSignOut({ choice: 'keep' });

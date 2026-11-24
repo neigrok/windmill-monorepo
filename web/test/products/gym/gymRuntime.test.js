@@ -722,6 +722,29 @@ test('before the seat changes each signed-out workout is saved for adoption: a f
   assert.deepEqual({ events, failures }, { events: [{ operation: 'workout-adopt', outcome: 'saved-local' }], failures: [] }, 'a second pass saves nothing new');
 });
 
+test('each signed-out workout is saved in an act of its own: one the import refuses, past its 200 sets, leaves the next to land', async (t) => {
+  const { browser, run, events, failures, told, saved, commands } = await signedOutBrowser(t);
+  const crowded = new Id('session1', Session), next = new Id('session2', Session);
+  await run(StartSession({ id: crowded, startedAt: new Instant(DEFAULT_NOW - 600_000) }));
+  for (let index = 1; index <= 201; index++) {
+    await run(AppendSet(benchSet(`set${String(index).padStart(5, '0')}`, crowded, DEFAULT_NOW - 600_000 + index * 1000)));
+  }
+  await run(FinishSession({ id: crowded, finishedAt: new Instant(DEFAULT_NOW - 390_000) }));
+  await run(StartSession({ id: next, startedAt: new Instant(DEFAULT_NOW - 300_000) }));
+  await run(AppendSet(benchSet('set99999', next, DEFAULT_NOW - 290_000)));
+  await run(FinishSession({ id: next, finishedAt: new Instant(DEFAULT_NOW - 280_000) }));
+  const before = commands().filter(([, session]) => session === 'session1');
+  await createGymApi(browser.engine, told).saveSignedOutWorkouts();
+  assert.deepEqual({ saved: saved(), crowded: commands().filter(([, session]) => session === 'session1'),
+    next: commands().filter(([, session]) => session === 'session2'), events, failures }, {
+    saved: [['session2', false, ['set99999']]],
+    crowded: before,
+    next: [['gym.importSession', 'session2', null]],
+    events: [{ operation: 'workout-adopt', outcome: 'refused', code: 'domain' }, { operation: 'workout-adopt', outcome: 'saved-local' }],
+    failures: [],
+  });
+});
+
 test('the route table’s hook saves them, and a bound replica or an empty anon one has none to save', async (t) => {
   const signedOut = await signedOutBrowser(t);
   assert.equal(gymRoutes.sync.seatWillChange(signedOut.browser.engine), null, 'an anon replica holding no gym work reads nothing');

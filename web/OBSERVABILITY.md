@@ -43,7 +43,7 @@ refusal text never enter telemetry properties.
 | `sync-refused`, `sync-push-malformed` | Terminal refusals, and malformed push responses or receipts: a 400, or a `200` whose receipt or inverse outcomes the replica cannot read, which still acknowledges its entry |
 | `sync-writer` | Transaction enqueue-to-durability latency and initial queue/read latency, sampled: the first 10 writes of each minute that change the store |
 | `sync-digest-mismatch` | Confirmed scope digest disagreed with the server |
-| `sync-store-cleared` | The browser cleared the device's store, as the backend reported it (web-device-parity.md §7 Cleared): an account read whose `syncReplica`, the replica its session last pushed for, is none of the replica ids this store has held, while the store keeps the device past the page and the active replica is bound to that account. Once per clear, by the write that marks the store, in one tab; a reload, another tab and the next read find the mark. No property |
+| `sync-store-cleared` | The browser cleared the device's store, as the backend reported it (web-device-parity.md §7 Cleared): an account read whose `syncReplica`, the replica its session last pushed for, is none of the replica ids this store holds or let go of lately, while the store keeps the device past the page and the active replica is bound to that account, at the read or at the sign-in that binds it after a question. Once per clear, by the write that marks the store with the account, in one tab; a reload, another tab and the next read find the mark. No property |
 
 Properties are restricted to `scopeKind` (`product`, `tree`, `overlay`, `device`), a nonnegative safe
 integer `seq`, `durationMs` and `queueMs` (capped at 60,000), `applied`, `skipped` and `waiting` (capped at
@@ -68,9 +68,10 @@ asks no one whose credential the browser holds: the shell tells it what each rea
 20-second poll among them), and that read is what releases a paused anon replica. Each read also tells it whether the
 server answered (an answer under 500), so a signed-out page, whose engine sends nothing of its own, reads `unreachable`
 when the server is out of reach while the browser reports itself online, and journal search's first use of meaning there
-is `needs_connection`, no Issue. Once a read for an account has bound the seat, the shell tells the engine the read's
-`syncReplica`: a store the browser cleared emits `sync-store-cleared`, whose mark a write that fails leaves for the next
-read, reported as `sync-storage`; no replica id, session or account enters either. A page in the back/forward cache reports nothing new: its rooms stand, and a write it
+is `needs_connection`, no Issue. After each read for an account the shell tells the engine the read's `syncReplica`, which
+it keeps until the seat is bound to that account: a store the browser cleared emits `sync-store-cleared`, whose mark a
+write that fails leaves for the next read or sign-in, reported as `sync-storage`; no replica id, session or account enters
+either. A page in the back/forward cache reports nothing new: its rooms stand, and a write it
 holds until the restore lands then, under the binding it was issued under, or fails as the `store` failure the restore already
 reported. One whose seat another tab moved meanwhile writes nothing, reports no failure and tells its `sync-commit`
 `not-writable`. Once a restore has failed, a write issued before the page is shown again fails at once, a `CommitError` of
@@ -151,14 +152,15 @@ gesture events. Domain refusals retain the complete input in a local editor draf
 editor's unsaved status; failed reconciliation emits a bounded `sync_commit` failure outcome.
 Post-commit notice-cleanup failures use `journal-notice-cleanup` and preserve the successful save
 outcome; it, `journal-save`, `journal-invitation` and `journal-claim-reconcile` carry the error's stack, its message struck.
-A save or a retirement a sign-in or a sign-out overtook, in this tab or another, the one binding the signed-out replica in
-place included, is refused (`ReplicaChanged`), lands in no seat and is no Issue: it tells `sync_commit` `not-writable`.
+A save, a retirement or a claim's reconcile a sign-in or a sign-out overtook, in this tab or another, the one binding the
+signed-out replica in place included, is refused (`ReplicaChanged`), lands in no seat and is no Issue: it tells
+`sync_commit` `not-writable`, and a save's words stay on the screen, unsaved.
 The carry of what the journal's bundle before the engine kept in this browser's storage (`carry.js`) emits
 `journal_carry` with `seat` (`anon` or `account`, whose pages they are; `unclaimed` for those returned), `outcome` and
 `pages`, a count through `countBucket` (`0/1/2-5/6-20/21+`): `carried`, the pages a run wrote into the replica as claims
 or drafts to recover; `cleared`, pages that left the stores while nothing was written, by a run (every page already
-recorded in the ledger, or only the account's own copies) or before the seat changed (`settleSeat`, the pages the
-replica's ledger records); `failed`, a run an act's write failed, and `refused`, a run an act the domain refused, each
+recorded in the ledger, or only the account's own copies), before the seat changed (`settleSeat`, the pages the
+replica's ledger records) or at the account's closure (`forgetClosedAccount`, every page of its seat); `failed`, a run an act's write failed, and `refused`, a run an act the domain refused, each
 after the `carried` of the acts before it, the pages it left owed in their stores; `returned`, the unattributed pages the
 journal's first bundle on the engine had kept in the device's metadata, back in the browser's storage, once. A run that
 writes and deletes nothing emits nothing, so a browser whose stores hold nothing is silent, and a run a sign-in or a
@@ -166,7 +168,7 @@ sign-out overtakes ends quietly, the pages it had not carried left in their stor
 Sentry hears `journal-migration` with the error's stack and `stage`: `read` (the browser refused its storage, or an
 entry does not read as a page, which stays where it is; once a page load, no stack for an entry), `write` (an act
 failed; its pages and those after it stay in their stores), `clear` (a store would not change; its carried pages leave
-it at the next run or before the seat changes; once a page load from a run) or `leftovers` (the return of the first
+it at the next run or before the seat changes; once a page load from a run; a closed account's store stays) or `leftovers` (the return of the first
 bundle's metadata failed; it is tried again at the next run). Settings' unsent pages emit `journal_unclaimed` with
 `action` (`restore` or `discard`), `outcome` (`ok`; `none` where no page waited any longer; for a restore,
 `replica_changed` where the account changed before or while it wrote and `refused` where the domain refused an act,
@@ -210,8 +212,8 @@ filename or allowance amount is reported.
 Gym engine writes emit `gym_action` through the first-party events intake with only `operation`
 and `outcome`, and for `refused` a `code`: `not-writable` or `domain`. Operations are routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
-delete, Undo, refusal and `workout-adopt`, the hook before the seat changes saving each signed-out workout for adoption,
-told only when it saved something (`saved-local`), was refused or failed. Outcomes are `saved-local`, `unchanged` (a clean draft or a rename to the
+delete, Undo, refusal and `workout-adopt`, the hook before the seat changes saving each signed-out workout for adoption in
+an act of its own, told once when it saved something (`saved-local`) and once for each workout refused or failed. Outcomes are `saved-local`, `unchanged` (a clean draft or a rename to the
 name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`. A local save
 records durability, not server admission. Unexpected product boundary failures use static
 `gym-<operation>` Sentry names with the error's stack frames, never its message; projection failures use `gym-projection`. A malformed frozen plan

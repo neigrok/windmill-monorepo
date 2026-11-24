@@ -36,6 +36,11 @@ const actorId = () => `r_${Array.from({ length: 12 }, () => '0123456789ABCDEFGHI
 
 // A tab whose store a newer bundle's upgrade closed reloads only between gestures: the page hidden, or no input this long.
 const RELOAD_IDLE_MS = 3000;
+// How many of the replica ids it let go a store keeps, the latest. A session names only an id its own pushes carried, and
+// while it is the browser's cookie the store lets that id go only by a re-identify, whose next push replays under the new
+// id; a sign-out ends the session. So a read can name only the last few let go, and the rest would only grow the head
+// record every write reads.
+const FORMER_REPLICAS_KEPT = 32;
 // The fields whose words a reload would lose while they hold the focus.
 const TEXT_FIELDS = new Set(['text', 'search', 'email', 'url', 'tel', 'password', 'number']);
 
@@ -103,6 +108,8 @@ export class BrowserSyncEngine {
     this.started = false;
     this.upgradeRequired = false;
     this.revision = -1;
+    // What the session owner last read of the replica its account's session last pushed for (`sessionReplica`).
+    this.sessionRead = null;
   }
 
   // `inMemory` holds the device in this tab alone (`MemoryStore`), for a browser that offers no store; else IndexedDB keeps it.
@@ -153,12 +160,12 @@ export class BrowserSyncEngine {
         const holding = device.replicas.map(({ id }) => id);
         let result;
         try { result = change(device, context); } catch (error) { thrown = error; throw error; }
-        // The store remembers every replica id it lets go, one a re-identify replaced and a removed replica's, so with the ids
-        // its replicas hold it knows every id it has held: a session that last pushed for none of them tells a cleared store
-        // (`sessionReplica`).
+        // The store remembers the replica ids it lets go, one a re-identify replaced and a removed replica's, the latest
+        // FORMER_REPLICAS_KEPT of them, so with the ids its replicas hold it knows every id a session can still name: a session
+        // that last pushed for none of them tells a cleared store (`sessionReplica`).
         const kept = new Set(device.replicas.map(({ id }) => id));
         const former = holding.filter((id) => !kept.has(id));
-        if (former.length) (device.meta.formerReplicas ??= []).push(...former);
+        if (former.length) device.meta.formerReplicas = [...(device.meta.formerReplicas ?? []), ...former].slice(-FORMER_REPLICAS_KEPT);
         for (const request of requests()) {
           if (!waiting.has(request.requestId) || request.state !== 'settled') continue;
           context.telemetry.push({ event: 'sync-inverse', outcome: 'settled', applied: request.result.appliedCount, skipped: request.result.skippedCount });
@@ -218,7 +225,8 @@ export class BrowserSyncEngine {
     const replica = device.activeReplica;
     this.snapshot = frozen({ revision, replica: replica.id, state: replica.meta.state, account: replica.meta.account ?? null,
       binding: bindingOf(replica), authPaused: replica.meta.authPaused, upgradeRequired: this.upgradeRequired,
-      pendingSignIn: structuredClone(device.meta.pendingSignIn ?? null), storeCleared: device.meta.storeCleared === true,
+      pendingSignIn: structuredClone(device.meta.pendingSignIn ?? null),
+      storeCleared: replica.meta.state === 'bound' && device.meta.storeCleared?.account === replica.meta.account,
       connection: this.connection() });
     for (const observation of [...this.views.values(), ...this.noticeViews.values()]) observation.refresh(replica);
     if (previous && previous.id !== replica.id) this.emit({ event: 'activeReplicaChanged', previous: previous.id, replica: replica.id });
@@ -1162,6 +1170,9 @@ export class BrowserSyncEngine {
           left.forgetScope(scope);
           delete left.known[scope];
         }
+        // A read told while a sign-in question stood is decided as the seat binds, before the bound replica's first push
+        // gives the session a replica this store holds.
+        this.markCleared(device, ctx);
         return result;
       });
       this.doubts.clear();
@@ -1267,6 +1278,8 @@ export class BrowserSyncEngine {
       this.signingOut = false;
       this.doubts.clear();
       this.peerScopes.clear();
+      // The read it kept was of the session this sign-out ends.
+      this.sessionRead = null;
       await this.cleanupCredentials();
       this.kick();
     }
@@ -1309,20 +1322,33 @@ export class BrowserSyncEngine {
   }
 
   // What the session owner read of the replica `account`'s session last pushed for (`/v1/me`'s `syncReplica`, null before
-  // its first accepted push). A store that keeps the device past the page, whose active replica is bound to `account` and
-  // which has held no such replica, was cleared by the browser (web-device-parity.md §7 Cleared). A store is born after at
-  // most one clear and tells it once: the write that finds it marks the store, which a reload, another tab and the next read
-  // find, and emits `sync-store-cleared`. A write that fails was reported as `storage`, and the next read tries again.
+  // its first accepted push), kept until the next read or the sign-out that ends the session, and decided now if the seat
+  // is bound to `account`, else as a sign-in binds it (`markCleared`).
   async sessionReplica(account, syncReplica) {
-    const cleared = (device) => Boolean(syncReplica) && this.store.durable && !device.meta.storeCleared
-      && device.activeReplica.meta.state === 'bound' && device.activeReplica.meta.account === account
-      && ![...device.replicas.map(({ id }) => id), ...(device.meta.formerReplicas ?? [])].includes(syncReplica);
-    if (!cleared(this.device)) return;
-    await this.write(null, (device, ctx) => {
-      if (!cleared(device)) return;
-      device.meta.storeCleared = true;
-      ctx.telemetry.push({ event: 'sync-store-cleared' });
-    }).catch((error) => this.unheard(error));
+    this.sessionRead = { account, syncReplica };
+    if (this.clearedFor(this.device) === null) return;
+    await this.write(null, (device, ctx) => this.markCleared(device, ctx)).catch((error) => this.unheard(error));
+  }
+
+  // The account a cleared store lost its work for, or null: a store that keeps the device past the page, whose active
+  // replica is bound to the account of the session owner's last read, and which neither holds nor let go of the replica that
+  // account's session last pushed for, was cleared by the browser (web-device-parity.md §7 Cleared).
+  clearedFor(device) {
+    const read = this.sessionRead;
+    const { state, account } = device.activeReplica.meta;
+    if (!read?.syncReplica || !this.store.durable || device.meta.storeCleared || state !== 'bound' || account !== read.account) return null;
+    return [...device.replicas.map(({ id }) => id), ...(device.meta.formerReplicas ?? [])].includes(read.syncReplica) ? null : account;
+  }
+
+  // A store is born after at most one clear and tells it once: the write that finds it marks the store with the account it
+  // was told for, which a reload, another tab and the next read find, and emits `sync-store-cleared`. The snapshot says it
+  // only while that account's seat is active. A write that fails was reported as `storage`, and the next read or sign-in
+  // tries again.
+  markCleared(device, ctx) {
+    const account = this.clearedFor(device);
+    if (account === null) return;
+    device.meta.storeCleared = { account };
+    ctx.telemetry.push({ event: 'sync-store-cleared' });
   }
 
   // The product cleanup a finished sign-out recorded (`finishSignOut`'s `deviceCleanup`) is done: its marker goes, unless a

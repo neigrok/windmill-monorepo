@@ -1258,7 +1258,7 @@ test('a bound replica pauses once the session owner finds the browser holds anot
   engine.close();
 });
 
-test('the store remembers every replica id it lets go, one a re-identify replaced and a discarded replica\'s, through a reload', async () => {
+test('the store remembers the replica ids it lets go, one a re-identify replaced and a discarded replica\'s, through a reload', async () => {
   const env = environment();
   let engine = await open(env);
   const anon = engine.activeReplica();
@@ -1301,6 +1301,82 @@ test('a store the browser cleared is told once, by one of two tabs, and a reload
   assert.deepEqual({ storeCleared: a.getSnapshot().storeCleared, told: cleared().length, ids: JSON.stringify(env.events).includes('rp_'), failures: env.failures },
     { storeCleared: true, told: 1, ids: false, failures: [] });
   a.close();
+});
+
+test('the store keeps the latest 32 replica ids it let go, in the order it let them go', async () => {
+  const env = environment();
+  const engine = await open(env);
+  env.transport.account = 'A';
+  await engine.signIn('A');
+  const letGo = [];
+  for (let turn = 0; turn < 40; turn++) {
+    letGo.push(engine.activeReplica());
+    await engine.write(null, (device, ctx) => reidentify(device.activeReplica, ctx));
+  }
+  assert.deepEqual(engine.device.meta.formerReplicas, letGo.slice(-32));
+  engine.close();
+});
+
+// The browser cleared the store under a session that had pushed for the account's replica; the store's fresh anon replica
+// holds work, so the account's first read finds the seat signed out and the sign-in asks its question.
+async function clearedWithSignedOutWork(env) {
+  let engine = await open(env);
+  env.transport.account = 'A';
+  await engine.signIn('A');
+  await engine.commit('self/probe', card('card0001'));
+  await engine.send();
+  const pushedFor = engine.activeReplica();
+  engine.close();
+  await new Promise((resolve, reject) => Object.assign(env.indexedDB.deleteDatabase('wm-sync'), { onsuccess: resolve, onerror: reject }));
+  engine = await open(env);
+  env.transport.account = null;
+  await engine.commit('self/probe', card('card0002'));
+  env.transport.account = 'A';
+  return { engine, pushedFor };
+}
+
+test('a cleared store read while the sign-in question stands is told as the answer binds the seat, before its first push names a replica the store holds', async () => {
+  const env = environment();
+  const { engine, pushedFor } = await clearedWithSignedOutWork(env);
+  const told = () => env.events.filter(({ name }) => name === 'sync-store-cleared');
+  const asked = await engine.signIn('A');
+  await engine.sessionReplica('A', pushedFor);
+  assert.deepEqual({ complete: asked.complete, state: engine.getSnapshot().state, storeCleared: engine.getSnapshot().storeCleared, told: told() },
+    { complete: false, state: 'anon', storeCleared: false, told: [] });
+  const [due] = asked.due;
+  assert.equal((await engine.signIn('A', { decisions: { [due.product]: 'add' }, counted: { [due.product]: due.counted } })).complete, true);
+  assert.deepEqual({ storeCleared: engine.getSnapshot().storeCleared, mark: engine.device.meta.storeCleared, told: told() },
+    { storeCleared: true, mark: { account: 'A' }, told: [{ name: 'sync-store-cleared', props: {} }] });
+  await until(() => engine.leader);
+  await engine.send();
+  await engine.sessionReplica('A', engine.activeReplica());
+  assert.deepEqual({ storeCleared: engine.getSnapshot().storeCleared, told: told().length, failures: env.failures }, { storeCleared: true, told: 1, failures: [] });
+  engine.close();
+});
+
+test('the clear mark is its account\'s: a Discard sign-out and another account\'s seat read no clear and tell none, and the account\'s own seat reads it again', async () => {
+  const env = environment();
+  const { engine, pushedFor } = await clearedWithSignedOutWork(env);
+  const [due] = (await engine.signIn('A')).due;
+  await engine.signIn('A', { decisions: { [due.product]: 'add' }, counted: { [due.product]: due.counted } });
+  await engine.sessionReplica('A', pushedFor);
+  const seen = () => ({ account: engine.getSnapshot().account, storeCleared: engine.getSnapshot().storeCleared });
+  const seats = [seen()];
+  const asked = await engine.finishSignOut({ choice: 'discard', counted: [] });
+  assert.equal((await engine.finishSignOut({ choice: 'discard', counted: asked.counted })).complete, true);
+  seats.push(seen());
+  env.transport.account = 'B';
+  await engine.signIn('B');
+  await engine.sessionReplica('B', `rp_${'b'.repeat(32)}`);
+  seats.push(seen());
+  assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+  env.transport.account = 'A';
+  await engine.signIn('A');
+  seats.push(seen());
+  assert.deepEqual({ seats, mark: engine.device.meta.storeCleared, told: env.events.filter(({ name }) => name === 'sync-store-cleared').length },
+    { seats: [{ account: 'A', storeCleared: true }, { account: null, storeCleared: false }, { account: 'B', storeCleared: false },
+      { account: 'A', storeCleared: true }], mark: { account: 'A' }, told: 1 });
+  engine.close();
 });
 
 const unknownReplica = `rp_${'f'.repeat(32)}`;

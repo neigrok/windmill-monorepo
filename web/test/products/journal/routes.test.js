@@ -50,6 +50,26 @@ test('before the seat changes, the old pages its replica\'s ledger records leave
   assert.deepEqual([...data.entries()], [[key, JSON.stringify(entry('2026-10-02', 'not carried yet'))]]);
 });
 
+test('an account change keeps the old pages its account still owns, and a closure takes them all from this browser', (t) => {
+  const page = (day, body) => JSON.stringify({ [day]: { page: { day, body, mood: null, energy: null, source: 'typed', stamp: '' }, needsPush: true, read: false } });
+  const kept = { 'wm.journal.v2.pages.anon': page('2026-10-03', 'written signed out') };
+  const data = new Map([...Object.entries(kept), ['wm.journal.v2.pages.u.A', page('2026-10-01', 'not carried yet')],
+    ['wm.journal.pages.u.A', page('2026-10-02', 'first version')]]);
+  const before = Object.fromEntries(data);
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { get length() { return data.size; }, key: (index) => [...data.keys()][index] ?? null,
+    getItem: (name) => data.get(name) ?? null, setItem: (name, value) => data.set(name, value), removeItem: (name) => data.delete(name) } });
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
+    else delete globalThis.localStorage;
+  });
+  journalRoutes.forgetDevice({ previous: 'A', next: null });
+  journalRoutes.forgetDevice({ previous: 'A', next: 'B' });
+  assert.deepEqual(Object.fromEntries(data), before);
+  journalRoutes.forgetDevice({ previous: 'A', next: null, closed: true });
+  assert.deepEqual(Object.fromEntries(data), kept);
+});
+
 test('only unwritten journal work is adopted without a personal-data question', () => {
   const day = '2026-10-01';
   const blank = { body: ' \n\u00a0\ufeff', mood: 0, energy: 10, source: 'spoken' };

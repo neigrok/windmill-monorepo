@@ -20,6 +20,7 @@ const { GymRefusals } = await import('../../../../src/products/gym/domain/gymRul
 const { GymTurnTelemetry } = await import('../../../../src/products/gym/coach/turnTelemetry.js');
 const { gymRoutes } = await import('../../../../src/products/gym/routes.js');
 const { Harness } = await import('../../../platform/domain-kit/harness.js');
+const { reidentify } = await import('../../../../../packages/api-contract/sync/reference/client/lifecycle.js');
 
 const allowance = (code, remaining) => ({ tier: 'free', period: 'calendar_month_utc', limit: '1', used: '0', reserved: '0', remaining,
   resetsAt: 1790000000000, budgetResetsAt: null, code, capabilities: { text: { large: 'large', medium: 'medium', small: 'small' }, transcription: false } });
@@ -194,7 +195,7 @@ test('R4, O3: a recovered turn that breaks tells no outcome of a send it never s
   const harness = await phone(t);
   const { turns, told } = coach(harness.engine, { connected: () => true, clearPass() {}, allowance: async () => ({ failure: {} }) });
   turns.runner.run = async () => { throw new Error('boom'); };
-  turns.launch({ lease: new GymTurn({ thread: null, lifter: null, coach: { record: 'x' } }, turns.replica), question: '', picture: null }, true);
+  turns.launch({ lease: new GymTurn({ thread: null, lifter: null, coach: { record: 'x' } }, turns.binding), question: '', picture: null }, true);
   await settle(turns);
   assert.deepEqual(outcomes(told), []);
 });
@@ -248,6 +249,19 @@ test('the Share door that never answers lets the turn go on as refused, within i
   await assert.rejects(door.share('session-1'), (error) => error.name === 'TimeoutError');
 });
 
+test('a re-identify keeps Coach\'s seat, which is the binding: the field\'s words stay, and the seat\'s writes land', async (t) => {
+  const harness = await phone(t);
+  const { engine } = harness;
+  const { turns } = coach(engine, { connected: () => true, clearPass() {}, allowance: async () => ({ failure: {} }) });
+  turns.setDraft('half a question');
+  const before = { seat: turns.getSnapshot().seat, replica: engine.activeReplica() };
+  await engine.write(null, (device, ctx) => reidentify(device.activeReplica, ctx));
+  const landed = await turns.host.runnerOn(before.seat).run({ scope: CoachMessage.scope, refusals: GymRefusals, load: () => null,
+    decide: () => Decision.unchanged(null) }).then(() => 'landed', (error) => (error instanceof HostUnavailable ? `unavailable:${error.reason}` : error.name));
+  assert.deepEqual({ reidentified: engine.activeReplica() !== before.replica, seat: turns.getSnapshot().seat === before.seat, draft: turns.draft(), landed },
+    { reidentified: true, seat: true, draft: 'half a question', landed: 'landed' });
+});
+
 test('a turn\'s write the engine held while the seat moved ends the turn as the seat\'s, never as a fault of the host', async (t) => {
   const harness = await phone(t);
   const { engine } = harness;
@@ -259,7 +273,7 @@ test('a turn\'s write the engine held while the seat moved ends the turn as the 
     if (operation === 'sync-commit') await slow;
     return write(operation, ...rest);
   });
-  const held = host.runnerOn(engine.activeReplica()).run({ scope: CoachMessage.scope, refusals: GymRefusals, load: () => null,
+  const held = host.runnerOn(engine.activeBinding()).run({ scope: CoachMessage.scope, refusals: GymRefusals, load: () => null,
     decide: () => Decision.unchanged(null) }).then(() => 'landed', (error) => (error instanceof HostUnavailable ? `unavailable:${error.reason}` : error.name));
   assert.equal((await signOut(harness)).complete, true);
   release();

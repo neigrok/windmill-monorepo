@@ -5,10 +5,11 @@
 // acts only while that binding stands: a sign-in or a sign-out between ends the run, and the next replica's run carries
 // what is still its. Each act's pages leave their stores as it commits, so a run that stops between acts leaves only
 // what is still owed, and a page is carried once, whichever seat comes next. Before the seat changes, the pages the
-// replica's ledger records leave their stores too (`settleSeat`), so a Discard of the replica, or the account's closure,
-// takes with it the old pages it counted, as the work they were carried into; the pages not yet carried, and the entries
-// that do not read, wait for that seat's next replica. The pages that bundle could not attribute (`.unclaimed`) stay in
-// the browser's storage until a signed-in person restores or discards them in Settings.
+// replica's ledger records leave their stores too (`settleSeat`), so a Discard of the replica takes with it the old pages
+// it counted, as the work they were carried into; the pages not yet carried, and the entries that do not read, wait for
+// that seat's next replica. An account's closure deletes every page of its seat (`forgetClosedAccount`). The pages that
+// bundle could not attribute (`.unclaimed`) stay in the browser's storage until a signed-in person restores or discards
+// them in Settings.
 
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { ActionRunner, EngineReplica } from '../../platform/domain-kit/runner.js';
@@ -76,6 +77,17 @@ export class OldStores {
       if (rest.kind === 'forget') this.storage.removeItem(store.key);
       else this.storage.setItem(store.key, rest.raw);
       gone.push(...rest.gone);
+    }
+    return gone;
+  }
+
+  // Every store of `seat` deleted whole, its entries that do not read among them. Answers the pages that left. Throws where
+  // the browser refuses its storage, the stores before the refusal gone.
+  forget(seat) {
+    const gone = [];
+    for (const store of this.read().filter((each) => each.seat.equals(seat))) {
+      this.storage.removeItem(store.key);
+      gone.push(...store.pages);
     }
     return gone;
   }
@@ -260,6 +272,17 @@ export function settleSeat(engine, { stores = new OldStores(), track = trackEven
   try {
     const gone = stores.settle(seat, CarryLedger.of(engine.readDeviceRows('journal')[CarryLedger.key(seat)] ?? null));
     if (gone.length > 0) track('journal_carry', { seat: seat.kind, outcome: 'cleared', pages: countBucket(gone.length) });
+  } catch (error) {
+    report('journal-migration', 'clear', error);
+  }
+}
+
+// The account's closure (the shell's `forgetDevice` with `closed`): the account no longer exists, so every page this
+// browser kept of its seat leaves its stores, carried or not, the entries that do not read among them.
+export function forgetClosedAccount(account, { stores = new OldStores(), track = trackEvent, report = reportFailure } = {}) {
+  try {
+    const gone = stores.forget(Seat.of(account));
+    if (gone.length > 0) track('journal_carry', { seat: 'account', outcome: 'cleared', pages: countBucket(gone.length) });
   } catch (error) {
     report('journal-migration', 'clear', error);
   }

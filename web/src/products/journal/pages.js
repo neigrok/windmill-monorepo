@@ -162,7 +162,9 @@ export function onSyncResult(replica, _ctx, result, body) {
   if (result.s === 'refused' && !['clock-skew', 'base-unknown'].includes(result.code)) pending.refusal = result.code;
 }
 
-export function watchClaims(engine) {
+// Each claim the account answered is reconciled into its day's page. A pass a sign-in or a sign-out overtakes is refused
+// (`ReplicaChanged`), which the engine told as `not-writable`, and ends quietly: the next seat's publication starts another.
+export function watchClaims(engine, { report = (error) => captureError('journal', 'journal-claim-reconcile', error?.stack ?? '', '/journal') } = {}) {
   let running = false;
   let dirty = false;
   const reconcile = async () => {
@@ -181,8 +183,9 @@ export function watchClaims(engine) {
           if (result.kind === 'refused') track('sync_commit', { outcome: 'failed' });
         }
       }
-    } catch (error) { captureError('journal', 'journal-claim-reconcile', error?.stack ?? '', '/journal'); }
-    finally { running = false; }
+    } catch (error) {
+      if (!(error instanceof ReplicaChanged)) report(error);
+    } finally { running = false; }
   };
   engine.observe(SCOPE).subscribe(reconcile);
   reconcile();

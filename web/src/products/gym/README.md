@@ -27,8 +27,9 @@ only before the seat changes, below.
 Before the shell signs in or finishes a sign-out (`routes.sync.seatWillChange`), `saveSignedOutWorkouts` saves each
 workout the anon replica holds for adoption (`AdoptWorkout` in `prepare`, kept under the device row `rack:adoption`): a
 finished one becomes one import that supersedes its chain, an open one keeps a start that does not join, and an open one's
-sets the replacing start folded are recorded again with it (`AppendSet` as recorded). It is one composed act on the API's
-binding, so it lands whole before the seat changes, or not at all when the seat moved first. A bound replica holds none. The web
+sets the replacing start folded are recorded again with it (`AppendSet` as recorded). Each workout is one composed act on
+the API's binding, so it lands whole before the seat changes, or not at all when the seat moved first; one the domain
+refuses or that fails leaves the others to land, and a seat that moved ends the hook. A bound replica holds none. The web
 holds no rack, so nothing of one is written first. Nothing on the web draws a signed-out workout yet; its recovery after
 sign-in is the domain's (`domain/workoutRecovery.js`) and no screen's.
 Correction and backfill helpers parse fields and arrange draft rows into domain inputs.
@@ -79,7 +80,8 @@ and the admitted minting calls before it, as the server's gate does; `RecordShar
 The Coach room runs each turn in the browser (`coach/`). `CoachTurns` admits a send, opens its records, and runs the turn on
 the Coach engine (`platform/agent`) with `GymTurnHost` and `GymProfile`, each model round a call to the AI service
 (`platform/ai`); the host writes the text about once a second and the round's mark, runs each call through
-`RunAbility` on the turn's replica or a share through the Share door, and ends, withdraws or recovers the turn. One turn
+`RunAbility` or a share through the Share door, and ends, withdraws or recovers the turn, every write under the seat the
+turn opened on, the engine's binding, which a re-identify keeps and an account change ends. One turn
 runs at a time in a browser across its tabs, the mark refusing a second; a tab that opens on a turn in its last round
 recovers its answer; a send opens under a browser-wide lock until the engine holds the turn's own, so another tab's
 recovery never meets a fresh turn. Pictures stay in the browser's `picture:<id>` rows, their model copy uploaded once a
@@ -144,8 +146,8 @@ in the catalog.
 `outcome` only, and a `refused` one also `code`: `not-writable` when the replica moved under the room, `domain` when the
 gym's rules refused it, this device's or the server's. Operations cover routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
-delete/Undo, refusal and the save of signed-out workouts for adoption (`workout-adopt`, told only when it saved something,
-was refused or failed, and never stopping the seat change). Outcomes are `saved-local`, `unchanged`, `failed`, `held`, `undone`,
+delete/Undo, refusal and the save of signed-out workouts for adoption (`workout-adopt`, told once when it saved something
+and once for each workout refused or failed, and never stopping the seat change). Outcomes are `saved-local`, `unchanged`, `failed`, `held`, `undone`,
 `closed`, `refused`. A local save does not claim server admission. Unexpected boundary failures
 report a static `gym-<operation>` to Sentry with the error's stack frames, never its message, IDs, names, bodies or field values;
 a `GymRefusal` is expected and reports nothing, and a store failure is the engine's to report.

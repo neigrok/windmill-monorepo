@@ -17,6 +17,7 @@ export function useToday() {
 // The journal draws the replica this tab draws (`useSyncReplica`): nothing of another seat's while the shell catches up.
 // What is typed belongs to the seat it was typed under, its binding, which a re-identify keeps: a save that comes due after
 // a sign-in or a sign-out moved the seat is refused (`ReplicaChanged`), told as the engine tells it, and lands in no other.
+// Its words stay on the screen, unsaved, until the person changes them under the seat that stands.
 export function usePages() {
   const session = useSyncExternalStore(syncSession.subscribe, syncSession.getSnapshot, syncSession.getSnapshot);
   const replica = useSyncReplica();
@@ -67,14 +68,32 @@ export function usePages() {
       setSaveTick((tick) => tick + 1);
     }).catch((error) => {
       writing.failed = true;
-      if (drafts.current.get(writing.binding) === writing && engine.activeBinding() === writing.binding) setFailure(true);
-      if (!(error instanceof ReplicaChanged)) captureError('journal', 'journal-save', error?.stack ?? '', '/journal');
+      if (!(error instanceof ReplicaChanged)) {
+        if (drafts.current.get(writing.binding) === writing && engine.activeBinding() === writing.binding) setFailure(true);
+        captureError('journal', 'journal-save', error?.stack ?? '', '/journal');
+        return;
+      }
+      // Words a seat change refused stay on the screen under the seat that now stands, unsaved (spec §7): nothing saves them
+      // there but the person's next change, so words typed under one seat reach another only by their hand. A writing the
+      // standing seat already holds is its own, and stays.
+      if (drafts.current.get(writing.binding) !== writing) return;
+      drafts.current.delete(writing.binding);
+      const standing = engine.activeBinding();
+      if (drafts.current.has(standing)) return;
+      const kept = { binding: standing, doc: writing.doc, saved: false, failed: true, typedUnder: writing.binding };
+      drafts.current.set(standing, kept);
+      setEditor(kept); setFailure(true);
     }).finally(() => { writing.pending = false; });
   }, [engine, show]);
   // A staged writing shows at once and reaches the engine 600 ms after the last keystroke, or on the next flush.
   const flush = useCallback(() => {
     if (staged.current) persist(staged.current.writing, staged.current.previous);
   }, [persist]);
+  // A writing staged under a seat that no longer stands goes to the engine at once, which refuses it, so its words come
+  // back on the screen without the 600 ms of the seat's own page between.
+  useEffect(() => {
+    if (engine && staged.current && staged.current.writing.binding !== binding) flush();
+  }, [engine, binding, flush]);
   const stage = useCallback((writing, previous) => {
     show(writing);
     staged.current = { writing, previous, timer: setTimeout(flush, 600) };
@@ -111,7 +130,7 @@ export function usePages() {
       writing = { binding, doc: { day: saved.day.text, ...saved.document.fields() }, saved: false, failed: true, recovered: retained };
       drafts.current.set(binding, writing);
     }
-    if (writing && !writing.pending && writing.doc.day !== today) {
+    if (writing && !writing.pending && !writing.typedUnder && writing.doc.day !== today) {
       const destination = pagesOf(engine).find((page) => page.day === today) ?? { body: '' };
       const doc = { ...writing.doc, day: today, body: JournalWriting.claimBody(destination.body, writing.doc.body) };
       persist({ binding, doc, saved: false, carriedFrom: writing.doc.day,

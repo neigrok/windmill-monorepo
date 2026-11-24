@@ -170,9 +170,10 @@ A phone always has its store. A browser can refuse one, lose one, or fill one.
   - **What is not a clear.** A re-identify gives the active replica a new id within one session (a
     push answered `replica-forked`, `replica-foreign` or `gap`, and an epoch change; engine §7.11),
     and `syncReplica` names the old id until the new one's first accepted push. So the browser
-    tells a clear only when `syncReplica` is none of the replica ids its own store has held, and says
-    nothing on `null`. A browser on a replica held in memory is a new device in every tab under one
-    cookie, and says nothing.
+    tells a clear only when `syncReplica` is none of the replica ids its own store has held that a
+    session can still name (its replicas' and the latest it let go), and says nothing on `null`. A
+    browser on a replica held in memory is a new device in every tab under one cookie, and says
+    nothing.
 - **Persistence.** The browser asks to keep its storage. Where it is denied, nothing more is shown.
 - One turn of Coach a browser, which Coach's spec rules, does not hold across tabs of a browser
   that keeps nothing.
