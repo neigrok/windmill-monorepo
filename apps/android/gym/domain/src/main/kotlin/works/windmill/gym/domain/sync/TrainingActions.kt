@@ -56,6 +56,19 @@ class Recorded<L, T>(val action: EntersLoads<L, T>) : Action<L, T, GymRefusal> {
     override fun decide(loaded: L, ids: IDSource): Decision<T, GymRefusal> = action.decideRecorded(loaded, ids)
 }
 
+// A client's start never joins another device's open workout: the account refuses it `session-open` (engine A.2 `gym.start`).
+class StartSessionCommand(id: Id<Session>, routineId: Id<Routine>?, startedAt: Instant) : ServerCommand {
+    override val name = Gym.Commands.start
+    override val specs = emptyList<ValueSpec>()
+    override val args: Map<String, Json> = buildMap {
+        put("id", id.json); put("startedAt", Json.of(startedAt.ms)); put("joinOpenSession", Json.of(false))
+        routineId?.let { put("routineId", it.json) }
+    }
+}
+
+// One open workout per account: a start beside a workout the account will hold open is refused here, open by the stale
+// rule over the stored sets since a held delete is not yet sent; a start that loses a race with another device's is
+// refused `session-open` by the account, its sets folded into that notice.
 class StartSession(val id: Id<Session>, val routineId: Id<Routine>? = null, val startedAt: Instant? = null) : Action<StartSession.Loaded, Id<Session>, GymRefusal> {
     data class Loaded(val state: TrainingState, val routine: Routine?, val prior: Boolean)
     override val scope = Session.scope
@@ -63,16 +76,14 @@ class StartSession(val id: Id<Session>, val routineId: Id<Routine>? = null, val 
     override fun load(read: Reader) = Loaded(TrainingState(read), routineId?.let { read.repository(Routine).find(it, ViewMode.drawn) }, read.repository(Session).record(id, ViewMode.stored) != null)
     override fun decide(loaded: Loaded, ids: IDSource): Decision<Id<Session>, GymRefusal> {
         if (loaded.prior) return Decision.Unchanged(id)
-        val at = startedAt ?: loaded.state.moment.now
-        val open = loaded.state.stored.firstOrNull { SessionRules.drawn(it, loaded.state.sets, loaded.state.moment.now).isOpen }
-        val args = buildMap {
-            put("id", id.json); routineId?.let { put("routineId", it.json) }; put("startedAt", Json.of(at.ms)); put("joinOpenSession", Json.of(true))
-        }
-        if (open != null) return Decision.Write(Plan(GymCommand(Gym.Commands.start, args)), open.id)
+        val state = loaded.state
+        if (state.drawn.any { SessionRules.drawn(it, state.sets, state.moment.now).isOpen })
+            return Decision.Refuse(GymRefusal.predicted(Gym.Codes.sessionOpen, id.ref))
+        val at = startedAt ?: state.moment.now
         SessionRules.instant(at, "session.startedAt", Path("startedAt"))
         val routine = loaded.routine
         val predicted = Session(id, at, routineId = routine?.id, plan = routine?.let(::PlanSnapshot))
-        return Decision.Write(Plan(GymCommand(Gym.Commands.start, args), listOf(Prediction.create(Session, id, predicted.fields()))), id)
+        return Decision.Write(Plan(StartSessionCommand(id, routineId, at), listOf(Prediction.create(Session, id, predicted.fields()))), id)
     }
 }
 

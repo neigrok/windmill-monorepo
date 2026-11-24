@@ -219,8 +219,9 @@ Where a roadmap and its steps open on the web, as what follows the app's origin:
 `/#/app/<treeId>?step=<id>` for a tree the reader owns, `/t/<treeId>` and `/t/<treeId>#?step=<id>` for
 one they can only read. A tree id is always `t_` plus 16 hex and is written as it is; a step id is
 encoded as `encodeURIComponent` does. The backend builds every case (`domain/WebAddress`, tested by
-`WebAddressTest`, which reads the file at run time; the image copies it in `backend/Dockerfile`), and
-`web/test/products/roadmap/addresses.test.js` proves the router opens each one. `localOrigin` is the
+`WebAddressTest`, which reads the file at run time; the image copies it in `backend/Dockerfile`),
+`web/test/products/roadmap/addresses.test.js` proves the router opens each one, and the iPhone reads and writes each by
+`RoadmapAddress` (`apps/ios/Domain/Sources/RoadmapDomain/Addresses.swift`, run by `AddressesTests`). `localOrigin` is the
 origin a local stack serves the app on: the backend's default when `WINDMILL_APP_URL` is unset
 (`platform/infra/AppOrigin.h`) and the port `web/vite.config.js` pins the dev server to, each held to
 it by the same two tests, so an address a locally run server hands out opens the local app.

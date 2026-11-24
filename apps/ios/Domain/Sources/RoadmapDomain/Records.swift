@@ -248,9 +248,11 @@ public struct RoadmapTree: Sendable {
     public let depth: Int
     public let visibility: String
     public let reach: String
+    // The roadmap a fork was copied from; none for a roadmap that is no fork.
+    public let forkedFrom: String?
 
     public init(title: String? = nil, guide: String? = nil, guideInherited: Bool? = nil, root: String, depth: Int? = nil,
-                visibility: String? = nil, reach: String? = nil) {
+                visibility: String? = nil, reach: String? = nil, forkedFrom: String? = nil) {
       self.title = title ?? Roadmap.Defaults.Meta.title
       self.guide = guide ?? Roadmap.Defaults.Meta.guide
       self.guideInherited = guideInherited ?? Roadmap.Defaults.Meta.guideInherited
@@ -258,6 +260,7 @@ public struct RoadmapTree: Sendable {
       self.depth = depth ?? Roadmap.Defaults.Meta.depth
       self.visibility = visibility ?? Roadmap.Defaults.Meta.visibility
       self.reach = reach ?? Roadmap.Defaults.Meta.reach
+      self.forkedFrom = forkedFrom
     }
   }
 

@@ -116,6 +116,7 @@
   "journal.search.empty": "Nothing close to that yet.",
   "journal.search.indexing": "reading your pages · one time",
   "journal.search.lexical": "Matched on your device. Nothing you wrote is sent anywhere to search.",
+  "journal.search.needsConnection": "Matched on your device. Search by meaning needs a connection the first time — nothing you wrote is sent.",
   "journal.search.neural": "Matched by meaning, on your device. Nothing you wrote is sent anywhere to search.",
   "journal.search.placeholder": "Search a feeling",
   "journal.search.quote": "“{text}”",

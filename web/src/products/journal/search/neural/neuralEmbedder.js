@@ -1,5 +1,6 @@
 // The same shape as LexicalEmbedder (embedAll / embedQuery / floor), over the Web Worker that runs the
-// model. `ready` resolves once the model is up and rejects if it never loads.
+// model. `ready` resolves once the model is up and rejects if it never loads, its `step` saying where: `worker` (the
+// worker never started) or `model` (the model did not load in it).
 
 const BATCH = 32;   // passages per worker round-trip — bounds model memory on a large corpus
 
@@ -14,13 +15,13 @@ export class NeuralEmbedder {
       this.worker.onmessage = (event) => {
         const data = event.data;
         if (data.ready) return resolve();
-        if (data.failed) return reject(new Error(data.error));
+        if (data.failed) return reject(Object.assign(new Error(data.error), { step: 'model' }));
         const settle = this.pending.get(data.id);
         if (!settle) return undefined;
         this.pending.delete(data.id);
         return data.ok ? settle.resolve(data.vectors) : settle.reject(new Error(data.error));
       };
-      this.worker.onerror = (event) => reject(new Error(event.message || 'worker error'));
+      this.worker.onerror = (event) => reject(Object.assign(new Error(event.message || 'worker error'), { step: 'worker' }));
     });
   }
 

@@ -1,7 +1,7 @@
 import XCTest
 
-// The Roadmap room's boards (Roadmap · iOS): its Board, a step's page, the step form, its roadmaps, and its door on
-// Where to start? (Shell 02a).
+// The Roadmap room's boards (Roadmap · iOS): its Board, a step's page, the step form, its roadmaps, its Guide, a shared
+// roadmap's cover and Fork, the account's questions that name its work, and its door on Where to start? (Shell 02a).
 final class RoadmapCaptures: DesignCapture {
   // 01.1: *Learn to sail* on its Board, as it arrives from its account.
   func testBoardAtRest() {
@@ -962,6 +962,207 @@ final class RoadmapCaptures: DesignCapture {
     app.navigationBars[name].buttons.element(boundBy: 0).tap()
     XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier == %@ AND label BEGINSWITH %@", "roadmap-kinds-row", name)).firstMatch
       .waitForExistence(timeout: 5))
+  }
+
+  // The Guide sheet over a roadmap on a board, raised by the title menu's item of that name.
+  func guide(of board: String, item: String = "Guide", _ look: Look) -> XCUIApplication {
+    let app = titleMenu(of: board, look)
+    app.buttons[item].tap()
+    XCTAssertTrue(app.navigationBars["Guide"].waitForExistence(timeout: 10))
+    return app
+  }
+
+  // 08.1: *Learn to sail*'s guide, read, over who else reads it.
+  func testGuide() {
+    captureBoard("08.1-roadmap-guide") { look in
+      let app = guide(of: "roadmap-guide", look)
+      XCTAssertTrue(app.staticTexts["roadmap-guide-text"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 08.2: a roadmap with no guide yet.
+  func testNoGuideYet() {
+    captureBoard("08.2-roadmap-guide-none-yet") { look in
+      let app = guide(of: "roadmap-learn-to-sail", look)
+      XCTAssertTrue(app.buttons["roadmap-guide-add"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 08.3: the long guide in the editor with the keyboard up, the counter showing what it may still hold.
+  func testGuideNearTheLimit() {
+    captureBoard("08.3-roadmap-guide-near-the-limit") { look in
+      let app = guide(of: "roadmap-guide-long", look)
+      app.buttons["roadmap-guide-edit"].tap()
+      XCTAssertTrue(app.staticTexts["roadmap-guide-count"].waitForExistence(timeout: 10) && app.keyboards.firstMatch.waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 08.4: typed past 5,000 characters, the excess counted and Save dimmed.
+  func testGuideOverTheLimit() {
+    captureBoard("08.4-roadmap-guide-over-the-limit") { look in
+      let app = guide(of: "roadmap-guide-long", look)
+      app.buttons["roadmap-guide-edit"].tap()
+      XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+      app.textViews["roadmap-guide-field"].typeText(", then tie up without help.")
+      XCTAssertTrue(app.staticTexts["roadmap-guide-count"].waitForLabel("12 over", timeout: 10))
+      return app
+    }
+  }
+
+  // 08.5: *Learn to sail* gone into from *Become a day skipper*, whose guide stands under its own.
+  func testGuidesFromAbove() {
+    captureBoard("08.5-roadmap-guides-from-above") { look in
+      let app = guide(of: "roadmap-guide-above", item: "Guide · +1 from above", look)
+      XCTAssertTrue(app.staticTexts["roadmap-guide-above"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 10.7: two roadmaps made on the phone signed out, then the sign-in question of an account that holds one.
+  func testSignInQuestionNamesRoadmaps() {
+    captureBoard("10.7-roadmap-sign-in-question") { look in
+      let app = launch("roadmap-sign-in", look)
+      XCTAssertTrue(app.buttons["roadmap-new"].waitForExistence(timeout: 30))
+      app.buttons["roadmap-new"].tap()
+      for name in ["Learn to cook", "Run a 10k"] {
+        let field = app.textFields["roadmap-new-name"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText(name)
+        app.buttons["roadmap-new-create"].tap()
+        XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 10))
+        if name == "Learn to cook" {
+          app.navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch.tap()
+          XCTAssertTrue(app.buttons["New Roadmap"].waitForExistence(timeout: 5))
+          app.buttons["New Roadmap"].tap()
+        }
+      }
+      app.buttons["you"].tap()
+      XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 10))
+      app.buttons["email-sign-in"].tap()
+      let email = app.textFields["email-address"]
+      XCTAssertTrue(email.waitForExistence(timeout: 5))
+      email.tap()
+      email.typeText("roadmap-fixture@example.com")
+      app.buttons["Send code"].tap()
+      let code = app.textFields["email-code"]
+      XCTAssertTrue(code.waitForExistence(timeout: 10))
+      code.tap()
+      code.typeText("482913")
+      XCTAssertTrue(app.alerts["Add to your account?"].waitForExistence(timeout: 30))
+      return app
+    }
+  }
+
+  // 10.8: the sign-out question over You, counting the five steps completed after the server stopped answering.
+  func testSignOutQuestionCountsRoadmapChanges() {
+    captureBoard("10.8-roadmap-sign-out-question") { look in
+      let app = launch("roadmap-unconfirmed", look)
+      XCTAssertTrue(app.staticTexts["8 of 8 done"].waitForExistence(timeout: 60))
+      app.buttons["you"].tap()
+      let signOut = app.buttons["sign-out"]
+      XCTAssertTrue(signOut.waitForExistence(timeout: 10))
+      for _ in 0..<6 where !signOut.isHittable { app.swipeUp(velocity: .slow) }
+      signOut.tap()
+      XCTAssertTrue(app.alerts["Sign out?"].waitForExistence(timeout: 30))
+      return app
+    }
+  }
+
+  // A shared roadmap's link opened on its board's cover, which lands on the Graph.
+  func cover(_ look: Look, board: String = "roadmap-cover", arguments: [String] = []) -> XCUIApplication {
+    let app = launch(board, look, arguments: arguments)
+    XCTAssertTrue(app.descendants(matching: .any)["roadmap-graph"].waitForExistence(timeout: 60))
+    return app
+  }
+
+  // 09.4: another account's public *Learn to sail* on its cover, on the Graph, its owner's progress under its name.
+  func testCoverOnTheGraph() {
+    captureBoard("09.4-roadmap-cover-graph", settle: 1.5) { look in cover(look) }
+  }
+
+  // 09.5a: the cover's Board, the owner's progress, read-only.
+  func testCoverBoard() {
+    captureBoard("09.5a-roadmap-cover-board") { look in
+      let app = cover(look)
+      app.segmentedControls.buttons["Board"].tap()
+      XCTAssertTrue(app.roadmapStep("Read the wind").waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 09.5b: a step's page on the cover, read-only, Fork at its foot.
+  func testCoverStepPage() {
+    captureBoard("09.5b-roadmap-cover-step") { look in
+      let app = cover(look)
+      app.segmentedControls.buttons["Board"].tap()
+      XCTAssertTrue(app.roadmapStep("Read the wind").waitForExistence(timeout: 10))
+      app.roadmapStep("Read the wind").tap()
+      XCTAssertTrue(app.roadmapStepPage("Read the wind"))
+      return app
+    }
+  }
+
+  // 09.7: Fork under way, which the board's server leaves unanswered.
+  func testForking() {
+    captureBoard("09.7-roadmap-forking", settle: 1.5) { look in
+      let app = cover(look, arguments: ["-fork-held"])
+      app.buttons["roadmap-fork"].tap()
+      XCTAssertTrue(app.staticTexts["Forking…"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 09.8: the copy arrived and opened on its Board, the band saying so.
+  func testForked() {
+    captureBoard("09.8-roadmap-forked", settle: 1.5) { look in
+      let app = cover(look)
+      app.buttons["roadmap-fork"].tap()
+      XCTAssertTrue(app.staticTexts["Forked · 8 steps planted"].waitForExistence(timeout: 60))
+      return app
+    }
+  }
+
+  // 09.9a: Fork signed out raises the shell's sign-in over the cover.
+  func testForkSignedOut() {
+    captureBoard("09.9a-roadmap-fork-signed-out", settle: 1.5) { look in
+      let app = cover(look, board: "roadmap-cover-signed-out")
+      app.buttons["roadmap-fork"].tap()
+      XCTAssertTrue(app.staticTexts["Sign in to fork this roadmap."].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 09.9b: a cover opened with no connection: Fork dimmed and the band slot saying why.
+  func testForkWithNoConnection() {
+    captureBoard("09.9b-roadmap-fork-no-connection", settle: 1.5) { look in
+      let app = cover(look, board: "roadmap-cover-offline")
+      XCTAssertTrue(app.staticTexts["Forking needs a connection."].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 09.10a and 09.10b: a link to a private roadmap, signed in and signed out.
+  func testLinkCannotOpen() {
+    for (screen, board) in [("09.10a-roadmap-link-cannot-open", "roadmap-cover-private"), ("09.10b-roadmap-link-cannot-open-signed-out", "roadmap-cover-private-signed-out")] {
+      captureBoard(screen) { look in
+        let app = launch(board, look)
+        XCTAssertTrue(app.staticTexts["This roadmap can’t be opened"].waitForExistence(timeout: 60))
+        return app
+      }
+    }
+  }
+
+  // 09.11: a link with no connection to a roadmap the phone holds no copy of.
+  func testLinkWithNoConnection() {
+    captureBoard("09.11-roadmap-link-no-connection") { look in
+      let app = launch("roadmap-cover-no-connection", look)
+      XCTAssertTrue(app.staticTexts["Needs a connection"].waitForExistence(timeout: 60))
+      return app
+    }
   }
 
   // Shell 02a: Where to start? with its third door.

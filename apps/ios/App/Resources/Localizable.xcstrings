@@ -244,6 +244,9 @@
       },
       "shouldTranslate" : false
     },
+    "%@ · from above" : {
+      "comment" : "A guide of a roadmap above this one: that roadmap's name"
+    },
     "%@ · this workout" : {
 
     },
@@ -481,6 +484,9 @@
           }
         }
       }
+    },
+    "%lld left" : {
+      "comment" : "The guide's counter from 4,500 characters: how many more it may hold"
     },
     "%lld minutes" : {
       "localizations" : {
@@ -748,6 +754,9 @@
     "%lld of 500 bytes" : {
 
     },
+    "%lld over" : {
+      "comment" : "The guide's counter past its 5,000 characters: how many too many"
+    },
     "%lld pages" : {
       "comment" : "The written journal pages this phone holds, in You",
       "localizations" : {
@@ -809,6 +818,28 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld reps"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld roadmaps" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld roadmap"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld roadmaps"
                 }
               }
             }
@@ -1220,6 +1251,9 @@
 
     },
     "Add" : {
+
+    },
+    "Add Guide" : {
 
     },
     "Add Kind" : {
@@ -1784,6 +1818,9 @@
     "Copied" : {
 
     },
+    "Copy Link" : {
+
+    },
     "Copy answer" : {
 
     },
@@ -1868,6 +1905,9 @@
       }
     },
     "Couldn’t delete your account. Check your connection and try again." : {
+
+    },
+    "Couldn’t fork this roadmap. Try again." : {
 
     },
     "Couldn’t load this roadmap" : {
@@ -2263,6 +2303,38 @@
     "For 30 days, you can sign in again to bring it all back. After that, it is deleted for good." : {
 
     },
+    "Fork Roadmap" : {
+
+    },
+    "Forked · %lld steps planted" : {
+      "comment" : "The band once a fork's copy opens: how many steps it planted",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Forked · %lld step planted"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Forked · %lld steps planted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Forking needs a connection." : {
+
+    },
+    "Forking…" : {
+
+    },
     "From %@" : {
       "comment" : "Who proposed a change: From Coach"
     },
@@ -2292,6 +2364,18 @@
     },
     "Graph" : {
 
+    },
+    "Guide" : {
+      "comment" : "The title menu's item that opens the roadmap's guide"
+    },
+    "Guide removed" : {
+      "comment" : "The band after a roadmap's guide is saved blank"
+    },
+    "Guide saved" : {
+      "comment" : "The band after a roadmap's guide is saved"
+    },
+    "Guide · +%lld from above" : {
+      "comment" : "The title menu's item that opens the roadmap's guide: how many guides of the roadmaps above it apply too"
     },
     "Gym" : {
 
@@ -2372,6 +2456,9 @@
 
     },
     "It lives only on this phone. Sign in to back it up and open it on the web." : {
+
+    },
+    "It may be private, or it may have moved." : {
 
     },
     "It opens another Windmill account with its own data. Windmill doesn't merge accounts. Remove Apple there first." : {
@@ -2741,6 +2828,9 @@
         }
       }
     },
+    "Needs a connection" : {
+
+    },
     "Needs you" : {
 
     },
@@ -2827,6 +2917,9 @@
 
     },
     "No finished workouts yet" : {
+
+    },
+    "No guide yet" : {
 
     },
     "No movement by that name." : {
@@ -3543,6 +3636,9 @@
     "Share with Coach" : {
 
     },
+    "Shared roadmap · %@" : {
+      "comment" : "A shared roadmap's cover: under its name, how far its owner is"
+    },
     "Sharing needs a connection. The link is still live." : {
 
     },
@@ -3557,6 +3653,9 @@
     },
     "Showing %@" : {
       "comment" : "The Board's first row while a kind filter narrows it: the kinds shown"
+    },
+    "Sign In" : {
+
     },
     "Sign in" : {
 
@@ -3577,6 +3676,12 @@
 
     },
     "Sign in to continue." : {
+
+    },
+    "Sign in to fork this roadmap." : {
+
+    },
+    "Sign in to open this roadmap." : {
 
     },
     "Sign in to review this proposal." : {
@@ -3941,7 +4046,13 @@
     "This response has expired. Your draft is still on this phone." : {
 
     },
+    "This roadmap can’t be opened" : {
+
+    },
     "This roadmap is at its limit." : {
+
+    },
+    "This roadmap isn’t on this iPhone." : {
 
     },
     "This routine could not be deleted. Try again." : {
@@ -4191,6 +4302,9 @@
     "What I am training for" : {
 
     },
+    "What are you working toward?" : {
+
+    },
     "What belongs here?" : {
 
     },
@@ -4349,6 +4463,9 @@
 
     },
     "Your account is deleted" : {
+
+    },
+    "Your agents and people you share this roadmap with can read the guide." : {
 
     },
     "Your choice couldn’t be saved. Try again." : {
@@ -4719,6 +4836,9 @@
         }
       }
     },
+    "roadmaps" : {
+      "comment" : "What the account already has, in the sign-in question"
+    },
     "saved" : {
 
     },
@@ -4756,9 +4876,6 @@
       "comment" : "When a routine was last trained: trained 3 days ago"
     },
     "training" : {
-      "comment" : "What the account already has, in the sign-in question"
-    },
-    "training and journal pages" : {
       "comment" : "What the account already has, in the sign-in question"
     },
     "two short" : {

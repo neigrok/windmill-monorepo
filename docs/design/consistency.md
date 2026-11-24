@@ -106,7 +106,8 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
   it.*; `web/src/products/gym/errors.js` `failureReason`) and keeps *the log didn’t answer. Try again
   when you have signal* for its REST doors. The journal says *not saved — no room on this device*
   (`Canvas.jsx`) for every failed save, which claims a full store when the store may be closed or
-  failing instead. Confirm one storage sentence for both products.
+  failing instead. Confirm one storage sentence for both products. The Shell file's proposal (`368:645`,
+  boards 07 and 08) words a full store and any other store failure apart, for both products.
 - **7k · A guard read beside a write.** `../foundation/domain-kit.md` §8.3 rule 2 refuses a plan in
   which two operations name one record. Android's kit counts a `guardRead` among them (`Plans.kt`);
   iOS's counts only writing operations (`Translation.swift`); no iOS plan guards and writes one
@@ -765,6 +766,22 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   its limit.*, the Board's sentence; the rows are the system's 52 pt where the boards draw 44, the list's separators
   start at the words, and the sections stand the list's own distance apart; and every board of the page draws
   *History* and the Coach circle or composer, which are not built.
+- **Roadmap · iOS · what the Guide and the account's questions leave for the boards.** The Guide is built in Debug
+  builds from 08.1 to 08.5, and the Shell's questions name roadmap's work as 10.7 and 10.8 draw. To draw or rule: no
+  board draws the band after *Save*, and it is built as the room's receipt, *Guide saved*, or *Guide removed* for a
+  blank draft, with *Undo* for six seconds, where the web keeps no Undo of a guide; a roadmap with no guide of its own
+  under guides from above is not drawn, and it is built as 08.2's empty view with *Add Guide* over 08.5's sections;
+  08.3 draws the editor's footer as the counter alone, and below 4,500 characters, which the counter does not count,
+  the footer says who else reads the guide where the phone is signed in, as the web's phone does; 08.2's symbol is
+  the system's empty view's size, larger than the board draws it, as on the room's other empty views; and the editor's
+  text scrolls on under the sheet's bar, which the system blurs, where 08.3 starts it below the bar.
+  08's NOTE gives up to eight guides from above, and where the roadmap has a guide of its own the domain's read of the
+  nearest eight holds that one, so seven stand above it (`RoadmapAccount.guides`, the web's read alike).
+  10.7 draws its third button *Cancel Sign-In*, where the Shell's 23i and the app say *Cancel sign-in*, and it is built
+  as the Shell's, for the Shell's owner to rule; and 10.7 and 10.8 name Coach's conversations, which the phone cannot
+  make until Coach is built, so neither question names them. For the Shell's owner: with nothing unconfirmed, Sign
+  out says *Your pages and log stay in your account and leave this phone.* (16c), which speaks of pages and a log to a
+  person who may hold only roadmaps; 10.8 keeps 16c's words, so the line is the Shell's to reword for every room.
 - **Roadmap · iOS · what the Graph leaves for the boards.** The switch, the canvas, a selected step with its bar,
   *Next* with its menu, *Fit* and an empty roadmap are built in Debug builds from 04.1 to 04.5, 04.7 and S.2. To draw
   or rule: the boards draw *Learn to sail* from the top down by hand, and the canvas seats it where the web's layout
@@ -813,6 +830,23 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the 5,000-step handbook opens with every disc at the layout's 6 pt floor and no connector wide enough to draw, 650
   times farther out than the working zoom, so until the Graph's own Find is built a person reaches a step there by
   pinching, from *Next*, or by *Open in Graph* on the step's Board row or page.
+- **Roadmap · iOS · what a roadmap's link, its cover and Fork leave for the boards.** A roadmap's link opening the room,
+  a shared roadmap's cover and Fork are built in Debug builds from 09.4, 09.5a, 09.5b and 09.7 to 09.11. To draw or rule:
+  the cover's Graph seats *Learn to sail* where the web's layout does, as the room's Graph does, not top-down as 09.4
+  draws it; Find on the cover's Graph is dimmed, as on the room's, where 09.4 draws it at rest; 09.4 draws no bar in the
+  band slot, and the cover has no *Next*, but a step selected on its Graph stands there as the room's bar, which opens
+  the step's page, and no board draws it; *Forking…*'s spinner wears the accent, where 09.7 draws it grey; 09.9a's sheet
+  is the shell's own sign-in at its own height, with *Close* and *Sign in* in its bar and *Sign in to fork this
+  roadmap.* as its title over the shell's doors, where the board draws a full sheet titled *Sign In* with a close
+  symbol and the sentence centred in body type; *Sign In* on 09.10b opens the same sheet saying *Sign in to open this
+  roadmap.*, which no board words; 09.10a's headline stands on one line where the board breaks it in two; 09.8 draws
+  Coach's composer under the band, which the room has not built, so the copy's Board has the + alone; a cover's Board
+  with no step says *No steps yet* with no button, and no board draws it; a cover whose copy the phone cannot read says
+  the room's *Couldn’t load this roadmap* with *Try Again* (01.5c), which no board of section 09 draws; a subtree's
+  cover has no Fork, as the section's NOTE and the web have it, and no board draws that cover; a fork the server refuses
+  or that fails says *Couldn’t fork this roadmap. Try again.* in the band slot, which no board words; and a step that owns a subtree stands
+  on a cover as the domain reads it with that subtree unread, so it is never Done there, where the web's reader takes
+  what the server's `subtrees` says ([Roadmap on iOS](../foundation/roadmap-ios.md) §13).
 - **Roadmap · iOS · what a pinch of a crowd shows while it moves.** On an iPhone 13 mini a pinch with the whole
   5,000-step handbook in view is given five sixths of its frames
   ([Roadmap on iOS](../foundation/roadmap-ios.md) §13). The room holds three ways to keep them (`GraphPinch`), each
@@ -1277,11 +1311,14 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 ## Gym
 
 - **The web as a device (owner, 2026-11-17).** [The web as a device](../foundation/web-device-parity.md) rules
-  full workout entry on the web and a gym room that opens signed out. Neither is drawn. To draw before it is
-  built: starting, logging, editing and finishing a workout on the web, with what stands in for a phone's Live
-  Activity; a workout open on another device; Coach during a workout and a workout proposal's card; the signed-out
-  gym room and its sign-in Add or Discard; and, for every room, a browser that keeps nothing and one whose saved
-  data was cleared.
+  full workout entry on the web and a gym room that opens signed out. Both are drawn as 🧪 proposals awaiting the
+  owner: the workout, another device, a stale plan edit, the room before its first pull, Coach during a workout and
+  the signed-out room with its sign-in in the Gym file's Web page (WD1–WD9, components `2150:11606`, READ ME
+  `2168:16052`); and, for every room, a browser that keeps nothing, is blocked, fails a write or was cleared in the
+  Shell file (`368:645`, READ ME `380:2404`). Each READ ME lists the questions the owner rules on approval. On
+  approval: the Gym file's START HERE · Gym web (`804:5811`) still says the phone owns live training, against R-2;
+  the 🚧 Plan / Routines / Training now boards (`1828:53034`, `1828:53151`, `1828:53298`, `1828:53416`) draw the
+  mirror's card that WD3.4 and WD4.1 replace and are archived.
 ### Sets · product direction
 
 Sets have no type on any surface. Targets are references: actual weight/reps remain independent for every set, including extra or
@@ -1754,10 +1791,10 @@ question; the rest are below. iOS paths are under `apps/ios/App/Sources/Gym/`, A
   `.claude/scratch/android-gym-figma-verify/owner-answers-12/post-publish-swap.js` swaps.
 - **12n · The sign-in decision names what the phone holds (owner ruling, 2026-10-22).** The words are
   7d's; the nouns are only the kinds present, in this order: workouts, routines, weigh-ins,
-  movements, notes, journal pages. Sets go with their workout; settings, movement names and Coach
+  movements, notes, journal pages, and on iOS roadmaps (Roadmap · iOS 10.7). Sets go with their workout; settings, movement names and Coach
   drafts are not named. The account line names what the account holds; *it* for one item, else
   *them*; the confirm title is *Discard {phrase}?* for one or two kinds, *Discard all of it?* for
-  three or more. One question answers both rooms (Shell iOS 23g–23j `94:5426`, `94:5455`, `94:5482`,
+  three or more. One question answers every room due (Shell iOS 23g–23j `94:5426`, `94:5455`, `94:5482`,
   `94:5511`; Gym Android 07.9 `1336:17333`, 07.10 `1336:17426`). iOS builds it
   (`AdoptionQuestion.swift`); Android does not (25). A room holding only unnamed kinds is not drawn:
   iOS counts its changes, also beside another room (*3 changes and 3 journal pages*), so the answer
@@ -1876,7 +1913,7 @@ Android. It and the product differ in these places.
 - **6x · The iOS sign-in decision names no conversations.** Signed-out Coach conversations are engine records, and
   they join the account or are deleted with the rest of the signed-out gym data (gym Coach §9.1). Android names them
   (`PhoneSignInCopy`, 07.15 `1902:35369`, 07.16 `1902:35444`). iOS `AdoptionQuestion.named` lists workouts, routines,
-  weigh-ins, movements, notes and journal pages, so a phone holding only conversations reads *N changes* and Discard
+  weigh-ins, movements, notes, journal pages and roadmaps, so a phone holding only conversations reads *N changes* and Discard
   deletes them unnamed. For iOS: `conversation` in `AdoptionQuestion.named`, which reads *This phone has 2 conversations
   from before you signed in. Your account already has training. Add them, or discard them from this phone.* and *Discard 2
   conversations?* / *They are deleted from this phone. You can’t undo this.*
@@ -2055,6 +2092,17 @@ Android. It and the product differ in these places.
   session · …* and Coach's *… sessions* receipt (`Log.jsx`, `progress.js`, `coach.js`, `DateJump.jsx`).
 
 ### Figma reconciliation
+
+- **The web's desktop head.** The Gym file's 08W boards and the Shell file's board 20 draw the desktop head with the
+  brand mark and centred rooms; `chrome.css` hides the mark from 744 px and left-aligns the rooms. The storage
+  proposal (`368:645`) follows the code.
+- **The published Gym library lags its file** (last published 2026-09-25): its Web shell / Desktop lacks the mark and
+  bottom panel, and its Gym Tab, Set row, Set line, Editable number and Action band bind the retired Gym · Colour
+  collection. It needs the owner's Publish.
+- **Dialog and Toast in the Design System.** The Dialog pins Theme=Light on itself, so a Night board shows it light
+  until its mode is set; the Toast has no Neutral tone, which the web's `Toast tone="neutral"` has.
+- **The sign-in question's weight.** 7d asks for Add and Discard of equal weight; the web's `SyncDecisions.jsx`
+  draws Discard as ghost and Add as primary. The Gym proposal WD9 draws them equal; the owner rules on approval.
 
 - **Coach setup chrome.** The Design System's `iOS / Tab bar · Gym` (`118:93`) now draws Routines as
   `list.bullet.rectangle`, like the app; the Gym boards show it once the owner publishes the Design

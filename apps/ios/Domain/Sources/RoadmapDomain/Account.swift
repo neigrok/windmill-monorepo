@@ -78,6 +78,8 @@ public struct Guide: Sendable {
   public let title: String
   public let text: String
   public let own: Bool
+  // How many openings away from the roadmap read its guide comes from: 0 for the roadmap's own.
+  public let distance: Int
 }
 
 // One of the person's own roadmaps as their list shows it.
@@ -334,16 +336,16 @@ public struct RoadmapAccount: Sendable {
 
   // The nearest eight nonempty guides, the roadmap's own included, farthest first, equals in id byte order.
   public func guides(_ id: String) -> [Guide] {
-    let candidates = waysBack(id).values.compactMap { way -> (guide: Guide, distance: Int)? in
+    let candidates = waysBack(id).values.compactMap { way -> Guide? in
       guard let tree = byId[way.tree], tree.read == .loaded, let meta = tree.meta, !meta.guide.isEmpty else { return nil }
-      return (Guide(tree: way.tree, title: locations[way.tree]?.title ?? "", text: meta.guide, own: !meta.guideInherited), way.distance)
+      return Guide(tree: way.tree, title: locations[way.tree]?.title ?? "", text: meta.guide, own: !meta.guideInherited, distance: way.distance)
     }
     let nearest = candidates.sorted { a, b in
-      a.distance != b.distance ? a.distance < b.distance : a.guide.tree.utf8.lexicographicallyPrecedes(b.guide.tree.utf8)
+      a.distance != b.distance ? a.distance < b.distance : a.tree.utf8.lexicographicallyPrecedes(b.tree.utf8)
     }.prefix(8)
     return nearest.sorted { a, b in
-      a.distance != b.distance ? a.distance > b.distance : a.guide.tree.utf8.lexicographicallyPrecedes(b.guide.tree.utf8)
-    }.map(\.guide)
+      a.distance != b.distance ? a.distance > b.distance : a.tree.utf8.lexicographicallyPrecedes(b.tree.utf8)
+    }
   }
 
   // What each step of one roadmap opens comes to, read without reading every roadmap.
@@ -364,6 +366,12 @@ public struct RoadmapAccount: Sendable {
       if let left = a.updatedAt, let right = b.updatedAt, left != right { return left > right }
       return a.id.utf8.lexicographicallyPrecedes(b.id.utf8)
     }
-    return newestFirst.map { ListedRoadmap(id: $0.id, title: locations[$0.id]?.title, counts: counts($0.id), updatedAt: $0.updatedAt) }
+    return newestFirst.compactMap { listing($0.id) }
+  }
+
+  // A roadmap that stands, whoever owns it, as a list shows it: what a reader's cover names a roadmap someone else shared by.
+  public func listing(_ id: String) -> ListedRoadmap? {
+    guard let tree = byId[id], locations[id]?.standing == .standing else { return nil }
+    return ListedRoadmap(id: tree.id, title: locations[id]?.title, counts: counts(id), updatedAt: tree.updatedAt)
   }
 }

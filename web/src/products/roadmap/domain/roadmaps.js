@@ -49,15 +49,16 @@ export const Roadmap = new EntityType({
   decode: (f) => new RoadmapValue(new Id(f.id, Roadmap), placeIn(f)),
 });
 
-// A roadmap's own words and a root's visibility, the singleton of its tree scope. Its place, its reach and whether its
-// guide is inherited are the server's.
+// A roadmap's own words and a root's visibility, the singleton of its tree scope. Its place, its reach, whether its guide
+// is inherited and the roadmap a fork was copied from are the server's.
 export class RoadmapMetaValue {
   /**
    * @param {Id<RoadmapMetaValue>} id
    * @param {{ title?: string, guide?: string, guideInherited?: boolean, root?: string | null, parent?: RoadmapParent | null, depth?: number,
-   *   visibility?: string, reach?: string }} values
+   *   visibility?: string, reach?: string, forkedFrom?: string | null }} values
    */
-  constructor(id, { title = '', guide = '', guideInherited = false, root = null, parent = null, depth = 0, visibility = 'private', reach = 'private' } = {}) {
+  constructor(id, { title = '', guide = '', guideInherited = false, root = null, parent = null, depth = 0, visibility = 'private', reach = 'private',
+    forkedFrom = null } = {}) {
     this.id = id;
     this.title = title;
     this.guide = guide;
@@ -67,13 +68,14 @@ export class RoadmapMetaValue {
     this.depth = depth;
     this.visibility = visibility;
     this.reach = reach;
+    this.forkedFrom = forkedFrom;
     Object.freeze(this);
   }
 
   /** @param {{ title?: string, guide?: string, visibility?: string }} changes */
   with(changes) {
     return new RoadmapMetaValue(this.id, { title: this.title, guide: this.guide, guideInherited: this.guideInherited, root: this.root,
-      parent: this.parent, depth: this.depth, visibility: this.visibility, reach: this.reach, ...changes });
+      parent: this.parent, depth: this.depth, visibility: this.visibility, reach: this.reach, forkedFrom: this.forkedFrom, ...changes });
   }
 
   fields() { return { title: this.title, guide: this.guide, visibility: this.visibility }; }
@@ -87,6 +89,7 @@ export const RoadmapMeta = new EntityType({
   decode: (f) => new RoadmapMetaValue(new Id(f.id, RoadmapMeta), {
     title: f.string('title', ''), guide: f.string('guide', ''), guideInherited: f.bool('guideInherited', false), root: f.optionalString('root'),
     parent: placeIn(f), depth: f.optionalInt('depth') ?? 0, visibility: f.string('visibility', 'private'), reach: f.string('reach', 'private'),
+    forkedFrom: f.optionalString('forkedFrom'),
   }),
   checks: [
     new Check('title', (value) => value.with({ title: RoadmapSpecs.title.apply(value.title, new Path('title')) })),
@@ -96,7 +99,7 @@ export const RoadmapMeta = new EntityType({
 });
 
 // One roadmap as a device's replica holds it, as the domain's normalized tree. `tree` reads its tree scope: the steps and
-// links as `readTree` reads them, absent ones included, its meta and its kinds. `overlay` reads its owner's overlay for
+// links as `readTree` reads them, absent ones included, its meta, with the roadmap a fork was copied from, and its kinds. `overlay` reads its owner's overlay for
 // the marks and pointers, null where the reader takes none (a roadmap someone else owns); `queued` are the overlay's
 // records an entry the device still queues changes. `listed` is its record in the person's own list, null where it is
 // not theirs, and says whether it is present and where it sits; without it the meta says where. `read` says the device
@@ -131,7 +134,7 @@ export function readRoadmap(id, { listed = null, tree, overlay = null, queued = 
     updatedAt,
     parent: listed ? placeIn(Fields.record(listed)) : meta.parent,
     meta: metaRecord ? { title: meta.title, guide: meta.guide, guideInherited: meta.guideInherited, root: meta.root ?? id, depth: meta.depth,
-      visibility: meta.visibility, reach: meta.reach } : null,
+      visibility: meta.visibility, reach: meta.reach, forkedFrom: meta.forkedFrom } : null,
     nodes: steps.nodes,
     edges: steps.edges,
     kinds: records.filter((record) => record.t === RoadmapKind.type).map((record) => {

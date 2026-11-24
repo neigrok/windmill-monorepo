@@ -4,6 +4,7 @@ import Observation
 import DomainKit
 import JournalDomain
 import GymDomain
+import RoadmapDomain
 import SyncAPI
 import SyncCore
 import SyncEngine
@@ -38,6 +39,8 @@ final class AppModel {
   var keepDismissed: Bool
   var keepSheetPresented = false
   var keepRoutines = false
+  // What a room opened the sign-in for, which the sheet says in place of keeping the phone's work; none for that.
+  var signInFor: RoomSignIn?
   var email = ""
   var code = ""
   var codeSentAt: Date?
@@ -71,7 +74,22 @@ final class AppModel {
   var restore: SignInRestore?
   // Delete account's page, from You (27a–27g).
   var deletion: AccountDeletion?
-  var signOutSession: SignOutSession? { didSet { holdGym() } }
+  // The sign-out under way, and what its question counts: each act the account has not confirmed once, however many scopes
+  // it wrote (a roadmap made writes its entry and its steps apart), and each piece of device work.
+  var signOutSession: SignOutSession? {
+    didSet {
+      holdGym()
+      guard let signOutSession else {
+        signOutChanges = 0
+        return
+      }
+      let acts = try? runtime?.store.read { (store: StoreTransaction) throws -> Int in
+        Set(try store.device().activeReplica.outbox.filter { $0.state == .ready || $0.state == .sent }.map(\.gestureId)).count
+      }
+      signOutChanges = (acts ?? signOutSession.ready + signOutSession.sent) + signOutSession.pending
+    }
+  }
+  private(set) var signOutChanges = 0
   var discardOwed: OwedDiscard? {
     didSet {
       if let discardOwed, let data = try? JSONEncoder().encode(discardOwed) { preferences.set(data, forKey: OwedDiscard.key) }
@@ -83,6 +101,8 @@ final class AppModel {
   var signOutRefusal: String?
   var adoptionAnswers: [String: LineageAnswer] = [:]
   var journalAdoptionPages: Int?
+  // The roadmaps made signed out that still stand, which the sign-in question names: one made and deleted is not named.
+  var roadmapsMadeSignedOut: Int?
   var appearance: Appearance
   var updateRequiredAtSignIn = false
   var updateAlert = false
@@ -127,12 +147,13 @@ final class AppModel {
     init(preferences: UserDefaults) { self = Appearance(rawValue: preferences.string(forKey: "appearance") ?? "") ?? .system }
   }
   enum Sheet: String, Identifiable {
-    case keep, address, code, you, adoption, discardAdoption
+    case keep, roomSignIn, address, code, you, adoption, discardAdoption
     case appleQuestion = "23a", appleAddress = "23b", appleAdded = "23c", appleNoAccount, appleExpired
     var id: String { rawValue }
     var telemetryName: String {
       switch self {
       case .discardAdoption: "discard_adoption"
+      case .roomSignIn: "room_sign_in"
       case .appleNoAccount: "apple_no_account"
       case .appleExpired: "apple_expired"
       default: rawValue
@@ -155,7 +176,8 @@ final class AppModel {
     roadmap = runtime.flatMap { (runtime: AppRuntime) -> RoadmapModel? in
       guard runtime.settings.roadmapRoom else { return nil }
       return RoadmapModel(records: RoadmapFixture.records(runtime), runner: runtime.roadmapRunner, phone: preferences, telemetry: telemetry,
-                          wait: RoadmapFixture.wait(), graph: RoadmapFixture.graph(telemetry: telemetry), boardFrames: RoadmapFixture.boardFrames())
+                          wait: RoadmapFixture.wait(), graph: RoadmapFixture.graph(telemetry: telemetry), boardFrames: RoadmapFixture.boardFrames(),
+                          role: .owner(RoadmapLinks(sources: RoadmapFixture.sources(runtime, telemetry: telemetry))))
     }
     let lastRoom = Room(rawValue: preferences.string(forKey: "lastRoom") ?? "") ?? .journal
     selectedRoom = lastRoom == .roadmap && roadmap == nil ? .journal : lastRoom
@@ -183,7 +205,7 @@ final class AppModel {
   var authPaused: Bool { runtime?.engine.status.authPaused == true }
   // A sign-in the server has verified but the engine has not finished: You carries it until it lands or is given up.
   var signInPending: Bool { pendingSignIn != nil || signInSession?.isComplete == false }
-  var compactAccountSheet: Bool { [.keep, .appleQuestion, .appleNoAccount, .appleExpired].contains(sheet) }
+  var compactAccountSheet: Bool { [.keep, .roomSignIn, .appleQuestion, .appleNoAccount, .appleExpired].contains(sheet) }
   var editorReadOnly: Bool { working || accountTransition || (!signInDeferred && signInPending) || signOutSession != nil || discardOwed != nil }
   // The gym takes no change while an account leaves this phone: a sign-out held or running, or a closed account's discard.
   func holdGym() { gym.accountChanging = signingOut || signOutSession != nil || discardOwed != nil }
@@ -370,13 +392,17 @@ final class AppModel {
 
   // Leaving releases every delete the engine holds, so the Roadmap room's band goes with its Undo, and a note open on its
   // screen is saved.
-  func background() { journal.background(); gym.background(); roadmap?.background() }
+  func background() { journal.background(); gym.background(); roadmap?.flush() }
 
   @discardableResult func flushRooms() -> Bool {
     if journal.dirty && !journal.save() { error = journal.error; return false }
     guard gym.flush() else { error = gym.error; return false }
     return true
   }
+
+  // An account change no check of the app's can still refuse is under way: the engine releases every delete it holds, so
+  // the Roadmap room's open note is saved and its band leaves with its Undo, which would name a replica that goes.
+  func beforeAccountChange() { roadmap?.flush() }
 
   func start() async {
     guard let runtime else { return }
@@ -479,6 +505,32 @@ final class AppModel {
 
   func keep(routines: Bool = false) { keepRoutines = routines; choose("keep", screen: selectedRoom.rawValue); journal.done(); keepSheetPresented = true; sheet = .keep }
 
+  // What a room opens the sign-in for: Fork on a shared roadmap's cover (Roadmap · iOS 09.9a), or Sign In on a link the
+  // phone could not open, which may be the person's own (09.10b).
+  enum RoomSignIn {
+    case fork, link
+  }
+
+  // The shell's sign-in, opened by a room for one of its own verbs, as a sheet of its own: closing it leaves the journal's
+  // offer to keep its pages as it was.
+  func signIn(for reason: RoomSignIn) {
+    guard sheet == nil else { return }
+    signInFor = reason; sheet = .roomSignIn
+  }
+
+  func closeRoomSignIn() {
+    cancelAuthentication(); sheet = nil
+  }
+
+  // A roadmap's address on the site the system handed the app (Roadmap on iOS §4): the Roadmap room comes to the front and
+  // follows it. A build without the room, or a phone whose account is changing, opens none.
+  func open(roadmapLink url: URL) {
+    guard let roadmap, let links = roadmap.links, !editorReadOnly else { return }
+    welcome = false
+    switchRoom(.roadmap)
+    links.follow(ClaimedLink(url), in: roadmap)
+  }
+
   func closeKeep() { choose("close", screen: "keep"); sheet = nil; dismissKeep() }
 
   func dismissKeep() {
@@ -488,6 +540,7 @@ final class AppModel {
 
   func dismissSheet() {
     cancelAuthentication()
+    signInFor = nil
     if keepSheetPresented { dismissKeep() }
     keepSheetPresented = false
     appleTicket = nil; appleLinkedReceipt = false; error = nil
@@ -746,6 +799,8 @@ final class AppModel {
       try? await runtime.auth.logout(token: identity.token)
       throw AppFailure(message: Self.sameAccountRequired)
     }
+    // Signing in again to the account the phone holds changes no replica and releases nothing.
+    if account == nil { beforeAccountChange() }
     if gym.isAnonymous, let source = try? runtime.runner.read(Gym.scope, { "anonymous:" + $0.replica }) {
       if preferences.string(forKey: "coachAdoptionSource") != source || preferences.string(forKey: "coachAdoptionAccount") != identity.account {
         preferences.set(false, forKey: "coachAdoptionDiscard")
@@ -790,6 +845,7 @@ final class AppModel {
     journal.editing = false
     choose("sign_out", screen: "you")
     guard flushRooms() else { await refuseSignOut(error ?? Self.signOutFailed); return }
+    beforeAccountChange()
     accountTransition = true; signingOut = true
     defer { if authGeneration == generation { accountTransition = false; signingOut = false } }
     do {
@@ -841,6 +897,7 @@ final class AppModel {
     appleTicket = nil; signInMethods = []; accountEmail = ""; accountName = ""; appleLinkedReceipt = false
     email = ""; code = ""; codeSentAt = nil; appleReceiptEmail = ""
     keepDismissed = false; welcome = true; preferences.set(true, forKey: "roomWelcomeRequired"); preferences.removeObject(forKey: "lastRoom"); clearAdoptionAnswers(); refresh()
+    preferences.removeObject(forKey: RoadmapModel.lastOpen); preferences.removeObject(forKey: RoadmapModel.lastLens)
     preferences.set(false, forKey: "keepDismissed")
   }
 
@@ -855,7 +912,7 @@ final class AppModel {
     guard !working, pendingSignIn == nil else { return }
     let attaching = appleSessionToken != nil
     appleTicket = nil; appleAuthorization = nil; appleLinkedReceipt = false
-    if sheet == .keep || sheet == .you { appleOrigin = sheet ?? .keep }
+    if sheet == .keep || sheet == .roomSignIn || sheet == .you { appleOrigin = sheet ?? .keep }
     let generation = authGeneration
     working = true; accountTransition = true; journal.editing = false; error = nil
     defer { if authGeneration == generation { working = false; accountTransition = false } }
@@ -922,6 +979,7 @@ final class AppModel {
       guard let room = Room(rawValue: decision.product) else { return }
       counts[room] = decision.counts
       if room == .journal, let journalAdoptionPages { counts[room]?[Page.type] = journalAdoptionPages }
+      if room == .roadmap, let roadmapsMadeSignedOut { counts[room]?[RoadmapEntry.type] = roadmapsMadeSignedOut }
     }
   }
 
@@ -973,7 +1031,7 @@ final class AppModel {
 
   func setSignInSession(_ session: SignInSession?) {
     signInSession = session
-    adoptionAnswers = [:]; journalAdoptionPages = nil
+    adoptionAnswers = [:]; journalAdoptionPages = nil; roadmapsMadeSignedOut = nil
     guard let session, !session.isComplete else { clearAdoptionAnswers(); return }
     if let data = preferences.data(forKey: "roomAdoption"),
       let saved = try? JSONDecoder().decode(SavedAdoption.self, from: data), saved.account == session.account {
@@ -999,10 +1057,19 @@ final class AppModel {
         if days.isEmpty { adoptionAnswers["journal"] = .add }
       } catch { reportBoundary("auth_adopt", error: error) }
     }
+    // Added or discarded, a roadmap made and deleted signed out stays deleted, so with none standing the work joins the
+    // account unasked, as the web's room answers it.
+    if session.decisions.contains(where: { $0.product == Room.roadmap.rawValue }), adoptionAnswers[Room.roadmap.rawValue] == nil {
+      do {
+        let standing = try runner.read(RoadmapEntry.scope) { try $0.repository(RoadmapEntry.self).all(in: .drawn).count { $0.parent == nil } }
+        roadmapsMadeSignedOut = standing
+        if standing == 0 { adoptionAnswers[Room.roadmap.rawValue] = .add }
+      } catch { reportBoundary("auth_adopt", error: error) }
+    }
   }
 
   func clearAdoptionAnswers() {
-    adoptionAnswers = [:]; journalAdoptionPages = nil; preferences.removeObject(forKey: "roomAdoption")
+    adoptionAnswers = [:]; journalAdoptionPages = nil; roadmapsMadeSignedOut = nil; preferences.removeObject(forKey: "roomAdoption")
   }
 
   func saveAdoptionAnswers(_ answers: [String: LineageAnswer], session: SignInSession) throws {

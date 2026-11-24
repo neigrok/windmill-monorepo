@@ -2,9 +2,7 @@
 
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
-v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json`
-and `coach-onboarding-actions.json` run in Swift and Kotlin and do not apply on the web (their rows say
-why); every other file runs in all three.
+v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; every file runs in all three.
 `workout-plan-actions.json` and `workout-proposals-actions.json` hold the open workout's editable plan and its
 workout proposals. R118 metadata reads remain optional
 for legacy records. The pinned rule book covers ten entities, `WorkoutProposal` the newest; `RoutineCreation`
@@ -37,12 +35,12 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `notes-actions.json` | Idempotent Coach note saves, capacity and single-note moves across held deletes |
 | `bodyweight-actions.json` | Whole-day weigh-in saves, corrections and held deletes |
 | `routines-actions.json` | Guarded editor saves, atomic routine/catalogue plans, reorder, delete, ordered targets, frozen-plan decoding |
-| `coach-onboarding-actions.json` | One batch of preassigned routines and required custom movements with a transactional per-result replay receipt; Kotlin and Swift claim the cases, while web carries no anonymous import door |
+| `coach-onboarding-actions.json` | One batch of preassigned routines and required custom movements with a transactional per-result replay receipt; Swift, Kotlin and the web claim the cases |
 | `coach-conversation-actions.json` | A phone turn's records: `OpenTurn`, `EndTurn` with the receipt its calls derive, a call's record as the calls bound fills, and a read's week. Kotlin, Swift and the web (`web/src/products/gym/domain/coach/`) claim the cases |
 | `catalogue-actions.json` | Create (a dumbbell movement's count included), rename, seed overrides, aliases, byte-sensitive search, decoding failures |
 | `preferences-actions.json` | Draft preference saves and rest defaults |
-| `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
-| `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery, discard, and the proposal a signed-out phone held minted again once the account holds its workout. Runs in Swift `GymDomain` and Kotlin `:gym:domain`; the web holds no signed-out workout, so it records the file as not applying |
+| `training-actions.json` | Start, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
+| `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery, discard, and the proposal a signed-out phone held minted again once the account holds its workout. Swift `GymDomain`, Kotlin `:gym:domain` and the web claim the cases |
 | `proposals-actions.json` | Propose, apply/dismiss, the proposal state's refusals and out of date, ordered diff, change count, the card's change blocks, provenance and optional R118 metadata reads |
 | `workout-plan-actions.json` | Every `ReviseWorkoutPlan` operation, the logged-movement refusal per operation, stale bases, closed and missing workouts, unknown and duplicate movements, bounds; and the reads over an edited plan: prefill, the workout and review documents, the receipt's plan changes |
 | `workout-proposals-actions.json` | Propose a workout change (diff, swap, reorder, unchanged, refusals), apply/dismiss with every out-of-date reason, and the card's `WorkoutOutOfDate` |
@@ -154,7 +152,7 @@ separately and is outside the v4 rule book because v4 has no such type.
 | `RenameExercise` | `{id,name}` | `null`; a custom rename, or a seed override writing `{name}` alone over any equipment or count it holds |
 | `SaveNoteCall` | `{note:{id,fields}}` | Call id, or the stored note with the same words |
 | `MoveNote` | `{id,below}`; `below:null` means the top | `null`; only the moved note's order changes, a drop in place writes nothing |
-| `StartSession` | `{id,routineId?,startedAt?}` | Predicted or joined session id; always sends `joinOpenSession:true` |
+| `StartSession` | `{id,routineId?,startedAt?}` | Predicted session id; sends `joinOpenSession:false`. A replay of its own id is `unchanged`; otherwise a session `drawn` holds open, by the stale rule over the `stored` sets, refuses it `sessionOpen`: a set held for deletion has not been sent, so its workout is still open on the account |
 | `FinishSession` | `{id,finishedAt?}`; without `finishedAt` it finishes at the later of now and the workout's last activity (its last `stored` set's `completedAt`, else its start), and a `finishedAt` before that is `badInstant` | `null` |
 | `AppendSet`, `CorrectSet` | `{set:{id,fields}}` | Set id or `null` |
 | `AppendSet.recorded`, `CorrectSet.recorded`, `ImportSession.recorded`, `CorrectSession.recorded` | as the action | as the action; the replay of a recorded fact, never refused by the load floor |

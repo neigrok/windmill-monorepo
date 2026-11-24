@@ -59,6 +59,8 @@ internal class EngineRoomFixture(
     private val coachInstallation: works.windmill.platform.ai.AiInstallation? = null,
     private val mintRoutine: () -> String = Ids::routine,
     private val mintExercise: () -> String = Ids::exercise,
+    // Session ids count up from here: two phones of one account pass it apart, as their random ids never meet.
+    mintedSessions: Int = 0,
     private val controlsWrite: (File, String) -> Unit = AtomicDocument::write,
     private val createEngine: ((Json?, EngineClock) -> Engine)? = null,
     private val readDispatcher: CoroutineDispatcher? = null,
@@ -101,7 +103,7 @@ internal class EngineRoomFixture(
     }
     var now = 1_800_000_000_000L
     var selected: String? = null
-    private var nextSession = 0
+    private var nextSession = mintedSessions
     private val engineClock = object : EngineClock { override fun now() = now }
     val engine = createEngine?.invoke(snapshot, engineClock) ?: Engine.memory(SyncSchema.registry, snapshot, clock = engineClock,
         intentResultWrites = EngineTraining.intentResultWrites, pendingDeviceWork = WorkoutImports.pendingDeviceWork,

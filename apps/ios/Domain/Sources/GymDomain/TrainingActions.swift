@@ -3,12 +3,13 @@ import SyncAPI
 import SyncCore
 import SyncSchema
 
+// A client's start never joins another device's open workout: the account refuses it `session-open` (engine A.2 `gym.start`).
 public struct StartSessionCommand: ServerCommand {
   public static let name = Gym.Commands.start
   public static let specs: [any ValueSpec] = []
   public let args: [String: JSON]
   public init(id: ID<Session>, routineId: ID<Routine>?, startedAt: Instant) {
-    var args: [String: JSON] = ["id": id.json, "startedAt": .of(startedAt), "joinOpenSession": true]
+    var args: [String: JSON] = ["id": id.json, "startedAt": .of(startedAt), "joinOpenSession": false]
     if let routineId { args["routineId"] = routineId.json }
     self.args = args
   }
@@ -99,6 +100,9 @@ public struct Recorded<Entry: EntersLoads>: Action {
   }
 }
 
+// One open workout per account: a start beside a workout the account will hold open is refused here, open by the stale
+// rule over the stored sets since a held delete is not yet sent; a start that loses a race with another device's is
+// refused `session-open` by the account, its sets folded into that notice.
 public struct StartSession: Action {
   public typealias Loaded = (state: TrainingState, routine: Routine?, prior: Bool)
   public let id: ID<Session>
@@ -114,15 +118,16 @@ public struct StartSession: Action {
   }
   public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<ID<Session>, GymRefusal> {
     if loaded.prior { return .unchanged(id) }
-    let at = startedAt ?? loaded.state.moment.now
-    let command = StartSessionCommand(id: id, routineId: routineId, startedAt: at)
-    if let open = loaded.state.stored.first(where: { SessionRules.drawn($0, sets: loaded.state.sets, now: loaded.state.moment.now).isOpen }) {
-      return .write(try Plan(running: command), open.id)
+    let state = loaded.state
+    if state.drawn.contains(where: { SessionRules.drawn($0, sets: state.sets, now: state.moment.now).isOpen }) {
+      return .refuse(.sessionOpen(Refused(Gym.Codes.sessionOpen, subject: id.ref, path: .predicted)))
     }
+    let at = startedAt ?? state.moment.now
     try SessionRules.instant(at, rule: "session.startedAt", at: "startedAt")
     let routine = loaded.routine
     let predicted = Session(id: id, startedAt: at, routineId: routine?.id, plan: routine.map(SessionPlan.init))
-    return .write(try Plan(running: command, predicting: [.create(Session.self, id, predicted.fields)]), id)
+    return .write(try Plan(running: StartSessionCommand(id: id, routineId: routineId, startedAt: at),
+                           predicting: [.create(Session.self, id, predicted.fields)]), id)
   }
 }
 

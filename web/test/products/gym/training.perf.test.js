@@ -16,9 +16,9 @@ function log(t, rows = []) {
   let records = { replica: 'bound', drawn: rows, stored: rows, notices: [], undoOffers: [], loaded: true, firstPullComplete: true };
   const observation = { subscribe: () => () => {}, getSnapshot: () => records, release() {} };
   const engine = { registry, now: () => Date.now(), device: { activeReplica: { meta: { serverOffsetMs: 0 } } },
-    readMetadata: () => ({ firstPullComplete: records.firstPullComplete }), activeReplica: () => 'bound', observe: () => observation,
-    getSnapshot: () => ({ state: 'bound' }), observeEngine: () => () => {} };
-  const session = { ready: true, signedIn: true, engine };
+    readMetadata: () => ({ firstPullComplete: records.firstPullComplete, binding: '["bound","A"]' }), activeBinding: () => '["bound","A"]',
+    observe: () => observation, getSnapshot: () => ({ state: 'bound', account: 'A', binding: '["bound","A"]' }), observeEngine: () => () => {} };
+  const session = { ready: true, signedIn: true, account: 'A', engine };
   t.mock.method(syncSession, 'getSnapshot', () => session);
   const view = renderHook(t, () => useTrainingLog());
   return { view, update: (change) => { records = { ...records, ...change }; view.redraw(); }, engine };

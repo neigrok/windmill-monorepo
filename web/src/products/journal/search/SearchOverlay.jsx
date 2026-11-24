@@ -7,7 +7,7 @@ import { stampWeekday } from '../echoes/echoDates.js';
 import { t } from '../i18n/index.js';
 
 export function SearchOverlay({ open, onClose, onSelect, account = null }) {
-  const { ready, indexing, sharpening, mode, version, source, search } = useSearch(open, account);
+  const { ready, indexing, sharpening, mode, needsConnection, version, source, search } = useSearch(open, account);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const inputRef = useRef(null);
@@ -61,16 +61,17 @@ export function SearchOverlay({ open, onClose, onSelect, account = null }) {
           <p className="journal-search-unread">{t('journal.search.unread')}</p>
         )}
         <p className={'journal-search-foot' + (sharpening ? ' is-sharpening' : '')}>
-          {footNote(indexing, sharpening, mode)}
+          {footNote(indexing, sharpening, mode, needsConnection)}
         </p>
       </div>
     </div>
   );
 }
 
-function footNote(indexing, sharpening, mode) {
+function footNote(indexing, sharpening, mode, needsConnection) {
   if (indexing) return t('journal.search.indexing');
   if (sharpening) return t('journal.search.sharpening');
   if (mode === 'neural') return t('journal.search.neural');
+  if (needsConnection) return t('journal.search.needsConnection');
   return t('journal.search.lexical');
 }

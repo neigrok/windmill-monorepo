@@ -17,13 +17,13 @@ import works.windmill.gym.domain.sync.Routine as SyncRoutine
 import works.windmill.gym.domain.sync.SavedSets
 import works.windmill.gym.domain.sync.Session as SyncSession
 import works.windmill.gym.domain.sync.SignedOutWorkout
+import works.windmill.gym.domain.sync.StartSessionCommand
 import works.windmill.gym.domain.sync.StrandedSet
 import works.windmill.gym.domain.sync.TrainingLog
 import works.windmill.gym.domain.sync.TrainingSet as SyncSet
 import works.windmill.gym.domain.sync.WorkoutFix
 import works.windmill.gym.domain.sync.WorkoutProposal
 import works.windmill.gym.domain.sync.WorkoutRecovery
-import works.windmill.gym.domain.sync.nonJoiningStart
 import works.windmill.gym.presentation.PlanSnapshot
 import works.windmill.gym.presentation.Session
 import works.windmill.gym.presentation.SetTarget
@@ -474,7 +474,7 @@ class WorkoutImports(private val engine: Engine, private val writeAuthority: () 
                     val reader = Reader(context, scope, Moment(Instant(context.now), FixedZone(0)), engine.registry)
                     copy.retryRefusal(reader.moment, TrainingLog(reader).drawnSessions, Catalogue(reader))?.let { throw RefusedImport(code(it)) }
                 }
-                val start = nonJoiningStart(copy.session)
+                val start = StartSessionCommand(copy.session.id, copy.session.routineId, copy.session.startedAt)
                 val predict = Change.create(Gym.Types.session, NewID.Given(RecordID(session.id)), fields)
                 Gesture(session.routineId?.let { listOf(Change.update(Gym.Types.routine, RecordID(it))) }.orEmpty(),
                     command = start.command, predict = listOf(predict), local = writes,

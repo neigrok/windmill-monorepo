@@ -11,13 +11,22 @@ import SyncSchema
 // most recent first), roadmap-workspace (*Learn to sail* with the workspace the boards draw on *Read the wind*),
 // roadmap-two-phones (*Learn to sail*, where the account's other phone adds a subtask to the first step whose page is
 // opened) and roadmap-first-read (*Learn to sail*, each pull of the signed-in phone answered three seconds late, so the
-// room's first read runs long). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no
+// room's first read runs long). Of the Guide: roadmap-guide (*Learn to sail* with its guide, 08.1), roadmap-guide-long (a
+// guide 15 characters short of the limit, 08.3 and 08.4) and roadmap-guide-above (roadmap-several, with *Learn to sail*'s
+// guide and *Become a day skipper*'s, 08.5). Of the account's questions: roadmap-sign-in (*Learn to sail* on an account the
+// phone is not signed in to, 10.7) and roadmap-unconfirmed (*Learn to sail*, five of whose steps the phone completes
+// after the server stops answering, 10.8). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no
 // order a server gave them; roadmap-handbook, the 5,000 steps the Graph's and the Board's budget is measured at;
 // roadmap-full, a roadmap at the steps the registry lets it hold; roadmap-undo-finds-nothing, *Learn to sail*, where
 // the engine keeps no Undo of a band's act by the time it is tapped (`undoFindsNothing(in:)`); and roadmap-empty, which
 // holds none.
-// roadmap-unreadable cannot make its views. A launch can also name where the Graph's measures go and how it keeps a
-// pinch's frames (`graph(telemetry:)`), where the Board's go (`boardFrames()`), and how long a band stands (`wait()`).
+// roadmap-unreadable cannot make its views. A shared roadmap's covers (`prepareCover`): roadmap-cover, signed in to an
+// account of the phone's own, and roadmap-cover-signed-out, each opening the link to another account's public *Learn to
+// sail*; roadmap-cover-offline, which opens it and has no connection; roadmap-cover-private and
+// roadmap-cover-private-signed-out, the link to a roadmap of that account's that is private; and
+// roadmap-cover-no-connection, a link with no connection and no copy on the phone. A launch can also name where the
+// Graph's measures go and how it keeps a pinch's frames (`graph(telemetry:)`), where the Board's go (`boardFrames()`), and
+// how long a band stands (`wait()`).
 enum RoadmapFixture {
   // The engine's views of every record of a type in a scope, visible or not, as the room's model takes them.
   static func records(_ runtime: AppRuntime) -> RoadmapModel.Records {
@@ -97,15 +106,48 @@ enum RoadmapFixture {
     return { try await Task.sleep(for: $0) }
   }
 
+  // What a cover reads a shared roadmap through: the engine, and the backend's sharing requests with the account's token. On
+  // a cover's board the model server serves sync alone, so the board's own requests stand in for the backend's
+  // (`BoardSharing`), and roadmap-cover-offline and roadmap-cover-no-connection have no connection, the latter following
+  // nothing, so the phone holds no copy.
+  static func sources(_ runtime: AppRuntime, telemetry: any Telemetry) -> RoadmapCover.Sources {
+    let engine = runtime.engine
+    // The session the phone can send as now: the signed-in account's, none while it waits to be renewed.
+    let credential = { () -> SessionToken? in
+      guard !engine.status.authPaused, let account = try? runtime.account() else { return nil }
+      return runtime.tokens.token(for: account)
+    }
+    #if DEBUG && targetEnvironment(simulator)
+    if let board = runtime.settings.board, board.hasPrefix("roadmap-cover") {
+      let offline = board == "roadmap-cover-offline" || board == "roadmap-cover-no-connection"
+      return RoadmapCover.Sources(follow: { board == "roadmap-cover-no-connection" ? .subscribed : try engine.subscribe($0) },
+                                  letGo: { try engine.unsubscribe($0) }, online: { !offline && engine.status.online },
+                                  signedIn: { engine.status.account != nil }, credential: credential, requests: BoardSharing(),
+                                  site: runtime.settings.baseURL)
+    }
+    #endif
+    let requests = SharingRequests(baseURL: runtime.settings.baseURL, credential: credential, online: { engine.status.online }, telemetry: telemetry)
+    return RoadmapCover.Sources(follow: { try engine.subscribe($0) }, letGo: { try engine.unsubscribe($0) }, online: { engine.status.online },
+                                signedIn: { engine.status.account != nil }, credential: credential, requests: requests, site: runtime.settings.baseURL)
+  }
+
   static func prepare(_ board: String, model: AppModel) async -> Bool {
     #if DEBUG && targetEnvironment(simulator)
     guard board.hasPrefix("roadmap-") else { return false }
     model.openRoom(.roadmap)
+    if board.hasPrefix("roadmap-cover") {
+      await prepareCover(board, model: model)
+      return true
+    }
     // The steps of *Learn to sail* each board's account completed, the oldest first.
     let completed = ["roadmap-learn-to-sail": ["choose", "parts", "rig"], "roadmap-several": ["choose", "parts", "rig"],
                      "roadmap-workspace": ["choose", "parts", "rig"], "roadmap-two-phones": ["choose", "parts", "rig"],
-                     "roadmap-first-read": ["choose", "parts", "rig"],
+                     "roadmap-first-read": ["choose", "parts", "rig"], "roadmap-guide": ["choose", "parts", "rig"],
+                     "roadmap-guide-long": ["choose", "parts", "rig"], "roadmap-guide-above": ["choose", "parts", "rig"],
+                     "roadmap-sign-in": ["choose", "parts", "rig"], "roadmap-unconfirmed": ["choose", "parts", "rig"],
                      "roadmap-all-done": ["choose", "parts", "rig", "read", "tie", "leave", "tri", "solo"]][board]
+    // The guide each board's *Learn to sail* holds.
+    let guide = ["roadmap-guide": Guides.sail, "roadmap-guide-above": Guides.sail, "roadmap-guide-long": Guides.long][board]
     let local = ["roadmap-many", "roadmap-handbook", "roadmap-full", "roadmap-undo-finds-nothing"]
     guard completed != nil || board == "roadmap-no-steps" || local.contains(board) else { return true }
     do {
@@ -161,6 +203,10 @@ enum RoadmapFixture {
         let sail = try plantLearnToSail(remote.roadmapRunner, done: [])
         planted = sail
         try await sent()
+        if let guide {
+          try write(guide, on: sail.tree, by: remote.roadmapRunner)
+          try await sent()
+        }
         if board == "roadmap-workspace" {
           try plantWorkspace(of: sail, by: remote.roadmapRunner)
           try await sent()
@@ -170,9 +216,10 @@ enum RoadmapFixture {
           try await sent()
         }
         // roadmap-several's two roadmaps under *Learn to sail* arrive before its last completion, the lower first.
-        if board == "roadmap-several" {
+        if board == "roadmap-several" || board == "roadmap-guide-above" {
           for roadmap in others.prefix(2).reversed() {
-            try plant(roadmap, opening: sail.tree, by: remote.roadmapRunner)
+            let other = try plant(roadmap, opening: sail.tree, by: remote.roadmapRunner)
+            if board == "roadmap-guide-above" && roadmap.title == "Become a day skipper" { try write(Guides.skipper, on: other.tree, by: remote.roadmapRunner) }
             try await sent()
           }
         }
@@ -190,7 +237,20 @@ enum RoadmapFixture {
         state.pushesReceivedLaterMs = 0
         if board == "roadmap-first-read" { (state.pullsAnsweredBeforeHold, state.pullDelaySeconds) = (Int.max, 3) }
       }
+      guard board != "roadmap-sign-in" else { return true }
       try await model.signIn(identity)
+      // roadmap-unconfirmed: once the launched phone has pulled *Learn to sail*, the server stops answering what the phone
+      // sends, and the phone completes the last five steps.
+      if board == "roadmap-unconfirmed", let sail = planted, let runner = model.runtime?.roadmapRunner {
+        Task { @MainActor in
+          let steps = { (try? runner.read(sail.tree.tree) { try $0.repository(RoadmapStep.self).all(in: .drawn).count }) ?? 0 }
+          for _ in 0..<600 where steps() < 8 { try? await Task.sleep(for: .milliseconds(100)) }
+          server.state.withLock { $0.pushesUnansweredAfter = 3_600 }
+          for step in ["read", "tie", "leave", "tri", "solo"] {
+            do { try complete(step, of: sail, by: runner) } catch { NSLog("Roadmap fixture: %@", String(describing: error)) }
+          }
+        }
+      }
       if board == "roadmap-two-phones", let tree = planted?.tree {
         Task { @MainActor in
           let step = await openedStep(in: model)
@@ -216,6 +276,103 @@ enum RoadmapFixture {
   }
 
   #if DEBUG && targetEnvironment(simulator)
+  // A cover's board: another account plants *Learn to sail*, completes three of its steps, a second apart as the server
+  // receives them, and makes it public, or on a private board leaves it private; the phone signs in to an account of its
+  // own, unless the board is signed out, whose other phone makes the copy a fork asks for; and the phone opens the
+  // roadmap's link.
+  static func prepareCover(_ board: String, model: AppModel) async {
+    do {
+      guard let server = model.runtime?.auth.fake, let sharing = model.roadmap?.links?.sources.requests as? BoardSharing else {
+        throw AppFailure(message: "no model server")
+      }
+      let clock = SteppingBoardClock()
+      let phone = { (email: String) async throws -> AppRuntime in
+        let identity = server.identity(email: email)
+        let remote = try AppRuntime(settings: AppSettings(arguments: ["fixture", "-model-server", "-board", board]),
+                                    directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString),
+                                    service: UUID().uuidString, syncTransport: server, wall: clock)
+        _ = try await remote.engine.signIn(account: identity.account, token: identity.token)
+        return remote
+      }
+      var sendings: Int64 = 0
+      let sent = { (remote: AppRuntime) async throws -> Void in
+        server.state.withLock { $0.pushesReceivedLaterMs = sendings * 1_000 }
+        clock.step(to: sendings * 1_000)
+        sendings += 1
+        try remote.engine.leave()
+        for _ in 0..<40 where try remote.store.read({ try $0.device().activeReplica.outbox.contains { $0.state != .acked } }) {
+          await remote.engine.flushOnLeave()
+        }
+      }
+      let owner = try await phone("roadmap-owner@example.com")
+      let sail = try plantLearnToSail(owner.roadmapRunner, done: [])
+      try await sent(owner)
+      for step in ["choose", "parts", "rig"] {
+        try complete(step, of: sail, by: owner.roadmapRunner)
+        try await sent(owner)
+      }
+      if !board.contains("private") {
+        guard case .committed = try owner.roadmapRunner.runAct(SetVisibility(tree: sail.tree, visibility: "public")) else {
+          throw AppFailure(message: "Learn to sail was not made public.")
+        }
+        try await sent(owner)
+      }
+      server.state.withLock { $0.pushesReceivedLaterMs = 0 }
+      sharing.owner = owner
+      sharing.sent = sent
+      if !board.hasSuffix("signed-out") && board != "roadmap-cover-no-connection" {
+        let reader = server.identity(email: "roadmap-reader@example.com")
+        try await model.signIn(reader)
+        sharing.reader = try await phone("roadmap-reader@example.com")
+      }
+      model.open(roadmapLink: URL(string: "https://windmill.works/t/\(sail.tree.description)")!)
+    } catch {
+      NSLog("Roadmap cover fixture failed: %@", String(describing: error))
+      model.error = "The roadmap fixture could not be prepared."
+    }
+  }
+
+  // The backend's sharing requests on a cover's board, where the model server serves sync alone: the owner's progress read
+  // from the owner's own phone, and a fork made by another phone of the reader's account, whose copy reaches this phone by
+  // sync as the server's does. A launch with `-fork-held` leaves a fork unanswered, as one under way (09.7).
+  final class BoardSharing: RoadmapSharing {
+    var owner: AppRuntime?
+    var reader: AppRuntime?
+    var sent: ((AppRuntime) async throws -> Void)?
+
+    func progress(of tree: String) async throws(SharingFailure) -> [RoadmapTree.Mark] {
+      guard let owner else { throw .failed }
+      do {
+        let overlay = try owner.engine.read(ID<RoadmapEntry>(RecordID(tree)).overlay) { try $0.records(StepMark.type, in: .drawn) }
+        return try RoadmapTree(id: ID(RecordID(tree)), listed: nil, tree: [], overlay: overlay).marks
+      } catch {
+        throw .failed
+      }
+    }
+
+    func fork(_ tree: String, request: String) async throws(SharingFailure) -> String {
+      if ProcessInfo.processInfo.arguments.contains("-fork-held") { try? await Task.sleep(for: .seconds(3_600)) }
+      guard let owner, let reader, let sent else { throw .signedOut }
+      do {
+        let source = try owner.engine.read(ID<RoadmapEntry>(RecordID(tree)).tree) { scope in
+          try RoadmapTree(id: ID(RecordID(tree)), listed: nil, tree: RoadmapModel.treeTypes.flatMap { try scope.records($0, in: .drawn) }, overlay: nil)
+        }
+        let steps = ImportedSteps(
+          steps: source.nodes.filter(\.present).map {
+            ImportedStep(key: $0.id, RoadmapStep.Changes(label: $0.label, color: $0.color, description: $0.description, links: $0.links))
+          },
+          links: source.edges.filter(\.present).map { (from: $0.from, to: $0.to) })
+        guard case .committed(let copy, _) = try reader.roadmapRunner.runAct(CreateRoadmap(title: source.meta?.title ?? "", steps: steps)) else {
+          throw SharingFailure.failed
+        }
+        try await sent(reader)
+        return copy.tree.description
+      } catch {
+        throw .failed
+      }
+    }
+  }
+
   // The step whose page the room first has open, once it has one: the stack is read again after each change to it.
   static func openedStep(in model: AppModel) async -> String {
     while true {
@@ -357,7 +514,8 @@ enum RoadmapFixture {
   // One of those roadmaps, each step following the one before. *Spanish B1* is linked, coloured and described as its
   // Board draws it on 01.11: two steps up next after the second, and three locked behind them. The second step of
   // *Become a day skipper*, *Learn to sail*, opens the roadmap given by its pointer.
-  static func plant(_ roadmap: (title: String, steps: [String], done: Int), opening sail: ID<RoadmapEntry>, by runner: ActionRunner) throws {
+  @discardableResult
+  static func plant(_ roadmap: (title: String, steps: [String], done: Int), opening sail: ID<RoadmapEntry>, by runner: ActionRunner) throws -> CreateRoadmap.Result {
     var steps = roadmap.steps.enumerated().map { (place: Int, label: String) -> (label: String, color: String, description: String, follows: [Int]) in
       (label, "terracotta", "", place == 0 ? [] : [place - 1])
     }
@@ -377,8 +535,27 @@ enum RoadmapFixture {
     // Its marks and its pointer are one act, so the account receives them in one sending.
     var overlay = created.steps.prefix(roadmap.done).map { AnyActAction<RoadmapRefusal>(MarkStep.complete(tree: created.tree, step: $0.id)) }
     if roadmap.title == "Become a day skipper" { overlay.append(AnyActAction(PointStep.set(tree: created.tree, step: created.steps[1].id, opens: sail))) }
-    guard !overlay.isEmpty else { return }
+    guard !overlay.isEmpty else { return created }
     guard case .committed = try runner.runComposed(overlay) else { throw AppFailure(message: "\(roadmap.title) was not marked.") }
+    return created
+  }
+
+  // The boards' guides: *Learn to sail*'s, as 08.1 draws it, or a long one that ends as 08.3 draws it and stands 15
+  // characters short of the domain's 5,000, so the 27 of *, then tie up without help.* take it 12 over (08.4); and *Become
+  // a day skipper*'s.
+  enum Guides {
+    static let sail = "Maya and I take the dinghy out on Sundays. This month I want to rig it, leave the dock and get us home without her taking the tiller.\n\nI mark a step done after I’ve tried it on the water. If the wind picks up, we practise reefing and leave docking for next time. Suggest one new step per sail."
+    static let long: String = {
+      let end = "Read the wind. Before we move the boat, take a minute to look across the water. I’ve been watching the flag by the slip and forgetting that the water farther out may look different.\n\nRig the boat. I’d like to do a complete setup with Maya nearby and enough time to start over. I keep a small list in the boat bag because I tend to skip a check when somebody is waiting at the ramp.\n\nNext Sunday, practise coming alongside the dock."
+      let earlier = String(repeating: "Write down one thing the water taught us after every sail, and one thing to try next time. ", count: 60)
+      return String(earlier.prefix(RoadmapSpecs.guide.max - 15 - end.count - 2)) + "\n\n" + end
+    }()
+    static let skipper = "Day skipper by September. Theory first, then sea time: weekends are for the water, one evening a week is for the books."
+  }
+
+  // A roadmap's guide, written as its account writes it.
+  static func write(_ guide: String, on tree: ID<RoadmapEntry>, by runner: ActionRunner) throws {
+    guard case .committed = try runner.runAct(WriteRoadmap(tree: tree, guide: guide)) else { throw AppFailure(message: "The guide was not written.") }
   }
 
   // One planted step marked done, by the key it was planted under.

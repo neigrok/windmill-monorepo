@@ -255,7 +255,7 @@ export function runRead(input) {
     return readRoadmap(input.id, { listed: input.listed, tree: reader(RoadmapScopes.tree(input.id), input.tree), read: input.read,
       overlay: input.overlay && reader(RoadmapScopes.overlay(input.id), input.overlay.drawn), queued: input.overlay?.queued ?? [] }).json;
   }
-  if (['account', 'activity', 'guides', 'pointers', 'progress', 'openings', 'list'].includes(input.operation)) {
+  if (['account', 'activity', 'guides', 'pointers', 'progress', 'openings', 'list', 'listing'].includes(input.operation)) {
     const account = new RoadmapAccount(input.trees.map((/** @type {any} */ tree) => new RoadmapTree(tree)));
     if (input.operation === 'account') return account.result();
     if (input.operation === 'activity') {
@@ -265,6 +265,7 @@ export function runRead(input) {
     if (input.operation === 'progress') return account.progress(input.tree);
     if (input.operation === 'openings') return account.openingsOf(input.tree);
     if (input.operation === 'list') return account.list();
+    if (input.operation === 'listing') return account.listing(input.tree);
     return input.operation === 'guides' ? account.guides(input.tree) : pointerDiagnostics(account, input.tree);
   }
   const tree = new RoadmapTree(input.tree);

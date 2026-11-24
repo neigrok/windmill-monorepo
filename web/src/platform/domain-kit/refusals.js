@@ -19,8 +19,8 @@ import { compareText } from './entities.js';
  * The engine's notice (engine D-17): its content holds the refused deltas, the command and the
  * dependents that folded into it.
  * @typedef {{ d?: NoticeDelta[], cmd?: { name: string, args: Record<string, Json> }, dependents?: NoticeContent[] }} NoticeContent
- * @typedef {{ t: string, id: RecordID, f?: Record<string, [Json, string]>, x?: Record<string, string | { text: string }> }} NoticeDelta
- * @typedef {{ id: string, scope: string, code: string, detail?: Json, content: NoticeContent, at: number }} Notice
+ * @typedef {{ t: string, id: RecordID, born?: string, life?: [string, string], f?: Record<string, [Json, string]>, x?: Record<string, string | { text: string }> }} NoticeDelta
+ * @typedef {{ id: string, scope: string, code: string, detail?: Json, content: NoticeContent, at: number, dismissed?: boolean }} Notice
  */
 
 export class Refused {
