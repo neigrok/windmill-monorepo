@@ -184,7 +184,7 @@ export class RoadmapAccount {
   /** @param {string} id */
   progress(id) {
     const tree = this.trees.get(id);
-    if (!tree || this.counts(id) === null) return null;
+    if (!tree || tree.read !== 'loaded' || this.locations.get(id)?.standing !== 'standing') return null;
     const completed = [...this.completedNodes(id)];
     const openings = new Map((this.openings.get(id) ?? []).map((opening) => [opening.node, opening]));
     const dates = completed.map((node) => {

@@ -2416,5 +2416,204 @@
         }
       ]
     }
+  },
+  {
+    "name": "A roadmap told of but not read has no progress: a subtree the device holds unread, whatever it is told, reads none",
+    "input": {
+      "operation": "progress",
+      "trees": [
+        {
+          "id": "R",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {
+            "title": "R",
+            "guide": "",
+            "guideInherited": false,
+            "root": "R",
+            "depth": 0,
+            "visibility": "public",
+            "reach": "public"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "a",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S"
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 9,
+              "deviceAt": 9
+            }
+          ],
+          "pointers": []
+        },
+        {
+          "id": "S",
+          "present": true,
+          "read": "unread",
+          "parent": {
+            "tree": "R",
+            "step": "a"
+          },
+          "meta": null,
+          "nodes": [],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ],
+      "told": [
+        {
+          "tree": "S",
+          "done": 2,
+          "total": 2
+        }
+      ],
+      "tree": "S"
+    },
+    "expect": null
+  },
+  {
+    "name": "A roadmap read under one the device holds unread has no progress, as it does not stand, whatever it is told",
+    "input": {
+      "operation": "progress",
+      "trees": [
+        {
+          "id": "R",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {
+            "title": "R",
+            "guide": "",
+            "guideInherited": false,
+            "root": "R",
+            "depth": 0,
+            "visibility": "public",
+            "reach": "public"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "a",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S"
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 9,
+              "deviceAt": 9
+            }
+          ],
+          "pointers": []
+        },
+        {
+          "id": "S",
+          "present": true,
+          "read": "unread",
+          "parent": {
+            "tree": "R",
+            "step": "a"
+          },
+          "meta": null,
+          "nodes": [],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "T",
+          "present": true,
+          "read": "loaded",
+          "parent": {
+            "tree": "S",
+            "step": "x"
+          },
+          "meta": {
+            "title": "T",
+            "guide": "",
+            "guideInherited": false,
+            "root": "R",
+            "depth": 2,
+            "visibility": "public",
+            "reach": "public"
+          },
+          "nodes": [
+            {
+              "id": "t1",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "t1",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [
+            {
+              "node": "t1",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 5,
+              "deviceAt": 5
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "told": [
+        {
+          "tree": "T",
+          "done": 1,
+          "total": 1
+        }
+      ],
+      "tree": "T"
+    },
+    "expect": null
   }
 ]
