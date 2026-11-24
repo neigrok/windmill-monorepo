@@ -191,6 +191,37 @@ test('Chromium: a re-identify keeps the room, and what is typed in it', async (t
   });
 });
 
+test('Chromium: a page restored from the back/forward cache keeps the room, a typed form and its scroll', async (t) => {
+  const { page } = await boot(t, { seeded: true, me: 'A', hash: '#/gym/backfill/routineBootA' });
+  await withBrowserErrors(page, async () => {
+    await page.setViewportSize({ width: 1440, height: 320 });
+    await page.getByRole('button', { name: 'Yesterday', exact: true }).click();
+    await page.getByRole('button', { name: 'Change time', exact: true }).click();
+    await page.getByLabel('Start time', { exact: true }).fill('07:15');
+    const before = await page.evaluate(() => {
+      const scroller = document.querySelector('.gym-scroll');
+      scroller.scrollTop = 120;
+      window.roomBefore = document.querySelector('.gym-room');
+      return { scrollTop: scroller.scrollTop, start: document.querySelector('.gym-past-start').value };
+    });
+    assert.deepEqual(before, { scrollTop: 120, start: '07:15' }, 'the form scrolls and holds what was typed');
+    const restored = await page.evaluate(async () => {
+      window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+      await new Promise((frame) => requestAnimationFrame(() => setTimeout(frame, 50)));
+      const { syncSession } = await import('/src/platform/sync/session.js');
+      const suspended = { closed: syncSession.engine.closed, sameRoom: document.querySelector('.gym-room') === window.roomBefore };
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+      await syncSession.engine.restoring;
+      await new Promise((frame) => requestAnimationFrame(() => setTimeout(frame, 50)));
+      return { suspended, sameRoom: document.querySelector('.gym-room') === window.roomBefore, closed: syncSession.engine.closed,
+        scrollTop: document.querySelector('.gym-scroll').scrollTop, start: document.querySelector('.gym-past-start')?.value ?? null,
+        day: [...document.querySelectorAll('.gym-past-days .gym-chip.is-on')].map((chip) => chip.textContent), issues: window.issues ?? [] };
+    });
+    assert.deepEqual(restored, { suspended: { closed: true, sameRoom: true }, sameRoom: true, closed: false, scrollTop: 120, start: '07:15',
+      day: ['Yesterday'], issues: [] });
+  });
+});
+
 test('Chromium: another tab’s account is not drawn under this tab’s, which waits for the shell to catch up', async (t) => {
   const { context, page } = await boot(t, { seeded: true, me: 'A' });
   await withBrowserErrors(page, async () => {

@@ -64,7 +64,11 @@ Storage denial is explicit; no volatile fallback replaces durable work. An engin
 the device's store cannot commit reports `storage` once and reaches its caller as a `CommitError` of
 kind `store`; an error a caller's read-and-commit function throws passes through unreported. The engine
 asks no one whose credential the browser holds: the shell tells it what each read of `/v1/me` finds (its
-20-second poll among them), and that read is what releases a paused anon replica.
+20-second poll among them), and that read is what releases a paused anon replica. Each read also tells it whether the
+server answered (an answer under 500), so a signed-out page, whose engine sends nothing of its own, reads `unreachable`
+when the server is out of reach while the browser reports itself online, and journal search's first use of meaning there
+is `needs_connection`, no Issue. A page in the back/forward cache reports nothing new: its rooms stand, and a write it
+holds until the restore lands then, or fails as the `store` failure the restore already reported.
 
 The shell reports session transition failures as `auth-session`, a refused auth-hint storage write as
 `auth-hint-storage` and a read of `/v1/me` the engine could not take as `auth-credential-held`, each with
@@ -76,7 +80,9 @@ Add/Discard and sign-out emit `sync_signin`/`sync_signout` with `outcome: pendin
 completed transitions. A product that words its own question (`sync.signInWords`, `sync.signOutWords`) tells its steps
 through the words' `onStep` (roadmap's `roadmap_signin` and `roadmap_signout` below); the shell adds none of its own. A
 product's hook into a question that throws (`adoptionAnswer`, `adoptionCount`, `signInWords`, `signOutWords`, the words'
-`onStep`, `signOutNotice`, `signOutBegins`, `signOutForgets`) reports `auth-product-words`, and the shell asks as it would of a product that says nothing. Escape
+`onStep`, `signOutNotice`, `signOutBegins`, `signOutForgets`) reports `auth-product-words`, and the shell asks as it would of a product that says nothing. A
+product's hook before the seat changes (`sync.seatWillChange`) that throws or outlasts its five seconds reports
+`auth-seat-will-change`, and the seat changes without it. Escape
 on such a sign-in question cancels the sign-in: one write drops the pending sign-in and records the cookie's cleanup, a
 cancel that fails reports `auth-session` and keeps the question, and the cookie is let go as a finished sign-out's is. Revoking this session uses the sign-out question before clearing its cookie.
 Account closure persists its account and current session before the server request and discards local
@@ -178,7 +184,8 @@ filename or allowance amount is reported.
 Gym engine writes emit `gym_action` through the first-party events intake with only `operation`
 and `outcome`, and for `refused` a `code`: `not-writable` or `domain`. Operations are routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
-delete, Undo and refusal. Outcomes are `saved-local`, `unchanged` (a clean draft or a rename to the
+delete, Undo, refusal and `workout-adopt`, the hook before the seat changes saving each signed-out workout for adoption,
+told only when it saved something (`saved-local`), was refused or failed. Outcomes are `saved-local`, `unchanged` (a clean draft or a rename to the
 name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`. A local save
 records durability, not server admission. Unexpected product boundary failures use static
 `gym-<operation>` Sentry names; projection failures use `gym-projection`. A malformed frozen plan
@@ -509,6 +516,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-sync-refused` | An unexpected refusal, once per bounded code per session, with `code` as a tag | The refusal notice |
 | `auth-session` | An unexpected account refresh failure | The session's existing path |
 | `auth-credential-held` | Telling the engine whose credential a read of `/v1/me` found threw, its store having failed or closed underneath it (a store failure the engine reports as `sync-storage` too); once a page, stack frames only | The read goes on: the shell settles the account it read, and the engine hears the next read, 20 seconds on at most |
+| `auth-seat-will-change` | A product's hook before the seat changes (`sync.seatWillChange`, before a sign-in binds the device and before a sign-out finishes) threw (`outcome: failed`, its stack frames) or outlasted its five seconds (`outcome: timeout`), tagged `product`, the route table's id. Never a record, a count or an account | The seat changes without it: the next product's hook runs, then the sign-in or the sign-out; a write the late hook makes afterwards is refused by its own binding check (gym's `not-writable`) |
 | `auth-product-words` | A product's hook into an account-change question threw, tagged `question`: `adoption` (`adoptionAnswer`, the product's own answer to a sign-in question), `signin` (`signInWords` or `adoptionCount`, the sign-in question's words or its count of the product's records), `signout` (`signOutWords`), `step` (the words' `onStep`, a step of the question told to the product), `begin` (`signOutBegins`, what the product does as a sign-out begins, before the engine sends what the device holds), `forget` (`signOutForgets`, the device rows the product's finished sign-out takes) or `notice` (`signOutNotice`, the product's line on what signing out discards from this tab). Stack frames only: never the product's words, a count or an account | The shell asks as it would of a product that says nothing: the person answers the sign-in question, in the shell's words with the engine's count, and the sign-out question in the next product's words or the shell's, without that product's line or its step event, so signing in and out go on |
 | `billing-subscription` | The subscription read (`GET /v1/subscription`), kind `billing`, under the tag `reason`: `server` for a 5xx, `shape` for a 200 that is not a SubscriptionResponse. A request lost and a 4xx report nothing | The page reads as holding no Windmill One until the next read, at the next focus |
 

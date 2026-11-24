@@ -28,6 +28,11 @@ function remember(user) {
   catch { captureError('auth', 'auth-hint-storage', '', '/auth'); }
 }
 const syncOf = (id) => PRODUCTS.find((product) => product.id === id)?.sync;
+// Every read of the account tells the engine whether the server answered, so a page whose engine sends nothing of its own,
+// as a signed-out one's, learns when the server is out of reach (the engine's `connection`).
+function readAccount(engine) {
+  return fetchMe({ heard: (answered) => { if (engine && !engine.closed) engine.answered(answered); } });
+}
 // The sign-in decisions still due: those the answers leave open, and those answered for work that changed since, which
 // the engine asks again (an answer that pins no work is given to the question as it stands).
 function unanswered(result, answers) {
@@ -55,8 +60,10 @@ export default function AuthProvider({ children }) {
   const upgradeRequired = useSyncExternalStore(observeEngine, () => session.engine?.getSnapshot().upgradeRequired ?? false, () => false);
   // A newer bundle's upgrade closed this tab's store: what is typed now stays on the screen alone.
   const superseded = useSyncExternalStore(observeEngine, () => session.engine?.getSnapshot().superseded ?? false, () => false);
-  const [seat] = useState(() => new DeviceSeat(PRODUCTS,
-    (error) => captureError('auth', 'auth-credential-held', error?.stack ?? '', '/auth')));
+  const [seat] = useState(() => new DeviceSeat(PRODUCTS, {
+    reportCredential: (error) => captureError('auth', 'auth-credential-held', error?.stack ?? '', '/auth'),
+    reportWillChange: (product, outcome, error) => captureError('auth', 'auth-seat-will-change', error?.stack ?? '', '/auth', { product, outcome }),
+  }));
   const [productQuestions] = useState(() => new ProductQuestions(PRODUCTS,
     (question, error) => captureError('auth', 'auth-product-words', error?.stack ?? '', '/auth', { question })));
   const [dataScope] = useState(() => new DocumentDataScope({
@@ -149,6 +156,7 @@ export default function AuthProvider({ children }) {
   }, [seat, dataScope]);
   const finishSignOut = useCallback(async (options, next = null, navigation = null) => {
     const engine = syncSession.engine;
+    await seat.willChange(engine);
     const captured = dataScope.read.getSnapshot();
     let ticket = roomOwnership.current.scopeTicket;
     const forgetDeviceRows = await productQuestions.signOutForgets(engine);
@@ -163,14 +171,14 @@ export default function AuthProvider({ children }) {
     } });
     if (result.complete) await cleanupDevice(engine, next, navigation);
     return result;
-  }, [cleanupDevice, dataScope, productQuestions]);
+  }, [cleanupDevice, dataScope, productQuestions, seat]);
   const finishClosure = useCallback(async () => {
     const engine = syncSession.engine;
     const { account, sessionId } = engine.device.meta.closingAccount;
     const replica = engine.device.activeReplica.meta;
     if (replica.state === 'bound' && replica.account === account) {
       const revision = roomOwnership.current.revision;
-      const me = await fetchMe();
+      const me = await readAccount(engine);
       if (revision !== roomOwnership.current.revision) throw new Error('account-changed-during-closure');
       confirmRoom(me);
       if (me === undefined) throw new Error('account-closure-unavailable');
@@ -205,6 +213,8 @@ export default function AuthProvider({ children }) {
       // A cookie replaced elsewhere cannot move this account's work to its successor.
       await finishSignOut({ choice: 'keep' }, me?.id ?? null);
     }
+    // A refresh of the account the replica is bound to changes no seat.
+    if (engine.device.activeReplica.meta.state !== 'bound') await seat.willChange(engine);
     let result = await engine.signIn(me.id, answers);
     if (!result.complete) {
       const automatic = (await Promise.all(unanswered(result, answers).map(async (question) => {
@@ -228,7 +238,7 @@ export default function AuthProvider({ children }) {
       return;
     }
     pending.current = null; setQuestion(null); setError(false); settle(me, undefined, revision);
-  }, [settle, finishSignOut, productQuestions]);
+  }, [settle, finishSignOut, productQuestions, seat]);
   const refresh = useCallback(({ signedOut = false } = {}) => enqueue(async () => {
     const engine = await syncSession.opening;
     if (engine?.restoring) await engine.restoring;
@@ -252,7 +262,7 @@ export default function AuthProvider({ children }) {
     await engine.cleanupCredentials();
     if (engine.device.meta.clearCredential) { settle(null, { signedOut: true }); return null; }
     const revision = roomOwnership.current.revision;
-    const me = await fetchMe();
+    const me = await readAccount(engine);
     if (revision !== roomOwnership.current.revision) return undefined;
     const confirmedRevision = confirmRoom(me);
     if (engine.restoring) await engine.restoring;
@@ -394,7 +404,7 @@ export default function AuthProvider({ children }) {
     // stays. Whose credential it holds the engine hears from every refresh (`tellCredential`).
     syncSession.open({ base: API_BASE, credentials: { clear: async (account) => {
       const revision = roomOwnership.current.revision;
-      const current = await fetchMe();
+      const current = await readAccount(syncSession.engine);
       if (revision !== roomOwnership.current.revision) throw new Error('account-changed-during-cleanup');
       if (current === undefined) throw new Error('cookie-cleanup-unavailable');
       if (current?.id !== account) { confirmRoom(current); return current === null; }
@@ -414,6 +424,8 @@ export default function AuthProvider({ children }) {
           throw error;
         }
         for (const each of hooks) await each.prepare?.(engine);
+        // A sign-in the engine resumes as it starts (its `pendingSignIn`) changes the seat too.
+        if (engine.device.meta.pendingSignIn) await seat.willChange(engine);
       },
       onPushResult: (...args) => { for (const each of hooks) each.onPushResult?.(...args); },
       pendingDeviceWork: (product, rows) => hooks.flatMap((each) => each.pendingDeviceWork?.(product, rows) ?? []),
@@ -434,7 +446,7 @@ export default function AuthProvider({ children }) {
     const poll = setInterval(wake, 20000);
     return () => { alive = false; broadcast.close(); channel.current = null; clearInterval(poll);
       window.removeEventListener('focus', wake); window.removeEventListener('online', wake); };
-  }, [refresh, cleanupDevice, confirmRoom]);
+  }, [refresh, cleanupDevice, confirmRoom, seat]);
   // A surface that says the refused-device line itself holds it from the shell while it stands, so it is said once.
   const holdDeviceLine = useCallback(() => {
     setDeviceLineHolders((holders) => holders + 1);

@@ -16,6 +16,12 @@ page. Blank drafts normalize before validation; a new blank draft queues no page
 erasing anonymous writing cancels its claim while preserving invitation state. Clearing an account
 page keeps an invisible sync ordering marker so older offline saves cannot revive it.
 
+The canvas draws the replica this tab draws (`useSyncReplica`): while the shell has settled an account the engine's
+replica is not bound to, as when another tab signed someone else in, it draws nothing of that replica until the shell
+catches up. A page restored from the back/forward cache keeps the canvas, what was typed and its scroll; a save that came
+due while the page was suspended lands once the engine is restored. `test/products/journal/boot.browser.test.js` boots
+the shell over a seeded browser copy in Chromium and proves both.
+
 Typing shows at once and commits 600 ms after the last keystroke, one save for the burst. A mood or
 energy change, the page hiding and the editor unmounting save a staged body at once; a local day
 change carries it into today and saves it.
@@ -71,15 +77,17 @@ its weights from `/models/`; `public/sw.js` keeps the runtime in its asset cache
 `windmill-models-v1` after first use, and neither joins the offline shell. One opening of search
 starts one model worker however often the pages change while it is open, and closing it ends the
 worker, so the next opening tries afresh and a connection that comes back brings meaning back. Offline is
-the engine's word on the connection, an unreachable server included. Offline before its first use in
+the engine's word on the connection, an unreachable server included, which signed out it learns from the shell's reads
+of the account. Offline before its first use in
 this browser (remembered under `windmill:journal-search-meaning`), the search's foot says search by
 meaning needs a connection the first time; a browser where it came up before and that keeps it no
 longer answers in words, with the words-only foot. The service worker keeps no redirected answer,
 drops an older `windmill-models-*` cache at every activation, and tells the pages it controls when the
 browser would not keep the weights.
 `test/products/journal/search/neuralOffline.browser.test.js` builds the app and proves in Chromium
-that meaning works offline after its first use, says it needs a connection before it, comes back with
-the connection, and leaves the shell without its worker and runtime; it is skipped when
+that meaning works offline after its first use, says it needs a connection before it, signed out with the server out of
+reach and the browser online too, reporting nothing to Sentry, comes back with the connection, and leaves the shell
+without its worker and runtime; it is skipped when
 `public/models` lacks the weights, which `npm run build`'s `prebuild` fetches.
 
 Echo quotations compare in NFC; saved writing retains its original bytes. The domain matcher

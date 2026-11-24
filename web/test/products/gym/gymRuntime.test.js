@@ -11,6 +11,19 @@ import { createGymApi, gymLiveHint } from '../../../src/products/gym/gymRuntime.
 import { StatsProgress } from '../../../src/products/gym/domain/trainingReads.js';
 import { spellWeightsIn } from '../../../src/products/gym/units.js';
 import { confirmed } from './harness.mjs';
+import { GymProduct } from '../../../../packages/api-contract/sync/reference/gym/product.js';
+import { Decision } from '../../../src/platform/domain-kit/actions.js';
+import { Id } from '../../../src/platform/domain-kit/entities.js';
+import { Plan, Prediction } from '../../../src/platform/domain-kit/plans.js';
+import { Instant } from '../../../src/platform/domain-kit/time.js';
+import { Exercise } from '../../../src/products/gym/domain/catalogue.js';
+import { GymRefusals } from '../../../src/products/gym/domain/gymRules.js';
+import { Session, SessionValue, TrainingSet, TrainingSetValue } from '../../../src/products/gym/domain/training.js';
+import { AppendSet, FinishSession, StartSession } from '../../../src/products/gym/domain/trainingActions.js';
+import { SignedOutWorkout } from '../../../src/products/gym/domain/workoutAdoption.js';
+import { gymRoutes } from '../../../src/products/gym/routes.js';
+import { Harness } from '../../platform/domain-kit/harness.js';
+import { DEFAULT_NOW } from '../../platform/domain-kit/vectors.js';
 
 async function open(t) {
   const env = environment();
@@ -670,4 +683,94 @@ test('domain read handles cannot follow the engine into another account', async 
   await assert.rejects(api.notes(), { code: 'not-writable' });
   assert.throws(() => api.mintNote(), { code: 'not-writable' });
   assert.deepEqual(failures, []);
+});
+
+// A browser signed out, its gym on the anon replica, every write through the domain's own actions.
+async function signedOutBrowser(t, { anonymous = true } = {}) {
+  const browser = await Harness.open({ registry, product: new GymProduct(), scope: Session.scope, anonymous });
+  t.after(() => browser.close());
+  const run = async (action) => assert.equal((await browser.runner.run(action)).kind, 'committed');
+  const events = [], failures = [];
+  const told = { event: (operation, outcome, code) => events.push({ operation, outcome, ...(code ? { code } : {}) }),
+    failure: (operation) => failures.push(operation) };
+  return { browser, run, events, failures, told,
+    saved: () => browser.runner.read(Session.scope, (read) => SignedOutWorkout.read(read))
+      .map((copy) => [copy.session.id.record, copy.session.isOpen, copy.sets.map((set) => set.id.record)]),
+    commands: () => browser.runner.read(Session.scope, (read) => read.commands())
+      .map(({ command }) => [command.name, command.args.id ?? command.args.sessionId, command.args.joinOpenSession ?? null]),
+    sets: () => browser.drawn(TrainingSet).map((set) => set.id.record).sort() };
+}
+const benchSet = (id, session, at, weightKg = 60) => new TrainingSetValue(new Id(id, TrainingSet), session, new Id('bench-press', Exercise), weightKg, 5, new Instant(at));
+
+test('before the seat changes each signed-out workout is saved for adoption: a finished one as one import, an open one beside its start, which does not join; told once', async (t) => {
+  const { browser, run, events, failures, told, saved, commands, sets } = await signedOutBrowser(t);
+  const finished = new Id('session1', Session), open = new Id('session2', Session);
+  await run(StartSession({ id: finished, startedAt: new Instant(DEFAULT_NOW - 60_000) }));
+  await run(AppendSet(benchSet('set00001', finished, DEFAULT_NOW - 50_000)));
+  await run(FinishSession({ id: finished, finishedAt: new Instant(DEFAULT_NOW - 40_000) }));
+  await run(StartSession({ id: open, startedAt: new Instant(DEFAULT_NOW - 30_000) }));
+  await run(AppendSet(benchSet('set00002', open, DEFAULT_NOW - 20_000, 80)));
+  const api = createGymApi(browser.engine, told);
+  await api.saveSignedOutWorkouts();
+  assert.deepEqual({ saved: saved(), commands: commands(), sets: sets() }, {
+    saved: [['session1', false, ['set00001']], ['session2', true, ['set00002']]],
+    commands: [['gym.start', 'session2', false], ['gym.importSession', 'session1', null]],
+    sets: ['set00001', 'set00002'],
+  });
+  await api.saveSignedOutWorkouts();
+  assert.deepEqual({ events, failures }, { events: [{ operation: 'workout-adopt', outcome: 'saved-local' }], failures: [] }, 'a second pass saves nothing new');
+});
+
+test('the route table’s hook saves them, and a bound replica or an empty anon one has none to save', async (t) => {
+  const signedOut = await signedOutBrowser(t);
+  assert.equal(gymRoutes.sync.seatWillChange(signedOut.browser.engine), null, 'an anon replica holding no gym work reads nothing');
+  const finished = new Id('session1', Session);
+  await signedOut.run(StartSession({ id: finished, startedAt: new Instant(DEFAULT_NOW - 60_000) }));
+  await signedOut.run(FinishSession({ id: finished, finishedAt: new Instant(DEFAULT_NOW - 40_000) }));
+  await gymRoutes.sync.seatWillChange(signedOut.browser.engine);
+  assert.deepEqual(signedOut.saved(), [['session1', false, []]]);
+
+  const account = await signedOutBrowser(t, { anonymous: false });
+  await account.run(StartSession({ id: finished, startedAt: new Instant(DEFAULT_NOW - 60_000) }));
+  const owed = structuredClone(account.browser.engine.device.activeReplica.outbox);
+  assert.equal(gymRoutes.sync.seatWillChange(account.browser.engine), null);
+  await createGymApi(account.browser.engine, account.told).saveSignedOutWorkouts();
+  assert.deepEqual({ saved: account.saved(), outbox: account.browser.engine.device.activeReplica.outbox, events: account.events },
+    { saved: [], outbox: owed, events: [] });
+});
+
+test('an open workout an older build started joining keeps its sets: the start that replaces it does not join, and each set is recorded with it', async (t) => {
+  const { browser, run, events, told, saved, commands, sets } = await signedOutBrowser(t);
+  const open = new Id('session1', Session), startedAt = new Instant(DEFAULT_NOW - 30_000);
+  await run({ scope: Session.scope, refusals: GymRefusals, load: () => null,
+    decide: () => Decision.write(Plan.running({ name: 'gym.start', args: { id: open.json, startedAt: startedAt.ms }, specs: [] },
+      [Prediction.create(open, new SessionValue(open, startedAt, null, null, null, null, null).fields())]), open) });
+  await run(AppendSet(benchSet('set00001', open, DEFAULT_NOW - 20_000)));
+  await run(AppendSet(benchSet('set00002', open, DEFAULT_NOW - 10_000, 62.5)));
+  await createGymApi(browser.engine, told).saveSignedOutWorkouts();
+  assert.deepEqual({ saved: saved(), commands: commands(), sets: sets(), events }, {
+    saved: [['session1', true, ['set00001', 'set00002']]],
+    commands: [['gym.start', 'session1', false]],
+    sets: ['set00001', 'set00002'],
+    events: [{ operation: 'workout-adopt', outcome: 'saved-local' }],
+  });
+});
+
+test('a seat that moved before the hook ran refuses it as not-writable, and a store that throws is a failure; each told once and neither stops the seat', async (t) => {
+  const moved = await signedOutBrowser(t);
+  const finished = new Id('session1', Session);
+  await moved.run(StartSession({ id: finished, startedAt: new Instant(DEFAULT_NOW - 60_000) }));
+  await moved.run(FinishSession({ id: finished, finishedAt: new Instant(DEFAULT_NOW - 40_000) }));
+  const before = createGymApi(moved.browser.engine, moved.told);
+  assert.equal((await moved.browser.engine.signIn('A')).complete, true);
+  await before.saveSignedOutWorkouts();
+  assert.deepEqual({ events: moved.events, failures: moved.failures },
+    { events: [{ operation: 'workout-adopt', outcome: 'refused', code: 'not-writable' }], failures: [] });
+
+  const failing = await signedOutBrowser(t);
+  await failing.run(StartSession({ id: finished, startedAt: new Instant(DEFAULT_NOW - 60_000) }));
+  t.mock.method(failing.browser.engine, 'commit', async () => { throw new Error('private detail'); });
+  await createGymApi(failing.browser.engine, failing.told).saveSignedOutWorkouts();
+  assert.deepEqual({ events: failing.events, failures: failing.failures },
+    { events: [{ operation: 'workout-adopt', outcome: 'failed' }], failures: ['workout-adopt'] });
 });

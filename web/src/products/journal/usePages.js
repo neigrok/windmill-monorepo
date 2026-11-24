@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { useSyncRecords } from '../../platform/sync/react.js';
+import { useSyncRecords, useSyncReplica } from '../../platform/sync/react.js';
 import { syncSession } from '../../platform/sync/session.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { localDay, watchLocalDay } from './localDay.js';
@@ -12,8 +12,10 @@ export function useToday() {
   return today;
 }
 
+// The journal draws the replica this tab draws (`useSyncReplica`): nothing of another seat's while the shell catches up.
 export function usePages() {
   const session = useSyncExternalStore(syncSession.subscribe, syncSession.getSnapshot, syncSession.getSnapshot);
+  const replica = useSyncReplica();
   const records = useSyncRecords(SCOPE);
   const today = useToday();
   const [editor, setEditor] = useState(null);
@@ -22,8 +24,8 @@ export function usePages() {
   const drafts = useRef(new Map());
   const staged = useRef(null);
   const key = `${records.replica}:${today}`;
-  const engine = session.engine;
-  const pages = engine && session.ready ? pagesOf(engine, records) : [];
+  const engine = replica?.engine ?? null;
+  const pages = engine ? pagesOf(engine, records) : [];
   const held = pages.find((page) => page.day === today) ?? { day: today, body: '', mood: null, energy: null, source: 'typed' };
   const shown = editor?.replica === records.replica && !editor.saved && !editor.recovered ? editor.doc : held;
   const show = useCallback((writing) => {
@@ -73,7 +75,7 @@ export function usePages() {
   // The last writing the engine was given: a staged one was never sent, so the one it is staged behind.
   const sentBefore = useCallback((writing) => (writing && staged.current?.writing === writing ? staged.current.previous : writing), []);
   const change = useCallback((field, value) => {
-    if (!engine || !session.ready) return;
+    if (!engine) return;
     const previous = drafts.current.get(records.replica);
     const retained = engine.readDeviceRows('journal')[EditorDraft.key];
     const destination = pagesOf(engine).find((page) => page.day === today) ?? held;
@@ -88,9 +90,9 @@ export function usePages() {
     const writing = { key, replica: records.replica, doc, saved: false, carriedFrom, priorDraft };
     if (field === 'body') stage(writing, sentBefore(previous));
     else persist(writing, sentBefore(previous));
-  }, [engine, session.ready, key, today, held.body, held.mood, held.energy, held.source, records.replica, stage, persist, sentBefore]);
+  }, [engine, key, today, held.body, held.mood, held.energy, held.source, records.replica, stage, persist, sentBefore]);
   useEffect(() => {
-    if (!engine || !session.ready) return;
+    if (!engine) return;
     let writing = drafts.current.get(records.replica);
     const retained = engine.readDeviceRows('journal')[EditorDraft.key];
     if (writing?.recovered && writing.recovered !== retained) {
@@ -114,7 +116,7 @@ export function usePages() {
       setEditor(writing ?? null);
       setFailure(Boolean(writing?.failed));
     }
-  }, [engine, session.ready, records, today, key, editor, failure, saveTick, persist, sentBefore]);
+  }, [engine, records, today, key, editor, failure, saveTick, persist, sentBefore]);
   useEffect(() => {
     const hide = () => { if (document.visibilityState === 'hidden') flush(); };
     document.addEventListener('visibilitychange', hide);
@@ -125,18 +127,18 @@ export function usePages() {
   }, [flush]);
   const hasPending = engine?.device.activeReplica.entries(SCOPE).length > 0
     || Object.keys(engine?.readDeviceRows('journal') ?? {}).some((key) => key.startsWith('pendingClaim:'));
-  const room = engine && session.ready ? journalRoom(engine, records) : null;
+  const room = engine ? journalRoom(engine, records) : null;
   const retainedDraft = engine?.readDeviceRows('journal')[EditorDraft.key];
   const retireScales = () => {
-    if (engine && session.ready) retireInvitation(engine, 'scales', records.replica)
+    if (engine) retireInvitation(engine, 'scales', records.replica)
       .catch(() => captureError('journal', 'journal-invitation', '', '/journal'));
   };
-  const readState = !session.ready ? 'loading' : engine.device.activeReplica.meta.state === 'anon' ? 'device'
+  const readState = !engine ? 'loading' : engine.device.activeReplica.meta.state === 'anon' ? 'device'
     : records.firstPullComplete ? 'ready' : 'failed';
   const saveState = records.notices.some((notice) => !notice.dismissed) ? 'refused' : failure || retainedDraft ? 'unsaved' : !session.online ? 'offline'
     : engine?.device.activeReplica.meta.state === 'anon' || hasPending ? 'device' : 'saved';
   return { today, history: pages.filter((page) => page.day < today && isWritten(page)), recoveries: recoveredDrafts(engine),
-    loading: !session.ready, readState,
+    loading: !engine, readState,
     firstRun: room?.firstRunKnown && !pages.some(isWritten) && room.state.placeholder !== 'retired',
     scalesInvitation: room?.scaleInvitationDue ?? false, retireScales,
     body: shown.body, mood: shown.mood, energy: shown.energy, saveState, saveTick,
