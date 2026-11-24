@@ -274,6 +274,6 @@ input names a role's result as `$role` or `$role.path`. Outcomes are a run's kin
 `{cancelHeld}`, and an inspection's visible records, each id named by the first role holding it, any other minted id
 `<new>`. A product inverse (`undoCreateRoadmap`, `undoCreateSubtree`, `redoCreateSubtree`) draws nothing until the server
 answers, so with no connection such an Undo waits and the roadmap or subtree stays drawn. Every restore draws at once:
-fields and texts written back, a created record deleted, and a record revived (the Undo of a delete, the Redo of a
-creation).
+fields and texts written back, a created record deleted, and a record revived with the fields it had (the Undo of a
+delete, a pointer's clear among them, and the Redo of a creation or of an Undo that took a record away).
 

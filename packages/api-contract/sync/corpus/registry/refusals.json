@@ -401,6 +401,367 @@
     }
   },
   {
+    "name": "a minted type keeping its dead rows is revivable",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": true
+    }
+  },
+  {
+    "name": "a keyed type with life is not revivable",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          },
+          {
+            "type": "day",
+            "scope": "product:p",
+            "identity": "keyed",
+            "idPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "score": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": true
+    }
+  },
+  {
+    "name": "a keyed type that says it is not revivable loads",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          },
+          {
+            "type": "day",
+            "scope": "product:p",
+            "identity": "keyed",
+            "idPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "score": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            },
+            "revivable": false
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": true
+    }
+  },
+  {
+    "name": "a keyed type is never revivable: a put brings it back",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          },
+          {
+            "type": "day",
+            "scope": "product:p",
+            "identity": "keyed",
+            "idPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "life": true,
+            "deadRows": "keep",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "score": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            },
+            "revivable": true
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
+    "name": "a singleton is never revivable",
+    "input": {
+      "registry": {
+        "registry": "mini",
+        "version": 2,
+        "minVersion": 1,
+        "products": {
+          "p": {},
+          "q": {}
+        },
+        "types": [
+          {
+            "type": "item",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "scope",
+            "idPattern": "^i_[0-9]+$",
+            "mint": {
+              "prefix": "i_",
+              "alphabet": "0123456789",
+              "length": 12
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "spent",
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            }
+          },
+          {
+            "type": "board",
+            "scope": "product:p",
+            "identity": "minted",
+            "idSpace": "global",
+            "idPattern": "^b_[0-9a-f]{8}$",
+            "mint": {
+              "prefix": "b_",
+              "alphabet": "0123456789abcdef",
+              "length": 8
+            },
+            "life": true,
+            "revivable": false,
+            "deadRows": "keep",
+            "governs": "tree",
+            "origins": [
+              "replica"
+            ],
+            "fields": {}
+          },
+          {
+            "type": "meta",
+            "scope": "tree",
+            "identity": "singleton",
+            "singletonId": "meta",
+            "idPattern": "^meta$",
+            "life": false,
+            "origins": [
+              "replica"
+            ],
+            "fields": {
+              "title": {
+                "kind": "lww",
+                "writer": "client"
+              }
+            },
+            "revivable": true
+          }
+        ],
+        "commands": [
+          {
+            "name": "p.sweep",
+            "scope": "product:p",
+            "origins": [
+              "server"
+            ],
+            "serverInternal": true,
+            "args": {}
+          }
+        ]
+      }
+    },
+    "expect": {
+      "admitted": false
+    }
+  },
+  {
     "name": "a derived type declares a Unicode id domain",
     "input": {
       "registry": {

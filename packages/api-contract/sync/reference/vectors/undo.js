@@ -713,6 +713,51 @@ function revival() {
   return [offline, redrawn];
 }
 
+// A keyed record keeps no field once dead (§6.10 G1). An Undo of its removal restores its life alone, as a roadmap
+// pointer's clear does, and its restore carries the values the life's preimage read, so the server brings the link back
+// with its strength, as the device drew it. The Undo of a Redo of that removal brings it back the same way.
+function keyedRevival() {
+  const linked = () => new Session(world({ rows: { [TREE]: [
+    row({ t: 'tag', id: 'elm', born: st(1300), life: ['alive', st(1300)], f: { label: ['Elm', st(1300)] }, seq: 3 }),
+    row({ t: 'link', id: ['oak', 'elm'], life: ['alive', st(1400)], f: { strength: [3, st(1400)] }, seq: 4 }),
+  ] } }));
+  const remove = { op: 'commitAct', deviceNow: 5000, segments: [{ scope: TREE, changes: [{ op: 'put', t: 'link', id: ['oak', 'elm'], present: false }] }],
+    opts: { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restoreTree', targets: [{ target: target(TREE, 'link', ['oak', 'elm'], 'life') }] }] }] } } };
+  const linkIn = (returned) => returned.records.find((record) => record.t === 'link') ?? null;
+  const serverLink = (session) => session.state.rows[`tree:${BOARD}`][JSON.stringify(['link', ['oak', 'elm']])];
+  const restoresOf = (vector) => vector.expect.returns.filter((returned) => returned?.intents)
+    .flatMap(({ intents }) => intents.filter(({ cmd }) => cmd?.name === 'probe.restoreTree').map(({ cmd }) => cmd.args.operations));
+
+  const undone = linked().local(remove);
+  undone.flush();
+  undone.pull([TREE]);
+  undone.local(requestStep('g1'));
+  undone.flush();
+  undone.pull([TREE]);
+  const back = undone.local(viewStep(TREE))
+    .vector('an Undo of a synced removal of a keyed record brings back the fields its death dropped, on the server as on the device');
+  assert.deepEqual(restoresOf(back), [[{ kind: 'field', t: 'link', id: ['oak', 'elm'], slot: { kind: 'life' }, expected: { kind: 'stamp', stamp: st(5000) },
+    before: 'alive', values: { f: { strength: 3 } } }]]);
+  assert.deepEqual(serverLink(undone).f, { strength: [3, serverLink(undone).life[1]] });
+  assert.deepEqual(linkIn(back.expect.returns.at(-1)), { t: 'link', id: ['oak', 'elm'], life: serverLink(undone).life, f: serverLink(undone).f });
+
+  const redone = linked().local(remove);
+  redone.flush();
+  redone.pull([TREE]);
+  for (const actId of ['g1', 'g2', 'g4']) {
+    redone.local(requestStep(actId, redone.serverNow));
+    redone.flush();
+    redone.pull([TREE]);
+  }
+  const again = redone.local(viewStep(TREE))
+    .vector('an Undo of a Redo of a keyed record\'s removal brings the record back with the fields it had before the Redo');
+  assert.deepEqual(restoresOf(again).map((operations) => operations.map(({ before, values }) => [before, values ?? null])),
+    [[['alive', { f: { strength: 3 } }]], [['dead', null]], [['alive', { f: { strength: 3 } }]]]);
+  assert.deepEqual(serverLink(redone).f, { strength: [3, serverLink(redone).life[1]] });
+  assert.deepEqual(linkIn(again.expect.returns.at(-1)), { t: 'link', id: ['oak', 'elm'], life: serverLink(redone).life, f: serverLink(redone).f });
+  return [back, again];
+}
+
 // A revival of a tag the device knows only by its spent id: its preimages are read over the dead row the spent id
 // keeps, so the Undo walks from that row to the revival's receipt and applies. A spent id that keeps no seq, and a
 // write another device made before the revival reached the server, leave nothing to walk from, and the Undo skips.
@@ -1197,6 +1242,6 @@ export function files() {
     'undo/journal.json': [...capture(), ...retention(), ...epochs(), ...retire(), ...release(), ...lifecycle(), ...remapped(),
       ...cancellationLifecycle(), ...deadScope(), ...startRelease()],
     'undo/restore.json': [...settledUndo(), ...mixed(), ...barrier(), ...laterEdit(), ...aba(), ...masked(), ...epochReplay(), ...strictCreation(), ...productInverse(), ...replacement(), ...requests(), ...heldRedo(), ...discarded(),
-      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival(), ...spentRevival(), ...redirected(), ...typedValues(), ...releasedBirth(), ...adoptedAct(), ...stepConditions()],
+      ...redoWritesTheAct(), ...noErase(), ...cancelledCommand(), ...plainReference(), ...ownCreation(), ...malformedOutcomes(), ...evidenceOnly(), ...revival(), ...keyedRevival(), ...spentRevival(), ...redirected(), ...typedValues(), ...releasedBirth(), ...adoptedAct(), ...stepConditions()],
   };
 }

@@ -427,6 +427,15 @@ struct AdmissionRun {
       guard case .object(let object)? = value else { return [] }
       return object.members
     }
+    // The registers a create's or a keyed revival's values write under the server stamp, each text onto an empty head.
+    let registers = { (values: JSON.Object) -> (fields: [String: PlannedRegister], texts: [String: TextWrite]) in
+      (Dictionary(uniqueKeysWithValues: members(values["f"]).map { (member: (key: String, value: JSON)) -> (String, PlannedRegister) in
+        (member.key, PlannedRegister(member.value, .server))
+      }),
+      Dictionary(uniqueKeysWithValues: members(values["x"]).map { (member: (key: String, value: JSON)) -> (String, TextWrite) in
+        (member.key, TextWrite(text: text(member.value), base: .rev(0)))
+      }))
+    }
     for (index, operation) in arguments.operations.enumerated() {
       guard arguments.expectedEpoch.isSameID(as: state.epoch) else {
         outcomes.append(InverseOutcome(index: index, skipped: "epoch-changed"))
@@ -443,7 +452,7 @@ struct AdmissionRun {
                             born: type.hasBorn ? row?.lattice.born.map(StampSlot.given) : nil)
       }
       switch operation {
-      case .field(_, let slot, let expected, let before):
+      case .field(_, let slot, let expected, let before, let values):
         let holds: Bool = switch expected {
         case .absent(let born): row != nil && (!type.hasBorn || row?.lattice.born == born) && row?.version(of: slot) == nil
         case .version(let version): row?.version(of: slot) == version
@@ -458,7 +467,11 @@ struct AdmissionRun {
         }
         var delta = written()
         switch slot {
-        case .life: delta.life = PlannedLife(before == "alive" ? .alive : .dead, .server)
+        case .life:
+          delta.life = PlannedLife(before == "alive" ? .alive : .dead, .server)
+          let revived = registers(values ?? [:])
+          delta.fields.merge(revived.fields) { $1 }
+          delta.texts.merge(revived.texts) { $1 }
         case .field(let name): delta.fields[name] = PlannedRegister(before, .server)
         case .text(let name): delta.replacements[name] = TextReplacement(text(before))
         case .born: preconditionFailure("born is never restored")
@@ -477,14 +490,9 @@ struct AdmissionRun {
           outcomes.append(InverseOutcome(index: index, skipped: "record-present"))
           continue
         }
-        let fields = Dictionary(uniqueKeysWithValues: members(values["f"]).map { (member: (key: String, value: JSON)) -> (String, PlannedRegister) in
-          (member.key, PlannedRegister(member.value, .server))
-        })
-        let texts = Dictionary(uniqueKeysWithValues: members(values["x"]).map { (member: (key: String, value: JSON)) -> (String, TextWrite) in
-          (member.key, TextWrite(text: text(member.value), base: .rev(0)))
-        })
+        let created = registers(values)
         deltas[key] = PlannedDelta(key: key, op: .create, life: PlannedLife(.alive, .server), born: type.hasBorn ? .server : nil,
-                                   fields: fields, texts: texts)
+                                   fields: created.fields, texts: created.texts)
       }
       outcomes.append(InverseOutcome(index: index))
     }

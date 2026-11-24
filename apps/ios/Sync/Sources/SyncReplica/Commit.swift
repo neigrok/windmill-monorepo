@@ -673,9 +673,9 @@ struct DeltaBuilder {
     return delta
   }
 
-  // A keyed put's life: alive when it makes the record present, dead when it removes it, else the drawn life unchanged. A
-  // put that makes the record present diffs against no record, since the server keeps no field of a dead keyed record
-  // (G1). A put that leaves a `wholePut` record present is a whole put; any other carries its life alone, since §6.1 step 2
+  // A keyed put's life: alive when it makes the record present, dead when it removes it, else the drawn life unchanged.
+  // A put that makes the record present diffs against no record, since the server keeps no field of a dead keyed one (G1).
+  // A put that leaves a `wholePut` record present is a whole put; any other carries its life alone, since §6.1 step 2
   // refuses a dead whole delta with a field register, so one that names a field value throws.
   mutating func put(_ type: TypeDef, _ id: RecordID, present: Bool?, values: [String: JSON], texts edits: [String: TextEdit]) throws -> Delta? {
     guard type.identity == .keyed, type.life else { throw CommitFailure.malformed("\(type.name) is not keyed with life") }

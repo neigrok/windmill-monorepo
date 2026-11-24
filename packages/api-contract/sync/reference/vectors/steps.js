@@ -1,5 +1,6 @@
 // The client-step language of corpus/README.md ("Client steps"). Each step answers one snapshot in
 // `returns`; a throwing step answers {throws: true} and changes nothing, being one local transaction.
+// `Session` pairs the steps with the reference server, so every response a vector carries is one it answered.
 
 import assert from 'node:assert/strict';
 import { steadyTiming } from '../core/clock.js';

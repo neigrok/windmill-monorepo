@@ -493,6 +493,9 @@ The engine applies:
   or text, whatever the value; serial values do not count.
 - `governs: tree`: each record of the type governs `tree:<id>` (D-5). A governing type is minted,
   in the `global` id space, and not revivable.
+- `revivable` marks a minted or derived type whose death is not terminal (D-8): its dead rows keep their
+  fields (§6.10 G1). A keyed type is never revivable, since a put brings it back (§4.3) and its dead rows
+  keep no field. A registry that marks any other type revivable is refused.
 - `opens`: on a `server`-written field of a `tree`-scoped singleton, the values that open the tree
   to every reader (D-4).
 - `beforePull`: a server-internal command that runs before every pull of its scope, unless the scope
@@ -1326,18 +1329,20 @@ fixed arguments; the bound scope supplies the scope, operations name none, and t
 
 ```ts
 type RestoreArgs = { expectedEpoch: string, operations: (
-  | { kind: 'field', t, id, slot, expected: E7Version | { kind: 'absent', born: Stamp | null }, before: Json }
+  | { kind: 'field', t, id, slot, expected: E7Version | { kind: 'absent', born: Stamp | null }, before: Json, values?: Values }
   | { kind: 'createdRecord', t, id, rowSeq: number, footprint: { slot, version: E7Version }[] }
-  | { kind: 'createRecord', t, id, values: { f?: Record<string, Json>, x?: Record<string, string> } })[] }
+  | { kind: 'createRecord', t, id, values: Values })[] }
+type Values = { f?: Record<string, Json>, x?: Record<string, string> }
 type InverseDetail = { inverse: { outcomes: { index, s: 'applied' | 'skipped', code? }[] } }
 ```
 
 - Every operation names a type the command `predicts`, one slot at most once. A `field` slot is a client
   `lww` field, a client text or the life of a keyed type with life or a revivable type, and `before` is on
   its domain (a life is `alive` or `dead`, a text within its bound). `absent` names no life, and its `born`
-  is the record's birth, or null for a type without one. A `createdRecord` or `createRecord` type has life,
-  governs no tree and is not whole-put; a footprint lists born, life, fields and texts in that order; a
-  create's values are client `lww`, `fww`, `const` or `time` fields and client texts, on their domains.
+  is the record's birth, or null for a type without one. A `field` carries `values` only on the life of a
+  keyed type it brings back alive. A `createdRecord` or `createRecord` type has life, governs no tree and
+  is not whole-put; a footprint lists born, life, fields and texts in that order; a create's values, and a
+  revival's, are client `lww`, `fww`, `const` or `time` fields and client texts, on their domains.
   Anything else, an empty list included, is `invalid` at §6.1 step 2.
 - At step 8 each operation, in order, holds or skips by its own condition, read from the scope as stored
   and as earlier operations of the command leave it. Another `expectedEpoch` skips every one
@@ -1348,7 +1353,8 @@ type InverseDetail = { inverse: { outcomes: { index, s: 'applied' | 'skipped', c
   `record-changed`. A `createRecord` holds while the id is wholly absent, no spent id among it; otherwise
   `record-present`.
 - What holds becomes one server delta a record: a `field` writes `before` (a text by a replacement that
-  archives the head, §6.4 above), a `createdRecord` writes the record's death, a `createRecord` the
+  archives the head, §6.4 above), and a keyed record's revival its `values` with its life, since its death
+  kept no field (§6.10 G1); a `createdRecord` writes the record's death, a `createRecord` the
   record with its values, all under the server stamp step 9 mints, newer than every register it joins. The
   delta carries the record's born, and its stored life where a keyed type or a dead record needs one. Checks
   and consequences run as for any command. The detail is `InverseDetail`, one outcome an operation, inside
@@ -1652,8 +1658,9 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
      - `[dead, s]` when it removes it;
      - otherwise the drawn life register, unchanged.
    - A put that makes a keyed record present diffs against no record: it writes every field the change
-     names, changed or not, stamped `s`. The server keeps no field of a dead keyed record (§6.10 G1), so a
-     value its dead row in `drawn` still shows is not one the server holds.
+     names, changed or not, stamped `s`. A keyed type is never revivable (§2.4), so the server keeps no
+     field of a dead keyed record (§6.10 G1), and a value its dead row in `drawn` still shows is not one
+     the server holds.
    - A put that leaves a `wholePut` record present writes every client-written lattice field of its
      type, changed or not, stamped `s`; a change that leaves one out throws. A change that removes a
      `wholePut` record carries its life alone (§6.1 step 2 refuses a dead whole delta with a field
@@ -1945,9 +1952,11 @@ holds no field recipe. Asking again for the same act answers its existing reques
    carrying the optimistic projection of its restore (each value at the request's stamp, a created record
    dead) as its origin prediction. A revived life draws its record even where `drawn` no longer holds it (its
    death already pulled): with the values its preimage's `record` kept, so an Undo of a delete, or a Redo of a
-   creation, draws at once and offline. The inverse act journals each restore slot as a source whose recipes
-   put back the values the act wrote (`written`), never a later local edit's, and a created record's life
-   only where a write can bring it back, with the record as `drawn` held it. Its preimages are read at the
+   creation or of an Undo that took a record away, draws at once and offline. The inverse act journals each
+   restore slot as a source whose recipes
+   put back the values the act wrote (`written`), never a later local edit's, and a life the slot takes
+   away, a created record's among them, only where a write can bring it back, with the record as `drawn`
+   held it. Its preimages are read at the
    row each restore writes over, which the restore's ACK names.
 3. **Barrier.** The sender stops at a slot still waiting (§7.4); later entries keep their positions, and a
    restart changes nothing.
@@ -1959,7 +1968,9 @@ holds no field recipe. Asking again for the same act answers its existing reques
    of the record the journal's receipts hold starts where the last ended (`beforeRowSeq` the previous
    `rowSeq`), until the act's last; a write the device had not seen breaks the chain, and the operation skips
    `history-changed`. The check is per row: an unseen write of another field of the record breaks it too. A
-   preimage of another epoch skips `epoch-changed`. An operation on a target no source owns is dropped, as
+   life operation that brings a keyed record back alive carries the client values of its preimage's
+   `record` (`values`, §6.4), so the server writes the record as its projection draws it, though the death
+   kept no field (§6.10 G1). A preimage of another epoch skips `epoch-changed`. An operation on a target no source owns is dropped, as
    there is nothing to take back (a refused source owns nothing), unless a source's history is
    `unavailable`, when it skips `history-changed`. A `createdRecord` is proven by its own receipts alone: its
    creation (`beforeRowSeq: null`) and each later own write continuing it; a gap, or `unavailable` history,

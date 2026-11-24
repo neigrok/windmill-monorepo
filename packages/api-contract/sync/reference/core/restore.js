@@ -52,6 +52,20 @@ export function restorableSlotFault(type, slot) {
   return field?.kind === 'text' && field.writer === 'client' ? null : `${type.type}.${slot.name} is not a client text`;
 }
 
+// A keyed record's life brought back alive: its death kept no field (§6.10 G1), so its restore carries the record's values.
+export function revivesKeyed(type, slot, before) {
+  return type.identity === 'keyed' && slot.kind === 'life' && before === 'alive';
+}
+
+// The values a keyed record's revival brings back, from the record its life's preimage read: its client fields and texts.
+export function revivalValues(type, record) {
+  const isClient = (name, kinds) => kinds.includes(type.field(name)?.kind) && type.field(name).writer === 'client';
+  const f = Object.entries(record.f ?? {}).filter(([name]) => isClient(name, ['lww', 'fww', 'const', 'time']));
+  const x = Object.entries(record.x ?? {}).filter(([name]) => isClient(name, ['text']));
+  return { ...(f.length ? { f: Object.fromEntries(f.map(([name, [value]]) => [name, structuredClone(value)])) } : {}),
+    ...(x.length ? { x: Object.fromEntries(x) } : {}) };
+}
+
 // A record a strict creation recipe may delete again: a type with life that governs no tree and is not saved whole.
 export function creatableFault(type) {
   if (!type.life) return `${type.type} has no life`;
@@ -215,9 +229,14 @@ export function restoreArgumentsFault(registry, command, args) {
     if (idFault) return idFault;
     switch (op.kind) {
       case 'field': {
-        if (!exactKeys(op, ['kind', 't', 'id', 'slot', 'expected', 'before'])) return 'a field operation is {t, id, slot, expected, before}';
+        if (!exactKeys(op, ['kind', 't', 'id', 'slot', 'expected', 'before'], ['values'])) return 'a field operation is {t, id, slot, expected, before, values?}';
         const fault = restorableSlotFault(type, op.slot) ?? logicalValueFault(registry, type, op.slot, op.before);
         if (fault) return fault;
+        if (Object.hasOwn(op, 'values')) {
+          if (!revivesKeyed(type, op.slot, op.before)) return 'values bring back a keyed record\'s life';
+          const valuesError = valuesFault(registry, type, op.values);
+          if (valuesError) return valuesError;
+        }
         if (op.expected?.kind === 'absent') {
           if (!exactKeys(op.expected, ['kind', 'born']) || op.slot.kind === 'life') return 'an absent expectation names a birth and a field';
           if (type.hasBorn ? !Stamp.isValid(op.expected.born) || op.expected.born === Stamp.UNSET : op.expected.born !== null) return 'an absent expectation names the record birth';
@@ -239,7 +258,7 @@ export function restoreArgumentsFault(registry, command, args) {
       }
       case 'createRecord': {
         if (!exactKeys(op, ['kind', 't', 'id', 'values'])) return 'a create operation is {t, id, values}';
-        const fault = creatableFault(type) ?? creationValuesFault(registry, type, op.values);
+        const fault = creatableFault(type) ?? valuesFault(registry, type, op.values);
         if (fault) return fault;
         break;
       }
@@ -250,8 +269,9 @@ export function restoreArgumentsFault(registry, command, args) {
   return null;
 }
 
-function creationValuesFault(registry, type, values) {
-  if (!exactKeys(values, [], ['f', 'x'])) return 'creation values are {f?, x?}';
+// The values a create, or a keyed record's revival, writes: client lww, fww, const or time fields and client texts.
+function valuesFault(registry, type, values) {
+  if (!exactKeys(values, [], ['f', 'x'])) return 'values are {f?, x?}';
   for (const [name, value] of Object.entries(values.f ?? {})) {
     const field = type.field(name);
     if (!field || field.writer !== 'client' || !['lww', 'fww', 'const', 'time'].includes(field.kind)) return `${type.type}.${name} is not a client value`;
@@ -328,8 +348,12 @@ export function evaluateRestore(registry, { stored, spent, epoch }, args) {
       } else if (!sameJson(versionIn(row, op.slot), op.expected)) return skip('version-changed');
       if (op.slot.kind !== 'life' && type.life && row.life?.[0] !== 'alive' && !type.revivable && type.identity !== 'keyed') return skip('record-dead');
       const delta = deltaOf(record);
-      if (op.slot.kind === 'life') delta.life = [op.before, null];
-      else if (op.slot.kind === 'field') delta.f = { ...delta.f, [op.slot.name]: [op.before, null] };
+      if (op.slot.kind === 'life') {
+        delta.life = [op.before, null];
+        const written = registersOf(op.values ?? {});
+        if (written.f) delta.f = { ...delta.f, ...written.f };
+        if (written.x) delta.x = { ...delta.x, ...written.x };
+      } else if (op.slot.kind === 'field') delta.f = { ...delta.f, [op.slot.name]: [op.before, null] };
       else delta.x = { ...delta.x, [op.slot.name]: { text: op.before, replace: true, archiveNonempty: false, archive: {} } };
       outcomes.push({ index, s: 'applied' });
       return undefined;
@@ -341,13 +365,19 @@ export function evaluateRestore(registry, { stored, spent, epoch }, args) {
       return undefined;
     }
     if (row || record.delta || spent(op.t, op.id)) return skip('record-present');
-    record.delta = { t: op.t, id: op.id, life: ['alive', null], ...(type.hasBorn ? { born: null } : {}) };
-    if (op.values.f && Object.keys(op.values.f).length) record.delta.f = Object.fromEntries(Object.entries(op.values.f).map(([name, value]) => [name, [value, null]]));
-    if (op.values.x && Object.keys(op.values.x).length) record.delta.x = Object.fromEntries(Object.entries(op.values.x).map(([name, text]) => [name, { text, base: { rev: 0 } }]));
+    record.delta = { t: op.t, id: op.id, life: ['alive', null], ...(type.hasBorn ? { born: null } : {}), ...registersOf(op.values) };
     outcomes.push({ index, s: 'applied' });
     return undefined;
   });
   return { deltas: [...records.values()].filter((record) => record.delta).map((record) => record.delta), outcomes };
+}
+
+// The registers a create's or a keyed revival's values write under the server stamp, each text onto an empty head.
+function registersOf(values) {
+  const f = Object.entries(values.f ?? {});
+  const x = Object.entries(values.x ?? {});
+  return { ...(f.length ? { f: Object.fromEntries(f.map(([name, value]) => [name, [value, null]])) } : {}),
+    ...(x.length ? { x: Object.fromEntries(x.map(([name, text]) => [name, { text, base: { rev: 0 } }])) } : {}) };
 }
 
 // The first condition a product inverse command's evidence breaks against the scopes as stored, or null:

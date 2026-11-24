@@ -307,10 +307,10 @@ struct SyncEngineTests {
 
   // MARK: A keyed record brought back (§7.1 step 4)
 
-  // A step's pointer set and synced, cleared, and set again to the same roadmap, with one sync after both or one between
-  // them, on Windmill's registry and server rules. The server keeps no field of the dead pointer (G1), so the pointer
-  // comes back opening the roadmap only because the put that makes it present writes `opens`, which the dead row the
-  // device draws until the sync still shows.
+  // A step's pointer set and synced, cleared, and set again to the same roadmap, on Windmill's registry and server rules.
+  // The server keeps no field of the dead pointer (G1). With one sync after both, the device still draws the dead row with
+  // `opens` when it sets it again, and the pointer comes back opening the roadmap only because the put that makes it
+  // present writes `opens` all the same. With a sync between them, the device holds no dead row by then: the control.
   @Test(arguments: [false, true]) func aPointerClearedAndSetAgainOpensItsRoadmapAfterTheSync(syncsBetween: Bool) throws {
     let phone = SteppedEngine(registry: SyncSchema.registry, startMs: Rig.startMs, account: "A",
                               rules: ComposedServerRules.windmill(registry: SyncSchema.registry))

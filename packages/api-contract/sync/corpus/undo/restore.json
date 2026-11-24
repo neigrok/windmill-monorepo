@@ -32822,6 +32822,2903 @@
     }
   },
   {
+    "name": "an Undo of a synced removal of a keyed record brings back the fields its death dropped, on the server as on the device",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "cardAAAA0001",
+                  "life": [
+                    "alive",
+                    "1100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Old",
+                      "1100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ],
+              "tree/b_00000001": [
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Root",
+                      "1200:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "1300:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1300:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Oak",
+                      "1300:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                },
+                {
+                  "t": "tag",
+                  "id": "elm",
+                  "life": [
+                    "alive",
+                    "1300:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1300:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Elm",
+                      "1300:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 3000,
+                  "ru": 3000
+                },
+                {
+                  "t": "link",
+                  "id": [
+                    "oak",
+                    "elm"
+                  ],
+                  "life": [
+                    "alive",
+                    "1400:0:r_aaaaaaaaaaaa"
+                  ],
+                  "f": {
+                    "strength": [
+                      3,
+                      "1400:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "b5597fbc5da727c9b4f133f2943370c4837ff00e431d70eafaf8d632bad4464d",
+                "booted": true
+              },
+              "tree/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+                "digest": "cfad92500a0252a776f0f5c603df4353dfeaa6e7ee69f94cfb839e5203eadb19",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commitAct",
+          "deviceNow": 5000,
+          "segments": [
+            {
+              "scope": "tree/b_00000001",
+              "changes": [
+                {
+                  "op": "put",
+                  "t": "link",
+                  "id": [
+                    "oak",
+                    "elm"
+                  ],
+                  "present": false
+                }
+              ]
+            }
+          ],
+          "opts": {
+            "undo": {
+              "version": 1,
+              "segments": [
+                {
+                  "index": 0,
+                  "recipes": [
+                    {
+                      "kind": "fields",
+                      "restoreCommand": "probe.restoreTree",
+                      "targets": [
+                        {
+                          "target": {
+                            "scope": "tree/b_00000001",
+                            "t": "link",
+                            "id": [
+                              "oak",
+                              "elm"
+                            ],
+                            "slot": {
+                              "kind": "life"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "push",
+          "deviceNow": 6000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 7000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 5,
+                  "write": [],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "tree/b_00000001",
+                          "beforeSeq": 4,
+                          "seq": 5,
+                          "rows": [
+                            {
+                              "t": "link",
+                              "id": [
+                                "oak",
+                                "elm"
+                              ],
+                              "beforeRowSeq": 4,
+                              "rowSeq": 5,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "life"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "5000:0:r_aaaaaaaaaaaa"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 6000
+        },
+        {
+          "op": "push",
+          "deviceNow": 7000
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "tree/b_00000001"
+          ],
+          "deviceNow": 7000
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 8000,
+              "epoch": "ep-1",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "link",
+                      "id": [
+                        "oak",
+                        "elm"
+                      ],
+                      "life": [
+                        "dead",
+                        "5000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "seq": 5
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
+                  "more": false,
+                  "seq": 5,
+                  "digest": "b9fc668bbffb00750b1aa0e52f35c565bbe10ade0a779b6fa308792b87609258",
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 7000
+        },
+        {
+          "op": "requestInverse",
+          "actId": "g1",
+          "deviceNow": 9000
+        },
+        {
+          "op": "push",
+          "deviceNow": 8000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 9000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 6,
+                  "write": [],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "tree/b_00000001",
+                          "beforeSeq": 5,
+                          "seq": 6,
+                          "rows": [
+                            {
+                              "t": "link",
+                              "id": [
+                                "oak",
+                                "elm"
+                              ],
+                              "beforeRowSeq": 5,
+                              "rowSeq": 6,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "life"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "9000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "strength"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "9000:0:srv"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "command": {
+                      "inverse": {
+                        "outcomes": [
+                          {
+                            "index": 0,
+                            "s": "applied"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 8000
+        },
+        {
+          "op": "push",
+          "deviceNow": 9000
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "tree/b_00000001"
+          ],
+          "deviceNow": 9000
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 10000,
+              "epoch": "ep-1",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "link",
+                      "id": [
+                        "oak",
+                        "elm"
+                      ],
+                      "life": [
+                        "alive",
+                        "9000:0:srv"
+                      ],
+                      "f": {
+                        "strength": [
+                          3,
+                          "9000:0:srv"
+                        ]
+                      },
+                      "seq": 6,
+                      "rc": 4000,
+                      "ru": 9000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Nn0",
+                  "more": false,
+                  "seq": 6,
+                  "digest": "461f8682ef18a3eb02b3d62a5ce3c5efac5c4672c1a9d0db79c6d3375adccafa",
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 9000
+        },
+        {
+          "op": "view",
+          "scope": "tree/b_00000001",
+          "withHeld": true
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "gestureId": "g1",
+          "segments": [
+            {
+              "scope": "tree/b_00000001",
+              "stamp": "5000:0:r_aaaaaaaaaaaa",
+              "localIds": [
+                "g1/0"
+              ],
+              "ids": [
+                [
+                  "oak",
+                  "elm"
+                ]
+              ]
+            }
+          ],
+          "retired": [],
+          "superseded": [],
+          "releaseAt": null
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "tree/b_00000001",
+              "d": [
+                {
+                  "t": "link",
+                  "id": [
+                    "oak",
+                    "elm"
+                  ],
+                  "life": [
+                    "dead",
+                    "5000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "cmd": {
+                "name": "probe.captureTree",
+                "args": {}
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "tree/b_00000001",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0"
+            }
+          ]
+        },
+        [
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "kind": "pending",
+          "requestId": "g3",
+          "inverseActId": "g2",
+          "localChanged": true
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "tree/b_00000001",
+              "cmd": {
+                "name": "probe.restoreTree",
+                "args": {
+                  "expectedEpoch": "ep-1",
+                  "operations": [
+                    {
+                      "kind": "field",
+                      "t": "link",
+                      "id": [
+                        "oak",
+                        "elm"
+                      ],
+                      "slot": {
+                        "kind": "life"
+                      },
+                      "expected": {
+                        "kind": "stamp",
+                        "stamp": "5000:0:r_aaaaaaaaaaaa"
+                      },
+                      "before": "alive",
+                      "values": {
+                        "f": {
+                          "strength": 3
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "tree/b_00000001",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0"
+            }
+          ]
+        },
+        [
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "records": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "elm"
+              ],
+              "life": [
+                "alive",
+                "9000:0:srv"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "9000:0:srv"
+                ]
+              }
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Root",
+                  "1200:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "alive",
+                "1300:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1300:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "1300:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1300:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1300:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1300:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {}
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 3,
+              "hlc": {
+                "ms": 10000,
+                "counter": 0
+              },
+              "hlcHigh": "10000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "9000:0:srv",
+              "serverOffsetMs": 1000,
+              "offsetSamples": [
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 2,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 9000,
+                "mono": 9000,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "cardAAAA0001",
+                  "life": [
+                    "alive",
+                    "1100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Old",
+                      "1100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ],
+              "tree/b_00000001": [
+                {
+                  "t": "link",
+                  "id": [
+                    "oak",
+                    "elm"
+                  ],
+                  "life": [
+                    "alive",
+                    "9000:0:srv"
+                  ],
+                  "f": {
+                    "strength": [
+                      3,
+                      "9000:0:srv"
+                    ]
+                  },
+                  "seq": 6,
+                  "rc": 4000,
+                  "ru": 9000
+                },
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Root",
+                      "1200:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "tag",
+                  "id": "elm",
+                  "life": [
+                    "alive",
+                    "1300:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1300:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Elm",
+                      "1300:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 3000,
+                  "ru": 3000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "1300:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1300:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Oak",
+                      "1300:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "b5597fbc5da727c9b4f133f2943370c4837ff00e431d70eafaf8d632bad4464d",
+                "booted": true
+              },
+              "tree/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Nn0",
+                "digest": "461f8682ef18a3eb02b3d62a5ce3c5efac5c4672c1a9d0db79c6d3375adccafa",
+                "booted": true
+              }
+            },
+            "journal": [
+              {
+                "version": 1,
+                "actId": "g1",
+                "retained": true,
+                "sourceEntries": [
+                  {
+                    "localId": "g1/0",
+                    "originScope": "tree/b_00000001",
+                    "recipes": [
+                      {
+                        "kind": "fields",
+                        "restoreCommand": "probe.restoreTree",
+                        "targets": [
+                          {
+                            "target": {
+                              "scope": "tree/b_00000001",
+                              "t": "link",
+                              "id": [
+                                "oak",
+                                "elm"
+                              ],
+                              "slot": {
+                                "kind": "life"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "preimages": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000001",
+                          "t": "link",
+                          "id": [
+                            "oak",
+                            "elm"
+                          ],
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "alive",
+                        "rowSeq": 4,
+                        "epoch": "ep-1",
+                        "record": {
+                          "f": {
+                            "strength": [
+                              3,
+                              "1400:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        }
+                      }
+                    ],
+                    "written": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000001",
+                          "t": "link",
+                          "id": [
+                            "oak",
+                            "elm"
+                          ],
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "dead"
+                      }
+                    ],
+                    "attempts": [
+                      {
+                        "epoch": "ep-1",
+                        "n": 1,
+                        "outcome": "ok",
+                        "acceptedEffects": [
+                          {
+                            "scope": "tree/b_00000001",
+                            "beforeSeq": 4,
+                            "seq": 5,
+                            "rows": [
+                              {
+                                "t": "link",
+                                "id": [
+                                  "oak",
+                                  "elm"
+                                ],
+                                "beforeRowSeq": 4,
+                                "rowSeq": 5,
+                                "slots": [
+                                  {
+                                    "slot": {
+                                      "kind": "life"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "5000:0:r_aaaaaaaaaaaa"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "version": 1,
+                "actId": "g2",
+                "retained": true,
+                "sourceEntries": [
+                  {
+                    "localId": "g2/0",
+                    "originScope": "tree/b_00000001",
+                    "recipes": [
+                      {
+                        "kind": "fields",
+                        "restoreCommand": "probe.restoreTree",
+                        "targets": [
+                          {
+                            "target": {
+                              "scope": "tree/b_00000001",
+                              "t": "link",
+                              "id": [
+                                "oak",
+                                "elm"
+                              ],
+                              "slot": {
+                                "kind": "life"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "preimages": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000001",
+                          "t": "link",
+                          "id": [
+                            "oak",
+                            "elm"
+                          ],
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "dead",
+                        "rowSeq": 5,
+                        "epoch": "ep-1"
+                      }
+                    ],
+                    "written": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000001",
+                          "t": "link",
+                          "id": [
+                            "oak",
+                            "elm"
+                          ],
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "alive"
+                      }
+                    ],
+                    "attempts": [
+                      {
+                        "epoch": "ep-1",
+                        "n": 2,
+                        "outcome": "ok",
+                        "acceptedEffects": [
+                          {
+                            "scope": "tree/b_00000001",
+                            "beforeSeq": 5,
+                            "seq": 6,
+                            "rows": [
+                              {
+                                "t": "link",
+                                "id": [
+                                  "oak",
+                                  "elm"
+                                ],
+                                "beforeRowSeq": 5,
+                                "rowSeq": 6,
+                                "slots": [
+                                  {
+                                    "slot": {
+                                      "kind": "life"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "9000:0:srv"
+                                    }
+                                  },
+                                  {
+                                    "slot": {
+                                      "kind": "field",
+                                      "name": "strength"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "9000:0:srv"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "inverses": [
+              {
+                "version": 1,
+                "requestId": "g3",
+                "sourceActId": "g1",
+                "inverseActId": "g2",
+                "state": "settled",
+                "requestedAt": 9000,
+                "localChanged": true,
+                "slots": [
+                  {
+                    "localId": "g2/0",
+                    "commitOrder": 1,
+                    "originScope": "tree/b_00000001",
+                    "recipe": {
+                      "kind": "withdrawn",
+                      "command": "probe.restoreTree"
+                    },
+                    "state": "settled",
+                    "skipped": [],
+                    "changed": true,
+                    "outcomes": [
+                      {
+                        "index": 0,
+                        "s": "applied"
+                      }
+                    ]
+                  }
+                ],
+                "result": {
+                  "kind": "settled",
+                  "requestId": "g3",
+                  "inverseActId": "g2",
+                  "changed": true,
+                  "appliedCount": 1,
+                  "skippedCount": 0
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g2/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ]
+    }
+  },
+  {
+    "name": "an Undo of a Redo of a keyed record's removal brings the record back with the fields it had before the Redo",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "cardAAAA0001",
+                  "life": [
+                    "alive",
+                    "1100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Old",
+                      "1100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ],
+              "tree/b_00000001": [
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Root",
+                      "1200:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "1300:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1300:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Oak",
+                      "1300:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                },
+                {
+                  "t": "tag",
+                  "id": "elm",
+                  "life": [
+                    "alive",
+                    "1300:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1300:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Elm",
+                      "1300:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 3000,
+                  "ru": 3000
+                },
+                {
+                  "t": "link",
+                  "id": [
+                    "oak",
+                    "elm"
+                  ],
+                  "life": [
+                    "alive",
+                    "1400:0:r_aaaaaaaaaaaa"
+                  ],
+                  "f": {
+                    "strength": [
+                      3,
+                      "1400:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "b5597fbc5da727c9b4f133f2943370c4837ff00e431d70eafaf8d632bad4464d",
+                "booted": true
+              },
+              "tree/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+                "digest": "cfad92500a0252a776f0f5c603df4353dfeaa6e7ee69f94cfb839e5203eadb19",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commitAct",
+          "deviceNow": 5000,
+          "segments": [
+            {
+              "scope": "tree/b_00000001",
+              "changes": [
+                {
+                  "op": "put",
+                  "t": "link",
+                  "id": [
+                    "oak",
+                    "elm"
+                  ],
+                  "present": false
+                }
+              ]
+            }
+          ],
+          "opts": {
+            "undo": {
+              "version": 1,
+              "segments": [
+                {
+                  "index": 0,
+                  "recipes": [
+                    {
+                      "kind": "fields",
+                      "restoreCommand": "probe.restoreTree",
+                      "targets": [
+                        {
+                          "target": {
+                            "scope": "tree/b_00000001",
+                            "t": "link",
+                            "id": [
+                              "oak",
+                              "elm"
+                            ],
+                            "slot": {
+                              "kind": "life"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "push",
+          "deviceNow": 6000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 7000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 5,
+                  "write": [],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "tree/b_00000001",
+                          "beforeSeq": 4,
+                          "seq": 5,
+                          "rows": [
+                            {
+                              "t": "link",
+                              "id": [
+                                "oak",
+                                "elm"
+                              ],
+                              "beforeRowSeq": 4,
+                              "rowSeq": 5,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "life"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "5000:0:r_aaaaaaaaaaaa"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 6000
+        },
+        {
+          "op": "push",
+          "deviceNow": 7000
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "tree/b_00000001"
+          ],
+          "deviceNow": 7000
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 8000,
+              "epoch": "ep-1",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "link",
+                      "id": [
+                        "oak",
+                        "elm"
+                      ],
+                      "life": [
+                        "dead",
+                        "5000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "seq": 5
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
+                  "more": false,
+                  "seq": 5,
+                  "digest": "b9fc668bbffb00750b1aa0e52f35c565bbe10ade0a779b6fa308792b87609258",
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 7000
+        },
+        {
+          "op": "requestInverse",
+          "actId": "g1",
+          "deviceNow": 8000
+        },
+        {
+          "op": "push",
+          "deviceNow": 8000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 9000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 6,
+                  "write": [],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "tree/b_00000001",
+                          "beforeSeq": 5,
+                          "seq": 6,
+                          "rows": [
+                            {
+                              "t": "link",
+                              "id": [
+                                "oak",
+                                "elm"
+                              ],
+                              "beforeRowSeq": 5,
+                              "rowSeq": 6,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "life"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "9000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "strength"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "9000:0:srv"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "command": {
+                      "inverse": {
+                        "outcomes": [
+                          {
+                            "index": 0,
+                            "s": "applied"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 8000
+        },
+        {
+          "op": "push",
+          "deviceNow": 9000
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "tree/b_00000001"
+          ],
+          "deviceNow": 9000
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 10000,
+              "epoch": "ep-1",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "link",
+                      "id": [
+                        "oak",
+                        "elm"
+                      ],
+                      "life": [
+                        "alive",
+                        "9000:0:srv"
+                      ],
+                      "f": {
+                        "strength": [
+                          3,
+                          "9000:0:srv"
+                        ]
+                      },
+                      "seq": 6,
+                      "rc": 4000,
+                      "ru": 9000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Nn0",
+                  "more": false,
+                  "seq": 6,
+                  "digest": "461f8682ef18a3eb02b3d62a5ce3c5efac5c4672c1a9d0db79c6d3375adccafa",
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 9000
+        },
+        {
+          "op": "requestInverse",
+          "actId": "g2",
+          "deviceNow": 10000
+        },
+        {
+          "op": "push",
+          "deviceNow": 10000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 11000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 3,
+              "results": [
+                {
+                  "n": 3,
+                  "s": "ok",
+                  "seq": 7,
+                  "write": [],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "tree/b_00000001",
+                          "beforeSeq": 6,
+                          "seq": 7,
+                          "rows": [
+                            {
+                              "t": "link",
+                              "id": [
+                                "oak",
+                                "elm"
+                              ],
+                              "beforeRowSeq": 6,
+                              "rowSeq": 7,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "life"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "11000:0:srv"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "command": {
+                      "inverse": {
+                        "outcomes": [
+                          {
+                            "index": 0,
+                            "s": "applied"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 10000
+        },
+        {
+          "op": "push",
+          "deviceNow": 11000
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "tree/b_00000001"
+          ],
+          "deviceNow": 11000
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 12000,
+              "epoch": "ep-1",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "link",
+                      "id": [
+                        "oak",
+                        "elm"
+                      ],
+                      "life": [
+                        "dead",
+                        "11000:0:srv"
+                      ],
+                      "seq": 7
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6N30",
+                  "more": false,
+                  "seq": 7,
+                  "digest": "b9fc668bbffb00750b1aa0e52f35c565bbe10ade0a779b6fa308792b87609258",
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 11000
+        },
+        {
+          "op": "requestInverse",
+          "actId": "g4",
+          "deviceNow": 12000
+        },
+        {
+          "op": "push",
+          "deviceNow": 12000
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 13000,
+              "epoch": "ep-1",
+              "as": "A",
+              "lastN": 4,
+              "results": [
+                {
+                  "n": 4,
+                  "s": "ok",
+                  "seq": 8,
+                  "write": [],
+                  "detail": {
+                    "windmillKit": {
+                      "v": 1,
+                      "effects": [
+                        {
+                          "scope": "tree/b_00000001",
+                          "beforeSeq": 7,
+                          "seq": 8,
+                          "rows": [
+                            {
+                              "t": "link",
+                              "id": [
+                                "oak",
+                                "elm"
+                              ],
+                              "beforeRowSeq": 7,
+                              "rowSeq": 8,
+                              "slots": [
+                                {
+                                  "slot": {
+                                    "kind": "life"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "13000:0:srv"
+                                  }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "strength"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "13000:0:srv"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    "command": {
+                      "inverse": {
+                        "outcomes": [
+                          {
+                            "index": 0,
+                            "s": "applied"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 12000
+        },
+        {
+          "op": "push",
+          "deviceNow": 13000
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "tree/b_00000001"
+          ],
+          "deviceNow": 13000
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 14000,
+              "epoch": "ep-1",
+              "as": "A",
+              "pages": [
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "link",
+                      "id": [
+                        "oak",
+                        "elm"
+                      ],
+                      "life": [
+                        "alive",
+                        "13000:0:srv"
+                      ],
+                      "f": {
+                        "strength": [
+                          3,
+                          "13000:0:srv"
+                        ]
+                      },
+                      "seq": 8,
+                      "rc": 4000,
+                      "ru": 13000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6OH0",
+                  "more": false,
+                  "seq": 8,
+                  "digest": "faf1fd4b520818c30fddee2b010414510fd0798363db09ea88c7b964e0c1ccbe",
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "deviceNow": 13000
+        },
+        {
+          "op": "view",
+          "scope": "tree/b_00000001",
+          "withHeld": true
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "gestureId": "g1",
+          "segments": [
+            {
+              "scope": "tree/b_00000001",
+              "stamp": "5000:0:r_aaaaaaaaaaaa",
+              "localIds": [
+                "g1/0"
+              ],
+              "ids": [
+                [
+                  "oak",
+                  "elm"
+                ]
+              ]
+            }
+          ],
+          "retired": [],
+          "superseded": [],
+          "releaseAt": null
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "tree/b_00000001",
+              "d": [
+                {
+                  "t": "link",
+                  "id": [
+                    "oak",
+                    "elm"
+                  ],
+                  "life": [
+                    "dead",
+                    "5000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "cmd": {
+                "name": "probe.captureTree",
+                "args": {}
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "tree/b_00000001",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0"
+            }
+          ]
+        },
+        [
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "kind": "pending",
+          "requestId": "g3",
+          "inverseActId": "g2",
+          "localChanged": true
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "tree/b_00000001",
+              "cmd": {
+                "name": "probe.restoreTree",
+                "args": {
+                  "expectedEpoch": "ep-1",
+                  "operations": [
+                    {
+                      "kind": "field",
+                      "t": "link",
+                      "id": [
+                        "oak",
+                        "elm"
+                      ],
+                      "slot": {
+                        "kind": "life"
+                      },
+                      "expected": {
+                        "kind": "stamp",
+                        "stamp": "5000:0:r_aaaaaaaaaaaa"
+                      },
+                      "before": "alive",
+                      "values": {
+                        "f": {
+                          "strength": 3
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "tree/b_00000001",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0"
+            }
+          ]
+        },
+        [
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "kind": "pending",
+          "requestId": "g5",
+          "inverseActId": "g4",
+          "localChanged": true
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "tree/b_00000001",
+              "cmd": {
+                "name": "probe.restoreTree",
+                "args": {
+                  "expectedEpoch": "ep-1",
+                  "operations": [
+                    {
+                      "kind": "field",
+                      "t": "link",
+                      "id": [
+                        "oak",
+                        "elm"
+                      ],
+                      "slot": {
+                        "kind": "life"
+                      },
+                      "expected": {
+                        "kind": "stamp",
+                        "stamp": "9000:0:srv"
+                      },
+                      "before": "dead"
+                    }
+                  ]
+                }
+              },
+              "gestureId": "g4",
+              "n": 3
+            }
+          ]
+        },
+        null,
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "tree/b_00000001",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Nn0"
+            }
+          ]
+        },
+        [
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "kind": "pending",
+          "requestId": "g7",
+          "inverseActId": "g6",
+          "localChanged": true
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 3,
+          "intents": [
+            {
+              "scope": "tree/b_00000001",
+              "cmd": {
+                "name": "probe.restoreTree",
+                "args": {
+                  "expectedEpoch": "ep-1",
+                  "operations": [
+                    {
+                      "kind": "field",
+                      "t": "link",
+                      "id": [
+                        "oak",
+                        "elm"
+                      ],
+                      "slot": {
+                        "kind": "life"
+                      },
+                      "expected": {
+                        "kind": "stamp",
+                        "stamp": "11000:0:srv"
+                      },
+                      "before": "alive",
+                      "values": {
+                        "f": {
+                          "strength": 3
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "gestureId": "g6",
+              "n": 4
+            }
+          ]
+        },
+        null,
+        null,
+        {
+          "scopes": [
+            {
+              "scope": "tree/b_00000001",
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6N30"
+            }
+          ]
+        },
+        [
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "records": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "elm"
+              ],
+              "life": [
+                "alive",
+                "13000:0:srv"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "13000:0:srv"
+                ]
+              }
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Root",
+                  "1200:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "alive",
+                "1300:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1300:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "1300:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1300:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1300:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1300:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            }
+          ],
+          "capCount": {}
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 5,
+              "hlc": {
+                "ms": 13000,
+                "counter": 0
+              },
+              "hlcHigh": "13000:0:srv",
+              "admittedHigh": "13000:0:srv",
+              "serverOffsetMs": 1000,
+              "offsetSamples": [
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                },
+                {
+                  "offset": 1000,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 4,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 13000,
+                "mono": 13000,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "cardAAAA0001",
+                  "life": [
+                    "alive",
+                    "1100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Old",
+                      "1100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ],
+              "tree/b_00000001": [
+                {
+                  "t": "link",
+                  "id": [
+                    "oak",
+                    "elm"
+                  ],
+                  "life": [
+                    "alive",
+                    "13000:0:srv"
+                  ],
+                  "f": {
+                    "strength": [
+                      3,
+                      "13000:0:srv"
+                    ]
+                  },
+                  "seq": 8,
+                  "rc": 4000,
+                  "ru": 13000
+                },
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Root",
+                      "1200:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "tag",
+                  "id": "elm",
+                  "life": [
+                    "alive",
+                    "1300:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1300:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Elm",
+                      "1300:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 3000,
+                  "ru": 3000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "1300:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1300:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Oak",
+                      "1300:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "b5597fbc5da727c9b4f133f2943370c4837ff00e431d70eafaf8d632bad4464d",
+                "booted": true
+              },
+              "tree/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6OH0",
+                "digest": "faf1fd4b520818c30fddee2b010414510fd0798363db09ea88c7b964e0c1ccbe",
+                "booted": true
+              }
+            },
+            "journal": [
+              {
+                "version": 1,
+                "actId": "g1",
+                "retained": true,
+                "sourceEntries": [
+                  {
+                    "localId": "g1/0",
+                    "originScope": "tree/b_00000001",
+                    "recipes": [
+                      {
+                        "kind": "fields",
+                        "restoreCommand": "probe.restoreTree",
+                        "targets": [
+                          {
+                            "target": {
+                              "scope": "tree/b_00000001",
+                              "t": "link",
+                              "id": [
+                                "oak",
+                                "elm"
+                              ],
+                              "slot": {
+                                "kind": "life"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "preimages": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000001",
+                          "t": "link",
+                          "id": [
+                            "oak",
+                            "elm"
+                          ],
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "alive",
+                        "rowSeq": 4,
+                        "epoch": "ep-1",
+                        "record": {
+                          "f": {
+                            "strength": [
+                              3,
+                              "1400:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        }
+                      }
+                    ],
+                    "written": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000001",
+                          "t": "link",
+                          "id": [
+                            "oak",
+                            "elm"
+                          ],
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "dead"
+                      }
+                    ],
+                    "attempts": [
+                      {
+                        "epoch": "ep-1",
+                        "n": 1,
+                        "outcome": "ok",
+                        "acceptedEffects": [
+                          {
+                            "scope": "tree/b_00000001",
+                            "beforeSeq": 4,
+                            "seq": 5,
+                            "rows": [
+                              {
+                                "t": "link",
+                                "id": [
+                                  "oak",
+                                  "elm"
+                                ],
+                                "beforeRowSeq": 4,
+                                "rowSeq": 5,
+                                "slots": [
+                                  {
+                                    "slot": {
+                                      "kind": "life"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "5000:0:r_aaaaaaaaaaaa"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "version": 1,
+                "actId": "g2",
+                "retained": true,
+                "sourceEntries": [
+                  {
+                    "localId": "g2/0",
+                    "originScope": "tree/b_00000001",
+                    "recipes": [
+                      {
+                        "kind": "fields",
+                        "restoreCommand": "probe.restoreTree",
+                        "targets": [
+                          {
+                            "target": {
+                              "scope": "tree/b_00000001",
+                              "t": "link",
+                              "id": [
+                                "oak",
+                                "elm"
+                              ],
+                              "slot": {
+                                "kind": "life"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "preimages": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000001",
+                          "t": "link",
+                          "id": [
+                            "oak",
+                            "elm"
+                          ],
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "dead",
+                        "rowSeq": 5,
+                        "epoch": "ep-1"
+                      }
+                    ],
+                    "written": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000001",
+                          "t": "link",
+                          "id": [
+                            "oak",
+                            "elm"
+                          ],
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "alive"
+                      }
+                    ],
+                    "attempts": [
+                      {
+                        "epoch": "ep-1",
+                        "n": 2,
+                        "outcome": "ok",
+                        "acceptedEffects": [
+                          {
+                            "scope": "tree/b_00000001",
+                            "beforeSeq": 5,
+                            "seq": 6,
+                            "rows": [
+                              {
+                                "t": "link",
+                                "id": [
+                                  "oak",
+                                  "elm"
+                                ],
+                                "beforeRowSeq": 5,
+                                "rowSeq": 6,
+                                "slots": [
+                                  {
+                                    "slot": {
+                                      "kind": "life"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "9000:0:srv"
+                                    }
+                                  },
+                                  {
+                                    "slot": {
+                                      "kind": "field",
+                                      "name": "strength"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "9000:0:srv"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "version": 1,
+                "actId": "g4",
+                "retained": true,
+                "sourceEntries": [
+                  {
+                    "localId": "g4/0",
+                    "originScope": "tree/b_00000001",
+                    "recipes": [
+                      {
+                        "kind": "fields",
+                        "restoreCommand": "probe.restoreTree",
+                        "targets": [
+                          {
+                            "target": {
+                              "scope": "tree/b_00000001",
+                              "t": "link",
+                              "id": [
+                                "oak",
+                                "elm"
+                              ],
+                              "slot": {
+                                "kind": "life"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "preimages": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000001",
+                          "t": "link",
+                          "id": [
+                            "oak",
+                            "elm"
+                          ],
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "alive",
+                        "rowSeq": 6,
+                        "epoch": "ep-1",
+                        "record": {
+                          "f": {
+                            "strength": [
+                              3,
+                              "9000:0:srv"
+                            ]
+                          }
+                        }
+                      }
+                    ],
+                    "written": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000001",
+                          "t": "link",
+                          "id": [
+                            "oak",
+                            "elm"
+                          ],
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "dead"
+                      }
+                    ],
+                    "attempts": [
+                      {
+                        "epoch": "ep-1",
+                        "n": 3,
+                        "outcome": "ok",
+                        "acceptedEffects": [
+                          {
+                            "scope": "tree/b_00000001",
+                            "beforeSeq": 6,
+                            "seq": 7,
+                            "rows": [
+                              {
+                                "t": "link",
+                                "id": [
+                                  "oak",
+                                  "elm"
+                                ],
+                                "beforeRowSeq": 6,
+                                "rowSeq": 7,
+                                "slots": [
+                                  {
+                                    "slot": {
+                                      "kind": "life"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "11000:0:srv"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "version": 1,
+                "actId": "g6",
+                "retained": true,
+                "sourceEntries": [
+                  {
+                    "localId": "g6/0",
+                    "originScope": "tree/b_00000001",
+                    "recipes": [
+                      {
+                        "kind": "fields",
+                        "restoreCommand": "probe.restoreTree",
+                        "targets": [
+                          {
+                            "target": {
+                              "scope": "tree/b_00000001",
+                              "t": "link",
+                              "id": [
+                                "oak",
+                                "elm"
+                              ],
+                              "slot": {
+                                "kind": "life"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "preimages": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000001",
+                          "t": "link",
+                          "id": [
+                            "oak",
+                            "elm"
+                          ],
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "dead",
+                        "rowSeq": 7,
+                        "epoch": "ep-1"
+                      }
+                    ],
+                    "written": [
+                      {
+                        "target": {
+                          "scope": "tree/b_00000001",
+                          "t": "link",
+                          "id": [
+                            "oak",
+                            "elm"
+                          ],
+                          "slot": {
+                            "kind": "life"
+                          }
+                        },
+                        "value": "alive"
+                      }
+                    ],
+                    "attempts": [
+                      {
+                        "epoch": "ep-1",
+                        "n": 4,
+                        "outcome": "ok",
+                        "acceptedEffects": [
+                          {
+                            "scope": "tree/b_00000001",
+                            "beforeSeq": 7,
+                            "seq": 8,
+                            "rows": [
+                              {
+                                "t": "link",
+                                "id": [
+                                  "oak",
+                                  "elm"
+                                ],
+                                "beforeRowSeq": 7,
+                                "rowSeq": 8,
+                                "slots": [
+                                  {
+                                    "slot": {
+                                      "kind": "life"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "13000:0:srv"
+                                    }
+                                  },
+                                  {
+                                    "slot": {
+                                      "kind": "field",
+                                      "name": "strength"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "13000:0:srv"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "inverses": [
+              {
+                "version": 1,
+                "requestId": "g3",
+                "sourceActId": "g1",
+                "inverseActId": "g2",
+                "state": "settled",
+                "requestedAt": 8000,
+                "localChanged": true,
+                "slots": [
+                  {
+                    "localId": "g2/0",
+                    "commitOrder": 1,
+                    "originScope": "tree/b_00000001",
+                    "recipe": {
+                      "kind": "withdrawn",
+                      "command": "probe.restoreTree"
+                    },
+                    "state": "settled",
+                    "skipped": [],
+                    "changed": true,
+                    "outcomes": [
+                      {
+                        "index": 0,
+                        "s": "applied"
+                      }
+                    ]
+                  }
+                ],
+                "result": {
+                  "kind": "settled",
+                  "requestId": "g3",
+                  "inverseActId": "g2",
+                  "changed": true,
+                  "appliedCount": 1,
+                  "skippedCount": 0
+                }
+              },
+              {
+                "version": 1,
+                "requestId": "g5",
+                "sourceActId": "g2",
+                "inverseActId": "g4",
+                "state": "settled",
+                "requestedAt": 10000,
+                "localChanged": true,
+                "slots": [
+                  {
+                    "localId": "g4/0",
+                    "commitOrder": 1,
+                    "originScope": "tree/b_00000001",
+                    "recipe": {
+                      "kind": "withdrawn",
+                      "command": "probe.restoreTree"
+                    },
+                    "state": "settled",
+                    "skipped": [],
+                    "changed": true,
+                    "outcomes": [
+                      {
+                        "index": 0,
+                        "s": "applied"
+                      }
+                    ]
+                  }
+                ],
+                "result": {
+                  "kind": "settled",
+                  "requestId": "g5",
+                  "inverseActId": "g4",
+                  "changed": true,
+                  "appliedCount": 1,
+                  "skippedCount": 0
+                }
+              },
+              {
+                "version": 1,
+                "requestId": "g7",
+                "sourceActId": "g4",
+                "inverseActId": "g6",
+                "state": "settled",
+                "requestedAt": 12000,
+                "localChanged": true,
+                "slots": [
+                  {
+                    "localId": "g6/0",
+                    "commitOrder": 1,
+                    "originScope": "tree/b_00000001",
+                    "recipe": {
+                      "kind": "withdrawn",
+                      "command": "probe.restoreTree"
+                    },
+                    "state": "settled",
+                    "skipped": [],
+                    "changed": true,
+                    "outcomes": [
+                      {
+                        "index": 0,
+                        "s": "applied"
+                      }
+                    ]
+                  }
+                ],
+                "result": {
+                  "kind": "settled",
+                  "requestId": "g7",
+                  "inverseActId": "g6",
+                  "changed": true,
+                  "appliedCount": 1,
+                  "skippedCount": 0
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g2/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g4/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g6/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ]
+    }
+  },
+  {
     "name": "an Undo of a revival of a tag the device knew only by its spent id walks from the dead row that id keeps, and the tag dies again with its label back",
     "input": {
       "device": {
@@ -33715,7 +36612,16 @@
                         },
                         "value": "alive",
                         "rowSeq": 4,
-                        "epoch": "ep-1"
+                        "epoch": "ep-1",
+                        "record": {
+                          "born": "1300:0:r_aaaaaaaaaaaa",
+                          "f": {
+                            "label": [
+                              "Next",
+                              "9000:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        }
                       },
                       {
                         "target": {
@@ -34609,7 +37515,16 @@
                         },
                         "value": "alive",
                         "rowSeq": null,
-                        "epoch": null
+                        "epoch": null,
+                        "record": {
+                          "born": "1300:0:r_aaaaaaaaaaaa",
+                          "f": {
+                            "label": [
+                              "Next",
+                              "9000:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        }
                       },
                       {
                         "target": {
@@ -35518,7 +38433,16 @@
                         },
                         "value": "alive",
                         "rowSeq": null,
-                        "epoch": null
+                        "epoch": null,
+                        "record": {
+                          "born": "1300:0:r_aaaaaaaaaaaa",
+                          "f": {
+                            "label": [
+                              "Next",
+                              "9000:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        }
                       },
                       {
                         "target": {
@@ -52452,6 +55376,16 @@
                                     "kind": "stamp",
                                     "stamp": "9000:0:srv"
                                   }
+                                },
+                                {
+                                  "slot": {
+                                    "kind": "field",
+                                    "name": "score"
+                                  },
+                                  "version": {
+                                    "kind": "stamp",
+                                    "stamp": "9000:0:srv"
+                                  }
                                 }
                               ]
                             }
@@ -52507,6 +55441,12 @@
                         "alive",
                         "9000:0:srv"
                       ],
+                      "f": {
+                        "score": [
+                          7,
+                          "9000:0:srv"
+                        ]
+                      },
                       "seq": 3,
                       "rc": 9000,
                       "ru": 9000
@@ -52515,7 +55455,7 @@
                   "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6M30",
                   "more": false,
                   "seq": 3,
-                  "digest": "0f091674200bdc9c28f3c73e6f66836dbbdf183f14ce6c0e88dc8746a0d36d90",
+                  "digest": "8bc51cb7b9709a80ece3bbdc674543b92ddf8249ba07655448447dc24f32e731",
                   "total": 1
                 }
               ]
@@ -52700,7 +55640,12 @@
                         "kind": "stamp",
                         "stamp": "7000:0:r_aaaaaaaaaaaa"
                       },
-                      "before": "alive"
+                      "before": "alive",
+                      "values": {
+                        "f": {
+                          "score": 7
+                        }
+                      }
                     }
                   ]
                 }
@@ -52742,7 +55687,13 @@
               "life": [
                 "alive",
                 "9000:0:srv"
-              ]
+              ],
+              "f": {
+                "score": [
+                  7,
+                  "9000:0:srv"
+                ]
+              }
             }
           ],
           "capCount": {
@@ -52802,6 +55753,12 @@
                     "alive",
                     "9000:0:srv"
                   ],
+                  "f": {
+                    "score": [
+                      7,
+                      "9000:0:srv"
+                    ]
+                  },
                   "seq": 3,
                   "rc": 9000,
                   "ru": 9000
@@ -52811,7 +55768,7 @@
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6M30",
-                "digest": "0f091674200bdc9c28f3c73e6f66836dbbdf183f14ce6c0e88dc8746a0d36d90",
+                "digest": "8bc51cb7b9709a80ece3bbdc674543b92ddf8249ba07655448447dc24f32e731",
                 "booted": true
               }
             },
@@ -52988,6 +55945,16 @@
                                   {
                                     "slot": {
                                       "kind": "life"
+                                    },
+                                    "version": {
+                                      "kind": "stamp",
+                                      "stamp": "9000:0:srv"
+                                    }
+                                  },
+                                  {
+                                    "slot": {
+                                      "kind": "field",
+                                      "name": "score"
                                     },
                                     "version": {
                                       "kind": "stamp",

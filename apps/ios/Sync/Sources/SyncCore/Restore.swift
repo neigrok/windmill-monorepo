@@ -259,14 +259,15 @@ public enum RestoreOperation: Sendable, Hashable {
     }
   }
 
-  case field(RecordKey, slot: EffectSlot.Slot, expected: Expected, before: JSON)
+  // `values`: on a keyed record's life brought back alive, the record's values, which its death did not keep (G1).
+  case field(RecordKey, slot: EffectSlot.Slot, expected: Expected, before: JSON, values: JSON.Object? = nil)
   case createdRecord(RecordKey, rowSeq: Int64, footprint: [EffectSlot])
   // `values`: `{f?, x?}` as the act created the record, client lww, fww, const and time fields and client texts.
   case createRecord(RecordKey, values: JSON.Object)
 
   public var key: RecordKey {
     switch self {
-    case .field(let key, _, _, _), .createdRecord(let key, _, _), .createRecord(let key, _): key
+    case .field(let key, _, _, _, _), .createdRecord(let key, _, _), .createRecord(let key, _): key
     }
   }
 
@@ -274,11 +275,12 @@ public enum RestoreOperation: Sendable, Hashable {
     let address: JSON.Object = ["t": .string(key.type), "id": key.id.json]
     var object = address
     switch self {
-    case .field(_, let slot, let expected, let before):
+    case .field(_, let slot, let expected, let before, let values):
       object["kind"] = "field"
       object["slot"] = slot.json
       object["expected"] = expected.json
       object["before"] = before
+      object["values"] = values.map(JSON.object)
     case .createdRecord(_, let rowSeq, let footprint):
       object["kind"] = "createdRecord"
       object["rowSeq"] = JSON(rowSeq)
@@ -423,6 +425,30 @@ extension Registry {
     }
   }
 
+  // A keyed record's life brought back alive: its death kept no field (G1), so its restore carries the record's values.
+  public func revivesKeyed(_ type: TypeDef, _ slot: EffectSlot.Slot, _ before: JSON) -> Bool {
+    type.identity == .keyed && slot == .life && before == "alive"
+  }
+
+  // The values a keyed record's revival brings back, from the record its life's preimage read: its client fields and texts.
+  public func revivalValues(_ type: TypeDef, fields: [String: Register], texts: [String: String]) -> JSON.Object {
+    let client = { (name: String) -> FieldKind? in type.field(name).flatMap { $0.writer == .client ? $0.kind : nil } }
+    let f = fields.compactMap { (name: String, register: Register) -> (String, JSON)? in
+      switch client(name) {
+      case .lww?, .fww?, .const?, .time?: (name, register.value)
+      default: nil
+      }
+    }
+    let x = texts.compactMap { (name: String, text: String) -> (String, JSON)? in
+      guard case .text? = client(name) else { return nil }
+      return (name, .string(text))
+    }
+    var values: JSON.Object = [:]
+    if !f.isEmpty { values["f"] = .object(JSON.Object(uniqueKeysWithValues: f)) }
+    if !x.isEmpty { values["x"] = .object(JSON.Object(uniqueKeysWithValues: x)) }
+    return values
+  }
+
   // A record a creation recipe may delete again, or create again: a type with life that governs no tree and is not saved
   // whole.
   public func creatableFault(_ type: TypeDef) -> String? {
@@ -525,10 +551,17 @@ extension Registry {
       let key = RecordKey(name, id)
       switch op["kind"] {
       case "field"?:
-        guard (try? op.expectKeys(required: ["kind", "t", "id", "slot", "expected", "before"])) != nil,
-              let slot = try? EffectSlot.Slot(json: op.member("slot")) else { throw malformed("a field operation is {t, id, slot, expected, before}") }
+        guard (try? op.expectKeys(required: ["kind", "t", "id", "slot", "expected", "before"], optional: ["values"])) != nil,
+              let slot = try? EffectSlot.Slot(json: op.member("slot")) else { throw malformed("a field operation is {t, id, slot, expected, before, values?}") }
         let before = op["before"]!
         if let fault = restorableFault(type, slot) ?? valueFault(type, slot, before) { throw malformed(fault) }
+        var values: JSON.Object?
+        if let given = op["values"] {
+          guard revivesKeyed(type, slot, before) else { throw malformed("values bring back a keyed record's life") }
+          guard case .object(let object) = given else { throw malformed("values are {f?, x?}") }
+          if let fault = valuesFault(type, object) { throw malformed(fault) }
+          values = object
+        }
         let expected = op["expected"]!
         let parsedExpected: RestoreOperation.Expected
         if expected["kind"] == "absent" {
@@ -547,7 +580,7 @@ extension Registry {
           parsedExpected = .version(version)
         }
         guard seen.insert([key.json, slot.json]).inserted else { throw malformed("one operation per slot") }
-        parsed.append(.field(key, slot: slot, expected: parsedExpected, before: before))
+        parsed.append(.field(key, slot: slot, expected: parsedExpected, before: before, values: values))
       case "createdRecord"?:
         guard (try? op.expectKeys(required: ["kind", "t", "id", "rowSeq", "footprint"])) != nil else {
           throw malformed("a created record operation is {t, id, rowSeq, footprint}")
@@ -560,7 +593,7 @@ extension Registry {
         guard (try? op.expectKeys(required: ["kind", "t", "id", "values"])) != nil, case .object(let values)? = op["values"] else {
           throw malformed("a create operation is {t, id, values}")
         }
-        if let fault = creatableFault(type) ?? creationValuesFault(type, values) { throw malformed(fault) }
+        if let fault = creatableFault(type) ?? valuesFault(type, values) { throw malformed(fault) }
         parsed.append(.createRecord(key, values: values))
       default: throw malformed("an unknown restore operation")
       }
@@ -596,10 +629,11 @@ extension Registry {
     return footprint
   }
 
-  func creationValuesFault(_ type: TypeDef, _ values: JSON.Object) -> String? {
-    guard values.keys.allSatisfy({ $0 == "f" || $0 == "x" }) else { return "creation values are {f?, x?}" }
+  // The values a create, or a keyed record's revival, writes: client lww, fww, const or time fields and client texts.
+  func valuesFault(_ type: TypeDef, _ values: JSON.Object) -> String? {
+    guard values.keys.allSatisfy({ $0 == "f" || $0 == "x" }) else { return "values are {f?, x?}" }
     if let f = values["f"] {
-      guard case .object(let fields) = f else { return "creation fields are an object" }
+      guard case .object(let fields) = f else { return "values' fields are an object" }
       for (name, value) in fields.members {
         guard let field = type.field(name), field.writer == .client else { return "\(type.name).\(name) is not a client value" }
         switch field.kind {
@@ -610,7 +644,7 @@ extension Registry {
       }
     }
     if let x = values["x"] {
-      guard case .object(let texts) = x else { return "creation texts are an object" }
+      guard case .object(let texts) = x else { return "values' texts are an object" }
       for (name, text) in texts.members {
         guard let field = type.field(name), case .text = field.kind, field.writer == .client, case .string(let value) = text else {
           return "\(type.name).\(name) is not a client text"
