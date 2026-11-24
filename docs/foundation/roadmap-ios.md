@@ -79,7 +79,7 @@ Activity and the web demo.
 - **Someone else's roadmap** is subscribed when its link is opened, signed in or not, shown in a
   cover of its own, and dropped when the cover closes. It never enters the room's list and does not
   reopen with no connection. The cover shows the owner's progress, read from the backend, and
-  offers no Complete and no workspace. A reader who wants a roadmap of their own forks it.
+  offers no Complete, no workspace and no Coach (Roadmap Coach R-15). A reader who wants a roadmap of their own forks it.
 - **Fork** is the server's, so it needs a connection and an account, and the copy arrives by sync.
 - **The public gallery** is the backend's list of public roadmaps, read a page at a time and shown
   in the order the backend ranks it. It needs a connection and no account, and nothing of it is
