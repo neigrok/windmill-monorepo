@@ -68,8 +68,9 @@ export function startSessionCommand(id, routineId, startedAt) {
     ...(routineId === null ? {} : { routineId: routineId.json }) }, specs: [] };
 }
 
-// One open workout per account: a start while the log draws one open is refused here, and a start that loses a race with
-// another device's is refused `session-open` by the account, its sets folded into that notice.
+// One open workout per account: a start beside a workout the account will hold open is refused here, open by the stale
+// rule over the stored sets since a held delete is not yet sent; a start that loses a race with another device's is
+// refused `session-open` by the account, its sets folded into that notice.
 /** @param {{ id: Id<SessionValue>, routineId?: Id<RoutineValue> | null, startedAt?: Instant | null }} input */
 export function StartSession({ id, routineId = null, startedAt = null }) {
   return Object.freeze({
@@ -83,7 +84,7 @@ export function StartSession({ id, routineId = null, startedAt = null }) {
     /** @param {{ state: TrainingState, routine: RoutineValue | null, prior: boolean }} loaded */
     decide({ state, routine, prior }) {
       if (prior) return Decision.unchanged(id);
-      if (state.drawn.some((session) => SessionRules.drawn(session, state.drawnSets, state.moment.now).isOpen)) {
+      if (state.drawn.some((session) => SessionRules.drawn(session, state.sets, state.moment.now).isOpen)) {
         return Decision.refuse(GymRefusals.ofRefused(new Refused('session-open', id.ref, null, 'predicted')));
       }
       const at = startedAt ?? state.moment.now;

@@ -66,8 +66,9 @@ class StartSessionCommand(id: Id<Session>, routineId: Id<Routine>?, startedAt: I
     }
 }
 
-// One open workout per account: a start while the log draws one open is refused here, and a start that loses a race with
-// another device's is refused `session-open` by the account, its sets folded into that notice.
+// One open workout per account: a start beside a workout the account will hold open is refused here, open by the stale
+// rule over the stored sets since a held delete is not yet sent; a start that loses a race with another device's is
+// refused `session-open` by the account, its sets folded into that notice.
 class StartSession(val id: Id<Session>, val routineId: Id<Routine>? = null, val startedAt: Instant? = null) : Action<StartSession.Loaded, Id<Session>, GymRefusal> {
     data class Loaded(val state: TrainingState, val routine: Routine?, val prior: Boolean)
     override val scope = Session.scope
@@ -76,7 +77,7 @@ class StartSession(val id: Id<Session>, val routineId: Id<Routine>? = null, val 
     override fun decide(loaded: Loaded, ids: IDSource): Decision<Id<Session>, GymRefusal> {
         if (loaded.prior) return Decision.Unchanged(id)
         val state = loaded.state
-        if (state.drawn.any { SessionRules.drawn(it, state.drawnSets, state.moment.now).isOpen })
+        if (state.drawn.any { SessionRules.drawn(it, state.sets, state.moment.now).isOpen })
             return Decision.Refuse(GymRefusal.predicted(Gym.Codes.sessionOpen, id.ref))
         val at = startedAt ?: state.moment.now
         SessionRules.instant(at, "session.startedAt", Path("startedAt"))

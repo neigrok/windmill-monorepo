@@ -115,6 +115,30 @@ test('a start while a workout is drawn open is refused on the device and writes 
   assert.deepEqual(committed(await b.runner.run(StartSession({ id: other }))).result, other);
 });
 
+// A set held for deletion has not been sent, so the account still counts it: the workout it keeps open refuses a start
+// here, as the account would, until the delete lands.
+test('a start beside a workout only a held delete keeps open is refused on the device until the delete lands', async (t) => {
+  const a = await open(t);
+  const other = new Id('session2', Session);
+  committed(await a.runner.run(StartSession({ id: sessionId, startedAt: new Instant(DEFAULT_NOW - SessionRules.staleAfterMs / 2) })));
+  const set = new TrainingSetValue(new Id('set00001', TrainingSet), sessionId, exerciseId, 80, 5, finishedAt);
+  committed(await a.runner.run(AppendSet(set)));
+  await a.sync();
+  await a.advance(SessionRules.staleAfterMs - 60_000);
+  committed(await a.runner.run(DeleteSet(set.id)));
+  assert.deepEqual(a.drawn(TrainingSet), []);
+  const refused = await a.runner.run(StartSession({ id: other }));
+  assert.deepEqual(refused.kind === 'refused' && refusalForm(refused.refusal),
+    { sessionOpen: { code: 'session-open', subject: { t: 'session', id: 'session2' }, detail: null, path: 'predicted' } });
+  assert.deepEqual(a.runner.read(Session.scope, (read) => read.commands()), []);
+  await a.advance(CONSTANTS.HOLD_MS);
+  await a.sync();
+  assert.deepEqual(committed(await a.runner.run(StartSession({ id: other }))).result, other);
+  await a.sync();
+  assert.deepEqual(a.drawn(Session).map((value) => value.id.record).sort(), ['session1', 'session2']);
+  assert.deepEqual(a.notices(GymRefusals), []);
+});
+
 // Two devices start with no connection: the start the account takes first opens the workout, and the other is refused
 // `session-open`, its sets folded into that notice, never into the open workout.
 test('a start that loses a race is refused session-open and its sets are held in its notice', async (t) => {

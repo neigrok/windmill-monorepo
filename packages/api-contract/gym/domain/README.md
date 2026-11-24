@@ -39,7 +39,7 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `coach-conversation-actions.json` | A phone turn's records: `OpenTurn`, `EndTurn` with the receipt its calls derive, a call's record as the calls bound fills, and a read's week. Kotlin, Swift and the web (`web/src/products/gym/domain/coach/`) claim the cases |
 | `catalogue-actions.json` | Create (a dumbbell movement's count included), rename, seed overrides, aliases, byte-sensitive search, decoding failures |
 | `preferences-actions.json` | Draft preference saves and rest defaults |
-| `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
+| `training-actions.json` | Start, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
 | `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery, discard, and the proposal a signed-out phone held minted again once the account holds its workout. Swift `GymDomain`, Kotlin `:gym:domain` and the web claim the cases |
 | `proposals-actions.json` | Propose, apply/dismiss, the proposal state's refusals and out of date, ordered diff, change count, the card's change blocks, provenance and optional R118 metadata reads |
 | `workout-plan-actions.json` | Every `ReviseWorkoutPlan` operation, the logged-movement refusal per operation, stale bases, closed and missing workouts, unknown and duplicate movements, bounds; and the reads over an edited plan: prefill, the workout and review documents, the receipt's plan changes |
@@ -152,7 +152,7 @@ separately and is outside the v4 rule book because v4 has no such type.
 | `RenameExercise` | `{id,name}` | `null`; a custom rename, or a seed override writing `{name}` alone over any equipment or count it holds |
 | `SaveNoteCall` | `{note:{id,fields}}` | Call id, or the stored note with the same words |
 | `MoveNote` | `{id,below}`; `below:null` means the top | `null`; only the moved note's order changes, a drop in place writes nothing |
-| `StartSession` | `{id,routineId?,startedAt?}` | Predicted session id; sends `joinOpenSession:false`. A replay of its own id is `unchanged`; otherwise a session `drawn` holds open, by the stale rule over the `drawn` sets, refuses it `sessionOpen` |
+| `StartSession` | `{id,routineId?,startedAt?}` | Predicted session id; sends `joinOpenSession:false`. A replay of its own id is `unchanged`; otherwise a session `drawn` holds open, by the stale rule over the `stored` sets, refuses it `sessionOpen`: a set held for deletion has not been sent, so its workout is still open on the account |
 | `FinishSession` | `{id,finishedAt?}`; without `finishedAt` it finishes at the later of now and the workout's last activity (its last `stored` set's `completedAt`, else its start), and a `finishedAt` before that is `badInstant` | `null` |
 | `AppendSet`, `CorrectSet` | `{set:{id,fields}}` | Set id or `null` |
 | `AppendSet.recorded`, `CorrectSet.recorded`, `ImportSession.recorded`, `CorrectSession.recorded` | as the action | as the action; the replay of a recorded fact, never refused by the load floor |

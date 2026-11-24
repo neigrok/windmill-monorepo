@@ -100,8 +100,9 @@ public struct Recorded<Entry: EntersLoads>: Action {
   }
 }
 
-// One open workout per account: a start while the log draws one open is refused here, and a start that loses a race with
-// another device's is refused `session-open` by the account, its sets folded into that notice.
+// One open workout per account: a start beside a workout the account will hold open is refused here, open by the stale
+// rule over the stored sets since a held delete is not yet sent; a start that loses a race with another device's is
+// refused `session-open` by the account, its sets folded into that notice.
 public struct StartSession: Action {
   public typealias Loaded = (state: TrainingState, routine: Routine?, prior: Bool)
   public let id: ID<Session>
@@ -118,7 +119,7 @@ public struct StartSession: Action {
   public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<ID<Session>, GymRefusal> {
     if loaded.prior { return .unchanged(id) }
     let state = loaded.state
-    if state.drawn.contains(where: { SessionRules.drawn($0, sets: state.drawnSets, now: state.moment.now).isOpen }) {
+    if state.drawn.contains(where: { SessionRules.drawn($0, sets: state.sets, now: state.moment.now).isOpen }) {
       return .refuse(.sessionOpen(Refused(Gym.Codes.sessionOpen, subject: id.ref, path: .predicted)))
     }
     let at = startedAt ?? state.moment.now
