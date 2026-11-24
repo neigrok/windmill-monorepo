@@ -42,6 +42,9 @@ struct RoadmapRoom: View {
         RoadmapStepForm(roadmap: roadmap, draft: draft)
       }
       .sheet(isPresented: Binding(get: { roadmap.kindsDoor == .menu }, set: { if !$0 { roadmap.closeKinds() } })) { RoadmapKinds(roadmap: roadmap) }
+      .fullScreenCover(item: Binding(get: { roadmap.sharedCover }, set: { if $0 == nil { roadmap.sharedCover?.close() } })) { cover in
+        RoadmapCoverScreen(cover: cover, app: app)
+      }
       .sensoryFeedback(trigger: roadmap.band) { _, band in
         switch band?.says {
         case .completed, .created: .success
@@ -108,10 +111,10 @@ struct RoadmapRoom: View {
     let graph = roadmap.view(of: open) == .graph
     let fitted = graph && roadmap.graph.fitted
     let footed = !roadmap.reading.finds && roadmap.selection == nil
-    return pinnedUnderBar(Group {
+    return Group {
       if graph { RoadmapGraphCanvas(roadmap: roadmap, progress: open.board.overall.progress) }
       else { RoadmapBoard(roadmap: roadmap, open: open) }
-    }, of: open, graph: graph, away: fitted).modifier(RoadmapTitle(roadmap: roadmap, open: open))
+    }.underSwitchRow(roadmap, open: open, graph: graph, away: fitted).modifier(RoadmapTitle(roadmap: roadmap, open: open))
       .toolbarVisibility(fitted ? .hidden : .automatic, for: .navigationBar)
       .roadmapFoot(roadmap, away: fitted) {
         if graph, roadmap.band == nil {
@@ -126,12 +129,19 @@ struct RoadmapRoom: View {
         }
       }
   }
+}
 
-  // The switch chooses the roadmap's view, and carries Find and the view's one tool: the Board's Sort and filter (02.5,
-  // 02.7), and the Graph's Fit (04.5), which needs the Graph on screen with its camera. Find is the Board's: the Graph's
-  // waits for its screen. The room reads only whether the camera is there, never the camera, which a gesture or a glide
-  // changes every frame. While several steps are selected the switch waits.
-  func switchRow(_ open: RoadmapModel.OpenRoadmap, graph: Bool) -> some View {
+// The switch row (Roadmap · iOS S.1, 09.4), the room's and a reader's cover's alike, chooses the roadmap's view, and carries
+// Find and the view's one tool: the Board's Sort and filter (02.5, 02.7), and the Graph's Fit (04.5), which needs the Graph
+// on screen with its camera. Find is the Board's: the Graph's waits for its screen. The row reads only whether the camera
+// is there, never the camera, which a gesture or a glide changes every frame. While several steps are selected the switch
+// waits.
+struct SwitchRow: View {
+  let roadmap: RoadmapModel
+  let open: RoadmapModel.OpenRoadmap
+  let graph: Bool
+
+  var body: some View {
     HStack(spacing: RoomSpace.related) {
       // Each segment takes its lens from the ForEach's id: a `tag` here leaves the room's type holding SwiftUI's
       // client-emitted `tag`, which a Release test bundle cannot link against.
@@ -148,12 +158,14 @@ struct RoadmapRoom: View {
       }
     }.padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.related)
   }
+}
 
+extension View {
   // The switch row stands in the bar's own safe area on iOS 26, and on the bar material over the list before it. Away,
   // it leaves that area to the screen.
-  @ViewBuilder func pinnedUnderBar(_ screen: some View, of open: RoadmapModel.OpenRoadmap, graph: Bool, away: Bool) -> some View {
-    if #available(iOS 26.0, *) { screen.safeAreaBar(edge: .top) { if !away { switchRow(open, graph: graph) } } }
-    else { screen.safeAreaInset(edge: .top) { if !away { switchRow(open, graph: graph).background(.bar) } } }
+  @ViewBuilder func underSwitchRow(_ roadmap: RoadmapModel, open: RoadmapModel.OpenRoadmap, graph: Bool, away: Bool) -> some View {
+    if #available(iOS 26.0, *) { safeAreaBar(edge: .top) { if !away { SwitchRow(roadmap: roadmap, open: open, graph: graph) } } }
+    else { safeAreaInset(edge: .top) { if !away { SwitchRow(roadmap: roadmap, open: open, graph: graph).background(.bar) } } }
   }
 }
 

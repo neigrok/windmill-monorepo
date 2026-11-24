@@ -2,19 +2,23 @@ import SwiftUI
 import UIKit
 import RoadmapDomain
 
-// A roadmap's Board (Roadmap · iOS 01.1, 01.12, 02.1 to 02.15, 05.7): one list of the domain's groups, Up next first, each
-// folding under its header, as the Board's reading keeps them. A row opens its step's page, slides right for Complete
-// and left for Delete, and a long press lists Complete, Edit, Open in Graph, Select and Delete Step. A narrowed Board
-// says what it shows in its first rows, with Clear, and one left with nothing says why. Find's field stands at the foot
-// while Find is up. With no step yet, or with every step done, the Board says so. A step the form made, which the
+// A roadmap's Board (Roadmap · iOS 01.1, 01.12, 02.1 to 02.15, 05.7, 09.5a): one list of the domain's groups, Up next
+// first, each folding under its header, as the Board's reading keeps them. A row opens its step's page, slides right for
+// Complete and left for Delete, and a long press lists Complete, Edit, Open in Graph, Select and Delete Step. A narrowed
+// Board says what it shows in its first rows, with Clear, and one left with nothing says why. Find's field stands at the
+// foot while Find is up. With no step yet, or with every step done, the Board says so. A step the form made, which the
 // reading shows, is scrolled to once the list holds it. While several steps are selected the list is in the system's
-// edit mode.
+// edit mode. On a reader's cover the same list offers no act: nothing slides, presses or selects, and nothing adds a step.
 struct RoadmapBoard: View {
   let roadmap: RoadmapModel
   let open: RoadmapModel.OpenRoadmap
 
   var body: some View {
-    if open.board.overall.total == 0 {
+    if open.board.overall.total == 0 && roadmap.role == .reader {
+      ContentUnavailableView {
+        Label { Text("No steps yet").foregroundStyle(RoadmapPalette.ink) } icon: { Image(systemName: "map").foregroundStyle(RoadmapPalette.inkDim) }
+      }
+    } else if open.board.overall.total == 0 {
       ContentUnavailableView {
         Label { Text("Your first step").foregroundStyle(RoadmapPalette.ink) } icon: { Image(systemName: "map").foregroundStyle(RoadmapPalette.inkDim) }
       } description: {
@@ -45,7 +49,7 @@ struct RoadmapBoard: View {
     let kept = selection == nil ? Set<String>() : Set(shown.groups.flatMap { (group: RoadmapModel.Group) -> [String] in group.rows.map(\.id) })
     return ScrollViewReader { list in
       List(selection: chosen) {
-        if open.everyStepDone && shown.recovery == nil && shown.branch == nil { Section {} header: { everyStepDone } }
+        if open.everyStepDone && shown.recovery == nil && shown.branch == nil && roadmap.role == .owner { Section {} header: { everyStepDone } }
         if let branch = shown.branch {
           narrowed(String(localized: "Branch · \(branch.name)", comment: "The Board's first row while it stays in a step's branch: the step's name"),
                    identifier: "roadmap-branch") { roadmap.reading.clearBranch() }
@@ -117,7 +121,7 @@ struct RoadmapBoard: View {
           .foregroundStyle(RoadmapPalette.inkDim)
       }
     } actions: {
-      if found {
+      if found && roadmap.role == .owner {
         Button(String(localized: "New Step “\(words)”", comment: "Find matched no step: a new step named as the words looked for")) {
           roadmap.newStep(from: .find, named: words)
         }.buttonStyle(RoomSecondaryStyle()).accessibilityIdentifier("roadmap-find-new-step")
@@ -169,7 +173,7 @@ struct RoadmapBoard: View {
       .swipeActions(edge: .trailing, allowsFullSwipe: false) {
         if row.deletes && !selecting { Button("Delete", systemImage: "trash", role: .destructive) { roadmap.askDelete(row, by: .swipe) }.tint(nil) }
       }
-      .contextMenu { if !selecting { menu(row) } }
+      .contextMenu { if !selecting && roadmap.role == .owner { menu(row) } }
       .modifier(DeleteQuestion(roadmap: roadmap, step: row.id, by: [.swipe, .menu]))
   }
 
@@ -204,9 +208,9 @@ struct FindField: ViewModifier {
   }
 }
 
-// The Board's tool in the switch row (Roadmap · iOS 02.7, 02.8): one menu over itself, with the order of Up next and
-// Locked, the kinds in use to show, and the way into selecting several. Its symbol fills while another order or a kind
-// filter narrows the Board.
+// The Board's tool in the switch row (Roadmap · iOS 02.7, 02.8, 09.5a): one menu over itself, with the order of Up next
+// and Locked, the kinds in use to show, and, but on a reader's cover, the way into selecting several. Its symbol fills
+// while another order or a kind filter narrows the Board.
 struct BoardTool: View {
   let roadmap: RoadmapModel
   let open: RoadmapModel.OpenRoadmap
@@ -216,7 +220,8 @@ struct BoardTool: View {
     Menu {
       // An inline picker in a menu drops its label on iOS 26.5, so the order is a section of three toggles under Sort.
       Section(String(localized: "Sort", comment: "The Board's Sort and filter menu: the order of Up next and Locked")) {
-        order(.roadmap, "Roadmap Order")
+        // A reader's menu has no Select Steps, so its first item tells the opening.
+        order(.roadmap, "Roadmap Order").onAppear { if roadmap.role == .reader { told() } }
         order(.newest, "Newest First")
         order(.oldest, "Oldest First")
       }
@@ -230,11 +235,16 @@ struct BoardTool: View {
         }
       }
       // The menu's items are made as it opens, so its last one tells the opening.
-      Button("Select Steps", systemImage: "checkmark.circle") { roadmap.startSelecting(nil, from: .tool) }
-        .onAppear { roadmap.telemetry.event("roadmap_board_menu", properties: ["menu": "sortFilter"]) }
+      if roadmap.role == .owner {
+        Button("Select Steps", systemImage: "checkmark.circle") { roadmap.startSelecting(nil, from: .tool) }.onAppear { told() }
+      }
     } label: {
       Label("Sort and filter", systemImage: reading.narrows ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
     }.menuOrder(.fixed).modifier(GlassCircle()).accessibilityIdentifier("roadmap-board-tool")
+  }
+
+  func told() {
+    roadmap.telemetry.event("roadmap_board_menu", properties: ["menu": "sortFilter"])
   }
 
   // One order, checked while it stands.

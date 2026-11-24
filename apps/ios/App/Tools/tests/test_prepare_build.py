@@ -58,6 +58,17 @@ class BuildConfigurationTests(unittest.TestCase):
         prepare_build.prepare(self.settings)
         self.assertEqual(self.group, self.read("Windmill.entitlements"))
 
+    def test_debug_alone_claims_the_sites_roadmap_links(self):
+        tools = Path(__file__).parents[1]
+        for enabled in ("NO", "YES"):
+            with self.subTest(apple=enabled):
+                with (tools / f"Windmill-{enabled}.entitlements").open("rb") as handle:
+                    release = plistlib.load(handle)
+                with (tools / f"Windmill-Debug-{enabled}.entitlements").open("rb") as handle:
+                    debug = plistlib.load(handle)
+                self.assertNotIn("com.apple.developer.associated-domains", release)
+                self.assertEqual({**release, "com.apple.developer.associated-domains": ["applinks:windmill.works"]}, debug)
+
     def test_the_widget_extension_shares_the_app_group(self):
         with (Path(__file__).parents[1] / "WorkoutActivity.entitlements").open("rb") as handle:
             self.assertEqual(self.group, plistlib.load(handle))

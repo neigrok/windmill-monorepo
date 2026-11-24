@@ -143,7 +143,7 @@ struct AccountSheet: View {
   var sheetTitle: Text {
     switch model.sheet {
     case .you: Text("You")
-    case .keep: Text(verbatim: "")
+    case .keep: model.signInFor == nil ? Text(verbatim: "") : Text("Sign in")
     case .appleQuestion, .appleAdded, .appleNoAccount, .appleExpired: Text("Apple")
     default: Text("Sign in")
     }
@@ -245,8 +245,24 @@ struct AccountSheet: View {
 
   func errorText(_ error: String) -> some View { Text(error).font(ShellType.meta).foregroundStyle(brand).accessibilityIdentifier("auth-error") }
 
-  // From a room the sheet keeps what the phone holds; from Where to start? it brings the account back (02b).
-  var keep: some View {
+  // From a room the sheet keeps what the phone holds; from Where to start? it brings the account back (02b). Opened for a
+  // room's own verb it says that verb (Roadmap · iOS 09.9a, 09.10b).
+  @ViewBuilder var keep: some View {
+    if let reason = model.signInFor { signIn(for: reason) } else { keepWork }
+  }
+
+  func signIn(for reason: AppModel.RoomSignIn) -> some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Text(reason == .fork ? "Sign in to fork this roadmap." : "Sign in to open this roadmap.").font(ShellType.title)
+      if model.canSignIn {
+        authDoors.padding(.top, 10)
+      } else {
+        Text("Backup is not connected in this build. Your work stays on this phone.").font(ShellType.subheadline).foregroundStyle(dim)
+      }
+    }
+  }
+
+  var keepWork: some View {
     let returning = model.welcome, journal = model.selectedRoom == .journal
     return VStack(alignment: .leading, spacing: 14) {
       head(returning ? "person.crop.circle.badge.checkmark" : "icloud.and.arrow.up")

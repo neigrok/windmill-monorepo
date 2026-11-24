@@ -48,7 +48,7 @@ nonisolated enum TelemetryPrivacy {
     "roadmap_step_edit", "roadmap_board_edit", "roadmap_view_switch", "roadmap_graph_select", "roadmap_whats_next", "roadmap_graph_fit",
     "roadmap_board_workspace", "roadmap_board_menu", "roadmap_board_sort", "roadmap_board_filter", "roadmap_board_clear",
     "roadmap_board_branch", "roadmap_board_search", "roadmap_board_select", "roadmap_board_bulk", "roadmap_kinds", "roadmap_activity",
-    "roadmap_first_read"
+    "roadmap_first_read", "roadmap_link_opened", "roadmap_cover", "fork_attempt", "fork_claim"
   ]
   static let labels: [String: Set<String>] = [
     "room": ["journal", "gym", "roadmap"],
@@ -58,13 +58,13 @@ nonisolated enum TelemetryPrivacy {
     "field": ["weight", "reps"],
     "action": ["rename", "equipment", "drafts_rejected", "save_routines", "sign_in", "shown", "screenshot", "describe", "goal", "just_log", "build_manually", "open_routine", "routines_saved", "keep_routines", "photo_selected", "photo_removed", "create", "update", "share", "apply", "reject", "open_gym", "open_journal", "open_roadmap", "dismiss_ink", "write", "done_writing", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "use_account", "create_account", "remove_apple", "retry", "inspect", "fix", "open", "connect", "manage", "hide", "select", "menu", "stage", "new_chat", "view_answer", "open_conversation", "delete_conversation", "retarget", "add_set", "remove_set", "swap", "add_movement", "remove_movement", "rest", "land", "complete", "reset", "delete", "editNote",
                "subtaskAdd", "subtaskToggle", "subtaskDelete", "linkOpen", "linkCancel", "linkAdd", "linkDelete", "noteSave", "undo",
-               "openInGraph", "viewBranch", "clear"],
-    "outcome": ["answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked", "started", "saved", "not-offered", "seat-required", "invalid-input", "invalid-arguments", "load-floor", "result-too-large", "coach-turn-volume", "pending", "unavailable", "settled", "released", "adopted", "read", "left"],
+               "openInGraph", "viewBranch", "clear", "copyLink"],
+    "outcome": ["signed_out", "unauthenticated", "answered", "capped", "fresh", "absent", "offline", "stalled", "decided", "refused", "ok", "completed", "failed", "cancelled", "signed_in", "paused", "anonymous", "linked", "started", "saved", "not-offered", "seat-required", "invalid-input", "invalid-arguments", "load-floor", "result-too-large", "coach-turn-volume", "pending", "unavailable", "settled", "released", "adopted", "read", "left"],
     "reason": ["invalid", "too_large", "claim_conflict", "session-open", "session-overlap", "id-taken", "bad-instant", "too-many-sets", "invalid-set", "unknown-exercise", "session-finished", "unsent", "other", "last_root"],
     "cap": ["daily", "ceiling", "allowance"],
     "state": ["shown", "opened", "completed", "declined", "failed", "stopped", "interrupted"],
     "seat": ["anon", "bound"],
-    "target": ["workout", "routine"],
+    "target": ["workout", "routine", "none", "roadmap", "step"],
     "name": ["list_routines", "list_exercises", "list_sessions", "get_session", "get_sessions", "last_time", "get_last_times", "get_stats", "get_record", "list_notes", "list_bodyweight", "get_preferences", "create_routine", "create_exercise", "save_note", "share_session", "share_log", "propose_routine_change", "propose_routine_removal", "propose_workout_change", "revoke_share", "true", "false"],
     "code": ["subject_exhausted", "free_month_exhausted", "free_day_exhausted", "concurrency_exhausted", "debt_outstanding", "device_bound", "invalid_installation", "coach-bad-request", "coach-update-required", "coach-turn-conflict", "coach-turn-unknown", "coach-turn-order", "coach-turn-volume", "coach-rate-limited", "coach-busy", "coach-vendor-error", "coach-stream-replaced", "coach-replica-syncing", "transport", "decode", "storage", "refusal", "other", "unauthenticated", "invalid_network"],
     "surface": ["activity", "control", "shortcut", "document", "board", "history"],
@@ -72,7 +72,7 @@ nonisolated enum TelemetryPrivacy {
     "item": ["write", "start", "open_workout", "weigh_in", "bodyweight", "date", "movement", "targets", "routine"],
     "stage": ["started", "room_opened", "complete"],
     "trigger": ["sync", "sign_in"],
-    "door": ["accessory", "row", "tab", "history", "handoff", "new_chat", "workout", "swipe", "menu", "page", "card", "step", "list", "empty", "blank", "foot", "form", "graph", "find", "tool", "bulk", "activity"],
+    "door": ["accessory", "row", "tab", "history", "handoff", "new_chat", "workout", "swipe", "menu", "page", "card", "step", "list", "empty", "blank", "foot", "form", "graph", "find", "tool", "bulk", "activity", "link"],
     // The Roadmap room, in the web's vocabulary: the act a Board event tells of, the step of a delete, of the roadmaps'
     // switcher, of a new roadmap or of the step form, the view a step's delete was made on, the group a step stands in
     // when its page opens or its form makes it, whether a step of another roadmap opens the one deleted, the write a
@@ -94,7 +94,12 @@ nonisolated enum TelemetryPrivacy {
     "what": ["kinds"],
     "from": ["row", "empty"],
     "via": ["done", "act"],
-    "read": ["loaded", "empty"],
+    "read": ["loaded", "empty", "missing", "offline"],
+    // A roadmap's link and a shared roadmap's cover: the claimed form the address came in, whether the roadmap it named was
+    // the person's own, and Fork's one way on the iPhone, the web's instant one.
+    "address": ["share", "app"],
+    "mine": ["true", "false"],
+    "mode": ["instant"],
     "legend": ["add", "rename", "describe", "recolor", "remove"],
     "count": ["0", "1", "2-5", "6-20", "21+"],
     "view": ["board", "graph"],
@@ -117,9 +122,9 @@ nonisolated enum TelemetryPrivacy {
     // Why an Undo of an act skipped operations when it settled (`sync_inverse`): the engine's closed list, never a code
     // beyond it.
     "skip_reason": Set(InverseSkipReason.allCases.map(\.rawValue)),
-    "route": ["/v1/ai", "/v1/auth", "/v1/me", "/v1/sync", "/v1/events", "/v1/gym", "/v1/journal"],
+    "route": ["/v1/ai", "/v1/auth", "/v1/me", "/v1/sync", "/v1/events", "/v1/gym", "/v1/journal", "/v1/trees"],
     "failure_kind": ["offline", "timeout", "transport", "http", "decode", "encode", "storage", "refusal", "keychain", "flush", "unexpected", "admission", "digest_reset", "doubt_exhausted", "overflow", "rejected", "tls", "sqlite", "digest_mismatch", "malformed", "unexpected_admission", "backoff_exhausted", "fallback", "unseated", "budget"],
-    "operation": ["ai_installation", "gym_coach_turn", "gym_activity_request", "gym_activity_update", "gym_control_update", "gym_read", "gym_action", "gym_flush", "gym_rest", "gym_import_fix", "gym_import_keep", "gym_import_retry", "gym_import_discard", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "journal_echoes", "roadmap_read", "roadmap_write", "roadmap_layout", "roadmap_canvas", "auth_sign_in", "auth_sign_out", "auth_adopt", "account_delete", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
+    "operation": ["ai_installation", "gym_coach_turn", "gym_activity_request", "gym_activity_update", "gym_control_update", "gym_read", "gym_action", "gym_flush", "gym_rest", "gym_import_fix", "gym_import_keep", "gym_import_retry", "gym_import_discard", "auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "journal_echoes", "roadmap_read", "roadmap_write", "roadmap_layout", "roadmap_canvas", "roadmap_progress", "roadmap_fork", "roadmap_subscribe", "auth_sign_in", "auth_sign_out", "auth_adopt", "account_delete", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
   ]
 
   // The counts a Coach turn carries (Coach §10.2) and an Undo of an act's operations, requests, wait and the targets a

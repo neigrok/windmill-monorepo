@@ -337,7 +337,38 @@ step, which pushes the step's page. VoiceOver hears the
 canvas as one element, *Graph*, with the roadmap's progress and the hint that the Board lists every step, or under Fit
 that a tap brings the bars back. Left out until
 their screens are built: Find on the Graph,
-the mark and progress of a step that opens a roadmap, a proposal's changes and a reader's cover.
+the mark and progress of a step that opens a roadmap, and a proposal's changes.
+
+`Sharing/` is a roadmap's link and a shared roadmap's cover ([Roadmap on iOS](../../../docs/foundation/roadmap-ios.md) §3
+and §4, boards 09.4 to 09.11). The app claims the site's roadmap addresses in Debug builds alone: `project.yml` selects
+`Tools/Windmill-Debug-NO.entitlements` or `-YES` for Debug, each its Release twin with `applinks:windmill.works` added,
+and Release's carry no associated domain. `WindmillApp` hands a browsing activity's address to
+`AppModel.open(roadmapLink:)`, once the model is made where the address came first, which brings the Roadmap room
+forward, and the room follows it (`RoadmapModel.follow(_:)`, a `ClaimedLink` named by the domain's `RoadmapAddress`)
+once its first read of the phone's copy is done: the person's own roadmap opens on its Board, or with the page of the
+step it names pushed, and a subtree of theirs on the roadmap it stands in; an address that names no roadmap opens All
+Roadmaps; any other raises a `RoadmapCover` over the room as a full-screen cover (`RoadmapModel.sharedCover`), closing
+one that stands. A cover follows the roadmap's tree scope, and each one above it as their metas name them, through the
+engine (`RoadmapCover.Sources`), and lets each go as it closes; it asks the backend for the owner's progress
+(`RoadmapSharing.progress`), and reads the roadmap with those marks into a `RoadmapModel` of its own in the reader's
+role (`RoadmapModel.Role`), whose `OpenRoadmap` offers no Complete, Reset or Delete. So the room's switch row
+(`SwitchRow`), Board, Graph, step page and History draw it with no act: no swipe, long-press menu, *Select Steps*, New
+Step, *Edit* or workspace, and a step's … menu holds *Open in Graph*, *View Branch* and *Copy Link*, the step's share
+address on the pasteboard. It lands on the Graph and keeps no view on the phone. Its bar holds the close button, the
+roadmap's name over *Shared roadmap* and its progress, and the share's address in the system's share sheet. Until the
+copy holds the roadmap and the progress has answered it is its close button and a spinner; with no connection and no
+copy it says *Needs a connection* with *Try Again*, and asks again by itself when the connection returns; a roadmap read
+and holding nothing, or one the engine answers gone, says *This roadmap can’t be opened*, with *Sign In* signed out,
+after which the room follows the link again. A progress read that fails shows the steps' own seeds, as the web's room
+does. `ForkFoot` stands at the foot of every screen of a cover (`roadmapFoot`): Fork needs a connection, so with none
+it is dimmed and the band slot says *Forking needs a connection.*; signed out it raises the shell's sign-in over the
+cover (`AppModel.signIn(for:)`), and runs once that ends signed in; signed in it asks the backend
+(`RoadmapSharing.fork`, one request id a cover, so a fork asked again answers the same copy) and shows *Forking…*,
+taking no second tap. The room opens the copy once its list holds it, on its Board with the band *Forked · N steps
+planted* and no Undo, and the cover closes then, or after fifteen seconds, leaving the room to open the copy when it
+lands. A fork that comes to nothing says *Couldn’t fork this roadmap. Try again.* in the band slot. `SharingRequests`
+makes the two requests over HTTP with the account's token. A step that owns a subtree stands on a cover as the domain
+reads it with that subtree unread, since the cover reads none of the server's `subtrees`.
 
 `Step/StepDraft.swift` is the step form's draft, which `newStep(from:)` and `edit(_:)` make and the model holds while the
 form is open: what a person sets of a step (its name, description and kind, the steps it requires, the steps it opens and

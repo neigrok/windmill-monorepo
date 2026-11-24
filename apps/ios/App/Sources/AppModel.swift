@@ -38,6 +38,8 @@ final class AppModel {
   var keepDismissed: Bool
   var keepSheetPresented = false
   var keepRoutines = false
+  // What a room opened the sign-in for, which the sheet says in place of keeping the phone's work; none for that.
+  var signInFor: RoomSignIn?
   var email = ""
   var code = ""
   var codeSentAt: Date?
@@ -155,7 +157,8 @@ final class AppModel {
     roadmap = runtime.flatMap { (runtime: AppRuntime) -> RoadmapModel? in
       guard runtime.settings.roadmapRoom else { return nil }
       return RoadmapModel(records: RoadmapFixture.records(runtime), runner: runtime.roadmapRunner, phone: preferences, telemetry: telemetry,
-                          wait: RoadmapFixture.wait(), graph: RoadmapFixture.graph(telemetry: telemetry), boardFrames: RoadmapFixture.boardFrames())
+                          wait: RoadmapFixture.wait(), graph: RoadmapFixture.graph(telemetry: telemetry), boardFrames: RoadmapFixture.boardFrames(),
+                          sources: RoadmapFixture.sources(runtime, telemetry: telemetry))
     }
     let lastRoom = Room(rawValue: preferences.string(forKey: "lastRoom") ?? "") ?? .journal
     selectedRoom = lastRoom == .roadmap && roadmap == nil ? .journal : lastRoom
@@ -479,6 +482,29 @@ final class AppModel {
 
   func keep(routines: Bool = false) { keepRoutines = routines; choose("keep", screen: selectedRoom.rawValue); journal.done(); keepSheetPresented = true; sheet = .keep }
 
+  // What a room opens the sign-in for: Fork on a shared roadmap's cover (Roadmap · iOS 09.9a), or Sign In on a link the
+  // phone could not open, which may be the person's own (09.10b).
+  enum RoomSignIn {
+    case fork, link
+  }
+
+  // The shell's sign-in, opened by a room for one of its own verbs.
+  func signIn(for reason: RoomSignIn) {
+    guard sheet == nil else { return }
+    keepRoutines = false; signInFor = reason; sheet = .keep
+  }
+
+  // A roadmap's address on the site the system handed the app (Roadmap on iOS §4): the Roadmap room comes to the front and
+  // follows it. A build without the room, or a phone whose account is changing, opens none.
+  func open(roadmapLink url: URL) {
+    guard let roadmap, !editorReadOnly else { return }
+    if selectedRoom == .journal { journal.liftInk() }
+    journal.done()
+    selectedRoom = .roadmap; welcome = false
+    refresh()
+    roadmap.follow(ClaimedLink(url))
+  }
+
   func closeKeep() { choose("close", screen: "keep"); sheet = nil; dismissKeep() }
 
   func dismissKeep() {
@@ -488,6 +514,7 @@ final class AppModel {
 
   func dismissSheet() {
     cancelAuthentication()
+    signInFor = nil
     if keepSheetPresented { dismissKeep() }
     keepSheetPresented = false
     appleTicket = nil; appleLinkedReceipt = false; error = nil
