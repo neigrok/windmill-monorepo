@@ -7,12 +7,12 @@ import Testing
 struct CorpusTests {
   static let reads = ["account", "activity", "board", "diagnostics", "graph", "guides", "landing", "legend", "pointers", "progress", "replica", "search"]
 
-  // `rules.json` and `values.json` run in RoadmapRulesTests, and each family's actions in its own tests.
-  @Test func everyFileIsClaimedOrWaitsForItsScenes() throws {
+  // `rules.json` and `values.json` run in RoadmapRulesTests, each family's actions in its own tests, and the scenes of
+  // `undo.json` in UndoTests.
+  @Test func everyFileIsClaimed() throws {
     let actions = ["kinds", "landing", "progress", "roadmaps", "steps", "workspace"].map { "\($0)-actions" }
-    let (claimed, waiting) = (Self.reads + actions + ["rules", "values"], ["undo"])
-    let named = (claimed + waiting).map { "roadmap/domain/\($0).json" }.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
-    #expect(try Contract.files(under: "roadmap/domain") == named)
+    let claimed = (Self.reads + actions + ["rules", "undo", "values"]).map { "roadmap/domain/\($0).json" }
+    #expect(try Contract.files(under: "roadmap/domain") == claimed.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) })
   }
 
   @Test(arguments: try reads.flatMap { try Contract.vectors("roadmap/domain/\($0).json") })
@@ -29,6 +29,7 @@ struct CorpusTests {
       switch operation {
       case "account": return account.form
       case "list": return .array(account.list().map(\.form))
+      case "listing": return account.listing(try input.member("tree").asString())?.form ?? .null
       default: break
       }
       let tree = try input.member("tree").asString()

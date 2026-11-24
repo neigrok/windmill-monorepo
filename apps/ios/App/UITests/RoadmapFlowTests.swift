@@ -3,8 +3,9 @@ import XCTest
 // The Roadmap room's flows on the simulator's boards: a step's workspace (Roadmap · iOS 03.2, 03.3, 03.10, 03.11, 03.14),
 // the step form's links (05.1, 05.8), the Board's Find, sort and filter, branch and several steps with Kinds (02.4 to
 // 02.12, 03.7, 06.1 to 06.5b), the Graph's (04.1 to 04.5, 04.7), then Activity and a step's History (01.13, 01.13b,
-// 03.12), the room's first read (01.5b), an Undo that brings nothing back (02.10d), the Guide (08.1 to 08.5) and a
-// roadmap made signed out joining the account at sign-in (10.7). The canvas is one element, as
+// 03.12), the room's first read (01.5b), an Undo that brings nothing back (02.10d), a shared roadmap's link on its
+// cover with Fork (09.4 to 09.10a), the Guide (08.1 to 08.5) and a roadmap made signed out joining the account at
+// sign-in (10.7). The canvas is one element, as
 // VoiceOver hears it, so a step is tapped where the layout seats it: *Learn to sail* opens at the phone's working zoom
 // with the middle of its seats' box at the centre of what the bars leave, and each step stands a known way from that
 // centre (`packages/api-contract/roadmap/layout/learn-to-sail.json` pins the seats). The zoom floor is half the opening
@@ -797,5 +798,42 @@ import XCTest
     XCTAssertTrue(app.buttons["you"].waitForExistence(timeout: 10))
     app.buttons["you"].tap()
     XCTAssertTrue(app.staticTexts["Backed up"].waitForExistence(timeout: 30))
+  }
+
+  // 09.4 to 09.8: another account's public roadmap opens by its link on a cover, on its Graph with the owner's progress; its
+  // Board's rows open read-only pages with Copy Link and no Edit or Complete; Fork copies it, the copy arrives by sync and
+  // opens on its Board under the band, and the cover is gone.
+  func testASharedLinkOpensOnACoverAndForkBringsTheCopyToItsBoard() {
+    let app = launch("roadmap-cover")
+    let close = app.buttons["roadmap-cover-close"], fork = app.buttons["roadmap-fork"]
+    XCTAssertTrue(app.descendants(matching: .any)["roadmap-graph"].waitForExistence(timeout: 60))
+    XCTAssertTrue(close.exists && fork.isEnabled && app.buttons["roadmap-cover-share"].exists)
+    XCTAssertTrue(app.staticTexts["Shared roadmap · 3 of 8 done"].exists)
+
+    app.segmentedControls.buttons["Board"].tap()
+    XCTAssertTrue(app.roadmapStep("Read the wind").waitForExistence(timeout: 10))
+    app.roadmapStep("Read the wind").tap()
+    XCTAssertTrue(app.roadmapStepPage("Read the wind"))
+    XCTAssertFalse(app.buttons["roadmap-step-edit"].exists || app.buttons["roadmap-complete"].exists || subtasks(app).exists)
+    app.buttons["roadmap-step-more"].tap()
+    XCTAssertTrue(app.buttons["Copy Link"].waitForExistence(timeout: 5) && !app.buttons["Delete Step"].exists)
+    app.buttons["Copy Link"].tap()
+    XCTAssertTrue(fork.waitForHittable(timeout: 10))
+
+    fork.tap()
+    XCTAssertTrue(app.staticTexts["Forked · 8 steps planted"].waitForExistence(timeout: 60))
+    XCTAssertFalse(close.exists)
+    XCTAssertTrue(app.staticTexts["0 of 8 done"].exists)
+    XCTAssertTrue(app.roadmapStep("Choose a sailing course").exists)
+  }
+
+  // 09.10a: with a connection, a link to a roadmap the phone may not read says so on its cover, and closes to the room.
+  func testALinkToAPrivateRoadmapCannotBeOpenedAndClosesToTheRoom() {
+    let app = launch("roadmap-cover-private")
+    XCTAssertTrue(app.staticTexts["This roadmap can’t be opened"].waitForExistence(timeout: 60))
+    XCTAssertFalse(app.buttons["roadmap-cover-sign-in"].exists || app.buttons["roadmap-fork"].exists)
+    app.buttons["roadmap-cover-close"].tap()
+    XCTAssertTrue(app.buttons["roadmap-cover-close"].waitForNonExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["room-menu"].waitForHittable(timeout: 10))
   }
 }

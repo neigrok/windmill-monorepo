@@ -16,18 +16,21 @@ system's Format menu, and *Your links* with New Link's two fields, and *History*
 foot's + and from an empty roadmap, and *Edit* from a step's page or a Board row: Name, Description, *Kind* with *Edit
 Kinds*, *Requires* and *Opens* pushed inside the sheet, the *Links* the step shares, their refusals as footers, *Discard
 draft?*, the created step shown on the Board and each save with its *Undo*, without its *Roadmap* row or Coach's
-composer; the room's roadmaps: the title menu with the three most recent, *All Roadmaps…*, *New Roadmap*, *Kinds*,
+composer; the room's roadmaps: the title menu with the three most recent, *All Roadmaps…*, *New Roadmap*, *Guide*, *Kinds*,
 *Activity*, *Rename* and *Delete Roadmap*, Activity with its days and its fold, All Roadmaps with its search and its
 swipe to Delete, New Roadmap for a blank roadmap,
 renaming in the bar, and a roadmap's delete asked once and held with *Undo*; Kinds: a roadmap's kinds added, named,
 described, recolored and removed with *Undo*, at most six; and the Graph:
 the switch row's *Board | Graph*, the canvas with its discs, connectors and captions, one finger's pan and a pinch, a
 step selected with its bar in the band slot and its page from there, *Next* in that slot with its menu of the Up next
-steps, *Fit*, and an empty roadmap, without Find, a step that opens a roadmap's mark or Coach's composer. Also built:
-the Guide from the title menu, read with the guides from above and the menu's count of them, *No guide yet* with *Add
-Guide*, the editor with its counter from 4,500 and its excess past 5,000 with *Save* dimmed, *Discard draft?*, and a
-save's *Undo* in the band; and the Shell's sign-in question naming roadmaps made signed out and its sign-out question
-counting roadmap's unconfirmed changes, without Coach's conversations.
+steps, *Fit*, and an empty roadmap, without Find, a step that opens a roadmap's mark or Coach's composer; a roadmap's
+link: the person's own opening on its Board or its step, and anyone else's on a cover, on its Graph and its Board with the
+owner's progress, read-only step pages and History with *Copy Link*, Fork with its sign-in and its line with no
+connection, the copy arriving on its Board, and the links the phone cannot open; the Guide from the title menu, read
+with the guides from above and the menu's count of them, *No guide yet* with *Add Guide*, the editor with its counter
+from 4,500 and its excess past 5,000 with *Save* dimmed, *Discard draft?*, and a save's *Undo* in the band; and the
+Shell's sign-in question naming roadmaps made signed out and its sign-out question counting roadmap's unconfirmed
+changes, without Coach's conversations.
 [Roadmap on iOS](../../foundation/roadmap-ios.md) §13 lists what is not built. The boards are on the Roadmap file's
 [Roadmap · iOS](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=648-2) page. Each board's
 caption names the SwiftUI element of every part, and each section ends with a NOTE of its stock parts, its

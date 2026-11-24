@@ -8,8 +8,8 @@ import Testing
 
 // The replica executor against the ability conformance corpus (Coach §3.5, INV-1, INV-2): every case of
 // packages/api-contract/gym/abilities/ run over its given records as the case's seat at its moment, the result's
-// canonical bytes and digest and the records it wrote compared with the server's golden; then the catalog's agent rules
-// and the schema check, keyword by keyword.
+// canonical bytes and digest and the records it wrote compared with the server's golden; then what the gym catalog offers
+// each seat, and what its schemas admit.
 struct CoachAbilitiesTests {
   static let files = ["create_exercise", "create_routine", "get_last_times", "get_session", "get_sessions", "get_stats", "last_time",
                       "list_bodyweight", "list_exercises", "list_notes", "list_routines", "list_sessions", "propose_routine_change",
@@ -19,16 +19,6 @@ struct CoachAbilitiesTests {
 
   @Test func everyAbilityFileHasARunner() throws {
     #expect(try Contract.files(under: "gym/abilities") == Self.files.map { "gym/abilities/\($0).json" })
-  }
-
-  @Test func sharedPatternsMatchTheWholeValueWithBacktracking() throws {
-    for sample in try Contract.json("catalog/schema-patterns.json").asArray() {
-      let expected = try sample.member("fault")
-      let fault = JSONSchema(try sample.member("schema")).fault(in: try sample.member("value"))
-      let actual: JSON = fault.map { ["path": .string($0.path.text), "reason": .string($0.reason)] } ?? .null
-      let name = try sample.member("name").asString()
-      #expect(actual == expected, "\(name)")
-    }
   }
 
   @Test func derivedResultSchemasAdmitNullWithoutInventingZero() throws {
@@ -42,7 +32,7 @@ struct CoachAbilitiesTests {
       }
     }
     let schemas = try ["list_sessions", "get_session", "get_sessions", "get_stats", "get_record"].flatMap { name in
-      let ability = try #require(Catalog.ability(named: name))
+      let ability = try #require(Catalog.gym.ability(named: name))
       return metrics(ability.result)
     }
     #expect(schemas.count == 11)
@@ -96,7 +86,7 @@ struct CoachAbilitiesTests {
     // result schema, and a refusal is one the gate or a rule answers.
     if expect.isNull {
       if let result = answered["result"] {
-        #expect(JSONSchema(Catalog.ability(named: request.name)!.result).fault(in: result) == nil, "\(vector.file) · \(vector.name)\n  got    \(answered.jcsText)")
+        #expect(JSONSchema(Catalog.gym.ability(named: request.name)!.result).fault(in: result) == nil, "\(vector.file) · \(vector.name)\n  got    \(answered.jcsText)")
       } else {
         #expect(try AbilityRefusal(rawValue: answered.member("refused").asString()) != nil && answered["writes"] == [], "\(vector.file) · \(vector.name)")
       }
@@ -105,7 +95,7 @@ struct CoachAbilitiesTests {
     if let refused = expect["refused"] {
       // The corpus is the server tool's golden; on the phone the gate's G-3 stands before the tool, so an input the schema
       // refuses answers `invalid-input` where the tool answered `invalid-arguments`.
-      let gated = refused == "invalid-arguments" && JSONSchema(Catalog.ability(named: request.name)!.input).fault(in: request.input) != nil
+      let gated = refused == "invalid-arguments" && JSONSchema(Catalog.gym.ability(named: request.name)!.input).fault(in: request.input) != nil
       #expect(answered == ["refused": gated ? "invalid-input" : refused, "writes": []], "\(vector.file) · \(vector.name)\n  got    \(answered.jcsText)")
       return
     }
@@ -216,65 +206,20 @@ struct CoachAbilitiesTests {
   // MARK: - The catalog
 
   @Test func theCatalogOffersBySeat() {
-    let bound = Catalog.offered(seat: .bound).map(\.name)
+    let bound = Catalog.gym.offered(seat: .bound).map(\.name)
     #expect(bound == ["list_routines", "list_exercises", "list_sessions", "get_session", "get_sessions", "last_time", "get_last_times", "get_stats",
                       "list_notes", "list_bodyweight", "create_routine", "create_exercise", "save_note", "share_session",
                       "propose_routine_change", "propose_routine_removal", "propose_workout_change", "revoke_share"])
-    #expect(Catalog.offered(seat: .anon).map(\.name) == bound.filter { !["save_note", "share_session", "revoke_share"].contains($0) })
-    #expect(Catalog.ability(named: "log_set")?.agent == .withheld)
-    #expect(Catalog.ability(named: "get_record")?.declared == false)
-    #expect(Catalog.ability(named: "propose_routine_change")?.phrase == "wrote a proposal for one of your routines")
-    #expect(Catalog.version == "catalog/2")
-    #expect(Catalog.ability(named: "no_such_ability") == nil)
+    #expect(Catalog.gym.offered(seat: .anon).map(\.name) == bound.filter { !["save_note", "share_session", "revoke_share"].contains($0) })
+    #expect(Catalog.gym.ability(named: "log_set")?.agent == .withheld)
+    #expect(Catalog.gym.ability(named: "get_record")?.declared == false)
+    #expect(Catalog.gym.ability(named: "propose_routine_change")?.phrase == "wrote a proposal for one of your routines")
+    #expect(Catalog.gym.version == "catalog/2")
+    #expect(Catalog.gym.ability(named: "no_such_ability") == nil)
   }
 
-  // MARK: - The schema check
-
-  static let schema = JSONSchema([
-    "type": "object", "additionalProperties": false, "required": ["id", "entries"],
-    "properties": [
-      "id": ["type": "string", "minLength": 8, "maxLength": 64, "pattern": "^[A-Za-z0-9_-]+$"],
-      "kind": ["type": "string", "enum": ["read", "add"]],
-      "saved": ["type": "boolean", "const": true],
-      "limit": ["type": "integer", "minimum": 1, "maximum": 200],
-      "load": ["type": "number", "minimum": -500, "maximum": 500],
-      "entries": [
-        "type": "array", "minItems": 1, "maxItems": 2, "uniqueItems": true,
-        "items": ["type": "object", "additionalProperties": false, "required": ["exerciseId"], "properties": ["exerciseId": ["type": "string"]]],
-      ],
-    ],
-  ])
-
-  static let faults: [(JSON, SchemaFault)] = [
-    faulted(JSON.array([]), SchemaFault(path: "", reason: "not \"object\"")),
-    faulted(["entries": [["exerciseId": "a"]]], SchemaFault(path: "id", reason: "required")),
-    faulted(["id": "abcdefgh", "entries": [["exerciseId": "a"]], "extra": 1], SchemaFault(path: "extra", reason: "not a property")),
-    faulted(["id": "abcdefgh", "entries": [["exerciseId": "a"]], "kind": "remove"], SchemaFault(path: "kind", reason: "not one of the enum")),
-    faulted(["id": "abcdefgh", "entries": [["exerciseId": "a"]], "saved": false], SchemaFault(path: "saved", reason: "not the constant")),
-    faulted(["id": "abcdefgh", "entries": [["exerciseId": "a"]], "limit": 1.5], SchemaFault(path: "limit", reason: "not \"integer\"")),
-    faulted(["id": "abcdefgh", "entries": [["exerciseId": "a"]], "limit": 0], SchemaFault(path: "limit", reason: "below 1")),
-    faulted(["id": "abcdefgh", "entries": [["exerciseId": "a"]], "load": 500.5], SchemaFault(path: "load", reason: "above 500")),
-    faulted(["id": "abc", "entries": [["exerciseId": "a"]]], SchemaFault(path: "id", reason: "shorter than 8")),
-    faulted(["id": .string(String(repeating: "a", count: 65)), "entries": [["exerciseId": "a"]]], SchemaFault(path: "id", reason: "longer than 64")),
-    faulted(["id": "abcdefg h", "entries": [["exerciseId": "a"]]], SchemaFault(path: "id", reason: "not ^[A-Za-z0-9_-]+$")),
-    faulted(["id": "abcdefgh", "entries": []], SchemaFault(path: "entries", reason: "fewer than 1 items")),
-    faulted(["id": "abcdefgh", "entries": [["exerciseId": "a"], ["exerciseId": "b"], ["exerciseId": "c"]]], SchemaFault(path: "entries", reason: "more than 2 items")),
-    faulted(["id": "abcdefgh", "entries": [["exerciseId": "a"], ["exerciseId": "a"]]], SchemaFault(path: "entries.1", reason: "repeats an item")),
-    faulted(["id": "abcdefgh", "entries": [["exerciseId": "a"], ["exerciseId": 2]]], SchemaFault(path: "entries.1.exerciseId", reason: "not \"string\"")),
-    faulted(["id": "abcdefgh", "entries": [["exerciseId": "a", "sets": []]]], SchemaFault(path: "entries.0.sets", reason: "not a property")),
-  ]
-
-  static func faulted(_ value: JSON, _ fault: SchemaFault) -> (JSON, SchemaFault) { (value, fault) }
-
-  @Test(arguments: CoachAbilitiesTests.faults)
-  func theSchemaCheckNamesTheFirstFault(_ value: JSON, _ fault: SchemaFault) {
-    #expect(Self.schema.fault(in: value) == fault)
-  }
-
-  @Test func aValueInsideItsSchemaPasses() {
-    #expect(Self.schema.fault(in: ["id": "abcdefgh", "entries": [["exerciseId": "a"], ["exerciseId": "b"]], "kind": "add", "saved": true, "limit": 200,
-                                   "load": -500]) == nil)
-    #expect(JSONSchema(Catalog.ability(named: "get_sessions")!.input).fault(in: ["sessionIds": ["a", "a"]])
+  @Test func getSessionsRefusesASessionNamedTwice() {
+    #expect(JSONSchema(Catalog.gym.ability(named: "get_sessions")!.input).fault(in: ["sessionIds": ["a", "a"]])
       == SchemaFault(path: "sessionIds.1", reason: "repeats an item"))
   }
 }

@@ -101,6 +101,7 @@ struct AccountSheet: View {
       VStack(alignment: .leading, spacing: 16) {
         switch model.sheet {
         case .keep: keep
+        case .roomSignIn: if let reason = model.signInFor { signIn(for: reason) }
         case .address, .appleAddress: address
         case .code: code
         case .adoption, .discardAdoption: if model.appleLinkedReceipt { appleAdded } else { code }
@@ -166,6 +167,8 @@ struct AccountSheet: View {
         Button("Back", systemImage: "chevron.left", action: goBack)
       } else if model.sheet == .keep {
         Button("Close") { model.cancelAuthentication(); model.closeKeep() }
+      } else if model.sheet == .roomSignIn {
+        Button("Close") { model.closeRoomSignIn() }
       } else if compact {
         Button("Close") { model.cancelAuthentication(); model.closeAppleStep() }
       }
@@ -177,7 +180,7 @@ struct AccountSheet: View {
     model.cancelAuthentication(); model.choose("back", screen: model.sheet?.telemetryName ?? "keep"); model.error = nil
     if model.sheet == .code { model.sheet = model.appleTicket == nil ? .address : .appleAddress }
     else if model.sheet == .appleAddress { model.sheet = model.account == nil ? .appleQuestion : model.appleOrigin }
-    else { model.sheet = .keep }
+    else { model.sheet = model.signInFor == nil ? .keep : .roomSignIn }
   }
 
   func closeSignIn() {
@@ -244,6 +247,18 @@ struct AccountSheet: View {
   }
 
   func errorText(_ error: String) -> some View { Text(error).font(ShellType.meta).foregroundStyle(brand).accessibilityIdentifier("auth-error") }
+
+  // The sign-in a room opens for one of its own verbs says that verb (Roadmap · iOS 09.9a, 09.10b).
+  func signIn(for reason: AppModel.RoomSignIn) -> some View {
+    VStack(alignment: .leading, spacing: 14) {
+      Text(reason == .fork ? "Sign in to fork this roadmap." : "Sign in to open this roadmap.").font(ShellType.title)
+      if model.canSignIn {
+        authDoors.padding(.top, 10)
+      } else {
+        Text("Backup is not connected in this build. Your work stays on this phone.").font(ShellType.subheadline).foregroundStyle(dim)
+      }
+    }
+  }
 
   // From a room the sheet keeps what the phone holds; from Where to start? it brings the account back (02b).
   var keep: some View {

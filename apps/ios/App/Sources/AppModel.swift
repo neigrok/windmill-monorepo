@@ -39,6 +39,8 @@ final class AppModel {
   var keepDismissed: Bool
   var keepSheetPresented = false
   var keepRoutines = false
+  // What a room opened the sign-in for, which the sheet says in place of keeping the phone's work; none for that.
+  var signInFor: RoomSignIn?
   var email = ""
   var code = ""
   var codeSentAt: Date?
@@ -145,12 +147,13 @@ final class AppModel {
     init(preferences: UserDefaults) { self = Appearance(rawValue: preferences.string(forKey: "appearance") ?? "") ?? .system }
   }
   enum Sheet: String, Identifiable {
-    case keep, address, code, you, adoption, discardAdoption
+    case keep, roomSignIn, address, code, you, adoption, discardAdoption
     case appleQuestion = "23a", appleAddress = "23b", appleAdded = "23c", appleNoAccount, appleExpired
     var id: String { rawValue }
     var telemetryName: String {
       switch self {
       case .discardAdoption: "discard_adoption"
+      case .roomSignIn: "room_sign_in"
       case .appleNoAccount: "apple_no_account"
       case .appleExpired: "apple_expired"
       default: rawValue
@@ -173,7 +176,8 @@ final class AppModel {
     roadmap = runtime.flatMap { (runtime: AppRuntime) -> RoadmapModel? in
       guard runtime.settings.roadmapRoom else { return nil }
       return RoadmapModel(records: RoadmapFixture.records(runtime), runner: runtime.roadmapRunner, phone: preferences, telemetry: telemetry,
-                          wait: RoadmapFixture.wait(), graph: RoadmapFixture.graph(telemetry: telemetry), boardFrames: RoadmapFixture.boardFrames())
+                          wait: RoadmapFixture.wait(), graph: RoadmapFixture.graph(telemetry: telemetry), boardFrames: RoadmapFixture.boardFrames(),
+                          role: .owner(RoadmapLinks(sources: RoadmapFixture.sources(runtime, telemetry: telemetry))))
     }
     let lastRoom = Room(rawValue: preferences.string(forKey: "lastRoom") ?? "") ?? .journal
     selectedRoom = lastRoom == .roadmap && roadmap == nil ? .journal : lastRoom
@@ -201,7 +205,7 @@ final class AppModel {
   var authPaused: Bool { runtime?.engine.status.authPaused == true }
   // A sign-in the server has verified but the engine has not finished: You carries it until it lands or is given up.
   var signInPending: Bool { pendingSignIn != nil || signInSession?.isComplete == false }
-  var compactAccountSheet: Bool { [.keep, .appleQuestion, .appleNoAccount, .appleExpired].contains(sheet) }
+  var compactAccountSheet: Bool { [.keep, .roomSignIn, .appleQuestion, .appleNoAccount, .appleExpired].contains(sheet) }
   var editorReadOnly: Bool { working || accountTransition || (!signInDeferred && signInPending) || signOutSession != nil || discardOwed != nil }
   // The gym takes no change while an account leaves this phone: a sign-out held or running, or a closed account's discard.
   func holdGym() { gym.accountChanging = signingOut || signOutSession != nil || discardOwed != nil }
@@ -501,6 +505,32 @@ final class AppModel {
 
   func keep(routines: Bool = false) { keepRoutines = routines; choose("keep", screen: selectedRoom.rawValue); journal.done(); keepSheetPresented = true; sheet = .keep }
 
+  // What a room opens the sign-in for: Fork on a shared roadmap's cover (Roadmap · iOS 09.9a), or Sign In on a link the
+  // phone could not open, which may be the person's own (09.10b).
+  enum RoomSignIn {
+    case fork, link
+  }
+
+  // The shell's sign-in, opened by a room for one of its own verbs, as a sheet of its own: closing it leaves the journal's
+  // offer to keep its pages as it was.
+  func signIn(for reason: RoomSignIn) {
+    guard sheet == nil else { return }
+    signInFor = reason; sheet = .roomSignIn
+  }
+
+  func closeRoomSignIn() {
+    cancelAuthentication(); sheet = nil
+  }
+
+  // A roadmap's address on the site the system handed the app (Roadmap on iOS §4): the Roadmap room comes to the front and
+  // follows it. A build without the room, or a phone whose account is changing, opens none.
+  func open(roadmapLink url: URL) {
+    guard let roadmap, let links = roadmap.links, !editorReadOnly else { return }
+    welcome = false
+    switchRoom(.roadmap)
+    links.follow(ClaimedLink(url), in: roadmap)
+  }
+
   func closeKeep() { choose("close", screen: "keep"); sheet = nil; dismissKeep() }
 
   func dismissKeep() {
@@ -510,6 +540,7 @@ final class AppModel {
 
   func dismissSheet() {
     cancelAuthentication()
+    signInFor = nil
     if keepSheetPresented { dismissKeep() }
     keepSheetPresented = false
     appleTicket = nil; appleLinkedReceipt = false; error = nil
@@ -881,7 +912,7 @@ final class AppModel {
     guard !working, pendingSignIn == nil else { return }
     let attaching = appleSessionToken != nil
     appleTicket = nil; appleAuthorization = nil; appleLinkedReceipt = false
-    if sheet == .keep || sheet == .you { appleOrigin = sheet ?? .keep }
+    if sheet == .keep || sheet == .roomSignIn || sheet == .you { appleOrigin = sheet ?? .keep }
     let generation = authGeneration
     working = true; accountTransition = true; journal.editing = false; error = nil
     defer { if authGeneration == generation { working = false; accountTransition = false } }

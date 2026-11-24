@@ -8,36 +8,14 @@ import SyncSchema
 import Testing
 
 // A roadmap's legend: each case of kinds-actions.json by its complete decision, the recolour command against the registry,
-// and its prediction against the model server holding the same records.
+// its prediction against the model server holding the same records, and a change to a kind another phone deleted (INV-1),
+// as the web's harness tells it (harness.test.js).
 struct KindsTests {
   @Test(arguments: try Contract.vectors("roadmap/domain/kinds-actions.json"))
   func action(_ vector: Vector) throws {
     for scene in [vector, vector.withRecordsReversed] {
-      let actual = try Self.decision(scene)
+      let actual = try RoadmapAct.decision(scene)
       #expect(actual == vector.expect, "\(vector)\n  got    \(actual.jcsText)\n  expect \(vector.expect.jcsText)")
-    }
-  }
-
-  static func decision(_ vector: Vector) throws -> JSON {
-    let corpus = ProductCorpus(RoadmapRules.book)
-    let input = try vector.input.member("input")
-    let tree: ID<RoadmapEntry> = try input.id("tree")
-    switch try vector.input.member("action").asString() {
-    case "CreateKind":
-      return try corpus.act(CreateKind(tree: tree, kind: NewKind(form: input.member("kind"))), vector, result: \.json, refusal: \.form)
-    case "ChangeKind":
-      let changes = try input.member("changes")
-      let act = ChangeKind(tree: tree, kind: try input.id("kind"), label: try changes.optionalString("label"),
-                           description: try changes.optionalString("description"))
-      return try corpus.act(act, vector, result: { .null }, refusal: \.form)
-    case "MoveKind":
-      let below: ID<RoadmapKind>? = try input.member("below").nullable { ID(try RecordID(json: $0)) }
-      return try corpus.act(MoveKind(tree: tree, kind: input.id("kind"), below: below), vector, result: { .null }, refusal: \.form)
-    case "RecolourKind":
-      let act = RecolourKind(tree: tree, kind: try input.id("kind"), hue: try input.member("hue").asString())
-      return try corpus.act(act, vector, result: { .null }, refusal: \.form)
-    case "DeleteKind": return try corpus.act(DeleteKind(tree: tree, kind: input.id("kind")), vector, result: { .null }, refusal: \.form)
-    case let name: throw ContractError("no kind action \(name)")
     }
   }
 
@@ -61,7 +39,7 @@ struct KindsTests {
     input["scopes"] = .object(scopes)
     let scene = Vector(file: vector.file, name: vector.name, input: .object(input), expect: vector.expect)
     for decided in [scene, scene.withRecordsReversed] {
-      let actual = try Self.decision(decided)
+      let actual = try RoadmapAct.decision(decided)
       #expect(actual == vector.expect, "got    \(actual.jcsText)\n  expect \(vector.expect.jcsText)")
     }
   }
@@ -121,5 +99,37 @@ struct KindsTests {
     phone.sync()
     #expect(try worn() == [["terracotta", "plum", "gold"], steps])
     #expect(try phone.notices(RoadmapRefusal.self).isEmpty)
+  }
+
+  // INV-1: once the tablet's delete of a kind has reached the phone, the phone holds only its spent id. A change revives
+  // the kind with the field it names, and the server's revival keeps the words the phone no longer held.
+  @Test func aChangeToAKindAnotherPhoneDeletedBringsItBackWithTheWordsTheServerKept() throws {
+    let phone = RoadmapsTests.phone()
+    guard case .committed(let created, _) = try phone.runner.runAct(CreateRoadmap(title: "Learn Rust")) else {
+      Issue.record("the roadmap was not created")
+      return
+    }
+    phone.sync()
+    let tablet = phone.device()
+    phone.sync()
+    let tree = created.tree
+    guard case .committed = try tablet.runner.runAct(DeleteKind(tree: tree, kind: ID("learn"))) else {
+      Issue.record("the kind was not deleted")
+      return
+    }
+    phone.sync()
+    let kinds = { (device: Harness) throws -> [[String]] in
+      try device.drawn(RoadmapKind.self, in: tree.tree).map { [$0.id.description, $0.label, $0.description] }
+    }
+    #expect(try kinds(phone).map { $0[0] } == ["build", "milestone"])
+    guard case .committed = try phone.runner.runAct(ChangeKind(tree: tree, kind: ID("learn"), description: "What you study")) else {
+      Issue.record("the kind was not changed")
+      return
+    }
+    phone.sync()
+    let legend = [["build", "Build", "Things you make"], ["learn", "Learn", "What you study"], ["milestone", "Milestone", "Moments that matter"]]
+    #expect(try kinds(phone) == legend)
+    #expect(try kinds(tablet) == legend)
+    #expect(try phone.notices(RoadmapRefusal.self).isEmpty && tablet.notices(RoadmapRefusal.self).isEmpty)
   }
 }

@@ -1,7 +1,7 @@
 import XCTest
 
-// The Roadmap room's boards (Roadmap · iOS): its Board, a step's page, the step form, its roadmaps, its Guide, the
-// account's questions that name its work, and its door on Where to start? (Shell 02a).
+// The Roadmap room's boards (Roadmap · iOS): its Board, a step's page, the step form, its roadmaps, its Guide, a shared
+// roadmap's cover and Fork, the account's questions that name its work, and its door on Where to start? (Shell 02a).
 final class RoadmapCaptures: DesignCapture {
   // 01.1: *Learn to sail* on its Board, as it arrives from its account.
   func testBoardAtRest() {
@@ -1068,6 +1068,99 @@ final class RoadmapCaptures: DesignCapture {
       for _ in 0..<6 where !signOut.isHittable { app.swipeUp(velocity: .slow) }
       signOut.tap()
       XCTAssertTrue(app.alerts["Sign out?"].waitForExistence(timeout: 30))
+      return app
+    }
+  }
+
+  // A shared roadmap's link opened on its board's cover, which lands on the Graph.
+  func cover(_ look: Look, board: String = "roadmap-cover", arguments: [String] = []) -> XCUIApplication {
+    let app = launch(board, look, arguments: arguments)
+    XCTAssertTrue(app.descendants(matching: .any)["roadmap-graph"].waitForExistence(timeout: 60))
+    return app
+  }
+
+  // 09.4: another account's public *Learn to sail* on its cover, on the Graph, its owner's progress under its name.
+  func testCoverOnTheGraph() {
+    captureBoard("09.4-roadmap-cover-graph", settle: 1.5) { look in cover(look) }
+  }
+
+  // 09.5a: the cover's Board, the owner's progress, read-only.
+  func testCoverBoard() {
+    captureBoard("09.5a-roadmap-cover-board") { look in
+      let app = cover(look)
+      app.segmentedControls.buttons["Board"].tap()
+      XCTAssertTrue(app.roadmapStep("Read the wind").waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 09.5b: a step's page on the cover, read-only, Fork at its foot.
+  func testCoverStepPage() {
+    captureBoard("09.5b-roadmap-cover-step") { look in
+      let app = cover(look)
+      app.segmentedControls.buttons["Board"].tap()
+      XCTAssertTrue(app.roadmapStep("Read the wind").waitForExistence(timeout: 10))
+      app.roadmapStep("Read the wind").tap()
+      XCTAssertTrue(app.roadmapStepPage("Read the wind"))
+      return app
+    }
+  }
+
+  // 09.7: Fork under way, which the board's server leaves unanswered.
+  func testForking() {
+    captureBoard("09.7-roadmap-forking", settle: 1.5) { look in
+      let app = cover(look, arguments: ["-fork-held"])
+      app.buttons["roadmap-fork"].tap()
+      XCTAssertTrue(app.staticTexts["Forking…"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 09.8: the copy arrived and opened on its Board, the band saying so.
+  func testForked() {
+    captureBoard("09.8-roadmap-forked", settle: 1.5) { look in
+      let app = cover(look)
+      app.buttons["roadmap-fork"].tap()
+      XCTAssertTrue(app.staticTexts["Forked · 8 steps planted"].waitForExistence(timeout: 60))
+      return app
+    }
+  }
+
+  // 09.9a: Fork signed out raises the shell's sign-in over the cover.
+  func testForkSignedOut() {
+    captureBoard("09.9a-roadmap-fork-signed-out", settle: 1.5) { look in
+      let app = cover(look, board: "roadmap-cover-signed-out")
+      app.buttons["roadmap-fork"].tap()
+      XCTAssertTrue(app.staticTexts["Sign in to fork this roadmap."].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 09.9b: a cover opened with no connection: Fork dimmed and the band slot saying why.
+  func testForkWithNoConnection() {
+    captureBoard("09.9b-roadmap-fork-no-connection", settle: 1.5) { look in
+      let app = cover(look, board: "roadmap-cover-offline")
+      XCTAssertTrue(app.staticTexts["Forking needs a connection."].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 09.10a and 09.10b: a link to a private roadmap, signed in and signed out.
+  func testLinkCannotOpen() {
+    for (screen, board) in [("09.10a-roadmap-link-cannot-open", "roadmap-cover-private"), ("09.10b-roadmap-link-cannot-open-signed-out", "roadmap-cover-private-signed-out")] {
+      captureBoard(screen) { look in
+        let app = launch(board, look)
+        XCTAssertTrue(app.staticTexts["This roadmap can’t be opened"].waitForExistence(timeout: 60))
+        return app
+      }
+    }
+  }
+
+  // 09.11: a link with no connection to a roadmap the phone holds no copy of.
+  func testLinkWithNoConnection() {
+    captureBoard("09.11-roadmap-link-no-connection") { look in
+      let app = launch("roadmap-cover-no-connection", look)
+      XCTAssertTrue(app.staticTexts["Needs a connection"].waitForExistence(timeout: 60))
       return app
     }
   }

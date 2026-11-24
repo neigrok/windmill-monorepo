@@ -4,10 +4,11 @@ import RoadmapDomain
 
 // The Roadmap room (Roadmap · iOS S.1, S.2, 01.3, 01.5, 01.5b, 01.5c, 02.10, 04.5, 04.7, 11.22a): one stack, the open
 // roadmap under its name with the switch row, its Board or its Graph, and at the foot the one band over New step. All
-// Roadmaps, Activity, a step's page, its note and its History are pushed on the stack, and New Roadmap, the step form,
-// Kinds and the Guide are its sheets. What the band says is announced and felt once, whichever screen stands over it.
-// While the Graph's Fit stands, the bar, the switch row and the foot are away; while several steps are selected the bar
-// and the bottom toolbar are the selection's.
+// Roadmaps, Activity, a step's page, its note and its History are pushed on the stack, New Roadmap, the step form,
+// Kinds and the Guide are its sheets, and a reader's cover of a roadmap someone else shared stands over it full screen.
+// What the band says is announced and felt once, whichever screen stands over it. While the Graph's Fit stands, the bar,
+// the switch row and the foot are away; while several steps are selected the bar and the bottom toolbar are the
+// selection's.
 struct RoadmapRoom: View {
   @Bindable var roadmap: RoadmapModel
   let app: AppModel
@@ -44,6 +45,9 @@ struct RoadmapRoom: View {
       .sheet(isPresented: Binding(get: { roadmap.kindsDoor == .menu }, set: { if !$0 { roadmap.closeKinds() } })) { RoadmapKinds(roadmap: roadmap) }
       .sheet(item: Binding(get: { roadmap.guide }, set: { if $0 == nil { roadmap.closeGuide() } })) { guide in
         RoadmapGuide(roadmap: roadmap, sheet: guide, signedIn: app.account != nil)
+      }
+      .fullScreenCover(item: Binding(get: { roadmap.links?.cover }, set: { if $0 == nil { roadmap.links?.cover?.close(.closed) } })) { cover in
+        RoadmapCoverScreen(cover: cover, app: app)
       }
       .sensoryFeedback(trigger: roadmap.band) { _, band in
         switch band?.says {
@@ -111,10 +115,10 @@ struct RoadmapRoom: View {
     let graph = roadmap.view(of: open) == .graph
     let fitted = graph && roadmap.graph.fitted
     let footed = !roadmap.reading.finds && roadmap.selection == nil
-    return pinnedUnderBar(Group {
+    return Group {
       if graph { RoadmapGraphCanvas(roadmap: roadmap, progress: open.board.overall.progress) }
       else { RoadmapBoard(roadmap: roadmap, open: open) }
-    }, of: open, graph: graph, away: fitted).modifier(RoadmapTitle(roadmap: roadmap, open: open))
+    }.underSwitchRow(roadmap, open: open, graph: graph, away: fitted).modifier(RoadmapTitle(roadmap: roadmap, open: open))
       .toolbarVisibility(fitted ? .hidden : .automatic, for: .navigationBar)
       .roadmapFoot(roadmap, away: fitted) {
         if graph, roadmap.band == nil {
@@ -129,12 +133,19 @@ struct RoadmapRoom: View {
         }
       }
   }
+}
 
-  // The switch chooses the roadmap's view, and carries Find and the view's one tool: the Board's Sort and filter (02.5,
-  // 02.7), and the Graph's Fit (04.5), which needs the Graph on screen with its camera. Find is the Board's: the Graph's
-  // waits for its screen. The room reads only whether the camera is there, never the camera, which a gesture or a glide
-  // changes every frame. While several steps are selected the switch waits.
-  func switchRow(_ open: RoadmapModel.OpenRoadmap, graph: Bool) -> some View {
+// The switch row (Roadmap · iOS S.1, 09.4), the room's and a reader's cover's alike, chooses the roadmap's view, and carries
+// Find and the view's one tool: the Board's Sort and filter (02.5, 02.7), and the Graph's Fit (04.5), which needs the Graph
+// on screen with its camera. Find is the Board's: the Graph's waits for its screen. The row reads only whether the camera
+// is there, never the camera, which a gesture or a glide changes every frame. While several steps are selected the switch
+// waits.
+struct SwitchRow: View {
+  let roadmap: RoadmapModel
+  let open: RoadmapModel.OpenRoadmap
+  let graph: Bool
+
+  var body: some View {
     HStack(spacing: RoomSpace.related) {
       // Each segment takes its lens from the ForEach's id: a `tag` here leaves the room's type holding SwiftUI's
       // client-emitted `tag`, which a Release test bundle cannot link against.
@@ -151,12 +162,14 @@ struct RoadmapRoom: View {
       }
     }.padding(.horizontal, RoomSpace.inset).padding(.bottom, RoomSpace.related)
   }
+}
 
+extension View {
   // The switch row stands in the bar's own safe area on iOS 26, and on the bar material over the list before it. Away,
   // it leaves that area to the screen.
-  @ViewBuilder func pinnedUnderBar(_ screen: some View, of open: RoadmapModel.OpenRoadmap, graph: Bool, away: Bool) -> some View {
-    if #available(iOS 26.0, *) { screen.safeAreaBar(edge: .top) { if !away { switchRow(open, graph: graph) } } }
-    else { screen.safeAreaInset(edge: .top) { if !away { switchRow(open, graph: graph).background(.bar) } } }
+  @ViewBuilder func underSwitchRow(_ roadmap: RoadmapModel, open: RoadmapModel.OpenRoadmap, graph: Bool, away: Bool) -> some View {
+    if #available(iOS 26.0, *) { safeAreaBar(edge: .top) { if !away { SwitchRow(roadmap: roadmap, open: open, graph: graph) } } }
+    else { safeAreaInset(edge: .top) { if !away { SwitchRow(roadmap: roadmap, open: open, graph: graph).background(.bar) } } }
   }
 }
 
@@ -175,9 +188,9 @@ struct GlassCircle: ViewModifier {
 // The bar's title over the Board (Roadmap · iOS 01.3, 01.9, 01.10): the open roadmap's name over its progress. Its menu
 // lists the three most recent roadmaps, each over its progress and the open one checked, then All Roadmaps…, New Roadmap,
 // Guide, which counts the guides from above (08.5), Kinds, Activity, Rename and Delete Roadmap. Rename is the system's:
-// it turns the bar into one field, whose return key commits a name and leaves the old one where the field was emptied. Delete Roadmap asks under the title, on a view that
-// stays on screen once the menu has closed. While several steps are selected the title counts them, with no progress, no menu
-// and no rename (02.10). The title stands on a view of its own behind the screen, which changes with it, so the screen
+// it turns the bar into one field, whose return key commits a name and leaves the old one where the field was emptied.
+// Delete Roadmap asks under the title, on a view that stays on screen once the menu has closed. While several steps are
+// selected the title counts them, with no progress, no menu and no rename (02.10). The title stands on a view of its own behind the screen, which changes with it, so the screen
 // under the title is not made anew as a selection starts and ends.
 struct RoadmapTitle: ViewModifier {
   let roadmap: RoadmapModel

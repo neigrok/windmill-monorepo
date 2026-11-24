@@ -1818,6 +1818,9 @@
     "Copied" : {
 
     },
+    "Copy Link" : {
+
+    },
     "Copy answer" : {
 
     },
@@ -1902,6 +1905,9 @@
       }
     },
     "Couldn’t delete your account. Check your connection and try again." : {
+
+    },
+    "Couldn’t fork this roadmap. Try again." : {
 
     },
     "Couldn’t load this roadmap" : {
@@ -2297,6 +2303,38 @@
     "For 30 days, you can sign in again to bring it all back. After that, it is deleted for good." : {
 
     },
+    "Fork Roadmap" : {
+
+    },
+    "Forked · %lld steps planted" : {
+      "comment" : "The band once a fork's copy opens: how many steps it planted",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Forked · %lld step planted"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Forked · %lld steps planted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Forking needs a connection." : {
+
+    },
+    "Forking…" : {
+
+    },
     "From %@" : {
       "comment" : "Who proposed a change: From Coach"
     },
@@ -2418,6 +2456,9 @@
 
     },
     "It lives only on this phone. Sign in to back it up and open it on the web." : {
+
+    },
+    "It may be private, or it may have moved." : {
 
     },
     "It opens another Windmill account with its own data. Windmill doesn't merge accounts. Remove Apple there first." : {
@@ -2786,6 +2827,9 @@
           }
         }
       }
+    },
+    "Needs a connection" : {
+
     },
     "Needs you" : {
 
@@ -3592,6 +3636,9 @@
     "Share with Coach" : {
 
     },
+    "Shared roadmap · %@" : {
+      "comment" : "A shared roadmap's cover: under its name, how far its owner is"
+    },
     "Sharing needs a connection. The link is still live." : {
 
     },
@@ -3606,6 +3653,9 @@
     },
     "Showing %@" : {
       "comment" : "The Board's first row while a kind filter narrows it: the kinds shown"
+    },
+    "Sign In" : {
+
     },
     "Sign in" : {
 
@@ -3626,6 +3676,12 @@
 
     },
     "Sign in to continue." : {
+
+    },
+    "Sign in to fork this roadmap." : {
+
+    },
+    "Sign in to open this roadmap." : {
 
     },
     "Sign in to review this proposal." : {
@@ -3990,7 +4046,13 @@
     "This response has expired. Your draft is still on this phone." : {
 
     },
+    "This roadmap can’t be opened" : {
+
+    },
     "This roadmap is at its limit." : {
+
+    },
+    "This roadmap isn’t on this iPhone." : {
 
     },
     "This routine could not be deleted. Try again." : {
