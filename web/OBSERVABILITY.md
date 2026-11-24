@@ -172,7 +172,9 @@ workout's facts, set corrections and deletion remain available, and its stored p
 Workout drafts stay in account-scoped device rows while admission is pending or refused; the
 refusal step offers the retained editor without reporting its contents. A gym refusal and a store
 failure report no `gym-<operation>`: engine telemetry owns transport, storage, authentication and
-admission failures. No workout or note content, identifiers, field values, refusal details or raw
+admission failures. A write whose replica changed under the room, a sign-in or a sign-out having moved the engine, is
+such a refusal (`not-writable`): `gym_action` with `refused`, and no Issue. The room drawing before the account answers
+adds no event and no failure of its own. No workout or note content, identifiers, field values, refusal details or raw
 exception messages are reported.
 
 Proposal decisions run through the gym domain. Removal snapshots persist in the account replica

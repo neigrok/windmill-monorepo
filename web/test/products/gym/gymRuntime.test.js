@@ -63,6 +63,44 @@ test('local shared-history previews retain typed rep facts and partial-pull comp
   assert.equal(progress.movement(movement.exerciseId).best, null);
 });
 
+test('before its first pull of gym’s scope the copy reads no last time, and once the pull lands it reads the latest', async (t) => {
+  const { api, engine } = await open(t);
+  const land = (booted) => engine.write(null, (device) => {
+    [confirmed('session', 'sessionPulled', { startedAt: 1000, finishedAt: 2000 }),
+      confirmed('set', 'setPulled', { sessionId: 'sessionPulled', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 1100 })]
+      .forEach((record, index) => device.activeReplica.putConfirmed('self/gym', { ...record, seq: index + 1 }));
+    device.activeReplica.cursors['self/gym'] = { ...device.activeReplica.cursorOf('self/gym'), booted };
+  }, ['self/gym']);
+  await land(false);
+  assert.deepEqual([await api.lastTime('bench-press'), await api.lastSets()], [null, []]);
+  await land(true);
+  assert.deepEqual(await api.lastSets(), [{ exerciseId: 'bench-press', weightKg: 60, reps: 5, at: 1000 }]);
+  assert.deepEqual(await api.lastTime('bench-press'), { exerciseId: 'bench-press',
+    session: { id: 'sessionPulled', startedAt: 1000, finishedAt: 2000 }, sets: (await api.session('sessionPulled')).sets });
+});
+
+test('a sign-in that binds the anon replica in place refuses the signed-out API in words that ask no one to sign in', async (t) => {
+  const env = environment();
+  env.options.registry = registry;
+  env.transport.request = async () => ({ response: hello({ state: env.state, registry, account: 'A', serverTime: env.timers.time }), timing: {
+    send: { wall: env.timers.time, mono: env.timers.time, boot: 'test' }, recv: { wall: env.timers.time, mono: env.timers.time, boot: 'test' },
+  } });
+  const engine = await BrowserSyncEngine.open(env.options);
+  t.after(() => engine.close());
+  const events = [], failures = [];
+  const signedOut = createGymApi(engine, { event: (operation, outcome) => events.push({ operation, outcome }), failure: (operation) => failures.push(operation) });
+  await signedOut.saveBodyweight('1970-01-01', { weightKg: 82 });
+  const replica = engine.activeReplica();
+  assert.equal((await engine.signIn('A')).complete, true);
+  assert.deepEqual([engine.activeReplica(), engine.getSnapshot().state], [replica, 'bound']);
+  const owed = structuredClone(engine.device.activeReplica.outbox);
+  await assert.rejects(signedOut.saveBodyweight('1970-01-02', { weightKg: 83 }),
+    { code: 'not-writable', sentence: 'That wasn’t saved — the account on this browser changed.' });
+  assert.deepEqual(engine.device.activeReplica.outbox, owed);
+  assert.deepEqual(events, [{ operation: 'bodyweight-save', outcome: 'saved-local' }, { operation: 'bodyweight-save', outcome: 'refused' }]);
+  assert.deepEqual(failures, []);
+});
+
 test('a malformed stored plan preserves the session and reports through the API failure boundary', async (t) => {
   const { api, engine, failures, events } = await open(t);
   const row = { t: 'session', id: 'sessionPrivate', seq: 1, born: '1000:0:srv', life: ['alive', '1000:0:srv'],
@@ -475,7 +513,7 @@ test('custom exercise creation preserves a supplied step and validates it before
 test('an adapter pinned to a previous replica cannot write into another account', async (t) => {
   const { api, engine } = await open(t);
   t.mock.method(engine, 'commit', async (scope, read) => read({ replica: 'anotherAccount' }));
-  await assert.rejects(api.createRoutine(routine), { code: 'not-writable', sentence: 'Sign in to save to your training log.' });
+  await assert.rejects(api.createRoutine(routine), { code: 'not-writable', sentence: 'That wasn’t saved — the account on this browser changed.' });
 });
 
 test('liveHint follows the phone session and expires after four idle hours', async (t) => {

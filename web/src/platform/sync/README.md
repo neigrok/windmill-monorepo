@@ -192,7 +192,9 @@ lost push reply. It requires `windmill_server` and Postgres client tools from `b
 territory; scheduling this script there remains an integration task. `npm run build` also bundles
 the browser engine separately and rejects Node builtins. The app shell caches the built room assets for offline reload; product adapters own their projections and migration.
 
-`react.js` exports `useSyncEngine()` (the open bound engine, or null during boot/sign-out),
+`react.js` exports `useSyncReplica()` (the open engine's active replica, `{ engine, id, state }`, bound or anon, from
+the moment the engine opens and whether or not the account has answered; null while it is not open), `useSyncEngine()`
+(the engine of a bound replica whose account the shell has settled, or null during boot and sign-out),
 `useSyncRecords(scope)` (the scope's snapshot through `useSyncExternalStore`, holding the scope for the
 document) and `useSyncNotices(product)` (the product's notices the same way). Records can observe the anonymous replica; only the session owner opens
 and starts the engine. Each product's route table carries a `sync` group — `prepare(engine)`,
