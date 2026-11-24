@@ -61,7 +61,8 @@ class EditSetsDraft {
 
 // Edit sets (WD3.2): this workout's plan for one movement with nothing logged — its sets, its rest, Swap and Remove — saved
 // whole in one write against the plan it opened on. A plan another tab or device changed first is refused stale and the
-// draft stays (WD5): Use latest reopens on the plan as it stands, Save mine writes the draft over it.
+// draft stays (WD5): while the answer stands the sets and the rest stay editable, Save, Add set, Swap and Remove wait, and
+// Use latest reopens on the plan as it stands or Save mine writes the draft over it.
 export function EditSets({ view, exerciseId, log, movementName, onRevise, onSwap, onClose }) {
   const name = movementName(exerciseId);
   const entryIn = (plan) => plan?.entries.find((entry) => entry.exerciseId === exerciseId) ?? null;
@@ -137,21 +138,25 @@ export function EditSets({ view, exerciseId, log, movementName, onRevise, onSwap
           </li>
         ))}
       </ol>
-      <button type="button" className="gym-live-add" onClick={addSet} disabled={rows.length >= MAX_SETS}>
-        <Plus size={16} aria-hidden="true" /> {t('gym.workout.addSet')}
-      </button>
+      {!stale && (
+        <button type="button" className="gym-live-add" onClick={addSet} disabled={rows.length >= MAX_SETS}>
+          <Plus size={16} aria-hidden="true" /> {t('gym.workout.addSet')}
+        </button>
+      )}
       <div className="gym-live-edit-rest">
         <span id="gym-live-rest">{t('gym.workout.rest')}</span>
         <Select value={draft.rest === null ? 'default' : String(draft.rest)} onChange={(value) => setDraft(draft.with({ rest: value === 'default' ? null : Number(value) }))}
           options={[{ value: 'default', label: t('gym.workout.restDefault') }, ...RESTS.map((seconds) => ({ value: String(seconds), label: clockOf(seconds * 1000) }))]} />
       </div>
       {refusal && <p className="gym-live-refusal" role="alert">{refusal}</p>}
-      <div className="gym-live-edit-more">
-        <button type="button" className="gym-live-edit-swap" onClick={() => onSwap(draft.edits(index), base)}>
-          <SwapIcon size={16} aria-hidden="true" /> {t('gym.workout.swapMovement')}
-        </button>
-        <button type="button" className="gym-live-edit-drop" onClick={() => save([{ kind: 'removeMovement', index }], base)}>{t('gym.workout.removeFromWorkout')}</button>
-      </div>
+      {!stale && (
+        <div className="gym-live-edit-more">
+          <button type="button" className="gym-live-edit-swap" onClick={() => onSwap(draft.edits(index), base)}>
+            <SwapIcon size={16} aria-hidden="true" /> {t('gym.workout.swapMovement')}
+          </button>
+          <button type="button" className="gym-live-edit-drop" onClick={() => save([{ kind: 'removeMovement', index }], base)}>{t('gym.workout.removeFromWorkout')}</button>
+        </div>
+      )}
       {stale ? (
         <div className="gym-live-band">
           <Button variant="secondary" onClick={useLatest}>{t('gym.workout.useLatest')}</Button>

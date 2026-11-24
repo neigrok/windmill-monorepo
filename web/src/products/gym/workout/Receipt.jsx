@@ -7,9 +7,40 @@ import { useGymApi, workoutStep } from '../gymRuntime.js';
 import { t } from '../i18n/index.js';
 import { dayLabel, entryLabel, nameOfMovement, sessionHref, timeLabel, tonnageLabel } from '../log.js';
 import { diffRows } from '../proposals.js';
-import { DiffRow } from '../Proposals.jsx';
 import { useDomainRead } from '../useDomainRead.js';
 import { receiptOf } from './workout.js';
+
+// What moved of two readings, the half both share left out: `10 × 8` to `12.5 × 8` reads `10 → 12.5` and `3 × 8 · 10`
+// to `4 × 8 · 10` reads `3 × 8 → 4 × 8`; readings that differ in both halves, or are not split alike, read whole.
+function movedPart(from, to) {
+  for (const separator of [' · ', ' × ']) {
+    const at = [from.lastIndexOf(separator), to.lastIndexOf(separator)];
+    if (at[0] < 0 || at[1] < 0) continue;
+    const heads = [from.slice(0, at[0]), to.slice(0, at[1])];
+    const tails = [from.slice(at[0] + separator.length), to.slice(at[1] + separator.length)];
+    if (tails[0] === tails[1] && heads[0] !== heads[1]) return heads;
+    if (heads[0] === heads[1] && tails[0] !== tails[1]) return separator === ' × ' ? tails.map((tail) => `× ${tail}`) : tails;
+  }
+  return [from, to];
+}
+
+// The workout's plan changes as the receipt lists them (WD3.3): one flat row a change, what changed (the movement, and
+// which set or its rest) and its values, the routine's struck through before the workout's.
+function changeLines(rows, catalog) {
+  return rows.flatMap((row) => {
+    const movement = row.exerciseId ? nameOfMovement(catalog, row.exerciseId) : null;
+    if (row.kind === 'retargeted') {
+      return row.moves.map((move) => {
+        const [from, to] = movedPart(move.from, move.to);
+        return { what: move.field === 'sets' ? movement : t('gym.workout.changeOf', { movement, field: move.field }), from, to };
+      });
+    }
+    if (row.kind === 'added') return [{ what: movement, word: t('gym.workout.changeAdded'), to: row.targets }];
+    if (row.kind === 'removed') return [{ what: movement, word: t('gym.workout.changeRemoved') }];
+    if (row.kind === 'reordered') return [{ what: t('gym.workout.changeOrder') }];
+    return [];
+  });
+}
 
 // The receipt of a workout this page just finished (WD3.3): the times, three figures, what each movement came to, and,
 // when this workout's plan changed, its changes against the routine with *Save to {routine}*, off until the lifter turns
@@ -84,7 +115,21 @@ export function Receipt({ id, log }) {
           {rows.length > 0 && (
             <section className="gym-live-changes" aria-labelledby="gym-receipt-changes">
               <h2 id="gym-receipt-changes">{t('gym.workout.planChanges', { count: changes.changeCount })}</h2>
-              <ul>{rows.map((row, at) => <li key={at} className={`gym-diff-row is-${row.kind}`}><DiffRow row={row} catalog={log.catalog} /></li>)}</ul>
+              <ul>
+                {changeLines(rows, log.catalog).map((line, at) => (
+                  <li key={at} className="gym-live-change">
+                    <span className="gym-live-change-what">{line.what}</span>
+                    {(line.word || line.to) && (
+                      <span className="gym-live-change-values">
+                        {line.word && <span className="is-word">{line.word}</span>}
+                        {line.from && <s>{line.from}</s>}
+                        {line.from && <span aria-hidden="true">→</span>}
+                        {line.to && <span className="is-now">{line.to}</span>}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
               {changes.offer === 'save' && routine && (
                 <div className="gym-live-changes-save">
                   <Switch checked={save} onChange={setSave} label={t('gym.workout.saveTo', { routine: routine.name })} />

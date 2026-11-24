@@ -23,9 +23,9 @@ test('the routine editor is keyed on the routine it edits, so a hash move remoun
 test('the routine row’s overflow is Log past above Delete, Delete alone signed out, and no surface offers a copy of a routine', () => {
   const source = spoken(read('Routines.jsx'));
   assert.equal(source.includes(`items={[
-                  ...(anonymous ? [] : [{ label: t('gym.routines.logPast'), run: () => { window.location.hash = backfillHref(routine.id, FROM_ROUTINE_MENU); } }]),
-                  { label: t('gym.routines.delete'), run: () => remove(routine) },
-                ]}`), true);
+                      ...(anonymous ? [] : [{ label: t('gym.routines.logPast'), run: () => { window.location.hash = backfillHref(routine.id, FROM_ROUTINE_MENU); } }]),
+                      { label: t('gym.routines.delete'), run: () => remove(routine) },
+                    ]}`), true);
   assert.equal(source.includes('Log past\nDelete'), true, 'the catalog says Log past, then Delete');
   assert.equal(/duplicat/i.test(source), false, 'the room has no duplicate act');
   assert.equal(/duplicat/i.test(spoken(read('routines.js'))), false);
@@ -649,8 +649,8 @@ test('discarding a session is withheld and undoable, so it is not confirmed and 
   assert.equal(finish.includes("log.holdDelete({\n      kind: 'session',\n      id,"), true);
   assert.equal((finish.match(/log\.holdDelete\(/g) ?? []).length, 1);
   assert.equal(finish.includes('<button type="button" className="gym-short-discard" onClick={discard}>'), true);
-  assert.equal(read('review.js').includes("export const SESSION_DELETED = t('gym.review.sessionDeleted');"), true);
-  assert.equal(catalog['gym.review.sessionDeleted'], 'Session deleted.');
+  assert.equal(read('withheld.js').includes("return { session: countLine(1),"), true, 'a discard is counted, as WD3.5 draws it');
+  assert.equal(catalog['gym.held.count'], '{count, plural, one {# deleted.} other {# deleted.}}');
   // The sentence became false the day the delete gained a way back, so it is nowhere in the room.
   for (const file of gymFiles()) {
     if (!/\.(jsx?|css)$/.test(file)) continue;
@@ -969,7 +969,7 @@ test('the finished session’s detail has the discard door, through the same win
   assert.equal(log.includes("<button type=\"button\" className=\"gym-short-discard\" onClick={discard}>{t('gym.log.discardSession')}</button>"), true);
   assert.equal(catalog['gym.log.discardSession'], 'Discard session');
   assert.equal(log.includes("holdDelete({\n      kind: 'session',\n      id,"), true);
-  assert.equal(read('withheld.js').includes('session: SESSION_DELETED'), true, 'the room names every discard with the review’s sentence');
+  assert.equal(read('withheld.js').includes('session: countLine(1)'), true, 'the room counts every discard alike');
   assert.equal(log.includes("window.location.hash = '#/gym/log';"), true);
   assert.equal(/gym-confirm|confirming/.test(log), false, 'no confirmation in front of an undoable act');
   assert.equal(read('Finish.jsx').includes('function ShortSession'), true, 'the review keeps its own');

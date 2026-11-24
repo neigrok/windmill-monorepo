@@ -38,14 +38,18 @@ lifter set them, and the slot and plan entry that filled them) and `offer` (the 
 a workout with no plan; the one in hand, else the latest set's; its rack, kept while its slot holds and filled again from
 `Prefill` once a set lands or the plan changes a rack the lifter did not set; and the set on offer, kept while the rack
 offers the same set. Every rack change reads the rows and writes them in one local write (`SettleRack`, `TurnRack`), so a
-tab never writes over another's. `LogRackSet` writes the set under the id the offer row holds — a second tap on one
+tab never writes over another's, and a step of the ladder or the reps stepper is taken from the row as it is written, so two
+tabs stepping together both count; a field's Enter lands what it holds and logs nothing, Log set alone logging. A settle that
+fails is tried again, backing off to every 30 s, and Log set says it is waiting meanwhile. `LogRackSet` writes the set under the id the offer row holds — a second tap on one
 offer, in this tab or another, finds the set written and writes nothing — and refuses `stale` an offer the rows no
 longer hold. `ReviseWorkout` is `ReviseWorkoutPlan`, refused `stale` against any plan but the one its editor opened on,
 with the rows it leaves; `FinishWorkout` finishes and forgets the rows; a finished workout is discarded through the
 room's held delete. `StartWorkout` refuses a routine the log no longer draws, and otherwise is `StartSession`, which
 refuses a start beside an open workout. The page's clocks read the server's time (the device's corrected by its offset)
 on every animation frame while the tab is shown, from the workout's start and the latest set's time, never a count; the
-tab's title and favicon read them each time a timer fires.
+tab's title and favicon read them each time a timer fires. The rest reaching its target is told and toned at that instant
+by the tab the sync engine leads from, when that tab draws the workout: a browser has one leading tab, and the engine gives
+the lead to a tab on screen whenever one is, so two tabs tell it once.
 Before the shell signs in or finishes a sign-out (`routes.sync.seatWillChange`), `saveSignedOutWorkouts` saves each
 workout the anon replica holds for adoption (`AdoptWorkout` in `prepare`, kept under the device row `rack:adoption`): a
 finished one becomes one import that supersedes its chain, an open one keeps a start that does not join, and an open one's
@@ -183,11 +187,12 @@ in the catalog.
 `gymRuntime.js` owns the gym telemetry boundary. A workout's steps tell the iPhone's events through `workoutStep`, its
 properties each one of a closed set of labels and never a name or an id of a workout, a routine or a movement:
 `gym_session_started` (`door`: `routine` or `empty`), `gym_set_logged`, `gym_session_finished`, `gym_workout_plan_changed`
-(one per kind of edit, `action`, `door: workout`), `gym_workout_adjusted` (`field`: `weight` or `reps`), each with
-`outcome` `ok`, `refused` (with `code`, and `reason: stale` for a plan another tab or device changed first) or `failed`;
-and from the screens `gym_rest_target_reached`, `gym_hidden_workout` (`action`: `hide`, or `open` with `door: bar`) and
-`gym_receipt_plan_saved`. Their unexpected failures report `gym-workout-start`, `gym-rack-settle`, `gym-rack-turn`,
-`gym-set-log`, `gym-plan-revise` and `gym-workout-finish`. Engine-backed writes otherwise emit first-party `gym_action` events with allowlisted `operation` and
+(one per kind of edit, `action`, `door: workout`), `gym_workout_adjusted` (`field`: `weight` or `reps`),
+`gym_workout_movement_chosen`, each with `outcome` `ok`, `refused` (with `code`, and `reason: stale` for a plan another tab or
+device changed first) or `failed`; and from the screens `gym_rest_target_reached`, `gym_hidden_workout` (`action`: `hide`, or
+`open` with `door: bar`), `gym_workout_popped_out` (`outcome` `ok` or `failed`) and `gym_receipt_plan_saved`. Their
+unexpected failures report `gym-workout-start`, `gym-rack-settle`, `gym-rack-turn`, `gym-set-log`, `gym-plan-revise`,
+`gym-workout-finish` and, for a pop-out window the browser would not open, `gym-pop-out`. Engine-backed writes otherwise emit first-party `gym_action` events with allowlisted `operation` and
 `outcome` only, and a `refused` one also `code`: `not-writable` when the replica moved under the room, `domain` when the
 gym's rules refused it, this device's or the server's. Operations cover routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
@@ -233,10 +238,13 @@ workout the account cannot take kept as finished from In this browser (WD9.1, WD
 (WD9.2); and a start that lost the race to the phone's, its toast and its sets kept (WD4.3). `WM_GYM_SHOTS` names a folder
 for their screenshots.
 `workout.browser.test.js` runs a workout in Chromium the same way: started from a routine and empty, a set logged and
-corrected, a plan edit, Finish and the discard; Log set tapped in two tabs on one offer logs one set; a plan edit another
-tab made stale is refused with its draft kept, and Save mine writes it; a set logged with no connection is kept through a
-reload and goes out once the reference server answers; the tab's title and favicon follow the rest clock of a workout
-another device started. `WM_WORKOUT_SHOTS` names a folder for the logging page at 1440 and 390. Shared training
+corrected, a plan edit, Finish and the discard; Log set tapped in two tabs on one offer logs one set and the second tap is
+quiet; a plan edit another tab made stale is refused with its draft kept, and Save mine writes it; a set logged with no
+connection is kept through a reload, taken by the reference server once it answers and drawn after; the tab's title and
+favicon follow the rest clock; Enter lands a field and logs nothing; a step of the ladder and of the reps in each of two tabs
+both count; the rest is told once across two tabs; a settle that fails is reported, said and tried again; Edit sets closes
+when a set lands on its movement; and Pop out's open is told and its refusal reported. Its page loads the app's fonts, and
+`WM_WORKOUT_SHOTS` names a folder for the logging page at 1440 and 390. Shared training
 reads run on web, Swift and Kotlin. The local stack checks domain reads over an actual disposable
 backend account and persisted browser-engine observations. Chromium acceptance has twelve checks: a phone replica's open workout draws the bar, its page
 continues it, the phone's set lands in its ledger and the phone's `gym.finish` closes it; web routine edits, backfills, additive recovery, weigh-ins and unit changes converge; a held weigh-in delete can be

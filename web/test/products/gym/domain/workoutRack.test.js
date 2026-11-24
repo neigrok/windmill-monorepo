@@ -13,9 +13,11 @@ import { GymRefusals } from '../../../../src/products/gym/domain/gymRules.js';
 import { PlanSnapshot, Routine, RoutineEntry, RoutineValue, SetTarget } from '../../../../src/products/gym/domain/routines.js';
 import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
 import { Session, TrainingSet } from '../../../../src/products/gym/domain/training.js';
+import { FinishSession } from '../../../../src/products/gym/domain/trainingActions.js';
 import { PlanOperations } from '../../../../src/products/gym/domain/workoutPlan.js';
+import { DeleteRoutine } from '../../../../src/products/gym/domain/routines.js';
 import {
-  FinishWorkout, LogRackSet, ReviseWorkout, SettleRack, StartWorkout, TurnRack, WorkoutRack,
+  FinishWorkout, LogRackSet, RackRows, ReviseWorkout, SettleRack, StartWorkout, TurnRack, WorkoutRack,
 } from '../../../../src/products/gym/domain/workoutRack.js';
 import { Harness } from '../../../platform/domain-kit/harness.js';
 
@@ -115,4 +117,47 @@ test('a workout with no plan holds the movements it adds, and Finish takes its r
   ended(await a.runner.run(FinishWorkout(sessionId)), 'committed');
   assert.deepEqual(rows(a.runner).rows, { order: null, movement: null, rack: null, offer: null });
   assert.equal(a.drawn(Session)[0]?.closedBy, 'finish');
+});
+
+test('a step of the ladder or the stepper in each of two tabs at once both count, each taken from the rack as it is written', async (t) => {
+  const { a, tab, drawn } = await browser(t);
+  ended(await a.runner.run(SettleRack(sessionId)), 'committed');
+  await drawn();
+  const steps = await Promise.all([
+    a.runner.run(TurnRack(sessionId, { stepLoad: { direction: 1, big: false } })),
+    tab.run(TurnRack(sessionId, { stepLoad: { direction: 1, big: false } })),
+    a.runner.run(TurnRack(sessionId, { stepReps: 1 })),
+    tab.run(TurnRack(sessionId, { stepReps: 1 })),
+  ]);
+  assert.deepEqual(steps.map((step) => step.kind), ['committed', 'committed', 'committed', 'committed']);
+  const stepped = await drawn();
+  assert.deepEqual([stepped.rack?.weightKg, stepped.rack?.reps, stepped.rack?.touched], [18, 10, true]);
+  ended(await a.runner.run(TurnRack(sessionId, { stepLoad: { direction: -1, big: true } })), 'committed');
+  assert.deepEqual([rows(a.runner).rack?.weightKg, rows(a.runner).rack?.reps], [15.5, 10], 'a big step down from 18 is the lighter rung’s 2.5');
+  ended(await a.runner.run(TurnRack(sessionId, { stepReps: -1 })), 'committed');
+  assert.equal(rows(a.runner).rack?.reps, 9);
+});
+
+test('the rows a workout that ended elsewhere left are cleared by the next workout’s first write', async (t) => {
+  const { a } = await browser(t);
+  ended(await a.runner.run(SettleRack(sessionId)), 'committed');
+  ended(await a.runner.run(FinishSession({ id: sessionId })), 'committed');
+  const left = () => a.runner.read(Session.scope, (read) => Object.values(RackRows.keys('session1')).map((key) => read.device(key)));
+  assert.equal(left().filter((row) => row !== null && row !== undefined).length, 4, 'a finish on another device leaves this device’s rows');
+  const next = new Id('session2', Session);
+  ended(await a.runner.run(StartWorkout({ id: next, routineId: null })), 'committed');
+  ended(await a.runner.run(TurnRack(next, { adding: dip })), 'committed');
+  assert.deepEqual(left().map((row) => row ?? null), [null, null, null, null]);
+  assert.deepEqual(a.runner.read(Session.scope, (read) => WorkoutRack.of(read, next).rows.order.map((id) => id.record)), ['dip']);
+});
+
+test('a start from a routine the log no longer draws is refused, and an added movement is refused stale on a workout with a plan', async (t) => {
+  const { a, plan } = await browser(t);
+  assert.equal(refusal(await a.runner.run(TurnRack(sessionId, { adding: dip }))), 'stale');
+  assert.deepEqual(a.drawn(Session)[0]?.plan?.json, plan.json, 'the plan stands as it was');
+  ended(await a.runner.run(FinishWorkout(sessionId)), 'committed');
+  const routine = new Id('routine1', Routine);
+  ended(await a.runner.run(DeleteRoutine(routine)), 'committed');
+  assert.equal(refusal(await a.runner.run(StartWorkout({ id: new Id('session2', Session), routineId: routine }))), 'gone');
+  assert.deepEqual(a.drawn(Session).map((session) => session.id.record), ['session1']);
 });

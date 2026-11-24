@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PictureInPicture2 } from 'lucide-react';
 import { Button } from '../../../design-system/index.js';
+import { gymFailure, workoutStep } from '../gymRuntime.js';
 import { t } from '../i18n/index.js';
 import { loadBasisLabel, movementOf } from '../log.js';
 import { KG } from '../units.js';
@@ -9,6 +10,7 @@ import { KG } from '../units.js';
 // Pop out (WD2.5): an always-on-top window through Document Picture-in-Picture, offered only where the browser has it.
 // It draws what a phone's Lock Screen card does — the movement, which set, the clocks against the static target and one
 // Log set — and never what is unsent. Closing it returns to the page as it was. `children` are the workout's clocks.
+// Opening it is a step, told with how it ended; a window the browser would not open reports `gym-pop-out`.
 export function PopOut({ view, name, movementName, catalog, onLog, children }) {
   const [pip, setPip] = useState(null);
   useEffect(() => () => pip?.close(), [pip]);
@@ -16,7 +18,14 @@ export function PopOut({ view, name, movementName, catalog, onLog, children }) {
 
   const open = async () => {
     if (pip) { pip.focus(); return; }
-    const opened = await window.documentPictureInPicture.requestWindow({ width: 320, height: 220 });
+    let opened;
+    try { opened = await window.documentPictureInPicture.requestWindow({ width: 320, height: 220 }); }
+    catch (error) {
+      workoutStep('gym_workout_popped_out', { screen: 'workout', outcome: 'failed' });
+      gymFailure('pop-out', error);
+      return;
+    }
+    workoutStep('gym_workout_popped_out', { screen: 'workout', outcome: 'ok' });
     for (const sheet of document.styleSheets) {
       try {
         const style = opened.document.createElement('style');

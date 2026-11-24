@@ -12,6 +12,7 @@ import { Routine } from './routines.js';
 import { Session, SetRules, TrainingSet, TrainingSetValue } from './training.js';
 import { AppendSet, FinishSession, StartSession, TrainingState } from './trainingActions.js';
 import { LastTime, Prefill, TrainingLog } from './trainingReads.js';
+import { WeightLadder } from './units.js';
 import { ReviseWorkoutPlan, WorkoutPlan } from './workoutPlan.js';
 
 /** @typedef {import('../../../platform/domain-kit/values.js').Json} Json */
@@ -24,6 +25,7 @@ import { ReviseWorkoutPlan, WorkoutPlan } from './workoutPlan.js';
 /** @typedef {import('./workoutPlan.js').PlanOperation} PlanOperation */
 /** @typedef {Id<ExerciseValue>} ExerciseId */
 /** @typedef {Id<SessionValue>} SessionId */
+/** @typedef {{ weightKg: number } | { reps: number } | { stepLoad: { direction: number, big: boolean } } | { stepReps: number }} RackChange */
 
 /** @param {readonly ExerciseId[]} ids @param {ExerciseId} id */
 const holds = (ids, id) => ids.some((each) => each.equals(id));
@@ -58,6 +60,18 @@ export class RackLoad {
 
   /** @param {{ weightKg?: number, reps?: number, touched?: boolean, slot?: string, target?: Json }} changes */
   with(changes) { return new RackLoad({ ...this, ...changes }); }
+
+  // The rack as the lifter set it: a load or a count typed, or a step of the ladder or the stepper taken from what the
+  // rack holds as it is written, so two tabs stepping at once both count.
+  /** @param {RackChange} change */
+  turned(change) {
+    const load = (/** @type {number} */ weightKg) => this.with({ weightKg: SetRules.weightKg.apply(weightKg, new Path('weightKg')), touched: true });
+    const count = (/** @type {number} */ reps) => this.with({ reps: SetRules.reps.apply(reps, new Path('reps')), touched: true });
+    if ('weightKg' in change) return load(change.weightKg);
+    if ('reps' in change) return count(change.reps);
+    if ('stepLoad' in change) return load(WeightLadder.bump(this.weightKg, change.stepLoad.direction, change.stepLoad.big));
+    return count(WeightLadder.bumpReps(this.reps, change.stepReps));
+  }
 
   // The same set on offer: one movement, one load, one count of reps.
   /** @param {RackLoad | null} other */
@@ -253,10 +267,10 @@ export function SettleRack(sessionId) {
 }
 
 // One change of the rack, read and written in one write so a tab never writes over another's (web-device-parity §4):
-// the movement in hand, a movement a workout with no plan takes, or the load or reps the lifter set.
+// the movement in hand, a movement a workout with no plan takes, or the load or reps the lifter set or stepped.
 /**
  * @param {SessionId} sessionId
- * @param {{ movement: ExerciseId } | { adding: ExerciseId } | { weightKg: number } | { reps: number }} change
+ * @param {{ movement: ExerciseId } | { adding: ExerciseId } | RackChange} change
  */
 export function TurnRack(sessionId, change) {
   return Object.freeze({
@@ -281,9 +295,7 @@ export function TurnRack(sessionId, change) {
         turned = rows.with({ order: distinct([...rows.order, change.adding]), movement: change.adding });
       } else {
         if (rows.rack === null) return Decision.refuse(stale(sessionId));
-        turned = rows.with({ rack: 'weightKg' in change
-          ? rows.rack.with({ weightKg: SetRules.weightKg.apply(change.weightKg, new Path('weightKg')), touched: true })
-          : rows.rack.with({ reps: SetRules.reps.apply(change.reps, new Path('reps')), touched: true }) });
+        turned = rows.with({ rack: rows.rack.turned(change) });
       }
       const plan = new Plan();
       return rack.written(plan, rack.settled(() => String(ids.mint(TrainingSet).record), turned)) ? Decision.write(plan, null) : Decision.unchanged(null);

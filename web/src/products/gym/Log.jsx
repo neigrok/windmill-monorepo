@@ -46,6 +46,8 @@ export function LogList({ log, signedIn = false, anonymous = false, hash = '#/gy
   const sessions = (history.data?.sessions ?? []).filter((session) => !hidden.has(session.id));
   const selected = sessionId ?? filters.selected ?? null;
   const complete = stored.phase === 'ready' && stored.data.isComplete;
+  // Before the first pull, one status line says the log is still arriving (WD6.2), and no other says it is opening.
+  const firstPull = stored.phase === 'ready' && !complete;
   const empty = history.phase === 'ready' && complete && !stored.data.hasSessions;
   const noMatches = empty && Boolean(filters.year || filters.exercise || filters.routine);
   const exerciseOptions = history.data?.exercises?.length ? history.data.exercises : log.catalog;
@@ -128,7 +130,7 @@ export function LogList({ log, signedIn = false, anonymous = false, hash = '#/gy
         <HistoryFilter kind="routine" value={filters.routine} onChange={(routine) => moveFilter({ routine })} options={routineOptions} />
       </div>
       {complete && history.data?.summary && <p className="gym-log-count">{historyTotals(withoutRows(history.data.summary, (history.data.sessions ?? []).filter((session) => hidden.has(session.id))))}</p>}
-      {history.phase === 'loading' && !history.data && <p className="gym-quiet">{t('gym.log.opening')}</p>}
+      {history.phase === 'loading' && !history.data && !firstPull && <p className="gym-quiet">{t('gym.log.opening')}</p>}
       {history.failure && <p className="gym-read-failed">{t('gym.log.readFailed')} <Button size="sm" variant="secondary" onClick={history.retry}>{t('gym.common.retry')}</Button></p>}
       {empty && !noMatches && <p className="gym-quiet">{t('gym.log.noSessions')}</p>}
       {noMatches && <section className="gym-history-empty"><p>{emptyHistoryLine(filters, log.catalog, routineOptions)}</p><Button onClick={() => moveFilter({ year: null, month: null, exercise: '', routine: '' })}>{t('gym.log.clearFilters')}</Button></section>}
@@ -137,7 +139,7 @@ export function LogList({ log, signedIn = false, anonymous = false, hash = '#/gy
           {signedIn && <InThisBrowser log={log} placement="wide" />}
           <HistoryIndex sessions={sessions} selected={selected} filters={filters} dense={dense} />
           {!history.data?.next && complete && history.phase === 'ready' && sessions.length > 0 && <p className="gym-history-end">{t('gym.log.historyEnd')}</p>}
-          {stored.phase === 'ready' && !complete && <p className="gym-history-end gym-first-pull" role="status">{t('gym.common.gettingLog')}</p>}
+          {firstPull && <p className="gym-history-end gym-first-pull" role="status">{t('gym.common.gettingLog')}</p>}
           {history.data?.next && <button type="button" className="gym-older" aria-busy={history.more === 'loading'} onClick={history.load}>{history.more === 'loading' ? t('gym.log.loadingOlder') : history.more === 'failed' ? t('gym.log.olderFailed') : t('gym.log.loadOlder')}</button>}
         </aside>
         <div className="gym-history-detail">

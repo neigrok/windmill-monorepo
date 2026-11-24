@@ -23,6 +23,7 @@ export { SegmentedControl } from './forms/SegmentedControl.jsx';
 export { Tooltip } from './feedback/Tooltip.jsx';
 export { Ghost, GhostBar } from './feedback/Ghost.jsx';
 export { Dialog } from './feedback/Dialog.jsx';
+export { Sheet } from './feedback/Sheet.jsx';
 export { Toast } from './feedback/Toast.jsx';
 export { ErrorBoundary } from './feedback/ErrorBoundary.jsx';
 

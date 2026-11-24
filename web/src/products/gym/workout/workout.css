@@ -14,7 +14,11 @@
 .gym-live-tool { box-sizing: border-box; width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center;
   border: 0; border-radius: var(--radius-md); background: transparent; color: var(--gym-ink); cursor: pointer; }
 .gym-live-tool:hover { background: var(--gym-raised); }
-.gym-live-tool:focus-visible, .gym-live-step:focus-visible, .gym-live-movement:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+/* Every control of the page wears the brand ring when the keyboard holds it, a sheet's closing included, never the browser's own. */
+.gym-live-tool:focus-visible, .gym-live-step:focus-visible, .gym-live-movement:focus-visible, .gym-live-add:focus-visible,
+.gym-live-dots button:focus-visible, .gym-live-edit-swap:focus-visible, .gym-live-edit-drop:focus-visible, .gym-live-edit-remove:focus-visible,
+.gym-live-fix-delete:focus-visible, .gym-live-sheet-head > button:focus-visible, .gym-live-edit-head > button:focus-visible,
+.gym-live-band-cancel:focus-visible, .gym-live-sheet-delete:focus-visible, .gym-live-bar:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 
 .gym-live-split { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 420px); gap: 32px; align-items: start; }
 .gym-live-index-card { display: flex; flex-direction: column; gap: 4px; }
@@ -31,7 +35,7 @@
 .gym-live-rail { flex: none; display: inline-flex; gap: 4px; align-items: center; }
 .gym-live-rail i { box-sizing: border-box; display: block; width: 2px; height: 10px; background: var(--gym-line-strong); }
 .gym-live-rail i.is-landed { background: var(--color-brand); }
-.gym-live-rail i.is-in-hand { background: transparent; box-shadow: 0 0 0 1px var(--color-brand); }
+.gym-live-rail i.is-in-hand { background: transparent; border-left: 1px solid var(--color-brand); }
 .gym-live-add { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; padding: 12px; border: 0; background: transparent;
   color: var(--color-brand); font: 700 14px/20px var(--font-body); cursor: pointer; }
 .gym-live-add:disabled { opacity: 0.45; cursor: default; }
@@ -48,8 +52,9 @@
 .gym-live-movement-head .wm-menu-open.is-labelled { min-width: 0; max-width: 100%; color: var(--gym-ink); }
 .gym-live-movement-head .wm-menu-open.is-labelled > svg:first-child { color: var(--color-brand); flex: none; }
 .gym-live-movement-title { font: 700 17px/24px var(--font-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gym-live-dots { display: flex; justify-content: center; gap: 0; margin-top: -8px; }
-.gym-live-dots button { width: 14px; height: 14px; padding: 4px; border: 0; background: transparent; cursor: pointer; }
+/* The dots sit 8px under the head and take their 6px in the column; each button's 14px reaches past them. */
+.gym-live-dots { display: flex; justify-content: center; align-items: center; gap: 0; height: 6px; margin-top: -8px; }
+.gym-live-dots button { flex: none; width: 14px; height: 14px; padding: 4px; border: 0; background: transparent; cursor: pointer; }
 .gym-live-dots button::before { content: ''; display: block; width: 6px; height: 6px; border-radius: var(--radius-full); background: var(--gym-ink-faint); }
 .gym-live-dots button[aria-current='true']::before { background: var(--gym-ink); }
 
@@ -68,7 +73,7 @@
 .gym-live-row { position: relative; box-sizing: border-box; min-height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 16px;
   border-bottom: 1px solid var(--gym-line); color: var(--gym-ink-faint); }
 .gym-live-row:last-child { border-bottom: 0; }
-.gym-live-row > button { all: unset; box-sizing: border-box; flex: 1; min-height: 44px; display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.gym-live-row > button { all: unset; box-sizing: border-box; flex: 1; align-self: stretch; display: flex; align-items: center; gap: 12px; cursor: pointer; }
 .gym-live-row > button:focus-visible { outline: 2px solid var(--color-brand); outline-offset: -2px; border-radius: 8px; }
 .gym-live-ordinal { flex: none; width: 16px; font: 400 13px/18px var(--font-mono); color: var(--gym-ink-faint); }
 .gym-live-reading { flex: 1; min-width: 0; font: 400 16px/20px var(--font-mono); font-variant-numeric: tabular-nums; }
@@ -89,15 +94,22 @@
 .gym-live-fix-delete { margin-left: auto; width: 36px; height: 36px; border: 0; background: transparent; color: var(--gym-ink-faint); font-size: 18px; cursor: pointer; }
 .gym-live-fix-delete:hover { color: var(--alarm-ink); }
 .gym-live-refusal { flex-basis: 100%; margin: 0; padding: 0 0 8px 28px; font: 400 13px/18px var(--font-body); color: var(--alarm-ink); }
-.gym-live-next { align-self: center; display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; padding: 4px 8px;
-  color: var(--color-brand); font: 700 13px/18px var(--font-body); cursor: pointer; }
+.gym-live-next { position: relative; align-self: center; display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 0;
+  color: var(--color-brand); font: 700 14px/20px var(--font-body); cursor: pointer; }
+.gym-live-next::before { content: ''; position: absolute; inset: -12px -8px; }
+.gym-live-next:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 4px; border-radius: 4px; }
 
-/* The rack (Gym / Workout / Rack): the load numeral is the field. */
+/* The rack (Gym / Workout / Rack): the load numeral is the field, one line of the numeral's leading tall, and focused it
+   wears the 2px brand box (WD4.2). A load too long for the rack's width at the numeral's size, with its unit beside it,
+   draws smaller on the same line, so five characters and kg total fit a phone. */
 .gym-live-rack { box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; padding: 20px 24px 24px; border-radius: var(--gym-card-radius); background: var(--gym-surface); }
-.gym-live-load { display: flex; align-items: baseline; justify-content: center; gap: 8px; min-width: 0; }
-.gym-live-load input { box-sizing: content-box; width: calc(var(--gym-load-chars, 2) * 0.62em); min-width: 0.62em; max-width: 100%; padding: 0; border: 0; border-radius: var(--radius-md);
-  background: transparent; color: var(--gym-ink); text-align: center; font: 500 var(--weight-size)/var(--weight-leading) var(--font-mono); font-variant-numeric: tabular-nums; }
-.gym-live-load input:focus { outline: none; background: var(--gym-raised); }
+.gym-live-load { container-type: inline-size; display: flex; align-items: baseline; justify-content: center; gap: 8px; min-width: 0; border-radius: var(--radius-md); }
+.gym-live-load:focus-within { box-shadow: inset 0 0 0 2px var(--color-brand); }
+.gym-live-load input { box-sizing: content-box; height: var(--weight-leading); width: calc(var(--gym-load-chars, 2) * 0.62em); min-width: 0.62em; max-width: 100%; padding: 0; border: 0;
+  background: transparent; color: var(--gym-ink); text-align: center; font-family: var(--font-mono); font-weight: 500; line-height: var(--weight-leading);
+  font-size: min(var(--weight-size), calc((100cqi - 80px) / (var(--gym-load-chars, 2) * 0.62))); font-variant-numeric: tabular-nums; }
+.gym-live-load input:focus { outline: none; }
+.gym-live-rack-waiting { margin: -4px 0 0; font: 400 13px/18px var(--font-body); color: var(--gym-ink-dim); text-align: center; }
 .gym-live-basis { flex: none; font: 400 14px/21px var(--font-body); color: var(--gym-ink-dim); }
 .gym-live-ladder { display: flex; gap: 8px; }
 .gym-live-ladder button { flex: 1; min-width: 0; height: 44px; border: 0; border-radius: var(--radius-md); background: var(--gym-raised); color: var(--gym-ink);
@@ -111,11 +123,8 @@
 .gym-live-reps input:focus { outline: none; background: var(--gym-raised); }
 .gym-live-ladder button:focus-visible, .gym-live-reps > button:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 
-/* A sheet over the workout on a phone: Fix set, and on a desk nothing else uses it. */
-.gym-live-sheet-catch { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; justify-content: flex-end; background: var(--gym-scrim); }
-.gym-live-sheet { box-sizing: border-box; width: min(560px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 16px; padding: 8px 16px 24px;
-  border-radius: 20px 20px 0 0; background: var(--gym-surface); }
-.gym-live-sheet::before { content: ''; display: block; width: 36px; height: 4px; margin: 0 auto; border-radius: 2px; background: var(--gym-line-strong); }
+/* The sheets a phone draws over the workout (the design system's Sheet): Fix set, This workout, the picker and Edit sets. */
+.gym-live-sheet-form { display: flex; flex-direction: column; gap: 16px; }
 .gym-live-sheet-head, .gym-live-edit-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .gym-live-sheet-head > button, .gym-live-edit-head > button { border: 0; background: transparent; color: var(--gym-ink-dim); font: 400 15px/22px var(--font-body); cursor: pointer; padding: 8px 0; }
 .gym-live-sheet-head > button.is-save, .gym-live-edit-head > .gym-live-edit-save { color: var(--color-brand); font-weight: 700; }
@@ -143,6 +152,7 @@
   color: var(--gym-ink); font: 400 15px/22px var(--font-body); cursor: pointer; }
 .gym-live-edit-drop { color: var(--alarm-ink); }
 .gym-live-band { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.gym-live-edit-head > .gym-live-edit-save:disabled { color: var(--gym-ink-faint); cursor: default; }
 .gym-live-band.is-edit { justify-content: space-between; }
 .gym-live-band-cancel { border: 0; background: transparent; color: var(--gym-ink-dim); font: 400 15px/22px var(--font-body); cursor: pointer; padding: 8px 0; }
 .gym-live-stale { padding: 16px; border: 1px solid var(--gym-line-strong); border-radius: var(--radius-lg); background: var(--gym-surface); display: flex; flex-direction: column; gap: 8px; }
@@ -165,26 +175,37 @@
 .gym-live-receipt-movements { list-style: none; margin: 0; padding: 8px 16px; border-radius: var(--gym-card-radius); background: var(--gym-surface); }
 .gym-live-receipt-movements li { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; font: 600 15px/22px var(--font-body); color: var(--gym-ink); }
 .gym-live-receipt-scheme { font: 400 13px/18px var(--font-mono); color: var(--gym-ink-faint); white-space: nowrap; }
-.gym-live-changes { padding: 12px 16px; border-radius: var(--gym-card-radius); background: var(--gym-surface); display: flex; flex-direction: column; gap: 8px; }
-.gym-live-changes h2 { margin: 0; font: 400 11px/16px var(--font-body); letter-spacing: 0.04em; text-transform: uppercase; color: var(--gym-ink-faint); }
-.gym-live-changes ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.gym-live-changes li { display: flex; justify-content: space-between; gap: 12px; font: 600 15px/22px var(--font-body); color: var(--gym-ink); }
-.gym-live-changes-save { padding-top: 10px; border-top: 1px solid var(--gym-line); font: 400 15px/22px var(--font-body); color: var(--gym-ink); }
+/* Plan changes (WD3.3): one flat row a change, what changed leading and its values trailing, then the switch row. */
+.gym-live-changes { padding: 16px; border-radius: var(--gym-card-radius); background: var(--gym-surface); display: flex; flex-direction: column; gap: 12px; }
+.gym-live-changes h2 { margin: 0; font: 600 12px/16px var(--font-body); color: var(--gym-ink-faint); }
+.gym-live-changes ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.gym-live-change { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.gym-live-change-what { min-width: 0; font: 600 15px/22px var(--font-body); color: var(--gym-ink); overflow-wrap: anywhere; }
+.gym-live-change-values { flex: none; display: inline-flex; align-items: center; gap: 8px; font: 400 13px/18px var(--font-mono); color: var(--gym-ink-faint); white-space: nowrap; }
+.gym-live-change-values s { text-decoration-thickness: 1px; }
+.gym-live-change-values .is-now { color: var(--color-brand); }
+.gym-live-change-values .is-word { font-family: var(--font-body); }
+.gym-live-changes-save { padding-top: 12px; border-top: 1px solid var(--gym-line); }
+/* The design system's Switch draws its knob before its words; here the words lead and the switch takes the trailing edge. */
+.gym-live-changes-save > label { display: flex !important; flex-direction: row-reverse; justify-content: space-between; width: 100%; }
+.gym-live-changes-save > label > span:last-child { font: 600 15px/22px var(--font-body) !important; color: var(--gym-ink) !important; }
 .gym-live-receipt-actions { display: flex; justify-content: flex-end; gap: 12px; }
 
-/* ── The open workout over the tab rail, on every gym page while its page is not shown (WD3.4, WD4.1) ── */
-.gym-live-bar { flex: none; box-sizing: border-box; align-self: center; display: inline-flex; align-items: center; gap: 8px; height: 48px; max-width: calc(100% - 32px);
-  margin: 0 auto 12px; padding: 0 16px; border: 1px solid var(--gym-line); border-radius: var(--radius-full); background: var(--gym-surface);
+/* ── The open workout over the tab rail, on every gym page while its page is not shown (WD3.4, WD4.1) ──
+   402 wide over a desk's rail and the column's 358 on a phone, where it stands over The log's foot band too. */
+.gym-live-bar { flex: none; box-sizing: border-box; align-self: center; display: flex; align-items: center; gap: 8px; height: 48px; width: min(402px, calc(100% - 32px));
+  margin: 0 auto 16px; padding: 0 16px; border: 1px solid var(--gym-line); border-radius: var(--radius-full); background: var(--gym-surface);
   color: var(--gym-ink); text-decoration: none; }
 .gym-live-bar > svg { flex: none; color: var(--color-brand); }
-.gym-live-bar-name { font: 600 15px/22px var(--font-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gym-live-bar-name { min-width: 0; font: 600 15px/22px var(--font-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 800px) {
+  .gym-live-bar { width: calc(100% - 32px); margin-bottom: 8px; }
+  .gym-room:has(.gym-log-screen:not(.has-session) .gym-log-footer) .gym-live-bar { margin-bottom: calc(var(--gym-log-footer-height) + 8px); }
+}
 .gym-live-bar-clock { flex: none; font: 400 16px/20px var(--font-mono); color: var(--gym-ink-dim); font-variant-numeric: tabular-nums; }
-.gym-live-bar:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 
 /* ── Routines: Start, Empty workout, In progress, and the room before its first pull (WD1.1, WD3.4, WD6, WD8.4) ── */
-.gym-root .gym-plan-home .gym-routine-start { position: absolute; right: 52px; top: 50%; transform: translateY(-50%); }
-.gym-root .gym-plan-home .gym-routine:has(.gym-routine-start) .gym-routine-open { padding-right: 88px; }
-.gym-root .gym-plan-home .gym-routine-in-progress { display: inline-flex; align-items: center; gap: 6px; color: var(--color-brand); }
+.gym-root .gym-plan-home .gym-routine-in-progress { display: inline-flex; align-items: center; gap: 6px; font: 400 13px/18px var(--font-body); color: var(--color-brand); white-space: nowrap; }
 .gym-root .gym-plan-home .gym-routine-in-progress::before { content: ''; width: 6px; height: 6px; border-radius: var(--radius-full); background: var(--color-brand); }
 .gym-root .gym-plan-home .gym-new-routine-wide:has(button) { display: inline-flex; align-items: center; gap: 12px; }
 @media (max-width: 799px) {
@@ -218,21 +239,20 @@
   .gym-live-started { font-size: 12px; line-height: 16px; }
   .gym-live-tool.is-pop-out { display: none; }
   .gym-live-split { display: block; }
-  .gym-live-index { display: none; }
-  .gym-live-index.is-open { display: flex; flex-direction: column; justify-content: flex-end; position: fixed; inset: 0; z-index: 60; background: var(--gym-scrim); }
-  .gym-live-index.is-open > .gym-live-index-card { max-height: 88dvh; overflow: auto; padding: 8px 16px 24px; border-radius: 20px 20px 0 0; background: var(--gym-surface); }
-  .gym-live-index.is-open > .gym-live-index-card::before { content: ''; display: block; width: 36px; height: 4px; margin: 0 auto 8px; border-radius: 2px; background: var(--gym-line-strong); }
   .gym-live-step { visibility: hidden; }
   .gym-live-rack { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; padding: 20px 16px calc(24px + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid var(--gym-line); border-radius: var(--gym-card-radius) var(--gym-card-radius) 0 0; }
   .gym-room:has(.gym-live-rack) .gym-tabs { display: none; }
-  .gym-live-panel { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; justify-content: flex-end; background: var(--gym-scrim); }
-  .gym-live-panel > * { box-sizing: border-box; max-height: 88dvh; overflow: auto; padding: 8px 16px 24px; border-radius: 20px 20px 0 0; background: var(--gym-surface); }
-  .gym-root .gym-live-panel > .gym-picker.is-pane { padding: 8px 16px 24px; background: var(--gym-surface); }
+  .gym-root .gym-live-panel-sheet > .gym-picker.is-pane { padding-bottom: 0; }
   .gym-live-edit-head > button { display: inline-block; }
   .gym-live-edit-title { align-items: center; text-align: center; }
   .gym-live-band.is-edit { display: none; }
-  .gym-live-receipt { padding-bottom: 140px; }
-  .gym-live-receipt-actions { position: fixed; left: 16px; right: 16px; bottom: calc(var(--gym-bottom-panel-height) + 12px); flex-direction: column-reverse; }
+  .gym-live-band > * { flex: 1; }
+  /* The receipt keeps the reach band for its actions, and no tab rail under them (WD3.3). */
+  .gym-root .gym-column:has(> .gym-live-receipt) { padding-top: 16px; }
+  .gym-room:has(.gym-live-receipt-actions) .gym-tabs { display: none; }
+  .gym-live-receipt { padding-bottom: 104px; }
+  .gym-live-receipt-actions { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    flex-direction: column-reverse; background: var(--gym-canvas); }
   .gym-live-receipt-actions > * { width: 100%; }
 }

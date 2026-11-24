@@ -48,7 +48,7 @@ const SCOPE = 'self/gym';
 const OPERATIONS = new Set(['routine-create', 'routine-save', 'exercise-create', 'exercise-rename',
   'preferences-save', 'note-save', 'note-reorder', 'bodyweight-save', 'set-correct', 'delete', 'undo',
   'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'workout-adopt', 'workout-recover', 'refusal',
-  'workout-start', 'rack-settle', 'rack-turn', 'set-log', 'plan-revise', 'workout-finish']);
+  'workout-start', 'rack-settle', 'rack-turn', 'set-log', 'plan-revise', 'workout-finish', 'pop-out']);
 const OUTCOMES = new Set(['saved-local', 'unchanged', 'failed', 'held', 'undone', 'closed', 'refused']);
 // What refused a write: the replica moved under the room, or the gym's rules, this device's or the server's.
 const REFUSED_BY = new Set(['not-writable', 'domain']);
@@ -91,7 +91,8 @@ const WORKOUT_LABELS = Object.freeze({
   field: ['weight', 'reps'],
 });
 const WORKOUT_STEPS = new Set(['gym_session_started', 'gym_set_logged', 'gym_session_finished', 'gym_workout_plan_changed',
-  'gym_workout_adjusted', 'gym_rest_target_reached', 'gym_hidden_workout', 'gym_receipt_plan_saved']);
+  'gym_workout_adjusted', 'gym_workout_movement_chosen', 'gym_rest_target_reached', 'gym_hidden_workout', 'gym_workout_popped_out',
+  'gym_receipt_plan_saved']);
 export function workoutStep(name, props) {
   if (!WORKOUT_STEPS.has(name) || Object.entries(props).some(([key, value]) => !WORKOUT_LABELS[key]?.includes(value))) return;
   try { track(name, props); } catch { /* reporting cannot stop a workout */ }
@@ -717,8 +718,9 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
     }),
     deleteBodyweight: (date) => remove(DeleteWeighIn(new Id(date, WeighIn))),
     // A workout on this browser's copy (web-device-parity §4): the domain's actions, each one write; the clock the log
-    // stamps with, this device's corrected by the server's offset.
+    // stamps with, this device's corrected by the server's offset; and whether this tab leads the browser's tabs.
     now: () => port.physNow(),
+    leads: () => engine.leader === true,
     startWorkout: ({ routineId = null } = {}) => workoutWrite('workout-start',
       { step: 'gym_session_started', labels: [{ screen: 'workout', door: routineId === null ? 'empty' : 'routine' }] }, async () => {
         const id = runner.mint(Session);
@@ -729,13 +731,15 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
       await ran(SettleRack(new Id(sessionId, Session)));
       return { happened: false, result: null };
     }),
-    // `change` is `{ movement }` or `{ adding }` (an exercise id), or the `{ weightKg }` or `{ reps }` the lifter set.
+    // `change` is `{ movement }` or `{ adding }` (an exercise id); the `{ weightKg }` or `{ reps }` the lifter set; or a
+    // step from what the rack holds, `{ stepLoad: { direction, big } }` or `{ stepReps: direction }`.
     turnRack: (sessionId, change) => {
-      const field = 'weightKg' in change ? 'weight' : 'reps' in change ? 'reps' : null;
+      const field = 'weightKg' in change || 'stepLoad' in change ? 'weight' : 'reps' in change || 'stepReps' in change ? 'reps' : null;
       const domainChange = 'movement' in change ? { movement: new Id(change.movement, Exercise) }
         : 'adding' in change ? { adding: new Id(change.adding, Exercise) } : change;
       const step = field ? { step: 'gym_workout_adjusted', labels: [{ screen: 'workout', field }] }
-        : 'adding' in change ? { step: 'gym_workout_plan_changed', labels: [{ action: 'add_movement', door: 'workout' }] } : {};
+        : 'adding' in change ? { step: 'gym_workout_plan_changed', labels: [{ action: 'add_movement', door: 'workout' }] }
+          : { step: 'gym_workout_movement_chosen', labels: [{ screen: 'workout' }] };
       return workoutWrite('rack-turn', step, async () => {
         const outcome = await ran(TurnRack(new Id(sessionId, Session), domainChange));
         return { happened: outcome.kind === 'committed', result: null };

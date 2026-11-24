@@ -162,6 +162,51 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 10px;
+  white-space: nowrap;
+}
+.wm-menu-open:focus-visible,
+.wm-menu-item:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* The bottom sheet (design-system/feedback/Sheet.jsx): a modal dialog in the top layer, pinned to the foot of the
+   viewport, its body the sheet's column under the grabber and its scrim the backdrop. */
+.wm-sheet {
+  box-sizing: border-box;
+  width: min(560px, 100%);
+  max-width: 100%;
+  max-height: 88dvh;
+  margin: auto auto 0;
+  padding: 0;
+  border: 0;
+  border-radius: 20px 20px 0 0;
+  background: var(--surface-card);
+  color: var(--text-primary);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.wm-sheet::backdrop {
+  background: var(--surface-overlay);
+}
+.wm-sheet:focus-visible {
+  outline: none;
+}
+.wm-sheet-body {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+}
+.wm-sheet-grabber {
+  flex: none;
+  align-self: center;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-default);
 }
 .wm-menu-item > svg {
   flex: none;

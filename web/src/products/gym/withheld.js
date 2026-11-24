@@ -6,7 +6,6 @@ import { WEIGH_IN_DELETED } from './bodyweight/bodyweight.js';
 import { deletedLine } from './fix.js';
 import { t } from './i18n/index.js';
 import { NOTE_DELETED } from './notes/notes.js';
-import { SESSION_DELETED } from './review.js';
 import { routineDeletedLine } from './routines.js';
 
 export const WITHHELD_KINDS = ['set', 'routine', 'session', 'thread', 'entry', 'note', 'bodyweight', 'copy'];
@@ -49,7 +48,9 @@ export function heldLine(open) {
   return countLine(open.length);
 }
 
-// An engine-held delete named from the store, which keeps the record until the delete is released.
+// An engine-held delete named from the store, which keeps the record until the delete is released. A discarded workout is
+// counted, as the room's other deletes are once there is more than one (WD3.5): no confirmation stands before it, and the
+// transient's Undo is the way back.
 export function deleteLineOf(kind, id, projection) {
   if (kind === 'set') {
     const set = projection.set(id);
@@ -59,7 +60,7 @@ export function deleteLineOf(kind, id, projection) {
     const routine = projection.routines().find((each) => each.id === id);
     return routine ? routineDeletedLine(routine.name) : countLine(1);
   }
-  return { session: SESSION_DELETED, note: NOTE_DELETED, bodyweight: WEIGH_IN_DELETED }[kind];
+  return { session: countLine(1), note: NOTE_DELETED, bodyweight: WEIGH_IN_DELETED }[kind];
 }
 
 // What the act does NOT take with it, said at the moment of the act rather than standing on the

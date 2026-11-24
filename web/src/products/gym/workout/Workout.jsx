@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeftRight as SwapIcon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock3, Dumbbell, List, Minus, Pencil, Plus, Timer,
 } from 'lucide-react';
-import { Button, Menu } from '../../../design-system/index.js';
+import { Button, Menu, Sheet } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
 import { WeightLadder } from '../domain/units.js';
 import { failureReason } from '../errors.js';
@@ -92,6 +92,56 @@ function playTone() {
   } catch { /* a page that cannot sound stays quiet */ }
 }
 
+// The rows a tab draws are written once as the workout stands, and a second tab finds them settled. A settle that fails
+// (the runtime reports it) is tried again after 1, 2, 4, 8 and 16 s and then every 30 s, and at once whenever the workout
+// moves; true while one has failed and the rows still wait, so Log set can say why it is held.
+const SETTLE_RETRY_CAP_MS = 30_000;
+function useSettledRack(api, ready, view) {
+  const key = view ? `${view.id}:${view.latestSetId}:${view.movements.length}` : null;
+  const due = ready && view !== null && !view.settled;
+  const [failed, setFailed] = useState({ key: null, times: 0 });
+  const running = useRef(false);
+  const times = failed.key === key ? failed.times : 0;
+  const sessionId = view?.id ?? null;
+  useEffect(() => {
+    if (!due || running.current) return undefined;
+    const timer = setTimeout(() => {
+      running.current = true;
+      api.settleRack(sessionId)
+        .then(() => setFailed({ key: null, times: 0 }))
+        .catch(() => setFailed({ key, times: times + 1 }))
+        .finally(() => { running.current = false; });
+    }, times === 0 ? 0 : Math.min(SETTLE_RETRY_CAP_MS, 1000 * 2 ** (times - 1)));
+    return () => clearTimeout(timer);
+  }, [api, due, key, times, sessionId, view]);
+  return due && times > 0;
+}
+
+// The rest reached, once per rest (iOS 03.21): the tab the sync engine leads from, drawing the workout, tells it and sounds
+// the tone at the instant the rest comes to its target. A browser has one leading tab at a time, and the engine hands the
+// lead to a tab on screen whenever one is, so two tabs tell it once and a browser whose tabs are all hidden still tells it,
+// as late as the browser slows a hidden tab's timers. A rest that came to its target before this tab drew it is not told.
+function useRestTold(api, view) {
+  const due = view && view.restSeconds !== null && view.lastSetAt !== null ? view.lastSetAt + view.restSeconds * 1000 : null;
+  const setId = view?.latestSetId ?? null;
+  const told = useRef(null);
+  const alerts = useRef({ sound: false, haptic: false });
+  alerts.current = { sound: Boolean(view?.sound), haptic: Boolean(view?.haptic) };
+  useEffect(() => {
+    if (!api || due === null || told.current === setId) return undefined;
+    const wait = due - api.now();
+    if (wait <= 0) return undefined;
+    const timer = setTimeout(() => {
+      if (!api.leads()) return;
+      told.current = setId;
+      workoutStep('gym_rest_target_reached', { screen: 'workout' });
+      if (alerts.current.sound) playTone();
+      if (alerts.current.haptic) navigator.vibrate?.(10);
+    }, wait);
+    return () => clearTimeout(timer);
+  }, [api, due, setId]);
+}
+
 function OpenWorkout({ log }) {
   const api = useGymApi();
   const narrow = useNarrow();
@@ -102,21 +152,9 @@ function OpenWorkout({ log }) {
   const [index, setIndex] = useState(false);
   const [firstClosed, setFirstClosed] = useState(false);
   const leaving = useRef(false);
-  const settling = useRef({ running: false, failedFor: null });
-  const rest = useRef({ restingFor: null, reachedFor: null });
   const ready = Boolean(api?.ready) && read.phase === 'ready';
-
-  // The rows a tab draws are written once as the workout stands; a second tab finds them settled. A settle that failed is
-  // tried again only once the workout moves.
-  const settleKey = view ? `${view.id}:${view.latestSetId}:${view.movements.length}` : null;
-  useEffect(() => {
-    if (!ready || !view || view.settled || settling.current.running || settling.current.failedFor === settleKey) return;
-    settling.current.running = true;
-    api.settleRack(view.id)
-      .then(() => { settling.current.failedFor = null; })
-      .catch(() => { settling.current.failedFor = settleKey; })
-      .finally(() => { settling.current.running = false; });
-  }, [api, ready, view, settleKey]);
+  const rackWaiting = useSettledRack(api, ready, view);
+  useRestTold(api, view);
 
   // Leaving the page with the workout still open hides it: it keeps running, and the bar over the rail brings it back.
   const open = Boolean(view);
@@ -127,16 +165,6 @@ function OpenWorkout({ log }) {
   }, []);
 
   const clocks = view ? clocksAt(view, now) : null;
-  // The rest reached once per rest, as the clock crosses its target with the workout on screen (iOS 03.21).
-  useEffect(() => {
-    if (!view || !clocks || view.latestSetId === null) return;
-    if (!clocks.reached) { rest.current.restingFor = view.latestSetId; return; }
-    if (rest.current.restingFor !== view.latestSetId || rest.current.reachedFor === view.latestSetId) return;
-    rest.current.reachedFor = view.latestSetId;
-    workoutStep('gym_rest_target_reached', { screen: 'workout' });
-    if (view.sound) playTone();
-    if (view.haptic) navigator.vibrate?.(10);
-  }, [view, clocks?.reached]);
 
   const select = useCallback(async (exerciseId) => {
     if (!view || exerciseId === view.movement?.exerciseId) return;
@@ -152,14 +180,14 @@ function OpenWorkout({ log }) {
 
   useEffect(() => {
     const keyed = (event) => {
-      if (panel || event.defaultPrevented || event.altKey || event.metaKey || event.ctrlKey) return;
-      if (event.target instanceof Element && event.target.closest('input, textarea, select, [role="menu"], [role="dialog"]')) return;
+      if (panel || index || event.defaultPrevented || event.altKey || event.metaKey || event.ctrlKey) return;
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, dialog, [role="menu"], [role="dialog"]')) return;
       if (event.key === 'ArrowLeft') step(-1);
       if (event.key === 'ArrowRight') step(1);
     };
     window.addEventListener('keydown', keyed);
     return () => window.removeEventListener('keydown', keyed);
-  }, [panel, step]);
+  }, [panel, index, step]);
 
   if (!ready) return <p className="gym-quiet">{t('gym.workout.opening')}</p>;
   if (!view) {
@@ -201,7 +229,46 @@ function OpenWorkout({ log }) {
   const movementName = (exerciseId) => nameOfMovement(log.catalog, exerciseId);
   // An empty workout asks for its first movement (WD1.3); closed, it stays open and empty, Add movement its way on.
   const picking = panel?.kind === 'add' || panel?.kind === 'swap' || (view.movements.length === 0 && panel === null && !firstClosed);
+  const pickerTitle = panel?.kind === 'swap' ? t('gym.workout.swapTitle', { movement: movementName(panel.exerciseId) }) : t('gym.workout.addMovement');
   const close = () => { setPanel(null); setFirstClosed(true); };
+  // The movements and Add movement: the index beside the pane on a desk, a sheet on a phone.
+  const movementIndex = (
+    <div className="gym-live-index-card">
+      <p className="gym-live-tab"><span>{t('gym.workout.thisWorkout')}</span></p>
+      <ul className="gym-live-movements">
+        {view.movements.map((movement) => (
+          <li key={movement.exerciseId}>
+            <button type="button" className={`gym-live-movement${movement.inHand ? ' is-current' : ''}`}
+              aria-current={movement.inHand ? 'true' : undefined}
+              onClick={() => { setIndex(false); setPanel(null); select(movement.exerciseId); }}>
+              <span className="gym-live-movement-words">
+                <span className="gym-live-movement-name">{movementName(movement.exerciseId)}</span>
+                {movement.entry && <span className="gym-live-movement-scheme">{entryLabel(movement.entry)}</span>}
+              </span>
+              <SetRail ticks={movement.ticks} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button type="button" className="gym-live-add" onClick={() => { setIndex(false); setPanel({ kind: 'add' }); }}>
+        <Plus size={16} aria-hidden="true" /> {t('gym.workout.addMovement')}
+      </button>
+    </div>
+  );
+  // The picker, or Edit sets: in the task pane on a desk, a sheet on a phone.
+  const panelBody = (
+    <>
+      {picking && (
+        <PickerPanel log={log} title={pickerTitle} taken={view.movements.map((movement) => movement.exerciseId)}
+          onPick={panel?.kind === 'swap' ? swap : add} onClose={close} />
+      )}
+      {panel?.kind === 'edit' && (
+        <EditSets key={panel.exerciseId} view={view} exerciseId={panel.exerciseId} log={log} movementName={movementName}
+          onRevise={revise} onSwap={(edits, base) => setPanel({ kind: 'swap', exerciseId: panel.exerciseId, edits, base })}
+          onClose={() => setPanel(null)} />
+      )}
+    </>
+  );
   // Pop out's Log set: the set the rack offers, as the rack would log it.
   const logOffered = async () => {
     if (!view.offer || !view.rack) return;
@@ -231,49 +298,17 @@ function OpenWorkout({ log }) {
         </span>
       </header>
       <div className="gym-live-split">
-        <nav className={`gym-live-index${index ? ' is-open' : ''}`} aria-label={t('gym.workout.thisWorkout')}
-          onClick={(event) => { if (event.target === event.currentTarget) setIndex(false); }}>
-          <div className="gym-live-index-card">
-            <p className="gym-live-tab"><span>{t('gym.workout.thisWorkout')}</span></p>
-            <ul className="gym-live-movements">
-              {view.movements.map((movement) => (
-                <li key={movement.exerciseId}>
-                  <button type="button" className={`gym-live-movement${movement.inHand ? ' is-current' : ''}`}
-                    aria-current={movement.inHand ? 'true' : undefined}
-                    onClick={() => { setIndex(false); setPanel(null); select(movement.exerciseId); }}>
-                    <span className="gym-live-movement-words">
-                      <span className="gym-live-movement-name">{movementName(movement.exerciseId)}</span>
-                      {movement.entry && <span className="gym-live-movement-scheme">{entryLabel(movement.entry)}</span>}
-                    </span>
-                    <SetRail ticks={movement.ticks} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <button type="button" className="gym-live-add" onClick={() => { setIndex(false); setPanel({ kind: 'add' }); }}>
-              <Plus size={16} aria-hidden="true" /> {t('gym.workout.addMovement')}
-            </button>
-          </div>
-        </nav>
+        {narrow ? index && (
+          <Sheet label={t('gym.workout.thisWorkout')} onClose={() => setIndex(false)}>{movementIndex}</Sheet>
+        ) : <nav className="gym-live-index" aria-label={t('gym.workout.thisWorkout')}>{movementIndex}</nav>}
         <div className="gym-live-pane">
           {view.movement && (
             <InHand view={view} clocks={clocks} log={log} api={api} movementName={movementName} onStep={step} onSelect={select}
-              onPanel={setPanel} />
+              onPanel={setPanel} waiting={rackWaiting} />
           )}
-          {(panel || picking) && (
-            <div className="gym-live-panel" onClick={(event) => { if (event.target === event.currentTarget) close(); }}>
-              {picking && (
-                <PickerPanel log={log} title={panel?.kind === 'swap' ? t('gym.workout.swapTitle', { movement: movementName(panel.exerciseId) }) : t('gym.workout.addMovement')}
-                  taken={view.movements.map((movement) => movement.exerciseId)}
-                  onPick={panel?.kind === 'swap' ? swap : add} onClose={close} />
-              )}
-              {panel?.kind === 'edit' && (
-                <EditSets key={panel.exerciseId} view={view} exerciseId={panel.exerciseId} log={log} movementName={movementName}
-                  onRevise={revise} onSwap={(edits, base) => setPanel({ kind: 'swap', exerciseId: panel.exerciseId, edits, base })}
-                  onClose={() => setPanel(null)} />
-              )}
-            </div>
-          )}
+          {(panel || picking) && (narrow
+            ? <Sheet label={panel?.kind === 'edit' ? t('gym.workout.editSets') : pickerTitle} onClose={close} className="gym-live-panel-sheet">{panelBody}</Sheet>
+            : <div className="gym-live-panel">{panelBody}</div>)}
         </div>
       </div>
     </section>
@@ -293,7 +328,7 @@ function SetRail({ ticks }) {
 }
 
 // The movement in hand: its head, which is its menu, the clocks, its ledger and the rack.
-function InHand({ view, clocks, log, api, movementName, onStep, onSelect, onPanel }) {
+function InHand({ view, clocks, log, api, movementName, onStep, onSelect, onPanel, waiting }) {
   const movement = view.movement;
   const name = movementName(movement.exerciseId);
   const at = view.movements.indexOf(movement);
@@ -340,10 +375,10 @@ function InHand({ view, clocks, log, api, movementName, onStep, onSelect, onPane
       <Ledger view={view} log={log} api={api} name={name} swiped={swiped} />
       {view.next && (
         <button type="button" className="gym-live-next" onClick={() => onSelect(view.next.exerciseId)}>
-          {t('gym.workout.next', { movement: movementName(view.next.exerciseId) })} <ChevronRight size={14} aria-hidden="true" />
+          {t('gym.workout.next', { movement: movementName(view.next.exerciseId) })} <ChevronRight size={16} aria-hidden="true" />
         </button>
       )}
-      <Rack view={view} log={log} api={api} exercise={movementOf(log.catalog, movement.exerciseId)} />
+      <Rack view={view} log={log} api={api} exercise={movementOf(log.catalog, movement.exerciseId)} waiting={waiting} />
     </div>
   );
 }
@@ -479,6 +514,11 @@ function FixSheet({ set, name, ordinal, exercise, onSave, onDelete, onClose }) {
   const [reps, setReps] = useState(set.reps);
   const [typedReps, setTypedReps] = useState(null);
   const [refusal, setRefusal] = useState(null);
+  const stepReps = (by) => {
+    const from = typedReps === null ? reps : countOf(typedReps) ?? reps;
+    setTypedReps(null);
+    setReps(WeightLadder.bumpReps(from, by));
+  };
   const save = async (event) => {
     event.preventDefault();
     const weightKg = typedNumber(load);
@@ -489,9 +529,8 @@ function FixSheet({ set, name, ordinal, exercise, onSave, onDelete, onClose }) {
     onClose();
   };
   return (
-    <div className="gym-live-sheet-catch" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <form className="gym-live-sheet" role="dialog" aria-modal="true" aria-label={t('gym.workout.fixTitle')} onSubmit={save}
-        onKeyDown={(event) => { if (event.key === 'Escape') onClose(); }}>
+    <Sheet label={t('gym.workout.fixTitle')} onClose={onClose} className="gym-live-sheet">
+      <form className="gym-live-sheet-form" onSubmit={save}>
         <header className="gym-live-sheet-head">
           <button type="button" onClick={onClose}>{t('gym.common.cancel')}</button>
           <span><strong>{t('gym.workout.fixTitle')}</strong><small>{t('gym.workout.fixSubtitle', { ordinal, movement: name })}</small></span>
@@ -502,11 +541,11 @@ function FixSheet({ set, name, ordinal, exercise, onSave, onDelete, onClose }) {
             aria-label={t('gym.workout.loadIn', { basis: loadBasisLabel(exercise, set.weightKg, KG) })} onFocus={(event) => event.currentTarget.select()} />
           <span aria-hidden="true">{loadBasisLabel(exercise, set.weightKg, KG)}</span>
         </label>
-        <RepsStepper reps={reps} typed={typedReps} onType={setTypedReps} onReps={setReps} />
+        <RepsStepper reps={reps} typed={typedReps} onType={setTypedReps} onReps={setReps} onStep={stepReps} />
         {refusal && <p className="gym-live-refusal" role="alert">{refusal}</p>}
         <button type="button" className="gym-live-sheet-delete" onClick={() => onDelete(set)}>{t('gym.workout.deleteSet')}</button>
       </form>
-    </div>
+    </Sheet>
   );
 }
 
@@ -515,8 +554,8 @@ const countOf = (text) => {
   return count !== null && Number.isInteger(count) && count >= 1 ? count : null;
 };
 
-// The reps stepper: − and + change the count at once; what is typed stays the field's until it lets go.
-function RepsStepper({ reps, typed, onType, onReps, onKeyDown }) {
+// The reps stepper: − and + step the count at once (`onStep`); what is typed stays the field's until it lets go.
+function RepsStepper({ reps, typed, onType, onReps, onStep, onKeyDown }) {
   const shown = typed ?? String(reps);
   const land = () => {
     if (typed === null) return;
@@ -524,10 +563,9 @@ function RepsStepper({ reps, typed, onType, onReps, onKeyDown }) {
     onType(null);
     if (count !== null && count !== reps) onReps(count);
   };
-  const bump = (by) => { onType(null); onReps(WeightLadder.bumpReps(countOf(shown) ?? reps, by)); };
   return (
     <span className="gym-live-reps">
-      <button type="button" aria-label={t('gym.workout.fewerReps')} onMouseDown={(event) => event.preventDefault()} onClick={() => bump(-1)}>
+      <button type="button" aria-label={t('gym.workout.fewerReps')} onMouseDown={(event) => event.preventDefault()} onClick={() => onStep(-1)}>
         <Minus size={18} aria-hidden="true" />
       </button>
       <label>
@@ -535,7 +573,7 @@ function RepsStepper({ reps, typed, onType, onReps, onKeyDown }) {
           onChange={(event) => onType(event.target.value)} onBlur={land} />
         <span aria-hidden="true">{t('gym.workout.repsUnit', { count: countOf(shown) ?? reps })}</span>
       </label>
-      <button type="button" aria-label={t('gym.workout.moreReps')} onMouseDown={(event) => event.preventDefault()} onClick={() => bump(1)}>
+      <button type="button" aria-label={t('gym.workout.moreReps')} onMouseDown={(event) => event.preventDefault()} onClick={() => onStep(1)}>
         <Plus size={18} aria-hidden="true" />
       </button>
     </span>
@@ -545,8 +583,11 @@ function RepsStepper({ reps, typed, onType, onReps, onKeyDown }) {
 // The rack (Gym / Workout / Rack): a form whose submit is Log set. The load numeral is the field; what is typed stays the
 // field's until it lets go, so a set landing from elsewhere never changes it under the lifter's fingers, and Log set logs
 // what the field shows: pressing Log set keeps the field's focus, so what it holds is logged rather than first written to
-// the rack. The ladder and the stepper change the rack's row at once, and every tab draws it.
-function Rack({ view, log, api, exercise }) {
+// the rack. Enter, a phone keyboard's done key, lands what a field holds and lets it go without logging (iOS 03.23D.4):
+// only Log set logs. The ladder and the stepper step the rack's row at once, every tab drawing it: from what is typed
+// while something is, and otherwise from the row as it stands when the step is written, so two tabs stepping together
+// both count. `waiting` says Log set is held while the rows this tab drew could not be written.
+function Rack({ view, log, api, exercise, waiting }) {
   const [typed, setTyped] = useState(null);
   const [typedReps, setTypedReps] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -557,16 +598,32 @@ function Rack({ view, log, api, exercise }) {
     try { await api.turnRack(view.id, change); }
     catch (error) { log.say(error.sentence ?? t('gym.workout.rackUnchanged', { reason: failureReason(error) })); }
   };
+  // What was typed stays drawn until the rack holds it, so the field never shows the old load in between.
   const land = () => {
     if (typed === null) return;
     const weightKg = typedNumber(typed);
-    setTyped(null);
-    if (weightKg !== null && weightKg !== rack.weightKg) turn({ weightKg });
+    if (weightKg === null || weightKg === rack.weightKg) { setTyped(null); return; }
+    turn({ weightKg }).finally(() => setTyped(null));
   };
-  const stepped = (event, by) => {
+  const stepLoad = (direction, big = false) => {
+    const from = typed === null ? null : typedNumber(typed);
+    setTyped(null);
+    turn(from === null ? { stepLoad: { direction, big } } : { weightKg: WeightLadder.bump(from, direction, big) });
+  };
+  const stepReps = (direction) => {
+    const from = typedReps === null ? null : countOf(typedReps);
+    setTypedReps(null);
+    turn(from === null ? { stepReps: direction } : { reps: WeightLadder.bumpReps(from, direction) });
+  };
+  const keyed = (event, step) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.currentTarget.blur();
+      return;
+    }
     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
     event.preventDefault();
-    by(event.key === 'ArrowUp' ? 1 : -1);
+    step(event.key === 'ArrowUp' ? 1 : -1);
   };
   const logSet = async (event) => {
     event.preventDefault();
@@ -594,22 +651,22 @@ function Rack({ view, log, api, exercise }) {
       <label className="gym-live-load">
         <input inputMode="decimal" enterKeyHint="done" value={shown} aria-label={t('gym.workout.loadIn', { basis })}
           style={{ '--gym-load-chars': Math.max(1, shown.length) }}
-          onFocus={(event) => { const input = event.currentTarget; window.requestAnimationFrame?.(() => input.select()); }}
-          onChange={(event) => setTyped(event.target.value)} onBlur={land}
-          onKeyDown={(event) => stepped(event, (by) => { setTyped(null); turn({ weightKg: WeightLadder.bump(typedNumber(shown) ?? rack.weightKg, by) }); })} />
+          onFocus={(event) => { const input = event.currentTarget; window.requestAnimationFrame?.(() => { if (document.activeElement === input) input.select(); }); }}
+          onChange={(event) => setTyped(event.target.value)} onBlur={land} onKeyDown={(event) => keyed(event, stepLoad)} />
         <span className="gym-live-basis" aria-hidden="true">{basis}</span>
       </label>
       <span className="gym-live-ladder">
         {WeightLadder.labels(rack.weightKg).map((label, at) => (
           <button key={at} type="button" aria-label={t('gym.workout.stepLoad', { step: label, basis })} onMouseDown={(event) => event.preventDefault()}
-            onClick={() => { setTyped(null); turn({ weightKg: WeightLadder.bump(typedNumber(shown) ?? rack.weightKg, at < 2 ? -1 : 1, at === 0 || at === 3) }); }}>
+            onClick={() => stepLoad(at < 2 ? -1 : 1, at === 0 || at === 3)}>
             {label}
           </button>
         ))}
       </span>
-      <RepsStepper reps={rack.reps} typed={typedReps} onType={setTypedReps} onReps={(reps) => turn({ reps })}
-        onKeyDown={(event) => stepped(event, (by) => { setTypedReps(null); turn({ reps: WeightLadder.bumpReps(countOf(typedReps ?? '') ?? rack.reps, by) }); })} />
+      <RepsStepper reps={rack.reps} typed={typedReps} onType={setTypedReps} onReps={(reps) => turn({ reps })} onStep={stepReps}
+        onKeyDown={(event) => keyed(event, stepReps)} />
       <Button type="submit" size="lg" full held={!view.offer || busy} ariaBusy={busy}>{t('gym.workout.logSet')}</Button>
+      {waiting && <p className="gym-live-rack-waiting" role="status">{t('gym.workout.rackWaiting')}</p>}
     </form>
   );
 }

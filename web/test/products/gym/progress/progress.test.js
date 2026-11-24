@@ -103,7 +103,7 @@ test('public kilogram facts do not inherit or mutate an owner pound preference',
     assert.deepEqual({ point: owner.points[0].value, heaviest: owner.heaviestLine }, { point: 231.5, heaviest: 'heaviest 198.4 × 5 · 25 Sep' });
     assert.deepEqual({ point: shared.points[0].value, label: shared.points[0].label, heaviest: shared.heaviestLine, best: shared.bestLine }, { point: 105, label: '105 kg est · 25 Sep · 90 × 5', heaviest: 'heaviest 90 × 5 · 25 Sep', best: 'best e1RM 105 · 25 Sep' });
     assert.equal(tonnageLabel(2000, 'kg'), '2,000');
-    assert.equal(historyTotals({ sessions: 1, sets: 1, reps: 5 }, 'kg'), '1 workout · 1 sets · 5 reps · loads in kg');
+    assert.equal(historyTotals({ sessions: 1, sets: 1, reps: 5 }, 'kg'), '1 workout · 1 set · 5 reps · loads in kg');
     assert.equal(weightUnit(), 'lb');
   } finally { spellWeightsIn('kg'); }
 });

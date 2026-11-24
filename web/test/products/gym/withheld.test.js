@@ -133,5 +133,5 @@ test('an engine-held delete is named from the store, and one the store no longer
     deleteLineOf('bodyweight', '2026-10-06', projection),
     deleteLineOf('set', 'set_gone', projection),
     deleteLineOf('routine', 'routine_gone', projection),
-  ], ['100 × 5 is out of the log.', 'Push A deleted.', 'Session deleted.', 'Note deleted.', 'Weigh-in deleted.', '1 deleted.', '1 deleted.']);
+  ], ['100 × 5 is out of the log.', 'Push A deleted.', '1 deleted.', 'Note deleted.', 'Weigh-in deleted.', '1 deleted.', '1 deleted.']);
 });

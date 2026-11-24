@@ -248,16 +248,20 @@ properties are each one of a closed set of labels and never a name or an id of a
 any load, rep or duration: `gym_session_started` (`screen: workout`, `door`: `routine` or `empty`), `gym_set_logged`
 (`screen: workout`; a second tap on an offer another tab already logged tells nothing), `gym_session_finished` (`screen:
 workout`), `gym_workout_plan_changed` (one per kind of edit a save makes, `action`: `retarget`, `add_set`, `remove_set`,
-`swap`, `add_movement`, `remove_movement` or `rest`, and `door: workout`) and `gym_workout_adjusted` (`screen: workout`,
-`field`: `weight` or `reps`), each with `outcome` `ok`, `refused` with `code` (`not-writable` or `domain`) and, for a plan
-another tab or device changed first, `reason: stale`, or `failed`. The page tells `gym_rest_target_reached` (`screen:
-workout`) once per rest as the clock crosses its target with the workout on screen, `gym_hidden_workout` (`action:
-hide` as the page is left with the workout open, `action: open` with `door: bar` from the bar over the tab rail) and the
-receipt `gym_receipt_plan_saved` (`outcome`) when Done saves the plan's changes to the routine. An unexpected failure of a
-workout's write reports to Sentry under a static `gym-workout-start`, `gym-rack-settle`, `gym-rack-turn`, `gym-set-log`,
-`gym-plan-revise` or `gym-workout-finish` with the error's stack frames; a refusal and a store failure report none, as
-above. A set's correction and a finished workout's discard keep their `gym_action` (`set-correct`, `delete`). Nothing the
-tab's title, favicon or pop-out window shows is reported.
+`swap`, `add_movement`, `remove_movement` or `rest`, and `door: workout`), `gym_workout_adjusted` (`screen: workout`,
+`field`: `weight` or `reps`, for a load or a count typed or stepped) and `gym_workout_movement_chosen` (`screen: workout`, the
+movement in hand changed from the index, the arrows, the dots, a swipe or Next), each with `outcome` `ok`, `refused` with
+`code` (`not-writable` or `domain`) and, for a plan another tab or device changed first, `reason: stale`, or `failed`. The
+page tells `gym_rest_target_reached` (`screen: workout`) once per rest, from the tab the sync engine leads from (a tab on
+screen whenever one is) when it draws the workout, as the rest comes to its target; `gym_hidden_workout` (`action: hide` as the page is left with the
+workout open, `action: open` with `door: bar` from the bar over the tab rail); `gym_workout_popped_out` (`screen: workout`,
+`outcome` `ok` or `failed`) as Pop out opens its window or the browser refuses it; and the receipt's
+`gym_receipt_plan_saved` (`outcome`) when Done saves the plan's changes to the routine. An unexpected failure of a workout's
+write reports to Sentry under a static `gym-workout-start`, `gym-rack-settle` (each failed settle, which the page tries
+again), `gym-rack-turn`, `gym-set-log`, `gym-plan-revise` or `gym-workout-finish` with the error's stack frames, and a
+pop-out window the browser would not open reports `gym-pop-out` with its stack; a refusal and a store failure report none,
+as above. A set's correction and a finished workout's discard keep their `gym_action` (`set-correct`, `delete`). Nothing
+the tab's title, favicon or pop-out window shows is reported.
 
 Proposal decisions run through the gym domain. Removal snapshots persist in the account replica
 until their outcome is visible; acknowledging one emits `gym_action` with `proposal-apply` and
