@@ -11,7 +11,9 @@ import SyncSchema
 // most recent first), roadmap-workspace (*Learn to sail* with the workspace the boards draw on *Read the wind*),
 // roadmap-two-phones (*Learn to sail*, where the account's other phone adds a subtask to the first step whose page is
 // opened) and roadmap-first-read (*Learn to sail*, each pull of the signed-in phone answered three seconds late, so the
-// room's first read runs long). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no
+// room's first read runs long). Of the Guide: roadmap-guide (*Learn to sail* with its guide, 08.1), roadmap-guide-long (a
+// guide 15 characters short of the limit, 08.3 and 08.4) and roadmap-guide-above (roadmap-several, with *Learn to sail*'s
+// guide and *Become a day skipper*'s, 08.5). On a phone never signed in: roadmap-many, the nine roadmaps All Roadmaps draws, in no
 // order a server gave them; roadmap-handbook, the 5,000 steps the Graph's and the Board's budget is measured at;
 // roadmap-full, a roadmap at the steps the registry lets it hold; roadmap-undo-finds-nothing, *Learn to sail*, where
 // the engine keeps no Undo of a band's act by the time it is tapped (`undoFindsNothing(in:)`); and roadmap-empty, which
@@ -104,8 +106,11 @@ enum RoadmapFixture {
     // The steps of *Learn to sail* each board's account completed, the oldest first.
     let completed = ["roadmap-learn-to-sail": ["choose", "parts", "rig"], "roadmap-several": ["choose", "parts", "rig"],
                      "roadmap-workspace": ["choose", "parts", "rig"], "roadmap-two-phones": ["choose", "parts", "rig"],
-                     "roadmap-first-read": ["choose", "parts", "rig"],
+                     "roadmap-first-read": ["choose", "parts", "rig"], "roadmap-guide": ["choose", "parts", "rig"],
+                     "roadmap-guide-long": ["choose", "parts", "rig"], "roadmap-guide-above": ["choose", "parts", "rig"],
                      "roadmap-all-done": ["choose", "parts", "rig", "read", "tie", "leave", "tri", "solo"]][board]
+    // The guide each board's *Learn to sail* holds.
+    let guide = ["roadmap-guide": Guides.sail, "roadmap-guide-above": Guides.sail, "roadmap-guide-long": Guides.long][board]
     let local = ["roadmap-many", "roadmap-handbook", "roadmap-full", "roadmap-undo-finds-nothing"]
     guard completed != nil || board == "roadmap-no-steps" || local.contains(board) else { return true }
     do {
@@ -161,6 +166,10 @@ enum RoadmapFixture {
         let sail = try plantLearnToSail(remote.roadmapRunner, done: [])
         planted = sail
         try await sent()
+        if let guide {
+          try write(guide, on: sail.tree, by: remote.roadmapRunner)
+          try await sent()
+        }
         if board == "roadmap-workspace" {
           try plantWorkspace(of: sail, by: remote.roadmapRunner)
           try await sent()
@@ -170,9 +179,10 @@ enum RoadmapFixture {
           try await sent()
         }
         // roadmap-several's two roadmaps under *Learn to sail* arrive before its last completion, the lower first.
-        if board == "roadmap-several" {
+        if board == "roadmap-several" || board == "roadmap-guide-above" {
           for roadmap in others.prefix(2).reversed() {
-            try plant(roadmap, opening: sail.tree, by: remote.roadmapRunner)
+            let other = try plant(roadmap, opening: sail.tree, by: remote.roadmapRunner)
+            if board == "roadmap-guide-above" && roadmap.title == "Become a day skipper" { try write(Guides.skipper, on: other.tree, by: remote.roadmapRunner) }
             try await sent()
           }
         }
@@ -357,7 +367,8 @@ enum RoadmapFixture {
   // One of those roadmaps, each step following the one before. *Spanish B1* is linked, coloured and described as its
   // Board draws it on 01.11: two steps up next after the second, and three locked behind them. The second step of
   // *Become a day skipper*, *Learn to sail*, opens the roadmap given by its pointer.
-  static func plant(_ roadmap: (title: String, steps: [String], done: Int), opening sail: ID<RoadmapEntry>, by runner: ActionRunner) throws {
+  @discardableResult
+  static func plant(_ roadmap: (title: String, steps: [String], done: Int), opening sail: ID<RoadmapEntry>, by runner: ActionRunner) throws -> CreateRoadmap.Result {
     var steps = roadmap.steps.enumerated().map { (place: Int, label: String) -> (label: String, color: String, description: String, follows: [Int]) in
       (label, "terracotta", "", place == 0 ? [] : [place - 1])
     }
@@ -377,8 +388,27 @@ enum RoadmapFixture {
     // Its marks and its pointer are one act, so the account receives them in one sending.
     var overlay = created.steps.prefix(roadmap.done).map { AnyActAction<RoadmapRefusal>(MarkStep.complete(tree: created.tree, step: $0.id)) }
     if roadmap.title == "Become a day skipper" { overlay.append(AnyActAction(PointStep.set(tree: created.tree, step: created.steps[1].id, opens: sail))) }
-    guard !overlay.isEmpty else { return }
+    guard !overlay.isEmpty else { return created }
     guard case .committed = try runner.runComposed(overlay) else { throw AppFailure(message: "\(roadmap.title) was not marked.") }
+    return created
+  }
+
+  // The boards' guides: *Learn to sail*'s, as 08.1 draws it, or a long one that ends as 08.3 draws it and stands 15
+  // characters short of the domain's 5,000, so the 27 of *, then tie up without help.* take it 12 over (08.4); and *Become
+  // a day skipper*'s.
+  enum Guides {
+    static let sail = "Maya and I take the dinghy out on Sundays. This month I want to rig it, leave the dock and get us home without her taking the tiller.\n\nI mark a step done after I’ve tried it on the water. If the wind picks up, we practise reefing and leave docking for next time. Suggest one new step per sail."
+    static let long: String = {
+      let end = "Read the wind. Before we move the boat, take a minute to look across the water. I’ve been watching the flag by the slip and forgetting that the water farther out may look different.\n\nRig the boat. I’d like to do a complete setup with Maya nearby and enough time to start over. I keep a small list in the boat bag because I tend to skip a check when somebody is waiting at the ramp.\n\nNext Sunday, practise coming alongside the dock."
+      let earlier = String(repeating: "Write down one thing the water taught us after every sail, and one thing to try next time. ", count: 60)
+      return String(earlier.prefix(RoadmapSpecs.guide.max - 15 - end.count - 2)) + "\n\n" + end
+    }()
+    static let skipper = "Day skipper by September. Theory first, then sea time: weekends are for the water, one evening a week is for the books."
+  }
+
+  // A roadmap's guide, written as its account writes it.
+  static func write(_ guide: String, on tree: ID<RoadmapEntry>, by runner: ActionRunner) throws {
+    guard case .committed = try runner.runAct(WriteRoadmap(tree: tree, guide: guide)) else { throw AppFailure(message: "The guide was not written.") }
   }
 
   // One planted step marked done, by the key it was planted under.

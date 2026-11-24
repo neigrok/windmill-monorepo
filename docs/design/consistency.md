@@ -765,6 +765,15 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   its limit.*, the Board's sentence; the rows are the system's 52 pt where the boards draw 44, the list's separators
   start at the words, and the sections stand the list's own distance apart; and every board of the page draws
   *History* and the Coach circle or composer, which are not built.
+- **Roadmap · iOS · what the Guide leaves for the boards.** The Guide is built in Debug builds from 08.1 to 08.5. To
+  draw or rule: no
+  board draws the band after *Save*, and it is built as the room's receipt, *Guide saved*, or *Guide removed* for a
+  blank draft, with *Undo* for six seconds, where the web keeps no Undo of a guide; a roadmap with no guide of its own
+  under guides from above is not drawn, and it is built as 08.2's empty view with *Add Guide* over 08.5's sections;
+  08.3 draws the editor's footer as the counter alone, and below 4,500 characters, which the counter does not count,
+  the footer says who else reads the guide where the phone is signed in, as the web's phone does; 08.2's symbol is
+  the system's empty view's size, larger than the board draws it, as on the room's other empty views; and the editor's
+  text scrolls on under the sheet's bar, which the system blurs, where 08.3 starts it below the bar.
 - **Roadmap · iOS · what the Graph leaves for the boards.** The switch, the canvas, a selected step with its bar,
   *Next* with its menu, *Fit* and an empty roadmap are built in Debug builds from 04.1 to 04.5, 04.7 and S.2. To draw
   or rule: the boards draw *Learn to sail* from the top down by hand, and the canvas seats it where the web's layout

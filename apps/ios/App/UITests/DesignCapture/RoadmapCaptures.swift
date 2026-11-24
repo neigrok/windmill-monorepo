@@ -1,7 +1,7 @@
 import XCTest
 
-// The Roadmap room's boards (Roadmap · iOS): its Board, a step's page, the step form, its roadmaps, and its door on
-// Where to start? (Shell 02a).
+// The Roadmap room's boards (Roadmap · iOS): its Board, a step's page, the step form, its roadmaps, its Guide, and its
+// door on Where to start? (Shell 02a).
 final class RoadmapCaptures: DesignCapture {
   // 01.1: *Learn to sail* on its Board, as it arrives from its account.
   func testBoardAtRest() {
@@ -962,6 +962,63 @@ final class RoadmapCaptures: DesignCapture {
     app.navigationBars[name].buttons.element(boundBy: 0).tap()
     XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier == %@ AND label BEGINSWITH %@", "roadmap-kinds-row", name)).firstMatch
       .waitForExistence(timeout: 5))
+  }
+
+  // The Guide sheet over a roadmap on a board, raised by the title menu's item of that name.
+  func guide(of board: String, item: String = "Guide", _ look: Look) -> XCUIApplication {
+    let app = titleMenu(of: board, look)
+    app.buttons[item].tap()
+    XCTAssertTrue(app.navigationBars["Guide"].waitForExistence(timeout: 10))
+    return app
+  }
+
+  // 08.1: *Learn to sail*'s guide, read, over who else reads it.
+  func testGuide() {
+    captureBoard("08.1-roadmap-guide") { look in
+      let app = guide(of: "roadmap-guide", look)
+      XCTAssertTrue(app.staticTexts["roadmap-guide-text"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 08.2: a roadmap with no guide yet.
+  func testNoGuideYet() {
+    captureBoard("08.2-roadmap-guide-none-yet") { look in
+      let app = guide(of: "roadmap-learn-to-sail", look)
+      XCTAssertTrue(app.buttons["roadmap-guide-add"].waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 08.3: the long guide in the editor with the keyboard up, the counter showing what it may still hold.
+  func testGuideNearTheLimit() {
+    captureBoard("08.3-roadmap-guide-near-the-limit") { look in
+      let app = guide(of: "roadmap-guide-long", look)
+      app.buttons["roadmap-guide-edit"].tap()
+      XCTAssertTrue(app.staticTexts["roadmap-guide-count"].waitForExistence(timeout: 10) && app.keyboards.firstMatch.waitForExistence(timeout: 10))
+      return app
+    }
+  }
+
+  // 08.4: typed past 5,000 characters, the excess counted and Save dimmed.
+  func testGuideOverTheLimit() {
+    captureBoard("08.4-roadmap-guide-over-the-limit") { look in
+      let app = guide(of: "roadmap-guide-long", look)
+      app.buttons["roadmap-guide-edit"].tap()
+      XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+      app.textViews["roadmap-guide-field"].typeText(", then tie up without help.")
+      XCTAssertTrue(app.staticTexts["roadmap-guide-count"].waitForLabel("12 over", timeout: 10))
+      return app
+    }
+  }
+
+  // 08.5: *Learn to sail* gone into from *Become a day skipper*, whose guide stands under its own.
+  func testGuidesFromAbove() {
+    captureBoard("08.5-roadmap-guides-from-above") { look in
+      let app = guide(of: "roadmap-guide-above", item: "Guide · +1 from above", look)
+      XCTAssertTrue(app.staticTexts["roadmap-guide-above"].waitForExistence(timeout: 10))
+      return app
+    }
   }
 
   // Shell 02a: Where to start? with its third door.

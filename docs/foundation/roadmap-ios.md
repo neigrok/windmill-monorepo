@@ -365,7 +365,8 @@ makes it false.
   it, subtasks, a note and links read live from their overlay on the phone's copy, each written by an act of the
   domain, and its History, and has no *Open Roadmap*, and its menu has no *Attach a Roadmap* or *Copy Link*; the note's
   field sets bold and italic alone, from the system's Format menu on iOS 26. The title menu's *Activity* and a step's
-  *History* are the domain's read of the phone's copy (§3); the title menu has no *Guide*, *Share…* or *Export*, New
+  *History* are the domain's read of the phone's copy (§3), and its *Guide* reads the roadmap's guide with the guides of
+  the roadmaps above it, and writes the guide from one draft; the title menu has no *Share…* or *Export*, New
   Roadmap starts a blank roadmap alone, from no plan or file, and All Roadmaps has no gallery. An Undo that brings
   nothing back says so in the band. The Graph draws the picture, pans and zooms it, selects a step and opens its page,
   lists the Up next steps under *Next*, brings the one chosen there or by *Open in Graph* into view, and shows the whole
@@ -397,7 +398,7 @@ makes it false.
   `DeleteStep` composed for several steps chosen on the Board, with one *Undo*; `CreateStep`, `ChangeStep` and
   `ChangePrerequisites`, composed into the step form's one save with one *Undo*, and `ChangeStep` composed for several
   steps recolored on the Board, with one *Undo*; `CreateRoadmap` for a blank roadmap and `WriteRoadmap` for a roadmap's
-  name, of which it keeps none; of a roadmap's kinds `CreateKind`, `ChangeKind` and `RecolourKind`, of which it keeps
+  name, of which it keeps none, and for its guide, with *Undo*; of a roadmap's kinds `CreateKind`, `ChangeKind` and `RecolourKind`, of which it keeps
   none, and `DeleteKind`, which the engine does not hold, with *Undo* for six seconds; and of a step's workspace
   `ChangeSubtask`, with *Undo* of a subtask checked, `DeleteSubtask` and `DeleteStepLink`, each held with *Undo*, and
   `AddSubtask`, `AddStepLink` and the note's draft save, `SaveStepNote`, of which it keeps none. Every other action of

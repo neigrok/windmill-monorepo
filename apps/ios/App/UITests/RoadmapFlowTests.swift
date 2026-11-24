@@ -3,7 +3,8 @@ import XCTest
 // The Roadmap room's flows on the simulator's boards: a step's workspace (Roadmap · iOS 03.2, 03.3, 03.10, 03.11, 03.14),
 // the step form's links (05.1, 05.8), the Board's Find, sort and filter, branch and several steps with Kinds (02.4 to
 // 02.12, 03.7, 06.1 to 06.5b), the Graph's (04.1 to 04.5, 04.7), then Activity and a step's History (01.13, 01.13b,
-// 03.12), the room's first read (01.5b) and an Undo that brings nothing back (02.10d). The canvas is one element, as
+// 03.12), the room's first read (01.5b), an Undo that brings nothing back (02.10d) and the Guide (08.1 to 08.5). The
+// canvas is one element, as
 // VoiceOver hears it, so a step is tapped where the layout seats it: *Learn to sail* opens at the phone's working zoom
 // with the middle of its seats' box at the centre of what the bars leave, and each step stands a known way from that
 // centre (`packages/api-contract/roadmap/layout/learn-to-sail.json` pins the seats). The zoom floor is half the opening
@@ -653,5 +654,103 @@ import XCTest
     XCTAssertTrue(app.staticTexts["Couldn’t bring back Tie a bowline"].waitForExistence(timeout: 5))
     XCTAssertFalse(undo.exists)
     XCTAssertTrue(app.staticTexts["3 of 7 done"].exists && !app.roadmapStep("Tie a bowline").exists)
+  }
+
+  // The title menu of the open roadmap, by its name, and one of its items.
+  func titleMenu(_ title: String, item: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+    let name = app.navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch
+    XCTAssertTrue(name.waitForExistence(timeout: 30), file: file, line: line)
+    name.tap()
+    XCTAssertTrue(app.buttons[item].waitForExistence(timeout: 5), file: file, line: line)
+    app.buttons[item].tap()
+  }
+
+  // Roadmap · iOS 08.1, 08.3 and 08.5, on the account's phone: the title menu's Guide counts the guide from above and
+  // opens the sheet on the roadmap's guide, who else reads it, and *Become a day skipper*'s guide under its name. Edit
+  // turns the sheet into the editor with the keyboard up; Save writes once, the sheet reads the guide saved, and the
+  // band's Undo takes the save back.
+  func testAGuideIsReadWithTheGuideAboveAndItsSaveIsTakenBackByUndo() {
+    let app = launch("roadmap-guide-above", takingUndo: true)
+    let text = app.staticTexts["roadmap-guide-text"], field = app.textViews["roadmap-guide-field"], undo = app.buttons["roadmap-undo"]
+    let guide = "Maya and I take the dinghy out on Sundays. This month I want to rig it, leave the dock and get us home without her taking the tiller.\n\nI mark a step done after I’ve tried it on the water. If the wind picks up, we practise reefing and leave docking for next time. Suggest one new step per sail."
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    titleMenu("Learn to sail", item: "Guide · +1 from above", in: app)
+    XCTAssertTrue(text.waitForExistence(timeout: 10))
+    XCTAssertEqual(text.label, guide)
+    XCTAssertTrue(app.navigationBars["Guide"].exists && app.buttons["roadmap-guide-close"].exists)
+    XCTAssertTrue(app.staticTexts["Your agents and people you share this roadmap with can read the guide."].exists)
+    XCTAssertTrue(app.staticTexts["Become a day skipper · from above"].exists)
+    XCTAssertEqual(app.staticTexts["roadmap-guide-above"].label,
+                   "Day skipper by September. Theory first, then sea time: weekends are for the water, one evening a week is for the books.")
+
+    app.buttons["roadmap-guide-edit"].tap()
+    XCTAssertTrue(field.waitForExistence(timeout: 10) && app.keyboards.firstMatch.waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["roadmap-guide-save"].isEnabled, "Save waits for a change")
+    XCTAssertFalse(app.staticTexts["Become a day skipper · from above"].exists)
+    field.typeText(" Bring the tide table.")
+    XCTAssertTrue(app.buttons["roadmap-guide-save"].wait(for: \.isEnabled, toEqual: true, timeout: 5))
+    app.buttons["roadmap-guide-save"].tap()
+    XCTAssertTrue(app.staticTexts["Guide saved"].waitForExistence(timeout: 10))
+    XCTAssertTrue(field.waitForNonExistence(timeout: 5) && text.exists)
+    XCTAssertTrue(text.label.contains(" Bring the tide table.") && text.label.count == guide.count + 22)
+    // The band stands at the sheet's foot and at the room's under it: the sheet's is the one on screen.
+    let shown = app.buttons.matching(identifier: "roadmap-undo").allElementsBoundByIndex.first { $0.isHittable }
+    XCTAssertNotNil(shown)
+    shown?.tap()
+    XCTAssertTrue(text.waitForLabel(guide, timeout: 10))
+    XCTAssertTrue(undo.waitForNonExistence(timeout: 5))
+  }
+
+  // Roadmap · iOS 08.2 and 08.3, on the account's phone: a roadmap with no guide opens on Add Guide, which writes with the
+  // keyboard up; Cancel on a changed draft asks once and Discard leaves no guide; Save writes it, read in the sheet over
+  // who else reads it, and the menu's Guide opens it again.
+  func testAGuideIsAddedAfterADraftIsDiscarded() {
+    let app = launch("roadmap-learn-to-sail")
+    let add = app.buttons["roadmap-guide-add"], field = app.textViews["roadmap-guide-field"], text = app.staticTexts["roadmap-guide-text"]
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    titleMenu("Learn to sail", item: "Guide", in: app)
+    XCTAssertTrue(app.staticTexts["No guide yet"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["What are you working toward?"].exists && !app.buttons["roadmap-guide-edit"].exists)
+    add.tap()
+    XCTAssertTrue(field.waitForExistence(timeout: 10) && app.keyboards.firstMatch.waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["Your agents and people you share this roadmap with can read the guide."].exists)
+    field.typeText("Rig it alone.")
+    app.buttons["roadmap-guide-cancel"].tap()
+    XCTAssertTrue(app.staticTexts["Discard draft?"].waitForExistence(timeout: 5))
+    app.buttons["Discard"].tap()
+    XCTAssertTrue(add.waitForExistence(timeout: 5) && !field.exists)
+
+    add.tap()
+    XCTAssertTrue(field.waitForExistence(timeout: 10))
+    field.typeText("Sail on Sundays with Maya.")
+    app.buttons["roadmap-guide-save"].tap()
+    XCTAssertTrue(text.waitForExistence(timeout: 10))
+    XCTAssertEqual(text.label, "Sail on Sundays with Maya.")
+    XCTAssertTrue(app.staticTexts["Guide saved"].exists && app.buttons["roadmap-guide-edit"].exists)
+    app.buttons["roadmap-guide-close"].tap()
+    XCTAssertTrue(text.waitForNonExistence(timeout: 5))
+    titleMenu("Learn to sail", item: "Guide", in: app)
+    XCTAssertTrue(text.waitForLabel("Sail on Sundays with Maya.", timeout: 10))
+  }
+
+  // Roadmap · iOS 08.3 and 08.4: the counter shows from 4,500 characters, and past 5,000 it counts the excess while Save
+  // stands dimmed; nothing typed is cut, and Cancel asks before the draft goes.
+  func testPastFiveThousandCharactersTheCounterCountsTheExcessAndSaveWaits() {
+    let app = launch("roadmap-guide-long")
+    let field = app.textViews["roadmap-guide-field"], count = app.staticTexts["roadmap-guide-count"], save = app.buttons["roadmap-guide-save"]
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    titleMenu("Learn to sail", item: "Guide", in: app)
+    XCTAssertTrue(app.buttons["roadmap-guide-edit"].waitForExistence(timeout: 10))
+    app.buttons["roadmap-guide-edit"].tap()
+    XCTAssertTrue(count.waitForLabel("15 left", timeout: 10))
+    field.typeText(", then tie up without help.")
+    XCTAssertTrue(count.waitForLabel("12 over", timeout: 10))
+    XCTAssertFalse(save.isEnabled)
+    XCTAssertTrue((field.value as? String)?.contains(", then tie up without help.") == true, "Nothing typed is cut")
+    app.buttons["roadmap-guide-cancel"].tap()
+    XCTAssertTrue(app.staticTexts["Discard draft?"].waitForExistence(timeout: 5))
+    app.buttons["Discard"].tap()
+    XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["roadmap-guide-text"].label.hasSuffix("Next Sunday, practise coming alongside the dock."))
   }
 }

@@ -244,6 +244,9 @@
       },
       "shouldTranslate" : false
     },
+    "%@ · from above" : {
+      "comment" : "A guide of a roadmap above this one: that roadmap's name"
+    },
     "%@ · this workout" : {
 
     },
@@ -481,6 +484,9 @@
           }
         }
       }
+    },
+    "%lld left" : {
+      "comment" : "The guide's counter from 4,500 characters: how many more it may hold"
     },
     "%lld minutes" : {
       "localizations" : {
@@ -747,6 +753,9 @@
     },
     "%lld of 500 bytes" : {
 
+    },
+    "%lld over" : {
+      "comment" : "The guide's counter past its 5,000 characters: how many too many"
     },
     "%lld pages" : {
       "comment" : "The written journal pages this phone holds, in You",
@@ -1220,6 +1229,9 @@
 
     },
     "Add" : {
+
+    },
+    "Add Guide" : {
 
     },
     "Add Kind" : {
@@ -2293,6 +2305,18 @@
     "Graph" : {
 
     },
+    "Guide" : {
+      "comment" : "The title menu's item that opens the roadmap's guide"
+    },
+    "Guide removed" : {
+      "comment" : "The band after a roadmap's guide is saved blank"
+    },
+    "Guide saved" : {
+      "comment" : "The band after a roadmap's guide is saved"
+    },
+    "Guide · +%lld from above" : {
+      "comment" : "The title menu's item that opens the roadmap's guide: how many guides of the roadmaps above it apply too"
+    },
     "Gym" : {
 
     },
@@ -2827,6 +2851,9 @@
 
     },
     "No finished workouts yet" : {
+
+    },
+    "No guide yet" : {
 
     },
     "No movement by that name." : {
@@ -4191,6 +4218,9 @@
     "What I am training for" : {
 
     },
+    "What are you working toward?" : {
+
+    },
     "What belongs here?" : {
 
     },
@@ -4349,6 +4379,9 @@
 
     },
     "Your account is deleted" : {
+
+    },
+    "Your agents and people you share this roadmap with can read the guide." : {
 
     },
     "Your choice couldn’t be saved. Try again." : {
