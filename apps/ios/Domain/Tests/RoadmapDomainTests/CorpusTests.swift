@@ -29,6 +29,7 @@ struct CorpusTests {
       switch operation {
       case "account": return account.form
       case "list": return .array(account.list().map(\.form))
+      case "listing": return account.listing(try input.member("tree").asString())?.form ?? .null
       default: break
       }
       let tree = try input.member("tree").asString()
