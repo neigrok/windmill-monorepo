@@ -40,19 +40,18 @@ export class TrainingState {
 
 // A decider through which a person enters loads now. It decides as the log decides a replay of the same facts, then
 // holds the loads the person entered to their movements' floors. `recorded` is that replay, for facts already recorded,
-// on this phone signed out or by an older build: the action's checks and its write, never the floor.
+// on this phone signed out or by an older build: the action's checks and its write, never the floor. The recorded
+// decider's other members, such as an import's own checks, are the action's too.
 /**
  * @template L, T
- * @param {import('../../../platform/domain-kit/actions.js').Decider<L, T, GymRefusal>} recorded
+ * @template {import('../../../platform/domain-kit/actions.js').Decider<L, T, GymRefusal>} D
+ * @param {D} recorded
  * @param {(loaded: L) => void} floored
  */
 function EntersLoads(recorded, floored) {
   return Object.freeze({
-    scope: recorded.scope,
-    refusals: recorded.refusals,
+    ...recorded,
     recorded,
-    /** @param {Reader} read */
-    load(read) { return recorded.load(read); },
     /** @param {L} loaded @param {IDSource} ids */
     decide(loaded, ids) {
       const decision = recorded.decide(loaded, ids);
@@ -135,16 +134,8 @@ export function AppendSet(value) {
       if (session === null || !loaded.drawn.some((drawn) => drawn.id.equals(value.sessionId))) {
         return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-record', value.sessionId.ref, null, 'predicted')));
       }
-      if (!SessionRules.lateSetLands(session, value.completedAt)) {
-        return Decision.refuse(GymRefusals.ofRefused(new Refused('session-finished', value.id.ref, null, 'predicted')));
-      }
-      if (loaded.catalogue.find(value.exerciseId) === null) {
-        return Decision.refuse(GymRefusals.ofRefused(new Refused('unknown-exercise', value.id.ref, null, 'predicted')));
-      }
-      if (loaded.sets.some((set) => set.id.equals(value.id))) return Decision.refuse(GymRefusals.ofRefused(new Refused('id-taken', value.id.ref, null, 'predicted')));
-      if (SetRules.nextNumber(loaded.sets, value.sessionId, value.exerciseId) === null) {
-        throw new Violation('set.setNumber', new Path('setNumber'), { kind: 'above', max: SetRules.maxNumber });
-      }
+      const refused = AppendSet.refusal(valid, session, loaded);
+      if (refused !== null) return Decision.refuse(refused);
       const plan = new Plan();
       plan.create(valid);
       return Decision.write(plan, value.id);
@@ -153,6 +144,27 @@ export function AppendSet(value) {
   return EntersLoads(recorded, /** @param {TrainingState} loaded */ (loaded) =>
     SetRules.floored(value, loaded.sets, loaded.catalogue, new Path('weightKg')));
 }
+
+// The phone's checks before a set joins a session: the session still takes a set at that time, the catalogue knows its
+// movement, its identity is fresh and a number is left for it. `planned` are the sets the same plan appends before it. A
+// recorded set's load stands as recorded.
+/**
+ * @param {Valid<TrainingSetValue>} valid @param {SessionValue} session @param {TrainingState} state
+ * @param {readonly TrainingSetValue[]} [planned]
+ * @returns {GymRefusal | null}
+ */
+AppendSet.refusal = (valid, session, state, planned = []) => {
+  const value = valid.value;
+  if (!SessionRules.lateSetLands(session, value.completedAt)) return GymRefusals.ofRefused(new Refused('session-finished', value.id.ref, null, 'predicted'));
+  if (state.catalogue.find(value.exerciseId) === null) return GymRefusals.ofRefused(new Refused('unknown-exercise', value.id.ref, null, 'predicted'));
+  if ([...state.sets, ...planned].some((set) => set.id.equals(value.id))) return GymRefusals.ofRefused(new Refused('id-taken', value.id.ref, null, 'predicted'));
+  const numbered = planned.filter((set) => set.sessionId.equals(value.sessionId) && set.exerciseId.equals(value.exerciseId)).length;
+  const next = SetRules.nextNumber(state.sets, value.sessionId, value.exerciseId);
+  if (next === null || next + numbered > SetRules.maxNumber) {
+    throw new Violation('set.setNumber', new Path('setNumber'), { kind: 'above', max: SetRules.maxNumber });
+  }
+  return null;
+};
 
 /** @param {TrainingSetValue} value @param {TrainingSetValue | null} original */
 export function CorrectSet(value, original = null) {
@@ -265,17 +277,30 @@ export function ImportSession({ id, startedAt, finishedAt, sets, routineId = nul
     load(read) {
       return { state: new TrainingState(read), routine: routineId === null ? null : read.repository(Routine).find(routineId, 'drawn') };
     },
+    // The import's own checks, before the account's: instants in bounds, at most 200 distinct sets, every set inside the
+    // window and valid.
+    /** @param {import('../../../platform/domain-kit/time.js').Moment} moment @returns {{ refusal: GymRefusal } | { sets: TrainingSetValue[] }} */
+    checked(moment) {
+      try {
+        SessionRules.instant(startedAt, 'session.startedAt', new Path('startedAt'));
+        SessionRules.instant(finishedAt, 'session.finishedAt', new Path('finishedAt'));
+        if (imported.length > MAX_SESSION_SETS || imported.some((set, index) => imported.slice(0, index).some((prior) => prior.id.equals(set.id)))) {
+          throw new Violation('session.sets', new Path('sets'), { kind: 'custom', custom: 'invalid' });
+        }
+        if (finishedAt.ms < startedAt.ms || imported.some((set) => set.completedAt.ms < startedAt.ms || set.completedAt.ms > finishedAt.ms)) {
+          return { refusal: GymRefusals.ofRefused(new Refused('bad-instant', id.ref, null, 'predicted')) };
+        }
+        return { sets: imported.map((set) => new Valid(set.value(id), moment).value) };
+      } catch (error) {
+        if (error instanceof Violation) return { refusal: GymRefusals.ofViolation(error) };
+        throw error;
+      }
+    },
     /** @param {{ state: TrainingState, routine: RoutineValue | null }} loaded */
     decide({ state, routine }) {
-      SessionRules.instant(startedAt, 'session.startedAt', new Path('startedAt'));
-      SessionRules.instant(finishedAt, 'session.finishedAt', new Path('finishedAt'));
-      if (imported.length > MAX_SESSION_SETS || imported.some((set, index) => imported.slice(0, index).some((prior) => prior.id.equals(set.id)))) {
-        throw new Violation('session.sets', new Path('sets'), { kind: 'custom', custom: 'invalid' });
-      }
-      if (finishedAt.ms < startedAt.ms || imported.some((set) => set.completedAt.ms < startedAt.ms || set.completedAt.ms > finishedAt.ms)) {
-        return Decision.refuse(GymRefusals.ofRefused(new Refused('bad-instant', id.ref, null, 'predicted')));
-      }
-      const checked = imported.map((set) => new Valid(set.value(id), state.moment).value);
+      const verdict = this.checked(state.moment);
+      if ('refusal' in verdict) return Decision.refuse(verdict.refusal);
+      const checked = verdict.sets;
       const predicted = new SessionValue(id, startedAt, finishedAt, 'finish', routine?.id ?? null, routine?.id ?? null,
         routine === null ? null : PlanSnapshot.fromRoutine(routine));
       const command = { name: 'gym.importSession', args: { id: id.json, startedAt: startedAt.ms, finishedAt: finishedAt.ms,

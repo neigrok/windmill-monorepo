@@ -2,9 +2,9 @@
 
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
-v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; `recovery-actions.json`
-and `coach-onboarding-actions.json` run in Swift and Kotlin and do not apply on the web (their rows say
-why); every other file runs in all three.
+v12/minimum-11 registry composition and reproduce each `expect` by JCS equality;
+`coach-onboarding-actions.json` runs in Swift and Kotlin and does not apply on the web (its row says why);
+every other file runs in all three.
 `workout-plan-actions.json` and `workout-proposals-actions.json` hold the open workout's editable plan and its
 workout proposals. R118 metadata reads remain optional
 for legacy records. The pinned rule book covers ten entities, `WorkoutProposal` the newest; `RoutineCreation`
@@ -42,7 +42,7 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `catalogue-actions.json` | Create (a dumbbell movement's count included), rename, seed overrides, aliases, byte-sensitive search, decoding failures |
 | `preferences-actions.json` | Draft preference saves and rest defaults |
 | `training-actions.json` | Start/join, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
-| `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery, discard, and the proposal a signed-out phone held minted again once the account holds its workout. Runs in Swift `GymDomain` and Kotlin `:gym:domain`; the web holds no signed-out workout, so it records the file as not applying |
+| `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery, discard, and the proposal a signed-out phone held minted again once the account holds its workout. Swift `GymDomain`, Kotlin `:gym:domain` and the web claim the cases |
 | `proposals-actions.json` | Propose, apply/dismiss, the proposal state's refusals and out of date, ordered diff, change count, the card's change blocks, provenance and optional R118 metadata reads |
 | `workout-plan-actions.json` | Every `ReviseWorkoutPlan` operation, the logged-movement refusal per operation, stale bases, closed and missing workouts, unknown and duplicate movements, bounds; and the reads over an edited plan: prefill, the workout and review documents, the receipt's plan changes |
 | `workout-proposals-actions.json` | Propose a workout change (diff, swap, reorder, unchanged, refusals), apply/dismiss with every out-of-date reason, and the card's `WorkoutOutOfDate` |
