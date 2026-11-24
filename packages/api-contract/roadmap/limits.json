@@ -7,74 +7,118 @@
       "max": 128,
       "unit": "characters",
       "backend": "kMaxIdLength",
-      "registry": "node.id"
+      "registry": [
+        "node.id",
+        "kind.id"
+      ]
     },
     "label": {
       "max": 200,
       "unit": "characters",
       "backend": "kMaxNodeLabelLength",
-      "registry": "node.label",
+      "registry": [
+        "node.label"
+      ],
       "web": "label"
     },
     "description": {
       "max": 16000,
       "unit": "characters",
       "backend": "kMaxNodeDescriptionLength",
-      "registry": "node.description",
+      "registry": [
+        "node.description"
+      ],
       "web": "description"
     },
     "steps": {
       "max": 10000,
       "unit": "items",
       "backend": "kMaxNodes",
-      "registry": "node"
+      "registry": [
+        "node"
+      ]
     },
     "links": {
       "max": 20000,
       "unit": "items",
       "backend": "kMaxEdges",
-      "registry": "edge"
+      "registry": [
+        "edge"
+      ]
     },
     "webLinks": {
       "max": 32,
       "unit": "items",
       "backend": "kMaxNodeLinks",
-      "registry": "node.links",
+      "registry": [
+        "node.links"
+      ],
       "web": "links"
     },
     "webLinkLabel": {
       "max": 200,
       "unit": "characters",
       "backend": "kMaxLinkLabelLength",
-      "registry": "node.links.label",
+      "registry": [
+        "node.links.label"
+      ],
       "web": "linkLabel"
     },
     "webLinkAddress": {
       "max": 2048,
       "unit": "characters",
       "backend": "kMaxLinkUrlLength",
-      "registry": "node.links.url",
+      "registry": [
+        "node.links.url"
+      ],
       "web": "linkUrl"
     },
     "kinds": {
       "max": 6,
       "unit": "items",
       "backend": "kMaxKinds",
-      "registry": "kind"
+      "registry": [
+        "kind"
+      ]
     },
     "kindLabel": {
       "max": 24,
       "unit": "characters",
       "backend": "kMaxKindLabelLength",
-      "registry": "kind.label",
+      "registry": [
+        "kind.label"
+      ],
       "web": "kindLabel"
     },
     "kindDescription": {
       "max": 80,
       "unit": "characters",
       "backend": "kMaxKindDescriptionLength",
-      "registry": "kind.description",
+      "registry": [
+        "kind.description"
+      ],
       "web": "kindDescription"
+    },
+    "proposalChanges": {
+      "max": 100,
+      "unit": "items",
+      "registry": [
+        "coachProposal.changes"
+      ]
+    },
+    "proposalChangesBytes": {
+      "max": 65536,
+      "unit": "bytes",
+      "registry": [
+        "coachProposal.changes"
+      ]
+    },
+    "proposalBaseBytes": {
+      "max": 262144,
+      "unit": "bytes",
+      "registry": [
+        "coachProposal.base"
+      ]
     }
   }
 }

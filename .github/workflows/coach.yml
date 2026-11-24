@@ -19,6 +19,7 @@ on:
       - 'packages/api-contract/sync/roadmap.registry.json'
       - 'backend/products/roadmap/domain/Command.h'
       - 'web/src/products/roadmap/domain/roadmapRules.js'
+      - 'docs/foundation/roadmap-coach.md'
       - '.github/workflows/coach.yml'
       - '!packages/api-contract/**/*.md'
   pull_request:
@@ -38,6 +39,7 @@ on:
       - 'packages/api-contract/sync/roadmap.registry.json'
       - 'backend/products/roadmap/domain/Command.h'
       - 'web/src/products/roadmap/domain/roadmapRules.js'
+      - 'docs/foundation/roadmap-coach.md'
       - '.github/workflows/coach.yml'
       - '!packages/api-contract/**/*.md'
   workflow_dispatch:

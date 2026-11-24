@@ -181,7 +181,7 @@ a plan as the input of the domain's `CreateRoadmap` and `ImportSteps`, and a roa
 ## `roadmap/catalog.json`, `roadmap/limits.json` and `roadmap/abilities/`
 
 Roadmap Coach's abilities, which the web and the iPhone each run on the device's own copy of a roadmap
-([Roadmap Coach](../../docs/foundation/roadmap-coach.md) §3, §4, §6).
+([Roadmap Coach](../../docs/foundation/roadmap-coach.md) §3 to §7).
 
 - `catalog.json` is catalog `roadmap/1`, `{catalog, abilities}`, each entry with `name`, `description`, `input`,
   `result`, `class`, `agent`, `seats`, `strict`, `phrase` and `ui`, so the domain kit's catalog types read it as they
@@ -190,26 +190,28 @@ Roadmap Coach's abilities, which the web and the iPhone each run on the device's
   the provider's strict mode also accepts (`type`, `description`, `properties`, `required`, `additionalProperties`,
   `items`, `enum`, `const`, `minItems` of 0 or 1 and `pattern`), with patterns of explicit classes. So declaring an
   ability strict is one word. A cap of §6 is no keyword of an input: the ability refuses past it as `over-limit`.
-- `result` is the JSON Schema of the answer, beside a read's `maxBytes`, 16384, the most its canonical text takes (§5.2).
-  `get_tree`, `get_nodes`, `find_nodes` and `propose_roadmap_change` state their answer whole; `get_progress`,
-  `get_diagnostics` and `list_trees` state only their `maxBytes`, and a direct write, whose writes are the room's own
-  actions, states none.
-- `limits.json` holds §6's caps, the ones the server enforces and every client checks first. Each names its `max`, its
-  `unit` (`characters`, counted as Unicode code points, or `items`), the constant of
-  `backend/products/roadmap/domain/Command.h` the backend's own doors hold to, the declaration of
-  `sync/roadmap.registry.json` the sync engine admits Coach's writes by, and, where the web's domain holds one, its spec
-  in `RoadmapSpecs` (`web/src/products/roadmap/domain/roadmapRules.js`).
-- `abilities/` holds the ability vectors; [roadmap/abilities/README.md](roadmap/abilities/README.md) has their format.
+- `result` is the JSON Schema of every ability's answer, beside a read's `maxBytes`, 16384, the most its canonical text
+  takes (§5.2).
+- `limits.json` holds the caps the server enforces, which every client checks first (§6, rule 4). Each names its
+  `max`; its `unit`, `characters` counted as Unicode code points, `bytes` of canonical text, or `items`; the constant of
+  `backend/products/roadmap/domain/Command.h` that holds it, where one does; every declaration of
+  `sync/roadmap.registry.json` the sync engine admits it by; and, where the web's domain holds one, its spec in
+  `RoadmapSpecs` (`web/src/products/roadmap/domain/roadmapRules.js`).
+- `abilities/` holds the ability vectors; [roadmap/abilities/README.md](roadmap/abilities/README.md) has their format,
+  and what of them the check holds and what it leaves to the executors.
 
-`check.py` holds the three in the Coach contracts workflow (`.github/workflows/coach.yml`), which runs when any of them,
-`Command.h`, the registry, `roadmapRules.js` or the domain's actions change:
+`check.py` runs in the Coach contracts workflow (`.github/workflows/coach.yml`), which runs when any of the three, the
+spec, `Command.h`, the registry, `roadmapRules.js` or the domain's actions change. It holds:
 
-- the catalog to the kit's shape and the shared vocabulary, inputs and stated answers alike, with no ability that runs
-  at once and removes (§4);
-- every vector to its format, a read's pages and parts to §5.2's rules, and every refusal to a code of §6.1;
-- each cap to the backend's constant, the registry's declaration and the web's spec.
+- the catalog to the kit's shape and the shared vocabulary, inputs and answers alike, and to the spec's tables: §4's
+  abilities, with every `seats` `any` and no tool strict; §5.1's fields and states; §6's actions and answers; §7's ops,
+  each line of `propose_roadmap_change`'s description against §7's row; and the registry's hues;
+- each vector to the format the vectors' README gives, and to what the case itself gives, as that README lists;
+- `limits.json` to §6's table of caps, and each cap to the backend's constant, to every registry declaration in value
+  and unit, and to the web's spec in value, unit and path, a constant or a spec defined twice refused.
 
-`check_test.py`, run in the same step, breaks each rule once and holds the refusal's words.
+`check_test.py`, run in the same step, holds a broken case for each refusal `check.py` makes, and the words it is
+refused with.
 
 ## `roadmap-addresses.json`
 

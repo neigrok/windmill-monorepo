@@ -21,7 +21,8 @@ and applies, and the records of a conversation. One catalog, one set of vectors 
 serve both surfaces.
 
 **Out of scope:** The screens, which the design canon holds; a screen is built only from a board the
-owner has marked ready, and the boards for the review, signed out and History are still proposals.
+owner has marked ready, as the owner has marked the boards for the review, signed out and History
+(the last of them, 07.1, 07.2 and 08.1, on 2026-11-24).
 The [AI service](ai-service.md), which makes each model call. The engine that runs a turn, the AI
 client and the pass door, which the [Coach engine](coach-engine.md) holds. Gym Coach's own move onto
 the device ([Gym Coach on the AI service](gym-coach-on-ai-service.md)). The iPhone's room
@@ -83,8 +84,8 @@ packages/api-contract/roadmap/
   limits.json             the caps the server enforces, for every client to check first (§6)
   abilities/              vectors: the roadmaps, an input, and the result, the writes or the refusal
                           they must give; its README.md has the format
-  check.py                the Coach contracts workflow's check of the three, and of each cap against
-                          the backend's
+  check.py                the Coach contracts workflow's check of the three against this document's
+                          tables, and of each cap against the sources it names
   domain/                 roadmap's shared domain corpus, where a turn's opening and end are proven
                           as gym's are (§9)
 web/src/products/roadmap/
@@ -105,7 +106,7 @@ apps/ios/Domain/Sources/RoadmapDomain/
   hands it the roadmap and carries out the writes it returns.
 - The plain data an ability is handed is the standing roadmap (D-2), together with what only the
   copy knows and diagnostics need: links to steps that are gone, links from a step to itself, and
-  removed steps that still have steps after them.
+  the removed steps whose records the copy holds, through which what a step follows is read.
 - The rules a write must keep live with the abilities, not in the screen that calls them. Rules the
   room's own controls enforce today, such as refusing a link that closes a cycle or a second kind of
   one hue, move there, and so does the function that derives a step's state. The control and Coach
@@ -129,7 +130,7 @@ phrase, ui}`, `class` is `read`, `add`, `change` or `remove`, and `agent` is `ru
 | `get_nodes` | read | runs | on the copy | Steps by exact id |
 | `find_nodes` | read | runs | on the copy | Steps by kind, state or text; `state: available` is the frontier |
 | `get_progress` | read | runs | on the copy | The person's completed steps, with the dates the copy holds |
-| `get_diagnostics` | read | runs | on the copy | What is wrong with the graph: cycles, links to missing steps, self links, masked work, smells |
+| `get_diagnostics` | read | runs | on the copy | What is wrong with the graph: cycles, links to missing steps, self links, smells, and pointer loops |
 | `list_trees` | read | runs | on the copy | One line for each roadmap the person owns. Offered only in a conversation about all roadmaps |
 | `set_progress` | change | runs | on the copy | Marks one step done or not done |
 | `rename_node` | change | runs | on the copy | Changes one step's title |
@@ -150,12 +151,12 @@ phrase, ui}`, `class` is `read`, `add`, `change` or `remove`, and `agent` is `ru
   `false`, so a turn declares no tool strict to the provider; every input keeps to what each schema
   check reads and strict mode accepts, so declaring one strict is one word.
 - An input names a roadmap as `treeId` and a step as `nodeId`, as the server's tools for an outside
-  assistant do. No cap of §6 is part of a schema, so a value past one reaches the ability, which
+  assistant do, and a link by the step that waits, `nodeId`, and the step it waits on,
+  `prerequisiteId`. No cap of §6 is part of a schema, so a value past one reaches the ability, which
   refuses it as `over-limit`. A read takes `cursor` for the page after the first (§5.2), and its
   `result` carries `maxBytes`, 16384.
-- `get_tree`, `get_nodes`, `find_nodes` and `propose_roadmap_change` state their answer's schema
-  (§5.1, §7). `get_progress`, `get_diagnostics` and `list_trees` state only their `maxBytes`, and a
-  direct write states none: what it writes is the room's own actions (§6).
+- Every ability states its answer's schema: a read's in §5.1, a direct write's in §6 (`create_node`
+  answers the id it minted, `{nodeId}`, and the others `{}`), and a proposal's in §7.
 - An ability's `agent` value is fixed in the catalog. Whether the person asked for exactly this
   change in this message, which the design's rule for a direct write requires, is the prompt's to
   judge. (R-8)
@@ -198,13 +199,13 @@ ability's result as data and never as instructions.
   state give them a count of their own.
 - A completion has a date only where the copy holds one. A step complete through the roadmap it
   opens, and a step done since before dates were kept, have none and are given without one.
-- `get_diagnostics` is computed on the device, by a function held to the server's report by shared
-  vectors. Loops and dead ends among the roadmaps that steps open are reported only among roadmaps
-  the device holds.
+- `get_diagnostics` is computed on the device, by the domain's reads the server claims (§5.1).
+  Loops and dead ends among the roadmaps that steps open are reported only among roadmaps the
+  device holds.
 - A result is at most 16 KiB, the catalog's `maxBytes`; a longer one is paged, never cut (§5.2).
 - The tool host notes the stamp of every register a turn's context and reads returned. §7 uses them.
 
-### §5.1 A step as a read answers it
+### §5.1 What each read answers
 
 `get_tree`, `get_nodes` and `find_nodes` answer steps in one shape. `fields` names the fields each
 step comes with, and `id` comes always; a call without `fields` is given the context's line: `id`,
@@ -223,23 +224,48 @@ step comes with, and `id` comes always; a call without `fields` is given the con
 | `links` | Its web links, `{url, label}`, in order |
 | `opens` | The id of the roadmap it opens, the subtree it owns or one it points to; null where it opens none |
 
-- `get_tree` answers `{tree?, steps, nextCursor?}`. `tree`, the roadmap's header, opens the answer
-  and comes on no later page: `{title, kinds, guide, stepCount}`, the kinds in the room's order as
-  `{id, label, hue, description}`, the roadmap's own guide and how many steps it has. Each step
-  comes after every step it follows; of the steps that can come next, the one first in the room's
-  order (`ord`, then birth, then id) comes first. A step on a loop, or after one, comes last, in id
-  byte order.
-- `get_nodes` answers `{steps, nextCursor?}`, in the order asked and each id once. An id the
-  roadmap does not hold refuses the call as `unknown-step`.
+- `get_tree` answers `{tree?, steps, nextCursor?}`. `tree`, the roadmap's header, opens the answer:
+  `{title, kinds, guide, stepCount}`, the kinds in the room's order as `{id, label, hue,
+  description}`, the roadmap's own guide and how many steps it has. Each step comes after every step
+  it follows; of the steps that can come next, the one first in the room's order (`ord`, then birth,
+  then id) comes first. A step on a loop, or after one, comes last, in id byte order.
+- `get_nodes` answers `{steps, nextCursor?}`, in the order asked. An id asked twice is
+  `invalid-input`, and an id the roadmap does not hold refuses the call as `unknown-step`, naming
+  the first such id in the order asked.
 - `find_nodes` answers `{steps, nextCursor?}` in the order of the domain's `search` read, which the
-  server claims: a step must match every filter sent.
+  server claims: a step must match every filter sent, `query` folds ASCII letters alone to one case
+  as that read does, and a `kind` the roadmap does not have matches no step.
+- `get_progress` answers `{completed, nextCursor?}`: each step the person has completed, `{id, at}`,
+  in id byte order, `at` the date the domain's `progress` read gives it, or null where it gives none.
+  The server's tool calls the list `completed` too.
+- `get_diagnostics` answers what the server's tool answers of a roadmap read through the shared
+  domain, from the domain's `diagnostics` and `pointers` reads, which the server claims:
+  `{cycles, dangling, selfEdges, smells}`, and on a roadmap the person owns `treeLoops` and
+  `danglingPointers`. A cycle is `{count, nodes}`, its size and its first ten steps; `dangling` and
+  `selfEdges` hold links as `{from, to}`; `smells` hold `{kind: "empty-legend"}`, then
+  `{kind: "unclaimed-hue", hue, count, nodes}` for each hue no kind wears, then `{kind, count,
+  nodes}` for `label-too-long`, `empty-icon` and `high-in-degree`; `treeLoops` hold
+  `{node, path, pathOmitted?}`, a path of `{treeId, title}`, and `danglingPointers` hold
+  `{node, treeId}`. Each list holds its first 50, with `cyclesOmitted`, `danglingOmitted`,
+  `selfEdgesOmitted`, `treeLoopsOmitted` or `danglingPointersOmitted` beside it counting the rest
+  where any is left off. What a step follows is read through removed steps, so a loop of removed
+  steps alone is not listed and no step's work is masked.
+- `list_trees` answers `{trees, nextCursor?}`: one row for each roadmap the person owns that
+  stands, in the order of the domain's `list` read, newest first, as `{id, title, counts, frontier,
+  lastCompletedAt}`. `counts` is `{total, done, available, locked, unknown}`, `frontier` the titles
+  of its available steps in `get_tree`'s order, and `lastCompletedAt` the newest date its
+  completions carry, or null where none carries one. A roadmap the device has not finished bringing
+  has its `counts` and `frontier` null. `id`, `title`, `total` and `done` are the server's names.
 
 ### §5.2 Pages
 
-A read answers a sequence of objects, `get_tree`'s header and then its steps, or the steps of
-`get_nodes` and `find_nodes`, in pages of at most 16,384 bytes of canonical text (the vectors'
-[README](../../packages/api-contract/roadmap/abilities/README.md)). A page is measured as it is
-sent, with its `nextCursor`, `part` and `parts`.
+A read answers a sequence of objects in pages of at most 16,384 bytes of canonical text (the
+vectors' [README](../../packages/api-contract/roadmap/abilities/README.md)), each measured as it is
+sent, with its `nextCursor`, `part` and `parts`. `get_tree`'s sequence is its header and then its
+steps; `get_nodes`' and `find_nodes`' are their steps, `get_progress`' its completions, `list_trees`'
+its rows, and `get_diagnostics`' the entries of its lists, list after list in key order. A page
+carries every list of its read, each with the entries that fall on it, and the first page carries
+`get_diagnostics`' `…Omitted` counts.
 
 1. A page takes whole objects in order while it stays within the cap. It carries `nextCursor` when
    the sequence goes on after it, and the next call sends that as `cursor`.
@@ -247,40 +273,74 @@ sent, with its `nextCursor`, `part` and `parts`.
    own. Each part but the last fills its page as far as whole Unicode scalars of text, and whole
    elements of a list, allow. The page of the last part goes on taking whole objects after it.
 3. Part 1 carries every field the object answers, each long field as far as it fits and empty where
-   none of it does; each later part carries the step's `id` and the rest of the long fields that go
-   on there. The long fields are a step's `description`, `links` and `prerequisites` and the
-   header's `guide`, filled in key order. Every part carries `part`, from 1, and `parts`, their
-   number, and a reader joins the parts' texts and lists in order.
+   none of it does; each later part carries the rest of the long fields that go on there. The long
+   fields are a step's `description`, `links` and `prerequisites`, the header's `guide` and a row's
+   `frontier`, filled in key order; no other object of a read can pass a page. A later part of a
+   step or a row carries its `id`; one of the header comes under `tree`, which names it. Every part
+   carries `part`, from 1, and `parts`, their number, and a reader joins the parts' texts and lists
+   in order.
 4. `nextCursor` is `<index>.<part>.<digest>`: the position, from 0, of the object the next page
    starts with; the part of it to start from, 1 for a whole object; and the first 16 lower-case
-   hexadecimal digits of the SHA-256 of the canonical text of the sequence's step ids, in order. A
-   cursor whose digest is not the roadmap's now is refused as `roadmap-changed`, and Coach reads
-   again from the first page. A cursor that is not of this form is `invalid-input`. The cursor holds
-   the position alone: each call names its `fields` again.
-
-Every read pages so. `get_progress`, `get_diagnostics` and `list_trees` do not yet state the shape
-of their answer, and so not the sequence they page.
+   hexadecimal digits of the SHA-256 of the canonical text of `{"read": …, "continues": …}`. `read`
+   is what the pages stand on: the ids of the steps of `get_tree` and `find_nodes`, of the
+   completions of `get_progress` and of the rows of `list_trees`, in order, and every object of
+   `get_nodes` and `get_diagnostics`, whole, which is all they read. `continues` is the object the
+   position is inside, whole as the read answers it, where the part is past the first, and null
+   otherwise; so a text edited between its part pages changes the digest.
+5. A cursor is checked in this order. One not of this form is `invalid-input`. One whose digest is
+   not the read's now is `roadmap-changed`, and Coach reads again from the first page. One whose
+   position the sequence does not hold, past its end or past the parts of its object, is
+   `invalid-input`. The cursor holds the position alone: each call sends its `fields` again, and a
+   call with other fields reads other objects, so its digest does not match.
 
 ## §6 Writing
 
 A direct write (D-3) is carried out by the tool host as the domain's own actions, the ones the
-room's controls run. The ability and the host check first:
+room's controls run, and answers as this table says:
 
-1. **The roadmap can take a write.** The device holds it whole, and the step is under no delete the
-   person can still undo. Otherwise the ability is refused as `roadmap-not-ready`.
+| Ability | The room's action | Answers |
+|---|---|---|
+| `set_progress` | `Complete` or `Reset` | `{}` |
+| `rename_node` | `ChangeStep`, its `label` | `{}` |
+| `annotate_node` | `ChangeStep`, its `description` and `links`, each replaced whole | `{}` |
+| `create_node` | `CreateStep`, under the id the tool host mints | `{nodeId}` |
+| `connect` | `ChangePrerequisites`, one link added | `{}` |
+
+The ability and the host check first:
+
+1. **The roadmap can take a write.** The device holds it whole, else `roadmap-unavailable`, and the
+   step is under no delete the person can still undo, else `roadmap-not-ready`.
 2. **The person may write it.** The person owns the roadmap, as the room itself decides before it
    offers its own controls. A reader's Coach answers questions and is offered no ability that
    writes or proposes. Otherwise the call is refused as `not-owner`.
 3. **It is this conversation's roadmap.** A direct write names the roadmap the conversation is
    about, or is refused as `out-of-scope`. A conversation about all roadmaps is offered no direct
    write.
-4. **The server will take it.** The write is inside the caps of `limits.json`: a label of 200
-   characters, a description of 16,000, 10,000 steps, 20,000 links, 32 web links a step with a label
-   of 200 and an address of 2,048, an id of 128, 6 kinds with a label of 24 and a description of 80.
-   An over-cap write is refused on the device as `over-limit` and never sent. Each cap in the file
-   names the constant of the backend's `domain/Command.h` and the declaration of roadmap's sync
-   registry it is, and the web domain's spec of it where there is one, and the Coach contracts
-   workflow fails when any differs.
+4. **The server will take it.** The write is inside the caps of `limits.json`, or it is refused on
+   the device as `over-limit` and never sent. Each cap names the constant of the backend's
+   `domain/Command.h` that holds it where one does, the declaration of the sync registry the engine
+   admits it by, and the web domain's spec of it where there is one, and the Coach contracts
+   workflow fails when any of them, or `limits.json`, differs from this table:
+
+   | Cap | Max | Counts | Backend | Registry | Web |
+   |---|---|---|---|---|---|
+   | `id` | 128 | characters | `kMaxIdLength` | `node.id`, `kind.id` | |
+   | `label` | 200 | characters | `kMaxNodeLabelLength` | `node.label` | `label` |
+   | `description` | 16000 | characters | `kMaxNodeDescriptionLength` | `node.description` | `description` |
+   | `steps` | 10000 | items | `kMaxNodes` | `node` | |
+   | `links` | 20000 | items | `kMaxEdges` | `edge` | |
+   | `webLinks` | 32 | items | `kMaxNodeLinks` | `node.links` | `links` |
+   | `webLinkLabel` | 200 | characters | `kMaxLinkLabelLength` | `node.links.label` | `linkLabel` |
+   | `webLinkAddress` | 2048 | characters | `kMaxLinkUrlLength` | `node.links.url` | `linkUrl` |
+   | `kinds` | 6 | items | `kMaxKinds` | `kind` | |
+   | `kindLabel` | 24 | characters | `kMaxKindLabelLength` | `kind.label` | `kindLabel` |
+   | `kindDescription` | 80 | characters | `kMaxKindDescriptionLength` | `kind.description` | `kindDescription` |
+   | `proposalChanges` | 100 | items | | `coachProposal.changes` | |
+   | `proposalChangesBytes` | 65536 | bytes | | `coachProposal.changes` | |
+   | `proposalBaseBytes` | 262144 | bytes | | `coachProposal.base` | |
+
+   Characters are Unicode code points, and bytes those of a value's canonical text, as the engine
+   measures a field that is not text. The last three hold a proposal's record (§7).
 5. **The graph stays whole.** `connect` and `create_node` refuse a link that would close a cycle
    (`closes-cycle`) or name a step the roadmap does not hold (`unknown-step`). A web link's address
    is one the contract allows (`address-not-allowed`). A new step names a kind the roadmap has
@@ -288,7 +348,11 @@ room's controls run. The ability and the host check first:
 6. **A new id is random.** The tool host mints a new step's id as the room's controls do, from a
    random source, so two devices that add a step offline never mint the same one. An ability call
    runs once, on the device, so nothing needs an id it could mint again.
-7. **Marks keep their rules.** A step that opens a roadmap takes no mark (`opens-roadmap`).
+7. **Marks keep their rules.** A step that opens a roadmap takes no mark (`opens-roadmap`). A locked
+   step is not marked complete (`step-locked`): the room offers no Complete on it, and only an
+   outside assistant's mark says it was done out of order (§14).
+8. **It changes something.** A write that sends what the step already holds, or a mark that already
+   stands, is refused as `no-change`, and nothing is sent.
 
 The check and the write run in one synchronous task, so nothing arriving from the server or from the
 person's hand comes between them. A door that answers that it wrote nothing is `roadmap-not-ready`
@@ -310,70 +374,79 @@ or `no-change`, never success.
 
 ### §6.1 Refusals
 
-Every code an ability refuses with. A refusal names, as `id`, the step, ref, kind or roadmap it is
-about where it is about one, and a proposal's carries `at` too (§7).
+Every code an ability refuses with. A refusal names, as `id`, what the failing check is about where
+that is a step, a ref, a kind or a roadmap: for a link, the step that waits; for a merge, the step
+of the two that fails it. A refusal of a proposal also carries `at` (§7).
 
 | Code | Refused when |
 |---|---|
-| `invalid-input` | The input breaks the ability's schema, as the gate's Shape rule finds ([Coach engine](coach-engine.md) §6), or a change of a proposal breaks its op's row (§7) |
-| `roadmap-unavailable` | The device has not finished bringing the roadmap (§10) |
+| `invalid-input` | The input breaks the ability's schema, as the gate's Shape rule finds ([Coach engine](coach-engine.md) §6), or a rule of its input this document states: a change that breaks its op's row (§7), a cursor that is not one or points past its sequence (§5.2), an id asked twice (§5.1), an `annotate_node` that sends neither field |
+| `roadmap-unavailable` | The device has not finished bringing the roadmap; it can be asked again once it has (§10) |
 | `unknown-roadmap` | The roadmap is neither the conversation's nor one the person owns, and the device holds the whole list of theirs (§10) |
-| `roadmap-not-ready` | The device does not hold the roadmap whole, or the step is under a delete the person can still undo |
+| `roadmap-not-ready` | The call names a step under a delete the person can still undo |
 | `not-owner` | The person does not own the roadmap, and a write or a proposal needs its owner |
 | `out-of-scope` | A direct write names a roadmap other than the conversation's |
-| `over-limit` | A value or a count would pass a cap of `limits.json`, or a proposal holds more than 100 changes |
+| `over-limit` | A value or a count would pass a cap of `limits.json`: a step's text or links, the roadmap's steps, links or kinds, or a proposal's changes, counted or as its record's bytes (§7) |
 | `unknown-step` | A step the roadmap does not hold, or a ref no earlier change gave |
 | `closes-cycle` | A link, or a merge, would close a loop |
-| `unknown-kind` | A kind the roadmap does not have |
+| `unknown-kind` | A kind the roadmap does not have, or a ref no earlier `add_kind` gave |
 | `address-not-allowed` | A web link's address is not one `roadmap-link-urls.json` shows |
 | `opens-roadmap` | A mark on a step that opens a roadmap, which is complete when that roadmap is |
-| `kind-exists` | A new kind's id is one the roadmap holds |
-| `hue-taken` | Two kinds would wear one hue once every change has folded |
-| `roadmap-changed` | A cursor from before the roadmap's steps changed (§5.2), or a proposal over a register that has moved since the turn read it (§7) |
-| `no-change` | The room's door wrote nothing |
+| `step-locked` | A locked step marked complete: Coach completes what it needs first, or suggests that |
+| `hue-taken` | A kind would take a hue another kind wears, as the room's own recolour refuses |
+| `roadmap-changed` | A cursor from before the read changed (§5.2), or a proposal over a register that has moved since the turn read it (§7) |
+| `no-change` | A write that changes nothing, or a door that wrote nothing |
 
 ## §7 Proposals
 
 `propose_roadmap_change` takes `{treeId, changes[]}`, one to 100 changes, and mints one proposal.
-A change is one flat object: its `op` and the fields its row names, those before the semicolon
-required. A field the row does not name, or a required one left out, is `invalid-input`.
+A change is one flat object: its `op` and the fields its row names. A field the row does not name,
+or a required one left out, is `invalid-input`.
 
-| `op` | Fields | Writes |
-|---|---|---|
-| `add_step` | `ref`, `label`; `description`, `kind`, `prerequisites`, `links` | A new step after its prerequisites; without `kind` it takes terracotta |
-| `remove_step` | `nodeId` | The step is removed. Each step after it follows the removed step's own prerequisites |
-| `rename` | `nodeId`, `label` | The step's label |
-| `describe` | `nodeId`; `description`, `links`, at least one | The step's description, its web links, or both, each replaced whole |
-| `set_kind` | `nodeId`, `kind` | The step takes the kind's hue |
-| `connect`, `disconnect` | `nodeId`, `prerequisiteId` | A link added or removed: `nodeId` is the step that waits, `prerequisiteId` the step it waits on |
-| `merge` | `nodeId`, `removeId`; `label`, `description` | `removeId` folds into `nodeId`, which keeps its own mark and takes `label` and `description` where sent. Each link into or out of `removeId` moves to `nodeId`, a link between the two is dropped, and two links that meet become one. `removeId` is removed |
-| `split` | `nodeId`, `parts` | The step becomes its parts, two or more, each `{ref, label; description, kind, links}`, side by side (R-9): each follows the old step's prerequisites, precedes each step that followed it, takes its mark, and takes its kind unless it names one. A part's description and web links are empty unless sent. The old step is removed |
-| `set_progress` | `nodeId`, `status` | The step marked `complete` or `none` |
-| `add_kind` | `kind`, `label`, `hue`; `description` | A new kind, under the id `kind` names |
-| `rename_kind` | `kind`, `label` | A kind's label |
-| `recolor_kind` | `kind`, `hue` | A kind's hue, and the steps that wear it with it, as the room's recolour does |
+| `op` | Required | Optional | Writes |
+|---|---|---|---|
+| `add_step` | `ref`, `label` | `description`, `kind`, `prerequisites`, `links` | A new step after its prerequisites; without `kind` it takes terracotta |
+| `remove_step` | `nodeId` | | The step is removed. Each step after it follows the removed step's own prerequisites |
+| `rename` | `nodeId`, `label` | | The step's label |
+| `describe` | `nodeId` | `description`, `links` | The step's description, its web links, or both, each replaced whole; at least one of the two is sent |
+| `set_kind` | `nodeId`, `kind` | | The step takes the kind's hue |
+| `connect` | `nodeId`, `prerequisiteId` | | A link added: `nodeId` is the step that waits, `prerequisiteId` the step it waits on |
+| `disconnect` | `nodeId`, `prerequisiteId` | | That link removed |
+| `merge` | `nodeId`, `removeId` | `label`, `description` | `removeId` folds into `nodeId`, which keeps its own mark and web links and takes `label` and `description` where sent. Each prerequisite link into or out of `removeId` moves to `nodeId`, a link between the two is dropped, and two links that meet become one. `removeId` is removed, its web links with it |
+| `split` | `nodeId`, `parts` | | The step becomes its parts, two or more, each `{ref, label}` and optionally `description`, `kind` and `links`, side by side (R-9): each follows the old step's prerequisites, precedes each step that followed it, takes its mark, and takes its kind unless it names one. A part's description and web links are empty unless sent. The old step is removed |
+| `set_progress` | `nodeId`, `status` | | The step marked `complete` or `none` |
+| `add_kind` | `ref`, `label`, `hue` | `description` | A new kind |
+| `rename_kind` | `kind`, `label` | | A kind's label |
+| `recolor_kind` | `kind`, `hue` | | A kind's hue, and the steps that wear its old hue with it, as the room's recolour repaints them |
 
-- **Refs.** `ref` names a new step within the proposal: `new:` and up to 32 lowercase letters,
-  digits and hyphens. An `add_step` or a part of a `split` gives it, once, and a later change names
-  that step by it wherever it names a step (`nodeId`, `prerequisites`, `prerequisiteId`,
-  `removeId`). When the proposal is minted the tool host draws the proposal's id and then one id for
-  each ref, in the order the changes give them, and the record's `changes` hold those ids: a new
-  step's under `nodeId`, and every field that named the ref names its id.
+- **Refs.** `ref` names a new step or kind within the proposal: `new:` and up to 32 lowercase
+  letters, digits and hyphens. An `add_step`, a part of a `split` or an `add_kind` gives it, once,
+  and a later change names that step or kind by it wherever it names one (`nodeId`,
+  `prerequisites`, `prerequisiteId`, `removeId`, `kind`). A ref given twice is `invalid-input`.
+  When the proposal is minted the tool host draws the proposal's id and then one id for each ref,
+  in the order the changes give them, as the room's own controls mint a step's or a kind's, and the
+  record's `changes` hold those ids: a new step's under `nodeId`, a new kind's under `kind`, and
+  every field that named the ref names its id.
 - **The fold.** The ability folds the changes in order over a scratch copy of the standing roadmap,
-  validating each as §6 validates a write, and refuses a set that could not be applied. Kinds' hues
-  are held apart once every change has folded, so two kinds can swap hues; a set that leaves two
-  kinds on one hue is refused as `hue-taken` at the last change that gave one of them its hue. It
-  also refuses, as `roadmap-changed`, a set that touches a register which has moved since this turn
-  read it, so the model reads again and never proposes over an edit it has not seen.
+  validating each as §6 validates a write, and refuses a set that could not be applied. A change
+  that names a step under a delete the person can still undo is `roadmap-not-ready`. A kind takes no
+  hue another kind wears, checked at each change as the room's recolour checks it, so two kinds do
+  not swap hues in one proposal. A `merge` whose two steps are one is `invalid-input`. It also
+  refuses, as `roadmap-changed`, a set that touches a register which has moved since this turn read
+  it, so the model reads again and never proposes over an edit it has not seen.
+- **The record's size.** A set of more than 100 changes is `over-limit`, and so is a minted record
+  whose `changes` pass 65,536 bytes or whose `base` passes 262,144, as the sync registry caps them
+  (§6, rule 4).
 - **The answer** is `{proposalId, removes}`: the minted proposal's id and, for each step the
   proposal removes (by `remove_step`, as a merge's `removeId`, or as the step a `split` replaces),
   in the order the changes remove them, `{nodeId, label, descriptionChars, links, done}` as the step
-  stands when that change folds: its id, its label, the Unicode scalars of its description, how many
-  web links it carries and whether it is complete.
-- **A refusal** of a change carries `at`, the index of the first change that fails, and `id`, the
-  step, ref or kind of that change it is about (§6.1). A set of more than 100 changes is refused as
-  `over-limit` at the 101st. A refusal of the call before any change folds, for the roadmap or the
-  person, carries no `at`.
+  stands when that change folds: its id, the minted one for a step the proposal itself added, its
+  label, the Unicode scalars of its description, how many web links it carries and whether it is
+  complete.
+- **A refusal** of a change carries `at`, the index of the first change that fails, and `id` as §6.1
+  says; the Shape rule's refusal of `changes[k]` carries `at: k`. A refusal of the count of changes
+  carries `at: 100` and no `id`. A refusal of the record's size, and one of the call before any
+  change folds, for the roadmap or the person, carry neither.
 
 A proposal is a record (§9): `{id, treeId, threadId, messageId, base, changes[], state, undone}`.
 
@@ -515,7 +588,8 @@ is lacking, and this build adds, is:
 - **A credential to ask with, in the browser.** The AI service admits an installation on a pass the
   backend signs for an installation credential. No such credential exists in the browser.
 - **A screen for sign-in when both sides hold conversations.** The sync engine asks a person what to
-  do with a device's records when the account already has some. No board draws that for Coach.
+  do with a device's records when the account already has some. Boards 10.4 on the web and 10.7 on
+  the iPhone draw that question for Coach (§15).
 
 ## §12 What retires, and what stays
 
@@ -592,7 +666,7 @@ states them. This document's own:
 | R-14 | Coach on the iPhone | In the iPhone's first release of the Roadmap room, on the same catalog, vectors and records. (2026-11-17) |
 | R-15 | Coach for a reader on the iPhone | None: a shared roadmap's cover on the iPhone offers Fork alone, and a reader meets Coach on the web. (2026-11-24) |
 
-Each is drawn and ✅ Ready for dev (owner, 2026-11-24): on the Roadmap Coach page, section 10 (10.1 a reader's Coach
-on the web, 10.2 a card applied and then undone, 10.3 a replaced card, 10.4 the sign-in question of §11); on the
-Roadmap · iOS page, 11.24, with the replaced card at 11.9b and the sign-in question at 10.7. A reader meets no Coach on
-the iPhone (R-15).
+The four states the design's first boards did not draw are each drawn and ✅ Ready for dev (owner, 2026-11-24): on
+the Roadmap Coach page, section 10 (10.1 a reader's Coach on the web, 10.2 a card applied and then undone, 10.3 a
+replaced card, 10.4 the sign-in question of §11); on the Roadmap · iOS page, 11.24, with the replaced card at 11.9b and
+the sign-in question at 10.7. A reader meets no Coach on the iPhone (R-15).
