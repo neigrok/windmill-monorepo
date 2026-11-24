@@ -167,12 +167,13 @@ test('Chromium: a paused session keeps the room, with sign-in at the account sea
   });
 });
 
-test('Chromium: a browser signed out keeps the sign-in pitch', async (t) => {
+test('Chromium: a browser signed out draws the room on its own copy', async (t) => {
   const { page } = await boot(t, { seeded: false, me: 'nobody' });
   await withBrowserErrors(page, async () => {
-    await page.locator('.gym-door').waitFor();
-    assert.equal(await page.locator('.gym-door .gym-door-line').textContent(), 'Sign in to open your training log.');
-    assert.equal(await page.locator('.gym-routine-name').count(), 0);
+    await page.locator('.gym-room').waitFor();
+    await page.waitForFunction(() => document.getElementById('auth-state').textContent === 'ghost');
+    assert.equal(await page.locator('.gym-door').count(), 0, 'no sign-in pitch stands in the room’s place');
+    assert.equal(await page.locator('.gym-tabs a').count(), 3);
     assert.deepEqual(await page.evaluate(() => [window.replica().state, window.issues ?? []]), ['anon', []]);
   });
 });

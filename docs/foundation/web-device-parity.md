@@ -8,12 +8,15 @@ them.
 
 **Status:** Specified, and approved by the owner on 2026-11-17; being built. On the web, journal reads and writes the
 browser's replica, signed in and signed out, and exports from it. Gym does so for everything but a workout, and draws
-from the browser's copy without waiting for the account (§2): it is a sign-in door when signed out and a live mirror of
-a phone's workout. The domain's part is built: the refusals of §4's one open workout on every surface, though a start
-that loses a race holds its sets in its notice and no surface recovers them yet; and §8's adoption, recovery and Coach
-onboarding import in the web's domain, which claims every file §8 names. Of them, the shell's hook before the seat changes
-(§3 Sign-in) saves each signed-out workout for adoption, an open one with its sets, with no rack to write first since the
-web has none yet; nothing else calls them on the web yet. Gym's Coach takes its turn in the browser. The browser
+from the browser's copy without waiting for the account (§2): signed out it is the room on the browser's own copy (§3),
+and it is a live mirror of a phone's workout. The domain's part is built: the refusals of §4's one open workout on every
+surface, and the recovery of a start that loses a race, whose sets the web saves from its notice for the recovery to
+offer while the phones show the refusal alone ([open problems](local-first-open-problems.md) LP-6); and §8's adoption,
+recovery and Coach onboarding import in the web's domain, which claims every file §8 names. §3's sign-in is built on the
+web: the shell's hook before the seat changes saves each signed-out workout for adoption, an open one with its sets, with
+no rack to write first since the web has none yet; gym's device work and its merge, the question's count, the recovery of
+a workout the account cannot take in The log, a proposal issued again and the copies the account took let go. Gym's
+Coach takes its turn in the browser. The browser
 counts a store it cleared (§7) once, with its event. A browser that cannot keep a copy is not supported (§7, R-7). The
 boards for a workout on the web and the signed-out gym are approved (R-10). The build order lives in the Web as a device roadmap tree, which the dogfood tree
 (`t_9362d9bc883e0a1e`) opens from the node `web-device-parity`.

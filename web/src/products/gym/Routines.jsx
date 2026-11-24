@@ -26,7 +26,8 @@ import { useDomainRead } from './useDomainRead.js';
 import { TargetEditor } from './planning/TargetEditor.jsx';
 import './planning/planning.css';
 
-export function RoutinesList({ log, reviewing = null }) {
+// Signed out (`anonymous`) a routine's menu holds Delete alone: Log past opens the past-workout form, a server command (R-5).
+export function RoutinesList({ log, reviewing = null, anonymous = false }) {
   const api = useGymApi();
   const view = useGymRead(() => api.routines(), [], { sync: true, ready: Boolean(api?.ready) });
   const program = useDomainRead((read) => ({ routines: read.repository(Routine).all('stored'), isComplete: read.firstPullComplete() }));
@@ -91,7 +92,7 @@ export function RoutinesList({ log, reviewing = null }) {
               <Menu
                 label={t('gym.routines.moreFor', { name: routine.name })}
                 items={[
-                  { label: t('gym.routines.logPast'), run: () => { window.location.hash = backfillHref(routine.id, FROM_ROUTINE_MENU); } },
+                  ...(anonymous ? [] : [{ label: t('gym.routines.logPast'), run: () => { window.location.hash = backfillHref(routine.id, FROM_ROUTINE_MENU); } }]),
                   { label: t('gym.routines.delete'), run: () => remove(routine) },
                 ]}
               />

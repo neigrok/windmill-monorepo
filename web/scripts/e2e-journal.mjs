@@ -229,8 +229,8 @@ try {
       await page.getByRole('textbox', { name: 'Write today' }).fill(`anonymous ${choice}`); await saved(page, `anonymous ${choice}`);
       await cookie(context); await page.reload(); await ready(page);
       await page.getByText('Add to your account?', { exact: true }).waitFor();
-      assert.equal(await page.getByRole('dialog').getByText('1 page and 1 unsaved change from before you signed in', { exact: false }).count(), 1);
-      await page.keyboard.press('Escape'); assert.equal(await page.getByRole('dialog').count(), 1);
+      assert.equal(await page.getByRole('dialog').getByText('This browser has 1 page and 1 unsaved change from before you signed in', { exact: false }).count(), 1);
+      assert.deepEqual(await page.getByRole('dialog').getByRole('button').allInnerTexts(), ['Cancel sign-in', 'Discard', 'Add']);
       await page.getByRole('dialog').getByRole('button', { name: choice, exact: true }).click();
       if (choice === 'Discard') {
         await page.getByText('Discard 1 page and 1 unsaved change?', { exact: true }).waitFor();

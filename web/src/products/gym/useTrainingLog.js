@@ -214,6 +214,8 @@ export function useTrainingLog() {
       const fingerprint = JSON.stringify(notice.content);
       if (seen.current.get(notice.id) === fingerprint) continue;
       seen.current.set(notice.id, fingerprint);
+      // A refusal a saved copy's card names, or a start that lost a race, is recovery's to say (recovery/InThisBrowser.jsx).
+      if (api.recoveryAnswers(notice)) continue;
       const commands = [notice.content?.cmd, ...(notice.content?.dependents ?? []).map((part) => part.cmd)].filter(Boolean);
       const workout = commands.length ? api.workoutSaves().find((receipt) => receipt.status === 'refused' && commands.some((command) =>
         command.name === receipt.command.name && (command.name === 'gym.importSession' ? command.args.id === receipt.sessionId

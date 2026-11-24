@@ -321,17 +321,21 @@ that finishes it, so a sign-out cancelled or failed keeps them: gym's Coach name
 `sync.seatWillChange(engine)` runs before the seat changes: before a sign-in binds the device to an account (one the
 engine resumes as it starts included) and before a sign-out finishes, in rail order, each awaited for at most five seconds
 (`DeviceSeat.willChange`); one that throws or outlasts that is reported and the seat changes without it. Gym saves each
-signed-out workout for adoption there. A product may
-word its own question (`sync.signInWords`; `sync.signOutWords` for a sign-out whose work is all its own and that no
-notice joins): the shell then asks in those words as flow 50 draws roadmap's, a dialog from 744px and a page below, where
-Escape cancels, and a cancelled sign-in signs the account out and leaves the work from before on the device. Each due
-product is asked in turn. Account closure records a durable intent and discards that
+signed-out workout for adoption there. A sign-in question is asked in its product's words (`sync.signInWords`, as
+roadmap's), or else in the shell's, consistency 7d's with *this browser*, around what the product counts: kind by kind,
+each with what names it (`sync.signInWork`, gym's workouts, routines and weigh-ins), or by its one noun
+(`sync.signedOutWork`, counted by `adoptionCount`, the journal's pages) beside its unsaved device work. It is a dialog from
+744px and a page below, as flow 50 draws roadmap's: Add and Discard of equal weight and Cancel sign-in, which Escape is
+too; Discard asks again before it deletes anything, in the words' `discard` (*Discard all of it?* where a product's words
+carry none), and Cancel or Escape there returns to the question. A cancelled sign-in signs the account out and leaves the
+work from before on the device. A product may word its sign-out too (`sync.signOutWords`, for a sign-out whose work is
+all its own and that no notice joins), with flow 50's Keep and quiet Discard. Each due product is asked in turn. Account closure records a durable intent and discards that
 account's device data without a second question, recovering interrupted cleanup before ordinary auth refresh: each
 product's `forgetDevice` hears `closed` for it.
 `platform/sync/react.js` exports `useSyncReplica()`, `useSyncEngine()`,
 `useSyncRecords(scope)` and `useSyncNotices(product)`; records and notices follow the replica this tab draws, so no room
 draws another seat's while the shell catches up. The anonymous journal uses record observations; gym's room draws from
-the replica the engine holds without waiting for the account, and signed out is its sign-in pitch. A page restored from
+the replica the engine holds without waiting for the account, signed out the browser's own copy. A page restored from
 the back/forward cache keeps every room as it stood, and its writes wait for the engine's restore, landing only under the
 seat they were made under.
 Gym and journal records change only through the engine; their REST clients carry server features.

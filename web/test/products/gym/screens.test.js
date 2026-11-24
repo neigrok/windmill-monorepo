@@ -20,10 +20,10 @@ test('the routine editor is keyed on the routine it edits, so a hash move remoun
   assert.equal(app.includes('<RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />'), true);
 });
 
-test('the routine row’s overflow is Log past above Delete, and no surface offers a copy of a routine', () => {
+test('the routine row’s overflow is Log past above Delete, Delete alone signed out, and no surface offers a copy of a routine', () => {
   const source = spoken(read('Routines.jsx'));
   assert.equal(source.includes(`items={[
-                  { label: t('gym.routines.logPast'), run: () => { window.location.hash = backfillHref(routine.id, FROM_ROUTINE_MENU); } },
+                  ...(anonymous ? [] : [{ label: t('gym.routines.logPast'), run: () => { window.location.hash = backfillHref(routine.id, FROM_ROUTINE_MENU); } }]),
                   { label: t('gym.routines.delete'), run: () => remove(routine) },
                 ]}`), true);
   assert.equal(source.includes('Log past\nDelete'), true, 'the catalog says Log past, then Delete');
@@ -264,14 +264,14 @@ test('workout rows read actual facts and collapse only an honest common scheme',
 test('the shared workout is answered above the replica’s door, and wears none of the app’s chrome', () => {
   const app = read('GymApp.jsx');
   const shared = app.indexOf('if (sharedToken || sharedLogToken) {');
-  const authSwitch = app.indexOf("const door = replica?.state === 'bound'");
+  const authSwitch = app.indexOf('<TrainingRoom key={replica.binding}');
   assert.ok(shared > 0, 'GymApp has no shared branch');
   assert.ok(shared < authSwitch, 'the shared branch resolves before the replica’s door');
   assert.ok(app.indexOf('const sharedToken = sharedTokenOf(hash);') < shared);
   assert.ok(app.indexOf('useSignInDoorHost()') < shared);
 
   const branch = app.slice(shared, authSwitch);
-  for (const chrome of ['<Chrome', '<TabBar', 'SignInPitch', 'AccountSeat', 'ProductSwitcher']) {
+  for (const chrome of ['<Chrome', '<TabBar', 'CoachDoor', 'AccountSeat', 'ProductSwitcher']) {
     assert.equal(branch.includes(chrome), false, chrome);
   }
   assert.equal(branch.includes('<SharedSession token={sharedToken} />'), true);
@@ -286,7 +286,7 @@ test('the account seat and the switcher are drawn in one place, and only outside
   assert.ok(app.indexOf('if (inShell) return null;') < app.indexOf('<AccountSeat'));
 
   const mounts = app.split('<Chrome').slice(1);
-  assert.equal(mounts.length, 2);
+  assert.equal(mounts.length, 1);
   for (const mount of mounts) assert.equal(mount.slice(0, 40).includes('inShell={inShell}'), true, mount.slice(0, 40));
 
   assert.equal((app.match(/data-chrome=\{inShell \? 'shell' : 'own'\}/g) ?? []).length, 2);
@@ -333,7 +333,7 @@ test('the transient is the room’s, and the window’s own carries the Undo, no
 
 test('the history reader changes session identity without replacing the history index', () => {
   assert.equal(read('GymApp.jsx').includes("(screen === 'log' || screen === 'session') && <LogList"), true);
-  assert.equal(read('Log.jsx').includes('<SessionDetail key={selected} id={selected} log={log} signedIn={signedIn} embedded from={from} />'), true);
+  assert.equal(read('Log.jsx').includes('<SessionDetail key={selected} id={selected} log={log} signedIn={signedIn} anonymous={anonymous} embedded from={from} />'), true);
 });
 
 test('web correction uses plain numeric fields and validates their raw values', () => {
@@ -671,7 +671,7 @@ test('the settings section carries the Notes door under the line the Notes scree
 
 test('the Notes screen is its own room off #/gym/notes, titled as a room with the honesty line under it, seeded with placeholders and nothing stored', () => {
   const app = read('GymApp.jsx');
-  assert.equal(app.includes("{screen === 'notes' && <Notes log={log} />}"), true);
+  assert.equal(app.includes("{signedIn && screen === 'notes' && <Notes log={log} />}"), true);
   const notes = read('notes/Notes.jsx');
   assert.equal(notes.includes('<Back href={COACH_HREF}>{COACH_TITLE}</Back>'), true);
   assert.equal(notes.includes(`<header className="gym-notes-heading">
