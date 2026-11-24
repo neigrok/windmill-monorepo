@@ -12,7 +12,7 @@ import { Valid } from '../../platform/domain-kit/validation.js';
 import { Violation } from '../../platform/domain-kit/values.js';
 import { CommitError } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { registry } from '../../platform/sync/schema.js';
-import { useSyncEngine, useSyncRecords } from '../../platform/sync/react.js';
+import { useSyncRecords, useSyncReplica } from '../../platform/sync/react.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
 import { Bodyweight, DeleteWeighIn, WeighIn, WeighInValue } from './domain/bodyweight.js';
@@ -225,18 +225,23 @@ export function noteDraft(note) {
     : Draft.opening(new NoteValue(id, note.title, note.body));
 }
 
+// A sign-in or a sign-out moved the engine off the replica the API stands on; nothing in it asks a person to sign in.
+const notWritable = () => new GymRefusal('not-writable', { sentence: t('gym.runtime.notWritable') });
+
 export function createGymApi(engine, { event = gymStep, failure = gymFailure, zone = deviceZone } = {}) {
   const owner = engine.activeReplica();
+  const anonymous = engine.getSnapshot().state === 'anon';
   if (shownRemovals.get(engine)?.owner !== owner) shownRemovals.set(engine, { owner, proposals: new Map() });
   const shown = shownRemovals.get(engine).proposals;
   const checkedPlans = new WeakSet();
   const port = new EngineReplica(engine);
-  const checkOwner = (replica = engine.activeReplica()) => {
-    if (replica !== owner) throw new GymRefusal('not-writable', { sentence: t('gym.runtime.signInToSave') });
+  // A commit's views, or the engine as it last published: another replica, or the anon one bound in place, is refused.
+  const checkOwner = (views = { replica: engine.activeReplica(), isAnonymous: engine.getSnapshot().state === 'anon' }) => {
+    if (views.replica !== owner || views.isAnonymous !== anonymous) throw notWritable();
   };
   const runner = new ActionRunner({
     commit: (scope, body) => port.commit(scope, (views) => {
-      checkOwner(views.replica);
+      checkOwner(views);
       reportUnreadablePlans(views, failure, checkedPlans);
       return body(views);
     }),
@@ -249,8 +254,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
   const boundary = async (operation, body) => {
     try { return await body(); }
     catch (thrown) {
-      const error = thrown instanceof CommitError && thrown.kind === 'not-writable'
-        ? new GymRefusal('not-writable', { sentence: t('gym.runtime.signInToSave') }) : thrown;
+      const error = thrown instanceof CommitError && thrown.kind === 'not-writable' ? notWritable() : thrown;
       event(operation, error instanceof GymRefusal ? 'refused' : 'failed');
       if (!(error instanceof GymRefusal) && !isStoreFailure(error)) failure(operation);
       throw error;
@@ -371,7 +375,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
       });
     }),
     ...Object.fromEntries(['exercises', 'sessions', 'session', 'review', 'routines', 'routine',
-      'history', 'progress', 'record', 'lastTime', 'lastSets', 'stats'].map((name) => [name, async (...args) => read((reader) => {
+      'history', 'progress', 'record', 'stats'].map((name) => [name, async (...args) => read((reader) => {
       const source = name === 'history' && args[0]?.timeZone
         ? new Reader(reader.views, SCOPE, new Moment(reader.moment.now, namedZone(args[0].timeZone))) : reader;
       const history = new TrainingHistory(source);
@@ -379,6 +383,9 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
       return name === 'history' && args[0]?.projection === 'progress'
         ? { ...document, progress: history.progressIn(args[0]) } : document;
     })])),
+    // A copy before its first pull of gym's scope may hold part of the history, so it reads no last time and claims nothing.
+    lastTime: async (exerciseId) => read((reader) => (reader.firstPullComplete() ? new TrainingHistory(reader).lastTime(exerciseId) : null)),
+    lastSets: async () => read((reader) => (reader.firstPullComplete() ? new TrainingHistory(reader).lastSets() : [])),
     importSession: (input, draft) => boundary('session-import', async () => {
       const id = new Id(input.id, Session);
       const outcome = await runner.run(savingWorkout(ImportSession({ id, startedAt: new Instant(input.startedAt), finishedAt: new Instant(input.finishedAt),
@@ -516,11 +523,12 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure, zo
   };
 }
 
+// Over whichever replica the engine holds, bound or anon, waiting for no account; `ready` once it has something to draw.
 export function useGymApi() {
-  const engine = useSyncEngine();
+  const replica = useSyncReplica();
   const records = useSyncRecords(SCOPE);
   const ready = records.firstPullComplete || records.drawn.length > 0;
-  return useMemo(() => engine ? { ...createGymApi(engine), ready } : null, [engine, records.replica, ready]);
+  return useMemo(() => replica ? { ...createGymApi(replica.engine), ready } : null, [replica, records.replica, ready]);
 }
 
 // A workout running on a phone keeps the mirror's sync close, until four idle hours close it.

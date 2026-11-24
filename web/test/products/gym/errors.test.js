@@ -12,7 +12,7 @@ test('failureReason — a refusal, a lapsed sign-in, a row that is gone, this de
   assert.equal(failureReason(new GymError(401, 'sign in to open your training log')), 'you’re signed out. Sign in and try again');
   assert.equal(failureReason(new GymError(404, 'no such session')), 'it isn’t in the log any more');
   assert.equal(failureReason(new GymRefusal('stale')), 'the log wouldn’t take it as written');
-  assert.equal(failureReason(new GymRefusal('not-writable')), 'you’re signed out. Sign in and try again');
+  assert.equal(failureReason(new GymRefusal('not-writable')), 'the account on this browser changed');
   assert.equal(failureReason(quota), 'this device couldn’t store it');
   assert.equal(failureReason(new CommitError('unknown change nope')), 'the log wouldn’t take it as written');
   assert.equal(failureReason(new TypeError('Failed to fetch')), 'the log didn’t answer. Try again when you have signal');

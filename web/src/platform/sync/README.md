@@ -1,8 +1,8 @@
 # Browser sync engine
 
 `BrowserSyncEngine.open()` opens IndexedDB and returns stable local snapshots without a network
-request. `start()` installs tab coordination and lifecycle hooks, releases holds on the first tab,
-requests persistent storage and starts synchronization. Products and UI reach the engine through `session.js`;
+request; `open({ inMemory: true })` holds the device in the tab instead (below). `start()` installs tab coordination
+and lifecycle hooks, releases holds on the first tab, requests persistent storage and starts synchronization. Products and UI reach the engine through `session.js`;
 from this module they import only `ReplicaChanged`.
 
 The registry composes the shared gym, journal and roadmap registries at version 13, minimum 11. The deterministic
@@ -110,6 +110,17 @@ after product cleanup succeeds, and replays it after reload. `recordAccountClosu
 session owner's closure of the bound account through the sign-out that ends it and any reload, until
 `clearAccountClosure(sessionId)`. The shell writes no engine state of its own: these calls are its only door.
 
+Two stores keep the engine's device behind one interface. `transact(change, { readonly, initialize, scopes })` runs
+`change` synchronously on the device in one transaction and answers `{ result, device, revision, changed, previous, active,
+measurement }`, a throw or a Promise from `change` committing nothing; `read(scopes)` is a read-only one, and
+`cleanup(limit)`, `reopen()`, `close()` and `coordination`, the name the tabs sharing the store lead and talk under
+(engine.md §7.8), complete it. `IndexedDBStore` (`store.js`) keeps the device durably for every tab of its version.
+`MemoryStore` (`memoryStore.js`) holds it in memory for as long as the page, for a browser that offers no IndexedDB
+(engine.md §2.5): its `coordination` is its own, so each tab holding one is a device of its own, leading its replica alone
+and syncing only through the server. Its reads share the committed values, frozen, and a write commits copies of what it changed, so a row keeps its identity
+while no write replaces it; `reopen` is the same device, as a restored page wants; it is never superseded and has no rows
+to clean up. The shell opens the engine on IndexedDB alone: where the browser refuses it, nothing opens in memory.
+
 Each store mutation uses one strict-durability IndexedDB transaction. Indexed reads precede the
 synchronous read-and-commit callback inside that same transaction; it cannot await. Writes hydrate
 only their requested scopes or row keys and the governing record type. Control records, outboxes
@@ -192,7 +203,9 @@ lost push reply. It requires `windmill_server` and Postgres client tools from `b
 territory; scheduling this script there remains an integration task. `npm run build` also bundles
 the browser engine separately and rejects Node builtins. The app shell caches the built room assets for offline reload; product adapters own their projections and migration.
 
-`react.js` exports `useSyncEngine()` (the open bound engine, or null during boot/sign-out),
+`react.js` exports `useSyncReplica()` (the open engine's active replica, `{ engine, id, state }`, bound or anon, from
+the moment the engine opens and whether or not the account has answered; null while it is not open), `useSyncEngine()`
+(the engine of a bound replica whose account the shell has settled, or null during boot and sign-out),
 `useSyncRecords(scope)` (the scope's snapshot through `useSyncExternalStore`, holding the scope for the
 document) and `useSyncNotices(product)` (the product's notices the same way). Records can observe the anonymous replica; only the session owner opens
 and starts the engine. Each product's route table carries a `sync` group — `prepare(engine)`,

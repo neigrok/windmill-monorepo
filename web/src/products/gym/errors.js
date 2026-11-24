@@ -37,7 +37,7 @@ export const RESPONSE_INTERRUPTED = t('gym.errors.responseInterrupted');
 
 export function failureReason(error) {
   if (error instanceof GymRefusal) {
-    return error.code === 'not-writable' ? t('gym.errors.reasonSignedOut') : t('gym.errors.reasonNotTaken');
+    return error.code === 'not-writable' ? t('gym.errors.reasonNotWritable') : t('gym.errors.reasonNotTaken');
   }
   if (isStoreFailure(error)) return t('gym.errors.reasonNotStored');
   if (error instanceof CommitError || error?.status === 400 || error?.status === 409) return t('gym.errors.reasonNotTaken');
