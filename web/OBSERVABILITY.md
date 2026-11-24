@@ -139,6 +139,9 @@ gesture events. Domain refusals retain the complete input in a local editor draf
 editor's unsaved status; failed reconciliation emits a bounded `sync_commit` failure outcome.
 Post-commit notice-cleanup failures use `journal-notice-cleanup` and preserve the successful save
 outcome. Unreadable legacy data uses `journal-migration`, retains its source, and allows startup.
+Settings' export emits `journal_export` with `outcome`: `ok`, `first_pull_timeout` (a bound replica's first pull of
+the journal did not end within 30 seconds), `replica_changed` (the account changed while it waited), `no_replica` (the
+browser holds no open replica) or `failed`, which alone also reports `journal-export`.
 No page body, scales, date, claim identifier or account is reported.
 
 Journal Talk emits `journal_talk_refused` each time the sheet says why Talk refused, with `code`, `reason` and

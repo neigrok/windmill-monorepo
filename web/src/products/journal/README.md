@@ -5,7 +5,7 @@ Pages live in the browser replica (`self/journal`) and change only through the e
 retirements, pending claims, editor drafts, content clocks, reconciliation and echo quotation
 comparisons. `pages.js` runs its actions and adapts `JournalRoom` to the web's flat page view
 (`pagesOf`, `corpus`), with durable refusal notices and editor drafts overlaid. `journalApi.js`
-holds the server features over the session cookie: echoes, nudges and export. `talk/` is Talk: the
+holds the server features over the session cookie: echoes and nudges. `talk/` is Talk: the
 mic and its sheet, `talkStore.js`, which holds a refused take for the tab across the room being left
 and forgets it at an account change, and `talkApi.js`, the transcription and the two reads a press
 makes before the microphone opens.
@@ -50,6 +50,11 @@ Distinct overlapping sources and changed source snapshots remain recoverable wit
 appending claim. Unattributable pages stay quarantined until explicit restore, with alternatives
 marked `recovered` so restoring them retains a draft instead of appending it to the account.
 Migration's claim adapter translates the domain's validated plan.
+
+Settings' export (`settings/journalExport.js`) is one Markdown file of the room's written pages,
+read from the replica: signed out the browser's own, and on a bound replica the account's once the
+engine's first pull of `self/journal` ends (it fails after 30 seconds without one). It asks the
+backend for nothing.
 
 Echo quotations compare in NFC; saved writing retains its original bytes. The domain matcher
 returns whole-grapheme UTF-16 ranges in the current source, with segmentation supplied by the
