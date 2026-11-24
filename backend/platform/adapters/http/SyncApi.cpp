@@ -61,15 +61,9 @@ std::optional<SyncReply> SyncApi::versionRefusal(const drogon::HttpRequestPtr& r
 }
 
 Credential SyncApi::credentialOf(const drogon::HttpRequestPtr& req) const {
-  const SentCredentials sent = SentCredentials::fromOccurrences(req->headerOccurrences()).withTokens([this](const std::string& token) {
-    return deps_.auth->digestOf(token);
-  });
-  const Credential credential = sent.resolve([this](const std::string& digest) -> std::optional<UserId> {
-    const std::optional<User> user = deps_.auth->revalidate(digest);
-    return user ? std::optional(user->id) : std::nullopt;
-  });
-  if (!credential.fails() && credential.servedAs()) req->attributes()->insert(kCallerAttribute, credential.servedAs()->str());
-  return credential;
+  const SentCaller caller = SentCaller::of(req, *deps_.auth);
+  if (caller.user) req->attributes()->insert(kCallerAttribute, caller.user->id.str());
+  return caller.credential;
 }
 
 std::optional<SyncReply> schemaRefusal(std::string_view version, std::int64_t minSchema, Ms serverTime, const std::string& epoch) {

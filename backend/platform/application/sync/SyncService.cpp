@@ -624,14 +624,23 @@ SyncReply SyncService::push(const Credential& credential, std::string_view body,
   SyncReply reply = ReplicaPush(catalog_, store_, admission_, *caller, *request, serverNow, bindUnavailable_.get()).run(budget, std::move(answer));
   if (reply.status != 200 || !credential.session() || !sessionReplicas_) return reply;
   // The accepted push's replica is now its session's. Recording it is part of the push's write and never changes its
-  // answer: a failure is reported under its own operation, and the results the push admitted are still answered.
+  // answer: a failure is reported under its own operation, and the results the push admitted are still answered. A
+  // session that is gone by now, or that is not the account's, is a refusal on the line, so a miss on every push shows.
   WriteObservation recorded("sync.push.session_replica", "platform", "sync");
   WriteContext context(recorded);
   try {
-    if (sessionReplicas_->recordSyncReplica(*credential.session(), (*request)["replica"].asString())) {
-      recorded.wrote();
-      recorded.finish();
-    } else recorded.skip();
+    switch (sessionReplicas_->recordSyncReplica(*credential.session(), *caller, (*request)["replica"].asString())) {
+      case SessionReplicas::Recorded::changed:
+        recorded.wrote();
+        recorded.finish();
+        break;
+      case SessionReplicas::Recorded::unchanged:
+        recorded.skip();
+        break;
+      case SessionReplicas::Recorded::absent:
+        recorded.finish("session-absent");
+        break;
+    }
   } catch (const std::exception& error) {
     recorded.fail(error);
   } catch (...) {

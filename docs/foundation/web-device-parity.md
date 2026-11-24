@@ -163,7 +163,8 @@ A phone always has its store. A browser can refuse one, lose one, or fill one.
   browser had not sent is gone. It is never said that it can be recovered.
   - **What the backend keeps.** Every push answered `200` records its replica as the replica of the
     session it was served through, the cookie's when the request sends one, else the bearer's.
-    `GET /v1/me` answers it as `syncReplica`, `null` until that session's first accepted push
+    `GET /v1/me` reads its caller from the same header lines by the same rule (engine §9.1), so it
+    answers that session's replica as `syncReplica`, `null` until the session's first accepted push
     ([backend/AUTH.md](../../backend/AUTH.md)). A new sign-in is a new session, so it starts at `null`.
   - **What is not a clear.** A re-identify gives the active replica a new id within one session (a
     push answered `replica-forked`, `replica-foreign` or `gap`, and an epoch change; engine §7.11),

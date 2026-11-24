@@ -534,7 +534,7 @@ TEST(sync_service_answers_a_withheld_product_as_holding_nothing_and_admits_none_
   CHECK_EQ(jcs(servedPages), jcs(expected));
 }
 
-TEST(sync_service_push_records_its_replica_for_its_session_and_is_answered_all_the_same_when_that_fails) {
+TEST(sync_service_push_records_its_replica_for_its_session_tells_a_session_it_cannot_and_is_answered_all_the_same) {
   BlockingThread::Mark blocking;
   test::FakeWorld world;
   Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
@@ -542,13 +542,15 @@ TEST(sync_service_push_records_its_replica_for_its_session_and_is_answered_all_t
   clock.now = 1'000'000;
   struct Sessions : wm::fake::FakeAuthRepository {
     bool fail = false;
-    bool recordSyncReplica(const std::string& sessionDigest, const std::string& replica) override {
+    Recorded recordSyncReplica(const std::string& sessionDigest, const UserId& account, const std::string& replica) override {
       if (fail) throw std::runtime_error("PRIVATE_SESSION_DIGEST rp_0000000000000000000000000000000b");
-      return FakeAuthRepository::recordSyncReplica(sessionDigest, replica);
+      return FakeAuthRepository::recordSyncReplica(sessionDigest, account, replica);
     }
   };
   const auto sessions = std::make_shared<Sessions>();
   sessions->insertSession("d-ann", world.account("A"), 2'000'000, "", "", 1'000'000);
+  sessions->insertSession("d-bob", world.account("B"), 2'000'000, "", "", 1'000'000);
+  sessions->insertSession("d-gone", world.account("A"), 2'000'000, "", "", 1'000'000);
   struct Reporter : FailureReporter {
     std::vector<std::string> writes;
     void report(const std::string&, const std::string&, const std::string&) override {}
@@ -560,32 +562,37 @@ TEST(sync_service_push_records_its_replica_for_its_session_and_is_answered_all_t
   const auto reporter = std::make_shared<Reporter>();
   std::vector<std::string> lines;
   SyncService service(world.catalog(), world.store(), admission, clock, nullptr, sessions);
-  const Credential ann = Credential::sent(world.account("A"), "d-ann");
   TimeBudget budget(60'000);
-  // Each push runs under its route's observation, as SyncApi's handler runs it.
+  // Each push runs under its route's observation, as SyncApi's handler runs it, served as A through `session`.
   std::vector<std::string> requestIds;
-  const auto pushed = [&](const std::string& replica, const std::string& card) {
+  const auto pushed = [&](const std::string& session, const std::string& replica, const std::string& card) {
     Json::Value request = parseJson(R"({"account": "A", "ackThrough": 0, "intents": []})");
     request["replica"] = replica;
     request["intents"].append(cardIntent(1, card));
     WriteObservation route("sync.push", "platform", "sync");
     WriteContext context(route);
     requestIds.push_back(route.requestId());
-    SyncReply reply = service.push(ann, jcs(request), budget);
+    SyncReply reply = service.push(Credential::sent(world.account("A"), session), jcs(request), budget);
     route.finish();
     return reply;
   };
   installWriteReporter(reporter);
   installWriteSink([&lines](const WriteCompletion& line) {
     if (line.operation != "sync.push" && line.operation != "sync.push.session_replica") return;
-    const char* severity = line.severity == WriteSeverity::info ? "info" : line.severity == WriteSeverity::debug ? "debug" : "error";
+    const char* severity = line.severity == WriteSeverity::info    ? "info"
+                           : line.severity == WriteSeverity::debug ? "debug"
+                           : line.severity == WriteSeverity::warn  ? "warn"
+                                                                   : "error";
     lines.push_back(line.operation + " " + line.outcome + " " + severity);
   });
 
-  const SyncReply first = pushed("rp_0000000000000000000000000000000a", "card0001");
-  const SyncReply again = pushed("rp_0000000000000000000000000000000a", "card0001");
+  const SyncReply first = pushed("d-ann", "rp_0000000000000000000000000000000a", "card0001");
+  const SyncReply again = pushed("d-ann", "rp_0000000000000000000000000000000a", "card0001");
+  const SyncReply anothers = pushed("d-bob", "rp_0000000000000000000000000000000a", "card0001");
+  sessions->deleteSession("d-gone");
+  const SyncReply gone = pushed("d-gone", "rp_0000000000000000000000000000000a", "card0001");
   sessions->fail = true;
-  const SyncReply unrecorded = pushed("rp_0000000000000000000000000000000b", "card0002");
+  const SyncReply unrecorded = pushed("d-ann", "rp_0000000000000000000000000000000b", "card0002");
   installWriteSink({});
   installWriteReporter({});
 
@@ -594,16 +601,25 @@ TEST(sync_service_push_records_its_replica_for_its_session_and_is_answered_all_t
   CHECK_EQ(jcs(first.body), jcs(parseJson(answered)));
   CHECK_EQ(again.status, 200);
   CHECK_EQ(jcs(again.body), jcs(parseJson(answered)));
+  CHECK_EQ(anothers.status, 200);
+  CHECK_EQ(jcs(anothers.body), jcs(parseJson(answered)));
+  CHECK_EQ(gone.status, 200);
+  CHECK_EQ(jcs(gone.body), jcs(parseJson(answered)));
   CHECK_EQ(unrecorded.status, 200);
   CHECK_EQ(jcs(unrecorded.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "as": "A", "lastN": 1,
       "results": [{"n": 1, "s": "ok", "seq": 2}]})")));
   CHECK_EQ(jcs(world.dump()["replicas"]), jcs(parseJson(R"({"rp_0000000000000000000000000000000a": {"account": "A", "lastN": 1},
       "rp_0000000000000000000000000000000b": {"account": "A", "lastN": 1}})")));
   CHECK(sessions->sessions.at("d-ann").syncReplica == std::optional<std::string>("rp_0000000000000000000000000000000a"));
-  // The replica the session already holds writes nothing; the failure is its own line and the request's one Issue, with
+  CHECK(sessions->sessions.at("d-bob").syncReplica == std::nullopt);
+  CHECK_FALSE(sessions->sessions.contains("d-gone"));
+  // The replica the session already holds writes nothing and says nothing; a session that is another account's or gone
+  // writes nothing and is a refusal on the line, no Issue; the failure is its own line and the request's one Issue, with
   // the exception's type and none of its message, and the push's line is still the push's.
   CHECK_EQ(lines, (std::vector<std::string>{"sync.push.session_replica ok debug", "sync.push ok info", "sync.push ok info",
+                                            "sync.push.session_replica session-absent warn", "sync.push ok info",
+                                            "sync.push.session_replica session-absent warn", "sync.push ok info",
                                             "sync.push.session_replica failed error", "sync.push ok info"}));
-  CHECK_EQ(reporter->writes, (std::vector<std::string>{"sync.push.session_replica platform sync failed " + requestIds[2] + " " +
+  CHECK_EQ(reporter->writes, (std::vector<std::string>{"sync.push.session_replica platform sync failed " + requestIds[4] + " " +
                                                        typeid(std::runtime_error).name()}));
 }

@@ -127,9 +127,9 @@ public:
   // The same check keyed by digest, for connections that must not hold the raw secret.
   std::string digestOf(const std::string& sessionSecret);
   std::optional<User> revalidate(const std::string& digest, const SessionContext& ctx = {});
-  // The replica the session last pushed for (web-device-parity.md §7, Cleared); nullopt before its first accepted push,
-  // or when there is no such session.
-  std::optional<std::string> syncReplicaOf(const std::string& sessionSecret);
+  // The replica the session whose token's digest is `sessionDigest` last pushed for (web-device-parity.md §7, Cleared);
+  // nullopt before its first accepted push, or when there is no such session.
+  std::optional<std::string> syncReplicaOf(const std::string& sessionDigest);
   void signOut(const std::string& sessionSecret);
 
   // nullopt is a blank or over-cap name; the updated user otherwise.

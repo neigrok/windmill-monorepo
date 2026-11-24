@@ -243,8 +243,9 @@ inline Json::Value credentialsVector(AuthRepository& repo, const Json::Value& in
 
   HeaderOccurrences occurrences;
   for (const Json::Value& header : input["headers"]) occurrences.emplace_back(header[0].asString(), header[1].asString());
-  const Credential credential = SentCredentials::fromOccurrences(occurrences).resolve([&auth](const std::string& token) -> std::optional<UserId> {
-    const std::optional<User> user = auth.authenticate(token);
+  const SentCredentials sent = SentCredentials::fromOccurrences(occurrences, [&auth](const std::string& token) { return auth.digestOf(token); });
+  const Credential credential = sent.resolve([&auth](const std::string& digest) -> std::optional<UserId> {
+    const std::optional<User> user = auth.revalidate(digest);
     return user ? std::optional(user->id) : std::nullopt;
   });
   Json::Value principal = object({{"account", credential.servedAs() ? Json::Value(aliases.at(credential.servedAs()->str())) : Json::Value()}});

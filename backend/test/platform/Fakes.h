@@ -370,11 +370,12 @@ struct FakeAuthRepository : AuthRepository {
     return true;
   }
   void deleteSession(const std::string& digest) override { sessions.erase(digest); }
-  bool recordSyncReplica(const std::string& sessionDigest, const std::string& replica) override {
+  Recorded recordSyncReplica(const std::string& sessionDigest, const UserId& account, const std::string& replica) override {
     auto it = sessions.find(sessionDigest);
-    if (it == sessions.end() || it->second.syncReplica == replica) return false;
+    if (it == sessions.end() || it->second.user != account) return Recorded::absent;
+    if (it->second.syncReplica == replica) return Recorded::unchanged;
     it->second.syncReplica = replica;
-    return true;
+    return Recorded::changed;
   }
 
   std::vector<SessionRow> listSessions(const UserId& userId) override {

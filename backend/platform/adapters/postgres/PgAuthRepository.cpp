@@ -537,15 +537,18 @@ void PgAuthRepository::deleteSession(const std::string& digest) {
   txn.commit();
 }
 
-bool PgAuthRepository::recordSyncReplica(const std::string& sessionDigest, const std::string& replica) {
+SessionReplicas::Recorded PgAuthRepository::recordSyncReplica(const std::string& sessionDigest, const UserId& account,
+                                                              const std::string& replica) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  const pqxx::result held = txn.exec_params(
+      "SELECT sync_replica FROM sessions WHERE token_hash = $1 AND user_id = $2::uuid FOR UPDATE", sessionDigest, account.str());
+  if (held.empty()) return Recorded::absent;
   // A session already holding the replica is left untouched, so a push of the same replica writes no row.
-  const pqxx::result updated = txn.exec_params(
-      "UPDATE sessions SET sync_replica = $2 WHERE token_hash = $1 AND sync_replica IS DISTINCT FROM $2",
-      sessionDigest, replica);
+  if (!held[0]["sync_replica"].is_null() && held[0]["sync_replica"].as<std::string>() == replica) return Recorded::unchanged;
+  txn.exec_params("UPDATE sessions SET sync_replica = $2 WHERE token_hash = $1", sessionDigest, replica);
   txn.commit();
-  return updated.affected_rows() != 0;
+  return Recorded::changed;
 }
 
 std::vector<SessionRow> PgAuthRepository::listSessions(const UserId& userId) {

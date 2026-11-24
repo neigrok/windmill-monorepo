@@ -95,16 +95,23 @@ single use, 5 attempts per row, and a per-IP bucket on `/v1/auth/verify-code` (1
 
 `200 { "user": {…}, "signInMethods": [{ "kind": "email", "email": "sam@example.com" },
 { "kind": "apple", "email": "<email_at_link>", "relay": true }], "syncReplica": "rp_…" }` when the
-session resolves (the window rolls forward on each call), else `401 {}`. Email is first; bound
-providers follow. Apple is absent when unbound. Its address and relay flag describe the door at
-attachment, not the account's email or the latest sign-in token.
+request's credentials resolve (the window of each session they name rolls forward), else `401 {}`.
+Email is first; bound providers follow. Apple is absent when unbound. Its address and relay flag
+describe the door at attachment, not the account's email or the latest sign-in token.
+
+`/v1/me` reads its caller as the sync endpoints do (Native surface notes): the `Bearer` scheme in any
+case, and served through the cookie's session when the request sends one, else the bearer's. Two
+session cookies, two `Authorization` lines, a credential that carries no token, or a cookie and a
+bearer of two accounts answer `401 {}`, where the other REST routes read the cookie, else a `Bearer `
+token.
 
 `syncReplica` is the replica this session's latest accepted sync push was for, `null` until its
 first: every push `/v1/sync/push` answers `200` records its `replica` on `sessions.sync_replica`
-for the session it was served through, the cookie's when the request sends one, else the bearer's,
-which is also the session `/v1/me` reads. A browser compares it with the replicas its own store has
-held, so it can tell that its store was cleared ([web-device-parity.md](../docs/foundation/web-device-parity.md)
-§7). It goes with the session's row. The phones ignore it.
+for the session it was served through. Both read that session by the one rule, so `/v1/me` answers
+the replica a push with the same header lines records. A browser compares it with the replicas its
+own store has held, so it can tell that its store was cleared
+([web-device-parity.md](../docs/foundation/web-device-parity.md) §7). It goes with the session's
+row. The phones ignore it.
 
 ### `POST /v1/auth/logout`
 
@@ -440,15 +447,18 @@ its session secret; an insert failure rolls back the binding and revival.
 - `Caller.cpp` falls back to `Authorization: Bearer <session-secret>` when the `wm_session` cookie is
   absent, and `AuthService::authenticate` is transport-neutral. The sync engine's iOS client keeps
   each account's secret in the Keychain (`KeychainTokenStore`).
-- The sync endpoints and the live upgrade (`SyncApi.cpp`, `SyncSocket.cpp`) read credentials as sent
-  (`docs/foundation/engine.md` §9.1), from every header line the request was received with: the
-  patched Drogon's `HttpRequest::headerOccurrences()` (`third_party/drogon`), read by
-  `SentCredentials::fromOccurrences` (`platform/domain/sync/Credentials.h`). Every `Authorization` line
-  and every `wm_session` piece of every `Cookie` line is a credential, a bare one included; header
-  names fold ASCII case only, and only space and tab are trimmed. They resolve only as at most one
-  `Authorization: Bearer <token>` (the scheme in any case) and at most one `wm_session=<token>` (the
-  token verbatim), each held by a live session, naming one account; anything else answers `401` and
-  is never served as anonymous. The REST surfaces read through `Caller.cpp`.
+- The sync endpoints, the live upgrade, `GET /v1/me` and every door that admits an AI principal
+  (`AiInstallationApi`, `AiAllowanceApi`, `AiPassApi`) read credentials as sent (`docs/foundation/engine.md` §9.1),
+  from every header line the request was received with: the patched Drogon's
+  `HttpRequest::headerOccurrences()` (`third_party/drogon`), read by `SentCredentials::fromOccurrences`
+  (`platform/domain/sync/Credentials.h`) and resolved by `SentCaller` (`Caller.cpp`). Every
+  `Authorization` line and every `wm_session` piece of every `Cookie` line is a credential, a bare one
+  included; header names fold ASCII case only, and only space and tab are trimmed. Each token is held
+  as its digest from the parse on, so the session a request is served through is a digest, never a
+  secret. They resolve only as at most one `Authorization: Bearer <token>` (the scheme in any case) and
+  at most one `wm_session=<token>` (the token verbatim), each held by a live session, naming one
+  account; anything else answers `401` and is never served as anonymous. The other REST surfaces read
+  through `callerOf` in `Caller.cpp`.
 - Every session deletion runs through `AuthService` and is told to `LiveSessions`, which closes the
   sync sockets the session opened before they send another frame: a sign-out, a revoked session,
   sign-out everywhere, a closed account, and a folded account with every session its deleted row took

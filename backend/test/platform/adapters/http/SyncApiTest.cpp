@@ -22,7 +22,7 @@
 // the version as the one value its carrier presents, credentials sent that do not resolve answered 401 whatever their
 // shape and however many lines carry them, each request on a keep-alive connection read with its own lines alone, a
 // signed-in round trip whose body is JCS and says whom it was served as, and the replica an accepted push leaves on the
-// session it was served through, which GET /v1/me answers.
+// session it was served through, which GET /v1/me answers, reading its caller from the same lines by the same rule.
 
 using namespace wm;
 using namespace wm::fake;
@@ -258,15 +258,10 @@ TEST(sync_api_push_records_its_replica_for_the_session_it_is_served_through_and_
     const std::string body = R"({"replica":")" + replica + R"(","account":")" + account + R"(","ackThrough":0,"intents":[]})";
     return answer(&sync::SyncApi::push, api, request("POST", "/v1/sync/push", body, "2", fields)).first;
   };
-  // GET /v1/me as a session sends it: its cookie, its bearer, or both.
-  auto me = [&auth](const std::string& cookie, const std::string& bearer) {
-    const drogon::HttpRequestPtr req = drogon::HttpRequest::newHttpRequest();
-    req->setMethod(drogon::Get);
-    req->setPath("/v1/me");
-    if (!cookie.empty()) req->addCookie("wm_session", cookie);
-    if (!bearer.empty()) req->addHeader("Authorization", "Bearer " + bearer);
+  // GET /v1/me's body, sent the same header lines: its cookie, its bearer, or both.
+  auto me = [&auth](const sync::HeaderOccurrences& fields) {
     Json::Value body;
-    auth.me(req, [&body](const drogon::HttpResponsePtr& response) { body = *response->getJsonObject(); });
+    auth.me(request("GET", "/v1/me", "", "", fields), [&body](const drogon::HttpResponsePtr& response) { body = *response->getJsonObject(); });
     return body;
   };
   auto ann = [](const Json::Value& syncReplica) {
@@ -280,23 +275,73 @@ TEST(sync_api_push_records_its_replica_for_the_session_it_is_served_through_and_
   const std::string reidentified = "rp_0000000000000000000000000000000c";
   const std::string together = "rp_0000000000000000000000000000000d";
 
-  CHECK_EQ(me(browser, ""), ann(Json::Value()));
+  CHECK_EQ(me(byCookie), ann(Json::Value()));
   CHECK_EQ(push(first, "u1", byCookie), 200);
-  CHECK_EQ(me(browser, ""), ann(first));
-  CHECK_EQ(me("", phone), ann(Json::Value()));
+  CHECK_EQ(me(byCookie), ann(first));
+  CHECK_EQ(me(byBearer), ann(Json::Value()));
 
   CHECK_EQ(push(phones, "u1", byBearer), 200);
-  CHECK_EQ(me("", phone), ann(phones));
-  CHECK_EQ(me(browser, ""), ann(first));
+  CHECK_EQ(me(byBearer), ann(phones));
+  CHECK_EQ(me(byCookie), ann(first));
 
   // A push the server refuses leaves the session's replica as it was; the next one it accepts moves it.
   CHECK_EQ(push(reidentified, "u2", byCookie), 409);
-  CHECK_EQ(me(browser, ""), ann(first));
+  CHECK_EQ(me(byCookie), ann(first));
   CHECK_EQ(push(reidentified, "u1", byCookie), 200);
-  CHECK_EQ(me(browser, ""), ann(reidentified));
+  CHECK_EQ(me(byCookie), ann(reidentified));
 
   // Sent both, a push is the cookie's session's, and so is GET /v1/me's answer.
   CHECK_EQ(push(together, "u1", byBoth), 200);
-  CHECK_EQ(me(browser, phone), ann(together));
-  CHECK_EQ(me("", phone), ann(phones));
+  CHECK_EQ(me(byBoth), ann(together));
+  CHECK_EQ(me(byBearer), ann(phones));
+}
+
+TEST(sync_api_push_and_v1_me_read_one_session_whatever_shape_the_credentials_take) {
+  Harness harness;
+  sync::SyncApi api = harness.api(8);
+  AuthApi auth(harness.auth, nullptr, false, SessionCookieScopes{"", ""});
+  const std::string browser = harness.signIn("ann");
+  const std::string phone = "s-ann-phone";
+  harness.authRepo->insertSession(harness.tokens.digestOf(phone), UserId{"u1"}, harness.clock->now + 1'000'000, "", "", harness.clock->now);
+  const std::string bob = harness.signIn("bob");
+  auto push = [&api](const std::string& replica, const std::string& account, const sync::HeaderOccurrences& fields) {
+    const std::string body = R"({"replica":")" + replica + R"(","account":")" + account + R"(","ackThrough":0,"intents":[]})";
+    return answer(&sync::SyncApi::push, api, request("POST", "/v1/sync/push", body, "2", fields)).first;
+  };
+  // GET /v1/me's body, sent the same header lines; a 401 answers {}.
+  auto me = [&auth](const sync::HeaderOccurrences& fields) {
+    Json::Value body;
+    auth.me(request("GET", "/v1/me", "", "", fields), [&body](const drogon::HttpResponsePtr& response) { body = *response->getJsonObject(); });
+    return body;
+  };
+  auto ann = [](const Json::Value& syncReplica) {
+    Json::Value body = sync::parseJson(R"({"user":{"email":"ann@example.com","id":"u1","name":"ann"},
+        "signInMethods":[{"email":"ann@example.com","kind":"email"}]})");
+    body["syncReplica"] = syncReplica;
+    return body;
+  };
+  const Json::Value unauthenticated(Json::objectValue);
+  const std::string phones = "rp_0000000000000000000000000000000b";
+  const std::string browsers = "rp_0000000000000000000000000000000c";
+
+  // The Bearer scheme is read in any case.
+  const sync::HeaderOccurrences lowercaseBearer{{"Authorization", "bearer " + phone}};
+  CHECK_EQ(push(phones, "u1", lowercaseBearer), 200);
+  CHECK_EQ(me(lowercaseBearer), ann(phones));
+
+  // A session cookie piece with no `=` carries no token, and fails the request whatever bearer is sent beside it.
+  const sync::HeaderOccurrences bareCookie{{"Cookie", "theme=dark; wm_session"}, {"Authorization", "Bearer " + phone}};
+  CHECK_EQ(push(browsers, "u1", bareCookie), 401);
+  CHECK_EQ(me(bareCookie), unauthenticated);
+
+  // A cookie and a bearer of two accounts serve the request as neither.
+  const sync::HeaderOccurrences twoAccounts{{"Cookie", "wm_session=" + browser}, {"Authorization", "Bearer " + bob}};
+  CHECK_EQ(push(browsers, "u1", twoAccounts), 401);
+  CHECK_EQ(me(twoAccounts), unauthenticated);
+
+  // A session cookie on a second Cookie line is the cookie, and its session is the one both read.
+  const sync::HeaderOccurrences secondCookieLine{{"Cookie", "theme=dark"}, {"Cookie", "wm_session=" + browser}, {"Authorization", "Bearer " + phone}};
+  CHECK_EQ(push(browsers, "u1", secondCookieLine), 200);
+  CHECK_EQ(me(secondCookieLine), ann(browsers));
+  CHECK_EQ(me({{"Authorization", "Bearer " + phone}}), ann(phones));
 }
