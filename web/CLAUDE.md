@@ -181,7 +181,7 @@ before installing or running the suite. Newer Node globals can conflict with the
 ```sh
 npm run dev      # localhost:5173; development API defaults to localhost:8088
 npm test         # complete Node test suite
-npm run build    # fetch model weights, run tests, build Vite and static landing shells
+npm run build    # fetch model weights, type-check the domain, run tests, build Vite and static landing shells
 ```
 
 Use `npm run build` as the gate. `prebuild` fetches self-hosted weights into `public/models`;
