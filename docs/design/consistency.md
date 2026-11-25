@@ -1392,7 +1392,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
     both for the log's refusal and for a change the browser's copy would refuse for a load under a movement's floor, which
     the card draws out of date as soon as the copy's rules would refuse it, in every tab and after a reload, with no Apply.
     A routine's card (08W-P) says the same sentence for its own floor, under 08W.28's head *{routine} · Out of date* and in
-    place of the drawn *{routine} changed after this suggestion.*; no board draws it. The phone's Coach button
+    place of the drawn *{routine} changed after this suggestion.*; no board draws it. The routines review says it too, in
+    place of its Apply and Turn this down, as it says *The routine changed after this was written. Nothing was applied.* for
+    a routine that moved; its component, *Gym / Coach / Inline proposal* (`575:5655`), draws no out-of-date state. The phone's Coach button
     reopens the sheet on the conversation the page holds while it has a turn running or a change to this workout waiting,
     and on a fresh chat otherwise, which no board draws. The rail's *This workout* and *Coach* are the design-system `Tabs`
     in their `line` variant, which the Design System file draws (`394:16`) and has not yet published, so the Gym file's
