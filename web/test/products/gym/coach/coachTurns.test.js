@@ -153,7 +153,8 @@ test('Coach over an open workout proposes a change to it, the browser\'s copy ap
   const view = phone.runner.read(CoachMessage.scope, (read) => conversationView(read, turn.thread.record, null));
   assert.deepEqual(view.messages.at(-1).workoutProposals, [id]);
 
-  const api = createGymApi(phone.engine, { event() {}, failure() {} });
+  const failures = [];
+  const api = createGymApi(phone.engine, { event() {}, failure: (operation) => failures.push(operation) });
   assert.deepEqual(await api.applyWorkoutProposal(id), { outcome: 'decided' });
   const applied = phone.runner.read(Session.scope, (read) => ({ proposal: read.repository(WorkoutProposal).find(new Id(id, WorkoutProposal), 'drawn'),
     plan: read.repository(Session).find(session, 'drawn').plan.entries.map((entry) => entry.json) }));
@@ -170,6 +171,13 @@ test('Coach over an open workout proposes a change to it, the browser\'s copy ap
   assert.equal((await phone.runner.run(AppendSet(logged))).kind, 'committed');
   assert.deepEqual(await api.applyWorkoutProposal(later), { outcome: 'out-of-date', reason: 'workout-moved' });
   assert.equal(phone.runner.read(Session.scope, (read) => read.repository(WorkoutProposal).find(new Id(later, WorkoutProposal), 'drawn').state), 'pending');
+  assert.deepEqual(failures, [], 'out of date is a refusal, never a failure');
+
+  // A store that breaks under a decision is a failure: it throws, and goes to Sentry under its static name.
+  const broken = new Error('the store broke');
+  t.mock.method(phone.engine, 'commit', async () => { throw broken; });
+  await assert.rejects(api.dismissWorkoutProposal(later), (error) => error === broken);
+  assert.deepEqual(failures, ['workout-proposal-dismiss']);
 });
 
 test('a question sent with no connection writes nothing and stays in the field', async (t) => {
