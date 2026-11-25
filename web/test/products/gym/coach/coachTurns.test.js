@@ -15,7 +15,7 @@ const { Instant } = await import('../../../../src/platform/domain-kit/time.js');
 const { Exercise } = await import('../../../../src/products/gym/domain/catalogue.js');
 const { GymRefusals } = await import('../../../../src/products/gym/domain/gymRules.js');
 const { Session, TrainingSet, TrainingSetValue } = await import('../../../../src/products/gym/domain/training.js');
-const { AppendSet } = await import('../../../../src/products/gym/domain/trainingActions.js');
+const { AppendSet, FinishSession } = await import('../../../../src/products/gym/domain/trainingActions.js');
 const { StartWorkout } = await import('../../../../src/products/gym/domain/workoutRack.js');
 const { WorkoutProposal } = await import('../../../../src/products/gym/domain/workoutProposals.js');
 const { conversationView } = await import('../../../../src/products/gym/coach/conversations.js');
@@ -204,6 +204,34 @@ test('Coach over an open workout proposes a change to it, the browser\'s copy ap
   t.mock.method(phone.engine, 'commit', async () => { throw broken; });
   await assert.rejects(api.dismissWorkoutProposal(later), (error) => error === broken);
   assert.deepEqual([failures, told.at(-1)], [['workout-proposal-dismiss'], outcome('reject', { outcome: 'failed' })]);
+});
+
+test('a change to a workout another device finished before the change reached the log is told failed, the workout finished', async (t) => {
+  const { phone, turns } = await room(t, playedAi([
+    async () => ended('tool_calls', [{ toolCall: { id: 'toolu_1', name: 'propose_workout_change', input: { id: 'the-model-names-this', sessionId: 'session1',
+      entries: [{ exerciseId: 'dumbbell-bench-press', restSeconds: 120, sets: [{ reps: 8, weightKg: 14 }, { reps: 8, weightKg: 14 }] },
+        { exerciseId: 'pull-up', restSeconds: 120, sets: [{ reps: 8, weightKg: 10 }, { reps: 8, weightKg: 10 }] }], summary: '' } } }]),
+    async () => ended('completed', [{ text: 'Lighter bench.' }]),
+  ]));
+  phone.server.product.seeds = Object.fromEntries(SeedExercises.all.map((seed) => [String(seed.id.record), seed.fields()]));
+  const session = await workoutOpen(phone);
+  await phone.sync();
+  const other = await phone.device();
+  t.after(() => other.close());
+  await phone.sync();
+  await phone.advance(60_000);
+  assert.equal((await other.runner.run(FinishSession({ id: session, finishedAt: new Instant(other.runner.moment().now.ms) }))).kind, 'committed');
+  assert.equal(await other.senderStep(), true, 'the log holds the finish before this browser hears of it');
+  const turn = await turns.send({ question: 'Lighter bench?' });
+  await settle(turns);
+  const id = String(coachOf(phone, turn).calls.find((call) => call.name === 'propose_workout_change').created[0].id);
+  const told = [];
+  const api = createGymApi(phone.engine, { event() {}, failure() {}, coached: (name, props) => told.push(props) });
+  await api.applyWorkoutProposal(id);
+  await phone.sync();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(told, [{ screen: 'coach', target: 'workout', action: 'apply', outcome: 'failed', reason: 'workout-finished' }],
+    'the log refused the change itself, and the Apply that named it folded into that refusal');
 });
 
 test('a routine\'s decision the log has not answered in 15 s is told stalled once and then decided as it answers, and another tab\'s Apply on it tells nothing', async (t) => {

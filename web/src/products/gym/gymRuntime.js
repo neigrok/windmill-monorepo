@@ -117,13 +117,15 @@ export function coachStep(name, props) {
 }
 
 // Why the log, or this device's copy of its rules, refused a decision on a proposal, as its card says it and its event tells
-// it: what a superseded proposal names, a movement logged since (and which, when the refusal names it), a proposal already
-// decided, a load under a movement's floor, which the log refuses as `invalid`, a record gone, or anything else.
+// it: what a superseded proposal names, a movement logged since (and which, when the refusal names it), a workout finished
+// before the change itself reached the log, a proposal already decided, a load under a movement's floor, which the log
+// refuses as `invalid`, a record gone, or anything else.
 const SUPERSEDED = new Set(['replaced', 'workout-changed', 'workout-moved', 'workout-finished', 'routine-changed']);
 export function decisionRefusal(code, detail) {
   if (code === 'proposal-superseded') return { reason: SUPERSEDED.has(detail?.reason) ? detail.reason : 'other', exerciseId: null };
   if (code === 'plan-logged') return { reason: 'workout-moved', exerciseId: typeof detail?.exerciseId === 'string' ? detail.exerciseId : null };
-  return { reason: { 'proposal-settled': 'settled', invalid: 'invalid', 'unknown-record': 'gone', 'record-dead': 'gone' }[code] ?? 'other', exerciseId: null };
+  return { reason: { 'session-finished': 'workout-finished', 'proposal-settled': 'settled', invalid: 'invalid', 'unknown-record': 'gone', 'record-dead': 'gone' }[code]
+    ?? 'other', exerciseId: null };
 }
 
 // The commands that decide a proposal, by what it changes.
@@ -134,9 +136,11 @@ const DECISIONS = Object.freeze({
 const decides = (command, target, record) => [DECISIONS[target].apply, DECISIONS[target].reject].includes(command?.name)
   && command.args?.proposalId === record;
 
-// The log's latest refusal, still standing, of a decision on the proposal `record`, among the scope's notices.
+// The log's latest refusal, still standing, of a decision on the proposal `record`, among the scope's notices: the
+// decision's own, or the refusal of the change itself, into which the decision that named it folded.
 export function refusedDecision(notices, target, record) {
-  return notices.findLast((notice) => !notice.dismissed && decides(notice.content?.cmd, target, record)) ?? null;
+  return notices.findLast((notice) => !notice.dismissed && [notice.content?.cmd, ...(notice.content?.dependents ?? []).map((part) => part.cmd)]
+    .some((command) => decides(command, target, record))) ?? null;
 }
 
 // The decisions on proposals this page made that the log has yet to answer. Each is told once, by this page, as the iPhone

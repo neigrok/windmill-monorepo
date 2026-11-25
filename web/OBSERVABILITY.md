@@ -299,12 +299,13 @@ holds no conversation with a turn running or a change to this workout waiting; a
 `gym_proposal_outcome` (`screen: coach`, `target`: `workout` or `routine`, `action`: `apply` or `reject`) is told once for
 each decision on a proposal's card in Coach or in the routines review, by the page that made it and as the log answers it:
 `outcome: decided` once the log took it, or `failed` with `reason` once the log refused it: `replaced`, `workout-changed`,
-`workout-moved` (a movement logged since, also the log's `plan-logged`), `workout-finished`, `routine-changed`, `settled`
+`workout-moved` (a movement logged since, also the log's `plan-logged`), `workout-finished` (also the log's `session-finished`
+for a change that reached it after the workout finished, the decision folded into that refusal), `routine-changed`, `settled`
 (decided on another device first), `invalid` (a load under a movement's floor), `gone` (the proposal or its workout deleted)
 or `other`. A decision that finds the proposal standing as asked writes nothing and is `decided` at once, unless another
-page's decision on it waits on the log and tells it. One this copy's rules refuse is told at once: `refused` for a value they hold
-invalid, such as a load under a movement's floor, `failed` with its `reason` otherwise; one that broke is `failed` with no reason; and a routine's decision
-the log has not answered in 15 s is told `stalled` once besides. A reload, a remount or another tab tells nothing of a
+page's decision on it waits on the log and tells it. One this copy's rules refuse is told at once: `refused` for a value
+they hold invalid, such as a load under a movement's floor, `failed` with its `reason` otherwise; one that broke is `failed`
+with no reason; and a routine's decision the log has not answered in 15 s is told `stalled` once besides. A reload, a remount or another tab tells nothing of a
 decision, and a page that closes before the log answers tells nothing of it either. A workout proposal's decision that fails
 unexpectedly reports `gym-workout-proposal-apply` or `gym-workout-proposal-dismiss` with the error's stack frames; a refusal,
 the copy's or the log's, is the card's sentence and no Issue. A decision on a workout proposal the log refused is the card's
