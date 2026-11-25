@@ -135,6 +135,7 @@ final class RoadmapModel {
       let owners = Dictionary(legend.entries.compactMap { (entry: RoadmapLegend.Entry) -> ([UInt8], Kind)? in
         entry.kind.map { (Array(entry.hue.utf8), $0) }
       }) { first, _ in first }
+      let kept = EffectsRead(graph, ids: [String]()).kept
       let rows = Dictionary(board.cards.compactMap { (card: BoardRead.Card) -> ([UInt8], Row)? in
         guard let held = tree.step(card.id) else { return nil }
         let read = openings[Array(card.id.utf8)]
@@ -143,7 +144,7 @@ final class RoadmapModel {
           step: held, card: card, kind: owners[Array(held.color.utf8)],
           opensStanding: read.map { $0.opening.kind == .pointer && account.location(of: $0.opening.tree).standing == .standing } ?? false,
           completes: owned && card.column == .upNext && read == nil, resets: owned && card.column == .done && read == nil,
-          deletes: owned && EffectsRead(graph, ids: [card.id]).deletable, opening: opening,
+          deletes: owned && (kept.map { !$0.utf8.elementsEqual(card.id.utf8) } ?? true), opening: opening,
           marked: owned && opening.map { $0.face != .complete } == true && tree.mark(on: held.id)?.isComplete == true))
       }) { first, _ in first }
       id = ID(RecordID(listed.id))
@@ -173,9 +174,7 @@ final class RoadmapModel {
 
     func step(_ id: String) -> Row? { rows[Array(id.utf8)] }
 
-    // What a delete of these steps or a Reset of one would do, as the domain reads it: the starting step the roadmap keeps,
-    // whether the steps may be deleted, the steps that follow them, which the delete question counts, and what Reset would
-    // return to Locked.
+    // What a delete of these steps or a Reset of one would do, as the domain reads it.
     func effects(of steps: some Sequence<String>) -> EffectsRead { EffectsRead(graph, ids: Array(steps)) }
 
     // A step's page; none for a step the roadmap does not hold.

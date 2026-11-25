@@ -166,7 +166,7 @@ phone's delete of the same step, puts in the receipt's place what could not come
 their count, and *Couldn’t undo* any other act. It has no Undo, stands six seconds, and the room plays a warning haptic
 and VoiceOver announces it; its event keeps outcome unavailable. The band says a refusal only where it is a limit the
 boards word, and any other refusal shows nothing. Facts the model reads or settles itself, as the web's room does. From
-the domain's `EffectsRead` (`OpenRoadmap.effects(of:)`, which the web's room reads through `acts.effectsOf`), what a
+the domain's `EffectsRead` (`OpenRoadmap.effects(of:)`, which the web's room reads through `readEffects`), what a
 delete or a Reset would do: the one starting step a roadmap keeps, which offers no Delete; that steps holding every step
 the roadmap starts from cannot be deleted; the steps outside them that follow one of them, which a step's page lists under
 *Opens* and the delete question counts; and what Reset would return to Locked (`OpenStep.relocks`), the steps a Done step

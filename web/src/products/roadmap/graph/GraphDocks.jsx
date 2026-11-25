@@ -3,7 +3,8 @@
 import React, { useMemo } from 'react';
 import { track } from '../../../telemetry/beacon.js';
 import { ActivityFeed } from '../activity/ActivityFeed.jsx';
-import { deletable, effectsOf } from '../board/acts.js';
+import { deletable } from '../board/acts.js';
+import { readEffects } from '../model/effects.js';
 import { emptyWorkspace } from '../model/NodeWorkspace.js';
 import { GraphDock } from './GraphChrome.jsx';
 import { StepPanel } from './StepPanel.jsx';
@@ -26,7 +27,7 @@ export function GraphDocks({
     ? selectedNode.prerequisites.map((id) => relatedStep(nodesById.get(id) ?? { id, label: id }, states))
     : []), [selectedNode, nodesById, states]);
   const unlocks = useMemo(() => (selectedNode && tree
-    ? effectsOf(tree, [selectedNode.id]).follow.map((id) => relatedStep(tree.nodesById.get(id), states))
+    ? readEffects(tree, [selectedNode.id]).follow.map((id) => relatedStep(tree.nodesById.get(id), states))
     : []), [selectedNode, tree, states]);
 
   const autoFocusName = selectedId !== null && selectedId === editing.autoFocusNameId;
@@ -120,7 +121,7 @@ export function GraphDocks({
           selectedCount={selectedIds.size}
           bulkChoice={bulkChoice}
           onBulkRecolor={editing.bulkRecolor}
-          onBulkDelete={effectsOf(standingTree, [...selectedIds])?.takesEveryStart ? null : editing.bulkDelete}
+          onBulkDelete={readEffects(standingTree, [...selectedIds])?.takesEveryStart ? null : editing.bulkDelete}
           onBulkDone={leaveMulti}
         />
       )}

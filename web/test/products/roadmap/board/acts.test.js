@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
 import { Board, BoardQuery } from '../../../../src/products/roadmap/board/Board.js';
-import { HeldDelete, StepSelection, deletable, editGesture, effectsOf, completionOutcome, creationOutcome } from '../../../../src/products/roadmap/board/acts.js';
+import { HeldDelete, StepSelection, deletable, editGesture, completionOutcome, creationOutcome } from '../../../../src/products/roadmap/board/acts.js';
+import { readEffects } from '../../../../src/products/roadmap/model/effects.js';
 import { TreeLattice, HlcClock } from '../../../../src/products/roadmap/sync/lattice.js';
 import { materialize } from '../../../../src/products/roadmap/sync/materialize.js';
 
@@ -48,7 +49,7 @@ test('held delete projection equals committed BulkDelete and its cost names the 
   const held = new HeldDelete(['dock', 'dock'], 'Leave the dock');
   assert.deepEqual(held.ids, ['dock']);
   assert.equal(held.message, 'Leave the dock deleted');
-  assert.deepEqual([held.ids, ['wind'], ['wind', 'dock'], ['solo']].map((ids) => effectsOf(tree, ids).follow),
+  assert.deepEqual([held.ids, ['wind'], ['wind', 'dock'], ['solo']].map((ids) => readEffects(tree, ids).follow),
     [['solo', 'other'], ['dock', 'other'], ['solo', 'other'], []]);
   const projected = held.projected(tree);
   lattice.join(materialize({ kind: 'BulkDelete', nodeIds: held.ids }, lattice, clock));
@@ -56,17 +57,6 @@ test('held delete projection equals committed BulkDelete and its cost names the 
   assert.equal(new HeldDelete(['wind', 'dock'], 'unused').message, '2 steps deleted');
   assert.ok(Object.isFrozen(held));
   assert.ok(Object.isFrozen(held.ids));
-});
-
-test('delete cost names a step keeping another prerequisite, and a step following two of the steps once', () => {
-  const tree = treeOf([
-    wind,
-    { id: 'rig', label: 'Rig the boat', prerequisites: [] },
-    { ...dock, prerequisites: ['wind', 'rig'] },
-    { id: 'solo', label: 'Sail solo', prerequisites: ['dock'] },
-  ]);
-  assert.deepEqual([['wind'], ['rig'], ['wind', 'rig', 'rig'], ['wind', 'rig', 'dock'], []].map((ids) => effectsOf(tree, ids).follow),
-    [['dock'], ['dock'], ['dock'], ['solo'], []]);
 });
 
 test('StepSelection toggles immutably and prunes to the pane order after filtering or regrouping', () => {
@@ -84,20 +74,6 @@ test('StepSelection toggles immutably and prunes to the pane order after filteri
   assert.deepEqual(selected.prune(board, 'upNext').ids, []);
   assert.ok(Object.isFrozen(selected));
   assert.ok(Object.isFrozen(selected.ids));
-});
-
-test('a selection takes every starting step only when it holds each one the roadmap has', () => {
-  const sole = new SkillTree({ id: 'sole', title: 'Sole', nodes: [
-    { id: 'root', label: 'Root', prerequisites: [] },
-    { id: 'leaf', label: 'Leaf', prerequisites: ['root'] },
-  ] });
-  const twoRoots = new SkillTree({ id: 'two', title: 'Two', nodes: [
-    { id: 'root', label: 'Root', prerequisites: [] },
-    { id: 'other', label: 'Other', prerequisites: [] },
-  ] });
-  assert.deepEqual([
-    [sole, ['root']], [sole, ['leaf', 'root']], [sole, ['leaf']], [sole, []], [sole, ['gone']], [twoRoots, ['root']], [twoRoots, ['root', 'other']],
-  ].map(([tree, ids]) => effectsOf(tree, ids).takesEveryStart), [true, true, false, false, false, false, true]);
 });
 
 test('deletable excludes the sole root, absent ids and empty selections', () => {

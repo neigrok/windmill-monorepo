@@ -1,10 +1,10 @@
 // What a step's document says, read off the whole roadmap whatever the Board shows: the step's column, the steps
-// it needs and opens with theirs, and what Complete or Reset would move. Every column comes from UnlockRules; the steps
-// it opens and what Reset would return to Locked are the domain's (`effectsOf`).
+// it needs and opens with theirs, and what Complete or Reset would move. Every column, and what Complete would open, comes
+// from UnlockRules; the steps that follow it and what Reset would return to Locked are the domain's (`readEffects`).
 
 import { COLUMN_OF_STATE, UnlockRules, owedStepsOf, takesMark, unmetPrerequisitesOf } from '../model/UnlockRules.js';
 import { advanceProgress } from '../model/progress.js';
-import { effectsOf } from '../board/acts.js';
+import { readEffects } from '../model/effects.js';
 import { STEP_DETAIL } from '../copy.js';
 
 export const titleOf = (step) => step.label?.trim() || STEP_DETAIL.unnamed;
@@ -21,7 +21,7 @@ class RelatedStep {
 export class StepFacts {
   constructor(tree, progress, id) {
     const states = UnlockRules.derive(tree, progress);
-    const effects = effectsOf(tree, [id], progress);
+    const effects = readEffects(tree, [id], progress);
     const related = (steps) => [...new Map(steps.map((step) => [step.id, step])).values()]
       .map((step) => new RelatedStep(step, states.get(step.id)));
 

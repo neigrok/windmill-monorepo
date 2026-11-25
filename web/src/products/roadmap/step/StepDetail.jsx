@@ -9,7 +9,7 @@ import { reportRoadmapFailure } from '../reportFailure.js';
 import { hueOf } from '../theme.js';
 import { SAFE_URL } from '../graph/tree/NodeWorkspace.jsx';
 import { StepWorkspace, StepHistory } from './StepWorkspace.jsx';
-import { effectsOf } from '../board/acts.js';
+import { readEffects } from '../model/effects.js';
 import { StepFacts, offersCompletion, titleOf } from './StepFacts.js';
 import { Sheet, handleMenuKey } from '../board/BoardControls.jsx';
 import { treeAttachment } from '../model/UnlockRules.js';
@@ -488,7 +488,7 @@ export function StepDetail({
   const cancelDelete = () => { setDeleting(false); onDeletePrompt?.('cancel'); };
   const confirm = deleting ? {
     title: deleteConfirm({ step: titleOf(facts.step) }),
-    cost: deleteCostLine(effectsOf(tree, [id]).follow.length),
+    cost: deleteCostLine(readEffects(tree, [id]).follow.length),
     cancel: cancelDelete,
     remove: () => {
       onDeletePrompt?.('confirm');

@@ -184,7 +184,7 @@ import SyncTesting
       "done: Name the boat parts [sky] resets deletes",
       "done: Choose a sailing course [Build] resets",
     ])
-    #expect(open.effects(of: []).kept == open.tree.nodes.first { $0.label == "Choose a sailing course" }?.id)
+    #expect(open.effects(of: [String]()).kept == open.tree.nodes.first { $0.label == "Choose a sailing course" }?.id)
     let followers = ["Name the boat parts", "Read the wind", "Sail solo"].map { (step: String) -> Int in
       open.effects(of: [open.tree.nodes.first { $0.label == step }?.id ?? ""]).follow.count
     }
@@ -720,7 +720,7 @@ import SyncTesting
     model.roomOpened()
     await shows(model, board: ["0 of 0"], on: engine)
     guard case .open(let empty) = model.phase else { return }
-    #expect(!empty.everyStepDone && empty.effects(of: []).kept == nil)
+    #expect(!empty.everyStepDone && empty.effects(of: [String]()).kept == nil)
 
     engine.advance(ms: 60_000)
     _ = try learnToSail(on: engine, runner, done: ["choose", "parts", "rig", "read", "tie", "leave", "tri"])

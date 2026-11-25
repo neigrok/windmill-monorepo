@@ -14,7 +14,7 @@ point for the component showcase.
 | `i18n/`, `copy.js`, `resume.js`, `reportFailure.js` | The catalogs every visible string reads from; the words and count sentences several surfaces read; the newest roadmap as the home card and the landing offer it back, and the person's roadmaps it is read from; the static-name Sentry report |
 | `OpeningMarks.jsx` | The marks of a step that opens a tree, its subtree or the tree its pointer names: one glyph and one bar for the Board, the step, the Graph's chrome and a node's centre |
 | `room/` | What the room holds: the load and its two readings of a roadmap (roadmap's own sync with the switch off, and the device's copy with it on, with a roadmap's birth there) and where the tree sits, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band, who holds the roadmap and the lines that tell its owner a change of theirs landed |
-| `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to and where a tree sits among the trees, the rule the device judges its own trees by, and what attaching one sets aside, legend, workspace and spatial queries. Independent of React and WebGL |
+| `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to and where a tree sits among the trees, the rule the device judges its own trees by, and what attaching one sets aside, legend, workspace and spatial queries, and the domain's read of what a delete or a Reset would do (`effects.js`). Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
 | `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, the guides of the holder's trees above it, its entry on the tree (in the identity row from 744px, in the owner’s Roadmap sheet on phones, below the head for phone readers) and the note it opens |
 | `board/` | Query and columns, regroup, held actions, the shared toast, card gestures and selection |
@@ -991,10 +991,10 @@ six-second Undo.
 ### Held delete
 
 Delete first confirms in an anchored desktop popover or a phone sheet, with a cost line counting the steps that follow
-it, the domain's `EffectsRead.follow` (`acts.effectsOf`). Confirm closes the detail and creates a `HeldDelete`, with
-no structural write yet. For its nine-second Undo window every Board surface reads the held projection: cards, counts,
-identity, topbar, detail and composer. A delete from the Graph's step page uses the same hold and projects it
-into the Graph. `SkillTree.without` and the eventual `BulkDelete` share `respliceEdges`.
+it, the domain's `EffectsRead.follow` (`readEffects`, `model/effects.js`). Confirm closes the detail and creates a
+`HeldDelete`, with no structural write yet. For its nine-second Undo window every Board surface reads the held
+projection: cards, counts, identity, topbar, detail and composer. A delete from the Graph's step page uses the same hold
+and projects it into the Graph. `SkillTree.without` and the eventual `BulkDelete` share `respliceEdges`.
 
 `useBoardActs` injects session, progress, query, clock, toast and boundary collaborators. It owns one held
 delete, which releases once on toast expiry or replacement, view exit, roadmap change, owner loss, unmount or
@@ -1066,7 +1066,7 @@ measured identity and any refusal banner. Ordinary node activation opens the sha
 keeps aim, link removal and multi-select surfaces; the document's menu provides Add step and Connect.
 
 A roadmap keeps a root, by one rule for every door: the domain's `EffectsRead` (`takesEveryStart`, and `deletable` in
-`board/acts.js`, which reads it), asked through `acts.effectsOf` of the tree a held delete leaves standing. A sole
+`board/acts.js`, which reads it), asked through `readEffects` of the tree a held delete leaves standing. A sole
 root, the last root under a hold and a select-all on a many-rooted roadmap all read the same. The desktop dock, the
 tablet panel, the selection bars and the phone Board's bulk bar stop offering Delete while they hold such a selection,
 the Graph's writes refuse it, and a Delete key on it does nothing.
