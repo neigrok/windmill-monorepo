@@ -165,10 +165,12 @@ phone's delete of the same step, puts in the receipt's place what could not come
 02.10d and 06.5c): *Couldn’t bring back* a step, a roadmap, a kind, a subtask or a link by its name, or several steps by
 their count, and *Couldn’t undo* any other act. It has no Undo, stands six seconds, and the room plays a warning haptic
 and VoiceOver announces it; its event keeps outcome unavailable. The band says a refusal only where it is a limit the
-boards word, and any other refusal shows nothing. Facts the model reads or settles itself, as the web's room does. From the domain's graph: the one starting step a
-roadmap keeps, which offers no Delete; the steps that follow a step (`OpenRoadmap.followers`, the web's `childrenOf`),
-which a step's page lists under *Opens* and the delete question counts; and what Reset would return to Locked
-(`OpenStep.relocks`, the web's `resetRelocks`), the steps a Done step opened that stand Up next. From the domain's read of
+boards word, and any other refusal shows nothing. Facts the model reads or settles itself, as the web's room does. From
+the domain's `EffectsRead` (`OpenRoadmap.effects(of:)`, which the web's room reads through `acts.effectsOf`), what a
+delete or a Reset would do: the one starting step a roadmap keeps, which offers no Delete; that steps holding every step
+the roadmap starts from cannot be deleted; the steps outside them that follow one of them, which a step's page lists under
+*Opens* and the delete question counts; and what Reset would return to Locked (`OpenStep.relocks`), the steps a Done step
+opened that stand Up next. From the domain's read of
 every roadmap: what else a roadmap's delete takes (`openers(of:)`, the web's `OpenedTrees.openersOf` and `deleteCost`),
 the steps of the person's other roadmaps whose pointer opens it, which the server deletes with it. And of a name: it is
 written without the blanks around it (`name(typed:)`, the web's `NewTreeBirth.plant` and `ReplicaSession.renameTree`), and a
@@ -179,9 +181,7 @@ web's `deriveLegend` over the kinds `ReplicaRoadmap` keeps), each with how many 
 kinds a step may wear, the named ones
 first (`kindChoices`); the kinds the Board's filter offers, the ones steps wear, none where steps wear one hue alone
 (`kindOptions`); the hue Add Kind takes, the first no entry has (`freeHue`); and only a kind no step wears may be removed
-(`onRemoveKind`). Of several steps: they cannot be deleted while they hold every step the roadmap starts from
-(`OpenRoadmap.takesEveryStart`, the web's `takesEveryRoot`), and their delete costs the steps outside them that follow
-one of them (`deletionCost`). And of the Board's query: a step the form made that the query hides is shown by clearing
+(`onRemoveKind`). And of the Board's query: a step the form made that the query hides is shown by clearing
 each part that alone hides it (`BoardReading.reveal`, the web's `BoardQuery.revealing`), once the phone's copy holds the
 step, whether the Board then shows a list or nothing left.
 

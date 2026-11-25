@@ -25,7 +25,7 @@ import { SkillTree } from './model/SkillTree.js';
 import { makeRenderable } from './model/renderableGraph.js';
 import { StepDetail } from './step/StepDetail.jsx';
 import { RefusedSync } from './sync/SyncNotices.jsx';
-import { deletable, takesEveryRoot } from './board/acts.js';
+import { deletable, effectsOf } from './board/acts.js';
 import { ASK_AI_PLACEHOLDER, GRAPH_LOAD, GRAPH_UNAVAILABLE, LOAD_ERROR, forkedToast, landingNote } from './copy.js';
 import { t } from './i18n/index.js';
 import { hashWithStep, useStepAddress } from './step/stepAddress.js';
@@ -749,7 +749,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
           onMarkDone={() => progressActs.markDone(selectedIdsRef.current)}
           onPreviewDelete={() => sceneRef.current?.previewDeleteCostSet([...selectedIdsRef.current])}
           onClearDelete={() => sceneRef.current?.clearDeleteCost()}
-          onDelete={takesEveryRoot(boardTree, [...selectedIds]) ? null : bulkDelete}
+          onDelete={effectsOf(boardTree, [...selectedIds])?.takesEveryStart ? null : bulkDelete}
         />
       )}
 

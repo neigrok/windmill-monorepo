@@ -1,3 +1,6 @@
+import { RoadmapTree } from '../domain/records.js';
+import { FollowGraph } from '../domain/graph.js';
+import { EffectsRead } from '../domain/reads.js';
 import { progressChanges } from '../model/progress.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { DEFAULT_NODE_COLOR } from '../theme.js';
@@ -52,15 +55,31 @@ export function onceLanded(receipt, landed) {
   receipt.landed.then((results) => { if (results) landed(results); });
 }
 
-// A roadmap keeps a root: the one rule every door into a delete asks, on both views and every band, of the tree a hold leaves standing.
-export function takesEveryRoot(tree, ids) {
-  const roots = tree?.roots() ?? [];
-  return roots.length > 0 && roots.every((root) => ids.includes(root.id));
+// The domain's graph of each tree with no step complete, read once and kept for every delete asked of that tree.
+const unmarked = new WeakMap();
+
+// What a delete of the steps `ids` would do, and a Reset of one, as the domain reads them (`EffectsRead`) over the room's
+// tree: its steps in the order it holds them, which is the roadmap's, each following its prerequisites, complete as
+// `progress` and their openings make them, with the person's marks. A delete reads no step's completion, so without
+// `progress` none is complete. None without a tree.
+export function effectsOf(tree, ids, progress = null) {
+  if (!tree) return null;
+  const width = String(tree.nodes.length).length;
+  const roadmap = (marked) => new RoadmapTree({
+    id: tree.id,
+    nodes: tree.nodes.map((node, place) => ({ id: node.id, ord: String(place).padStart(width, '0') })),
+    edges: tree.edges.map(({ from, to }) => ({ from, to, present: true })),
+    marks: tree.nodes.filter((node) => marked.has(node.id)).map((node) => ({ node: node.id, status: 'complete', recordedAt: null, deviceAt: null })),
+  });
+  if (progress !== null) return new EffectsRead(new FollowGraph(roadmap(progress.completed), UnlockRules.completed(tree, progress)), ids);
+  if (!unmarked.has(tree)) unmarked.set(tree, new FollowGraph(roadmap(new Set())));
+  return new EffectsRead(unmarked.get(tree), ids);
 }
 
+// Whether the steps `ids` may be deleted: the one rule every door into a delete asks, on both views and every band, of
+// the tree a hold leaves standing. A roadmap keeps a step it starts from.
 export function deletable(tree, ids) {
-  if (!tree || ids.length === 0 || ids.some((id) => !tree.nodesById.has(id))) return false;
-  return !takesEveryRoot(tree, ids);
+  return effectsOf(tree, ids)?.deletable ?? false;
 }
 
 export function editGesture(tree, request) {
@@ -101,11 +120,6 @@ export class HeldDelete {
     if (this.ids.length === 1) return deletedToast({ step: this.subject });
     return deletedStepsToast({ count: this.ids.length });
   }
-}
-
-export function deletionCost(tree, ids) {
-  const deleted = new Set(ids);
-  return tree.nodes.filter((step) => !deleted.has(step.id) && step.prerequisites.some((id) => deleted.has(id))).length;
 }
 
 export function completionOutcome(tree, before, after, id) {

@@ -990,9 +990,9 @@ six-second Undo.
 
 ### Held delete
 
-Delete first confirms in an anchored desktop popover or a phone sheet, with a cost line counting the step's
-children through `acts.deletionCost`. Confirm closes the detail and creates a `HeldDelete`, with no structural
-write yet. For its nine-second Undo window every Board surface reads the held projection: cards, counts,
+Delete first confirms in an anchored desktop popover or a phone sheet, with a cost line counting the steps that follow
+it, the domain's `EffectsRead.follow` (`acts.effectsOf`). Confirm closes the detail and creates a `HeldDelete`, with
+no structural write yet. For its nine-second Undo window every Board surface reads the held projection: cards, counts,
 identity, topbar, detail and composer. A delete from the Graph's step page uses the same hold and projects it
 into the Graph. `SkillTree.without` and the eventual `BulkDelete` share `respliceEdges`.
 
@@ -1065,10 +1065,11 @@ phone camera controls sit beneath the measured row. The blank-step naming dock a
 measured identity and any refusal banner. Ordinary node activation opens the shared step document. The tablet Graph
 keeps aim, link removal and multi-select surfaces; the document's menu provides Add step and Connect.
 
-A roadmap keeps a root, by one rule for every door: `takesEveryRoot` in `board/acts.js`, which `deletable` builds on, asked of
-the tree a held delete leaves standing. A sole root, the last root under a hold and a select-all on a many-rooted roadmap all
-read the same. The desktop dock, the tablet panel, the selection bars and the phone Board's bulk bar stop offering Delete while
-they hold such a selection, the Graph's writes refuse it, and a Delete key on it does nothing.
+A roadmap keeps a root, by one rule for every door: the domain's `EffectsRead` (`takesEveryStart`, and `deletable` in
+`board/acts.js`, which reads it), asked through `acts.effectsOf` of the tree a held delete leaves standing. A sole
+root, the last root under a hold and a select-all on a many-rooted roadmap all read the same. The desktop dock, the
+tablet panel, the selection bars and the phone Board's bulk bar stop offering Delete while they hold such a selection,
+the Graph's writes refuse it, and a Delete key on it does nothing.
 
 The owner's Next chip reads the unfiltered `Board.upNext` in Roadmap order, including a one-step roadmap, and
 hides at zero. Picking a row selects and reveals that canvas step.
