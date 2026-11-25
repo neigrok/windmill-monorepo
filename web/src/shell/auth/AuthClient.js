@@ -76,16 +76,20 @@ export async function logout() {
   if (!response.ok) throw new AuthError('Sign out failed', { code: 'unreachable', status: response.status });
 }
 
-// Clears the cookie of a session the server no longer holds. JavaScript cannot see the HttpOnly cookie, so `read`, the
-// account's read, decides under the cookie lock: no session still, and the logout expires the cookie (`cleared`); a
-// sign-in another tab made meanwhile, which stays (`kept`); no answer, no lock within 10 s or a logout that fails
-// (`failed`, the logout's `error` with it). Answers that read, undefined when there was none.
-export async function clearLapsedCookie(read) {
+// Clears the cookie of a session the server no longer holds, once a lapse. JavaScript cannot see the HttpOnly cookie, so
+// under the cookie lock `lapse.cleared()` first says whether a page or tab already cleared it (then nothing is sent and this
+// answers null), and then `read`, the account's read, decides: no session still, and the logout expires the cookie and
+// `lapse.record()` notes it (`cleared`); a sign-in another tab made meanwhile, which stays (`kept`); no answer, no lock within
+// 10 s or a logout that fails (`failed`, the logout's `error` with it), noted nowhere, so the next read that lapses the seat
+// tries again. Answers that read, undefined when there was none.
+export async function clearLapsedCookie(read, lapse) {
   try {
     return await navigator.locks.request(COOKIE_LOCK, { signal: AbortSignal.timeout(10000) }, async () => {
+      if (lapse.cleared()) return null;
       const account = await read();
       if (account?.user !== null) return { read: account, outcome: account ? 'kept' : 'failed' };
       try { await logout(); } catch (error) { return { read: account, outcome: 'failed', error }; }
+      lapse.record();
       return { read: account, outcome: 'cleared' };
     });
   } catch {

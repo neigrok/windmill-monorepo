@@ -20,11 +20,17 @@ export function useAuth() {
   if (!value) throw new Error('useAuth must be used within an AuthProvider');
   return value;
 }
-function hint() {
-  try { return JSON.parse(localStorage.getItem(HINT_KEY) || 'null')?.user ?? null; } catch { return null; }
+// The browser's last settled account, which the static pages read and write too: `{ status: 'signed-in', user }`, or
+// `{ status: 'ghost' }` naming in `cleared` the account whose lapsed session's cookie the browser already cleared. Only a
+// signed-in hint drops that mark, since the cookie comes back only through a sign-in.
+function hinted() {
+  try { return JSON.parse(localStorage.getItem(HINT_KEY) || 'null') ?? {}; } catch { return {}; }
 }
-function remember(user) {
-  try { localStorage.setItem(HINT_KEY, JSON.stringify(user ? { status: 'signed-in', user } : { status: 'ghost' })); }
+function hint() {
+  return hinted().user ?? null;
+}
+function remember(user, cleared = hinted().cleared) {
+  try { localStorage.setItem(HINT_KEY, JSON.stringify(user ? { status: 'signed-in', user } : { status: 'ghost', ...(cleared ? { cleared } : {}) })); }
   catch { captureError('auth', 'auth-hint-storage', '', '/auth'); }
 }
 // Every read of the account tells the engine whether the server answered, so a page whose engine sends nothing of its own,
@@ -263,13 +269,18 @@ export default function AuthProvider({ children }) {
     if (engine.device.meta.clearCredential) { settle(null, { signedOut: true }); return null; }
     const revision = roomOwnership.current.revision;
     let read = await readAccount(engine);
-    // The read that lapses the seat finds a cookie no live session holds: it goes, so no door refuses this browser for it
-    // (AUTH.md), and the read made under the cookie lock, a sign-in another tab made meanwhile included, is the one this takes.
+    // The read that lapses the seat finds a cookie no live session holds: it goes, once a lapse, so no door refuses this
+    // browser for it (AUTH.md), and the read made under the cookie lock, a sign-in another tab made meanwhile included, is
+    // the one this takes.
     if (seat.lapses(read?.user, engine, { signedOut })) {
-      const cleared = await clearLapsedCookie(() => readAccount(engine));
-      if (cleared.error) captureError('auth', 'auth-session-clear', cleared.error.stack ?? '', '/auth');
-      track('auth_session_cleared', { outcome: cleared.outcome });
-      read = cleared.read;
+      const account = seat.previousAccount;
+      const cleared = await clearLapsedCookie(() => readAccount(engine),
+        { cleared: () => hinted().cleared === account, record: () => remember(null, account) });
+      if (cleared) {
+        if (cleared.error) captureError('auth', 'auth-session-clear', cleared.error.stack ?? '', '/auth');
+        track('auth_session_cleared', { outcome: cleared.outcome });
+        read = cleared.read;
+      }
     }
     const me = read?.user;
     if (revision !== roomOwnership.current.revision) return undefined;

@@ -105,10 +105,11 @@ for (const trigger of ['refresh', 'poll']) {
   });
 }
 
-test('the read that lapses the seat clears the cookie no live session holds, once a page and again after the next sign-in lapses, keeping the account\'s copy', async (t) => {
+test('the read that lapses the seat clears the cookie no live session holds once a lapse, across reloads, and again after the next sign-in lapses, keeping the account\'s copy', async (t) => {
   const state = await account(t);
   const calls = () => globalThis.fetch.mock.calls.map((call) => new URL(String(call.arguments[0])).pathname);
   const logouts = () => calls().filter((path) => path === '/v1/auth/logout').length;
+  const mark = () => JSON.parse(localStorage.getItem('windmill:auth-hint'));
   const before = calls().length;
   state.setMe(null);
   await state.auth().refresh();
@@ -116,20 +117,51 @@ test('the read that lapses the seat clears the cookie no live session holds, onc
   await state.auth().refresh();
   t.mock.timers.tick(20000);
   await state.auth().refresh();
-  const lapsed = { logouts: logouts(), status: state.auth().status, lapsed: state.auth().lapsed,
+  const lapsed = { logouts: logouts(), hint: mark(), status: state.auth().status, lapsed: state.auth().lapsed,
     replica: state.engine.device.activeReplica.meta.state, outbox: state.engine.device.activeReplica.outbox, forgotten: state.forgotten };
   await state.reload();
   await until(() => state.auth().lapsed);
-  const reloaded = logouts();
+  await state.auth().refresh();
+  const reloaded = { logouts: logouts(), hint: mark() };
   state.setMe({ id: 'A', name: 'Ada' });
   await state.auth().signIn({ id: 'A', name: 'Ada' });
-  const signedIn = logouts();
+  const signedIn = { logouts: logouts(), hint: mark() };
   state.setMe(null);
   await state.auth().refresh();
-  assert.deepEqual({ lapse, lapsed, reloaded, signedIn, again: logouts(), failures: state.env.failures }, {
+  assert.deepEqual({ lapse, lapsed, reloaded, signedIn, again: { logouts: logouts(), hint: mark() }, failures: state.env.failures }, {
     lapse: ['/v1/me', '/v1/me', '/v1/auth/logout'],
-    lapsed: { logouts: 1, status: 'ghost', lapsed: true, replica: 'bound', outbox: state.entries, forgotten: [] },
-    reloaded: 2, signedIn: 2, again: 3, failures: [],
+    lapsed: { logouts: 1, hint: { status: 'ghost', cleared: 'A' }, status: 'ghost', lapsed: true, replica: 'bound',
+      outbox: state.entries, forgotten: [] },
+    reloaded: { logouts: 1, hint: { status: 'ghost', cleared: 'A' } },
+    signedIn: { logouts: 1, hint: { status: 'signed-in', user: { id: 'A', name: 'Ada' } } },
+    again: { logouts: 2, hint: { status: 'ghost', cleared: 'A' } },
+    failures: [],
+  });
+});
+
+test('a clear that failed notes nothing, so the next page tries again, and a browser that lapsed with no mark clears once', async (t) => {
+  const state = await account(t);
+  let logout = 503;
+  globalThis.fetch.mock.mockImplementation(async (url) => (String(url).endsWith('/v1/auth/logout')
+    ? { ok: logout < 300, status: logout, json: async () => ({}) } : { ok: false, status: 401, json: async () => ({}) }));
+  const logouts = () => globalThis.fetch.mock.calls.filter((call) => String(call.arguments[0]).endsWith('/v1/auth/logout')).length;
+  const mark = () => JSON.parse(localStorage.getItem('windmill:auth-hint'));
+  await state.auth().refresh();
+  await state.auth().refresh();
+  const failed = { logouts: logouts(), hint: mark(), lapsed: state.auth().lapsed };
+  logout = 204;
+  await state.reload();
+  await until(() => state.auth().lapsed);
+  const retried = { logouts: logouts(), hint: mark() };
+  localStorage.setItem('windmill:auth-hint', JSON.stringify({ status: 'ghost' }));
+  await state.reload();
+  await until(() => state.auth().lapsed);
+  await state.reload();
+  await until(() => state.auth().lapsed);
+  assert.deepEqual({ failed, retried, unmarked: { logouts: logouts(), hint: mark() } }, {
+    failed: { logouts: 1, hint: { status: 'ghost' }, lapsed: true },
+    retried: { logouts: 2, hint: { status: 'ghost', cleared: 'A' } },
+    unmarked: { logouts: 3, hint: { status: 'ghost', cleared: 'A' } },
   });
 });
 

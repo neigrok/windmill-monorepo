@@ -324,6 +324,70 @@ for (const moment of ['before the clear reads again', 'while the clear holds the
   });
 }
 
+// The same played server and shared cookie jar: a lapse is cleared once, whichever tab or page reads it next, until a
+// sign-in brings a cookie back.
+test('Chromium: a lapsed session\'s cookie is cleared once a lapse: one logout and one event across a reload and a second tab, and one again after a sign-in lapses', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    const server = { cookie: 's1', sessions: new Set(['s1']), logouts: [] };
+    const pages = new Map();
+    await context.route('**/v1/me', (route) => {
+      const user = server.sessions.has(server.cookie) ? { id: 'A', name: 'Ada', email: 'ada@example.test' } : null;
+      return route.fulfill({ status: user ? 200 : 401, contentType: 'application/json', body: JSON.stringify(user ? { user } : {}) });
+    });
+    await context.route('**/v1/auth/verify', (route) => {
+      server.cookie = 's2'; server.sessions.add('s2');
+      return route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ user: { id: 'A', name: 'Ada', email: 'ada@example.test' } }) });
+    });
+    await context.route('**/v1/sessions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"sessions":[]}' }));
+    await context.route('**/v1/auth/logout', (route) => {
+      server.logouts.push({ tab: pages.get(route.request().frame().page()), cookie: server.cookie });
+      server.sessions.delete(server.cookie); server.cookie = null;
+      return route.fulfill({ status: 204 });
+    });
+    const errors = [];
+    const mount = async (page, state) => {
+      await page.waitForFunction(() => typeof mountAuth === 'function');
+      await page.evaluate(() => mountAuth('auth-lapse-once', false));
+      await page.waitForFunction((wanted) => document.getElementById('auth-state')?.textContent === wanted, state);
+      await page.evaluate(() => auth.refresh());
+    };
+    const open = async (tab, state) => {
+      const page = await context.newPage();
+      pages.set(page, tab);
+      page.on('pageerror', (error) => errors.push(`${tab}: ${error.message}`));
+      await page.goto(`${origin}/auth-test`);
+      await mount(page, state);
+      return page;
+    };
+    const told = (page) => page.evaluate(() => (window.events ?? []).filter((event) => event.name === 'auth_session_cleared')
+      .map((event) => event.props.outcome));
+    const a = await open('A', 'signed-in');
+    server.sessions.delete('s1');
+    await a.evaluate(() => auth.refresh());
+    const lapse = await told(a);
+    await a.reload();
+    await mount(a, 'ghost');
+    const reloaded = await told(a);
+    const b = await open('B', 'ghost');
+    const opened = await told(b);
+    const cleared = [...server.logouts];
+    await b.evaluate(async () => { const { user } = await verifyToken('link'); await auth.signIn(user); });
+    await a.waitForFunction(() => document.getElementById('auth-state')?.textContent === 'signed-in');
+    server.sessions.delete('s2');
+    await b.evaluate(() => auth.refresh());
+    await a.evaluate(() => auth.refresh());
+    assert.deepEqual({ cleared, told: { lapse, reloaded, opened, again: await told(b), aAgain: await told(a) },
+      logouts: server.logouts, cookie: server.cookie, errors }, {
+      cleared: [{ tab: 'A', cookie: 's1' }],
+      told: { lapse: ['cleared'], reloaded: [], opened: [], again: ['cleared'], aAgain: [] },
+      logouts: [{ tab: 'A', cookie: 's1' }, { tab: 'B', cookie: 's2' }], cookie: null, errors: [],
+    });
+  } finally { await context.close(); }
+});
+
 test('Chromium: account closure discards without asking; failed server and local cleanup remain retryable', async () => {
   await ready;
   const context = await browser.newContext();
