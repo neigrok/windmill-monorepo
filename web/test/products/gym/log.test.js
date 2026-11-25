@@ -11,12 +11,12 @@ import {
   logWhenLabel, NEVER_TRAINED_ALONE,
   FROM_ROUTINES, fromSession, MOVEMENTS_HREF, recordFromOf,
   movementIdOf, movementOf, NAME_COUNT_FROM, NAME_MAX, nameCountLabel, NOTES_HREF,
-  nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, NOT_IN_PLAN, OPEN_TARGET,
+  nameOfMovement, NEW_ROUTINE_ID, NO_ROUTINE, OPEN_TARGET,
   planFrozenLabel,
-  BODYWEIGHT_HREF, planOf, planReadingOf, proposalHref, proposalIdOf,
+  BODYWEIGHT_HREF, planOf, proposalHref, proposalIdOf,
   recordHref, routineHref, routineIdOf, routineNameOf, routineSizeLabel, ROUTINES_HREF, screenOf, showsNameCount,
   loadBasisLabel, sameSet, schemeAgrees, sessionHref, sessionIdOf, sessionMetaLabel, setCountLabel, setLoadLabel,
-  setReading, slotRows, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel, tonnageTotalLabel,
+  setReading, sharedHref, sharedTokenOf, shortDayLabel, timeLabel, tonnageLabel, tonnageTotalLabel,
   threadHref, threadIdOf, THREADS_HREF,
   topSetLabel, topSetOf, weekdayName, whenLabel,
 } from '../../../src/products/gym/log.js';
@@ -643,88 +643,6 @@ test('planFrozenLabel — the snapshot is named by the moment it was taken', () 
   assert.equal(planFrozenLabel({ startedAt, plan: JSON.stringify(plan) }), 'plan snapshot · frozen 18:02');
   assert.equal(planFrozenLabel({ startedAt }), null);
   assert.equal(planFrozenLabel({ startedAt, plan: 'not json at all' }), null);
-});
-
-test('planReadingOf — the target, the movement nobody planned, and the plan that names one twice', () => {
-  const session = {
-    startedAt: 1_900_000_000_000,
-    plan: {
-      routine: 'Push A',
-      entries: [
-        { exerciseId: 'bench-press', sets: [{ reps: 5, weightKg: 82.5 }, { reps: 5, weightKg: 82.5 }], restSeconds: 180 },
-        { exerciseId: 'overhead-press', sets: [{ reps: 5 }, { reps: 5 }] },
-        { exerciseId: 'back-squat', sets: RAMP },
-        { exerciseId: 'face-pull' },
-      ],
-    },
-  };
-  assert.deepEqual(planReadingOf(session, 'bench-press'), {
-    kind: 'planned',
-    line: 'plan 2 × 5 · 82.5',
-    entry: { exerciseId: 'bench-press', sets: [{ reps: 5, weightKg: 82.5 }, { reps: 5, weightKg: 82.5 }], restSeconds: 180 },
-  });
-  assert.equal(planReadingOf(session, 'overhead-press').line, 'plan 2 × 5');
-  assert.equal(planReadingOf(session, 'back-squat').line, 'plan 5 × 1–5 · 60–100');
-  assert.deepEqual(planReadingOf(session, 'face-pull'), { kind: 'planned', line: 'plan open', entry: { exerciseId: 'face-pull' } });
-  assert.deepEqual(planReadingOf(session, 'chin-up'), { kind: 'added', line: NOT_IN_PLAN, entry: null });
-  assert.equal(NOT_IN_PLAN, 'not in the plan');
-
-  const twice = {
-    startedAt: 1_900_000_000_000,
-    plan: {
-      routine: 'Squat day',
-      entries: [
-        { exerciseId: 'back-squat', sets: [{ reps: 3, weightKg: 140 }] },
-        { exerciseId: 'back-squat', sets: [{ reps: 8, weightKg: 100 }] },
-      ],
-    },
-  };
-  assert.deepEqual(planReadingOf(twice, 'back-squat'), { kind: 'ambiguous', line: null, entry: null });
-
-  assert.deepEqual(planReadingOf({ startedAt: 1 }, 'bench-press'), { kind: 'unplanned', line: null, entry: null });
-
-  const unreadable = { kind: 'unplanned', line: null, entry: null };
-  assert.deepEqual(planReadingOf({ plan: { routine: 'Push A', entries: {} } }, 'bench-press'), unreadable);
-  assert.deepEqual(planReadingOf({ plan: { routine: 'Push A' } }, 'bench-press'), unreadable);
-  assert.deepEqual(planReadingOf({ plan: [{ exerciseId: 'bench-press', sets: [{}] }] }, 'bench-press'), unreadable);
-  assert.deepEqual(planReadingOf({ plan: { routine: 'Push A', entries: [] } }, 'bench-press'), {
-    kind: 'added', line: NOT_IN_PLAN, entry: null,
-  });
-});
-
-test('slotRows — the slot strip as rows: what was lifted, then the slots still to come', () => {
-  const entry = { exerciseId: 'back-squat', sets: RAMP, restSeconds: 180 };
-  const logged = (id, weightKg, reps) => ({ id, exerciseId: 'back-squat', weightKg, reps });
-  // The rack fixture: sets 1 and 2 landed as planned, set 3 current.
-  assert.deepEqual(slotRows([logged('set_1', 60, 5), logged('set_2', 80, 5)], entry), [
-    { key: 'set_1', kind: 'lifted', label: '60 × 5' },
-    { key: 'set_2', kind: 'lifted', label: '80 × 5' },
-    { key: 'slot-3', kind: 'target', label: '90 × 3', spoken: 'set 3, target 90 × 3' },
-    { key: 'slot-4', kind: 'target', label: '100 × 1', spoken: 'set 4, target 100 × 1' },
-    { key: 'slot-5', kind: 'target', label: '80 × 5', spoken: 'set 5, target 80 × 5' },
-  ]);
-  // Every set fills the next slot, a light first set included, and a set logged past the plan appends as lifted.
-  assert.deepEqual(slotRows([
-    logged('set_0', 40, 8), logged('set_1', 60, 5), logged('set_2', 80, 5), logged('set_3', 90, 3),
-    logged('set_4', 102.5, 1), logged('set_5', 80, 5), logged('set_6', 80, 5),
-  ], entry), [
-    { key: 'set_0', kind: 'lifted', label: '40 × 8' },
-    { key: 'set_1', kind: 'lifted', label: '60 × 5' },
-    { key: 'set_2', kind: 'lifted', label: '80 × 5' },
-    { key: 'set_3', kind: 'lifted', label: '90 × 3' },
-    { key: 'set_4', kind: 'lifted', label: '102.5 × 1' },
-    { key: 'set_5', kind: 'lifted', label: '80 × 5' },
-    { key: 'set_6', kind: 'lifted', label: '80 × 5' },
-  ]);
-  // Nothing landed yet: the whole scheme to come, its nulls spoken as their words.
-  assert.deepEqual(slotRows([], { exerciseId: 'chin-up', sets: [{ weightKg: 20 }, { reps: 5 }] }), [
-    { key: 'slot-1', kind: 'target', label: '20 × max', spoken: 'set 1, target 20 × max' },
-    { key: 'slot-2', kind: 'target', label: 'last × 5', spoken: 'set 2, target last × 5' },
-  ]);
-  // No plan, or an open line: only what was lifted.
-  assert.deepEqual(slotRows([logged('set_1', -20, 6)], null), [{ key: 'set_1', kind: 'lifted', label: '−20 × 6' }]);
-  assert.deepEqual(slotRows([logged('set_1', 60, 5)], { exerciseId: 'back-squat' }), [{ key: 'set_1', kind: 'lifted', label: '60 × 5' }]);
-  assert.deepEqual(slotRows([], null), []);
 });
 
 test('setLoadLabel — what a set was, in the one spelling a weight has here', () => {

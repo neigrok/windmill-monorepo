@@ -8,13 +8,17 @@ import { hello } from '../../../../packages/api-contract/sync/reference/server/p
 import { push } from '../../../../packages/api-contract/sync/reference/server/push.js';
 import { ServerState } from '../../../../packages/api-contract/sync/reference/server/state.js';
 import { registry } from '../../../src/platform/sync/schema.js';
+import { Fields } from '../../../src/platform/domain-kit/entities.js';
+import { RoutineChange } from '../../../src/products/gym/domain/proposals.js';
+import { RoutineEntry } from '../../../src/products/gym/domain/routines.js';
 import { SeedExercises } from '../../../src/products/gym/domain/seedExercises.js';
 import { beacon, withBrowserErrors } from '../roadmap/browserFixture.js';
 
 // A workout on the web (web-device-parity §4): the real account provider and shell over the browser's own engine, its
 // copy seeded with the fixture's routine (Upper A) by an earlier visit, and every `/v1` request the test's to answer or to
-// hold. Two pages of one context are two tabs of one browser. The page loads the app's fonts, so a screenshot judges its
-// type; `WM_WORKOUT_SHOTS` names a folder for the logging page's screenshots at 1440 and 390.
+// hold. Two pages of one context are two tabs of one browser. Coach's AI service is played (`window.aiRounds`): each round
+// answers the next, a call to one of Coach's abilities or words. The page loads the app's fonts, so a screenshot judges its
+// type; `WM_WORKOUT_SHOTS` names a folder for the logging page's and Coach's screenshots at 1440 and 390.
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const repo = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
@@ -42,6 +46,7 @@ window.seed = async ({ response, rows }) => {
   engine.close();
 };
 window.drawnSets = () => syncSession.engine.observe('self/gym').getSnapshot().drawn.filter((record) => record.t === 'set' && record.life?.[0] !== 'dead');
+window.openWorkout = () => syncSession.engine.observe('self/gym').getSnapshot().drawn.find((record) => record.t === 'session' && !record.f?.finishedAt?.[0])?.id ?? null;
 window.engineOpen = () => Boolean(syncSession.engine);
 // This tab's engine writes wait until releaseCommits(), so a test can order two tabs' writes.
 window.holdCommits = () => {
@@ -81,6 +86,28 @@ window.mount = () => {
 window.entryReady = true;
 `;
 
+// The AI service Coach's turns call, played: each round is the next of `window.aiRounds`, calls to Coach's abilities
+// (`{ calls: [{ name, input }] }`) or its words (`{ text }`), and the allowance is open.
+const playedAi = `
+const allowance = { tier: 'free', period: 'calendar_month_utc', limit: '1', used: '0', reserved: '0', remaining: '1', resetsAt: null,
+  budgetResetsAt: null, code: 'ok', capabilities: { text: { large: 'large', medium: 'medium', small: 'small' }, transcription: false } };
+const ended = (stop, parts) => ({ id: 9, event: 'ended', data: { stop, message: { role: 'assistant', parts, carry: 'c' }, charged: '0', allowance: null } });
+let calls = 0;
+export class AiClient {
+  connected() { return true; }
+  clearPass() {}
+  async allowance() { return allowance; }
+  async text({ onText }) {
+    const round = (window.aiRounds ?? []).shift();
+    if (!round) throw new Error('no round left to play');
+    if (round.calls) return ended('tool_calls', round.calls.map((call) => ({ toolCall: { id: 'toolu_' + (calls += 1), name: call.name, input: call.input } })));
+    await onText?.(round.text);
+    return ended('completed', [{ text: round.text }]);
+  }
+  async result() { throw new Error('no result to play'); }
+}
+`;
+
 let server, browser, origin;
 const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-gym-live-test`,
@@ -90,11 +117,13 @@ const ready = (async () => {
         if (id === '/gym-live-entry.js') return '\0gym-live-entry';
         if (id.endsWith('/telemetry/beacon.js')) return '\0gym-live-events';
         if (id.endsWith('/telemetry/sentry.js')) return '\0gym-live-issues';
+        if (id.endsWith('/platform/ai/client.js')) return '\0gym-live-ai';
       },
       load(id) {
         if (id === '\0gym-live-entry') return entry;
         if (id === '\0gym-live-events') return beacon;
         if (id === '\0gym-live-issues') return 'export function captureError(product, operation) { (window.issues ??= []).push(operation); }';
+        if (id === '\0gym-live-ai') return playedAi;
       },
       configureServer(vite) {
         vite.middlewares.use('/gym-live', (_request, response) => {
@@ -505,6 +534,169 @@ test('Chromium: at a phone’s width the sheets cover the app’s header, take t
     await page.mouse.click(200, 30);
     await index.waitFor({ state: 'detached' });
   });
+});
+
+// Coach during a workout (WD7). Its change to Upper A's open workout: the belt off the pull-ups and face pulls at the end,
+// two suggested changes; and the routine's for next time, face pulls added.
+const lighter = [entries[0], entries[1], { ...entries[2], sets: entries[2].sets.map((set) => ({ ...set, weightKg: 0 })) },
+  { exerciseId: 'face-pull', sets: [{ reps: 15, weightKg: 15 }, { reps: 15, weightKg: 15 }] }];
+const answer = 'Finish your last bench set as planned if it feels fine. For today, take the added weight off pull-ups and add face pulls at the end.';
+// Coach answers the next question with a change to the workout open on this browser's copy, and with `routine` the
+// routine's change too, then its words.
+const proposes = (page, { routine = false } = {}) => page.evaluate(({ plan, nextTime, words }) => {
+  const workout = { name: 'propose_workout_change', input: { id: 'coach-names-it', sessionId: window.openWorkout(), entries: plan, summary: '' } };
+  const upper = { name: 'propose_routine_change', input: { id: 'coach-names-it', routineId: 'routineUpperA', name: 'Upper A', entries: nextTime, summary: '' } };
+  window.aiRounds = [{ calls: nextTime ? [workout, upper] : [workout] }, { text: words }];
+}, { plan: lighter, nextTime: routine ? [...entries, lighter[3]] : null, words: answer });
+const ask = async (scope, question) => {
+  const field = scope.getByRole('textbox', { name: 'Ask about your training', exact: true });
+  await field.fill(question);
+  await field.press('Enter');
+};
+const coachSteps = async (page) => ({ opened: await steps(page, 'gym_action'), shown: await steps(page, 'gym_proposal_shown'),
+  decided: await steps(page, 'gym_proposal_outcome') });
+
+test('Chromium: at a desk Coach opens in the rail beside the rack, and its change to the workout is applied there (WD7.1, WD7.2)', async (t) => {
+  const { tab } = await browserWith(t);
+  const page = await tab();
+  await withBrowserErrors(page, async () => {
+    await page.getByRole('button', { name: 'Start', exact: true }).click();
+    await loggable(page);
+    assert.deepEqual(await page.getByRole('tab').allTextContents(), ['This workout', 'Coach']);
+    await page.getByRole('tab', { name: 'Coach', exact: true }).click();
+    const coach = page.getByRole('tabpanel', { name: 'Coach', exact: true });
+    await proposes(page, { routine: true });
+    await ask(coach, 'My shoulder feels off on bench today. Should I change anything?');
+    const workout = coach.getByRole('region', { name: 'This workout', exact: true });
+    await workout.getByRole('button', { name: 'Apply', exact: true }).waitFor();
+    assert.equal(await workout.locator('header').innerText(), 'This workout\n2 suggested changes · now');
+    const routine = coach.getByRole('region', { name: 'Upper A', exact: true });
+    assert.equal(await routine.locator('header').innerText(), 'Upper A\n1 suggested change · next time');
+    assert.deepEqual(await Promise.all([workout, routine].map((card) => card.locator('.gym-coach-proposal-apply').evaluate((apply) => apply.classList.contains('is-quiet')))),
+      [false, true], 'this workout\'s card holds the one prominent Apply');
+    assert.equal(await page.getByRole('button', { name: 'Log set', exact: true }).isVisible(), true, 'the rack stays beside Coach');
+
+    await workout.getByRole('button', { name: 'Apply', exact: true }).click();
+    await coach.getByText('Applied · this workout', { exact: true }).waitFor();
+    assert.equal(await routine.getByRole('button', { name: 'Apply', exact: true }).count(), 1, 'the routine card is decided on its own');
+    await page.getByRole('tab', { name: 'This workout', exact: true }).click();
+    await page.locator('.gym-live-movement').filter({ hasText: 'Face Pull' }).waitFor();
+    assert.deepEqual(await coachSteps(page), {
+      opened: [{ screen: 'coach', action: 'new_chat', door: 'workout', outcome: 'ok' }],
+      shown: [{ screen: 'coach', target: 'workout', state: 'pending' }, { screen: 'coach', target: 'workout', state: 'applied' }],
+      decided: [{ screen: 'coach', target: 'workout', action: 'apply', outcome: 'decided' }] });
+    assert.deepEqual(await page.evaluate(() => window.issues ?? []), []);
+  });
+});
+
+test('Chromium: on a phone Coach is a sheet over the workout at its large detent, and Close returns to the rack as it was (WD7.1 · 390)', async (t) => {
+  const { tab } = await browserWith(t, { width: 390, height: 844 });
+  const page = await tab();
+  await withBrowserErrors(page, async () => {
+    await page.getByRole('button', { name: 'Start', exact: true }).click();
+    await loggable(page);
+    await page.getByRole('button', { name: 'Log set', exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll('.gym-live-row.is-logged').length === 1);
+    assert.equal(await page.getByRole('tab').count(), 0, 'a phone has no rail to hold the tabs');
+    await page.getByRole('button', { name: 'Coach', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'Coach', exact: true });
+    await sheet.waitFor();
+    assert.deepEqual(await page.evaluate(() => { const box = document.querySelector('dialog.wm-sheet').getBoundingClientRect(); return [box.top, box.bottom]; }), [60, 844]);
+    assert.equal(await sheet.getByRole('link', { name: 'History', exact: true }).getAttribute('href'), '#/gym/coach/threads');
+    await proposes(page);
+    await ask(sheet, 'My shoulder feels off on bench today.');
+    await sheet.getByRole('region', { name: 'This workout', exact: true }).getByRole('button', { name: 'Apply', exact: true }).waitFor();
+    const field = await sheet.getByRole('textbox', { name: 'Ask about your training', exact: true }).boundingBox();
+    assert.ok(field.y + field.height <= 844, 'the composer stays at the sheet\'s foot');
+    await sheet.getByRole('button', { name: 'Close', exact: true }).click();
+    await sheet.waitFor({ state: 'detached' });
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Coach', 'focus is back on Coach');
+    assert.deepEqual(await ledger(page), ['100 × 5']);
+    assert.equal(await page.locator('.gym-live-load input').inputValue(), '100');
+    assert.deepEqual(await steps(page, 'gym_action'), [{ screen: 'coach', action: 'new_chat', door: 'workout', outcome: 'ok' }]);
+  });
+});
+
+test('Chromium: a change to a movement logged since its suggestion is out of date, says why in one sentence and applies nothing (WD7.3)', async (t) => {
+  const { tab } = await browserWith(t);
+  const page = await tab();
+  await withBrowserErrors(page, async () => {
+    await page.getByRole('button', { name: 'Start', exact: true }).click();
+    await loggable(page);
+    await page.getByRole('tab', { name: 'Coach', exact: true }).click();
+    const coach = page.getByRole('tabpanel', { name: 'Coach', exact: true });
+    await proposes(page);
+    await ask(coach, 'My shoulder feels off on bench today.');
+    const card = coach.getByRole('region', { name: 'This workout', exact: true });
+    await card.getByRole('button', { name: 'Apply', exact: true }).waitFor();
+    for (let step = 0; step < 2; step += 1) await page.getByRole('button', { name: 'Next movement', exact: true }).click();
+    await page.locator('.gym-live-movement-title').filter({ hasText: 'Pull Up' }).waitFor();
+    await loggable(page);
+    await page.getByRole('button', { name: 'Log set', exact: true }).click();
+    await card.getByText('You logged Pull Up since this suggestion. Nothing was applied.', { exact: true }).waitFor();
+    assert.equal(await card.locator('header').innerText(), 'This workout\nOut of date');
+    assert.equal(await card.getByRole('button').count(), 0, 'no buttons');
+    assert.deepEqual((await coachSteps(page)).shown, [{ screen: 'coach', target: 'workout', state: 'pending' },
+      { screen: 'coach', target: 'workout', state: 'out-of-date', reason: 'workout-moved' }]);
+  });
+});
+
+// A phone's workout and its conversation, as the browser's copy holds them once they synced: Upper A open since ten
+// minutes ago, and the phone's question answered with a change to it, waiting on its card.
+function phoneConversation() {
+  const at = Date.now() - 600_000;
+  const plan = entries.map((entry) => RoutineEntry.decode(Fields.object(entry)));
+  const changes = RoutineChange.between(plan, lighter.map((entry) => RoutineEntry.decode(Fields.object(entry)))).map((change) => change.json);
+  const record = (t, id, fields) => ({ t, id, born: stamp, life: ['alive', stamp], f: Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, [value, stamp]])) });
+  return [
+    record('session', 'sessionPhone', { startedAt: at, routineId: 'routineUpperA', planRevision: 1, plan: { routine: 'Upper A', entries } }),
+    record('thread', 'threadPhone', { title: 'My shoulder feels off on bench today.' }),
+    record('message', 'lifterPhone', { threadId: 'threadPhone', role: 'lifter', at, text: 'My shoulder feels off on bench today.', pictures: [] }),
+    record('message', 'coachPhone', { threadId: 'threadPhone', role: 'coach', at: at + 1000, replica: `rp_${'1'.repeat(32)}`, text: answer, state: 'completed',
+      truncated: false, calls: [{ callId: 'toolu_1', name: 'propose_workout_change', outcome: 'ok', created: [{ t: 'workoutProposal', id: 'proposalPhone' }],
+        read: { sessions: [], sets: [], weeks: [] } }] }),
+    record('workoutProposal', 'proposalPhone', { sessionId: 'sessionPhone', summary: '', changes, door: 'ask', connection: '', agent: '', baseRevision: 1,
+      threadId: 'threadPhone', state: 'pending' }),
+  ];
+}
+
+test('Chromium: a phone\'s workout proposal stands in History with its card, and applied in one tab it reads applied in the other', async (t) => {
+  const { tab } = await browserWith(t, { rows: phoneConversation() });
+  const one = await tab('#/gym/coach/threads/threadPhone');
+  const two = await tab('#/gym/coach/threads/threadPhone');
+  for (const page of [one, two]) await page.getByRole('region', { name: 'This workout', exact: true }).getByRole('button', { name: 'Apply', exact: true }).waitFor();
+  assert.equal(await one.getByRole('region', { name: 'This workout', exact: true }).locator('header').innerText(), 'This workout\n2 suggested changes · now');
+  await one.getByRole('region', { name: 'This workout', exact: true }).getByRole('button', { name: 'Apply', exact: true }).click();
+  for (const page of [one, two]) await page.getByText('Applied · this workout', { exact: true }).waitFor();
+  assert.deepEqual(await steps(two, 'gym_proposal_outcome'), [], 'the other tab decided nothing');
+  await two.evaluate(() => { window.location.hash = '#/gym/workout'; });
+  await two.locator('.gym-live-movement').filter({ hasText: 'Face Pull' }).waitFor();
+  assert.deepEqual(await two.evaluate(() => window.issues ?? []), []);
+});
+
+// Tab one's Apply waits until tab two has logged a pull-up: the domain then refuses it as out of date, and the card says so
+// in its sentence, never as a failure.
+test('Chromium: an Apply the domain refuses as out of date is drawn as the card\'s sentence, never as a failure', async (t) => {
+  const { tab } = await browserWith(t, { rows: phoneConversation() });
+  const one = await tab('#/gym/coach/threads/threadPhone');
+  const two = await tab('#/gym/workout');
+  const card = one.getByRole('region', { name: 'This workout', exact: true });
+  await card.getByRole('button', { name: 'Apply', exact: true }).waitFor();
+  await loggable(two);
+  await one.evaluate(() => window.holdCommits());
+  await card.getByRole('button', { name: 'Apply', exact: true }).click();
+  await two.locator('.gym-live-movement').filter({ hasText: 'Pull Up' }).click();
+  await two.locator('.gym-live-movement-title').filter({ hasText: 'Pull Up' }).waitFor();
+  await loggable(two);
+  await two.getByRole('button', { name: 'Log set', exact: true }).click();
+  await two.waitForFunction(() => document.querySelectorAll('.gym-live-row.is-logged').length === 1);
+  await one.evaluate(() => window.releaseCommits());
+  await card.getByText('You logged Pull Up since this suggestion. Nothing was applied.', { exact: true }).waitFor();
+  await one.waitForFunction(() => (window.events ?? []).some((event) => event.name === 'gym_proposal_outcome'));
+  assert.deepEqual(await steps(one, 'gym_proposal_outcome'), [{ screen: 'coach', target: 'workout', action: 'apply', outcome: 'refused', reason: 'workout-moved' }]);
+  assert.equal(await card.getByRole('alert').count(), 0, 'no failure line');
+  assert.equal(await said(one), '', 'the room says nothing of it');
+  assert.deepEqual(await one.evaluate(() => window.issues ?? []), []);
 });
 
 test('Chromium: the logging page at 1440 and 390, for the boards', { skip: !process.env.WM_WORKOUT_SHOTS }, async (t) => {

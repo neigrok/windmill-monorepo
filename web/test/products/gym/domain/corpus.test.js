@@ -571,7 +571,7 @@ const handlers = {
         const proposal = Proposal.decode(Fields.values('proposal', input.proposal.id, input.proposal.fields));
         const routine = input.routine ? Routine.decode(Fields.values('routine', input.routine.id, input.routine.fields)) : null;
         const each = (input.each ?? []).map((/** @type {string} */ id) => new Id(id, Exercise));
-        const diff = new ProposalDiff(proposal, routine, GymUnits.reading(input.units), each);
+        const diff = ProposalDiff.ofRoutine(proposal, routine, GymUnits.reading(input.units), each);
         return { unchanged: diff.unchanged, blocks: diff.blocks.map((block) => ({
           kind: block.kind, exerciseId: block.exerciseId === null ? null : block.exerciseId.record,
           fields: block.fields.map((field) => ({ label: field.label, before: field.before, after: field.after, state: field.state })) })) };

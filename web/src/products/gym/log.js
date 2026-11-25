@@ -516,37 +516,6 @@ export function planFrozenLabel(session) {
   return t('gym.log.planFrozen', { time: timeLabel(session.startedAt) });
 }
 
-export const NOT_IN_PLAN = t('gym.log.notInPlan');
-
-// Read off the frozen snapshot, never off today's routine; a snapshot entry is the routine entry's
-// own shape, `sets` per set, so the reading is the entry itself.
-// A plan may name one movement twice and a `PlanEntry` carries no id, so nothing can tell which a
-// logged set was performed against; that case answers `ambiguous`.
-export function planReadingOf(session, exerciseId) {
-  // The snapshot is frozen jsonb echoed back verbatim, so a list of entries is only a convention.
-  // An unreadable plan draws no comparison; an empty list means every movement was added today.
-  const plan = planOf(session);
-  if (!plan || !Array.isArray(plan.entries)) return { kind: 'unplanned', line: null, entry: null };
-  const entries = plan.entries.filter((entry) => entry?.exerciseId === exerciseId);
-  if (entries.length === 0) return { kind: 'added', line: NOT_IN_PLAN, entry: null };
-  if (entries.length > 1) return { kind: 'ambiguous', line: null, entry: null };
-  const entry = entries[0];
-  return { kind: 'planned', line: t('gym.log.planReading', { scheme: entryLabel(entry) }), entry };
-}
-
-// The slot strip as rows, for one movement: what was lifted, in order, then the slots still to
-// come. A set logged past the plan appends as lifted. A planned row is spoken as `set 4, target 100 × 1`.
-export function slotRows(sets, entry) {
-  const lifted = sets.map((set) => ({
-    key: set.id, kind: 'lifted', label: `${fmt(set.weightKg)} × ${set.reps}`,
-  }));
-  const coming = (entry?.sets ?? []).slice(lifted.length).map((slot, index) => {
-    const n = lifted.length + index + 1;
-    return { key: `slot-${n}`, kind: 'target', label: setReading(slot), spoken: t('gym.log.slotSpoken', { position: n, reading: setReading(slot) }) };
-  });
-  return [...lifted, ...coming];
-}
-
 // What an entered load counts for its movement: each of a pair of dumbbells, weight added to the body (assistance
 // below zero), or the whole bar. One dumbbell, other equipment and a movement the log does not know read the unit.
 export function loadBasisLabel(exercise, weightKg = 0, unit = weightUnit()) {

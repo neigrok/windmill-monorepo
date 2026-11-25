@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
-import { AlertCircle, ArrowLeftRight, ChevronRight, CircleCheck, CircleSlash, List, Minus, Pencil, Plus } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { AlertCircle, ArrowLeftRight, Check, ChevronRight, CircleCheck, CircleSlash, ClipboardList, List, Minus, Pencil, Plus } from 'lucide-react';
 import { Id } from '../../../platform/domain-kit/entities.js';
 import { Catalogue } from '../domain/catalogue.js';
 import { Proposal, ProposalState } from '../domain/proposals.js';
 import { ProposalDiff } from '../domain/proposalDiff.js';
 import { Routine } from '../domain/routines.js';
+import { Session } from '../domain/training.js';
+import { TrainingLog } from '../domain/trainingReads.js';
 import { GymUnits } from '../domain/units.js';
-import { failureReason } from '../errors.js';
-import { useGymApi } from '../gymRuntime.js';
+import { WorkoutProposal, WorkoutProposalState } from '../domain/workoutProposals.js';
+import { failureReason, GymRefusal } from '../errors.js';
+import { coachStep, useGymApi } from '../gymRuntime.js';
 import { t } from '../i18n/index.js';
 import { nameOfMovement } from '../log.js';
 import { weightUnit } from '../units.js';
@@ -16,17 +19,32 @@ import { useDomainRead } from '../useDomainRead.js';
 const SHOWN = 2;
 const KIND_ICONS = { renamed: Pencil, moved: ArrowLeftRight, changed: Pencil, removed: Minus, added: Plus };
 
-// A proposal as its card reads it (08.2P in web form): the shared `ProposalDiff`'s blocks against the routine, its name,
-// and whether Apply would still be taken.
-function proposalCard(read, record) {
+// The movements of a proposal's lines loaded as a pair of dumbbells, whose loads its card says per hand.
+function pairs(read, changes) {
+  const catalogue = new Catalogue(read);
+  return changes.map((change) => change.exerciseId)
+    .filter((id) => { const movement = catalogue.find(id); return movement?.equipment === 'dumbbell' && movement.loadCount === 2; });
+}
+
+// A routine proposal as its card reads it (08.2P in web form): the shared `ProposalDiff`'s blocks against the routine, its
+// name, whether Apply would still be taken, and whether a workout is open, so the routine waits for its next one (08.56P).
+function routineCard(read, record) {
   const proposal = read.repository(Proposal).find(new Id(record, Proposal), 'drawn');
   if (proposal === null) return null;
   const routine = read.repository(Routine).find(proposal.routineId, 'drawn');
-  const catalogue = new Catalogue(read);
-  const each = proposal.changes.map((change) => change.exerciseId)
-    .filter((id) => { const movement = catalogue.find(id); return movement?.equipment === 'dumbbell' && movement.loadCount === 2; });
-  return { diff: new ProposalDiff(proposal, routine, GymUnits.reading(weightUnit()), each), state: proposal.state,
-    name: proposal.baseName ?? routine?.name ?? proposal.proposedName ?? '', outOfDate: ProposalState.of(read, proposal.id).outOfDate === true };
+  return { diff: ProposalDiff.ofRoutine(proposal, routine, GymUnits.reading(weightUnit()), pairs(read, proposal.changes)), state: proposal.state,
+    name: proposal.baseName ?? routine?.name ?? proposal.proposedName ?? '', outOfDate: ProposalState.of(read, proposal.id).outOfDate === true,
+    nextTime: new TrainingLog(read).open !== null };
+}
+
+// Coach's change to the open workout as its card reads it (WD7): its blocks against the workout's plan, how many changes it
+// suggests, and why it can no longer be applied when it cannot, which the domain decides.
+function workoutCard(read, record) {
+  const proposal = read.repository(WorkoutProposal).find(new Id(record, WorkoutProposal), 'drawn');
+  if (proposal === null) return null;
+  const plan = read.repository(Session).find(proposal.sessionId, 'stored')?.plan ?? null;
+  return { diff: ProposalDiff.ofWorkout(proposal, plan, GymUnits.reading(weightUnit()), pairs(read, proposal.changes)), state: proposal.state,
+    count: proposal.countChanges(plan?.entries ?? []), outOfDate: WorkoutProposalState.of(read, proposal.id).outOfDate };
 }
 
 // One line of a block: its label, the old value struck through and the new one, or the one side a new or gone line has.
@@ -41,46 +59,11 @@ function FieldLine({ field }) {
   </p>;
 }
 
-// A routine proposal under the answer whose call made it (08W.25–08W.28): pending with Reject and Apply, applied,
-// rejected, or out of date. Apply and Reject are the lifter's gestures and the server's commands; no ability decides one.
-export function CoachProposalCard({ id, movements }) {
-  const api = useGymApi();
-  const card = useDomainRead((read) => proposalCard(read, id), [id]).data;
-  const [busy, setBusy] = useState(null);
-  const [failure, setFailure] = useState('');
+// A card's changes: one block per changed movement, two of them until the disclosure opens the rest in place (08.27P).
+function Changes({ diff, movements, name }) {
   const [open, setOpen] = useState(false);
-  if (!card) return null;
-  const { diff, name, state } = card;
-  if (state === 'dismissed') {
-    return <p className="gym-coach-proposal-rejected"><CircleSlash size={18} aria-hidden="true" />{t('gym.coach.proposal.rejected', { name })}</p>;
-  }
-  const applied = state === 'applied';
-  const pending = state === 'pending' && !card.outOfDate;
-  const outOfDate = !applied && !pending;
-  const decide = async (verb) => {
-    if (busy) return;
-    setBusy(verb);
-    setFailure('');
-    try {
-      if (verb === 'apply') await api.applyProposal(id);
-      else await api.dismissProposal(id);
-    } catch (error) {
-      setFailure(error.sentence || t('gym.proposals.notDecided', { verb, reason: failureReason(error) }));
-    } finally {
-      setBusy(null);
-    }
-  };
   const blocks = open ? diff.blocks : diff.blocks.slice(0, SHOWN);
-  const Symbol = applied ? CircleCheck : outOfDate ? AlertCircle : List;
-  return <section className={`gym-coach-proposal-card${outOfDate ? ' is-out-of-date' : ''}`} aria-label={name}>
-    <header>
-      <Symbol size={22} aria-hidden="true" className={outOfDate ? undefined : 'gym-coach-made-check'} />
-      <span>
-        <strong>{applied ? t('gym.coach.proposal.applied', { name }) : outOfDate ? t('gym.coach.proposal.outOfDate', { name }) : name}</strong>
-        {outOfDate ? t('gym.coach.proposal.outOfDateLine', { name })
-          : applied ? t('gym.coach.proposal.changes', { count: diff.blocks.length }) : t('gym.coach.proposal.suggested', { count: diff.blocks.length })}
-      </span>
-    </header>
+  return <>
     <ul className="gym-coach-proposal-blocks">{blocks.map((block, index) => {
       const Icon = KIND_ICONS[block.kind];
       return <li key={index} className={`gym-coach-proposal-block is-${block.kind}`}>
@@ -91,11 +74,133 @@ export function CoachProposalCard({ id, movements }) {
     })}</ul>
     {!open && diff.blocks.length > SHOWN && <button type="button" className="gym-coach-proposal-more" aria-expanded="false" onClick={() => setOpen(true)}>
       {t('gym.coach.proposal.more', { count: diff.blocks.length - SHOWN })}<ChevronRight size={18} aria-hidden="true" /></button>}
+  </>;
+}
+
+// What refused a decision, as its event names it: a load under the movement's floor, a replica that moved, or another rule.
+const refusedBy = (error) => (error.code === 'load-floor' || error.code === 'not-writable' ? error.code : 'other');
+
+// A card's decision while it runs (08W.26's decided states): which is on its way, *Applying…* with Reject held, and why
+// the last one did not land, said under the card with Apply reading *Try again*. Each decision tells how it ended; `run`
+// answers `{ outcome, reason }` when the card itself says the outcome.
+function useDecision(target, run) {
+  const [busy, setBusy] = useState(null);
+  const [failure, setFailure] = useState('');
+  const decide = async (verb) => {
+    if (busy) return;
+    const tell = (props) => coachStep('gym_proposal_outcome', { screen: 'coach', target, action: verb === 'apply' ? 'apply' : 'reject', ...props });
+    setBusy(verb);
+    setFailure('');
+    try {
+      tell((await run(verb)) ?? { outcome: 'decided' });
+    } catch (error) {
+      tell(error instanceof GymRefusal ? { outcome: 'refused', reason: refusedBy(error) } : { outcome: 'failed' });
+      setFailure(error.sentence || t('gym.proposals.notDecided', { verb, reason: failureReason(error) }));
+    } finally {
+      setBusy(null);
+    }
+  };
+  return { busy, failure, decide };
+}
+
+// Reject | Apply. Apply is the card's prominent button, but a routine's while a workout is open: this workout's card then
+// holds the one prominent Apply (08.56P).
+function Decision({ busy, failure, quiet, onDecide }) {
+  return <>
     {failure && <p className="gym-coach-proposal-failure" role="alert">{failure}</p>}
-    {pending && <div className="gym-coach-proposal-decide">
-      <button type="button" className="gym-coach-proposal-reject" disabled={Boolean(busy)} onClick={() => decide('dismiss')}>{t('gym.coach.proposal.reject')}</button>
-      <button type="button" className="gym-coach-proposal-apply" disabled={Boolean(busy)} onClick={() => decide('apply')}>
+    <div className="gym-coach-proposal-decide">
+      <button type="button" className="gym-coach-proposal-reject" disabled={Boolean(busy)} onClick={() => onDecide('dismiss')}>{t('gym.coach.proposal.reject')}</button>
+      <button type="button" className={`gym-coach-proposal-apply${quiet ? ' is-quiet' : ''}`} disabled={Boolean(busy)} onClick={() => onDecide('apply')}>
         {busy === 'apply' ? t('gym.coach.proposal.applying') : failure ? t('gym.coach.access.tryAgain') : t('gym.coach.proposal.apply')}</button>
-    </div>}
+    </div>
+  </>;
+}
+
+// A routine proposal under the answer whose call made it (08W.25–08W.28): pending with Reject and Apply, applied,
+// rejected, or out of date; while a workout is open it waits for next time (WD7). Apply and Reject are the lifter's
+// gestures and the server's commands; no ability decides one.
+export function CoachProposalCard({ id, movements }) {
+  const api = useGymApi();
+  const card = useDomainRead((read) => routineCard(read, id), [id]).data;
+  const { busy, failure, decide } = useDecision('routine', async (verb) => {
+    if (verb === 'apply') await api.applyProposal(id);
+    else await api.dismissProposal(id);
+  });
+  if (!card) return null;
+  const { diff, name, state } = card;
+  if (state === 'dismissed') {
+    return <p className="gym-coach-proposal-rejected"><CircleSlash size={18} aria-hidden="true" />{t('gym.coach.proposal.rejected', { name })}</p>;
+  }
+  const applied = state === 'applied';
+  const pending = state === 'pending' && !card.outOfDate;
+  const outOfDate = !applied && !pending;
+  const Symbol = applied ? CircleCheck : outOfDate ? AlertCircle : List;
+  const waiting = card.nextTime ? t('gym.coach.proposal.nextTime', { count: diff.blocks.length }) : t('gym.coach.proposal.suggested', { count: diff.blocks.length });
+  return <section className={`gym-coach-proposal-card${outOfDate ? ' is-out-of-date' : ''}`} aria-label={name}>
+    <header>
+      <Symbol size={22} aria-hidden="true" className={outOfDate ? undefined : 'gym-coach-made-check'} />
+      <span>
+        <strong>{applied ? t('gym.coach.proposal.applied', { name }) : outOfDate ? t('gym.coach.proposal.outOfDate', { name }) : name}</strong>
+        {outOfDate ? t('gym.coach.proposal.outOfDateLine', { name }) : applied ? t('gym.coach.proposal.changes', { count: diff.blocks.length }) : waiting}
+      </span>
+    </header>
+    <Changes diff={diff} movements={movements} name={name} />
+    {pending && <Decision busy={busy} failure={failure} quiet={card.nextTime} onDecide={decide} />}
+  </section>;
+}
+
+// Why a workout proposal can no longer be applied, in one sentence (08.57): the domain's reason, and for a movement logged
+// since, the movement.
+function outOfDateLine(outOfDate, movements) {
+  if (outOfDate.reason === 'replaced') return t('gym.coach.workoutProposal.replaced');
+  if (outOfDate.reason === 'workout-finished') return t('gym.coach.workoutProposal.finished');
+  if (outOfDate.reason === 'workout-moved' && typeof outOfDate.exerciseId === 'string') {
+    return t('gym.coach.workoutProposal.logged', { movement: nameOfMovement(movements, outOfDate.exerciseId) });
+  }
+  return t('gym.coach.workoutProposal.changed');
+}
+
+// Each state a workout proposal's card stands in, told once a page.
+const toldStates = new Set();
+
+// Coach's change to the open workout under the answer whose call made it, this browser's or a phone's (WD7, 08.56P):
+// pending with Reject and the prominent Apply, which rewrites this workout's plan on the browser's copy and never a logged
+// movement; applied, one line; rejected, one line; out of date, one sentence of why and nothing applied (WD7.3), which is
+// also what an Apply the domain refuses as out of date draws, never a failure.
+export function WorkoutProposalCard({ id, movements }) {
+  const api = useGymApi();
+  const card = useDomainRead((read) => workoutCard(read, id), [id]).data;
+  const [refused, setRefused] = useState(null);
+  const { busy, failure, decide } = useDecision('workout', async (verb) => {
+    const answer = verb === 'apply' ? await api.applyWorkoutProposal(id) : await api.dismissWorkoutProposal(id);
+    if (answer.outcome === 'out-of-date') setRefused({ reason: answer.reason });
+    return answer.outcome === 'decided' ? { outcome: 'decided' } : { outcome: 'refused', reason: answer.reason ?? 'settled' };
+  });
+  const outOfDate = card?.outOfDate ?? refused ?? (card?.state === 'superseded' ? { reason: 'replaced' } : null);
+  const stance = !card ? null : card.state === 'dismissed' ? 'rejected' : card.state === 'applied' ? 'applied' : outOfDate ? 'out-of-date' : 'pending';
+  useEffect(() => {
+    if (stance === null || toldStates.has(`${id}:${stance}`)) return;
+    toldStates.add(`${id}:${stance}`);
+    coachStep('gym_proposal_shown', { screen: 'coach', target: 'workout', state: stance, ...(stance === 'out-of-date' ? { reason: outOfDate.reason } : {}) });
+  }, [id, stance, outOfDate?.reason]);
+  if (!card) return null;
+  const title = t('gym.coach.workoutProposal.title');
+  if (stance === 'rejected') {
+    return <p className="gym-coach-proposal-rejected"><CircleSlash size={18} aria-hidden="true" />{t('gym.coach.workoutProposal.rejected')}</p>;
+  }
+  if (stance === 'applied') {
+    return <section className="gym-coach-proposal-card is-settled" aria-label={title}>
+      <p className="gym-coach-proposal-settled"><Check size={18} aria-hidden="true" className="gym-coach-made-check" />{t('gym.coach.workoutProposal.applied')}</p>
+    </section>;
+  }
+  return <section className={`gym-coach-proposal-card is-workout${outOfDate ? ' is-out-of-date' : ''}`} aria-label={title}>
+    <header>
+      <ClipboardList size={20} aria-hidden="true" className="gym-coach-made-check" />
+      <span><strong>{title}</strong>{outOfDate ? t('gym.coach.workoutProposal.outOfDate') : t('gym.coach.workoutProposal.count', { count: card.count })}</span>
+    </header>
+    {outOfDate ? <p className="gym-coach-proposal-why">{outOfDateLine(outOfDate, movements)}</p> : <>
+      <Changes diff={card.diff} movements={movements} name={title} />
+      <Decision busy={busy} failure={failure} quiet={false} onDecide={decide} />
+    </>}
   </section>;
 }

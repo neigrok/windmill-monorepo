@@ -108,7 +108,7 @@ export const CoachDocuments = Object.freeze({
     const waiting = 'Nothing has changed. This workout keeps its plan, and this change is waiting on its card in the lifter\'s app until they tap '
       + 'Apply — no tool on this connection can apply it. Say so when you answer: the workout is unchanged and a change is waiting for them.';
     return { proposal: { id: value.id.json, sessionId: value.sessionId.json, state: value.state, summary: value.summary,
-      changeCount: value.changeCount ?? RoutineChange.count(base, value.changes), ...(value.settledAt === null ? {} : { settledAt: value.settledAt.ms }),
+      changeCount: value.countChanges(base), ...(value.settledAt === null ? {} : { settledAt: value.settledAt.ms }),
       source: source(value.door, value.connection, value.agent, value.threadId), baseRevision: value.baseRevision ?? planRevision ?? 1,
       changes: value.changes.map((line, index) => changeLine(line, index)) }, note: notes[value.state] ?? waiting };
   },

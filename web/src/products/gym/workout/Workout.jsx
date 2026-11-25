@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ArrowLeftRight as SwapIcon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock3, Dumbbell, List, Minus, Pencil, Plus, Timer,
+  ArrowLeftRight as SwapIcon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock3, Dumbbell, List, MessagesSquare, Minus, Pencil, Plus,
+  Timer,
 } from 'lucide-react';
-import { Button, Menu, Sheet } from '../../../design-system/index.js';
+import { Button, Menu, Sheet, Tabs } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
+import { WorkoutCoach } from '../coach/CoachRoom.jsx';
 import { WeightLadder } from '../domain/units.js';
 import { failureReason } from '../errors.js';
 import { fixFailure } from '../fix.js';
@@ -23,11 +25,12 @@ import '../planning/planning.css';
 import './workout.css';
 
 // The workout page (#/gym/workout): the account's open workout on this browser's copy, whichever device started it, and
-// the receipt of one it just finished. Every change is the domain's action on the copy, one write each.
+// the receipt of one it just finished. Every change is the domain's action on the copy, one write each. Coach is open
+// beside it while an account is settled (WD7); signed out, Coach is left out, not greyed.
 export function WorkoutPage({ hash, log, signedIn = false }) {
   const receipt = receiptIdOf(hash);
   if (receipt) return <Receipt key={receipt} id={receipt} log={log} signedIn={signedIn} />;
-  return <OpenWorkout log={log} />;
+  return <OpenWorkout log={log} signedIn={signedIn} />;
 }
 
 // The server's time, read again on every animation frame while the tab is shown and drawn once a second: a hidden tab's
@@ -142,7 +145,7 @@ function useRestTold(api, view) {
   }, [api, due, setId]);
 }
 
-function OpenWorkout({ log }) {
+function OpenWorkout({ log, signedIn }) {
   const api = useGymApi();
   const narrow = useNarrow();
   const read = useDomainRead(workoutView);
@@ -150,6 +153,8 @@ function OpenWorkout({ log }) {
   const now = useServerNow(api);
   const [panel, setPanel] = useState(null);
   const [index, setIndex] = useState(false);
+  // Coach over the workout (WD7.1): the rail's Coach tab on a desk, a sheet on a phone; closing it leaves the rack as it was.
+  const [coach, setCoach] = useState(false);
   const [firstClosed, setFirstClosed] = useState(false);
   const leaving = useRef(false);
   const ready = Boolean(api?.ready) && read.phase === 'ready';
@@ -232,9 +237,8 @@ function OpenWorkout({ log }) {
   const pickerTitle = panel?.kind === 'swap' ? t('gym.workout.swapTitle', { movement: movementName(panel.exerciseId) }) : t('gym.workout.addMovement');
   const close = () => { setPanel(null); setFirstClosed(true); };
   // The movements and Add movement: the index beside the pane on a desk, a sheet on a phone.
-  const movementIndex = (
-    <div className="gym-live-index-card">
-      <p className="gym-live-tab"><span>{t('gym.workout.thisWorkout')}</span></p>
+  const movementList = (
+    <>
       <ul className="gym-live-movements">
         {view.movements.map((movement) => (
           <li key={movement.exerciseId}>
@@ -253,6 +257,19 @@ function OpenWorkout({ log }) {
       <button type="button" className="gym-live-add" onClick={() => { setIndex(false); setPanel({ kind: 'add' }); }}>
         <Plus size={16} aria-hidden="true" /> {t('gym.workout.addMovement')}
       </button>
+    </>
+  );
+  const thisWorkout = <p className="gym-live-tab"><span>{t('gym.workout.thisWorkout')}</span></p>;
+  // On a desk the rail's Tabs switch This workout to Coach, whose panel stands beside the rack (WD7.1 · 1440).
+  const side = coach ? 'coach' : 'workout';
+  const rail = (
+    <div className="gym-live-index">
+      {signedIn ? <Tabs variant="line" id="gym-live-side" value={side} onChange={(chosen) => setCoach(chosen === 'coach')}
+        tabs={[{ value: 'workout', label: t('gym.workout.thisWorkout') }, { value: 'coach', label: t('gym.coach.title') }]} /> : thisWorkout}
+      <div className={`gym-live-side is-${side}`}
+        {...(signedIn ? { role: 'tabpanel', id: `gym-live-side-${side}-panel`, 'aria-labelledby': `gym-live-side-${side}` } : {})}>
+        {coach ? <WorkoutCoach log={log} /> : <nav className="gym-live-index-card" aria-label={t('gym.workout.thisWorkout')}>{movementList}</nav>}
+      </div>
     </div>
   );
   // The picker, or Edit sets: in the task pane on a desk, a sheet on a phone.
@@ -285,6 +302,8 @@ function OpenWorkout({ log }) {
           <a className="gym-live-tool" href={ROUTINES_HREF} aria-label={t('gym.workout.hide')}><ChevronDown size={18} aria-hidden="true" /></a>
           <button type="button" className="gym-live-tool" aria-label={t('gym.workout.thisWorkout')} aria-expanded={index}
             onClick={() => setIndex(true)}><ClipboardList size={18} aria-hidden="true" /></button>
+          {signedIn && <button type="button" className="gym-live-tool" aria-label={t('gym.coach.title')} aria-expanded={coach}
+            onClick={() => setCoach(true)}><MessagesSquare size={18} aria-hidden="true" /></button>}
         </span>
         <span className="gym-live-titles">
           <h1 id="gym-live-title" className="gym-title">{name}</h1>
@@ -299,8 +318,13 @@ function OpenWorkout({ log }) {
       </header>
       <div className="gym-live-split">
         {narrow ? index && (
-          <Sheet label={t('gym.workout.thisWorkout')} onClose={() => setIndex(false)}>{movementIndex}</Sheet>
-        ) : <nav className="gym-live-index" aria-label={t('gym.workout.thisWorkout')}>{movementIndex}</nav>}
+          <Sheet label={t('gym.workout.thisWorkout')} onClose={() => setIndex(false)}><div className="gym-live-index-card">{thisWorkout}{movementList}</div></Sheet>
+        ) : rail}
+        {narrow && coach && (
+          <Sheet label={t('gym.coach.title')} detent="large" onClose={() => setCoach(false)} className="gym-live-coach-sheet">
+            <WorkoutCoach log={log} onClose={() => setCoach(false)} />
+          </Sheet>
+        )}
         <div className="gym-live-pane">
           {view.movement && (
             <InHand view={view} clocks={clocks} log={log} api={api} movementName={movementName} onStep={step} onSelect={select}

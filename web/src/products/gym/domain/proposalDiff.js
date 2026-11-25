@@ -7,6 +7,9 @@ import { GymUnits } from './units.js';
 /** @typedef {import('../../../platform/domain-kit/entities.js').Id<import('./catalogue.js').ExerciseValue>} ExerciseId */
 /** @typedef {import('./proposals.js').EntryTargets} EntryTargets */
 /** @typedef {import('./proposals.js').ProposalValue} ProposalValue */
+/** @typedef {import('./routines.js').PlanSnapshot} PlanSnapshot */
+/** @typedef {import('./routines.js').RoutineEntry} RoutineEntry */
+/** @typedef {import('./workoutProposals.js').WorkoutProposalValue} WorkoutProposalValue */
 /** @typedef {import('./routines.js').RoutineValue} RoutineValue */
 /** @typedef {import('./routines.js').SetTarget} SetTarget */
 /** @typedef {'renamed' | 'moved' | 'changed' | 'removed' | 'added'} BlockKind */
@@ -36,19 +39,35 @@ export class ProposalDiffField {
 
 // A proposal as its card reads it: each change a block of field lines, in the card's order — a new name, movements that
 // only moved, changed movements, removals, additions — and how many movements it leaves as they were. Moves are read
-// against the routine while the proposal waits; once it settled, the routine no longer holds the order it replaced.
+// against the routine, or the workout's plan, while the proposal waits; once it settled, they no longer hold the order it
+// replaced.
 export class ProposalDiff {
+  // A routine proposal against its routine, its new name first; a removal lists no block.
   /** @param {ProposalValue} proposal @param {RoutineValue | null} routine @param {GymUnits} units @param {readonly ExerciseId[]} each */
-  constructor(proposal, routine = null, units = GymUnits.kg, each = []) {
+  static ofRoutine(proposal, routine = null, units = GymUnits.kg, each = []) {
+    if (proposal.intent === 'remove') return new ProposalDiff([], null, null, units, each);
     const pending = proposal.state === 'pending';
-    const moves = pending && routine !== null ? RoutineChange.moves(routine.entries, proposal.changes) : new Map();
+    const rename = new ProposalDiffField('Name', proposal.baseName ?? (pending ? routine?.name ?? null : null), proposal.proposedName);
+    return new ProposalDiff(proposal.changes, pending ? routine?.entries ?? null : null, rename, units, each);
+  }
+
+  // Coach's change to the open workout against the workout's plan, which has no name to change.
+  /** @param {WorkoutProposalValue} proposal @param {PlanSnapshot | null} plan @param {GymUnits} units @param {readonly ExerciseId[]} each */
+  static ofWorkout(proposal, plan = null, units = GymUnits.kg, each = []) {
+    return new ProposalDiff(proposal.changes, proposal.state === 'pending' ? plan?.entries ?? null : null, null, units, each);
+  }
+
+  /**
+   * @param {readonly RoutineChange[]} changes @param {readonly RoutineEntry[] | null} base @param {ProposalDiffField | null} rename
+   * @param {GymUnits} units @param {readonly ExerciseId[]} each
+   */
+  constructor(changes, base, rename, units, each) {
+    const moves = base === null ? new Map() : RoutineChange.moves(base, changes);
     /** @type {ProposalDiffBlock[]} */
     const blocks = [];
-    const name = proposal.baseName ?? (pending ? routine?.name ?? null : null);
-    const rename = new ProposalDiffField('Name', name, proposal.proposedName);
-    if (rename.state === 'changed') blocks.push(Object.freeze({ kind: 'renamed', exerciseId: null, fields: Object.freeze([rename]) }));
+    if (rename?.state === 'changed') blocks.push(Object.freeze({ kind: 'renamed', exerciseId: null, fields: Object.freeze([rename]) }));
     let unchanged = 0;
-    proposal.changes.forEach((change, index) => {
+    changes.forEach((change, index) => {
       const move = moves.get(index);
       const order = move ? [new ProposalDiffField('Order', ProposalDiff.ordinal(move.from), ProposalDiff.ordinal(move.to))] : [];
       const fields = ProposalDiff.fields(change.before, change.after, units, each.some((id) => id.equals(change.exerciseId)));
@@ -60,9 +79,8 @@ export class ProposalDiff {
       else if (change.kind === 'removed') block('removed', fields);
       else block('added', fields);
     });
-    const removing = proposal.intent === 'remove';
-    this.blocks = Object.freeze(removing ? [] : blocks.sort((a, b) => blockOrder.indexOf(a.kind) - blockOrder.indexOf(b.kind)));
-    this.unchanged = removing ? 0 : unchanged;
+    this.blocks = Object.freeze(blocks.sort((a, b) => blockOrder.indexOf(a.kind) - blockOrder.indexOf(b.kind)));
+    this.unchanged = unchanged;
     Object.freeze(this);
   }
 

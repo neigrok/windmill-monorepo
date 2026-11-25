@@ -31,7 +31,7 @@ import { Session, SessionRules, SetRules, TrainingSet } from './domain/training.
 import { AppendSet, CorrectedSet, CorrectSession, CorrectSet, DeleteSet, ImportedSet, ImportSession } from './domain/trainingActions.js';
 import { AdoptWorkout, ReconcileAdoptedWorkouts, SignedOutWorkout } from './domain/workoutAdoption.js';
 import { DiscardSignedOutWorkout, RecoverStrandedSets, SaveRefusedStart, WorkoutFix, WorkoutRecovery } from './domain/workoutRecovery.js';
-import { ReissueWorkoutProposal } from './domain/workoutProposals.js';
+import { ApplyWorkoutProposal, DismissWorkoutProposal, ReissueWorkoutProposal, WorkoutProposal, WorkoutProposalState } from './domain/workoutProposals.js';
 import { TrainingLog } from './domain/trainingReads.js';
 import { PlanOperations } from './domain/workoutPlan.js';
 import { FinishWorkout, LogRackSet, ReviseWorkout, SettleRack, StartWorkout, TurnRack } from './domain/workoutRack.js';
@@ -48,7 +48,8 @@ const SCOPE = 'self/gym';
 const OPERATIONS = new Set(['routine-create', 'routine-save', 'exercise-create', 'exercise-rename',
   'preferences-save', 'note-save', 'note-reorder', 'bodyweight-save', 'set-correct', 'delete', 'undo',
   'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'workout-adopt', 'workout-recover', 'refusal',
-  'workout-start', 'rack-settle', 'rack-turn', 'set-log', 'plan-revise', 'workout-finish', 'pop-out']);
+  'workout-start', 'rack-settle', 'rack-turn', 'set-log', 'plan-revise', 'workout-finish', 'pop-out',
+  'workout-proposal-apply', 'workout-proposal-dismiss']);
 const OUTCOMES = new Set(['saved-local', 'unchanged', 'failed', 'held', 'undone', 'closed', 'refused']);
 // What refused a write: the replica moved under the room, or the gym's rules, this device's or the server's.
 const REFUSED_BY = new Set(['not-writable', 'domain']);
@@ -96,6 +97,24 @@ const WORKOUT_STEPS = new Set(['gym_session_started', 'gym_set_logged', 'gym_ses
 export function workoutStep(name, props) {
   if (!WORKOUT_STEPS.has(name) || Object.entries(props).some(([key, value]) => !WORKOUT_LABELS[key]?.includes(value))) return;
   try { track(name, props); } catch { /* reporting cannot stop a workout */ }
+}
+
+// Coach's steps around a workout (WD7), told under the iPhone's event names, each property one of a closed set of labels:
+// never a name or an id of a workout, a routine, a movement or a proposal, and never Coach's words. Coach opened over the
+// workout is a fresh chat (`gym_action`, `new_chat` at the `workout` door); a workout proposal's card tells each state it
+// stands in once (`gym_proposal_shown`), and a decision on either card how it ended (`gym_proposal_outcome`), `refused`
+// with the reason the card says.
+const OUT_OF_DATE = Object.freeze(['replaced', 'workout-changed', 'workout-moved', 'workout-finished']);
+const COACH_LABELS = Object.freeze({
+  gym_action: { screen: ['coach'], action: ['new_chat'], door: ['workout'], outcome: ['ok'] },
+  gym_proposal_shown: { screen: ['coach'], target: ['workout'], state: ['pending', 'applied', 'rejected', 'out-of-date'], reason: OUT_OF_DATE },
+  gym_proposal_outcome: { screen: ['coach'], target: ['workout', 'routine'], action: ['apply', 'reject'], outcome: ['decided', 'refused', 'failed'],
+    reason: [...OUT_OF_DATE, 'settled', 'load-floor', 'not-writable', 'other'] },
+});
+export function coachStep(name, props) {
+  const labels = COACH_LABELS[name];
+  if (!labels || Object.entries(props).some(([key, value]) => !labels[key]?.includes(value))) return;
+  try { track(name, props); } catch { /* reporting cannot stop Coach */ }
 }
 
 // A failure goes to Sentry under its static operation with the error's stack frames, never its message.
@@ -436,6 +455,26 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
     return { proposal: outcome.kind === 'unchanged' && outcome.result
       ? { ...outcome.result, ...(observed?.createdAt === undefined ? {} : { createdAt: observed.createdAt }) } : observed };
   });
+  // Coach's change to the open workout, decided on its card (WD7): Apply rewrites the workout's plan and never a logged
+  // movement, Reject sets the change aside. Answers `decided`, `settled` when the proposal was decided elsewhere first, or
+  // `out-of-date` with the reason the domain reads (spec §4), each having written nothing more; any other refusal throws,
+  // and an unexpected failure also goes to Sentry.
+  const decideWorkoutProposal = async (record, applying) => {
+    const id = new Id(record, WorkoutProposal);
+    try {
+      const outcome = await runner.run(applying ? ApplyWorkoutProposal(id) : DismissWorkoutProposal(id));
+      if (outcome.kind !== 'refused') return { outcome: 'decided' };
+      const refused = gymRefusalError(outcome.refusal);
+      if (refused.code === 'proposal-settled') return { outcome: 'settled' };
+      if (!['proposal-superseded', 'unknown-record', 'record-dead'].includes(refused.code)) throw refused;
+      return { outcome: 'out-of-date', reason: read((reader) => WorkoutProposalState.of(reader, id).outOfDate?.reason) ?? 'workout-changed' };
+    } catch (thrown) {
+      const moved = thrown instanceof ReplicaChanged || (thrown instanceof CommitError && thrown.kind === 'not-writable');
+      const error = moved ? notWritable() : thrown;
+      if (!(error instanceof GymRefusal) && !isStoreFailure(error)) failure(applying ? 'workout-proposal-apply' : 'workout-proposal-dismiss', error);
+      throw error;
+    }
+  };
   // Every notice of gym's scope as the domain reads it; the review hears only the live ones.
   const recoveryNotices = () => engine.observe(SCOPE).getSnapshot().notices.map((notice) => new DomainNotice(notice, engine.registry, GymRefusals));
   const reviewOf = (reader) => WorkoutRecovery.review(SignedOutWorkout.read(reader), recoveryNotices(), new TrainingLog(reader), new Catalogue(reader));
@@ -646,6 +685,8 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
     proposal: async (record) => read((reader) => proposal(reader, record)),
     applyProposal: (record) => decideProposal(record, true),
     dismissProposal: (record) => decideProposal(record, false),
+    applyWorkoutProposal: (record) => decideWorkoutProposal(record, true),
+    dismissWorkoutProposal: (record) => decideWorkoutProposal(record, false),
     removalReceipts: async () => read((reader) => removalReceipts(reader).map((receipt) => removalDocument(reader, receipt))),
     removalReceiptShown: (record, replica, expectedOutcome = null) => boundary('proposal-apply', async () => {
       if (replica !== owner) return;

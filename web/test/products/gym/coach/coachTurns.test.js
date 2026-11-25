@@ -9,7 +9,17 @@ const { Id } = await import('../../../../src/platform/domain-kit/entities.js');
 const { registry } = await import('../../../../src/platform/sync/schema.js');
 const { CoachMessage, CoachThread } = await import('../../../../src/products/gym/domain/coach/conversation.js');
 const { BeginRound, Mark, OpenTurn, PictureCopy, StreamTurnText } = await import('../../../../src/products/gym/domain/coach/turn.js');
-const { Routine } = await import('../../../../src/products/gym/domain/routines.js');
+const { Routine, RoutineEntry, RoutineValue, SetTarget } = await import('../../../../src/products/gym/domain/routines.js');
+const { Draft } = await import('../../../../src/platform/domain-kit/drafts.js');
+const { Instant } = await import('../../../../src/platform/domain-kit/time.js');
+const { Exercise } = await import('../../../../src/products/gym/domain/catalogue.js');
+const { GymRefusals } = await import('../../../../src/products/gym/domain/gymRules.js');
+const { Session, TrainingSet, TrainingSetValue } = await import('../../../../src/products/gym/domain/training.js');
+const { AppendSet } = await import('../../../../src/products/gym/domain/trainingActions.js');
+const { StartWorkout } = await import('../../../../src/products/gym/domain/workoutRack.js');
+const { WorkoutProposal } = await import('../../../../src/products/gym/domain/workoutProposals.js');
+const { conversationView } = await import('../../../../src/products/gym/coach/conversations.js');
+const { createGymApi } = await import('../../../../src/products/gym/gymRuntime.js');
 const { CoachTurns } = await import('../../../../src/products/gym/coach/coachTurns.js');
 const { GymProfile } = await import('../../../../src/products/gym/coach/profile.js');
 const { GymTurnTelemetry } = await import('../../../../src/products/gym/coach/turnTelemetry.js');
@@ -70,9 +80,8 @@ test('a question is answered in the browser: the context reads and the answer la
     [['context-list_sessions', 'ok'], ['context-list_notes', 'ok'], ['context-list_exercises', 'ok'], ['context-list_routines', 'ok']]);
   const request = ai.requests[0].request;
   assert.equal(request.system[0], turns.profile.words.prompt);
-  assert.ok(!request.tools.some((tool) => tool.name === 'propose_workout_change'));
   assert.deepEqual(request.tools.filter((tool) => tool.strict).map((tool) => tool.name).sort(),
-    ['create_exercise', 'create_routine', 'propose_routine_change', 'propose_routine_removal']);
+    ['create_exercise', 'create_routine', 'propose_routine_change', 'propose_routine_removal', 'propose_workout_change']);
   assert.equal(request.messages[0].parts.at(-1).text, 'How heavy today?');
   assert.equal(phone.runner.read(CoachMessage.scope, (read) => read.device(Mark.turnKey)), null);
   assert.deepEqual(told.events.map(([name]) => name).filter((name) => name !== 'coach_ability'), ['gym_ask_started', 'coach_turn', 'gym_ask_outcome']);
@@ -102,6 +111,65 @@ test('an ability that writes creates the routine at once, under the id its turn 
   assert.equal(routine?.name, 'Push A');
   assert.notEqual(routine.id.record, 'the-model-names-this');
   assert.deepEqual(coach.receipt.results, [{ t: 'routine', id: routine.id.record }]);
+});
+
+// A workout open on the browser's copy: Upper A started, bench press then pull-ups, nothing logged.
+async function workoutOpen(phone) {
+  const upper = new RoutineValue(new Id('routine1', Routine), 'Upper A', 0, [
+    new RoutineEntry(new Id('dumbbell-bench-press', Exercise), [new SetTarget(8, 16), new SetTarget(8, 16)], 120),
+    new RoutineEntry(new Id('pull-up', Exercise), [new SetTarget(8, 10), new SetTarget(8, 10)], 120)]);
+  assert.equal((await phone.runner.save(Draft.new(upper), GymRefusals)).result.kind, 'saved');
+  const session = new Id('session1', Session);
+  assert.equal((await phone.runner.run(StartWorkout({ id: session, routineId: upper.id }))).kind, 'committed');
+  return session;
+}
+
+test('Coach over an open workout proposes a change to it, the browser\'s copy applies it, and a set logged since makes it out of date', async (t) => {
+  const entries = [{ exerciseId: 'dumbbell-bench-press', restSeconds: 120, sets: [{ reps: 8, weightKg: 16 }, { reps: 8, weightKg: 16 }] },
+    { exerciseId: 'pull-up', restSeconds: 120, sets: [{ reps: 8, weightKg: 0 }, { reps: 8, weightKg: 0 }] },
+    { exerciseId: 'face-pull', sets: [{ reps: 15, weightKg: 15 }, { reps: 15, weightKg: 15 }] }];
+  // Each question is answered in two rounds: the change to Upper A's open workout, then the words.
+  const proposing = (proposed) => [
+    async ({ request }) => {
+      assert.ok(request.tools.some((tool) => tool.name === 'propose_workout_change'));
+      return ended('tool_calls', [{ toolCall: { id: 'toolu_1', name: 'propose_workout_change',
+        input: { id: 'the-model-names-this', sessionId: 'session1', entries: proposed, summary: 'Easy on the shoulder' } } }]);
+    },
+    async ({ request }) => {
+      assert.equal(request.messages.at(-1).results[0].isError, false);
+      return ended('completed', [{ text: 'Take the weight off pull-ups and add face pulls.' }]);
+    },
+  ];
+  const rounds = proposing(entries);
+  const { phone, turns } = await room(t, playedAi(rounds));
+  const session = await workoutOpen(phone);
+  const turn = await turns.send({ question: 'My shoulder feels off on bench today.' });
+  await settle(turns);
+  const coach = coachOf(phone, turn);
+  assert.ok(coach.calls.some((call) => call.callId === 'context-get_session' && call.outcome === 'ok'), 'the open workout is part of what Coach reads');
+  const call = coach.calls.find((each) => each.name === 'propose_workout_change');
+  assert.equal(call.outcome, 'ok');
+  const id = String(call.created[0].id);
+  const view = phone.runner.read(CoachMessage.scope, (read) => conversationView(read, turn.thread.record, null));
+  assert.deepEqual(view.messages.at(-1).workoutProposals, [id]);
+
+  const api = createGymApi(phone.engine, { event() {}, failure() {} });
+  assert.deepEqual(await api.applyWorkoutProposal(id), { outcome: 'decided' });
+  const applied = phone.runner.read(Session.scope, (read) => ({ proposal: read.repository(WorkoutProposal).find(new Id(id, WorkoutProposal), 'drawn'),
+    plan: read.repository(Session).find(session, 'drawn').plan.entries.map((entry) => entry.json) }));
+  assert.equal(applied.proposal.state, 'applied');
+  assert.deepEqual(applied.plan, entries);
+  assert.deepEqual(await api.applyWorkoutProposal(id), { outcome: 'decided' }, 'a second Apply finds it applied and writes nothing');
+
+  // A second proposal, then a pull-up logged before it is applied: Apply writes nothing and answers why.
+  rounds.push(...proposing(entries.map((entry) => (entry.exerciseId === 'pull-up' ? { ...entry, sets: [{ reps: 6, weightKg: 0 }, { reps: 6, weightKg: 0 }] } : entry))));
+  const second = await turns.send({ question: 'Fewer pull-ups?', thread: turn.thread });
+  await settle(turns);
+  const later = String(coachOf(phone, second).calls.find((each) => each.name === 'propose_workout_change').created[0].id);
+  const logged = new TrainingSetValue(new Id('set1', TrainingSet), session, new Id('pull-up', Exercise), 0, 8, new Instant(phone.runner.moment().now.ms));
+  assert.equal((await phone.runner.run(AppendSet(logged))).kind, 'committed');
+  assert.deepEqual(await api.applyWorkoutProposal(later), { outcome: 'out-of-date', reason: 'workout-moved' });
+  assert.equal(phone.runner.read(Session.scope, (read) => read.repository(WorkoutProposal).find(new Id(later, WorkoutProposal), 'drawn').state), 'pending');
 });
 
 test('a question sent with no connection writes nothing and stays in the field', async (t) => {

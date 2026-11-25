@@ -4,8 +4,10 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 // frame of the page, whatever contains the room that opens it, with the grabber at its head. Escape, a press on the scrim
 // and a close the browser makes itself all close it through `onClose`; closing hands focus back to what held it before.
 // Its content mounts once the dialog is open, so a field in it that takes focus as it mounts has it. `label` names it for a
-// screen reader and `className` dresses its body. Styled by `.wm-sheet-*` in styles/global.css.
-export function Sheet({ label, onClose, className = '', children }) {
+// screen reader and `className` dresses its body. `detent` is how far it rises: `medium` to its content, and no higher
+// than most of the viewport, or `large`, the viewport but a band at its top, its body filling the sheet. Styled by
+// `.wm-sheet-*` in styles/global.css.
+export function Sheet({ label, onClose, className = '', detent = 'medium', children }) {
   const dialog = useRef(null);
   const closing = useRef(false);
   const latestClose = useRef(onClose);
@@ -25,7 +27,7 @@ export function Sheet({ label, onClose, className = '', children }) {
   }, []);
 
   return (
-    <dialog ref={dialog} className="wm-sheet" aria-label={label}
+    <dialog ref={dialog} className={detent === 'large' ? 'wm-sheet is-large' : 'wm-sheet'} aria-label={label}
       onCancel={(event) => { event.preventDefault(); latestClose.current(); }}
       onClose={() => { if (!closing.current) latestClose.current(); }}
       onClick={(event) => { if (event.target === event.currentTarget) latestClose.current(); }}>

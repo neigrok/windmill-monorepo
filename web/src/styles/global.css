@@ -187,6 +187,13 @@ a:hover {
   overflow: auto;
   overscroll-behavior: contain;
 }
+.wm-sheet.is-large {
+  height: calc(100dvh - 60px);
+  max-height: calc(100dvh - 60px);
+}
+.wm-sheet.is-large > .wm-sheet-body {
+  min-height: 100%;
+}
 .wm-sheet::backdrop {
   background: var(--surface-overlay);
 }
