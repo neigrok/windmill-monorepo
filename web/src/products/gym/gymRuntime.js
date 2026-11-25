@@ -103,7 +103,7 @@ export function workoutStep(name, props) {
 // never a name or an id of a workout, a routine, a movement or a proposal, and never Coach's words. Coach opened over the
 // workout is a fresh chat (`gym_action`, `new_chat` at the `workout` door); a workout proposal's card tells each state it
 // stands in once (`gym_proposal_shown`), and a decision on either card how it ended (`gym_proposal_outcome`), `refused`
-// with the reason the card says.
+// with the reason the card says, as does a decision the log refused. A reason no label names reads `other`.
 const OUT_OF_DATE = Object.freeze(['replaced', 'workout-changed', 'workout-moved', 'workout-finished']);
 const COACH_LABELS = Object.freeze({
   gym_action: { screen: ['coach'], action: ['new_chat'], door: ['workout'], outcome: ['ok'] },
@@ -113,8 +113,9 @@ const COACH_LABELS = Object.freeze({
 });
 export function coachStep(name, props) {
   const labels = COACH_LABELS[name];
-  if (!labels || Object.entries(props).some(([key, value]) => !labels[key]?.includes(value))) return;
-  try { track(name, props); } catch { /* reporting cannot stop Coach */ }
+  const told = 'reason' in props && !labels?.reason?.includes(props.reason) ? { ...props, reason: 'other' } : props;
+  if (!labels || Object.entries(told).some(([key, value]) => !labels[key]?.includes(value))) return;
+  try { track(name, told); } catch { /* reporting cannot stop Coach */ }
 }
 
 // A failure goes to Sentry under its static operation with the error's stack frames, never its message.

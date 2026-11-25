@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSyncRecords } from '../../platform/sync/react.js';
 import { UNDO_MS } from './fix.js';
 import { failureReason } from './errors.js';
-import { useGymApi, gymStep, gymReadView, preferencesDocument } from './gymRuntime.js';
+import { coachStep, useGymApi, gymStep, gymReadView, preferencesDocument } from './gymRuntime.js';
 import { t } from './i18n/index.js';
 import { mintId } from './mint.js';
 import { backfillHref, FREE_SESSION, sessionHref } from './log.js';
@@ -217,10 +217,16 @@ export function useTrainingLog() {
       if (seen.current.get(notice.id) === fingerprint) continue;
       seen.current.set(notice.id, fingerprint);
       // A refusal a saved copy's card names, or a start that lost a race, is recovery's to say (recovery/InThisBrowser.jsx);
-      // a decision on a workout proposal the log refused is its card's, which reads why from the copy (WD7.3).
+      // a decision on a workout proposal the log refused is its card's, which reads why from the copy (WD7.3), and its step
+      // says the log refused it.
       if (api.recoveryAnswers(notice)) continue;
       const commands = [notice.content?.cmd, ...(notice.content?.dependents ?? []).map((part) => part.cmd)].filter(Boolean);
-      if (commands.some((command) => WORKOUT_PROPOSAL_DECISIONS.has(command.name))) continue;
+      const decision = commands.find((command) => WORKOUT_PROPOSAL_DECISIONS.has(command.name));
+      if (decision) {
+        coachStep('gym_proposal_outcome', { screen: 'coach', target: 'workout', action: decision.name === 'gym.applyWorkoutProposal' ? 'apply' : 'reject',
+          outcome: 'refused', reason: { 'proposal-settled': 'settled', 'session-finished': 'workout-finished' }[notice.code] ?? notice.detail?.reason });
+        continue;
+      }
       const workout = commands.length ? api.workoutSaves().find((receipt) => receipt.status === 'refused' && commands.some((command) =>
         command.name === receipt.command.name && (command.name === 'gym.importSession' ? command.args.id === receipt.sessionId
           : command.args.sessionId === receipt.sessionId && command.args.requestId === receipt.command.args.requestId))) : null;

@@ -301,8 +301,9 @@ rail's Coach tab or the phone's sheet, a fresh chat each time; `gym_proposal_sho
 `decided`, `refused` with `reason`, one of the four above, `settled` when another device decided it first, `load-floor`,
 `not-writable` or `other`, or `failed`) for each decision on a card in Coach. A workout proposal's decision that fails
 unexpectedly reports `gym-workout-proposal-apply` or `gym-workout-proposal-dismiss` with the error's stack frames; an Apply
-the domain refuses as out of date is the card's sentence, a refusal and no Issue, and the log's refusal of a decision is
-the card's to say, so the room voices no notice and tells no `refusal` step for it.
+the domain refuses as out of date is the card's sentence, a refusal and no Issue. A decision on a workout proposal the log
+refused is the card's to say, so the room voices no notice and tells no `refusal` step for it: it tells
+`gym_proposal_outcome` with `outcome: refused` and the log's reason, a reason no label names reading `other`.
 
 ## Roadmap
 

@@ -219,8 +219,9 @@ under the iPhone's names through `coachStep`, from the same closed sets: `gym_ac
 `door: workout`, `outcome: ok`) as Coach opens over the workout; `gym_proposal_shown` (`target: workout`, `state`
 `pending`, `applied`, `rejected` or `out-of-date` with its `reason`) once for each state a workout proposal's card stands
 in; and `gym_proposal_outcome` (`target` `workout` or `routine`, `action` `apply` or `reject`, `outcome` `decided`, `refused`
-with its `reason`, or `failed`) for each decision on a card in Coach. A workout proposal's decision that fails unexpectedly
-reports `gym-workout-proposal-apply` or `gym-workout-proposal-dismiss`. Engine-backed writes otherwise emit first-party `gym_action` events with allowlisted `operation` and
+with its `reason`, or `failed`) for each decision on a card in Coach, and for a decision on a workout proposal the log
+refused. A workout proposal's decision that fails unexpectedly reports `gym-workout-proposal-apply` or
+`gym-workout-proposal-dismiss`. Engine-backed writes otherwise emit first-party `gym_action` events with allowlisted `operation` and
 `outcome` only, and a `refused` one also `code`: `not-writable` when the replica moved under the room, `domain` when the
 gym's rules refused it, this device's or the server's. Operations cover routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
