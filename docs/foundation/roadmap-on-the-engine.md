@@ -227,8 +227,9 @@ Every gesture is an action on the domain kit, the same in each language.
   server writes the branch's reach back. Undo creating a roadmap deletes it while nothing has
   changed in it since. A product inverse draws nothing on the device until the server answers it:
   with no connection, such an Undo waits, and the roadmap or subtree stays as it is until then.
-  Undo of a kind's delete makes the kind again, so it is checked where it is asked as a kind made is: while another
-  present kind wears its hue it is refused before anything is written. The server refuses no such Undo.
+  Undo of a kind's delete, or of a present kind's recolour, brings the kind back onto a hue, so it is checked where it is
+  asked as a kind made or changed is: while another present kind wears that hue it is refused before anything is
+  written, as is the Undo of its Redo. The server refuses no such Undo.
 - **Undo creating a subtree** conditionally clears its step's `branch` and deletes the created
   subtree together, only while both the connection and subtree contents remain unchanged since
   creation, the owner's marks and workspace in it included. Otherwise it changes neither. Redo

@@ -14,7 +14,7 @@ import { Harness } from '../../../platform/domain-kit/harness.js';
 import { RoadmapRules } from '../../../../src/products/roadmap/domain/ruleBook.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { ChangePrerequisites, ChangeStep, CreateStep, DeleteStep, ImportSteps, MoveStep } from '../../../../src/products/roadmap/domain/steps.js';
-import { ChangeKind, CreateKind, DeleteKind, KindRestore, MoveKind, RecolourKind } from '../../../../src/products/roadmap/domain/kinds.js';
+import { ChangeKind, CreateKind, DeleteKind, MoveKind, RecolourKind } from '../../../../src/products/roadmap/domain/kinds.js';
 import { ClearPointer, Complete, Reset, SetPointer } from '../../../../src/products/roadmap/domain/progress.js';
 import { AddStepLink, AddSubtask, ChangeStepLink, ChangeSubtask, DeleteStepLink, DeleteSubtask, MoveStepLink, MoveSubtask, SaveStepNote, StepNote, StepNoteValue } from '../../../../src/products/roadmap/domain/workspace.js';
 import { ClearLanding, cannotLand, landingOf } from '../../../../src/products/roadmap/domain/landing.js';
@@ -123,7 +123,7 @@ export function runAction(vector) {
   /** @type {any} */
   let decided = null;
   const form = /** @type {any} */ (corpus.act({ refusals: act.refusals, load: (read) => act.load(read), decide: (loaded, ids) => (decided = act.decide(loaded, ids)) },
-    vector, (result) => /** @type {Json} */ (result instanceof KindRestore ? result.json : result), refusalForm));
+    vector, (result) => /** @type {Json} */ (result), refusalForm));
   if (!form.decision.write) return form;
   // K-3: each segment's Undo recipes as the engine journals them (translateUndo), where the segment opts in.
   form.decision.write.segments = form.decision.write.segments.map((/** @type {any} */ segment, /** @type {number} */ index) => {
@@ -134,15 +134,15 @@ export function runAction(vector) {
 }
 
 // K-3 scenes (`undo.json`): acts and a note's draft saves on the kit's harness over the reference server with roadmap's
-// binding, then their Undo and Redo, an Undo checked by an act's answer that is its check (a kind's restore). A step names a
+// binding, then their Undo and Redo, each by the Undo handle its receipt or the Redo before it carries. A step names a
 // role's result by `$role` or `$role.path`, also inside a scope; what a scene reads back names each minted id by the first
-// role that holds it, and any other `<new>`.
+// role that holds it, and any other minted id `<new>`.
 /** @param {Vector} vector */
 export async function runScene(vector) {
   const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
   /** @type {Record<string, Harness>} */
   const phones = { a };
-  /** @type {Record<string, { input: any, result: any, actId: string | null, requestId: string | null }>} */
+  /** @type {Record<string, { input: any, result: any, undo: import('../../../../src/platform/domain-kit/runner.js').UndoHandle | null, requestId: string | null }>} */
   const roles = {};
   /** @param {string} path */
   const lookup = (path) => {
@@ -205,7 +205,7 @@ export async function runScene(vector) {
         const outcome = await phone.runner.runAct(/** @type {any} */ (actOf({ action: step.run, input })));
         if (step.as) {
           roles[step.as] = { input, result: outcome.kind === 'refused' ? null : outcome.result,
-            actId: outcome.kind === 'committed' ? outcome.receipt.gestureId : null, requestId: null };
+            undo: outcome.kind === 'committed' ? outcome.receipt.undo : null, requestId: null };
         }
         outcomes.push(outcome.kind === 'refused' ? { refused: refusalForm(outcome.refusal) } : outcome.kind);
       } else if (step.save) {
@@ -214,7 +214,7 @@ export async function runScene(vector) {
         const id = new Id(owner, StepNote);
         const draft = phone.runner.openOrNew(StepNote, id, new StepNoteValue(id), scope).edit((note) => new StepNoteValue(note.id, text));
         const { result } = await phone.runner.save(draft, RoadmapRefusals, scope);
-        if (step.as) roles[step.as] = { input: { tree, step: owner, text }, result: null, actId: result.kind === 'saved' ? result.receipt?.gestureId ?? null : null, requestId: null };
+        if (step.as) roles[step.as] = { input: { tree, step: owner, text }, result: null, undo: result.kind === 'saved' ? result.receipt?.undo ?? null : null, requestId: null };
         outcomes.push(result.kind);
       } else if (step.sync) {
         observeAll();
@@ -227,14 +227,21 @@ export async function runScene(vector) {
         const fresh = step.redo && step.subtree ? String(phone.runner.mint(Roadmap).record) : null;
         const slots = fresh === null ? undefined : redoCreateSubtree({ ...role.input, ...role.result }, fresh);
         if (fresh !== null) for (const scope of [RoadmapScopes.tree(fresh), RoadmapScopes.overlay(fresh)]) a.observe(scope);
-        const checks = role.result instanceof KindRestore ? [role.result] : [];
-        const result = step.undo ? await phone.runner.undo(String(role.actId), checks) : await phone.runner.redo(String(role.requestId), slots);
-        if (result.kind !== 'unavailable') role.requestId = result.requestId;
-        outcomes.push(inverse(result));
+        if (role.undo === null) throw new Error(`${step.undo ?? step.redo} committed no act`);
+        if (step.undo) {
+          const result = await phone.runner.undo(role.undo);
+          if (result.kind !== 'unavailable') role.requestId = result.requestId;
+          outcomes.push(inverse(result));
+        } else {
+          const { result, undo } = await phone.runner.redo(String(role.requestId), role.undo, slots);
+          if (result.kind !== 'unavailable') role.requestId = result.requestId;
+          if (undo !== null) role.undo = undo;
+          outcomes.push(inverse(result));
+        }
       } else if (step.read) {
         outcomes.push(inverse(phone.runner.inverseResult(String(roles[step.read]?.requestId))));
       } else if (step.cancelHeld) {
-        outcomes.push({ cancelHeld: await phone.runner.cancelHeld(String(roles[step.cancelHeld]?.actId)) });
+        outcomes.push({ cancelHeld: await phone.runner.cancelHeld(String(roles[step.cancelHeld]?.undo?.actId)) });
       } else if (step.inspect) {
         const { scope, t, fields } = step.inspect;
         const rows = phone.runner.read(bind(scope), (read) => read.views.visible('drawn', t)).map((record) => Object.fromEntries(fields.map((/** @type {string} */ name) =>

@@ -162,10 +162,11 @@ Undo of Reset marks the step done anew, so it leads Done, and an Undo of a roadm
 the room had it open. An Undo that brings nothing back, a roadmap's delete or a workspace removal past its hold, an act
 the engine keeps no Undo of, one whose every restore a write made elsewhere stood in the way of, such as another
 phone's delete of the same step, or a kind's removal whose hue another kind has come to wear, which the domain refuses
-before anything is written (`KindRestore`, `ActionRunner.undo(_:checking:)`), puts in the receipt's place what could not
-come back (`Band.Says.unrestored`, boards 02.10d and 06.5c): *Couldn’t bring back* a step, a roadmap, a kind, a subtask
-or a link by its name, or several steps by their count, and *Couldn’t undo* any other act. It has no Undo, stands six seconds, and the room plays a warning haptic
-and VoiceOver announces it; its event keeps outcome unavailable. The band says a refusal only where it is a limit the
+before anything is written (the check `DeleteKind`'s plan names, read by `ActionRunner.undo(_:)` from the act's
+`UndoHandle`, which the band keeps), puts in the receipt's place what could not come back (`Band.Says.unrestored`,
+boards 02.10d and 06.5c): *Couldn’t bring back* a step, a roadmap, a kind, a subtask or a link by its name, or several
+steps by their count, and *Couldn’t undo* any other act. It has no Undo, stands six seconds, and the room plays a
+warning haptic and VoiceOver announces it; its event keeps outcome unavailable. The band says a refusal only where it is a limit the
 boards word, and any other refusal shows nothing. Facts the model reads or settles itself, as the web's room does. From the domain's graph: the one starting step a
 roadmap keeps, which offers no Delete; the steps that follow a step (`OpenRoadmap.followers`, the web's `childrenOf`),
 which a step's page lists under *Opens* and the delete question counts; and what Reset would return to Locked
@@ -503,7 +504,7 @@ leaves them (`ChangeKind`), and a hue no kind names that is given one becomes a 
 chosen recolors the kind and every step that wears it (`RecolourKind`, the server's command, predicted on the phone), or
 moves the steps of a hue no kind names in one gesture (`ChangeStep`), with no band; and a kind no step wears is removed at
 once (`DeleteKind`), the band holding *Undo* for six seconds, since the engine does not hold a kind's removal; that Undo
-brings the kind back only while no other kind wears its hue, as the kind's restore checks. Add, a name,
+brings the kind back only while no other kind wears its hue, as the delete's plan checks. Add, a name,
 a description and a colour keep no *Undo*, as the web's legend keeps none. `Kinds/RoadmapKinds.swift` is the sheet, a large
 one with its own stack, which the room raises from the title menu's *Kinds* and the form from *Edit Kinds*: the legend
 under the roadmap's name, each entry with its disc, name, description and how many steps wear it, pushing its page; *Add

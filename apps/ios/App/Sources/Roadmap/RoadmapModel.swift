@@ -238,12 +238,12 @@ final class RoadmapModel {
   // What the write door answers: what an act wrote with its receipt, nothing where it changed nothing, the domain's
   // refusal, or a commit that failed.
   enum Written<Result> {
-    case committed(Result, ActReceipt)
+    case committed(Result, Receipt<ActReceipt>)
     case unchanged
     case refused(RoadmapRefusal)
     case failed
 
-    var committed: (result: Result, receipt: ActReceipt)? {
+    var committed: (result: Result, receipt: Receipt<ActReceipt>)? {
       guard case .committed(let result, let receipt) = self else { return nil }
       return (result, receipt)
     }
@@ -319,8 +319,8 @@ final class RoadmapModel {
       case pasteRefused
     }
 
-    // A receipt's Undo: the gesture its act wrote, whether the engine holds that act, the act it takes back, and the kinds
-    // it brings back, each only while no other kind wears its hue.
+    // A receipt's Undo: the gesture its act wrote, whether the engine holds that act, the act it takes back, and the kit's
+    // Undo of that act, with the checks it is asked with.
     struct Undo: Equatable {
       // An act on a roadmap's steps, kinds or guide, or on a workspace, by its name in the room's events, or a roadmap's
       // delete, with the roadmap where the room had it open, which its Undo opens again.
@@ -340,7 +340,7 @@ final class RoadmapModel {
       let gesture: String
       let held: Bool
       let act: Act
-      let restores: [KindRestore]
+      let handle: UndoHandle
     }
 
     let says: Says
@@ -351,10 +351,10 @@ final class RoadmapModel {
     let lasts: Duration
 
     // A receipt: a removal the engine holds offers its Undo for the engine's hold, any other act for six seconds.
-    init(_ says: Says, of receipt: ActReceipt, act: Undo.Act, restoring restores: [KindRestore] = [], arrived: [String] = []) {
+    init(_ says: Says, of receipt: Receipt<ActReceipt>, act: Undo.Act, arrived: [String] = []) {
       let held = receipt.releaseAt != nil
       self.says = says
-      undo = Undo(gesture: receipt.gestureId, held: held, act: act, restores: restores)
+      undo = Undo(gesture: receipt.gestureId, held: held, act: act, handle: receipt.undo)
       self.arrived = arrived
       lasts = held ? .milliseconds(Constants.holdMs) : RoadmapModel.bandLasts
     }
@@ -823,10 +823,7 @@ final class RoadmapModel {
   func write<E: Draftable>(_ draft: inout Draft<E>, as name: String) -> Written<Void> {
     told(as: name) {
       switch runner.save(&draft, SaveDraft<E, RoadmapRefusal>.self) {
-      case .saved(let receipt?):
-        let segment = ActSegmentReceipt(scope: draft.scope, stamp: receipt.stamp, localIds: receipt.localIds, ids: receipt.ids)
-        return .committed((), ActReceipt(gestureId: receipt.gestureId, segments: [segment], retired: receipt.retired,
-                                         superseded: receipt.superseded, releaseAt: receipt.releaseAt))
+      case .saved(let receipt?): return .committed((), receipt.act(in: draft.scope))
       case .saved(nil): return .unchanged
       case .refused(let refusal): return .refused(refusal)
       case .failed(let error): throw error
@@ -1053,8 +1050,8 @@ final class RoadmapModel {
   // hold has ended, is taken back by the kit's Undo of it. The engine then keeps nothing more of the act, nor of its Undo,
   // which the room never redoes. A roadmap brought back is the open one again where it was. An Undo that brought nothing
   // back, a roadmap's delete or a workspace removal past its hold, an act the engine keeps no Undo of, one whose every
-  // restore a write elsewhere stood in the way of, or a kind's removal whose hue another kind has come to wear, which the
-  // domain refuses before anything is written, says so in the band's place, with a warning (02.10d, 06.5c).
+  // restore a write elsewhere stood in the way of, or one the domain refuses where it is asked, as a kind's removal whose
+  // hue another kind has come to wear, says so in the band's place, with a warning (02.10d, 06.5c).
   func undo() {
     guard root === self else { return root.undo() }
     guard let receipt = band, let undo = receipt.undo else { return }
@@ -1064,7 +1061,7 @@ final class RoadmapModel {
       var taken = false
       if undo.held { taken = try runner.cancelHeld(undo.gesture) }
       if !taken && (!undo.held || undo.act.outlivesHold) {
-        switch try runner.undo(undo.gesture, checking: undo.restores) {
+        switch try runner.undo(undo.handle) {
         case .cancelled(_, let inverse, let changed), .pending(_, let inverse, let changed), .settled(_, let inverse, let changed, _, _):
           taken = changed
           try runner.release(inverse)

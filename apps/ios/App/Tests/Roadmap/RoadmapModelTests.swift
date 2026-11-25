@@ -12,9 +12,10 @@ import SyncTesting
 @testable import Windmill
 
 @Suite(.serialized) @MainActor struct RoadmapModelTests {
-  // A phone's engine in step mode on the model server, the runner roadmap's actions take, and what the phone remembers.
-  func phone(account: String? = "acct-1") -> (engine: SteppedEngine, runner: ActionRunner, memory: UserDefaults, suite: String) {
-    let engine = SteppedEngine(registry: SyncSchema.registry, startMs: 1_790_424_000_000, account: account,
+  // A phone's engine in step mode on the model server, the runner roadmap's actions take, and what the phone remembers;
+  // every id it mints follows `seed`.
+  func phone(account: String? = "acct-1", seed: UInt64 = 1) -> (engine: SteppedEngine, runner: ActionRunner, memory: UserDefaults, suite: String) {
+    let engine = SteppedEngine(registry: SyncSchema.registry, startMs: 1_790_424_000_000, seed: seed, account: account,
                                rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     let suite = "roadmap-model-\(UUID().uuidString)"
     return (engine, ActionRunner(replica: engine.replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0)),
@@ -153,22 +154,25 @@ import SyncTesting
   }
 
   // Signed out, no server has received any of the phone's roadmaps, so the title menu lists them by the newest stamp the
-  // phone holds of each: the roadmap made last comes first.
+  // phone holds of each: the roadmap made last comes first. The phone's seed mints the second a larger id than the first,
+  // so their ids stand the other way round.
   @Test func aPhoneNeverSignedInListsTheRoadmapMadeLastFirst() async throws {
-    let (engine, runner, memory, suite) = phone(account: nil)
+    let (engine, runner, memory, suite) = phone(account: nil, seed: 2)
     defer { memory.removePersistentDomain(forName: suite) }
     let basics = ImportedSteps(steps: [ImportedStep(key: "first", RoadmapStep.Changes(label: "Basics"))])
-    guard case .committed = try runner.runAct(CreateRoadmap(title: "Learn Rust", steps: basics)) else {
-      Issue.record("Learn Rust was not created")
-      return
+    for (made, title) in ["Learn Rust", "Learn to sail"].enumerated() {
+      if made > 0 { engine.advance(ms: 60_000) }
+      guard case .committed = try runner.runAct(CreateRoadmap(title: title, steps: basics)) else {
+        Issue.record("\(title) was not created")
+        return
+      }
     }
-    engine.advance(ms: 60_000)
-    try RoadmapFixture.plantLearnToSail(runner)
 
     let model = room(engine, runner, memory)
     model.roomOpened()
     await shows(model, roadmaps: ["Learn to sail", "Learn Rust"], on: engine)
     #expect(model.roadmaps.map { $0.updatedAt == nil } == [true, true])
+    #expect(model.roadmaps.map(\.id) == model.roadmaps.map(\.id).sorted { $1.utf8.lexicographicallyPrecedes($0.utf8) })
   }
 
   // The Board is the domain's read of the open roadmap: its groups, what a Locked step needs and what an Up next step
@@ -770,7 +774,7 @@ import SyncTesting
     await shows(model, "open Learn to sail", on: engine)
 
     model.complete(try row("Read the wind", in: model), by: .swipe)
-    let first = try #require(model.band?.undo?.gesture)
+    let first = try #require(model.band?.undo?.handle)
     model.complete(try row("Tie a bowline", in: model), by: .swipe)
     #expect(model.band?.says == .completed(step: "Tie a bowline", upNext: [], inPlace: false))
     #expect(try runner.undo(first) == .unavailable(requestId: nil, reason: "not-reversible"))

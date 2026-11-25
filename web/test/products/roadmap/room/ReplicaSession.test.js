@@ -355,6 +355,38 @@ test('a removed kind’s Undo brings nothing back while a kind made since wears 
   }
 });
 
+test('the Undo of a Redo is checked as the gesture’s own: a kind removed, brought back and removed again comes back no more once a kind made since wears its hue; a recolour’s Undo is checked the same way', async () => {
+  const { a, tree, reading, session, told } = await gestures();
+  try {
+    const { CreateKind } = await import('../../../../src/products/roadmap/domain/kinds.js');
+    const legend = () => reading.roadmap().account.trees.get(tree).kinds.filter((kind) => kind.present).map(({ hue, label }) => `${label} ${hue}`);
+    const undo = async () => { session.undo(); await session.redoStack.at(-1).inverse; };
+    const redo = async () => { session.redo(); await session.undoStack.at(-1).undo; };
+    await session.dispatch({ kind: 'AddKind', id: 'legend-sea', hue: 'sky' }).act;
+    const sea = reading.roadmap().account.trees.get(tree).kinds.find((kind) => kind.hue === 'sky').id;
+    await session.dispatch({ kind: 'RenameKind', id: sea, label: 'Sea' }).act;
+    await session.dispatch({ kind: 'RemoveKind', id: sea }).act;
+    await undo();
+    await a.sync();
+    await redo();
+    await a.sync();
+    committed(await a.runner.runAct(new CreateKind(tree, { hue: 'sky', label: 'Weather' })));
+    await undo();
+    assert.deepEqual(legend(), ['Build terracotta', 'Learn olive', 'Milestone gold', 'Weather sky']);
+
+    await session.dispatch({ kind: 'RecolorKind', id: 'learn', hue: 'plum' }).act;
+    committed(await a.runner.runAct(new CreateKind(tree, { hue: 'olive', label: 'Wind' })));
+    await undo();
+    assert.deepEqual({ legend: legend(), undone: told.events.filter(([, props]) => props.action === 'undo').map(([, props]) => props.outcome) }, {
+      legend: ['Build terracotta', 'Learn plum', 'Milestone gold', 'Weather sky', 'Wind olive'],
+      undone: ['unavailable', 'unavailable'],
+    });
+  } finally {
+    reading.close();
+    a.close();
+  }
+});
+
 test('a roadmap’s deletion is held nine seconds: hidden from the person’s list at once, taken back within the hold, and permanent once it ends', async () => {
   const { a, tree } = await sailing();
   try {

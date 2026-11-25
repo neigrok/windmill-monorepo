@@ -18,7 +18,7 @@ import { ProbeProduct } from '../../../../packages/api-contract/sync/reference/p
 import { Harness } from './harness.js';
 import { Capacity, Reader } from '../../../src/platform/domain-kit/reading.js';
 import { DomainNotice, Refused } from '../../../src/platform/domain-kit/refusals.js';
-import { ActionRunner, EngineReplica } from '../../../src/platform/domain-kit/runner.js';
+import { ActionRunner, EngineReplica, UndoHandle } from '../../../src/platform/domain-kit/runner.js';
 import { Move, Remove } from '../../../src/platform/domain-kit/standardActions.js';
 import { Instant, LocalDay } from '../../../src/platform/domain-kit/time.js';
 import { translate } from '../../../src/platform/domain-kit/translation.js';
@@ -306,32 +306,33 @@ async function engineActVector(input) {
         return ActDecision.write(new ActPlan(plans([{ ...item, plan: [{ op: 'update', t, id, f: { [field]: `${found.fields()[field]}${suffix}` }, fields: [field] }] }])), null);
       },
     });
-    let actId = null;
+    /** @type {import('../../../src/platform/domain-kit/runner.js').UndoHandle | null} */
+    let act = null;
     let outcome;
     try {
       if (input.parts) {
         const ran = await phone.runner.runComposed(input.parts.map(partOf));
         outcome = ran.kind === 'committed' ? { kind: ran.kind, counts: ran.receipt.segments.map((item) => item.localIds.length), held: ran.receipt.releaseAt !== null }
           : ran.kind === 'refused' ? { kind: ran.kind, part: ran.part, refusal: refusalForm(/** @type {any} */ (ran.refusal)) } : { kind: ran.kind };
-        if (ran.kind === 'committed') actId = ran.receipt.gestureId;
+        if (ran.kind === 'committed') act = ran.receipt.undo;
       } else if (input.save) {
         const type = probeEntity(input.save.t);
         const opened = phone.runner.open(type, new Id(input.save.id, type), input.save.scope ?? probeScope(type));
         if (opened === null) throw new ContractError('a save opens a record the phone holds');
         const saved = await phone.runner.save(opened.edit(() => probeValue(type, input.save.id, input.save.current)), ProbeRefusals);
         outcome = { kind: saved.result.kind };
-        if (saved.result.kind === 'saved' && saved.result.receipt !== null) actId = saved.result.receipt.gestureId;
+        if (saved.result.kind === 'saved' && saved.result.receipt !== null) act = saved.result.receipt.undo;
       } else if (input.reversible !== undefined) {
         const segment = plans(input.segments)[0];
         if (segment === undefined) throw new ContractError('a single action names one segment');
         const ran = await phone.runner.run({ scope: segment.scope, refusals: ProbeRefusals, reversible: input.reversible,
           load: () => null, decide: () => Decision.write(segment.plan, null) });
         outcome = ran.kind === 'committed' ? { kind: ran.kind, count: ran.receipt.localIds.length } : { kind: ran.kind };
-        if (ran.kind === 'committed') actId = ran.receipt.gestureId;
+        if (ran.kind === 'committed') act = ran.receipt.undo;
       } else {
         const ran = await phone.runner.runAct({ refusals: ProbeRefusals, load: () => null, decide: () => ActDecision.write(new ActPlan(plans(input.segments)), null) });
         outcome = ran.kind === 'committed' ? { kind: ran.kind, counts: ran.receipt.segments.map((item) => item.localIds.length), held: ran.receipt.releaseAt !== null } : { kind: ran.kind };
-        if (ran.kind === 'committed') actId = ran.receipt.gestureId;
+        if (ran.kind === 'committed') act = ran.receipt.undo;
       }
     } catch (error) {
       if (error instanceof PlanError || error instanceof Fault) return { error: true };
@@ -341,11 +342,12 @@ async function engineActVector(input) {
     let requestId = null;
     for (const step of input.steps) {
       if (step === 'sync') await phone.sync();
-      else if (step === 'cancel') results.push({ cancelled: await phone.runner.cancelHeld(/** @type {string} */ (actId)) });
+      else if (step === 'cancel') results.push({ cancelled: await phone.runner.cancelHeld(/** @type {UndoHandle} */ (act).actId) });
       else if (step === 'read') results.push(inverseForm(phone.runner.inverseResult(/** @type {string} */ (requestId))));
       else {
         /** @type {import('../../../src/platform/domain-kit/runner.js').InverseResult} */
-        const result = step === 'undo' ? await phone.runner.undo(/** @type {string} */ (actId)) : await phone.runner.redo(/** @type {string} */ (requestId));
+        const result = step === 'undo' ? await phone.runner.undo(/** @type {UndoHandle} */ (act))
+          : (await phone.runner.redo(/** @type {string} */ (requestId), /** @type {UndoHandle} */ (act))).result;
         if (result.kind !== 'unavailable') requestId = result.requestId;
         results.push(inverseForm(result));
       }

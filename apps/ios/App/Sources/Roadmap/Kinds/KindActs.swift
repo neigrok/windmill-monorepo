@@ -105,7 +105,7 @@ extension RoadmapModel {
           let written = write(DeleteKind(tree: shown.id, kind: ID(RecordID(kind.id))), as: "RemoveKind").committed else { return false }
     removedKinds[subject] = written.receipt.gestureId
     telemetry.event("roadmap_board_edit", properties: ["step": "saved", "legend": "remove"])
-    show(Band(.removedKind(entry.name), of: written.receipt, act: .step("removeKind"), restoring: written.result.map { [$0] } ?? []))
+    show(Band(.removedKind(entry.name), of: written.receipt, act: .step("removeKind")))
     return true
   }
 }

@@ -100,7 +100,7 @@ import SyncTesting
     let id = model.runner.mint(Routine.self)
     var draft = Draft(new: Routine(id: id, name: name, entries: [RoutineEntry(exerciseId: ID("back-squat"))]))
     let result = model.runner.save(&draft, SaveRoutine.self)
-    let receipt: CommitReceipt? = if case .saved(let receipt) = result { receipt } else { nil }
+    let receipt: Receipt<CommitReceipt>? = if case .saved(let receipt) = result { receipt } else { nil }
     _ = try #require(receipt)
     model.refresh()
     return id
@@ -265,12 +265,12 @@ import SyncTesting
     let model = try LineageFlowTests().fixture(server)
     var weighIn = Draft(new: WeighIn(day: model.journal.today, kg: 82.4))
     let weighInResult = model.runner.save(&weighIn, SaveWeighIn.self)
-    let weighInReceipt: CommitReceipt? = if case .saved(let receipt) = weighInResult { receipt } else { nil }
+    let weighInReceipt: Receipt<CommitReceipt>? = if case .saved(let receipt) = weighInResult { receipt } else { nil }
     _ = try #require(weighInReceipt)
     var preferences = Draft(new: GymPreferences())
     preferences.current.units = "lb"
     let preferencesResult = model.runner.save(&preferences, SavePreferences.self)
-    let preferencesReceipt: CommitReceipt? = if case .saved(let receipt) = preferencesResult { receipt } else { nil }
+    let preferencesReceipt: Receipt<CommitReceipt>? = if case .saved(let receipt) = preferencesResult { receipt } else { nil }
     _ = try #require(preferencesReceipt)
     _ = try #require(try model.runner.run(RenameExercise(ID("back-squat"), name: "Renamed squat")).receipt)
     try await model.signIn(server.identity(email: "gym-counts@example.com"))

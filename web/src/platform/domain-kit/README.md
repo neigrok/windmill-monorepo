@@ -82,7 +82,10 @@ Readers and plan translation check both the registry's scope kind and any fixed 
 `new ActionRunner(new EngineReplica(engine), engine.registry, zone)`, where `engine` is the shell's
 `BrowserSyncEngine`. The runner mints the gesture id through `engine.newGestureId()` and passes it as
 `opts.gestureId`, so a `too-large` refusal names the notice the commit wrote and the runner dismisses it;
-a held removal's receipt reads `releaseAt` from the gesture's entry. `runner.dismissNotices(scope, ids, when)`
+a held removal's receipt reads `releaseAt` from the gesture's entry. Every receipt carries its act's `UndoHandle`
+(`receipt.undo`), the act id with the checks its plans named (`plan.undoCheckedBy`): `runner.undo(handle)` reads each check
+first and answers `unavailable` (`refused`) where one throws its `Violation`, and `runner.redo(requestId, handle)` answers
+`{ result, undo }`, the handle of the act the Redo wrote. Only the runner makes a handle. `runner.dismissNotices(scope, ids, when)`
 dismisses several notices in one write while `when` holds over the scope's `ScopeMetadata` (its views without
 their records: device rows, replica, commands) as that write reads it, so a rule that keeps a notice speaking
 cannot be overtaken between its reading and the dismissal; `EngineReplica` reads it with

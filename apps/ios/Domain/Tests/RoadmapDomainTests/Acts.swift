@@ -5,18 +5,17 @@ import SyncAPI
 import SyncCore
 
 // Each act of roadmap's corpus as a case names it (the corpus README's Actions table), built from its `action` and `input`:
-// decided over a case's records, or run on a phone of the harness, its result in the form the corpus states it and as the
-// act answered it.
+// decided over a case's records, or run on a phone of the harness, its result in the form the corpus states it.
 struct RoadmapAct {
   let decide: (Vector) throws -> JSON
-  let run: (ActionRunner) throws -> ActOutcome<(form: JSON, value: any Sendable), RoadmapRefusal>
+  let run: (ActionRunner) throws -> ActOutcome<JSON, RoadmapRefusal>
 
   init<A: ActAction>(_ act: A, result: @escaping (A.Result) -> JSON) where A.Refusal == RoadmapRefusal {
     decide = { vector in try ProductCorpus(RoadmapRules.book).act(act, vector, result: result, refusal: \.form) }
     run = { runner in
       switch try runner.runAct(act) {
-      case .committed(let value, let receipt): .committed((result(value), value), receipt)
-      case .unchanged(let value): .unchanged((result(value), value))
+      case .committed(let value, let receipt): .committed(result(value), receipt)
+      case .unchanged(let value): .unchanged(result(value))
       case .refused(let refusal): .refused(refusal)
       }
     }
@@ -68,7 +67,7 @@ struct RoadmapAct {
       self.init(act, result: { .null })
     case "MoveKind": self.init(MoveKind(tree: tree, kind: try input.id("kind"), below: try input.optionalID("below")), result: { .null })
     case "RecolourKind": self.init(RecolourKind(tree: tree, kind: try input.id("kind"), hue: try input.member("hue").asString()), result: { .null })
-    case "DeleteKind": self.init(DeleteKind(tree: tree, kind: try input.id("kind")), result: { $0?.form ?? .null })
+    case "DeleteKind": self.init(DeleteKind(tree: tree, kind: try input.id("kind")), result: { .null })
     case "Complete":
       let act = MarkStep.complete(tree: tree, step: try input.id("step"), outOfOrder: try input.optionalBool("outOfOrder") ?? false,
                                   opensStanding: try input.optionalBool("opensStanding") ?? false)
@@ -99,8 +98,4 @@ struct RoadmapAct {
     case let name: throw ContractError("no roadmap act \(name)")
     }
   }
-}
-
-extension KindRestore {
-  var form: JSON { ["tree": tree.json, "kind": kind.json, "hue": .string(hue)] }
 }

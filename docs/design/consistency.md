@@ -690,9 +690,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   `ContentUnavailableView.search`; a delete made on a row of All Roadmaps leaves the list on screen with the band at
   its foot, and its *Undo* brings the row back without opening it, where 01.11 draws the Board alone; *No roadmaps yet*
   stands over the band while the last roadmap's delete is held, and 01.5 draws no band; a blank roadmap is opened once
-  the phone's copy holds it, with no band, as no board draws one for it; 01.3 and 01.4 group a count's digits (*3,200 of 5,000*) and the app writes every count as
-  Swift does, *3200 of 5000*; and the domain orders a person's roadmaps by when a server last received each, so on a
-  phone never signed in the title menu's three and All Roadmaps stand in the order of their ids, which no board says.
+  the phone's copy holds it, with no band, as no board draws one for it; and 01.3 and 01.4 group a count's digits
+  (*3,200 of 5,000*) and the app writes every count as Swift does, *3200 of 5000*.
 - **Roadmap · iOS · what plans leave for the boards.** New Roadmap's *A Copied Plan* and *A File*, the plan read back,
   *Roadmap planted*, a file that can't be read, and Paste Steps with its read-back, its *Undo* and its two bands are
   built in Debug builds from 01.6, 01.8 to 01.8c, 02.16 to 02.18, 02.16b and 02.16c. To draw or rule: 01.8 and 01.8b

@@ -11,7 +11,8 @@ client's design, whose public API the kit binds to.
 implementation passes the shared vectors of §15. `WindmillKit` supplies the product-neutral AI
 client and Coach runtime; the shipped app lives in `apps/ios/App` and keeps its product UI there. Undo of an act (§9.6)
 is built in the web, Swift and Kotlin kits over their engines, with the held-only `undo` named `cancelHeld`,
-each passing `run/undo.json`; an Undo's checks (`UndoCheck`) are built in the web and Swift kits.
+each passing `run/undo.json`; an Undo's checks (`UndoCheck`) and the Undo handle receipts carry (`UndoHandle`) are built
+in the web and Swift kits.
 
 **The kit is pure logic.** It is the layer every Windmill feature's domain logic is declared on, on iOS
 and Android: §3–§15 and the layering tests of §2. It provides base interfaces and base implementations;
@@ -996,6 +997,7 @@ public struct Plan: Sendable {
   public mutating func guardRead<E: Entity>(_ id: ID<E>, fields: [String])
   public mutating func device(_ key: String, _ value: JSON?)
   public mutating func undoBy(_ recipes: UndoRecipe...)                                    // §9.6
+  public mutating func undoCheckedBy(_ check: any UndoCheck)                                // §9.6
   public mutating func evidenceForUndo()                                                    // §9.6
   public var undo: (version: Int, recipes: [UndoRecipe])? { get }
 }
@@ -1017,9 +1019,10 @@ public struct Plan: Sendable {
   step 10).
 - An action builds a plan from the value it loaded and names only the fields its caller set, never
   every field, so a value another writer stored is never rewritten by normalisation.
-- `undoBy` opts the plan's act into Undo after its hold with the recipes an Undo runs (§9.6); `evidenceForUndo`
-  names the plan's segment for that Undo with no recipe of its own; `undo` is them as engine §7.3's
-  `{version: 1, recipes}`, with `recipes` empty for evidence alone, or nil.
+- `undoBy` opts the plan's act into Undo after its hold with the recipes an Undo runs (§9.6); `undoCheckedBy` names
+  what that Undo must find standing where it is asked; `evidenceForUndo` names the plan's segment for that Undo with no
+  recipe of its own; `undo` is the recipes as engine §7.3's `{version: 1, recipes}`, with `recipes` empty for evidence
+  alone, or nil.
 
 ### §8.2 Translation to one gesture
 
@@ -1084,7 +1087,8 @@ when:
 8. an update names no field, or a keyed create writes no field, except a create of a keyed type with
    life that declares no field, which writes the record's presence alone;
 9. a create or update of a `wholePut` type leaves out one of its client-written fields (engine §2.4);
-10. a plan names Undo recipes in a single action that is not `reversible` (§9.6).
+10. a plan names Undo recipes in a single action that is not `reversible` (§9.6);
+11. a plan names an Undo check (`undoCheckedBy`) and no Undo of its own (§9.6).
 
 A malformed Undo recipe (a target outside its restore command's types, an unset target without its default,
 a created record that exists before the act) fails the act as a programming fault, before anything is
@@ -1148,7 +1152,7 @@ extension Decider {
 public protocol Action: Decider where Result: Sendable {}
 public enum Decision<Result, Refusal> { case write(Plan, Result), unchanged(Result), refuse(Refusal) }
 extension Decision where Result == Void { public static func write(_ plan: Plan) -> Decision }
-public enum Outcome<Result, Refusal> { case committed(Result, CommitReceipt), unchanged(Result), refused(Refusal) }
+public enum Outcome<Result, Refusal> { case committed(Result, Receipt<CommitReceipt>), unchanged(Result), refused(Refusal) }
 extension Outcome {
   public var receipt: CommitReceipt? { get }
   public var refusal: Refusal? { get }
@@ -1178,8 +1182,9 @@ public final class ActionRunner: Sendable {
   public func run<A: Action>(_ action: A) throws -> Outcome<A.Result, A.Refusal>
   public func read<T>(_ scope: ScopeRef, _ body: (Reader) throws -> T) throws -> T
   public func cancelHeld(_ gestureId: String) throws -> Bool
-  public func undo(_ actId: String, checking checks: [any UndoCheck] = []) throws -> InverseResult  // §9.6
-  public func redo(_ requestId: String, productSlots: [ProductSlot]? = nil) throws -> InverseResult
+  public func undo(_ act: UndoHandle) throws -> InverseResult                                // §9.6
+  public func redo(_ requestId: String, of act: UndoHandle, productSlots: [ProductSlot]? = nil) throws
+    -> (result: InverseResult, undo: UndoHandle?)
   public func inverseResult(_ requestId: String) -> InverseResult
   public func release(_ actId: String) throws
   public func mint<E: Entity>(_ type: E.Type, in scope: ScopeRef) -> ID<E>
@@ -1293,9 +1298,9 @@ segment against the tentative projection of segments `0..<i`, including explicit
 Creating a record before updating it, or creating a governing record before writing its tree,
 therefore uses the earlier segment's result. The original load snapshot never changes meaning.
 
-`ActOutcome.committed(result, ActReceipt)` reports the one local transaction. Its receipt keeps the
+`ActOutcome.committed(result, Receipt<ActReceipt>)` reports the one local transaction. Its receipt keeps the
 shared gesture ID, each ordered segment's scope, stamp and local IDs, the flat retired and superseded
-gesture IDs, and the shared release deadline. A predicted refusal, engine refusal or technical
+gesture IDs, the shared release deadline, and the act's Undo handle (§9.6). A predicted refusal, engine refusal or technical
 failure leaves no segment, device write, clock tick, reservation or notice from the act durable.
 Remote admission remains separate for each intent. Existing `Action`, `Plan`, `run`, `Outcome` and
 `CommitReceipt` retain their single-scope contracts.
@@ -1333,6 +1338,14 @@ public protocol UndoCheck: Sendable {                  // what an Undo must find
   var scope: ScopeRef { get }
   func check(_ read: Reader) throws                    // throws the Violation the Undo would break
 }
+public struct UndoHandle: Sendable, Equatable {         // an act's Undo: only the runner makes one
+  public let actId: String                             // the act's gesture id
+}
+@dynamicMemberLookup
+public struct Receipt<Engine: Sendable>: Sendable {    // what every outcome and save answers for a commit
+  public let engine: Engine                            // CommitReceipt or ActReceipt, its members read through
+  public let undo: UndoHandle
+}
 ```
 
 - **Opting in.** A plan names its Undo recipes with `undoBy`: earlier values of client fields, texts and
@@ -1348,7 +1361,8 @@ public protocol UndoCheck: Sendable {                  // what an Undo must find
   `reversible: true` (JS `reversible`, Swift and Kotlin the `Decider` requirement of the same name) and then runs
   through the same one-segment act path, its loads, decision, `firstGone` and result unchanged, its receipt the
   one segment's. A plan that opts into Undo from any other single action is a `PlanError` (rule 10).
-- **Undo** is `undo(actId)`, `actId` the act's gesture id: an act whose entries are all still held is
+- **Undo** is `undo(act)`, `act` the handle the act's receipt carries (`receipt.undo`, every committed outcome's and
+  saved draft's), never a bare id: an act whose entries are all still held is
   cancelled in place (`cancelled`); otherwise the engine reserves the inverse at once (`pending`, with whether
   the device's view changed) and it settles as the act's sources do (`settled`, with whether accepted effects
   changed anything and how many operations applied and skipped). An Undo never erases a write the device had
@@ -1357,16 +1371,19 @@ public protocol UndoCheck: Sendable {                  // what an Undo must find
   `unavailable`.
   `inverseResult(requestId)` reads the result as it stands.
 - **Checked where it is asked.** An Undo can break a LOCAL rule its act kept: a kind's restore can bring the kind back
-  onto a hue another kind has come to wear. `undo(actId, checking:)` reads each check's scope first; a check that throws
-  its `Violation` answers `unavailable` (`refused`), and nothing is written. The act whose Undo a check guards knows what
-  that Undo brings back and answers the check as its result, and the product passes it to the Undo it asks: the engine
-  journals no check, and the device may keep nothing else of what the act took.
-- **Redo** is `redo(requestId)`: the inverse of the Undo, which writes back the values the act wrote, only
+  onto a hue another kind has come to wear. A plan names what its act's Undo must find standing with `undoCheckedBy`,
+  beside its recipes, while it still holds what the Undo will bring back; the runner puts every check of the act's plans
+  on the handle its receipt carries. `undo(act)` reads each check's scope first; a check that throws its `Violation`
+  answers `unavailable` (`refused`) and nothing is written, and any other error rethrows. The engine journals no check,
+  and the handle lives as long as the product's stack, which no process outlives.
+- **Redo** is `redo(requestId, of: act)`: the inverse of the Undo `requestId` of `act`, which writes back the values the
+  act wrote, only
   where the Undo applied, and re-creates no terminal record. `productSlots` replaces the stored recipes whole,
   by the inverse act's source ordinal, each with the scope that source wrote: a product's Redo of a creation
   names its own command and a fresh id. A field target there must be one the act journaled. The Redo of a
   held act cancelled in place writes back what the act's own writes took out; one whose act ran a product
-  command is `unavailable` (`product-redo-required`) without `productSlots`.
+  command is `unavailable` (`product-redo-required`) without `productSlots`. It answers its result and the handle of the
+  act it wrote, with `act`'s checks, whose Undo takes the Redo back; none where it is unavailable.
 - `release(actId)` tells the engine the product's stack no longer holds the act, so its journal and values go.
   A product keeps its own stack of acts for its Undo and Redo keys; the engine keeps no stack, and at its start
   releases every act no unsettled request reads, since no product stack outlives its process.
@@ -1380,7 +1397,7 @@ link moved to another step, a paste that also creates kinds), runs as one act th
 
 ```swift
 public enum ComposedOutcome<R> {
-  case committed(results: [any Sendable], receipt: ActReceipt)   // each part's result, in order
+  case committed(results: [any Sendable], receipt: Receipt<ActReceipt>)   // each part's result, in order
   case unchanged(results: [any Sendable])
   case refused(part: Int, refusal: R)
 }
@@ -1431,7 +1448,7 @@ extension Draft where E: ProductEntity {
 }
 extension Draft where E: ProductEntity & Ordered { public init(new blank: E, placed: Placement) }
 public enum SaveResult<R: ProductRefusal>: Sendable {
-  case saved(CommitReceipt?)                               // nil: nothing needed writing
+  case saved(Receipt<CommitReceipt>?)                      // nil: nothing needed writing
   case refused(R)
   case failed(any Error)                                   // a store failure: nothing was written
 }
