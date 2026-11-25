@@ -421,7 +421,7 @@ resolves to `http://localhost:8088` outside a production build. Run the server o
 
 ```sh
 cmake --build build -j8
-ctest --test-dir build --output-on-failure       # four C++ suites and fourteen script checks
+ctest --test-dir build --output-on-failure       # four C++ suites and fifteen script checks
 ctest --test-dir build -V                        # …and their summary lines
 ```
 
@@ -451,7 +451,12 @@ with the CORS headers an allow-listed origin reads, logged once under its static
 or body, and the kept routes answer as they do unset. `subtree_inventory` checks the subtree inventory tool's refusals; under `WM_PG_TEST` it builds
 databases of its own beside `DATABASE_URL`'s, which the role must be allowed to create, and checks the
 counts the tool prints, that they name no tree, account or title, that the tool writes nothing, and that
-it counts a chain of 200,001 trees to its end. `roadmap_adopt` checks the roadmap adoption tool's refusals; under `WM_PG_TEST`
+it counts a chain of 200,001 trees to its end. `roadmaps_to_private` checks the refusals of the tool that moves unlisted
+roadmaps to private; under `WM_PG_TEST` it builds a database of its own beside `DATABASE_URL`'s, starts `windmill_server`
+on it with `ROADMAP_ENGINE_ENABLED` set, makes every roadmap by its owner's pushes, and checks that a dry run writes
+nothing, that a write moves exactly people's unlisted roadmaps, their subtrees' reach with them, while the owner's pull
+carries the change and a reader's answers `not-found`, that a second write writes nothing, that the house's roadmap is
+refused, and that nothing it prints names a roadmap, an account or a title. `roadmap_adopt` checks the roadmap adoption tool's refusals; under `WM_PG_TEST`
 it builds databases of its own beside `DATABASE_URL`'s from `db/schema.sql` and `test/platform/infra/roadmap_adopt_fixture.sql`
 and runs every stage on them: their counts, a second run that writes nothing, a run killed between stages and in the middle
 of its adoption, a stage refused beside another client, which it watches for from `DATABASE_URL`'s database, the rows
@@ -479,7 +484,7 @@ psql -h /tmp -d wm_rest_test -v ON_ERROR_STOP=1 -f db/schema.sql
 psql -h /tmp -d wm_sync_test -v ON_ERROR_STOP=1 -f db/schema.sql -f db/probe.sql
 WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
   WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" \
-  ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch|subtree_inventory|roadmap_adopt|server_stop|roadmap_routes)$' -V
+  ctest --test-dir build -R '^(domain|sync|adapters|mcp|sync_epoch|subtree_inventory|roadmaps_to_private|roadmap_adopt|server_stop|roadmap_routes)$' -V
 ```
 
 `windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product
@@ -536,7 +541,8 @@ dropdb -h /tmp wm_sync_test
 
 The Docker build runs `ctest` with no database beside it, so its Postgres cases skip. Backend CI's
 `postgres` job runs them: it loads the builder stage the `test` job built and runs the `domain`,
-`mcp`, `sync`, `adapters`, `sync_epoch`, `subtree_inventory`, `roadmap_adopt` and `server_stop` tests in one `ctest` run
+`mcp`, `sync`, `adapters`, `sync_epoch`, `subtree_inventory`, `roadmaps_to_private`, `roadmap_adopt`, `roadmap_routes` and
+`server_stop` tests in one `ctest` run
 under `WM_PG_TEST` against a Postgres 16 service
 with the same two-database setup above (`windmill_test` for `DATABASE_URL`, `windmill_sync_test` for
 `WM_SYNC_DATABASE_URL`). It then serves the stage's own `windmill_server_probe` on the sync database
