@@ -181,7 +181,7 @@ That order and that ceiling are both load-bearing: a closed loopback connection 
 
 ## A green local build is not a green CI
 
-macOS/Homebrew and the CI Linux image disagree on two things that compile green on one side and fail
+macOS/Homebrew and the CI Linux image disagree on three things that compile green on one side and fail
 on the other:
 
 - **libpqxx** names a result row `pqxx::row_ref` on macOS and `pqxx::row` on Linux. Read rows through
