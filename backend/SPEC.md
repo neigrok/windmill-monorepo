@@ -1244,8 +1244,8 @@ alive with no `opens`. It reads `DATABASE_URL`, prints one JSON object of counts
 else, and never writes. A failure prints one fixed sentence on stderr and exits 2 without
 `DATABASE_URL`, 1 otherwise. Its completion is `roadmap.subtree.inventory` (`OBSERVABILITY.md`). On
 production it runs inside the live server container through the **Ops · subtree inventory** workflow,
-which seals the counts to the owner's certificate before the public job log sees them
-(`deploy/README.md`).
+which seals the counts to the owner's certificate and keeps them as the run's artifact, out of the
+public job log (`deploy/README.md`).
 
 The read is `PgTreeRepository::eachAccountsTrees`: one statement over `trees` and the present pointers
 in `tree_nodes`, read through `tree_nodes_pointers_idx`, in a `READ ONLY` transaction. A cursor fetches

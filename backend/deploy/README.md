@@ -764,15 +764,18 @@ the tool never writes, and no credential leaves the host. Its one JSON object of
 private: this repository's logs are public, where few accounts hold pointers the counts are one
 person's structure, and the visibility counts are one person's private facts even with no pointers:
 where few people hold roadmaps, they say how someone shares theirs. So the runner seals them to
-`.github/ops/inventory-recipient.pem` as they arrive, and the job log shows the sealed block and the
-tool's completion line, nothing else. The certificate is public; its private key is the owner's and
-is kept out of the repository. On any failure the job prints no block and fails; against an image that
-does not carry the tool, it says so.
+`.github/ops/inventory-recipient.pem` as they arrive, and the job log shows the sealed file's size and
+sha256 and the tool's completion line, nothing else. The certificate is public; its private key is the
+owner's and is kept out of the repository. On any failure the job keeps no file and fails; against an
+image that does not carry the tool, it says so.
 
-To read the counts, save the block, from `-----BEGIN PKCS7-----` to `-----END PKCS7-----`, as
-`counts.pem`, and open it with the private key that belongs to the certificate:
+The artifact `subtree-inventory-<run id>-<attempt>` keeps `counts.pem` for a day, and this repository's
+artifacts are public: download it into a new folder, delete it at once
+(`gh api -X DELETE repos/<owner>/<repo>/actions/artifacts/<artifact id>`), check its sha256 against the log's, and
+open it with the private key that belongs to the certificate:
 
 ```sh
+gh run download <run id> -n subtree-inventory-<run id>-<attempt> -D "$(mktemp -d)"
 openssl smime -decrypt -inform PEM -inkey <key> -in counts.pem
 ```
 

@@ -3,7 +3,8 @@
 # Subtree inventory). The tool runs inside the live server container, reads the database that container already knows
 # and never writes. Where few accounts hold pointers its counts are one person's private structure, and the visibility
 # counts are one person's private facts even with no pointers. This repository's logs are public, so the counts are
-# sealed on the runner to the owner's certificate, .github/ops/inventory-recipient.pem, before anything is printed.
+# sealed on the runner to the owner's certificate, .github/ops/inventory-recipient.pem, and leave the runner only as
+# the run's artifact, never in the log, where GitHub would mask any stretch of the block that matches a secret.
 # Opening them is in backend/deploy/README.md.
 name: Ops · subtree inventory
 
@@ -59,9 +60,11 @@ jobs:
           SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
           set -euo pipefail
+          umask 077
           key=$(mktemp)
-          sealed=$(mktemp)
-          trap 'rm -f "$key" "$sealed"' EXIT
+          trap 'rm -f "$key"' EXIT
+          sealed="$RUNNER_TEMP/subtree-inventory"
+          mkdir "$sealed"
           printf '%s\n' "$SSH_KEY" > "$key"
           chmod 600 "$key"
           # The live server's counts, on stdout.
@@ -84,7 +87,17 @@ jobs:
           main < /dev/null
           REMOTE
           }
-          # The counts go from ssh straight into the seal, so no plaintext reaches a file or the log, and the sealed
-          # block is printed only once the whole pipe has succeeded.
-          count | openssl smime -encrypt -aes256 -binary -outform PEM -out "$sealed" .github/ops/inventory-recipient.pem
-          cat "$sealed"
+          # The counts go from ssh straight into the seal, so no plaintext reaches a file or the log. A pipe that fails
+          # fails the step, and the artifact step keeps nothing.
+          count | openssl smime -encrypt -aes256 -binary -outform PEM -out "$sealed/counts.pem" .github/ops/inventory-recipient.pem
+          printf 'counts.pem: %s bytes\n' "$(wc -c < "$sealed/counts.pem" | tr -d ' ')"
+          (cd "$sealed" && sha256sum counts.pem)
+
+      - name: Keep the sealed counts for a day
+        uses: actions/upload-artifact@v4
+        with:
+          name: subtree-inventory-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/subtree-inventory/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
