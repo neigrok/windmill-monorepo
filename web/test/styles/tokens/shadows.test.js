@@ -26,6 +26,6 @@ test('journal-dark and both gym focus rings retain their product values', () => 
   ]);
   assert.deepEqual(focusValues('../../../src/products/gym/gymTokens.css'), [
     '--focus-ring: 0 0 0 4px rgba(95, 205, 180, 0.4);',
-    '--focus-ring: 0 0 0 4px rgba(76, 67, 116, 0.4);',
+    '--focus-ring: 0 0 0 4px rgba(19, 122, 108, 0.4);',
   ]);
 });

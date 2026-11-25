@@ -12,8 +12,8 @@ export const gymLandingHead = {
   twitterDescription: t('gym.landingHead.shareDescription'),
   imageAlt: SHARE_CARD_ALT,
   fallback: {
-    // --accent-iris-600 in styles/tokens/palettes.css.
-    accent: '#4C4374',
+    // --accent-verdigris-600 in styles/tokens/palettes.css.
+    accent: '#137A6C',
     badge: t('gym.landing.hero.badge'),
     h1: t('gym.landing.hero.title'),
     sub: t('gym.landing.hero.sub'),

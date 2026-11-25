@@ -1413,9 +1413,9 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
     its decisions are design-system Buttons, as WD7 draws them: Reject Secondary, the workout's Apply Primary and a routine's
     Apply Secondary while a workout is open, an Apply saying *Applying…* while it waits and *Try again* after a failure;
     Coach's room and History keep 08W.25's pills. A block lists only the lines that change, as WD7 draws, but an added movement keeps
-    its three lines (Sets, Reps, Load) from the shared `ProposalDiff`, as WD7 now draws it. A load of zero reads *0 kg* on the card, as the shared vectors pin `ProposalDiff`, where WD7.1 draws
-    *bodyweight*, which the workout's index says for the same load (`gym.logbook.schemeBodyweight`): the owner may rule one
-    word for both. The sheet keeps the design system's grabber, as WD7's sheets draw it. Out of date, the card says
+    its three lines (Sets, Reps, Load) from the shared `ProposalDiff`, as WD7 now draws it. A load of zero reads *0 kg* on the card, as the shared vectors pin `ProposalDiff` and WD7.1 draws,
+    where the workout's index says *bodyweight* for the same load (`gym.logbook.schemeBodyweight`); the owner kept *0 kg*
+    (2026-11-26) and left one word for both to the dogfood node `gym-how-a-zero-load-reads`. The sheet keeps the design system's grabber, as WD7's sheets draw it. Out of date, the card says
     why in one sentence, of which WD7.3 draws only *You logged {movement} since this suggestion. Nothing was applied.*; the
     rest no board draws: the iPhone's *A newer suggestion replaced this one.*, *This workout changed after this
     suggestion.*, *This workout has finished.* and *You logged a movement since this suggestion.* (a refusal that names no
@@ -1428,10 +1428,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
     place of its Apply and Turn this down, as it says *The routine changed after this was written. Nothing was applied.* for
     a routine that moved; its component, *Gym / Coach / Inline proposal* (`575:5655`), draws no out-of-date state. The phone's Coach button
     reopens the sheet on the conversation the page holds while it has a turn running or a change to this workout waiting,
-    and on a fresh chat otherwise, which no board draws. The rail's *This workout* and *Coach* are the design-system `Tabs`
-    in their `line` variant, which the Design System file draws (`394:16`) and has not yet published, so the Gym file's
-    rails are frames rather than its instances; those frames draw the underline 8 px above the hairline, where the build and
-    the variant seat it on the hairline. The workout page leaves Coach out signed out,
+    and on a fresh chat otherwise, which no board draws. The workout page leaves Coach out signed out,
     where no board draws it. WD7's card replaces 08W.14's read-only row for a phone's workout proposal (`2126:11058`,
     `2126:11183`, 🗄 Archived).
   - *Edit movement (WD3.1).* It opens the movement's record, which renames it; the web has no form for its equipment.
