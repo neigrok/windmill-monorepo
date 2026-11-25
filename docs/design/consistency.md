@@ -325,7 +325,7 @@ and Android disagree.
   observation names: `GymTools.cpp` adds every week `get_stats` returns, empty ones included, and
   `ReadReceipt.cpp` each set's week. iOS counts weeks only from the workouts *What Coach read*
   lists and never prints `read.weeks`, so a totals-only answer reads *Read your movement history*
-  with no number; the web prints the server's weeks (`coach.js` `readLine`), and Android the weeks its own
+  with no number; the web prints the weeks its own receipt counts (`coach/CoachRoom.jsx` `receiptWords`), and Android the weeks its own
   receipt counts (`CoachReply.readLine`). The fix belongs to the backend: dogfood node `coach-receipt-weeks-provable`.
 - **10o · The page is the target.** The Gym iOS page holds the current target. 🚀 means the
   drawing matches verified implementation; 🔨 means implementation; ✅ means human-approved design
@@ -1372,18 +1372,43 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   boards for it (`368:645`) are rejected. With the approval, the Gym file's START HERE · Gym web (`804:5811`), which says
   the phone owns live training, is rewritten, and the 🚧 Plan / Routines / Training now boards (`1828:53034`,
   `1828:53151`, `1828:53298`, `1828:53416`), which draw the mirror's card that WD3.4 and WD4.1 replace, are archived.
-  Where the build of WD1–WD6 parts from the boards:
-  - *Coach during a workout (WD7).* The index draws *This workout* alone and the narrow toolbar no Coach button, and the
-    receipt has no *Share with Coach*: Coach on the web takes no handed question yet. Until it does, Coach speaks in
-    interim words no board draws, which claim nothing about a phone: closed while a workout is open, *Coach opens again
-    when this workout is over.*; its workout panel *This workout as logged so far. Nothing here logs a set.*; an empty
-    History *No conversations yet. What you ask Coach is listed here.* (`coach/CoachRoom.jsx`, `coach/History.jsx`). The
-    panel reads a planned set's load as *last* (`coach/coach.js`).
+  Where the build of WD1–WD7 parts from the boards:
+  - *Coach from the receipt.* The receipt has no *Share with Coach*: Coach on the web takes no handed question yet.
+  - *An empty History.* It says words no board draws, which claim nothing about a phone: *No conversations yet. What you
+    ask Coach is listed here.* (`coach/History.jsx`).
+  - *Coach during a workout (WD7).* A proposal's card keeps 08W.25's hairline between blocks, radius 12 and secondary
+    subtitle, which WD7 draws otherwise; its title and movement names are weight 600 on both cards. In the workout's Coach
+    its decisions are design-system Buttons, as WD7 draws them: Reject Secondary, the workout's Apply Primary and a routine's
+    Apply Secondary while a workout is open, an Apply saying *Applying…* while it waits and *Try again* after a failure;
+    Coach's room and History keep 08W.25's pills. A block lists only the lines that change, as WD7 draws, but an added movement keeps
+    its three lines (Sets, Reps, Load) from the shared `ProposalDiff`, where WD7 draws one *2 × 15 · 15* line: WD7 should
+    redraw it. A load of zero reads *0 kg* on the card, as the shared vectors pin `ProposalDiff`, where WD7.1 draws
+    *bodyweight*, which the workout's index says for the same load (`gym.logbook.schemeBodyweight`): the owner may rule one
+    word for both. The sheet keeps the design system's grabber, which WD7.1 · 390 should draw. Out of date, the card says
+    why in one sentence, of which WD7.3 draws only *You logged {movement} since this suggestion. Nothing was applied.*; the
+    rest no board draws: the iPhone's *A newer suggestion replaced this one.*, *This workout changed after this
+    suggestion.*, *This workout has finished.* and *You logged a movement since this suggestion.* (a refusal that names no
+    movement), and the web's own *This suggestion was already answered.*, *This change sets a load below what one of its
+    movements allows.* and *This suggestion is out of date.*, each closing *Nothing was applied.* The phone's Coach button
+    reopens the sheet on the conversation the page holds while it has a turn running or a change to this workout waiting,
+    and on a fresh chat otherwise, which no board draws. The rail's *This workout* and *Coach* are the design-system `Tabs`
+    in their `line` variant, which the Design System file does not draw yet. The workout page leaves Coach out signed out,
+    where no board draws it. WD7's card replaces 08W.14's read-only row for a phone's workout proposal (`2126:11058`,
+    `2126:11183`), which waits for its 🗄 Archived mark.
   - *Edit movement (WD3.1).* It opens the movement's record, which renames it; the web has no form for its equipment.
   - *A stale plan edit (WD5.1).* The drawn heading, *{movement} changed in another tab.*, stands also when a phone or
     Coach changed the plan.
-  - *The rest preference.* No board draws a control for the lifter's own rest target or rest sound on the web, so the web
-    reads them and writes neither; a movement's rest in this workout is Edit sets' *Rest*.
+  - *The rest preference.* The web reads the lifter's own rest target and rest sound and writes neither; a movement's rest
+    in this workout is Edit sets' *Rest*. WD10 (`2181:16061`, 🚧 awaiting the owner) draws both in Settings · Your
+    training log, and the Shell file's Settings signed out (`390:2417`, 🚧) draws the same rows signed out.
+  - *Where WD10 meets the phones.* Neither phone sets `restSeconds` or `restSound`: the shared vector "phone creates only
+    its three preferences" and engine.md (*Phones edit units, confirmHaptic, confirmSound*) pin that. No shared vector
+    covers `RestTarget.of`, which every surface reads the default through while it draws, so a changed default reaches
+    an open workout's movements on Default. The iPhone gates the rest-reached haptic on `confirmHaptic` where WD2.4 gates
+    the web's tone on `restSound`. The web's Settings keeps Units, which the phones dropped (9r).
+  - *The web's settings words.* `gym.settings.notSaved` is written lower-case at the section's foot where the gym's other
+    sentences are capitalised; the journal's export downloads a file holding only its title when there are no pages, and
+    then says *No pages to export yet.*, where Settings signed out (SO5) draws no button at all.
 ### Sets · product direction
 
 Sets have no type on any surface. Targets are references: actual weight/reps remain independent for every set, including extra or
@@ -1660,8 +1685,6 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     scrim reads #5e5c5b against the board's #6a6866.
   - *Proposal diff.* The review sheet writes a load change as *30kg → 32.5kg*, with no space before
     the unit (`ui/ReviewSheet.kt:384` over `presentation/Proposal.kt`); every other Android readout spaces it.
-  - *Web planned rows.* Android, iOS and the web's workout page read a planned row at the load the plan expects
-    (*100 kg total × max*); Coach's workout panel on the web still reads *last × max* (`web/src/products/gym/coach/coach.js`).
 - **11w · An answer's proposal still arriving (designer, design brief QW2, task 103).** On the phone that ran a turn its
   proposal commits with its call, so the card stands with the answer. A conversation synced from another phone can land an
   answer before its proposal. Android then says *Reading proposal…* until a read misses, and until the miss settles draws
@@ -2185,6 +2208,16 @@ Android. It and the product differ in these places.
 - **A list in the sign-in question.** WD9 writes *1 workout, 2 routines and 3 weigh-ins*; the web joins the kinds with
   the locale's list rule, as roadmap's landing lines do, and English's rule writes *1 workout, 2 routines, and 3
   weigh-ins*.
+- **Board status chips.** The Gym file's Board status set (`802:11855`) has Built, Ready, Archived, In progress and
+  Proposal: a 🔨 In dev board wears Ready and a 🚀 In production board wears Built. The WD parts section
+  (`2150:11608`) says its parts join Components · Gym web when the build lands; WD1–WD9 are built and the parts stay
+  local. The Shell file's ✅ section *Where to start? · the Roadmap door* (`326:7899`) holds boards named 🔨 In dev
+  (`326:7900`, `326:7971`).
+- **The Design System's Select** (`294:129`) draws rows about 100 px tall, where `forms/Select.jsx` draws compact ones;
+  WD3.2 and WD10 draw a compact local part.
+- **The Shell file's Settings boards.** Board 21 (`2:203`) lags the code (no Back, another Profile section, no Notes
+  door), and boards 21 and 30 (`2:464`) show a real account's name and email where boards use example data. The Gym
+  file's signed-in WD frames draw the signed-out seat in the head.
 
 - **Coach setup chrome.** The Design System's `iOS / Tab bar · Gym` (`118:93`) now draws Routines as
   `list.bullet.rectangle`, like the app; the Gym boards show it once the owner publishes the Design

@@ -9,11 +9,9 @@ import { AbilityRefusals } from '../domain/coach/conversation.js';
 // every app ships as they are.
 export const COACH_WORDS = Object.freeze({ prompt, firstContent, refusals });
 
-// The web offers no workout proposal: its room is closed while a workout is open (gym Coach on the AI service §3).
-const NOT_ON_THE_WEB = Object.freeze(['propose_workout_change']);
-
 const GROUPS = Object.freeze([
   { name: 'routine-proposal', tools: ['propose_routine_change', 'propose_routine_removal'], maxSuccesses: 1, code: 'one-proposal' },
+  { name: 'workout-proposal', tools: ['propose_workout_change'], maxSuccesses: 1, code: 'one-proposal' },
   { name: 'note', tools: ['save_note'], maxSuccesses: 1, code: 'one-note' },
 ]);
 
@@ -32,7 +30,7 @@ export class GymProfile {
 
   /** @param {'bound' | 'anon'} seat */
   of(seat) {
-    const tools = this.catalog.offered(seat).filter((ability) => !NOT_ON_THE_WEB.includes(ability.name));
+    const tools = this.catalog.offered(seat);
     const offered = new Set(tools.map((ability) => ability.name));
     return {
       name: GymProfile.name,
@@ -65,10 +63,10 @@ export class GymProfile {
     return `${this.words.firstContent.contextLeads[ability]}\n${new TextDecoder().decode(result)}`;
   }
 
-  // The sentence beside each code the model may read. `one-proposal` names its target, the web's one proposal being a
-  // routine's; `invalid-input` and the executor's own codes have no sentence in the words, so the model reads the code.
+  // The sentence beside each code the model may read. `one-proposal` names no target, since one code answers both groups;
+  // `invalid-input` and the executor's own codes have no sentence in the words, so the model reads the code.
   sentences() {
-    const said = { ...this.words.refusals, 'one-proposal': this.words.refusals['one-proposal'].replace('{target}', 'routine') };
+    const said = { ...this.words.refusals, 'one-proposal': this.words.refusals['one-proposal'].replace('{target}', 'routine or workout') };
     for (const code of [...Object.values(AbilityRefusals), 'one-note']) if (!Object.hasOwn(said, code)) said[code] = '';
     return said;
   }

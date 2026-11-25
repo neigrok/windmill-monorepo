@@ -31,7 +31,7 @@ import { Session, SessionRules, SetRules, TrainingSet } from './domain/training.
 import { AppendSet, CorrectedSet, CorrectSession, CorrectSet, DeleteSet, ImportedSet, ImportSession } from './domain/trainingActions.js';
 import { AdoptWorkout, ReconcileAdoptedWorkouts, SignedOutWorkout } from './domain/workoutAdoption.js';
 import { DiscardSignedOutWorkout, RecoverStrandedSets, SaveRefusedStart, WorkoutFix, WorkoutRecovery } from './domain/workoutRecovery.js';
-import { ReissueWorkoutProposal } from './domain/workoutProposals.js';
+import { ApplyWorkoutProposal, DismissWorkoutProposal, ReissueWorkoutProposal, WorkoutProposal } from './domain/workoutProposals.js';
 import { TrainingLog } from './domain/trainingReads.js';
 import { PlanOperations } from './domain/workoutPlan.js';
 import { FinishWorkout, LogRackSet, ReviseWorkout, SettleRack, StartWorkout, TurnRack } from './domain/workoutRack.js';
@@ -48,7 +48,8 @@ const SCOPE = 'self/gym';
 const OPERATIONS = new Set(['routine-create', 'routine-save', 'exercise-create', 'exercise-rename',
   'preferences-save', 'note-save', 'note-reorder', 'bodyweight-save', 'set-correct', 'delete', 'undo',
   'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'workout-adopt', 'workout-recover', 'refusal',
-  'workout-start', 'rack-settle', 'rack-turn', 'set-log', 'plan-revise', 'workout-finish', 'pop-out']);
+  'workout-start', 'rack-settle', 'rack-turn', 'set-log', 'plan-revise', 'workout-finish', 'pop-out',
+  'workout-proposal-apply', 'workout-proposal-dismiss']);
 const OUTCOMES = new Set(['saved-local', 'unchanged', 'failed', 'held', 'undone', 'closed', 'refused']);
 // What refused a write: the replica moved under the room, or the gym's rules, this device's or the server's.
 const REFUSED_BY = new Set(['not-writable', 'domain']);
@@ -96,6 +97,117 @@ const WORKOUT_STEPS = new Set(['gym_session_started', 'gym_set_logged', 'gym_ses
 export function workoutStep(name, props) {
   if (!WORKOUT_STEPS.has(name) || Object.entries(props).some(([key, value]) => !WORKOUT_LABELS[key]?.includes(value))) return;
   try { track(name, props); } catch { /* reporting cannot stop a workout */ }
+}
+
+// Coach's steps (WD7) under the iPhone's names and values (docs/IOS_OBSERVABILITY.md), each property one of a closed set of
+// labels: never a name or an id of a workout, a routine, a movement or a proposal, and never Coach's words. `gym_action` is
+// Coach opened over the workout on a fresh chat; `gym_proposal_outcome` is how a decision on a proposal ended
+// (`AwaitedDecisions`), the web adding to a failed one the log's reason (`decisionRefusal`).
+const DECISION_REASONS = Object.freeze(['replaced', 'workout-changed', 'workout-moved', 'workout-finished', 'routine-changed', 'settled', 'invalid',
+  'gone', 'other']);
+const COACH_LABELS = Object.freeze({
+  gym_action: { screen: ['coach'], action: ['new_chat'], door: ['workout'], outcome: ['ok'] },
+  gym_proposal_outcome: { screen: ['coach'], target: ['workout', 'routine'], action: ['apply', 'reject'], outcome: ['decided', 'refused', 'failed', 'stalled'],
+    reason: DECISION_REASONS },
+});
+export function coachStep(name, props) {
+  const labels = COACH_LABELS[name];
+  if (!labels || Object.entries(props).some(([key, value]) => !labels[key]?.includes(value))) return;
+  try { track(name, props); } catch { /* reporting cannot stop Coach */ }
+}
+
+// Why the log, or this device's copy of its rules, refused a decision on a proposal, as its card says it and its event tells
+// it: what a superseded proposal names, a movement logged since (and which, when the refusal names it), a workout finished
+// before the change itself reached the log, a proposal already decided, a load under a movement's floor, which the log
+// refuses as `invalid`, a record gone, or anything else.
+const SUPERSEDED = new Set(['replaced', 'workout-changed', 'workout-moved', 'workout-finished', 'routine-changed']);
+export function decisionRefusal(code, detail) {
+  if (code === 'proposal-superseded') return { reason: SUPERSEDED.has(detail?.reason) ? detail.reason : 'other', exerciseId: null };
+  if (code === 'plan-logged') return { reason: 'workout-moved', exerciseId: typeof detail?.exerciseId === 'string' ? detail.exerciseId : null };
+  return { reason: { 'session-finished': 'workout-finished', 'proposal-settled': 'settled', invalid: 'invalid', 'unknown-record': 'gone', 'record-dead': 'gone' }[code]
+    ?? 'other', exerciseId: null };
+}
+
+// The commands that decide a proposal, by what it changes.
+const DECISIONS = Object.freeze({
+  workout: { entity: WorkoutProposal, apply: 'gym.applyWorkoutProposal', reject: 'gym.dismissWorkoutProposal' },
+  routine: { entity: Proposal, apply: 'gym.applyProposal', reject: 'gym.dismissProposal' },
+});
+const decides = (command, target, record) => [DECISIONS[target].apply, DECISIONS[target].reject].includes(command?.name)
+  && command.args?.proposalId === record;
+
+// The log's latest refusal, still standing, of a decision on the proposal `record`, among the scope's notices: the
+// decision's own, or the refusal of the change itself, into which the decision that named it folded.
+export function refusedDecision(notices, target, record) {
+  return notices.findLast((notice) => !notice.dismissed && [notice.content?.cmd, ...(notice.content?.dependents ?? []).map((part) => part.cmd)]
+    .some((command) => decides(command, target, record))) ?? null;
+}
+
+// The decisions on proposals this page made that the log has yet to answer. Each is told once, by this page, as the iPhone
+// tells it: decided once the log took it, failed with the log's reason once it refused it, and a routine's not answered in
+// 15 s told stalled once besides. A reload, a remount or another tab tells nothing of it.
+const STALL_MS = 15_000;
+class AwaitedDecisions {
+  constructor(engine) {
+    this.engine = engine;
+    this.waiting = new Map();
+    this.hold = null;
+  }
+
+  // `decision` is `{ target, record, action, read, tell }`: the proposal decided, as the API that decided it reads the
+  // copy and tells its step.
+  wait(decision) {
+    const key = `${decision.target}:${decision.record}`;
+    this.forget(key);
+    const entry = { ...decision, stall: null };
+    if (decision.target === 'routine') entry.stall = setTimeout(() => { if (this.waiting.get(key) === entry) entry.tell({ outcome: 'stalled' }); }, STALL_MS);
+    this.waiting.set(key, entry);
+    if (this.hold === null) {
+      this.hold = this.engine.observe(SCOPE);
+      this.hold.subscribe(() => this.settle());
+    }
+    this.settle();
+  }
+
+  settle() {
+    const notices = this.hold?.getSnapshot()?.notices ?? [];
+    for (const [key, entry] of [...this.waiting]) {
+      let answer;
+      try { answer = entry.read((reader) => logAnswer(reader, notices, entry)); }
+      catch { answer = undefined; }
+      if (answer === null) continue;
+      this.forget(key);
+      if (answer) entry.tell(answer);
+    }
+    if (this.waiting.size === 0 && this.hold !== null) {
+      this.hold.release();
+      this.hold = null;
+    }
+  }
+
+  forget(key) {
+    const entry = this.waiting.get(key);
+    if (!entry) return;
+    clearTimeout(entry.stall);
+    this.waiting.delete(key);
+  }
+}
+
+// The log's answer to a decision this page queued, or null while it waits: decided once the log took it or the proposal
+// reads as decided, failed with the reason its refusal gives otherwise.
+function logAnswer(reader, notices, { target, record, action }) {
+  const { entity, [action]: name } = DECISIONS[target];
+  const queued = reader.commands().find((each) => each.command.name === name && each.command.args?.proposalId === record);
+  if (queued) return queued.isAdmitted ? { outcome: 'decided' } : null;
+  if (reader.repository(entity).find(new Id(record, entity), 'stored')?.state === (action === 'apply' ? 'applied' : 'dismissed')) return { outcome: 'decided' };
+  const refused = refusedDecision(notices, target, record);
+  return { outcome: 'failed', reason: refused ? decisionRefusal(refused.code, refused.detail).reason : 'other' };
+}
+
+const awaitedDecisions = new WeakMap();
+function decisionsOf(engine) {
+  if (!awaitedDecisions.has(engine)) awaitedDecisions.set(engine, new AwaitedDecisions(engine));
+  return awaitedDecisions.get(engine);
 }
 
 // A failure goes to Sentry under its static operation with the error's stack frames, never its message.
@@ -276,7 +388,8 @@ const notWritable = () => new GymRefusal('not-writable', { sentence: t('gym.runt
 
 // The API stands on the engine's binding as it is made: the replica's storage and its account, which a re-identify keeps.
 // A sign-in or a sign-out changes it, the anon replica bound in place included, and every read and write then is refused.
-export function createGymApi(engine, { event = gymStep, recovered = gymRecovery, told = workoutStep, failure = gymFailure, zone = deviceZone } = {}) {
+export function createGymApi(engine, { event = gymStep, recovered = gymRecovery, told = workoutStep, coached = coachStep, failure = gymFailure,
+  zone = deviceZone } = {}) {
   const owner = engine.activeBinding();
   if (shownRemovals.get(engine)?.owner !== owner) shownRemovals.set(engine, { owner, proposals: new Map() });
   const shown = shownRemovals.get(engine).proposals;
@@ -419,16 +532,47 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
     if (receipt) return removalDocument(reader, receipt);
     return reviewDocument(reader, reader.repository(Proposal).find(new Id(record, Proposal), 'drawn')) ?? shown.get(record) ?? null;
   };
+  // A decision on a proposal, told as the iPhone tells it (`gym_proposal_outcome`): one that queued its command waits for the
+  // log's answer (`AwaitedDecisions`); one that wrote nothing, the proposal standing as asked already, is decided, unless a
+  // decision of another page waits on the log and tells it; one the rules refused is refused for a load under a movement's
+  // floor and failed with its reason otherwise; one that broke is failed.
+  const decision = (target, record, applying) => {
+    const action = applying ? 'apply' : 'reject';
+    const tell = (answer) => coached('gym_proposal_outcome', { screen: 'coach', target, action, ...answer });
+    return {
+      tell,
+      answered: (outcome) => {
+        if (outcome.kind === 'committed') {
+          decisionsOf(engine).wait({ target, record, action, read, tell });
+          return;
+        }
+        if (outcome.kind === 'unchanged') {
+          if (!read((reader) => reader.commands().some((each) => decides(each.command, target, record)))) tell({ outcome: 'decided' });
+          return;
+        }
+        const refused = outcome.refusal;
+        tell(refused.kind === 'invalid' ? { outcome: 'refused' } : { outcome: 'failed', reason: decisionRefusal(refused.refused?.code, refused.refused?.detail).reason });
+      },
+    };
+  };
   const decideProposal = (record, applying) => boundary(applying ? 'proposal-apply' : 'proposal-dismiss', async () => {
     const id = new Id(record, Proposal);
     const action = applying ? ApplyProposalKeepingReceipt(id) : DismissProposal(id);
-    const outcome = await runner.run({ ...action,
-      load: (reader) => ({ loaded: action.load(reader), current: proposal(reader, record) }),
-      decide: ({ loaded, current }) => {
-        const decided = action.decide(loaded);
-        return decided.kind === 'unchanged' ? Decision.unchanged(current) : decided;
-      },
-    });
+    const step = decision('routine', record, applying);
+    let outcome;
+    try {
+      outcome = await runner.run({ ...action,
+        load: (reader) => ({ loaded: action.load(reader), current: proposal(reader, record) }),
+        decide: ({ loaded, current }) => {
+          const decided = action.decide(loaded);
+          return decided.kind === 'unchanged' ? Decision.unchanged(current) : decided;
+        },
+      });
+    } catch (thrown) {
+      step.tell({ outcome: 'failed' });
+      throw thrown;
+    }
+    step.answered(outcome);
     if (outcome.kind === 'refused') throw gymRefusalError(outcome.refusal);
     event(applying ? 'proposal-apply' : 'proposal-dismiss', outcome.kind === 'committed' ? 'saved-local' : 'unchanged');
     const observed = read((reader) => proposal(reader, record));
@@ -436,6 +580,28 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
     return { proposal: outcome.kind === 'unchanged' && outcome.result
       ? { ...outcome.result, ...(observed?.createdAt === undefined ? {} : { createdAt: observed.createdAt }) } : observed };
   });
+  // Coach's change to the open workout, decided on its card (WD7): Apply rewrites the workout's plan and never a logged
+  // movement, Reject sets the change aside. The card reads what the decision left from the copy: a refusal whose cause the
+  // copy shows, the proposal already decided or out of date, answers nothing more; any other refusal throws, for the card
+  // to say why, and an unexpected failure also goes to Sentry.
+  const decideWorkoutProposal = async (record, applying) => {
+    const id = new Id(record, WorkoutProposal);
+    const step = decision('workout', record, applying);
+    let outcome;
+    try {
+      outcome = await runner.run(applying ? ApplyWorkoutProposal(id) : DismissWorkoutProposal(id));
+    } catch (thrown) {
+      const moved = thrown instanceof ReplicaChanged || (thrown instanceof CommitError && thrown.kind === 'not-writable');
+      const error = moved ? notWritable() : thrown;
+      step.tell({ outcome: 'failed' });
+      if (!(error instanceof GymRefusal) && !isStoreFailure(error)) failure(applying ? 'workout-proposal-apply' : 'workout-proposal-dismiss', error);
+      throw error;
+    }
+    step.answered(outcome);
+    if (outcome.kind !== 'refused') return;
+    const refused = gymRefusalError(outcome.refusal);
+    if (!['proposal-superseded', 'proposal-settled'].includes(refused.code)) throw refused;
+  };
   // Every notice of gym's scope as the domain reads it; the review hears only the live ones.
   const recoveryNotices = () => engine.observe(SCOPE).getSnapshot().notices.map((notice) => new DomainNotice(notice, engine.registry, GymRefusals));
   const reviewOf = (reader) => WorkoutRecovery.review(SignedOutWorkout.read(reader), recoveryNotices(), new TrainingLog(reader), new Catalogue(reader));
@@ -646,6 +812,8 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
     proposal: async (record) => read((reader) => proposal(reader, record)),
     applyProposal: (record) => decideProposal(record, true),
     dismissProposal: (record) => decideProposal(record, false),
+    applyWorkoutProposal: (record) => decideWorkoutProposal(record, true),
+    dismissWorkoutProposal: (record) => decideWorkoutProposal(record, false),
     removalReceipts: async () => read((reader) => removalReceipts(reader).map((receipt) => removalDocument(reader, receipt))),
     removalReceiptShown: (record, replica, expectedOutcome = null) => boundary('proposal-apply', async () => {
       if (replica !== owner) return;

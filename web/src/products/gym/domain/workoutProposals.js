@@ -51,6 +51,11 @@ export class WorkoutProposalValue {
   }
 
   get document() { return RoutineChange.document(this.changes); }
+
+  // The count its card, History and its receipt say: the log's once it has counted, else every line that is not kept and
+  // every kept line that moves in the plan it changes.
+  /** @param {readonly RoutineEntry[]} base */
+  countChanges(base) { return this.changeCount ?? RoutineChange.count(base, this.changes); }
 }
 
 /** @type {EntityType<WorkoutProposalValue, string>} */

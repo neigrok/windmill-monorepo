@@ -16,7 +16,8 @@ recovery and Coach onboarding import in the web's domain, which claims every fil
 web: the shell's hook before the seat changes saves each signed-out workout for adoption, an open one with its sets, the
 rack having been written as it changed; gym's device work and its merge, the question's count, the recovery of
 a workout the account cannot take in The log, a proposal issued again and the copies the account took let go. Gym's
-Coach takes its turn in the browser. The browser
+Coach takes its turn in the browser and is open during a workout, beside the rack on a desk and over it on a phone,
+where it proposes a change to the workout that the person applies on the browser's copy (§4). The browser
 counts a store it cleared (§7) once, with its event. A browser that cannot keep a copy is not supported (§7, R-7), and
 every sign-out forgets the journal's pages no account claims (R-9). The
 boards for a workout on the web and the signed-out gym are approved (R-10). The build order lives in the Web as a device roadmap tree, which the dogfood tree

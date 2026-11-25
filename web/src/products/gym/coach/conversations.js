@@ -4,22 +4,21 @@ import { CoachPictureRow, Mark } from '../domain/coach/turn.js';
 import { Proposal } from '../domain/proposals.js';
 import { ProposalDiff } from '../domain/proposalDiff.js';
 import { Routine } from '../domain/routines.js';
-import { WorkoutProposal } from '../domain/workoutProposals.js';
+import { Session } from '../domain/training.js';
+import { WorkoutProposal, WorkoutProposalState } from '../domain/workoutProposals.js';
 import { CONTEXT_CALL_PREFIX } from './turnHost.js';
 
 // What a Coach message made, from the records its calls created: the routines, still standing, with their movements;
-// the routine proposals, for their card; the workout proposals a phone made, with their count of changes.
+// the routine proposals and the workout proposals, this browser's or a phone's, each for its card.
 function made(read, message) {
   const created = message.calls.filter((call) => call.isOk).flatMap((call) => call.created);
   const of = (type) => created.filter((ref) => ref.t === type).map((ref) => String(ref.id));
   const routines = read.repository(Routine);
-  const workouts = read.repository(WorkoutProposal);
   return {
     routines: of(Routine.type).map((id) => routines.find(new Id(id, Routine), 'drawn'))
       .filter((routine) => routine !== null).map((routine) => ({ id: routine.id.record, name: routine.name, movements: routine.entries.length })),
     proposals: [...new Set(of(Proposal.type))],
-    workoutProposals: of(WorkoutProposal.type).map((id) => workouts.find(new Id(id, WorkoutProposal), 'drawn'))
-      .filter((proposal) => proposal !== null).map((proposal) => ({ id: proposal.id.record, changes: proposal.changeCount ?? proposal.changes.length })),
+    workoutProposals: [...new Set(of(WorkoutProposal.type))],
   };
 }
 
@@ -64,6 +63,19 @@ export function conversationView(read, threadId, runningHere) {
   };
 }
 
+// Whether the conversation `threadId` holds a change to the workout `sessionId` that waits on the person: one a message of
+// it made, pending, which the workout can still take.
+export function holdsUndecidedChange(read, threadId, sessionId) {
+  const thread = read.repository(CoachThread).find(new Id(threadId, CoachThread), 'drawn');
+  if (thread === null || sessionId === null) return false;
+  const proposals = read.repository(WorkoutProposal);
+  return read.repository(CoachMessage).children(thread.id, 'threadId', 'drawn').filter((message) => message.isCoach)
+    .flatMap((message) => made(read, message).workoutProposals)
+    .map((id) => proposals.find(new Id(id, WorkoutProposal), 'drawn'))
+    .some((proposal) => proposal !== null && proposal.sessionId.record === sessionId && proposal.state === 'pending'
+      && WorkoutProposalState.of(read, proposal.id).outOfDate === null);
+}
+
 // History, one list with the phones (gym Coach on the AI service §5): every conversation, newest first, with its first
 // question as its title and what its last turn made, or the first words of its last answer.
 export function historyRows(read) {
@@ -75,12 +87,14 @@ export function historyRows(read) {
   }
   const proposals = read.repository(Proposal);
   const routines = read.repository(Routine);
+  const workouts = read.repository(WorkoutProposal);
   return read.repository(CoachThread).all('drawn').map((thread) => {
     const messages = new Conversation(byThread.get(thread.id.record) ?? []).messages;
     const last = messages.at(-1);
     const answer = [...messages].reverse().find((message) => message.isCoach) ?? null;
     const making = answer === null ? null : made(read, answer);
     const proposal = making?.proposals.map((id) => proposals.find(new Id(id, Proposal), 'drawn')).find((value) => value) ?? null;
+    const workout = making?.workoutProposals.map((id) => workouts.find(new Id(id, WorkoutProposal), 'drawn')).find((value) => value) ?? null;
     return {
       id: thread.id.record,
       title: thread.title,
@@ -88,8 +102,8 @@ export function historyRows(read) {
       line: making === null ? null
         : making.routines.length ? { kind: 'created', count: making.routines.length }
           : proposal ? { kind: 'proposal', routine: proposal.baseName ?? routines.find(proposal.routineId, 'drawn')?.name ?? '',
-            count: new ProposalDiff(proposal, routines.find(proposal.routineId, 'drawn')).blocks.length }
-            : making.workoutProposals.length ? { kind: 'workout', count: making.workoutProposals[0].changes }
+            count: ProposalDiff.ofRoutine(proposal, routines.find(proposal.routineId, 'drawn')).blocks.length }
+            : workout ? { kind: 'workout', count: workout.countChanges(read.repository(Session).find(workout.sessionId, 'stored')?.plan?.entries ?? []) }
               : answer.text ? { kind: 'words', text: answer.text.split('\n')[0] } : null,
     };
   }).sort((a, b) => b.at - a.at || (a.id < b.id ? 1 : -1));

@@ -153,7 +153,6 @@ test('Coach is a tab root: a column in the rail, no back link, History its rail 
   assert.equal((head.match(/label: t\('gym\.coach\.notes'\)/g) ?? []).length, 1);
   assert.equal(catalog['gym.coach.notes'], 'Notes');
   assert.equal(room.includes('<HistoryList rows={rows} current={threadId}'), true);
-  assert.equal(speech('coach/CoachRoom.jsx').includes('Coach opens again when this workout is over.'), true);
   const said = (file) => [...read(file).matchAll(/\bt\('([\w.]+)'/g)].map(([, key]) => catalog[key]).join('\n');
   assert.equal(/phone/i.test(`${said('coach/CoachRoom.jsx')}\n${said('coach/History.jsx')}`), false, 'Coach on the web claims nothing about a phone');
   assert.equal(read('Proposals.jsx').includes('gym-coach-aside'), false, 'proposal review remains inline');

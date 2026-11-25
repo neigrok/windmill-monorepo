@@ -1,9 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  ArrowLeftRight as SwapIcon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock3, Dumbbell, List, Minus, Pencil, Plus, Timer,
+  ArrowLeftRight as SwapIcon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock3, Dumbbell, List, MessagesSquare, Minus, Pencil, Plus,
+  Timer,
 } from 'lucide-react';
-import { Button, Menu, Sheet } from '../../../design-system/index.js';
+import { Button, Menu, Sheet, Tabs } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
+import { useWorkoutConversation, WorkoutCoach } from '../coach/CoachRoom.jsx';
 import { WeightLadder } from '../domain/units.js';
 import { failureReason } from '../errors.js';
 import { fixFailure } from '../fix.js';
@@ -23,11 +25,12 @@ import '../planning/planning.css';
 import './workout.css';
 
 // The workout page (#/gym/workout): the account's open workout on this browser's copy, whichever device started it, and
-// the receipt of one it just finished. Every change is the domain's action on the copy, one write each.
+// the receipt of one it just finished. Every change is the domain's action on the copy, one write each. Coach is open
+// beside it while an account is settled (WD7); signed out, Coach is left out, not greyed.
 export function WorkoutPage({ hash, log, signedIn = false }) {
   const receipt = receiptIdOf(hash);
   if (receipt) return <Receipt key={receipt} id={receipt} log={log} signedIn={signedIn} />;
-  return <OpenWorkout log={log} />;
+  return <OpenWorkout log={log} signedIn={signedIn} />;
 }
 
 // The server's time, read again on every animation frame while the tab is shown and drawn once a second: a hidden tab's
@@ -142,7 +145,36 @@ function useRestTold(api, view) {
   }, [api, due, setId]);
 }
 
-function OpenWorkout({ log }) {
+// The rail's Coach stands as tall as the page's scroller leaves below its top, at most the board's 783, so its composer stays
+// clear of the tab rail under the page at any height (WD7.1 · 1440).
+function useFitBelow(panel, shown) {
+  useLayoutEffect(() => {
+    const node = panel.current;
+    const scroller = node?.closest('.gym-scroll');
+    if (!shown || !scroller) return undefined;
+    const fit = () => {
+      const top = node.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+      node.style.setProperty('--gym-live-coach-height', `${Math.min(783, Math.max(420, scroller.clientHeight - top - 24))}px`);
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, [panel, shown]);
+}
+
+// A movement's scheme in the index: a plan of the same reps at zero load on every set reads as bodyweight, as The log reads
+// it; any other, its plan's reading.
+function indexScheme(entry) {
+  const sets = entry.sets ?? [];
+  const first = sets[0];
+  if (typeof first?.reps === 'number' && sets.every((set) => set.weightKg === 0 && set.reps === first.reps)) {
+    return t('gym.logbook.schemeBodyweight', { sets: sets.length, reps: first.reps });
+  }
+  return entryLabel(entry);
+}
+
+function OpenWorkout({ log, signedIn }) {
   const api = useGymApi();
   const narrow = useNarrow();
   const read = useDomainRead(workoutView);
@@ -150,6 +182,14 @@ function OpenWorkout({ log }) {
   const now = useServerNow(api);
   const [panel, setPanel] = useState(null);
   const [index, setIndex] = useState(false);
+  // Coach over the workout (WD7.1): the rail's tab beside the rack on a desk, a sheet over it on a phone, which closing leaves
+  // as it was, and one conversation for the life of this page, whichever shows it.
+  const [side, setSide] = useState('workout');
+  const [sheet, setSheet] = useState(false);
+  const coach = useWorkoutConversation(view?.id ?? null);
+  const coachPanel = useRef(null);
+  useFitBelow(coachPanel, !narrow && side === 'coach');
+  useEffect(() => { if (!narrow) setSheet(false); }, [narrow]);
   const [firstClosed, setFirstClosed] = useState(false);
   const leaving = useRef(false);
   const ready = Boolean(api?.ready) && read.phase === 'ready';
@@ -232,9 +272,8 @@ function OpenWorkout({ log }) {
   const pickerTitle = panel?.kind === 'swap' ? t('gym.workout.swapTitle', { movement: movementName(panel.exerciseId) }) : t('gym.workout.addMovement');
   const close = () => { setPanel(null); setFirstClosed(true); };
   // The movements and Add movement: the index beside the pane on a desk, a sheet on a phone.
-  const movementIndex = (
-    <div className="gym-live-index-card">
-      <p className="gym-live-tab"><span>{t('gym.workout.thisWorkout')}</span></p>
+  const movementList = (
+    <>
       <ul className="gym-live-movements">
         {view.movements.map((movement) => (
           <li key={movement.exerciseId}>
@@ -243,7 +282,7 @@ function OpenWorkout({ log }) {
               onClick={() => { setIndex(false); setPanel(null); select(movement.exerciseId); }}>
               <span className="gym-live-movement-words">
                 <span className="gym-live-movement-name">{movementName(movement.exerciseId)}</span>
-                {movement.entry && <span className="gym-live-movement-scheme">{entryLabel(movement.entry)}</span>}
+                {movement.entry && <span className="gym-live-movement-scheme">{indexScheme(movement.entry)}</span>}
               </span>
               <SetRail ticks={movement.ticks} />
             </button>
@@ -253,8 +292,26 @@ function OpenWorkout({ log }) {
       <button type="button" className="gym-live-add" onClick={() => { setIndex(false); setPanel({ kind: 'add' }); }}>
         <Plus size={16} aria-hidden="true" /> {t('gym.workout.addMovement')}
       </button>
-    </div>
+    </>
   );
+  const thisWorkout = <p className="gym-live-tab"><span>{t('gym.workout.thisWorkout')}</span></p>;
+  const movementIndex = <nav className="gym-live-index-card" aria-label={t('gym.workout.thisWorkout')}>{movementList}</nav>;
+  // On a desk the rail's Tabs switch This workout to Coach beside the rack (WD7.1 · 1440); both panels stay, the one not
+  // chosen hidden. Signed out, Coach is left out and the rail is this workout's movements alone.
+  const rail = signedIn ? (
+    <div className="gym-live-index">
+      <Tabs variant="line" label={t('gym.workout.railTabs')} panels="gym-live-side" value={side}
+        onChange={(chosen) => { setSide(chosen); if (chosen === 'coach') coach.enter('tab'); }}
+        tabs={[{ value: 'workout', label: t('gym.workout.thisWorkout') }, { value: 'coach', label: t('gym.coach.title') }]} />
+      <div className="gym-live-side" role="tabpanel" id="gym-live-side-workout-panel" aria-labelledby="gym-live-side-workout" hidden={side !== 'workout'}>
+        {movementIndex}
+      </div>
+      <div className="gym-live-side is-coach" ref={coachPanel} role="tabpanel" id="gym-live-side-coach-panel" aria-labelledby="gym-live-side-coach"
+        hidden={side !== 'coach'}>
+        {coach.held && <WorkoutCoach log={log} thread={coach.thread} onThread={coach.open} />}
+      </div>
+    </div>
+  ) : <div className="gym-live-index">{thisWorkout}{movementIndex}</div>;
   // The picker, or Edit sets: in the task pane on a desk, a sheet on a phone.
   const panelBody = (
     <>
@@ -285,6 +342,8 @@ function OpenWorkout({ log }) {
           <a className="gym-live-tool" href={ROUTINES_HREF} aria-label={t('gym.workout.hide')}><ChevronDown size={18} aria-hidden="true" /></a>
           <button type="button" className="gym-live-tool" aria-label={t('gym.workout.thisWorkout')} aria-expanded={index}
             onClick={() => setIndex(true)}><ClipboardList size={18} aria-hidden="true" /></button>
+          {signedIn && <button type="button" className="gym-live-tool" aria-label={t('gym.coach.title')} aria-expanded={sheet}
+            onClick={() => { coach.enter('sheet'); setSheet(true); }}><MessagesSquare size={18} aria-hidden="true" /></button>}
         </span>
         <span className="gym-live-titles">
           <h1 id="gym-live-title" className="gym-title">{name}</h1>
@@ -299,8 +358,13 @@ function OpenWorkout({ log }) {
       </header>
       <div className="gym-live-split">
         {narrow ? index && (
-          <Sheet label={t('gym.workout.thisWorkout')} onClose={() => setIndex(false)}>{movementIndex}</Sheet>
-        ) : <nav className="gym-live-index" aria-label={t('gym.workout.thisWorkout')}>{movementIndex}</nav>}
+          <Sheet label={t('gym.workout.thisWorkout')} onClose={() => setIndex(false)}><div className="gym-live-index-card">{thisWorkout}{movementList}</div></Sheet>
+        ) : rail}
+        {narrow && sheet && (
+          <Sheet label={t('gym.coach.title')} detent="large" onClose={() => setSheet(false)} className="gym-live-coach-sheet">
+            <WorkoutCoach log={log} thread={coach.thread} onThread={coach.open} onClose={() => setSheet(false)} />
+          </Sheet>
+        )}
         <div className="gym-live-pane">
           {view.movement && (
             <InHand view={view} clocks={clocks} log={log} api={api} movementName={movementName} onStep={step} onSelect={select}

@@ -21,7 +21,12 @@
 .gym-live-band-cancel:focus-visible, .gym-live-sheet-delete:focus-visible, .gym-live-bar:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 
 .gym-live-split { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 420px); gap: 32px; align-items: start; }
-.gym-live-index-card { display: flex; flex-direction: column; gap: 4px; }
+.gym-live-index, .gym-live-index-card { display: flex; flex-direction: column; gap: 4px; }
+/* The rail's Coach tab (WD7.1 · 1440): Coach beside the rack, as tall as the page's scroller leaves it (`useFitBelow`), its
+   reading scrolling and its composer at its foot, so a set is logged mid-answer. */
+.gym-live-side[hidden] { display: none; }
+.gym-live-side.is-coach:not([hidden]) { display: flex; flex-direction: column; height: var(--gym-live-coach-height, 640px); margin-top: 12px; }
+.gym-live-side.is-coach > .gym-coach { flex: 1; min-height: 0; }
 .gym-live-tab { margin: 0; display: flex; border-bottom: 1px solid var(--gym-line); }
 .gym-live-tab span { padding-bottom: 8px; border-bottom: 2px solid var(--color-brand); margin-bottom: -1px; font: 700 14px/20px var(--font-body); color: var(--gym-ink); }
 .gym-live-movements { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -123,7 +128,12 @@
 .gym-live-reps input:focus { outline: none; background: var(--gym-raised); }
 .gym-live-ladder button:focus-visible, .gym-live-reps > button:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 
-/* The sheets a phone draws over the workout (the design system's Sheet): Fix set, This workout, the picker and Edit sets. */
+/* The sheets a phone draws over the workout (the design system's Sheet): Fix set, This workout, the picker, Edit sets and
+   Coach (WD7.1 · 390), whose body fills its large detent so its reading scrolls under its head and above its composer. */
+.gym-root .wm-sheet:has(> .gym-live-coach-sheet) { background: var(--gym-canvas); box-shadow: inset 0 0 0 1px var(--gym-line); }
+.gym-root .wm-sheet-body.gym-live-coach-sheet { height: 100%; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+.gym-live-coach-sheet > .gym-coach { flex: 1; min-height: 0; }
+.gym-live-coach-sheet .gym-coach-bottom { margin: 0 -16px; padding: 16px 16px 0; border-top: 1px solid var(--gym-line); }
 .gym-live-sheet-form { display: flex; flex-direction: column; gap: 16px; }
 .gym-live-sheet-head, .gym-live-edit-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .gym-live-sheet-head > button, .gym-live-edit-head > button { border: 0; background: transparent; color: var(--gym-ink-dim); font: 400 15px/22px var(--font-body); cursor: pointer; padding: 8px 0; }

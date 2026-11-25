@@ -9,7 +9,20 @@ const { Id } = await import('../../../../src/platform/domain-kit/entities.js');
 const { registry } = await import('../../../../src/platform/sync/schema.js');
 const { CoachMessage, CoachThread } = await import('../../../../src/products/gym/domain/coach/conversation.js');
 const { BeginRound, Mark, OpenTurn, PictureCopy, StreamTurnText } = await import('../../../../src/products/gym/domain/coach/turn.js');
-const { Routine } = await import('../../../../src/products/gym/domain/routines.js');
+const { Routine, RoutineEntry, RoutineValue, SetTarget } = await import('../../../../src/products/gym/domain/routines.js');
+const { Draft } = await import('../../../../src/platform/domain-kit/drafts.js');
+const { Instant } = await import('../../../../src/platform/domain-kit/time.js');
+const { Exercise } = await import('../../../../src/products/gym/domain/catalogue.js');
+const { GymRefusals } = await import('../../../../src/products/gym/domain/gymRules.js');
+const { Session, TrainingSet, TrainingSetValue } = await import('../../../../src/products/gym/domain/training.js');
+const { AppendSet, FinishSession } = await import('../../../../src/products/gym/domain/trainingActions.js');
+const { StartWorkout } = await import('../../../../src/products/gym/domain/workoutRack.js');
+const { WorkoutProposal } = await import('../../../../src/products/gym/domain/workoutProposals.js');
+const { conversationView } = await import('../../../../src/products/gym/coach/conversations.js');
+const { createGymApi } = await import('../../../../src/products/gym/gymRuntime.js');
+const { SeedExercises } = await import('../../../../src/products/gym/domain/seedExercises.js');
+const { Proposal, ProposeRoutine } = await import('../../../../src/products/gym/domain/proposals.js');
+const { BrowserSyncEngine } = await import('../../../../src/platform/sync/engine.js');
 const { CoachTurns } = await import('../../../../src/products/gym/coach/coachTurns.js');
 const { GymProfile } = await import('../../../../src/products/gym/coach/profile.js');
 const { GymTurnTelemetry } = await import('../../../../src/products/gym/coach/turnTelemetry.js');
@@ -70,9 +83,8 @@ test('a question is answered in the browser: the context reads and the answer la
     [['context-list_sessions', 'ok'], ['context-list_notes', 'ok'], ['context-list_exercises', 'ok'], ['context-list_routines', 'ok']]);
   const request = ai.requests[0].request;
   assert.equal(request.system[0], turns.profile.words.prompt);
-  assert.ok(!request.tools.some((tool) => tool.name === 'propose_workout_change'));
   assert.deepEqual(request.tools.filter((tool) => tool.strict).map((tool) => tool.name).sort(),
-    ['create_exercise', 'create_routine', 'propose_routine_change', 'propose_routine_removal']);
+    ['create_exercise', 'create_routine', 'propose_routine_change', 'propose_routine_removal', 'propose_workout_change']);
   assert.equal(request.messages[0].parts.at(-1).text, 'How heavy today?');
   assert.equal(phone.runner.read(CoachMessage.scope, (read) => read.device(Mark.turnKey)), null);
   assert.deepEqual(told.events.map(([name]) => name).filter((name) => name !== 'coach_ability'), ['gym_ask_started', 'coach_turn', 'gym_ask_outcome']);
@@ -102,6 +114,170 @@ test('an ability that writes creates the routine at once, under the id its turn 
   assert.equal(routine?.name, 'Push A');
   assert.notEqual(routine.id.record, 'the-model-names-this');
   assert.deepEqual(coach.receipt.results, [{ t: 'routine', id: routine.id.record }]);
+});
+
+// A workout open on the browser's copy: Upper A started, bench press then pull-ups, nothing logged.
+async function workoutOpen(phone) {
+  const upper = new RoutineValue(new Id('routine1', Routine), 'Upper A', 0, [
+    new RoutineEntry(new Id('dumbbell-bench-press', Exercise), [new SetTarget(8, 16), new SetTarget(8, 16)], 120),
+    new RoutineEntry(new Id('pull-up', Exercise), [new SetTarget(8, 10), new SetTarget(8, 10)], 120)]);
+  assert.equal((await phone.runner.save(Draft.new(upper), GymRefusals)).result.kind, 'saved');
+  const session = new Id('session1', Session);
+  assert.equal((await phone.runner.run(StartWorkout({ id: session, routineId: upper.id }))).kind, 'committed');
+  return session;
+}
+
+test('Coach over an open workout proposes a change to it, the browser\'s copy applies it, and each decision is told once as the log answers it', async (t) => {
+  const entries = [{ exerciseId: 'dumbbell-bench-press', restSeconds: 120, sets: [{ reps: 8, weightKg: 16 }, { reps: 8, weightKg: 16 }] },
+    { exerciseId: 'pull-up', restSeconds: 120, sets: [{ reps: 8, weightKg: 0 }, { reps: 8, weightKg: 0 }] },
+    { exerciseId: 'face-pull', sets: [{ reps: 15, weightKg: 15 }, { reps: 15, weightKg: 15 }] }];
+  // Each question is answered in two rounds: the change to Upper A's open workout, then the words.
+  const proposing = (proposed) => [
+    async ({ request }) => {
+      assert.ok(request.tools.some((tool) => tool.name === 'propose_workout_change'));
+      return ended('tool_calls', [{ toolCall: { id: 'toolu_1', name: 'propose_workout_change',
+        input: { id: 'the-model-names-this', sessionId: 'session1', entries: proposed, summary: 'Easy on the shoulder' } } }]);
+    },
+    async ({ request }) => {
+      assert.equal(request.messages.at(-1).results[0].isError, false);
+      return ended('completed', [{ text: 'Take the weight off pull-ups and add face pulls.' }]);
+    },
+  ];
+  const rounds = proposing(entries);
+  const { phone, turns } = await room(t, playedAi(rounds));
+  phone.server.product.seeds = Object.fromEntries(SeedExercises.all.map((seed) => [String(seed.id.record), seed.fields()]));
+  const session = await workoutOpen(phone);
+  await phone.sync();
+  const turn = await turns.send({ question: 'My shoulder feels off on bench today.' });
+  await settle(turns);
+  const coach = coachOf(phone, turn);
+  assert.ok(coach.calls.some((call) => call.callId === 'context-get_session' && call.outcome === 'ok'), 'the open workout is part of what Coach reads');
+  const call = coach.calls.find((each) => each.name === 'propose_workout_change');
+  assert.equal(call.outcome, 'ok');
+  const id = String(call.created[0].id);
+  const view = phone.runner.read(CoachMessage.scope, (read) => conversationView(read, turn.thread.record, null));
+  assert.deepEqual(view.messages.at(-1).workoutProposals, [id]);
+  await phone.sync();
+
+  const failures = [];
+  const told = [];
+  const api = createGymApi(phone.engine, { event() {}, failure: (operation) => failures.push(operation), coached: (name, props) => told.push([name, props]) });
+  const outcome = (action, answer) => ['gym_proposal_outcome', { screen: 'coach', target: 'workout', action, ...answer }];
+  const answered = async () => { await phone.sync(); await new Promise((resolve) => setImmediate(resolve)); };
+  await api.applyWorkoutProposal(id);
+  const applied = phone.runner.read(Session.scope, (read) => ({ proposal: read.repository(WorkoutProposal).find(new Id(id, WorkoutProposal), 'drawn'),
+    plan: read.repository(Session).find(session, 'drawn').plan.entries.map((entry) => entry.json) }));
+  assert.equal(applied.proposal.state, 'applied');
+  assert.deepEqual(applied.plan, entries);
+  assert.deepEqual(told, [], 'nothing is told before the log answers');
+  await answered();
+  assert.deepEqual(told, [outcome('apply', { outcome: 'decided' })]);
+  await api.applyWorkoutProposal(id);
+  assert.deepEqual(told.at(-1), outcome('apply', { outcome: 'decided' }), 'an Apply that finds it applied writes nothing and is decided, as the iPhone tells it');
+
+  // A second proposal; another device of the account logs a pull-up before this one hears of it, so the log refuses the Apply
+  // this copy still took for current.
+  rounds.push(...proposing(entries.map((entry) => (entry.exerciseId === 'pull-up' ? { ...entry, sets: [{ reps: 6, weightKg: 0 }, { reps: 6, weightKg: 0 }] } : entry))));
+  const second = await turns.send({ question: 'Fewer pull-ups?', thread: turn.thread });
+  await settle(turns);
+  const later = String(coachOf(phone, second).calls.find((each) => each.name === 'propose_workout_change').created[0].id);
+  await phone.sync();
+  const other = await phone.device();
+  t.after(() => other.close());
+  await phone.sync();
+  await phone.advance(60_000);
+  const logged = new TrainingSetValue(new Id('setPullUp0000001', TrainingSet), session, new Id('pull-up', Exercise), 0, 8, new Instant(other.runner.moment().now.ms));
+  assert.equal((await other.runner.run(AppendSet(logged))).kind, 'committed');
+  assert.equal(await other.senderStep(), true, 'the log holds the other device\'s pull-up');
+  told.length = 0;
+  await api.applyWorkoutProposal(later);
+  assert.deepEqual(told, []);
+  await answered();
+  assert.deepEqual(told, [outcome('apply', { outcome: 'failed', reason: 'workout-moved' })], 'the log refused it, with its reason');
+  assert.equal(phone.runner.read(Session.scope, (read) => read.repository(WorkoutProposal).find(new Id(later, WorkoutProposal), 'drawn').state), 'pending');
+  await api.applyWorkoutProposal(later);
+  assert.deepEqual(told.at(-1), outcome('apply', { outcome: 'failed', reason: 'workout-moved' }), 'this copy now refuses it itself, for the same reason');
+  assert.deepEqual(failures, [], 'out of date is a refusal, never a failure');
+
+  // A store that breaks under a decision is a failure: it throws, is told failed, and goes to Sentry under its static name.
+  const broken = new Error('the store broke');
+  t.mock.method(phone.engine, 'commit', async () => { throw broken; });
+  await assert.rejects(api.dismissWorkoutProposal(later), (error) => error === broken);
+  assert.deepEqual([failures, told.at(-1)], [['workout-proposal-dismiss'], outcome('reject', { outcome: 'failed' })]);
+});
+
+test('a change to a workout another device finished before the change reached the log is told failed, the workout finished', async (t) => {
+  const { phone, turns } = await room(t, playedAi([
+    async () => ended('tool_calls', [{ toolCall: { id: 'toolu_1', name: 'propose_workout_change', input: { id: 'the-model-names-this', sessionId: 'session1',
+      entries: [{ exerciseId: 'dumbbell-bench-press', restSeconds: 120, sets: [{ reps: 8, weightKg: 14 }, { reps: 8, weightKg: 14 }] },
+        { exerciseId: 'pull-up', restSeconds: 120, sets: [{ reps: 8, weightKg: 10 }, { reps: 8, weightKg: 10 }] }], summary: '' } } }]),
+    async () => ended('completed', [{ text: 'Lighter bench.' }]),
+  ]));
+  phone.server.product.seeds = Object.fromEntries(SeedExercises.all.map((seed) => [String(seed.id.record), seed.fields()]));
+  const session = await workoutOpen(phone);
+  await phone.sync();
+  const other = await phone.device();
+  t.after(() => other.close());
+  await phone.sync();
+  await phone.advance(60_000);
+  assert.equal((await other.runner.run(FinishSession({ id: session, finishedAt: new Instant(other.runner.moment().now.ms) }))).kind, 'committed');
+  assert.equal(await other.senderStep(), true, 'the log holds the finish before this browser hears of it');
+  const turn = await turns.send({ question: 'Lighter bench?' });
+  await settle(turns);
+  const id = String(coachOf(phone, turn).calls.find((call) => call.name === 'propose_workout_change').created[0].id);
+  const told = [];
+  const api = createGymApi(phone.engine, { event() {}, failure() {}, coached: (name, props) => told.push(props) });
+  await api.applyWorkoutProposal(id);
+  await phone.sync();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(told, [{ screen: 'coach', target: 'workout', action: 'apply', outcome: 'failed', reason: 'workout-finished' }],
+    'the log refused the change itself, and the Apply that named it folded into that refusal');
+});
+
+test('a routine\'s decision the log has not answered in 15 s is told stalled once and then decided as it answers, and another tab\'s Apply on it tells nothing', async (t) => {
+  const { phone } = await room(t, playedAi([]));
+  phone.server.product.seeds = Object.fromEntries(SeedExercises.all.map((seed) => [String(seed.id.record), seed.fields()]));
+  const upper = new RoutineValue(new Id('routine1', Routine), 'Upper A', 0, [new RoutineEntry(new Id('pull-up', Exercise), [new SetTarget(8, 10)], 120)]);
+  assert.equal((await phone.runner.save(Draft.new(upper), GymRefusals)).result.kind, 'saved');
+  const proposal = new Id('proposal0000001', Proposal);
+  assert.equal((await phone.runner.run(ProposeRoutine({ id: proposal, routineId: upper.id, name: 'Upper A', summary: '',
+    entries: [new RoutineEntry(new Id('pull-up', Exercise), [new SetTarget(8, 10)], 120), new RoutineEntry(new Id('face-pull', Exercise), [new SetTarget(15, 15)])] }))).kind, 'committed');
+  await phone.sync();
+  const told = { one: [], two: [] };
+  const second = await BrowserSyncEngine.open(phone.options);
+  t.after(() => second.close());
+  second.observe(Proposal.scope);
+  const one = createGymApi(phone.engine, { event() {}, failure() {}, coached: (name, props) => told.one.push(props) });
+  const two = createGymApi(second, { event() {}, failure() {}, coached: (name, props) => told.two.push(props) });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  await one.applyProposal(proposal.record);
+  await second.refresh();
+  await two.applyProposal(proposal.record);
+  assert.deepEqual(told, { one: [], two: [] }, 'nothing is told before the log answers, and the second Apply writes nothing');
+  t.mock.timers.tick(15_000);
+  assert.deepEqual(told.one, [{ screen: 'coach', target: 'routine', action: 'apply', outcome: 'stalled' }]);
+  t.mock.timers.reset();
+  await phone.sync();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(told, { one: [{ screen: 'coach', target: 'routine', action: 'apply', outcome: 'stalled' }, { screen: 'coach', target: 'routine', action: 'apply', outcome: 'decided' }],
+    two: [] });
+});
+
+test('a refusal that answered one question stands no longer: one that fits is sent after one too long, and one asked while an answer runs is refused busy and sent once it ends', async (t) => {
+  let finish;
+  const answering = new Promise((resolve) => { finish = resolve; });
+  const ai = playedAi([async () => { await answering; return ended('completed', [{ text: 'First.' }]); }, async () => ended('completed', [{ text: 'Second.' }])]);
+  const { turns } = await room(t, ai);
+  assert.equal(await turns.send({ question: 'x'.repeat(9_000) }), null);
+  assert.deepEqual(turns.getSnapshot().refusal, { state: 'too-long' });
+  const first = await turns.send({ question: 'How heavy today?' });
+  assert.ok(first, 'a question that fits is sent');
+  assert.equal(await turns.send({ question: 'And tomorrow?', thread: first.thread }), null);
+  assert.deepEqual(turns.getSnapshot().refusal, { state: 'busy' });
+  finish();
+  await settle(turns);
+  assert.equal(turns.getSnapshot().refusal, null, 'the answer ended, and busy with it');
+  assert.ok(await turns.send({ question: 'And tomorrow?', thread: first.thread }));
 });
 
 test('a question sent with no connection writes nothing and stays in the field', async (t) => {

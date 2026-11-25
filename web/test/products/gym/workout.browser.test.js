@@ -14,7 +14,8 @@ import { beacon, withBrowserErrors } from '../roadmap/browserFixture.js';
 // A workout on the web (web-device-parity §4): the real account provider and shell over the browser's own engine, its
 // copy seeded with the fixture's routine (Upper A) by an earlier visit, and every `/v1` request the test's to answer or to
 // hold. Two pages of one context are two tabs of one browser. The page loads the app's fonts, so a screenshot judges its
-// type; `WM_WORKOUT_SHOTS` names a folder for the logging page's screenshots at 1440 and 390.
+// type; `WM_WORKOUT_SHOTS` names a folder for the logging page's screenshots at 1440 and 390. Coach during a workout is
+// `coach/coachDuringWorkout.browser.test.js`.
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const repo = fileURLToPath(new URL('../../../../', import.meta.url));
 const entry = `
