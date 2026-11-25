@@ -285,7 +285,9 @@ relative and collaboration sockets use the page's `ws(s)` origin. `VITE_API_BASE
 this only for preview builds.
 
 `.github/workflows/web.yml` builds and rsyncs `dist/` on trusted runs. On a fresh host, web must
-land before backend deployment because the embedder mounts weights from the web directory.
+land before backend deployment because the embedder mounts weights from the web directory. Its paths
+name every file outside `web/` and `packages/` a web test reads, so a change to one runs the tests that
+read it; `test/web-workflow-paths.test.mjs` fails on a read the paths miss.
 See [embedder operations](../services/embedder/README.md).
 
 Watch every PR check with `gh pr checks <number> --watch --fail-fast --interval 45` under a bounded
