@@ -631,12 +631,11 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
 
   lifetime.onStop([] {}, aiCallBudget, aiBudgets, aiBudgetRepo, entitlements, authRepo, sentry);
 
-  // Roadmap's scopes are served through the engine only where ROADMAP_ENGINE_ENABLED is "true"/"1". Production reads it
-  // from the host's roadmap-engine.env, which holds ROADMAP_ENGINE_ENABLED=1 (roadmap-on-the-engine.md §8.1).
-  const char* roadmapEngineEnv = std::getenv("ROADMAP_ENGINE_ENABLED");
-  const std::string roadmapEngineFlag = roadmapEngineEnv ? roadmapEngineEnv : "";
-  const bool roadmapEngine = roadmapEngineFlag == "true" || roadmapEngineFlag == "1";
-  auto productsCatalog = sync::productCatalog(roadmapEngine ? sync::RoadmapServing::served : sync::RoadmapServing::withheld);
+  // Roadmap's scopes are served through the engine only where ROADMAP_ENGINE_ENABLED says so
+  // (roadmap-on-the-engine.md §8.1).
+  const sync::RoadmapServing roadmapServing = sync::roadmapServing();
+  const bool roadmapEngine = roadmapServing == sync::RoadmapServing::served;
+  auto productsCatalog = sync::productCatalog(roadmapServing);
   // Where the engine serves roadmap, its read models (the activity, the progress, the share page, the gallery and
   // reminders' readiness) read its records (roadmap-on-the-engine.md §7); elsewhere the rooms and roadmap's own tables.
   std::shared_ptr<RoadmapRecords> roadmapRecords;
@@ -657,8 +656,9 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.watch(syncEngine, systemClock, sentry);
 
   // Every server write for a person goes through roadmap's door where the engine serves roadmap's scopes (Roadmap on the
-  // sync engine §7): MCP's tools, tending, the fork and the fork at sign-up, beside the engine's own admissions on its
-  // store and clock. Elsewhere they write through roadmap's rooms.
+  // sync engine §7): MCP's tools, tending, the fork and the fork at sign-up here, and the move of unlisted roadmaps to
+  // private in roadmaps_to_private.cpp, beside the engine's own admissions on its store and clock. Elsewhere they write
+  // through roadmap's rooms.
   const bool roadmapOnEngine = productsCatalog->serves("roadmap");
   auto roadmapDoor = std::make_shared<roadmap::RoadmapDoor>(*productsCatalog, syncEngine->store, *syncEngine->live,
                                                            syncEngine->serverClock, *systemClock, *sentry);
