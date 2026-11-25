@@ -98,12 +98,13 @@ import XCTest
 
   // Roadmap · iOS 01.1 and 11.22a: the account's roadmap on its Board, Done folded, the switch, Find and the Board's
   // tool live, and New step at the foot.
-  func assertLearnToSailBoard(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+  func assertLearnToSailBoard(_ app: XCUIApplication, subtitle: String = "3 of 8 done", file: StaticString = #filePath,
+                              line: UInt = #line) {
     let locked = app.buttons["roadmap-group-locked"]
     XCTAssertTrue(locked.waitForExistence(timeout: 30), file: file, line: line)
     XCTAssertEqual(app.buttons["room-menu"].label, "Roadmap", file: file, line: line)
     XCTAssertTrue(app.navigationBars["Learn to sail"].exists, file: file, line: line)
-    XCTAssertTrue(app.staticTexts["3 of 8 done"].exists, file: file, line: line)
+    XCTAssertTrue(app.staticTexts[subtitle].waitForExistence(timeout: 5), file: file, line: line)
     let groups = ["upNext", "locked", "done"].map { (group: String) -> String in
       let header = app.buttons["roadmap-group-" + group]
       return "\(header.label) · \(header.value as? String ?? "")"
@@ -139,7 +140,8 @@ import XCTest
     app.terminate()
     app.launchArguments = ["-board", "roadmap-learn-to-sail", "-restore-board", "-server", "https://offline.invalid", "-offline-fixture", "no-network"]
     app.launch()
-    assertLearnToSailBoard(app)
+    // Roadmap · iOS 10.1: with no connection the subtitle joins Offline to the progress.
+    assertLearnToSailBoard(app, subtitle: "3 of 8 done · Offline")
   }
 
   // Roadmap · iOS 02.1 and 02.2: only an Up next row slides right to Complete, a full swipe stops at the button, and the
