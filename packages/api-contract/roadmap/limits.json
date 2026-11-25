@@ -120,5 +120,27 @@
         "coachProposal.base"
       ]
     }
+  },
+  "context": {
+    "bytes": {
+      "max": 65536,
+      "unit": "bytes"
+    },
+    "steps": {
+      "max": 300,
+      "unit": "items"
+    },
+    "recent": {
+      "max": 10,
+      "unit": "items"
+    },
+    "frontier": {
+      "max": 10,
+      "unit": "items"
+    },
+    "prerequisites": {
+      "max": 50,
+      "unit": "items"
+    }
   }
 }
