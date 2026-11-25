@@ -534,6 +534,24 @@ simulator responsiveness issue, not harmlessness or severity/rate equivalence. T
 is `/tmp/ios-gym-ui-verify/gym-hang-audit.md`; the load-wheel Release/device profiling follow-up is in
 [App/WORK_LOG.md](../apps/ios/App/WORK_LOG.md).
 
+The Roadmap room's run builds the app with `IOS_SENTRY_DSN=http://ios@127.0.0.1:8091/42`, `WM_DEBUG_TELEMETRY=YES` and
+`WM_TELEMETRY_ENVIRONMENT=test` through `Tools/generate_project.py` and `WM_SERVER_BASE_URL=http://127.0.0.1:8089` on the
+`xcodebuild build-for-testing` line, so every board launch of the room's UI tests posts its events to a local backend on a
+throwaway database while the in-process model server serves sync and the covers' requests. `ShellFlowTests` but account
+deletion, `RoadmapFlowTests`, `RoadmapNestedFlowTests` and `RoadmapSharingFlowTests`, with Sort's Newest First, a row
+menu's Complete and Back from a subtree walked once by a journey kept outside the suites, record 1,328 first-party iOS
+events, 505 of them the room's, and every Roadmap row of the table above arrives with labels its row names.
+`-board roadmap-unreadable` forces `roadmap_read` (unexpected)
+and `-board roadmap-unwritable` `roadmap_write` (storage, write mark); each arrives at the envelope collector as one
+handled event with its allowlisted tags and no message, request, user, extra or breadcrumbs, beside its `client_error`
+event, and so do `roadmap_file` and `roadmap_canvas` (budget frames), beside 17 App Hang reports of the simulator. Every
+property of every event passes the allowlist, and neither the events nor the envelopes hold a fixture's roadmap, step,
+subtask, note, link or guide text, an email, an address or an id. The run reaches no `roadmap_layout`, `roadmap_plant`,
+`roadmap_progress`, `roadmap_fork` or `roadmap_subscribe`: no board seats a loop or refuses a plan, and the boards' covers
+answer their own requests. Local evidence is `.claude/scratch/roadmap-ios/events-arrive/evidence/` (`rows.txt`,
+`timeline.txt`, `analysis.json`, `envelopes.jsonl`). These checks establish the named local paths, not Amplitude
+forwarding or production Sentry receipt.
+
 ## Coach engine libraries
 
 The `Agent` and `WindmillPlatform` packages expose telemetry ports for their library integration;

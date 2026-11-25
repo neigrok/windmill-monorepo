@@ -82,7 +82,8 @@ struct RoadmapRoom: View {
   }
 
   // 01.5b: before the first read of the phone's copy the room is its bar alone, and a large spinner shows only once the
-  // read has run half a second, so a quick read never flashes one. A spinner shown is told, and how its wait ended.
+  // read has run half a second, so a quick read never flashes one. A spinner shown is told, and how its wait ended. A
+  // read that ends as the half second does takes the view away before its wait resumes, which then tells nothing.
   struct FirstRead: View {
     let roadmap: RoadmapModel
     @State private var waited = false
@@ -92,7 +93,7 @@ struct RoadmapRoom: View {
         if waited { ProgressView().controlSize(.large).tint(RoadmapPalette.inkDim).accessibilityIdentifier("roadmap-first-read") }
       }.frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
-          guard (try? await Task.sleep(for: .milliseconds(500))) != nil else { return }
+          guard (try? await Task.sleep(for: .milliseconds(500))) != nil, !Task.isCancelled else { return }
           waited = true
           roadmap.firstReadWaits()
         }
