@@ -257,14 +257,15 @@ bool writeFailureReported(const drogon::HttpRequestPtr& request) {
   return request->attributes()->get<std::shared_ptr<WriteObservation>>(kWriteObservationAttribute)->reportedFailure();
 }
 
+WriteRoutePolicy writeRoutePolicy(const drogon::HttpRequestPtr& request) {
+  if (request->attributes()->find("wm.write_policy")) return request->attributes()->get<WriteRoutePolicy>("wm.write_policy");
+  if (const auto route = matchingWriteRoute(request)) return route->policy;
+  return {};
+}
+
 void applyWriteResponsePolicy(const drogon::HttpRequestPtr& request, const drogon::HttpResponsePtr& response) {
   if (!response) return;
-  WriteRoutePolicy policy;
-  if (request->attributes()->find("wm.write_policy")) {
-    policy = request->attributes()->get<WriteRoutePolicy>("wm.write_policy");
-  } else if (const auto route = matchingWriteRoute(request)) {
-    policy = route->policy;
-  }
+  const WriteRoutePolicy policy = writeRoutePolicy(request);
   if (!policy.cacheControl.empty()) response->addHeader("Cache-Control", policy.cacheControl);
 }
 

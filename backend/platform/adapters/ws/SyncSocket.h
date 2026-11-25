@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform/adapters/http/Caller.h"
 #include "platform/application/AuthService.h"
 #include "platform/application/LiveSessions.h"
 #include "platform/application/WorkerPool.h"
@@ -38,10 +39,11 @@ void installSyncSocket(SyncSocketDeps deps);
 // Stop the session heartbeat and release its dependencies after the app's IO loops stop.
 void uninstallSyncSocket();
 
-// The gate's step 3 on a worker: the principal the upgrade's credentials prove now, or the refusal it answers — 401
-// for credentials that fail, 503 for ones that cannot be resolved, which reports under `sync.live.upgrade`.
+// The gate's step 3 on a worker: whom the upgrade's credentials serve it as now, and the refusal it answers — 401 for
+// credentials that fail, a WARN line under `sync.live.upgrade`, and 503 for ones that cannot be read, which names no caller
+// and reports there as a failure.
 struct UpgradeProof {
-  std::optional<UserId> principal;
+  std::optional<SentCaller> caller;
   std::optional<SyncReply> refusal;
 };
 UpgradeProof proveUpgrade(AuthService& auth, const SentCredentials& sent, const Json::Value& envelope);
@@ -52,8 +54,13 @@ UpgradeProof proveUpgrade(AuthService& auth, const SentCredentials& sent, const 
 //    it (the last value of a repeated one): missing or not a decimal integer → 400 malformed, below minSchema → 426;
 // 3. §9.1's credentials, from every header line the upgrade was received with (SentCredentials::fromOccurrences),
 //    resolved on a worker: ones that fail → 401 unauthenticated, never an anonymous socket.
-// The answer returns to the connection's own loop, where Drogon upgrades it served as the credential's account.
-// Drogon creates the gate by the name SyncSocket's path list gives.
+// Each refusal writes one WARN line under `sync.live.upgrade`, which no access line follows. The answer returns to the
+// connection's own loop, on which it is called, which leaves the caller for the upgrade's access line, and Drogon upgrades
+// it served as the credential's account.
+void admitUpgrade(const SyncSocketDeps& deps, const drogon::HttpRequestPtr& req, drogon::FilterCallback&& refuse,
+                  drogon::FilterChainCallback&& pass);
+
+// admitUpgrade over the installed socket's deps. Drogon creates the gate by the name SyncSocket's path list gives.
 class SyncUpgradeGate : public drogon::HttpFilter<SyncUpgradeGate> {
 public:
   void doFilter(const drogon::HttpRequestPtr& req, drogon::FilterCallback&& refuse, drogon::FilterChainCallback&& pass) override;

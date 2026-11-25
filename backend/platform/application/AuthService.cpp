@@ -294,16 +294,23 @@ std::string AuthService::digestOf(const std::string& sessionSecret) {
   return tokens_.digestOf(sessionSecret);
 }
 
-std::optional<User> AuthService::revalidate(const std::string& digest, const SessionContext& ctx) {
+std::optional<User> AuthService::holderOf(const std::string& digest) {
   if (digest.empty()) return std::nullopt;
-  const UnixMs now = clock_.nowMs();
-
   const std::optional<StoredSession> session = repo_.findSession(digest);
-  if (!session || sessionExpired(session->expiresAt, now)) return std::nullopt;
-
+  if (!session || sessionExpired(session->expiresAt, clock_.nowMs())) return std::nullopt;
   const std::optional<User> user = repo_.findUserById(session->user);
   if (!user || user->deletedAt) return std::nullopt;  // unknown or closed account cannot act
+  return user;
+}
 
+std::optional<User> AuthService::revalidate(const std::string& digest, const SessionContext& ctx) {
+  std::optional<User> user = holderOf(digest);
+  if (user) touch(digest, ctx);
+  return user;
+}
+
+void AuthService::touch(const std::string& digest, const SessionContext& ctx) {
+  const UnixMs now = clock_.nowMs();
   WriteObservation observation{"auth.session.refresh", "platform", "server-origin"};
   WriteContext context{observation};
   try {
@@ -318,7 +325,6 @@ std::optional<User> AuthService::revalidate(const std::string& digest, const Ses
     observation.failUnknown();
     throw;
   }
-  return user;
 }
 
 std::optional<std::string> AuthService::syncReplicaOf(const std::string& sessionDigest) {

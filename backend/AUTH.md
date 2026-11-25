@@ -114,10 +114,11 @@ row. The phones ignore it.
 
 ### `POST /v1/auth/logout`
 
-Ends the session the request is served through (Native surface notes) and expires the cookie in every
-one of its scopes (Frontend integration), `204`. A request that sends no credential, or one credential
-no live session holds, ends nothing and answers the same. Credentials the rule refuses, such as a
-cookie and a bearer of two accounts, answer `401 unauthenticated`, end no session and leave the cookie.
+Ends the session of every token the request sends, each token proof of its session, whatever shape the
+credentials take: two session cookies, a cookie and another account's bearer, a token whose session has
+expired, whose row goes too. It expires the cookie in every one of its scopes (Frontend integration)
+and answers `204` to every request, one whose credentials carry no token included (none, another
+scheme, a bare `wm_session`, an empty `Bearer`), which ends nothing.
 
 ### `DELETE /v1/me`
 
@@ -200,7 +201,10 @@ The proof grants no access after expiry. Post-expiry confirmation can be unavail
 
 Closure increments a durable OAuth account generation. Codes and refresh grants keep the generation
 that admitted them; token insertion and access require a live account with that same generation.
-Code admission rechecks the original session under the account lock. A pre-close authorization,
+Code admission rechecks the original session under the account lock, and the code keeps that session's
+digest: the token exchange spends the code and reads the session in one statement, and a code whose
+session has been signed out, revoked or has expired, or a code that names none, as one issued before
+codes named their session, exchanges for nothing. A pre-close authorization,
 consumed code or rotated refresh cannot acquire credentials after closure or restoration. Initial
 grant metadata and its token commit together. Restoration does not reset the generation.
 
@@ -459,13 +463,18 @@ its session secret; an insert failure rolls back the binding and revival.
   as its digest from the parse on, so the session a request is served through is a digest, never a
   secret. They resolve only as at most one `Authorization: Bearer <token>` (the scheme in any case) and
   at most one `wm_session=<token>` (the token verbatim), each held by a live session, naming one
-  account. A door that serves an account alone answers anything else `401`. A door that serves
-  anonymous callers too (logout, Apple sign-in, feedback, events, the gallery, the roadmap's reads,
-  its share pages and their image and video, the collab socket) serves one credential no live session
-  holds as anonymous, as a browser sends once its session is revoked or expires, and answers every
-  other credential that fails `401 unauthenticated`; the collab socket closes on it. The sync
-  endpoints, the live upgrade, `GET /v1/me` and the AI doors refuse that one too, and serve no request
-  that sends a credential as anonymous.
+  account. A door that serves an account alone answers anything else `401`. A JSON door that serves
+  anonymous callers too (Apple sign-in, feedback, events, the gallery, the roadmap's reads, the
+  collab socket's upgrade) serves one credential no live session holds as anonymous, as a browser
+  sends once its session is revoked or expires, and answers every other credential that fails
+  `401 unauthenticated`. A page (the share page `/t/{id}`, its card and its video), which shows an
+  anonymous caller public content alone, serves every credential that fails as anonymous. The sync
+  endpoints, the live upgrade, `GET /v1/me` and the AI doors refuse a lapsed credential too, and
+  serve no request that sends a credential as anonymous. Logout ends the session of every token it is
+  sent (`POST /v1/auth/logout`).
+- Each token's session is looked up with nothing written. A request served as an account rolls
+  forward, and heals the user agent and address of, the one session it is served through; a request
+  whose credentials fail writes no session.
 - Every session deletion runs through `AuthService` and is told to `LiveSessions`, which closes the
   sync sockets the session opened before they send another frame: a sign-out, a revoked session,
   sign-out everywhere, a closed account, and a folded account with every session its deleted row took
@@ -498,7 +507,8 @@ its session secret; an insert failure rolls back the binding and revival.
   whatever its case or leading dot. A response that sets `wm_session` writes the live cookie in the
   configured scope first, then expires it in every other scope; a response that clears it expires it
   in every scope. A variant left in another scope would ride beside the live cookie, and two session
-  cookies answer every sync request `401`; this way it never outlives the next sign-in or sign-out.
+  cookies serve no account at any door; this way it never outlives the next sign-in or sign-out, which
+  clears the cookie whatever the request sends.
 - The live cookie is written first because the Android app lifts the first `wm_session` a response
   sets. Where the `Domain` equals the host that answers sign-in, as in production (`windmill.works`),
   every client must keep a host-only and a `Domain` cookie apart, as Chrome does for a host under a

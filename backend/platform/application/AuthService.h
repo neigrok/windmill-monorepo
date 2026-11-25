@@ -122,8 +122,12 @@ public:
 
   // A session is keyed by its token's digest; a request's token is digested as it is read (SentCredentials).
   std::string digestOf(const std::string& sessionSecret);
-  // The account of the live session `digest` keys, its window rolled forward and its metadata healed from ctx. A closed
-  // account is refused even if a stale session row survives.
+  // The account of the live session `digest` keys, read with nothing written. A closed account is refused even if a stale
+  // session row survives.
+  std::optional<User> holderOf(const std::string& digest);
+  // Rolls the session `digest` keys forward and heals its metadata from ctx.
+  void touch(const std::string& digest, const SessionContext& ctx = {});
+  // holderOf, and the session touched when it holds an account.
   std::optional<User> revalidate(const std::string& digest, const SessionContext& ctx = {});
   // The replica the session whose token's digest is `sessionDigest` last pushed for (web-device-parity.md §7, Cleared);
   // nullopt before its first accepted push, or when there is no such session.

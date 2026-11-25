@@ -11,10 +11,10 @@ sync::SentCredentials sentCredentialsOf(const drogon::HttpRequestPtr& req, AuthS
   return sync::SentCredentials::fromOccurrences(req->headerOccurrences(), [&auth](const std::string& token) { return auth.digestOf(token); });
 }
 
-SentCaller SentCaller::of(const sync::SentCredentials& sent, AuthService& auth, const SessionContext& ctx) {
+SentCaller SentCaller::read(const sync::SentCredentials& sent, AuthService& auth) {
   std::optional<User> held;
-  const sync::Credential credential = sent.resolve([&auth, &ctx, &held](const std::string& digest) -> std::optional<UserId> {
-    held = auth.revalidate(digest, ctx);
+  const sync::Credential credential = sent.resolve([&auth, &held](const std::string& digest) -> std::optional<UserId> {
+    held = auth.holderOf(digest);
     return held ? std::optional(held->id) : std::nullopt;
   });
   if (!credential.fails()) return SentCaller{credential, held, false};
@@ -22,12 +22,22 @@ SentCaller SentCaller::of(const sync::SentCredentials& sent, AuthService& auth, 
   return SentCaller{credential, std::nullopt, lapsed};
 }
 
+SentCaller SentCaller::of(const sync::SentCredentials& sent, AuthService& auth, const SessionContext& ctx) {
+  SentCaller caller = read(sent, auth);
+  if (caller.user) auth.touch(*caller.credential.session(), ctx);
+  return caller;
+}
+
 SentCaller SentCaller::of(const drogon::HttpRequestPtr& req, AuthService& auth, const SessionContext& ctx) {
   SentCaller caller = of(sentCredentialsOf(req, auth), auth, ctx);
-  // The access log runs after the handler and has no way of its own to know whom the request was served as.
-  if (caller.user) req->attributes()->insert(kCallerAttribute, caller.user->id.str());
-  else if (caller.credential.fails()) req->attributes()->insert(kCallerAttribute, std::string(caller.lapsed ? "lapsed" : "refused"));
+  caller.leaveOn(req);
   return caller;
+}
+
+void SentCaller::leaveOn(const drogon::HttpRequestPtr& req) const {
+  // The access log runs after the handler and has no way of its own to know whom the request was served as.
+  if (user) req->attributes()->insert(kCallerAttribute, user->id.str());
+  else if (credential.fails()) req->attributes()->insert(kCallerAttribute, std::string(lapsed ? "lapsed" : "refused"));
 }
 
 std::optional<UserId> SentCaller::account() const {

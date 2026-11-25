@@ -19,6 +19,7 @@
 
 #include "platform/application/WriteObservation.h"
 #include "test/DrogonLoopback.h"
+#include "platform/adapters/http/Caller.h"
 
 #include <trantor/net/EventLoopThread.h>
 #include <trantor/net/InetAddress.h>
@@ -119,11 +120,14 @@ struct Harness {
     trees.byId[id] = StoredTree{graph.exportState(), LegendState{}, {"Tree", {}}, 0, owner, visibility};
   }
 
+  // An upgrade as its gate leaves it: admitted with its caller, or refused, carrying none, so onOpen closes it.
   drogon::HttpRequestPtr upgrade(const std::string& session, const std::string& origin = "") {
-    auto req = drogon::HttpRequest::newHttpRequest();
-    if (!session.empty()) req->addCookie("wm_session", session);
-    if (!origin.empty()) req->addHeader("Origin", origin);
-    return wm::test::DrogonLoopback::received(req);
+    auto built = drogon::HttpRequest::newHttpRequest();
+    if (!session.empty()) built->addCookie("wm_session", session);
+    if (!origin.empty()) built->addHeader("Origin", origin);
+    const drogon::HttpRequestPtr req = wm::test::DrogonLoopback::received(built);
+    collab.admit(req);
+    return req;
   }
 };
 
@@ -361,30 +365,43 @@ TEST(ws_non_owner_on_a_private_tree_is_rejected_and_never_joins_the_bus) {
   CHECK_EQ(conn->sent.size(), 1u);
 }
 
-// The upgrade reads its caller as every door does (platform/adapters/http/Caller.h): credentials that resolve open the
-// owner's private tree, none or one lapsed credential join as a guest the tree refuses, and credentials the rule refuses
-// close the socket.
-TEST(ws_an_upgrade_reads_its_caller_as_every_door_does) {
-  const auto opened = [](const std::vector<std::string>& fields) {
+// The upgrade reads its caller as every door does (platform/adapters/http/Caller.h), at its gate, before the connection
+// upgrades: credentials that resolve open the owner's private tree and name the caller on the upgrade's access line, none
+// or one lapsed credential join as a guest the tree refuses, and credentials the rule refuses answer 401, write one WARN
+// line under `roadmap.ws.upgrade`, and open nothing.
+TEST(ws_an_upgrade_reads_its_caller_as_every_door_does_at_its_gate) {
+  std::vector<WriteCompletion> lines;
+  installWriteSink([&lines](const WriteCompletion& completion) { lines.push_back(completion); });
+  const auto opened = [&lines](const std::vector<std::string>& fields) {
+    lines.clear();
     Harness h;
     const UserId owner = h.signIn("s-owner", "owner@example.com");
     h.signIn("s-other", "other@example.com");
     h.seed("t_priv", owner, Visibility::private_);
+    const drogon::HttpRequestPtr req = wm::test::DrogonLoopback::received("GET", "/v1/socket", fields);
+    std::string refused;
+    if (const std::optional<drogon::HttpResponsePtr> refusal = h.collab.admit(req)) {
+      for (const WriteCompletion& line : lines)
+        if (line.operation == "roadmap.ws.upgrade") refused += " " + line.door + " " + line.outcome + (line.severity == WriteSeverity::warn ? " WARN" : "");
+      return std::to_string(static_cast<int>((*refusal)->statusCode())) + refused;
+    }
     auto conn = std::make_shared<FakeSocket>();
-    h.collab.onOpen(wm::test::DrogonLoopback::received("GET", "/v1/socket", fields), conn);
-    if (!conn->open) return std::string("closed");
+    h.collab.onOpen(req, conn);
     h.collab.onMessage(conn, subscribeFrame("t_priv"));
-    return frameType(conn->sent.at(0));
+    const std::string caller = req->attributes()->find(kCallerAttribute) ? req->attributes()->get<std::string>(kCallerAttribute) : "anon";
+    return frameType(conn->sent.at(0)) + " as " + (caller == owner.str() ? "owner" : caller);
   };
-  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-owner"}), std::string("subgraph"));
-  CHECK_EQ(opened({"Host: collab", "Authorization: bearer s-owner"}), std::string("subgraph"));
-  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-owner", "Authorization: Bearer s-owner"}), std::string("subgraph"));
-  CHECK_EQ(opened({"Host: collab"}), std::string("reject"));
-  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-gone"}), std::string("reject"));
-  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-owner", "Authorization: Bearer s-other"}), std::string("closed"));
-  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-owner; wm_session=s-other"}), std::string("closed"));
-  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session"}), std::string("closed"));
-  CHECK_EQ(opened({"Host: collab", "Authorization: Basic s-owner"}), std::string("closed"));
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-owner"}), std::string("subgraph as owner"));
+  CHECK_EQ(opened({"Host: collab", "Authorization: bearer s-owner"}), std::string("subgraph as owner"));
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-owner", "Authorization: Bearer s-owner"}), std::string("subgraph as owner"));
+  CHECK_EQ(opened({"Host: collab"}), std::string("reject as anon"));
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-gone"}), std::string("reject as lapsed"));
+  const std::string refused = "401 websocket unauthenticated WARN";
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-owner", "Authorization: Bearer s-other"}), refused);
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-owner; wm_session=s-other"}), refused);
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session"}), refused);
+  CHECK_EQ(opened({"Host: collab", "Authorization: Basic s-owner"}), refused);
+  installWriteSink({});
 }
 
 TEST(ws_anon_on_an_unlisted_tree_receives_the_delta_and_joins_the_bus) {
@@ -1633,6 +1650,17 @@ TEST(ws_an_upgrade_from_an_unlisted_origin_is_refused) {
   Harness h;
   UserId owner = h.signIn("s-owner", "owner@example.com");
   h.seed("t_priv", owner, Visibility::private_);
+
+  std::vector<WriteCompletion> lines;
+  installWriteSink([&lines](const WriteCompletion& completion) { lines.push_back(completion); });
+  const std::optional<drogon::HttpResponsePtr> refusal = h.collab.admit(wm::test::DrogonLoopback::received(
+      "GET", "/v1/socket", {"Host: collab", "Origin: http://evil.example.com", "Cookie: wm_session=s-owner"}));
+  installWriteSink({});
+  REQUIRE(refusal);
+  CHECK_EQ((*refusal)->statusCode(), drogon::k403Forbidden);
+  REQUIRE_EQ(lines.size(), std::size_t{1});
+  CHECK_EQ(lines[0].operation + " " + lines[0].outcome, std::string("roadmap.ws.upgrade untrusted-origin"));
+  CHECK(lines[0].severity == WriteSeverity::warn);
 
   auto evil = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade("s-owner", "http://evil.example.com"), evil);

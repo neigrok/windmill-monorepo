@@ -20,20 +20,26 @@ inline constexpr char kCallerAttribute[] = "wm.caller";
 // as its digest. Every door that reads a session reads it from these, through SentCaller.
 sync::SentCredentials sentCredentialsOf(const drogon::HttpRequestPtr& req, AuthService& auth);
 
-// Whom sent credentials serve a request as: the credential they make, each digest revalidated to its live session's
-// account (rolling the session forward and healing its metadata from `ctx`), and that account, which `user` holds unless
-// the request is anonymous or its credential fails. A door that serves an account alone answers 401 unless `user` holds
-// one; a door that serves anonymous callers too answers 401 when `refused()`.
+// Whom sent credentials serve a request as: the credential they make, each digest looked up to its live session's
+// account, and that account, which `user` holds unless the request is anonymous or its credential fails. A door that
+// serves an account alone answers 401 unless `user` holds one; a JSON door that serves anonymous callers too answers 401
+// when `refused()`; a page, which shows an anonymous caller public content alone, serves every other caller as anonymous.
 struct SentCaller {
   sync::Credential credential;
   std::optional<User> user;
   // One credential of its form that no live session holds, as a browser sends once its session is revoked or expired.
   bool lapsed = false;
 
+  // The caller, read with nothing written.
+  static SentCaller read(const sync::SentCredentials& sent, AuthService& auth);
+  // The caller, and the session it is served through rolled forward and its metadata healed from `ctx`. Credentials that
+  // fail write nothing.
   static SentCaller of(const sync::SentCredentials& sent, AuthService& auth, const SessionContext& ctx = {});
-  // The caller of the credentials `req`'s header lines send (sentCredentialsOf), which it leaves for the access log.
+  // The caller of the credentials `req`'s header lines send (sentCredentialsOf), left on `req` for the access log.
   static SentCaller of(const drogon::HttpRequestPtr& req, AuthService& auth, const SessionContext& ctx = {});
 
+  // Leaves whom `req` is served as for the access log (kCallerAttribute).
+  void leaveOn(const drogon::HttpRequestPtr& req) const;
   std::optional<UserId> account() const;
   // Credentials that fail, but for one lapsed credential, which a door that serves anonymous callers serves as anonymous.
   // The sync doors, GET /v1/me and the AI doors refuse every credential that fails (`credential.fails()`).

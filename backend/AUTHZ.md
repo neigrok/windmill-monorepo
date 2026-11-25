@@ -157,7 +157,11 @@ client-supplied user or actor id.
 ### REST
 
 The caller is resolved per request through `SentCaller`. A read serves a lapsed credential as
-anonymous and answers other credentials the rule refuses `401 unauthenticated`.
+anonymous and answers other credentials the rule refuses `401 unauthenticated`. The share page
+(`/t/{id}`), its card and its video serve every credential that serves no account as anonymous. Only
+an answer for a roadmap anyone with its address may read carries `Cache-Control: public, max-age=300`;
+the answer for a private one, its owner's included, and for an absent or unreadable id is
+`private, no-store`, so no cache hands one caller's answer to another and the two read alike.
 
 Reads gate on `canRead` and answer a denial as a `404` byte-identical to absence. Writes require an
 authenticated caller (`401` for anonymous) and then gate on `canWrite`. Progress writes carry the
@@ -169,13 +173,14 @@ room, so the authz decision reads loaded facts instead of issuing a second query
 
 ### WebSocket (`/v1/socket`)
 
-The upgrade is authenticated, not each frame. `Collab::onOpen` reads its caller through `SentCaller`
-and stores a `Principal` (`products/roadmap/adapters/ws/PresenceHub.h`) in the connection context.
+The upgrade is authenticated, not each frame. Its gate (`TreeUpgradeGate`, `Collab::admit`) reads the
+caller through `SentCaller` before the connection upgrades, and `Collab::onOpen` stores a `Principal`
+(`products/roadmap/adapters/ws/PresenceHub.h`) in the connection context.
 
 - An upgrade that sends no credential, or one credential no live session holds, joins as a read-only
   guest (`u<N>`, `authenticated = false`), because a public tree has to be watchable by a stranger.
-  Credentials the rule refuses close the upgrade before a frame is read.
-- A stated `Origin` must be allow-listed or the upgrade is closed before a frame is read — the same
+  Credentials the rule refuses answer `401 unauthenticated`, and nothing upgrades.
+- A stated `Origin` must be allow-listed or the upgrade answers `403 untrusted-origin` — the same
   set `main.cpp` composes for CORS, handed to `Collab` through `RoadmapDeps`. A client that sends no
   `Origin` is untouched: only a browser sends one.
 - The `Principal` keeps the session's digest, never the secret, plus `checkedAtMs`. A socket outlives

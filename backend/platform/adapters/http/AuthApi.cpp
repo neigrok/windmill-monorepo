@@ -14,6 +14,7 @@
 #include <ctime>
 #include <iterator>
 #include <optional>
+#include <set>
 #include <string_view>
 #include <vector>
 
@@ -606,13 +607,13 @@ void AuthApi::me(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
 }
 
 void AuthApi::logout(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  // Ends the session the request is served through; credentials the rule refuses end none.
-  const SentCaller caller = SentCaller::of(req, *auth_);
-  if (caller.refused()) {
-    callback(refusedCredentials());
-    return;
-  }
-  if (caller.credential.session()) auth_->signOut(*caller.credential.session());
+  // Each token the request sends proves its session, so every one is ended, whatever shape the credentials take and
+  // whether or not its session is live; a credential that carries no token ends nothing. The cookie goes either way.
+  const sync::SentCredentials sent = sentCredentialsOf(req, *auth_);
+  SentCaller::read(sent, *auth_).leaveOn(req);
+  std::set<std::string> ended;
+  for (const sync::SentCredential& credential : sent.each())
+    if (credential.digest && ended.insert(*credential.digest).second) auth_->signOut(*credential.digest);
 
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
