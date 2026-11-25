@@ -717,3 +717,69 @@ test('Chromium: the logging page at 1440 and 390, for the boards', { skip: !proc
     await page.screenshot({ path: `${process.env.WM_WORKOUT_SHOTS}/wd2-logging-${width}.png` });
   }
 });
+
+test('Chromium: Coach during a workout at 1440 and 390, for the boards (WD7)', { skip: !process.env.WM_WORKOUT_SHOTS }, async (t) => {
+  const shot = (page, name) => page.screenshot({ path: `${process.env.WM_WORKOUT_SHOTS}/${name}.png` });
+  // Upper A under way as the boards draw it: two sets of bench press logged, the third in hand.
+  const underWay = async (page) => {
+    await page.getByRole('button', { name: 'Start', exact: true }).click();
+    await loggable(page);
+    await page.getByRole('button', { name: 'Dumbbell Bench Press, 2 of 3', exact: true }).click();
+    await page.locator('.gym-live-movement-title').filter({ hasText: 'Dumbbell Bench Press' }).waitFor();
+    for (let set = 0; set < 2; set += 1) {
+      await loggable(page);
+      await page.getByRole('button', { name: 'Log set', exact: true }).click();
+      await page.waitForFunction((count) => document.querySelectorAll('.gym-live-row.is-logged').length === count, set + 1);
+    }
+  };
+  const question = 'My shoulder feels off on bench today. Should I change anything?';
+
+  const desk = await browserWith(t, { width: 1440, height: 1240, colorScheme: 'dark' });
+  const wide = await desk.tab();
+  await underWay(wide);
+  await wide.getByRole('tab', { name: 'Coach', exact: true }).click();
+  await proposes(wide, { routine: true });
+  const rail = wide.getByRole('tabpanel', { name: 'Coach', exact: true });
+  await ask(rail, question);
+  await rail.getByRole('region', { name: 'Upper A', exact: true }).getByRole('button', { name: 'Apply', exact: true }).waitFor();
+  await wide.mouse.click(5, 600);
+  await wide.waitForTimeout(1300);
+  await wide.evaluate(() => { document.querySelector('.gym-coach.is-workout .gym-coach-reading').scrollTop = 0; });
+  await shot(wide, 'wd7.1-1440');
+
+  const phone = await browserWith(t, { width: 390, height: 844, colorScheme: 'dark' });
+  const narrow = await phone.tab();
+  await underWay(narrow);
+  await narrow.getByRole('button', { name: 'Coach', exact: true }).click();
+  const sheet = narrow.getByRole('dialog', { name: 'Coach', exact: true });
+  await proposes(narrow, { routine: true });
+  await ask(sheet, question);
+  const workout = sheet.getByRole('region', { name: 'This workout', exact: true });
+  await workout.getByRole('button', { name: 'Apply', exact: true }).waitFor();
+  await narrow.evaluate(() => document.activeElement?.blur());
+  await narrow.evaluate(() => { document.querySelector('.gym-coach.is-workout .gym-coach-reading').scrollTop = 0; });
+  await shot(narrow, 'wd7.1-390');
+
+  // Out of date (WD7.3): a pull-up logged in another tab while the card waits.
+  const other = await phone.tab('#/gym/workout');
+  await loggable(other);
+  await other.getByRole('button', { name: 'Pull Up, 3 of 3', exact: true }).click();
+  await other.locator('.gym-live-movement-title').filter({ hasText: 'Pull Up' }).waitFor();
+  await loggable(other);
+  await other.getByRole('button', { name: 'Log set', exact: true }).click();
+  await workout.getByText('You logged Pull Up since this suggestion. Nothing was applied.', { exact: true }).waitFor();
+  await narrow.evaluate(() => { document.querySelector('.gym-coach.is-workout .gym-coach-reading').scrollTop = 0; });
+  await shot(narrow, 'wd7.3-390');
+
+  // Applied (WD7.2): Coach opened again, a fresh chat, and its change, which leaves the logged pull-ups as they stand, applied.
+  await narrow.getByRole('button', { name: 'Close', exact: true }).click();
+  await narrow.getByRole('button', { name: 'Coach', exact: true }).click();
+  await proposes(narrow, { routine: true });
+  await narrow.evaluate((plan) => { window.aiRounds[0].calls[0].input.entries = plan; }, [entries[0], entries[1], entries[2], lighter[3]]);
+  await ask(sheet, question);
+  await sheet.getByRole('region', { name: 'This workout', exact: true }).getByRole('button', { name: 'Apply', exact: true }).click();
+  await sheet.getByText('Applied · this workout', { exact: true }).waitFor();
+  await narrow.evaluate(() => document.activeElement?.blur());
+  await narrow.evaluate(() => { document.querySelector('.gym-coach.is-workout .gym-coach-reading').scrollTop = 0; });
+  await shot(narrow, 'wd7.2-390');
+});

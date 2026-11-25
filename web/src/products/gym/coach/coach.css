@@ -183,6 +183,7 @@
   font: 400 13px/28px var(--font-body); color: var(--gym-ink-dim); }
 .gym-root .gym-coach-proposal-line s { color: var(--gym-ink-faint); font-family: var(--font-mono); }
 .gym-root .gym-coach-proposal-line strong { color: var(--gym-ink); font: 700 14px/28px var(--font-mono); }
+.gym-root .gym-coach-proposal-line.is-same > span:last-child { color: var(--gym-ink-dim); font: 400 14px/28px var(--font-mono); }
 .gym-root .gym-coach-proposal-more { align-self: stretch; display: flex; justify-content: space-between; padding: 12px 0; border: 0; background: transparent;
   color: var(--color-brand); font: 600 14px/20px var(--font-body); text-align: left; cursor: pointer; }
 .gym-root .gym-coach-proposal-decide { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }

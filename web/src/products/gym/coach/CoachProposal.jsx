@@ -47,14 +47,17 @@ function workoutCard(read, record) {
     count: proposal.countChanges(plan?.entries ?? []), outOfDate: WorkoutProposalState.of(read, proposal.id).outOfDate };
 }
 
-// One line of a block: its label, the old value struck through and the new one, or the one side a new or gone line has.
+// One line of a block, as the phones draw it: a value that changes, the old one struck through and the new one; a value
+// that stays, alone and quiet; a new or a gone line, its one side.
 function FieldLine({ field }) {
-  return <p className="gym-coach-proposal-line">
+  return <p className={`gym-coach-proposal-line is-${field.state}`}>
     <span>{field.label}</span>
     <span>
-      {field.before !== null && <s>{field.before}</s>}
-      {field.before !== null && field.after !== null && <ChevronRight size={14} aria-hidden="true" />}
-      {field.after !== null && <strong>{field.after}</strong>}
+      {field.state === 'same' ? field.after : <>
+        {field.before !== null && <s>{field.before}</s>}
+        {field.state === 'changed' && <ChevronRight size={14} aria-hidden="true" />}
+        {field.after !== null && <strong>{field.after}</strong>}
+      </>}
     </span>
   </p>;
 }

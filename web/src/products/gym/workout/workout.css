@@ -129,8 +129,10 @@
 
 /* The sheets a phone draws over the workout (the design system's Sheet): Fix set, This workout, the picker, Edit sets and
    Coach (WD7.1 · 390), whose body fills its large detent so its reading scrolls under its head and above its composer. */
+.gym-root .wm-sheet:has(> .gym-live-coach-sheet) { background: var(--gym-canvas); box-shadow: inset 0 0 0 1px var(--gym-line); }
 .gym-root .wm-sheet-body.gym-live-coach-sheet { height: 100%; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
 .gym-live-coach-sheet > .gym-coach { flex: 1; min-height: 0; }
+.gym-live-coach-sheet .gym-coach-bottom { margin: 0 -16px; padding: 16px 16px 0; border-top: 1px solid var(--gym-line); }
 .gym-live-sheet-form { display: flex; flex-direction: column; gap: 16px; }
 .gym-live-sheet-head, .gym-live-edit-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .gym-live-sheet-head > button, .gym-live-edit-head > button { border: 0; background: transparent; color: var(--gym-ink-dim); font: 400 15px/22px var(--font-body); cursor: pointer; padding: 8px 0; }
