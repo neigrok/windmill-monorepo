@@ -190,7 +190,7 @@ test('the routines home waits for the initial pull before claiming an empty prog
   await gym.land(pushA());
   await settle();
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), ['Push A']);
-  assert.deepEqual(findByClass(home.screen(), 'gym-routine-trained').map(textOf), ['']);
+  assert.deepEqual(findByClass(home.screen(), 'gym-routine-trained').map(textOf), [], 'no claim of when it was trained');
   assert.deepEqual(findByClass(home.screen(), 'gym-plan-empty').map(textOf), []);
 
   await gym.engine.write(null, (device) => { device.activeReplica.cursors['self/gym'].booted = true; }, ['self/gym']);
@@ -267,7 +267,7 @@ test('the home’s empty stance and its new routine action read the store: a hel
   await settle();
   // The stance becomes true only once the release takes the delete into the store the home reads.
   assert.deepEqual(gym.owed(), ['ready delete routine routinePushA']);
-  assert.deepEqual(quiet(), ['No routines yet. Build the first one.']);
+  assert.deepEqual(quiet(), ['No routines yet.Build one, or start lifting and keep the workout as a routine after.']);
   assert.equal(build().length, 1, 'the store took it, and only now is the offer honest');
 });
 
@@ -613,7 +613,7 @@ test('Discard asks nothing, holds the session for the window, and only then lets
   assert.equal(findByClass(short(), 'gym-confirm').length, 0);
   await settle();
   assert.deepEqual(gym.owed(), ['held delete session session0001']);
-  assert.equal(finish.log().transient.text, 'Session deleted.');
+  assert.equal(finish.log().transient.text, '1 deleted.');
   assert.equal(finish.log().transient.action.label, 'Undo');
   assert.equal(window.location.hash, '#/gym', 'the lifter is back in the room, and the transient came with them');
 
@@ -655,7 +655,7 @@ test('a finished session’s detail draws Discard session, and it takes the same
   assert.equal(detail.log().hidden('session').has('session0001'), true);
   await settle();
   assert.deepEqual(gym.owed(), ['held delete session session0001']);
-  assert.equal(detail.log().transient.text, 'Session deleted.');
+  assert.equal(detail.log().transient.text, '1 deleted.');
   assert.equal(detail.log().transient.action.label, 'Undo');
   assert.equal(window.location.hash, '#/gym/log', 'the lifter is on the log, where the row is already off it');
 
@@ -751,7 +751,7 @@ test('the count over the log follows its rows: a held session leaves it, and Und
   logScreen.log().holdDelete({ kind: 'session', id: 'session0002' });
   await settle();
   assert.deepEqual(gym.owed(), ['held delete session session0002']);
-  assert.deepEqual(count(), ['1 workout · 1 sets · 5 reps · loads in kg']);
+  assert.deepEqual(count(), ['1 workout · 1 set · 5 reps · loads in kg']);
 
   logScreen.log().transient.action.run();
   await settle();

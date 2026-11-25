@@ -34,8 +34,9 @@ function Fixture(props) {
     if (window.sendError) throw { code: window.sendError };
   } });
   else if (props.kind === 'feedback') dialog = e(FeedbackDialog, common);
-  else if (props.kind === 'sync') dialog = open ? e(SyncDecisions, { question: { kind: 'signed-out', count: { page: 1 } },
-    work: { type: 'page', counted: (count) => count + (count === 1 ? ' page' : ' pages'), many: 'pages' }, onCancel: close, onDecision: close }) : null;
+  else if (props.kind === 'sync') dialog = open ? e(SyncDecisions, { question: { kind: 'signed-out', counted: ['one'], words: { title: 'Add to your account?',
+    lead: 'This browser has 1 page from before you signed in.', items: [{ label: '1 page' }], note: 'Add it, or discard it from this browser.', onStep() {} } },
+    onCancel: close, onDecision: close }) : null;
   else dialog = e(Dialog, { ...common, key: props.gate, title: props.custom ? undefined : props.title ?? 'Shared dialog',
     labelledBy: props.custom ? 'custom-title' : undefined, onClose: props.empty ? undefined : close,
     focusableBody: props.focusableBody, gate: props.gate,

@@ -2,6 +2,9 @@
 // account matches the cached hint. A lapse retains that account's device work until sign-in;
 // explicit sign-out or a different account makes every product forget its device residue.
 
+import { APP_LOCALE } from '../../platform/i18n/index.js';
+import { t } from '../i18n/entry/index.js';
+
 // How long the seat waits on one product's `sync.seatWillChange` before it changes without it.
 export const SEAT_WILL_CHANGE_MS = 5000;
 
@@ -97,11 +100,26 @@ function complain(product, error) {
   console.error(`forgetDevice failed for product "${product?.id}" — its device residue may survive this account change`, error);
 }
 
-// What products say into the account-change questions (engine.md §7.10): a sign-in question one answers by itself, its
-// count in the product's own records, a question one words itself, the steps of that question told back to it, and the
-// line on what signing out discards from this tab. Each product's hook is isolated: one that throws reports the question
-// it was asked (`adoption`, `signin`, `signout`, `step` or `notice`), and the shell asks as it would of a product that
-// says nothing, in its own words and the engine's count.
+// The sign-in question in the shell's words (consistency 7d) around what a product counts of its signed-out work: `items`,
+// each `{ label, detail? }`, the `total` they count, the noun `held` for what the account already holds, and the
+// product's `onStep`. Its Discard asks again before it deletes anything (`discard`).
+function accountWords({ items, total, held, onStep }) {
+  const work = new Intl.ListFormat(APP_LOCALE, { type: 'conjunction' }).format(items.map((item) => item.label));
+  return {
+    title: t('shell.syncDecisions.addTitle'),
+    lead: t('shell.syncDecisions.addLead', { work, held }),
+    items,
+    note: t('shell.syncDecisions.addNote', { count: total }),
+    discard: { title: t('shell.syncDecisions.discardTitle', { work }), body: t('shell.syncDecisions.discardBody', { count: total }) },
+    onStep,
+  };
+}
+
+// What products say into the account-change questions (engine.md §7.10): a sign-in question one answers by itself, the
+// sign-in question in its own words or in the shell's around its count, the steps of that question told back to it, and
+// the line on what signing out discards from this tab. Each product's hook is isolated: one that throws reports the
+// question it was asked (`adoption`, `signin`, `signout`, `step` or `notice`), and the shell asks as it would of a product
+// that says nothing, in its own words and the engine's count.
 export class ProductQuestions {
   constructor(products, report = () => {}) {
     this.products = products;
@@ -113,13 +131,29 @@ export class ProductQuestions {
     return this.ask('adoption', () => this.syncOf(due.product)?.adoptionAnswer?.(engine, due));
   }
 
-  // How many of its records the due product counts, or nothing for the engine's count.
-  adoptionCount(engine, due) {
-    return this.ask('signin', () => this.syncOf(due.product)?.adoptionCount?.(engine));
+  // The sign-in question in the due product's own words (`sync.signInWords`), else in the shell's around the work it counts:
+  // kind by kind (`sync.signInWork`), or by its one noun (`sync.signedOutWork`), counted by its `adoptionCount` or the
+  // engine, beside the unsaved changes its device work holds (`due.pending`).
+  async signInWords(engine, due) {
+    const sync = this.syncOf(due.product);
+    const own = await this.ask('signin', () => sync?.signInWords?.(engine, due));
+    if (own) return this.heard(own);
+    const work = await this.ask('signin', () => sync?.signInWork?.(engine, due));
+    return this.heard(accountWords(work ?? await this.countedWork(engine, due)));
   }
 
-  async signInWords(engine, due) {
-    return this.heard(await this.ask('signin', () => this.syncOf(due.product)?.signInWords?.(engine, due)));
+  async countedWork(engine, due) {
+    const sync = this.syncOf(due.product);
+    const noun = sync?.signedOutWork;
+    if (!noun) {
+      const total = due.counted.length;
+      return { items: [{ label: t('shell.syncDecisions.changes', { count: total }) }], total, held: t('shell.syncDecisions.heldWork') };
+    }
+    const count = await this.ask('signin', () => sync.adoptionCount?.(engine)) ?? due.count?.[noun.type] ?? 0;
+    const pending = due.pending ?? 0;
+    const items = [count > 0 || pending === 0 ? { label: noun.counted(count) } : null,
+      pending > 0 ? { label: t('shell.syncDecisions.unsaved', { count: pending }) } : null].filter(Boolean);
+    return { items, total: count + pending, held: noun.many };
   }
 
   // What each product does as a sign-out begins (`sync.signOutBegins`), before the engine sends what the device holds:

@@ -853,7 +853,7 @@ test('a paused anon replica waits on the shell\'s 20-second read of the account,
   });
 });
 
-test('each sign-in decision due is asked once, in turn, in its product’s own words where it words them, and each answer pins what its question counted', async (t) => {
+test('each sign-in decision due is asked once, in turn, in its product’s own words where it words them, else the shell’s around its count, and each answer pins what its question counted', async (t) => {
   const state = await account(t);
   const steps = [];
   const said = { title: 'Add your roadmaps?', lead: '1 roadmap on this browser can join your account.', items: ['Learn to sail'],
@@ -873,11 +873,10 @@ test('each sign-in decision due is asked once, in turn, in its product’s own w
   });
   const decision = () => elementsOf(state.view.tree).find((node) => node.props.onDecision);
   const asked = () => {
-    const { product, count, words: worded } = decision().props.question;
-    if (!worded) return { product, count, words: worded };
+    const { product, words: worded } = decision().props.question;
     const { onStep, ...shown } = worded;
     onStep('shown');
-    return { product, count, words: shown };
+    return { product, words: shown };
   };
 
   await state.auth().signIn({ id: 'A', name: 'Ada' });
@@ -886,8 +885,10 @@ test('each sign-in decision due is asked once, in turn, in its product’s own w
   const second = asked();
   await decision().props.onDecision('discard');
   assert.deepEqual({ first, second, last: decision().props.question, answered, status: state.auth().status, steps }, {
-    first: { product: 'journal', count: { page: 2 }, words: null },
-    second: { product: 'roadmap', count: { tree: 1, meta: 1 }, words: said },
+    first: { product: 'journal', words: { title: 'Add to your account?',
+      lead: 'This browser has 2 pages from before you signed in. Your account already has pages.', items: [{ label: '2 pages' }],
+      note: 'Add them, or discard them from this browser.', discard: { title: 'Discard 2 pages?', body: 'They are deleted from this browser. You can’t undo this.' } } },
+    second: { product: 'roadmap', words: said },
     steps: ['shown'],
     last: null,
     answered: [{}, { decisions: { journal: 'add' }, counted: { journal: ['j1'] } },

@@ -12,8 +12,8 @@ const held = (kind, id, line, at, settling = false, detail = null) => ({
   key: withheldKey(kind, id), kind, id, line, detail, at, settling,
 });
 
-test('the window is a list over seven verbs, and a key is the verb and the id together', () => {
-  assert.deepEqual(WITHHELD_KINDS, ['set', 'routine', 'session', 'thread', 'entry', 'note', 'bodyweight']);
+test('the window is a list over eight verbs, and a key is the verb and the id together', () => {
+  assert.deepEqual(WITHHELD_KINDS, ['set', 'routine', 'session', 'thread', 'entry', 'note', 'bodyweight', 'copy']);
   assert.equal(withheldKey('set', 'set_3'), 'set:set_3');
   assert.equal(withheldKey('routine', 'rt_push'), 'routine:rt_push');
   assert.equal(withheldKey('thread', 'thr_1'), 'thread:thr_1');
@@ -34,15 +34,15 @@ test('one held delete says WHICH left; several say how many', () => {
 test('the count line is the only count line: nothing appends into this window, so nothing is taken back', () => {
   // The phones hold a LOGGED set in the same window, and a count over one says `2 to take back.`
   // there. Web has no such entry — every verb here destroys — so `N deleted.` is honest for every
-  // mix of the seven, and the other sentence is a state this surface cannot reach.
+  // mix of the eight, and the other sentence is a state this surface cannot reach.
   const window = WITHHELD_KINDS.map((kind, at) => held(kind, `id_${at}`, `${kind} line`, at));
-  assert.equal(heldLine(window), '7 deleted.');
+  assert.equal(heldLine(window), '8 deleted.');
   for (let n = 2; n <= WITHHELD_KINDS.length; n += 1) {
     assert.equal(heldLine(window.slice(0, n)), `${n} deleted.`);
   }
   const everySentence = [heldLine([]), ...window.map((_, at) => heldLine(window.slice(0, at + 1)))];
   assert.deepEqual(everySentence, [
-    null, 'set line', '2 deleted.', '3 deleted.', '4 deleted.', '5 deleted.', '6 deleted.', '7 deleted.',
+    null, 'set line', '2 deleted.', '3 deleted.', '4 deleted.', '5 deleted.', '6 deleted.', '7 deleted.', '8 deleted.',
   ]);
 });
 
@@ -133,5 +133,5 @@ test('an engine-held delete is named from the store, and one the store no longer
     deleteLineOf('bodyweight', '2026-10-06', projection),
     deleteLineOf('set', 'set_gone', projection),
     deleteLineOf('routine', 'routine_gone', projection),
-  ], ['100 × 5 is out of the log.', 'Push A deleted.', 'Session deleted.', 'Note deleted.', 'Weigh-in deleted.', '1 deleted.', '1 deleted.']);
+  ], ['100 × 5 is out of the log.', 'Push A deleted.', '1 deleted.', 'Note deleted.', 'Weigh-in deleted.', '1 deleted.', '1 deleted.']);
 });

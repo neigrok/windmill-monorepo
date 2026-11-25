@@ -13,10 +13,10 @@ import { Catalogue, Exercise } from '../../../../src/products/gym/domain/catalog
 import { GymRefusals, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
 import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
 import { Session, SessionValue, TrainingSet, TrainingSetValue } from '../../../../src/products/gym/domain/training.js';
-import { FinishSession, ImportedSet, ImportSession, StartSession } from '../../../../src/products/gym/domain/trainingActions.js';
+import { AppendSet, CorrectSet, FinishSession, ImportedSet, ImportSession, StartSession } from '../../../../src/products/gym/domain/trainingActions.js';
 import { TrainingLog } from '../../../../src/products/gym/domain/trainingReads.js';
 import { AdoptWorkout, ReconcileAdoptedWorkouts, SignedOutWorkout } from '../../../../src/products/gym/domain/workoutAdoption.js';
-import { DiscardSignedOutWorkout, RecoverStrandedSets, SetFix, WorkoutFix, WorkoutRecovery } from '../../../../src/products/gym/domain/workoutRecovery.js';
+import { DiscardSignedOutWorkout, RecoverStrandedSets, SaveRefusedStart, SetFix, WorkoutFix, WorkoutRecovery } from '../../../../src/products/gym/domain/workoutRecovery.js';
 import { Harness } from '../../../platform/domain-kit/harness.js';
 import { DEFAULT_NOW } from '../../../platform/domain-kit/vectors.js';
 
@@ -100,6 +100,48 @@ test('an open copy that loses the race for the account\'s open workout waits whi
   committed(await browser.runner.run(ReconcileAdoptedWorkouts()));
   assert.deepEqual(saved(browser), []);
   assert.deepEqual(review(browser), []);
+});
+
+// Two devices start with no connection at once and the phone's start lands first: the browser's is refused `session-open`,
+// its sets folded into the notice. Saved from the notice, they wait under the account's open workout, and Keep as finished
+// lands them as a workout of their own while that one is still open.
+test('a start that lost the race keeps its sets: saved from its notice, reviewed under the account\'s open workout and kept as finished', async (t) => {
+  const phone = await account(t);
+  const browser = await phone.device();
+  await phone.sync();
+  const theirs = new Id('phoneOpen', Session), lost = new Id('lostS001', Session);
+  committed(await phone.runner.run(StartSession({ id: theirs, startedAt: new Instant(DEFAULT_NOW - 30 * minute) })));
+  committed(await browser.runner.run(StartSession({ id: lost, startedAt: new Instant(DEFAULT_NOW - 25 * minute) })));
+  const first = new TrainingSetValue(new Id('setS0001', TrainingSet), lost, bench, 60, 5, new Instant(DEFAULT_NOW - 20 * minute));
+  const second = new TrainingSetValue(new Id('setS0002', TrainingSet), lost, bench, 62.5, 5, new Instant(DEFAULT_NOW - 15 * minute));
+  committed(await browser.runner.run(AppendSet(first)));
+  committed(await browser.runner.run(AppendSet(second)));
+  committed(await browser.runner.run(CorrectSet(new TrainingSetValue(first.id, lost, bench, 65, 5, first.completedAt))));
+  await phone.sync();
+  assert.deepEqual(browser.drawn(Session).map((session) => session.id.record), ['phoneOpen']);
+  assert.deepEqual(browser.drawn(TrainingSet), []);
+  const [notice, ...others] = browser.notices(GymRefusals);
+  assert.ok(notice);
+  assert.deepEqual([notice.notice.code, others], ['session-open', []]);
+
+  committed(await browser.runner.run(SaveRefusedStart(notice)));
+  assert.equal((await browser.runner.run(SaveRefusedStart(notice))).kind, 'unchanged');
+  assert.deepEqual(saved(browser).map((copy) => [copy.session.id.record, copy.session.isOpen, copy.sets.map((set) => [set.id.record, set.weightKg])]),
+    [['lostS001', true, [['setS0001', 65], ['setS0002', 62.5]]]]);
+  const [recovery] = review(browser);
+  assert.ok(recovery);
+  assert.deepEqual(row(recovery), { id: 'lostS001', reason: 'session-open', retry: 'restartWorkout', notices: 1, stranded: [] });
+  assert.equal((await browser.runner.run(AdoptWorkout(lost, 'restart'))).kind, 'refused');
+
+  committed(await browser.runner.run(AdoptWorkout(lost, 'keep', WorkoutFix.ofRecovery(recovery).markFinished().workout)));
+  await phone.sync();
+  for (const device of [phone, browser]) {
+    assert.deepEqual(device.drawn(Session).map((session) => [session.id.record, session.finishedAt?.ms ?? null]),
+      [['lostS001', second.completedAt.ms], ['phoneOpen', null]]);
+    assert.deepEqual(device.drawn(TrainingSet).map((set) => [set.id.record, set.weightKg]), [['setS0001', 65], ['setS0002', 62.5]]);
+  }
+  committed(await browser.runner.run(ReconcileAdoptedWorkouts()));
+  assert.deepEqual([saved(browser), review(browser)], [[], []]);
 });
 
 test('a finished copy crossing a workout on the log is refused before the account sees it, fixed, kept and let go once taken', async (t) => {

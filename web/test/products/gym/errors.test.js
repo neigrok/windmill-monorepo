@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { CommitError } from '../../../../packages/api-contract/sync/reference/client/commit.js';
 import { failureReason, GymError, GymRefusal, isStoreFailure } from '../../../src/products/gym/errors.js';
 
-test('failureReason — a refusal, a lapsed sign-in, a row that is gone, this device’s store and a silence each get their own sentence', () => {
+test('failureReason — a refusal, a lapsed sign-in, a row that is gone, this device’s store and a REST door’s silence each get their own sentence, and only a REST door names the network', () => {
   const quota = new CommitError('the device store did not commit', 'store', { cause: new DOMException('storage refused', 'QuotaExceededError') });
   assert.equal(failureReason(new GymError(400, 'that share link has no session')), 'the log wouldn’t take it as written');
   assert.equal(failureReason(new GymError(409, 'that thread is taken', 'ask-thread-taken')), 'the log wouldn’t take it as written');
@@ -16,7 +16,7 @@ test('failureReason — a refusal, a lapsed sign-in, a row that is gone, this de
   assert.equal(failureReason(quota), 'this device couldn’t store it');
   assert.equal(failureReason(new CommitError('unknown change nope')), 'the log wouldn’t take it as written');
   assert.equal(failureReason(new TypeError('Failed to fetch')), 'the log didn’t answer. Try again when you have signal');
-  assert.equal(failureReason(undefined), 'the log didn’t answer. Try again when you have signal');
+  assert.equal(failureReason(new Error('an engine write that threw')), 'this device couldn’t store it');
 });
 
 test('only the engine’s store failure is this device’s', () => {
