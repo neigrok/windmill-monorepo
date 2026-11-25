@@ -42,7 +42,9 @@ class CorpusTests {
         val coachWords = files.filter { it.startsWith("gym/coach/") }
         // The web's recovery of a start that lost a race, whose design on the phones is open (local-first open problems LP-6).
         val refusedStart = files.filter { it == "gym/domain/refused-start-actions.json" }
-        assertEquals((paths + abilities + readByCatalogTests + turnWire + catalog2 + coachWords + refusedStart).sorted(), files)
+        // The web's Settings rows for the default rest and the rest sound, which no phone sets.
+        val restSettings = files.filter { it == "gym/domain/rest-settings-actions.json" }
+        assertEquals((paths + abilities + readByCatalogTests + turnWire + catalog2 + coachWords + refusedStart + restSettings).sorted(), files)
         val failures = mutableListOf<String>()
         try { RuleBookParity.check(book, paths[0]) } catch (error: Exception) {
             failures += "${paths[0]} · ${error.message}"
