@@ -1,5 +1,6 @@
 // The settings home, in the account chrome shared with /connect. Signed in it is the account's; signed out it opens on the
-// browser's own copy, with the product sections that run on it and a way to sign in for the rest.
+// browser's own copy, with the product sections that run on it and a way to sign in for the rest. A lapsed session's page,
+// signed out over a copy that is still the account's, holds the way to sign in alone.
 
 import React, { Suspense } from 'react';
 import { AccountChrome } from '../account/AccountChrome.jsx';
@@ -13,11 +14,12 @@ import { ApiKeysSection } from './ApiKeysSection.jsx';
 import { SessionsSection } from './SessionsSection.jsx';
 import { FeedbackSection } from './FeedbackSection.jsx';
 import { CloseAccountSection } from './CloseAccountSection.jsx';
+import { useSettingsSeat } from './Section.jsx';
 import { t } from '../i18n/settings/index.js';
 
 // `main` sits in the product zone after the account identity; `data` renders last, beside the account's own close.
-// Signed out, the page keeps that order and holds only the sections a product lists as `signedOut`: those that run on the
-// browser's own copy.
+// Over the browser's own copy, the page keeps that order and holds only the sections a product lists as `signedOut`: those
+// that run on it.
 const sectionsIn = (zone) => PRODUCTS.flatMap((product) => product.settingsSections?.[zone] ?? []);
 const PRODUCT_MAIN_SECTIONS = sectionsIn('main');
 const PRODUCT_DATA_SECTIONS = sectionsIn('data');
@@ -29,8 +31,8 @@ function ProductSections({ sections }) {
 }
 
 export function SettingsPage({ inShell = false }) {
-  const { user, status } = useAuth();
-  const signedIn = status === 'signed-in' && Boolean(user);
+  const { user } = useAuth();
+  const seat = useSettingsSeat();
   const openSignInDoor = useSignInDoor();
 
   return (
@@ -38,7 +40,7 @@ export function SettingsPage({ inShell = false }) {
       {/* An account's settings, or with none known on this browser the seat menu's word for the page. */}
       <h1 style={title}>{user ? t('shell.settings.title') : t('shell.account.settings')}</h1>
 
-      {status === 'loading' ? null : signedIn ? (
+      {seat === 'loading' ? null : seat === 'signed-in' ? (
         <>
           <ProfileSection />
           <ProductSections sections={PRODUCT_MAIN_SECTIONS} />
@@ -55,7 +57,7 @@ export function SettingsPage({ inShell = false }) {
             <p style={signInLine}>{t('shell.settings.signedOut')}</p>
             <Button variant="primary" size="sm" onClick={openSignInDoor}>{t('shell.auth.signIn')}</Button>
           </div>
-          <ProductSections sections={SIGNED_OUT_SECTIONS} />
+          {seat === 'browsers-own' && <ProductSections sections={SIGNED_OUT_SECTIONS} />}
         </>
       )}
     </AccountChrome>

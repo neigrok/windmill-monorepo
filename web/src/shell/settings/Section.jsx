@@ -1,6 +1,19 @@
-// A titled block plus the style tokens every settings section lays its rows out with.
+// A titled block, the style tokens every settings section lays its rows out with, and the seat the page is drawn for.
 
 import React from 'react';
+import { useAuth } from '../auth/AuthProvider.jsx';
+import { useSyncReplica } from '../../platform/sync/react.js';
+
+// `loading` until the shell settles who is here; `signed-in`, an account it has settled; `browsers-own`, nobody signed in
+// over the browser's own copy, the anon replica; `signed-out`, nobody signed in over any other copy or none yet, as a lapsed
+// session's, whose copy is still the account's and is drawn nowhere on the page.
+export function useSettingsSeat() {
+  const { user, status } = useAuth();
+  const replica = useSyncReplica();
+  if (status === 'loading') return 'loading';
+  if (status === 'signed-in' && user) return 'signed-in';
+  return replica?.state === 'anon' ? 'browsers-own' : 'signed-out';
+}
 
 export function Section({ title, children }) {
   return (

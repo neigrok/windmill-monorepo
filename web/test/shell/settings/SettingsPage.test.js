@@ -1,17 +1,23 @@
 // The settings page on each seat: signed out it opens on the browser's own copy, with the product sections that run on it in
-// the page's order, and signed in it is the account's page it has always been.
+// the page's order, and signed in it is the account's page it has always been. A lapsed session's page, signed out over the
+// account's copy, holds a way to sign in alone.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { syncSession } from '../../../src/platform/sync/session.js';
 import { gymRoutes } from '../../../src/products/gym/routes.js';
 import { journalRoutes } from '../../../src/products/journal/routes.js';
 import { roadmapRoutes } from '../../../src/products/roadmap/routes.js';
 import { elementsOf, loadScreen, renderHook, textOf } from '../../products/gym/harness.mjs';
 
 // The page as the reader meets it, top to bottom: the heading, each line and button, and each section by its name, a
-// product's sections by the registration they come from.
-async function page(t, auth) {
+// product's sections by the registration they come from. `replica` is the copy the tab draws: the anon one, an account's
+// (`bound`), or none while the engine opens.
+async function page(t, auth, replica = null) {
+  const engine = replica && { observeEngine: () => () => {}, getSnapshot: () => ({ binding: 'b', ...replica }) };
+  t.mock.method(syncSession, 'getSnapshot', () => ({ engine, ready: true, signedIn: auth.status === 'signed-in', account: auth.user?.id ?? null,
+    online: true, error: false }));
   const { SettingsPage } = await loadScreen('shell/settings/SettingsPage.jsx');
   const sectionNames = new Map([
     [gymRoutes.settingsSections.main[0], 'gym · Your training log'],
@@ -36,7 +42,7 @@ async function page(t, auth) {
 }
 
 test('signed out, the page opens on the browser\'s copy: a way to sign in, then training log, roadmaps and journal', async (t) => {
-  const { read, signIn } = await page(t, { status: 'ghost', user: null });
+  const { read, signIn } = await page(t, { status: 'ghost', user: null }, { state: 'anon', account: null });
   assert.deepEqual(read, [
     '# Settings',
     'Sign in for your profile, sessions and connected tools.',
@@ -49,7 +55,7 @@ test('signed out, the page opens on the browser\'s copy: a way to sign in, then 
 });
 
 test('signed in, the page is the account\'s: its own sections around every product section, in their zones', async (t) => {
-  const { read } = await page(t, { status: 'signed-in', user: { id: 'A', name: 'Ada', email: 'ada@example.com' } });
+  const { read } = await page(t, { status: 'signed-in', user: { id: 'A', name: 'Ada', email: 'ada@example.com' } }, { state: 'bound', account: 'A' });
   assert.deepEqual(read, [
     '# Account settings',
     'ProfileSection',
@@ -69,4 +75,10 @@ test('signed in, the page is the account\'s: its own sections around every produ
 test('while the seat is unknown the page holds its title alone, the account\'s where this browser last held one', async (t) => {
   assert.deepEqual((await page(t, { status: 'loading', user: null })).read, ['# Settings']);
   assert.deepEqual((await page(t, { status: 'loading', user: { id: 'A', email: 'ada@example.com' } })).read, ['# Account settings']);
+});
+
+test('a lapsed session\'s page, signed out over the account\'s copy, holds a way to sign in and no product section', async (t) => {
+  const signInAlone = ['# Settings', 'Sign in for your profile, sessions and connected tools.', '[Sign in] primary sm'];
+  assert.deepEqual((await page(t, { status: 'ghost', user: null }, { state: 'bound', account: 'A' })).read, signInAlone);
+  assert.deepEqual((await page(t, { status: 'ghost', user: null })).read, signInAlone, 'nor while no copy is drawn');
 });
