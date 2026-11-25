@@ -9,8 +9,7 @@ import { GymRefusals } from './gymRules.js';
 
 export const PreferencesRules = Object.freeze({ units: new ChoiceSpec('prefs.units', ['kg', 'lb']) });
 
-// The rest registers of the same record are the web's to set alone, so their rule stays out of the book the three surfaces
-// pin (`rules.json`) until a phone sets them too.
+// The web alone sets the record's rest registers, so their rule is outside the book the three surfaces pin (`rules.json`).
 export const RestSettingsRules = Object.freeze({ seconds: new NumberSpec('prefs.restSeconds', { min: 15, max: 900, integer: true }) });
 
 export class PreferencesValue {
