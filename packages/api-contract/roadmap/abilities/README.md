@@ -2,8 +2,8 @@
 
 An ability is a pure function of the roadmaps a device holds and an input, which answers what it read, the writes to
 make, or a refusal ([Roadmap Coach](../../../../docs/foundation/roadmap-coach.md) §3). A file here is one ability of
-`../catalog.json`, named `<ability>.json`, and holds an array of cases, each giving the function both and what it must
-answer:
+`../catalog.json`, named `<ability>.json`, or the context Coach is told at the start of a turn, `context.json`
+([The context](#the-context)), and holds an array of cases, each giving the function both and what it must answer:
 
 ```json
 {"case": "…", "about": "t_…", "given": {"trees": […], "held": […], "ids": […]}, "call": {"name": "…", "input": {…}}, "expect": {…}}
@@ -57,6 +57,35 @@ A page of a read is measured, in bytes, on its canonical text, the same on every
 How a read fills its pages, splits an object too long for one, and writes `nextCursor` is the spec's §5.2. A later page
 is a case of its own, whose `cursor` is the `nextCursor` of the case before.
 
+## The context
+
+`context.json` holds the context (D-8, §5): what Coach is told at the start of a turn, before it calls anything. A case
+gives the roadmaps as an ability's case does, and the conversation in place of a call:
+
+```json
+{"case": "…", "about": "t_…", "step": "…", "given": {"trees": […], "held": […]}, "expect": {…}}
+```
+
+- `about` is what the conversation is about, as above, and `step` the step it started from, or null.
+- `expect` is `{"result": …}`, or `{"refused": {"code", "id"}}` where a read of `about` would be refused:
+  `roadmap-unavailable` or `unknown-roadmap`, naming `about`.
+- About all of the person's roadmaps, the result is `{trees}`: every row `list_trees` answers, whole and never paged.
+- About one roadmap, the result holds:
+  - `tree`: `{id, title, kinds}`, the roadmap's id, and its title and kinds as `get_tree`'s header gives them;
+  - `diagnostics`: `get_diagnostics`' report in summary: for each of its lists, how many entries it holds, those left
+    off counted in; and `smells` as the report gives them, each without its `nodes`;
+  - `recent`: the ten newest completions that carry a date, `{id, label, at}`, newest first and in id byte order at one
+    date;
+  - then, where the roadmap has at most 300 steps and the context given so comes to at most `CONTEXT_BYTES` (§8, 65,536
+    bytes of canonical text, `step` not counted), the roadmap whole: `steps`, every step's line, §5.1's default fields,
+    in `get_tree`'s order, and `completed`, what `get_progress` answers;
+  - or else the roadmap around where the person stands: `counts`, the counts `list_trees` gives with `byKind`, the same
+    counts for each kind in the room's order and, where a step wears a hue no kind owns, for `kind: null`; and `steps`,
+    the lines of every step of the kind `milestone`, of every available step, and of every step within two links of an
+    available one, a link read either way, in `get_tree`'s order;
+  - `step`, in a conversation started from a step the roadmap shows: that step with every field of §5.1 but `summary`.
+    A step the roadmap does not show, as one under a delete the person can still undo, adds nothing.
+
 ## The rules a case leans on
 
 A rule the server keeps too is pinned where the server already holds it, and a case here leans on it rather than state it
@@ -85,11 +114,17 @@ running an ability:
   `roadmap-unavailable` for one unread, `not-owner` for one the person does not own, `out-of-scope` for a write outside
   `about`, `roadmap-not-ready` naming a held step, and `over-limit` for a call that passes a cap. An input that passes a
   cap must be refused as `over-limit`. `at` is on a proposal's refusal of a change alone, and where §7 fixes it, as for
-  the count of changes, the Shape rule's `changes[k]` and the first value past a cap, it is that.
+  the count of changes, the Shape rule's `changes[k]` and the first value past a cap, it is that;
+- a context's step and its refusal name what the case gives; a roadmap's context holds the parts its form holds, each
+  line with §5.1's default fields and of a given step, a roadmap given whole only within both bounds and with every
+  step's line, counts that add up to the roadmap's steps, at most ten newest completions in their order, and a step in
+  full exactly where the conversation started from a step the roadmap shows; and a context about all roadmaps holds
+  whole rows of `list_trees`' shape.
 
 It does not run an ability, so it does not check what only running one shows: the order of a read, a step's state,
-prerequisites and unlock count, a cursor's digest or where a page is cut, a fold's colours, or which code a refusal is.
-Those are the executors' to claim. `../check_test.py` holds a broken case for each refusal `check.py` makes. The web's
-runner, `web/test/products/roadmap/domain/abilities/corpus.test.js`, claims the read abilities' files and compares each
-answer whole by canonical text; no executor claims the direct writes' files or the proposal's yet. The format holds no
-register stamps, so no case shows §7's `roadmap-changed` over a register.
+prerequisites and unlock count, a cursor's digest or where a page is cut, a fold's colours, which code a refusal is, or
+which steps lie around the frontier. Those are the executors' to claim. `../check_test.py` holds a broken case for each
+refusal `check.py` makes. The web's runner, `web/test/products/roadmap/domain/abilities/corpus.test.js`, claims the read
+abilities' files and `context.json` and compares each answer whole by canonical text; no executor claims the direct
+writes' files or the proposal's yet. The format holds no register stamps, so no case shows §7's `roadmap-changed` over a
+register.

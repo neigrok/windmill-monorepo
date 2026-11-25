@@ -4,7 +4,6 @@
 // or the refusal of the call. The roadmap a call names is checked first, then the rules of its input, then its cursor.
 
 import { compareText } from '../../../../platform/domain-kit/entities.js';
-import { diagnose, pointerDiagnostics } from '../diagnostics.js';
 import { selectNodes } from '../reads.js';
 import { AbilityCodes, refusal } from './answers.js';
 import { Pages } from './pages.js';
@@ -14,7 +13,6 @@ import { STEP_LINE, StandingRoadmaps } from './standing.js';
 /** @typedef {import('./answers.js').AbilityResponse} AbilityResponse */
 /** @typedef {import('./standing.js').StandingRoadmap} StandingRoadmap */
 /** @typedef {import('./pages.js').Entry} Entry */
-/** @typedef {import('./pages.js').JsonObject} JsonObject */
 /** @typedef {{ treeId: string, fields?: readonly string[], cursor?: string }} TreeRequest */
 /** @typedef {{ treeId: string, nodeIds: readonly string[], fields?: readonly string[], cursor?: string }} NodesRequest */
 /** @typedef {{ treeId: string, kind?: string, state?: 'locked' | 'available' | 'complete', query?: string, fields?: readonly string[], cursor?: string }} FindRequest */
@@ -79,39 +77,18 @@ function findNodes(standing, { treeId, kind, state, query, fields = STEP_LINE, c
 function getProgress(standing, { treeId, cursor }, about) {
   const opened = StandingRoadmaps.of(standing).open(treeId, about);
   if (!('roadmap' in opened)) return opened;
-  const { roadmap } = opened;
-  const dates = new Map(roadmap.roadmaps.progress(treeId).dates.map(({ node, at }) => [node, at]));
-  const completed = [...dates.keys()].sort(compareText);
-  return paged(new Pages({ lists: ['completed'], entries: completed.map((id) => ({ under: 'completed', make: () => ({ id, at: dates.get(id) ?? null }) })),
-    read: completed }), cursor, treeId);
+  const { completions } = opened.roadmap;
+  return paged(new Pages({ lists: ['completed'], entries: completions.map((completion) => ({ under: 'completed', make: () => completion })),
+    read: completions.map(({ id }) => id) }), cursor, treeId);
 }
 
-// `get_diagnostics`: what is wrong with the roadmap's graph, from the domain's `diagnostics` read, and on a roadmap of the
-// person's own what the roadmaps its steps open come to, from its `pointers` read. Each list holds its first 50, and the
-// first page counts the rest of each.
+// `get_diagnostics`: the standing roadmap's report of what is wrong with its graph, each list its first 50, and the first
+// page counting the rest of each.
 /** @param {Standing} standing @param {RoadmapRequest} input @param {string | null} about @returns {AbilityResponse} */
 function getDiagnostics(standing, { treeId, cursor }, about) {
   const opened = StandingRoadmaps.of(standing).open(treeId, about);
   if (!('roadmap' in opened)) return opened;
-  const { roadmap } = opened;
-  const found = diagnose(roadmap.graph);
-  /** @type {Record<string, { entries: JsonObject[], omitted: number }>} */
-  const lists = {
-    cycles: { entries: found.cycles.entries.map(({ count, named }) => ({ count, nodes: named })), omitted: found.cycles.omitted },
-    dangling: { entries: found.missingEdges.entries.map(([from = '', to = '']) => ({ from, to })), omitted: found.missingEdges.omitted },
-    selfEdges: { entries: found.selfEdges.entries.map(([from = '', to = '']) => ({ from, to })), omitted: found.selfEdges.omitted },
-    smells: { omitted: 0, entries: [
-      ...(found.legendEmpty ? [{ kind: 'empty-legend' }] : []),
-      ...found.unclaimedHues.map(({ hue, nodes }) => ({ kind: 'unclaimed-hue', hue, count: nodes.count, nodes: nodes.named })),
-      ...found.smells.map(({ kind, nodes }) => ({ kind, count: nodes.count, nodes: nodes.named })),
-    ] },
-  };
-  if (roadmap.tree.own) {
-    const pointers = pointerDiagnostics(roadmap.roadmaps.account, treeId);
-    lists.treeLoops = { omitted: pointers.treeLoopsOmitted, entries: pointers.treeLoops.map(({ node, path, pathOmitted }) => ({ node,
-      path: path.map(({ tree, title }) => ({ treeId: tree, title })), ...(pathOmitted > 0 ? { pathOmitted } : {}) })) };
-    lists.danglingPointers = { omitted: pointers.danglingPointersOmitted, entries: pointers.danglingPointers.map(({ node, tree }) => ({ node, treeId: tree })) };
-  }
+  const lists = opened.roadmap.diagnostics;
   const names = Object.keys(lists).sort(compareText);
   const entries = names.flatMap((name) => (lists[name]?.entries ?? []).map((entry) => ({ under: name, make: () => entry })));
   const first = Object.fromEntries(names.flatMap((name) => (lists[name]?.omitted ? [[`${name}Omitted`, lists[name]?.omitted ?? 0]] : [])));
@@ -119,24 +96,14 @@ function getDiagnostics(standing, { treeId, cursor }, about) {
 }
 
 // `list_trees`: one row for each roadmap the person owns that stands, in the order of the domain's `list` read, newest
-// first: its title, its steps by state, the titles of its available steps in get_tree's order and its newest completion's
-// date. A roadmap the device has not finished bringing has its counts, frontier and date null, and the title the device
-// holds of it, null where it holds none. While the device does not hold the person's whole list the call is refused, so
-// no roadmap of theirs goes unlisted.
+// first. While the device does not hold the person's whole list the call is refused, so no roadmap of theirs goes
+// unlisted.
 /** @param {Standing} standing @param {TreesRequest} input @returns {AbilityResponse} */
 function listTrees(standing, { cursor }) {
   const roadmaps = StandingRoadmaps.of(standing);
   if (!roadmaps.listRead) return refusal(AbilityCodes.roadmapUnavailable);
   const rows = roadmaps.account.list();
-  /** @param {{ id: string, title: string | null }} row @returns {JsonObject} */
-  const line = ({ id, title }) => {
-    const opened = roadmaps.open(id, null);
-    if (!('roadmap' in opened)) return { id, title: title ?? roadmaps.account.trees.get(id)?.meta?.title ?? null, counts: null, frontier: null, lastCompletedAt: null };
-    const { roadmap } = opened;
-    const frontier = roadmap.order().filter((step) => roadmap.state(step) === 'available').map((step) => roadmap.tree.nodesById.get(step)?.label ?? '');
-    return { id, title, counts: roadmap.counts, frontier, lastCompletedAt: roadmap.lastCompletedAt };
-  };
-  return paged(new Pages({ lists: ['trees'], entries: rows.map((row) => ({ under: 'trees', make: () => line(row) })), read: rows.map((row) => row.id) }), cursor);
+  return paged(new Pages({ lists: ['trees'], entries: rows.map((row) => ({ under: 'trees', make: () => roadmaps.row(row) })), read: rows.map((row) => row.id) }), cursor);
 }
 
 // Every read ability of `../../../../../../packages/api-contract/roadmap/catalog.json`, by name.

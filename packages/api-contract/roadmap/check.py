@@ -39,6 +39,16 @@ MARK = ({'node', 'status', 'outOfOrder', 'recordedAt', 'deviceAt'}, {'stamp'})
 POINTER = ({'node', 'present', 'opens'}, {'setAt'})
 # The codes that refuse a whole call, before any change of a proposal folds (§7).
 CALL_CODES = {'not-owner', 'roadmap-unavailable', 'unknown-roadmap'}
+# The context (§5): its cases' file, the bounds past which a roadmap is given around where the person stands (§5, and §8's
+# `CONTEXT_BYTES`), how many newest completions it holds, the fields of a step's line and of a step in full, and the
+# codes it refuses with.
+CONTEXT = 'abilities/context.json'
+CONTEXT_STEPS = 300
+CONTEXT_BYTES = 64 * 1024
+RECENT = 10
+LINE = ['id', 'label', 'kind', 'state', 'prerequisites', 'unlockCount', 'summary']
+IN_FULL = ['id', 'label', 'kind', 'state', 'prerequisites', 'unlockCount', 'description', 'links', 'opens']
+CONTEXT_CODES = {'roadmap-unavailable', 'unknown-roadmap'}
 
 def refuse(where, reason):
     raise ValueError(f'{where}: {reason}')
@@ -217,20 +227,21 @@ class Actions:
                 self.shapes[case['input']['action']] = (required & keys, allowed | keys)
 
 class Contract:
-    def __init__(self, catalog, spec, limits, header, registry, rules, files, actions):
-        self.catalog, self.spec, self.limits, self.header, self.registry, self.rules, self.files, self.actions = catalog, spec, limits, header, registry, rules, files, actions
+    def __init__(self, catalog, spec, limits, header, registry, rules, files, context, actions):
+        self.catalog, self.spec, self.limits, self.header, self.registry, self.rules, self.files, self.context, self.actions = catalog, spec, limits, header, registry, rules, files, context, actions
 
     @staticmethod
     def read():
         limits = json.loads((ROOT / 'limits.json').read_text())
         return Contract(json.loads((ROOT / 'catalog.json').read_text()), Spec((REPO / SPEC).read_text()), limits, (REPO / limits['backend']).read_text(),
                         json.loads((REPO / limits['registry']).read_text()), (REPO / limits['web']).read_text(),
-                        {path.stem: json.loads(path.read_text()) for path in (ROOT / 'abilities').glob('*.json')}, Actions(ROOT / 'domain'))
+                        {path.stem: json.loads(path.read_text()) for path in (ROOT / 'abilities').glob('*.json') if path.name != Path(CONTEXT).name},
+                        json.loads((ROOT / CONTEXT).read_text()), Actions(ROOT / 'domain'))
 
     def check(self):
         self.check_catalog()
         self.check_limits()
-        return self.check_vectors()
+        return self.check_vectors() + self.check_context()
 
     def ability(self, name):
         return next(ability for ability in self.catalog['abilities'] if ability['name'] == name)
@@ -533,10 +544,85 @@ class Contract:
             hues = [kind['hue'] for kind in expect['folded']['kinds']]
             if len(set(hues)) != len(hues): refuse(where, 'folded kinds that share a hue')
 
+    # --- the context
+    def check_context(self):
+        if not isinstance(self.context, list) or not self.context: refuse(CONTEXT, 'not a list of cases')
+        for case in self.context:
+            where = f'{CONTEXT} · {case.get("case") if isinstance(case, dict) else "a case"}'
+            members(case, {'case', 'about', 'step', 'given', 'expect'}, where)
+            if not isinstance(case['case'], str) or not case['case']: refuse(where, 'a case that is not named')
+            self.check_given(case, where)
+            tree = next((tree for tree in case['given']['trees'] if tree['id'] == case['about']), None)
+            if case['step'] is not None and tree is None: refuse(where, 'a conversation about all roadmaps started from a step')
+            if case['step'] is not None and case['step'] not in {node['id'] for node in tree['nodes']}: refuse(where, f'a conversation started from `{case["step"]}`, a step its roadmap does not hold')
+            expect = case['expect']
+            if not isinstance(expect, dict) or sorted(expect) not in (['refused'], ['result']): refuse(where, 'an expectation that is neither a result nor a refusal')
+            if 'refused' in expect: self.check_context_refusal(case, tree, where)
+            elif tree is None:
+                found = fault(expect['result'], result_schema(self.ability('list_trees')), 'result')
+                if found or 'nextCursor' in expect['result']: refuse(where, found or 'result.nextCursor: a context is never paged')
+                for row in expect['result']['trees']: members(row, {'id', 'title', 'counts', 'frontier', 'lastCompletedAt'}, f'{where} · trees')
+            else: self.check_roadmap_context(case, tree, where)
+        return len(self.context)
+
+    def check_context_refusal(self, case, tree, where):
+        members(case['expect']['refused'], {'code'}, f'{where} · refused', {'id'})
+        code = case['expect']['refused']['code']
+        if code not in CONTEXT_CODES: refuse(where, f'`{code}`, which the context does not refuse with')
+        if code == 'roadmap-unavailable' and tree is not None and tree['read'] != 'unread': refuse(where, '`roadmap-unavailable` for a roadmap the device holds whole')
+        if case['expect']['refused'].get('id', case['about']) != case['about']: refuse(where, 'a refusal that names a roadmap other than the conversation\'s')
+
+    # What Coach is told of one roadmap: its header, its diagnostics' summary and newest dated completions, and either every
+    # step's line and completion, within the bounds, or its counts and the lines around its frontier; and a step in full
+    # where the conversation started from one the roadmap shows.
+    def check_roadmap_context(self, case, tree, where):
+        result, nodes = case['expect']['result'], {node['id']: node for node in tree['nodes']}
+        present = [node for node in tree['nodes'] if node['present']]
+        whole = 'counts' not in result
+        members(result, {'tree', 'steps', 'diagnostics', 'recent'} | ({'completed'} if whole else {'counts'}), where, {'step'})
+        members(result['tree'], {'id', 'title', 'kinds'}, f'{where} · tree')
+        if (result['tree']['id'], result['tree']['title']) != (tree['id'], tree['meta']['title']): refuse(where, 'a header that is not the roadmap\'s')
+        found = fault(result['tree']['kinds'], self.ability('get_tree')['result']['properties']['tree']['properties']['kinds'], 'result.tree.kinds')
+        if found: refuse(where, found)
+        for item in result['steps']:
+            found = fault(item, self.ability('get_tree')['result']['properties']['steps']['items'], 'result.steps[]')
+            if found: refuse(where, found)
+            if sorted(item) != sorted(LINE): refuse(where, f'`{item["id"]}`\'s line, whose fields are not §5.1\'s default')
+            if item['id'] not in nodes or not nodes[item['id']]['present']: refuse(where, f'a step `{item["id"]}` the roadmap does not hold')
+            check_projection(item, nodes[item['id']], where)
+        told = canonical({key: value for key, value in result.items() if key != 'step'}, where)
+        if whole and len(result['steps']) != len(present): refuse(where, f'{len(result["steps"])} lines of a roadmap given whole, where it holds {len(present)} steps')
+        if whole and len(present) > CONTEXT_STEPS: refuse(where, f'a roadmap of {len(present)} steps given whole, past {CONTEXT_STEPS}')
+        if whole and len(told) > CONTEXT_BYTES: refuse(where, f'a context of {len(told)} bytes given whole, past CONTEXT_BYTES, {CONTEXT_BYTES}')
+        if whole:
+            found = fault(result['completed'], {'type': 'array', 'items': self.ability('get_progress')['result']['properties']['completed']['items']}, 'result.completed')
+            if found: refuse(where, found)
+        else: self.check_counts(result['counts'], len(present), [kind['id'] for kind in result['tree']['kinds']], where)
+        members(result['diagnostics'], {'cycles', 'dangling', 'selfEdges', 'smells'} | ({'treeLoops', 'danglingPointers'} if tree['own'] else set()), f'{where} · diagnostics')
+        recent = result['recent']
+        if len(recent) > RECENT: refuse(where, f'{len(recent)} newest completions, past {RECENT}')
+        for item in recent:
+            members(item, {'id', 'label', 'at'}, f'{where} · recent')
+            if type(item['at']) is not int or item['id'] not in nodes or item['label'] != nodes[item['id']]['label']: refuse(where, f'a newest completion `{item["id"]}` that is not a dated step of the roadmap')
+        if recent != sorted(recent, key=lambda item: (-item['at'], item['id'].encode())): refuse(where, 'newest completions that are not newest first, and in id byte order at one date')
+        shown = case['step'] is not None and nodes[case['step']]['present']
+        if shown != ('step' in result): refuse(where, 'a step in full where the conversation started from no step the roadmap shows' if not shown else 'no step in full, where the conversation started from a step the roadmap shows')
+        if shown:
+            if sorted(result['step']) != sorted(IN_FULL) or result['step']['id'] != case['step']: refuse(where, 'a step in full that is not the step started from with every field of §5.1 but its summary')
+            check_projection(result['step'], nodes[case['step']], where)
+
+    def check_counts(self, counts, total, kinds, where):
+        states = ['total', 'done', 'available', 'locked', 'unknown']
+        members(counts, set(states) | {'byKind'}, f'{where} · counts')
+        if counts['total'] != total or sum(counts[state] for state in states[1:]) != total: refuse(where, f'counts of {counts["total"]} steps, where the roadmap holds {total}')
+        for row in counts['byKind']: members(row, set(states) | {'kind'}, f'{where} · counts.byKind')
+        if [row['kind'] for row in counts['byKind']] not in (kinds, kinds + [None]): refuse(where, 'counts by kind other than one row for each kind in the room\'s order, then the steps no kind owns')
+        if any(sum(row[state] for row in counts['byKind']) != counts[state] for state in states): refuse(where, 'counts by kind that do not add up to the roadmap\'s')
+
 if __name__ == '__main__':
     try:
         contract = Contract.read()
         cases = contract.check()
     except ValueError as error: sys.exit(str(error))
     print(f'{len(contract.catalog["abilities"])} abilities of {VERSION} as §4 lists them, in the shared vocabulary; {len(contract.limits["limits"])} caps as §6, '
-          f'the backend, the registry and the web hold them; {cases} vectors in {len(contract.files)} files well formed')
+          f'the backend, the registry and the web hold them; {cases} vectors in {len(contract.files) + 1} files well formed, the context\'s among them')

@@ -23,7 +23,7 @@ class Rows(unittest.TestCase):
 class ContractTest(unittest.TestCase):
     def test_the_contract_as_it_stands_holds(self):
         contract = check.Contract.read()
-        self.assertEqual(contract.check(), sum(len(cases) for cases in contract.files.values()))
+        self.assertEqual(contract.check(), sum(len(cases) for cases in contract.files.values()) + len(contract.context))
 
 
 class CatalogTest(Rows):
@@ -254,6 +254,98 @@ class VectorsTest(Rows):
         self.refused([
             self.vector('propose_roadmap_change', 0, lambda case, c: (case['given']['trees'][0].update(own=False), case.update(expect={'refused': {'code': 'not-owner', 'at': 0}})), ': an `at` on `not-owner`, which refuses the whole call'),
         ], 'check_vectors')
+
+
+class ContextTest(Rows):
+    CASES = check.Contract.read().context
+
+    def vector(self, case, change, tail):
+        index = next(index for index, each in enumerate(self.CASES) if each['case'].startswith(case))
+        return (lambda c: change(c.context[index]['expect'].get('result'), c.context[index], c), f'abilities/context.json · {self.CASES[index]["case"]}{tail}')
+
+    def test_a_case_out_of_shape_is_refused(self):
+        self.refused([
+            (lambda c: setattr(c, 'context', []), 'abilities/context.json: not a list of cases'),
+            (lambda c: c.context[0].update(case=''), 'abilities/context.json · : a case that is not named'),
+            self.vector('a small roadmap', lambda result, case, c: case.pop('step'), ': no `step`'),
+            self.vector('a conversation about all roadmaps', lambda result, case, c: case.update(step='a'), ': a conversation about all roadmaps started from a step'),
+            self.vector('a small roadmap', lambda result, case, c: case.update(step='zz'), ': a conversation started from `zz`, a step its roadmap does not hold'),
+            self.vector('a small roadmap', lambda result, case, c: case['expect'].update(refused={'code': 'roadmap-unavailable'}), ': an expectation that is neither a result nor a refusal'),
+            self.vector('a small roadmap', lambda result, case, c: case['given']['trees'][0].pop('kinds'), ' · a given tree: no `kinds`'),
+        ], 'check_context')
+
+    def test_a_refusal_other_than_the_context_gives_is_refused(self):
+        self.refused([
+            self.vector('a conversation about a roadmap the device', lambda result, case, c: case['expect']['refused'].update(code='unknown-step'), ': `unknown-step`, which the context does not refuse with'),
+            self.vector('a conversation about a roadmap the device', lambda result, case, c: (case.update(about='t_0000000000000001'), case['expect']['refused'].update(id='t_0000000000000001')),
+                        ': `roadmap-unavailable` for a roadmap the device holds whole'),
+            self.vector('a conversation about a roadmap the device', lambda result, case, c: case['expect']['refused'].update(id='t_0000000000000001'), ': a refusal that names a roadmap other than the conversation\'s'),
+            self.vector('a conversation about a roadmap the device', lambda result, case, c: case['expect']['refused'].update(at=0), ' · refused: `at` is not one of its keys'),
+        ], 'check_context')
+
+    def test_all_roadmaps_other_than_list_trees_answers_is_refused(self):
+        self.refused([
+            self.vector('a conversation about all roadmaps', lambda result, case, c: result['trees'][0].update(counts={}), ': result.trees[0].counts.total: required'),
+            self.vector('a conversation about all roadmaps', lambda result, case, c: result['trees'][0].pop('frontier'), ' · trees: no `frontier`'),
+            self.vector('a conversation about all roadmaps', lambda result, case, c: result['trees'][0].update(part=1, parts=2), ' · trees: `part` is not one of its keys'),
+            self.vector('a conversation about all roadmaps', lambda result, case, c: result.update(nextCursor='1.1.0000000000000000'), ': result.nextCursor: a context is never paged'),
+        ], 'check_context')
+
+    def test_a_roadmap_other_than_the_case_gives_is_refused(self):
+        def line(id): return {'id': id, 'label': 'Swim', 'kind': None, 'state': 'locked', 'prerequisites': [], 'unlockCount': 0, 'summary': ''}
+        self.refused([
+            self.vector('a small roadmap', lambda result, case, c: result.pop('recent'), ': no `recent`'),
+            self.vector('a small roadmap', lambda result, case, c: result.update(counts={}), ': `completed` is not one of its keys'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree'].update(title='Learn to swim'), ': a header that is not the roadmap\'s'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree'].update(guide=''), ' · tree: `guide` is not one of its keys'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree']['kinds'][0].pop('hue'), ': result.tree.kinds[0].hue: required'),
+            self.vector('a small roadmap', lambda result, case, c: result['steps'][0].update(state='done'), ': result.steps[].state: not one of the enum'),
+            self.vector('a small roadmap', lambda result, case, c: result['steps'][0].update(description=''), ': `a`\'s line, whose fields are not §5.1\'s default'),
+            self.vector('a small roadmap', lambda result, case, c: result['steps'].append(line('zz')), ': a step `zz` the roadmap does not hold'),
+            self.vector('a small roadmap', lambda result, case, c: result['steps'][1].update(summary='Practise'), ': `b`\'s summary, which is not its description cut after 160 characters'),
+            self.vector('a small roadmap', lambda result, case, c: result['completed'][0].update(at='today'), ': result.completed[0].at: not [\'integer\', \'null\']'),
+            self.vector('a small roadmap', lambda result, case, c: result['diagnostics'].pop('treeLoops'), ' · diagnostics: no `treeLoops`'),
+        ], 'check_context')
+
+    def test_a_roadmap_given_whole_past_the_bounds_is_refused(self):
+        def grown(result, case):
+            tree = case['given']['trees'][0]
+            tree['nodes'].append({**tree['nodes'][-1], 'id': 'zz', 'ord': '~'})
+            result['steps'].append({**next(item for item in result['steps'] if item['id'] == tree['nodes'][-2]['id']), 'id': 'zz', 'prerequisites': [], 'state': 'available'})
+        def lengthened(result, case):
+            item = next(item for item in result['steps'] if item['state'] == 'locked')
+            node = next(node for node in case['given']['trees'][0]['nodes'] if node['id'] == item['id'])
+            node['label'] += '!'
+            item['label'] += '!'
+        self.refused([
+            self.vector('a small roadmap', lambda result, case, c: result['steps'].pop(), ': 14 lines of a roadmap given whole, where it holds 15 steps'),
+            self.vector('a roadmap of 300 steps whose context, given whole, comes to', lambda result, case, c: grown(result, case), ': a roadmap of 301 steps given whole, past 300'),
+            self.vector('a roadmap of 300 steps whose context, given whole, comes to', lambda result, case, c: lengthened(result, case), ': a context of 65537 bytes given whole, past CONTEXT_BYTES, 65536'),
+        ], 'check_context')
+
+    def test_counts_other_than_the_roadmaps_are_refused(self):
+        self.refused([
+            self.vector('a roadmap of 500 steps', lambda result, case, c: result['counts'].update(total=499), ': counts of 499 steps, where the roadmap holds 500'),
+            self.vector('a roadmap of 500 steps', lambda result, case, c: result['counts'].pop('byKind'), ' · counts: no `byKind`'),
+            self.vector('a roadmap of 500 steps', lambda result, case, c: result['counts']['byKind'].reverse(), ': counts by kind other than one row for each kind in the room\'s order, then the steps no kind owns'),
+            self.vector('a roadmap of 500 steps', lambda result, case, c: result['counts']['byKind'][0].update(done=0), ': counts by kind that do not add up to the roadmap\'s'),
+        ], 'check_context')
+
+    def test_newest_completions_other_than_the_roadmaps_are_refused(self):
+        self.refused([
+            self.vector('a small roadmap', lambda result, case, c: result['recent'].append(result['recent'][0]), ': 11 newest completions, past 10'),
+            self.vector('a small roadmap', lambda result, case, c: result['recent'][0].update(label='Read a map'), ': a newest completion `l` that is not a dated step of the roadmap'),
+            self.vector('a step done before', lambda result, case, c: result['recent'].append({'id': 'a', 'label': 'Find a pool', 'at': None}), ': a newest completion `a` that is not a dated step of the roadmap'),
+            self.vector('a small roadmap', lambda result, case, c: result['recent'].reverse(), ': newest completions that are not newest first, and in id byte order at one date'),
+        ], 'check_context')
+
+    def test_a_step_in_full_other_than_the_conversation_started_from_is_refused(self):
+        self.refused([
+            self.vector('a conversation started from a step adds', lambda result, case, c: result.pop('step'), ': no step in full, where the conversation started from a step the roadmap shows'),
+            self.vector('a conversation started from a step the roadmap', lambda result, case, c: result.update(step={'id': 'o'}), ': a step in full where the conversation started from no step the roadmap shows'),
+            self.vector('a conversation started from a step adds', lambda result, case, c: result['step'].update(summary=''), ': a step in full that is not the step started from with every field of §5.1 but its summary'),
+            self.vector('a conversation started from a step adds', lambda result, case, c: result['step'].update(description='Plan it.'), ': `m`\'s description, which is not the step\'s'),
+        ], 'check_context')
 
 
 class LimitsTest(Rows):

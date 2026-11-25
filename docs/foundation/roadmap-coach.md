@@ -9,9 +9,10 @@ roadmap nodes can cite them.
 **Status:** Specified, and approved by the owner on 2026-11-15, and again on 2026-11-17 as revised
 for roadmap on the sync engine (R-13) and Coach on the iPhone in the first release (R-14). Of Coach
 its contract is built: the catalog, its limits and the format of its vectors (§3); and on the web
-the standing roadmap (D-2) and the read abilities (§4, §5), in `web/src/products/roadmap/domain/abilities/`,
-which claim the read abilities' vectors. The roadmap's AI today is tending: a server-side agent that
-edits a roadmap at once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person
+the standing roadmap (D-2), the read abilities (§4, §5) and the context (D-8, §5), in
+`web/src/products/roadmap/domain/abilities/`, which claim the read abilities' vectors and the context's.
+The roadmap's AI today is tending: a server-side agent that edits a roadmap at once from one sentence
+(`backend/products/roadmap`, `TendingApi`). What a person
 sees of Coach is ruled in the [design canon](../design/roadmap-coach.md); this document says how it
 is built. The build order lives in the Roadmap Coach roadmap tree, which the dogfood tree
 (`t_9362d9bc883e0a1e`) opens from the node `roadmap-coach`.
@@ -85,15 +86,15 @@ packages/api-contract/roadmap/
   catalog.json            the abilities Coach is offered (§4)
   limits.json             the caps the server enforces, for every client to check first (§6)
   abilities/              vectors: the roadmaps, an input, and the result, the writes or the refusal
-                          they must give; its README.md has the format
+                          they must give, the context's among them; its README.md has the format
   check.py                the Coach contracts workflow's check of the three against this document's
                           tables, and of each cap against the sources it names
   domain/                 roadmap's shared domain corpus, where a turn's opening and end are proven
                           as gym's are (§9)
 web/src/products/roadmap/
-  domain/                 the abilities, each a pure function of a roadmap and an input, with the
-                          rules they share with the room's controls
-  coach/                  roadmap's profile: prompt, context, the tool host over the copy,
+  domain/                 the abilities and the context, each a pure function of a roadmap and an
+                          input, with the rules they share with the room's controls
+  coach/                  roadmap's profile: prompt, first content, the tool host over the copy,
                           proposals, receipts
 apps/ios/Domain/Sources/RoadmapDomain/
                           the same abilities and rules in Swift, with the tool host's executor
