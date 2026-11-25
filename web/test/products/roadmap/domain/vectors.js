@@ -255,12 +255,16 @@ export function runRead(input) {
     return readRoadmap(input.id, { listed: input.listed, tree: reader(RoadmapScopes.tree(input.id), input.tree), read: input.read,
       overlay: input.overlay && reader(RoadmapScopes.overlay(input.id), input.overlay.drawn), queued: input.overlay?.queued ?? [] }).json;
   }
-  if (['account', 'activity', 'guides', 'pointers', 'progress', 'openings', 'list', 'listing'].includes(input.operation)) {
+  if (input.trees !== undefined) {
     const account = new RoadmapAccount(input.trees.map((/** @type {any} */ tree) => new RoadmapTree(tree)), { told: input.told ?? [] });
     if (input.operation === 'account') return account.result();
     if (input.operation === 'activity') {
       const graph = account.graph(input.tree);
       return graph === null ? null : new ActivityRead(graph, input.step ?? null).result();
+    }
+    if (input.operation === 'effects') {
+      const graph = account.graph(input.tree);
+      return graph === null ? null : new EffectsRead(graph, input.ids).result();
     }
     if (input.operation === 'progress') return account.progress(input.tree);
     if (input.operation === 'openings') return account.openingsOf(input.tree);

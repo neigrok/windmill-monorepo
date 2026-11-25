@@ -301,7 +301,10 @@ extension BoardRead {
 }
 
 extension EffectsRead {
-  var form: JSON { ["kept": .of(kept), "deletable": .bool(deletable), "follow": .strings(follow), "relocks": .strings(relocks)] }
+  var form: JSON {
+    ["kept": .of(kept), "takesEveryStart": .bool(takesEveryStart), "deletable": .bool(deletable), "follow": .strings(follow),
+     "relocks": .strings(relocks)]
+  }
 }
 
 extension LandingFact {

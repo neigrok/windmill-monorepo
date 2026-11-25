@@ -15,7 +15,7 @@
       },
       "ids": ["choose"]
     },
-    "expect": {"kept": "choose", "deletable": false, "follow": ["parts"], "relocks": []}
+    "expect": {"kept": "choose", "takesEveryStart": true, "deletable": false, "follow": ["parts"], "relocks": []}
   },
   {
     "name": "Any other step of a roadmap with one starting step may be deleted",
@@ -33,7 +33,7 @@
       },
       "ids": ["parts"]
     },
-    "expect": {"kept": "choose", "deletable": true, "follow": ["rig"], "relocks": []}
+    "expect": {"kept": "choose", "takesEveryStart": false, "deletable": true, "follow": ["rig"], "relocks": []}
   },
   {
     "name": "A roadmap with two starting steps keeps neither, and a selection that takes both is refused",
@@ -51,7 +51,7 @@
       },
       "ids": ["plan", "shoes"]
     },
-    "expect": {"kept": null, "deletable": false, "follow": ["run"], "relocks": []}
+    "expect": {"kept": null, "takesEveryStart": true, "deletable": false, "follow": ["run"], "relocks": []}
   },
   {
     "name": "One of two starting steps may be deleted",
@@ -69,7 +69,7 @@
       },
       "ids": ["shoes"]
     },
-    "expect": {"kept": null, "deletable": true, "follow": ["run"], "relocks": []}
+    "expect": {"kept": null, "takesEveryStart": false, "deletable": true, "follow": ["run"], "relocks": []}
   },
   {
     "name": "A selection that names a step the roadmap does not hold, deleted or never held, is not deletable",
@@ -87,7 +87,7 @@
       },
       "ids": ["parts", "gone", "never"]
     },
-    "expect": {"kept": "choose", "deletable": false, "follow": [], "relocks": []}
+    "expect": {"kept": "choose", "takesEveryStart": false, "deletable": false, "follow": [], "relocks": []}
   },
   {
     "name": "An empty selection is not deletable and costs nothing",
@@ -104,10 +104,10 @@
       },
       "ids": []
     },
-    "expect": {"kept": "choose", "deletable": false, "follow": [], "relocks": []}
+    "expect": {"kept": "choose", "takesEveryStart": false, "deletable": false, "follow": [], "relocks": []}
   },
   {
-    "name": "A follower that is itself selected is not counted, and a step named twice is one step",
+    "name": "A follower that is itself selected is not counted",
     "input": {
       "operation": "effects",
       "tree": {
@@ -127,9 +127,9 @@
           {"from": "rig", "to": "leave", "present": true}, {"from": "read", "to": "leave", "present": true}
         ]
       },
-      "ids": ["rig", "parts", "rig"]
+      "ids": ["rig", "parts"]
     },
-    "expect": {"kept": "choose", "deletable": true, "follow": ["read", "tie", "leave"], "relocks": []}
+    "expect": {"kept": "choose", "takesEveryStart": false, "deletable": true, "follow": ["read", "tie", "leave"], "relocks": []}
   },
   {
     "name": "A Reset of a marked step returns its Up next followers to Locked, and its Done follower stays Done",
@@ -159,7 +159,7 @@
       },
       "ids": ["parts"]
     },
-    "expect": {"kept": "choose", "deletable": true, "follow": ["rig", "read", "tie"], "relocks": ["read", "tie"]}
+    "expect": {"kept": "choose", "takesEveryStart": false, "deletable": true, "follow": ["rig", "read", "tie"], "relocks": ["read", "tie"]}
   },
   {
     "name": "A Reset of an unmarked step returns nothing to Locked",
@@ -181,10 +181,10 @@
       },
       "ids": ["parts"]
     },
-    "expect": {"kept": "choose", "deletable": true, "follow": ["rig"], "relocks": []}
+    "expect": {"kept": "choose", "takesEveryStart": false, "deletable": true, "follow": ["rig"], "relocks": []}
   },
   {
-    "name": "A Reset counts only a mark the graph counts: a step that opens a roadmap has its mark set aside and relocks nothing",
+    "name": "A Reset counts only a mark the tree counts: a step that opens a roadmap has its mark set aside and relocks nothing",
     "input": {
       "operation": "effects",
       "tree": {
@@ -204,7 +204,7 @@
       },
       "ids": ["sail"]
     },
-    "expect": {"kept": "plan", "deletable": true, "follow": ["maya"], "relocks": []}
+    "expect": {"kept": "plan", "takesEveryStart": false, "deletable": true, "follow": ["maya"], "relocks": []}
   },
   {
     "name": "A follower reached only through an absent step follows the step behind it, and a Reset of that step relocks it",
@@ -230,7 +230,7 @@
       },
       "ids": ["shoes"]
     },
-    "expect": {"kept": null, "deletable": true, "follow": ["run"], "relocks": ["run"]}
+    "expect": {"kept": null, "takesEveryStart": false, "deletable": true, "follow": ["run"], "relocks": ["run"]}
   },
   {
     "name": "A step that follows only an absent step with nothing behind it is a starting step",
@@ -248,6 +248,95 @@
       },
       "ids": ["run"]
     },
-    "expect": {"kept": "run", "deletable": false, "follow": ["race"], "relocks": []}
+    "expect": {"kept": "run", "takesEveryStart": true, "deletable": false, "follow": ["race"], "relocks": []}
+  },
+  {
+    "name": "A roadmap whose every step is in a loop has no starting step: none is kept, and even all its steps may be deleted",
+    "input": {
+      "operation": "effects",
+      "tree": {
+        "id": "T",
+        "meta": {"title": "Learn to sail"},
+        "nodes": [
+          {"id": "read", "label": "Read the wind", "ord": "a0"},
+          {"id": "trim", "label": "Trim the sails", "ord": "a1"}
+        ],
+        "edges": [{"from": "read", "to": "trim", "present": true}, {"from": "trim", "to": "read", "present": true}]
+      },
+      "ids": ["read", "trim"]
+    },
+    "expect": {"kept": null, "takesEveryStart": false, "deletable": true, "follow": [], "relocks": []}
+  },
+  {
+    "name": "A step that follows itself through an absent step is neither its own follower nor its own delete's cost",
+    "input": {
+      "operation": "effects",
+      "tree": {
+        "id": "T",
+        "meta": {"title": "Learn to sail"},
+        "nodes": [
+          {"id": "choose", "label": "Choose a course", "ord": "a0"},
+          {"id": "read", "label": "Read the wind", "ord": "a1"},
+          {"id": "gone", "present": false, "label": "Trim the sails", "ord": "a2"}
+        ],
+        "edges": [{"from": "read", "to": "gone", "present": true}, {"from": "gone", "to": "read", "present": true}]
+      },
+      "ids": ["read"]
+    },
+    "expect": {"kept": "choose", "takesEveryStart": false, "deletable": true, "follow": [], "relocks": []}
+  },
+  {
+    "name": "A marked step named twice is one step, whose Reset relocks its Up next follower",
+    "input": {
+      "operation": "effects",
+      "tree": {
+        "id": "T",
+        "meta": {"title": "Learn to sail"},
+        "nodes": [
+          {"id": "choose", "label": "Choose a course", "ord": "a0"},
+          {"id": "parts", "label": "Name the parts", "ord": "a1"},
+          {"id": "rig", "label": "Rig the boat", "ord": "a2"}
+        ],
+        "edges": [{"from": "choose", "to": "parts", "present": true}, {"from": "parts", "to": "rig", "present": true}],
+        "marks": [
+          {"node": "choose", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 1000},
+          {"node": "parts", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 2000}
+        ]
+      },
+      "ids": ["parts", "parts"]
+    },
+    "expect": {"kept": "choose", "takesEveryStart": false, "deletable": true, "follow": ["rig"], "relocks": ["rig"]}
+  },
+  {
+    "name": "Over the account, a step complete by the roadmap it opens keeps its mark set aside, and a Reset of it relocks nothing",
+    "input": {
+      "operation": "effects",
+      "trees": [
+        {
+          "id": "T",
+          "meta": {"title": "My year"},
+          "nodes": [
+            {"id": "plan", "label": "Plan the year", "ord": "a0"},
+            {"id": "sail", "label": "Learn to sail", "ord": "a1"},
+            {"id": "maya", "label": "Take Maya sailing", "ord": "a2"}
+          ],
+          "edges": [{"from": "plan", "to": "sail", "present": true}, {"from": "sail", "to": "maya", "present": true}],
+          "marks": [
+            {"node": "plan", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 1000},
+            {"node": "sail", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 2000}
+          ],
+          "pointers": [{"node": "sail", "present": true, "opens": "S", "setAt": "1500:0:dev"}]
+        },
+        {
+          "id": "S",
+          "meta": {"title": "Learn to sail"},
+          "nodes": [{"id": "dinghy", "label": "Sail a dinghy", "ord": "a0"}],
+          "marks": [{"node": "dinghy", "status": "complete", "outOfOrder": false, "recordedAt": null, "deviceAt": 3000}]
+        }
+      ],
+      "tree": "T",
+      "ids": ["sail"]
+    },
+    "expect": {"kept": "plan", "takesEveryStart": false, "deletable": true, "follow": ["maya"], "relocks": []}
   }
 ]

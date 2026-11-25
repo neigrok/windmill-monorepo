@@ -270,30 +270,34 @@ public struct ActivityRead: Sendable {
   }
 }
 
-// What deleting the steps `ids` would do, and what a Reset of one would, read before anything is written. A roadmap keeps
-// its one starting step (`kept`), and a delete may not take every step it starts from. `follow` are the present steps
-// outside the selection that follow a step in it, read through absent steps (D-5), in authored order: what a delete
-// costs, and for one step the steps it opens. `relocks`, for one step complete by the person's mark (the graph counts it
-// complete and its mark is complete), are those that stand Up next, which a Reset returns to Locked; its completed
-// followers stay Done.
+// What deleting `ids` or resetting one would do (the corpus README's `effects`); `follow` walks the graph when asked.
 public struct EffectsRead: Sendable {
   public let kept: String?
   public let takesEveryStart: Bool
   public let deletable: Bool
-  public let follow: [String]
-  public let relocks: [String]
+  let graph: FollowGraph
+  let chosen: [Int]
+  let marked: Bool
 
   public init(_ graph: FollowGraph, ids: [String]) {
     let index = graph.tree.index
-    var named = Set<[UInt8]>()
-    let selected = ids.filter { named.insert(Array($0.utf8)).inserted }
-    let slots = selected.compactMap(index.slot(of:))
+    let slots = ids.compactMap(index.slot(of:))
+    let chosen = Set(slots)
+    let present = slots.count == ids.count
+    self.graph = graph
+    self.chosen = Array(chosen)
     kept = graph.starting.count == 1 ? graph.starting[0] : nil
-    takesEveryStart = !graph.starting.isEmpty && graph.starting.allSatisfy { named.contains(Array($0.utf8)) }
-    deletable = !selected.isEmpty && slots.count == selected.count && !takesEveryStart
+    takesEveryStart = !graph.starting.isEmpty && graph.starting.allSatisfy { index.slot(of: $0).map(chosen.contains) == true }
+    deletable = !ids.isEmpty && present && !takesEveryStart
+    let only = chosen.count == 1 ? chosen.first : nil
+    marked = present && only.map { graph.done[$0] && index.markedDone[$0] } == true
+  }
+
+  public var follow: [String] {
+    let index = graph.tree.index
     // A present step stops the walk: what follows it follows it, not the selection.
-    var passed = Set(slots)
-    var pending = slots
+    var passed = Set(chosen)
+    var pending = chosen
     var followers: [Int] = []
     while let vertex = pending.popLast() {
       for next in index.children[vertex] {
@@ -301,11 +305,10 @@ public struct EffectsRead: Sendable {
         if next < index.ids.count { followers.append(next) } else { pending.append(next) }
       }
     }
-    followers.sort()
-    follow = followers.map { index.ids[$0] }
-    let marked = selected.count == 1 && slots.count == 1 && graph.done[slots[0]] && graph.tree.mark(on: selected[0])?.isComplete == true
-    relocks = marked ? followers.filter { graph.stateAt[$0] == .available }.map { index.ids[$0] } : []
+    return followers.sorted().map { index.ids[$0] }
   }
+
+  public var relocks: [String] { marked ? follow.filter { graph.states[$0] == .available } : [] }
 }
 
 // A step the device linked that is now read through an absent step: its own links that bridge the absence, and what it follows through them.

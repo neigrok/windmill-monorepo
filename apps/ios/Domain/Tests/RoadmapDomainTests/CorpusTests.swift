@@ -39,6 +39,9 @@ struct CorpusTests {
       let tree = try input.member("tree").asString()
       switch operation {
       case "activity": return try account.graph(tree).map { ActivityRead($0, step: try input.optionalString("step")).form } ?? .null
+      case "effects":
+        let ids = try input.member("ids").asArray().map { try $0.asString() }
+        return account.graph(tree).map { EffectsRead($0, ids: ids).form } ?? .null
       case "progress": return account.progress(tree)?.form ?? .null
       case "guides": return .array(account.guides(tree).map(\.form))
       case "openings": return .array(account.openings(of: tree).map(\.form))

@@ -44,7 +44,7 @@ ID byte order.
 | `pointers` | Shortest pointer-loop paths and known dangling targets, with omission counts | yes |
 | `landing` | The device's own links (`edges`) whose current followed prerequisites bridge absence | no |
 | `activity` | A roadmap's Activity, or one step's History: each present step's creation and completion the copy holds a time for, newest first; null for an unread/hidden tree | no |
-| `effects` | What deleting `ids` or resetting one would do: the roadmap's one starting step (`kept`, null unless it has exactly one), a starting step being a present step that follows nothing; whether `ids` may be deleted (`deletable`), which they may not when empty, naming a step that is not present, or holding every starting step; the present steps outside `ids` that follow one of them, in authored order (`follow`); and, for one step the graph counts complete that holds a complete mark, those of them Up next, which a Reset returns to Locked (`relocks`) | no |
+| `effects` | What deleting `ids` or resetting one would do: the roadmap's one starting step (`kept`, null unless it has exactly one), a starting step being a present step that follows nothing; whether `ids` take every starting step of a roadmap that has any (`takesEveryStart`; false where every step is in a loop); whether `ids` may be deleted (`deletable`), not when empty, naming a step that is not present, or taking every starting step; the present steps outside `ids` that follow one of them, in authored order, a step never its own follower (`follow`); and, for one step the graph counts complete by a mark its tree counts (none on a step that owns a subtree or opens a roadmap), those of them Up next, which a Reset returns to Locked (`relocks`) | no |
 | `roadmap` (`replica.json`) | One roadmap's records as a replica holds them, as the normalized tree | no |
 | `openings` (`replica.json`) | One tree's openings as `account` reads them, without reading every tree, with what a read elsewhere tells (`told`) | no |
 | `progress` (`replica.json`) | `progress` with what a read elsewhere tells (`told`) | no |
@@ -143,7 +143,8 @@ The harness inputs are `{operation, tree, subjects}` for `graph`, `{operation, t
 `{operation, trees, tree: id, step?}` for `activity`,
 `{operation, id, listed, tree, overlay: {drawn, queued} | null, read}` for `roadmap`, its records engine view records and
 `queued` the overlay's records (`{t, id}`) a queued entry still changes, `{operation, tree, query}` for `board` and
-`search`, `{operation, tree}` for `legend` and `diagnostics`, `{operation, tree, ids}` for `effects`, and
+`search`, `{operation, tree}` for `legend` and `diagnostics`, `{operation, tree, ids}` for `effects`, or
+`{operation, trees, tree: id, ids}` over the account's graph of that roadmap, and
 `{operation, tree, own: {nodes: [id], edges: [[from,to]]}}` for `landing`. `subjects` selects detailed graph reads only;
 it never narrows states. `query` is Board's `{sort,kinds,search,branch,doneExpanded}` or MCP's `{query,color,kind}`.
 Optional query fields have the defaults in `reads.js`.

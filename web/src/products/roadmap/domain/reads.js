@@ -161,27 +161,37 @@ export function landingFacts(graph, edges) {
   });
 }
 
-// What deleting the steps `ids` would do, and what a Reset of one would, read before anything is written. A roadmap keeps
-// its one starting step (`kept`), and a delete may not take every step it starts from. `follow` are the present steps
-// outside the selection that follow a step in it, read through absent steps (D-5), in authored order: what a delete
-// costs, and for one step the steps it opens. `relocks`, for one step complete by the person's mark (the graph counts it
-// complete and its mark is complete), are those that stand Up next, which a Reset returns to Locked; its completed
-// followers stay Done.
+// What deleting `ids` or resetting one would do (the corpus README's `effects`); `follow` walks the graph when asked.
 export class EffectsRead {
+  /** @type {FollowGraph} */
+  #graph;
+  /** @type {number[]} */
+  #chosen;
+  /** @type {boolean} */
+  #marked;
+
   /** @param {FollowGraph} graph @param {string[]} ids */
   constructor(graph, ids) {
-    const named = new Set(ids);
-    const selected = [...named];
-    const slots = selected.flatMap((id) => {
+    const slots = ids.flatMap((id) => {
       const slot = graph.slot.get(id);
       return slot === undefined ? [] : [slot];
     });
+    const chosen = new Set(slots);
+    const present = slots.length === ids.length;
+    this.#graph = graph;
+    this.#chosen = [...chosen];
     this.kept = graph.starting.length === 1 ? graph.starting[0] ?? null : null;
-    this.takesEveryStart = graph.starting.length > 0 && graph.starting.every((id) => named.has(id));
-    this.deletable = selected.length > 0 && slots.length === selected.length && !this.takesEveryStart;
+    this.takesEveryStart = graph.starting.length > 0 && graph.starting.every((id) => chosen.has(graph.slot.get(id) ?? -1));
+    this.deletable = ids.length > 0 && present && !this.takesEveryStart;
+    const [only = -1] = this.#chosen;
+    this.#marked = present && chosen.size === 1 && graph.done[only] === 1 && graph.tree.index.markedDone[only] === 1;
+  }
+
+  get follow() {
+    const graph = this.#graph;
     // A present step stops the walk: what follows it follows it, not the selection.
-    const passed = new Set(slots);
-    const pending = [...slots];
+    const passed = new Set(this.#chosen);
+    const pending = [...this.#chosen];
     /** @type {number[]} */
     const followers = [];
     for (let vertex = pending.pop(); vertex !== undefined; vertex = pending.pop()) {
@@ -192,12 +202,12 @@ export class EffectsRead {
         else pending.push(next);
       }
     }
-    followers.sort((a, b) => a - b);
-    this.follow = followers.map((slot) => graph.ids[slot] ?? '');
-    const marked = selected.length === 1 && slots.length === 1 && graph.done[slots[0] ?? 0] === 1
-      && graph.tree.marks.get(selected[0] ?? '')?.status === 'complete';
-    this.relocks = marked ? followers.filter((slot) => graph.states.valueAt(slot) === 'available').map((slot) => graph.ids[slot] ?? '') : [];
+    return followers.sort((a, b) => a - b).map((slot) => graph.ids[slot] ?? '');
   }
 
-  result() { return { kept: this.kept, deletable: this.deletable, follow: this.follow, relocks: this.relocks }; }
+  get relocks() { return this.#marked ? this.follow.filter((id) => this.#graph.states.get(id) === 'available') : []; }
+
+  result() {
+    return { kept: this.kept, takesEveryStart: this.takesEveryStart, deletable: this.deletable, follow: this.follow, relocks: this.relocks };
+  }
 }
