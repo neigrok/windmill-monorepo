@@ -11,7 +11,7 @@ import { evalJson, httpOrigin, installReadOnlyGuard, installRoadmapObserver, set
 
 test('roadmap socket fixtures follow the production client and backend route', { timeout: 2000 }, async () => {
   const backend = await readFile(new URL('../../../../backend/products/roadmap/adapters/ws/TreeSocket.h', import.meta.url), 'utf8');
-  const routes = [...backend.matchAll(/WS_PATH_ADD\("([^"]+)"\)/g)].map((match) => match[1]);
+  const routes = [...backend.matchAll(/WS_PATH_ADD\("([^"]+)"/g)].map((match) => match[1]);
   assert.deepEqual(routes, [new URL(socketUrl()).pathname]);
 });
 
