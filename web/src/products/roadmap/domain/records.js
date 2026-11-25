@@ -10,7 +10,7 @@ import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/
 /** @typedef {{node:string,present:boolean,opens:string,setAt?:string|null}} Pointer */
 /** @typedef {{tree:string,step:string}} Parent */
 /** @typedef {{title:string,guide:string,guideInherited:boolean,root:string,depth:number,visibility:string,reach:string,forkedFrom:string|null}} Metadata */
-/** @typedef {{id:string,present?:boolean,read?:'loaded'|'unread',own?:boolean,updatedAt?:number|null,parent?:Parent|null,meta?:Partial<Metadata>|null,nodes?:StepInput[],edges?:Edge[],kinds?:KindInput[],marks?:MarkInput[],pointers?:Pointer[]}} TreeInput */
+/** @typedef {{id:string,present?:boolean,read?:'loaded'|'unread',own?:boolean,updatedAt?:number|null,stampedAt?:number|null,parent?:Parent|null,meta?:Partial<Metadata>|null,nodes?:StepInput[],edges?:Edge[],kinds?:KindInput[],marks?:MarkInput[],pointers?:Pointer[]}} TreeInput */
 
 export class Step {
   /** @param {StepInput} input */
@@ -129,8 +129,9 @@ export class TreeIndex {
 }
 
 // A roadmap's normalized records. `own` says it is in the person's own list; `updatedAt` is when the server last received
-// any record of it, null where it has received none; `meta` is null while its tree scope holds no meta, and its `forkedFrom`
-// names the roadmap a fork was copied from, null for one that is no fork.
+// any record of it, null where it has received none; `stampedAt` is the time of the newest engine stamp the device holds of
+// it, null where it holds none; `meta` is null while its tree scope holds no meta, and its `forkedFrom` names the roadmap a
+// fork was copied from, null for one that is no fork.
 export class RoadmapTree {
   /** @param {TreeInput} input */
   constructor(input) {
@@ -139,6 +140,7 @@ export class RoadmapTree {
     this.read = input.read ?? 'loaded';
     this.own = input.own ?? false;
     this.updatedAt = input.updatedAt ?? null;
+    this.stampedAt = input.stampedAt ?? null;
     this.parent = input.parent ? { ...input.parent } : null;
     this.meta = input.meta === null ? null
       : { title: '', guide: '', guideInherited: false, root: input.id, depth: 0, visibility: 'private', reach: 'private', forkedFrom: null, ...input.meta };
@@ -159,6 +161,7 @@ export class RoadmapTree {
   get json() {
     return {
       id: this.id, present: this.present, read: /** @type {'loaded'|'unread'} */ (this.read), own: this.own, updatedAt: this.updatedAt,
+      stampedAt: this.stampedAt,
       parent: this.parent && { ...this.parent }, meta: this.meta && { ...this.meta },
       nodes: this.nodes.map((step) => ({ ...step, links: step.links.map((link) => ({ ...link })) })),
       edges: this.edges.map((edge) => ({ ...edge })),

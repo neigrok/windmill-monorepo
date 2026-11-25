@@ -18,8 +18,8 @@ time, randomness or localization.
 
 `RoadmapTree` constructs the supplied normalized tree, nodes and kinds. Trees retain `present`,
 `read`, `own` (the tree is in the person's own list), `updatedAt` (when the server last received any
-record of it, or null), immutable `parent`, metadata (`meta: null` where its tree scope holds no meta),
-every node record including absent ones, every edge's presence, marks and pointers. D-3: a root stands
+record of it, or null), `stampedAt` (the time of the newest engine stamp the device holds of it, or null),
+immutable `parent`, metadata (`meta: null` where its tree scope holds no meta), every node record including absent ones, every edge's presence, marks and pointers. D-3: a root stands
 once its tree scope holds its meta; a loaded root without it (a creation or a fork under way) is hidden,
 with every subtree under it, so it has no title, count, list row or address and a pointer at it dangles.
 An unread root keeps standing, as nothing is known of it. `born` is an engine stamp string or null; `rc`/`ru`, `recordedAt`/`deviceAt` are
@@ -47,7 +47,7 @@ ID byte order.
 | `roadmap` (`replica.json`) | One roadmap's records as a replica holds them, as the normalized tree | no |
 | `openings` (`replica.json`) | One tree's openings as `account` reads them, without reading every tree, with what a read elsewhere tells (`told`) | no |
 | `progress` (`replica.json`) | `progress` with what a read elsewhere tells (`told`) | no |
-| `list` (`replica.json`) | The person's own roots that stand, newest first by `updatedAt`, none received last, ID byte ties | no |
+| `list` (`replica.json`) | The person's own roots that stand, newest first by `updatedAt`, or by `stampedAt` where no server has received any record of the roadmap, one with neither last, ID byte ties | no |
 | `listing` (`replica.json`) | One roadmap that stands, whoever owns it, as a list shows it, null for one that does not stand | no |
 
 `readRoadmap` (`roadmaps.js`) reads one roadmap from a device's replica: its tree scope's steps and links as
@@ -62,7 +62,8 @@ nor of its overlay (none carries an `ru`): a roadmap the device made, which the 
 way leaves it unread, whatever rows it has brought. §5 Dates: the server has received a mark once no entry the device queues (held, ready, sent or
 acked) still changes its record, and its `recordedAt` is that record's `ru`; a mark an entry still changes is the
 device's, with no `recordedAt`. Every mark's `deviceAt` is its stamp's milliseconds. `updatedAt` is the newest `ru` among the
-roadmap's record, its tree scope's records and its overlay's.
+roadmap's record, its tree scope's records and its overlay's. `stampedAt` is the milliseconds of the newest engine stamp
+(a record's birth, its life's or a field's) among the same records as the device holds them, null where it holds none.
 
 `FollowGraph` reads every live incoming edge. A present predecessor is a boundary. Any other endpoint
 is traversed, including an ID with no node record. Missing records remain diagnosed separately from

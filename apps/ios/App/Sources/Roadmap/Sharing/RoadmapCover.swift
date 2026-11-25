@@ -336,7 +336,8 @@ extension RoadmapTree {
   // A roadmap someone else owns as its reader sees it: its records as the phone's copy holds them, with its owner's marks,
   // which the server reads and the phone holds none of.
   init(_ held: RoadmapTree, marks: [Mark]) {
-    self.init(id: held.id, present: held.present, read: held.read, own: held.own, updatedAt: held.updatedAt, parent: held.parent,
-              meta: held.meta, nodes: held.nodes, edges: held.edges, kinds: held.kinds, marks: marks, pointers: held.pointers)
+    self.init(id: held.id, present: held.present, read: held.read, own: held.own, updatedAt: held.updatedAt, stampedAt: held.stampedAt,
+              parent: held.parent, meta: held.meta, nodes: held.nodes, edges: held.edges, kinds: held.kinds, marks: marks,
+              pointers: held.pointers)
   }
 }

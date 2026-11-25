@@ -389,12 +389,14 @@ public struct RoadmapAccount: Sendable {
     }
   }
 
-  // The person's own roots that stand, newest first by when the server last received a record of each, never received last, equals in id byte order.
+  // The person's own roots that stand, newest first by when the server last received a record of each, or, of one no server
+  // has received, by its newest stamp the phone holds; one with neither last, equals in id byte order.
   public func list() -> [ListedRoadmap] {
     let roots = trees.filter { $0.own && locations[$0.id]?.standing == .standing && $0.parent == nil }
     let newestFirst = roots.sorted { a, b in
-      if (a.updatedAt == nil) != (b.updatedAt == nil) { return a.updatedAt != nil }
-      if let left = a.updatedAt, let right = b.updatedAt, left != right { return left > right }
+      let (left, right) = (a.updatedAt ?? a.stampedAt, b.updatedAt ?? b.stampedAt)
+      if (left == nil) != (right == nil) { return left != nil }
+      if let left, let right, left != right { return left > right }
       return a.id.utf8.lexicographicallyPrecedes(b.id.utf8)
     }
     return newestFirst.compactMap { listing($0.id) }

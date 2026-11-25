@@ -152,6 +152,25 @@ import SyncTesting
     #expect(reopened.roadmaps.map(\.id) == [newer.description, older.tree.description])
   }
 
+  // Signed out, no server has received any of the phone's roadmaps, so the title menu lists them by the newest stamp the
+  // phone holds of each: the roadmap made last comes first.
+  @Test func aPhoneNeverSignedInListsTheRoadmapMadeLastFirst() async throws {
+    let (engine, runner, memory, suite) = phone(account: nil)
+    defer { memory.removePersistentDomain(forName: suite) }
+    let basics = ImportedSteps(steps: [ImportedStep(key: "first", RoadmapStep.Changes(label: "Basics"))])
+    guard case .committed = try runner.runAct(CreateRoadmap(title: "Learn Rust", steps: basics)) else {
+      Issue.record("Learn Rust was not created")
+      return
+    }
+    engine.advance(ms: 60_000)
+    try RoadmapFixture.plantLearnToSail(runner)
+
+    let model = room(engine, runner, memory)
+    model.roomOpened()
+    await shows(model, roadmaps: ["Learn to sail", "Learn Rust"], on: engine)
+    #expect(model.roadmaps.map { $0.updatedAt == nil } == [true, true])
+  }
+
   // The Board is the domain's read of the open roadmap: its groups, what a Locked step needs and what an Up next step
   // unlocks, each row with the kind that names its colour and what the room offers on it.
   @Test func theOpenRoadmapsBoardIsTheDomainsReadOfLearnToSail() async throws {

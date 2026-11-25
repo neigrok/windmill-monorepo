@@ -110,7 +110,8 @@ export const RoadmapMeta = new EntityType({
 // §5 Dates: the server has received a mark once no entry the device queues still changes it, and its time is its
 // record's `ru`, the server's; a mark an entry still changes is the device's, timed by its stamp. A roadmap was last
 // changed when the server last received a record of it: the newest `ru` among its record, its tree scope's and its
-// overlay's.
+// overlay's; and it was last stamped at the time of the newest engine stamp among them as the device holds them, which
+// orders a roadmap no server has received.
 /**
  * @param {string} id
  * @param {{ listed?: ReceivedRecord | null, tree: Reader, overlay?: Reader | null, queued?: { t: string, id: import('../../../platform/domain-kit/entities.js').RecordID }[], read?: boolean }} held
@@ -125,6 +126,10 @@ export function readRoadmap(id, { listed = null, tree, overlay = null, queued = 
   const changing = new Set(queued.map((record) => recordKey(record.t, record.id)));
   const updatedAt = [listed, ...records, ...overlaid].reduce((latest, record) => (typeof record?.ru === 'number' && (latest === null || record.ru > latest)
     ? record.ru : latest), /** @type {number | null} */ (null));
+  const stampedAt = [listed, ...records, ...overlaid]
+    .flatMap((record) => (record === null ? [] : [record.born, record.life?.[1], ...Object.values(record.f ?? {}).map(([, stamp]) => stamp)]))
+    .reduce((latest, stamp) => (typeof stamp === 'string' && (latest === null || Stamp.parse(stamp).ms > latest) ? Stamp.parse(stamp).ms : latest),
+      /** @type {number | null} */ (null));
   const madeHere = records.length > 0 && [...records, ...overlaid].every((record) => typeof record.ru !== 'number');
   return new RoadmapTree({
     id,
@@ -132,6 +137,7 @@ export function readRoadmap(id, { listed = null, tree, overlay = null, queued = 
     read: read || madeHere ? 'loaded' : 'unread',
     own: listed !== null,
     updatedAt,
+    stampedAt,
     parent: listed ? placeIn(Fields.record(listed)) : meta.parent,
     meta: metaRecord ? { title: meta.title, guide: meta.guide, guideInherited: meta.guideInherited, root: meta.root ?? id, depth: meta.depth,
       visibility: meta.visibility, reach: meta.reach, forkedFrom: meta.forkedFrom } : null,

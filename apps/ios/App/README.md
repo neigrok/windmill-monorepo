@@ -207,8 +207,9 @@ no menu. Before iOS 26 the name and the progress stand in the bar's
 principal slot (`roomTitle`) with the same menu attached; no iOS 18 runtime has drawn that menu or tried its rename.
 
 `Roadmaps/RoadmapsList.swift` is All Roadmaps, pushed on the stack: every roadmap in the domain's order, the open one
-checked. That order is by when a server last received each, the most recent first, so on a phone never signed in it is
-the order of their ids. A row opens its roadmap on its Board and slides left for *Delete*, which asks on the row, never
+checked. That order is by when a server last received each, or, for a roadmap no server has received, by the newest
+stamp the phone holds of it, the most recent first, so on a phone never signed in the roadmap made last comes first. A row
+opens its roadmap on its Board and slides left for *Delete*, which asks on the row, never
 commits by a full swipe, and leaves the list on screen under the band; past eight roadmaps the bar's drawer finds them
 by name; and + names a new one. Its last row on the board, the gallery, is left out. `Roadmaps/NewRoadmap.swift` is the
 sheet the title menu, All Roadmaps and *No roadmaps yet* all open, over its draft (`Roadmaps/NewRoadmapDraft.swift`): a
@@ -553,7 +554,8 @@ that guide and *Become a day skipper*'s; `-board roadmap-sign-in` leaves the pho
 roadmap, beside the account `roadmap-fixture@example.com`, which holds *Learn to sail*; `-board roadmap-unconfirmed` is
 *Learn to sail* after the server stops answering, its last five steps completed on the phone, so the account has not
 confirmed them; `-board roadmap-many` is a phone never signed in that holds the nine roadmaps All Roadmaps draws,
-*Learn to sail* the one last open, listed in the order of their ids since no server has received them; `-board
+*Learn to sail* the one last open, listed in the order of their ids: no server has received them, and the board's clock
+stands still, so the newest stamp the phone holds of each is of one millisecond; `-board
 roadmap-handbook` is a phone never signed in that holds *Coastal navigation handbook*, the 5,000 steps, links and colours
 of the layout's shared fixture, read from the repository the build was made in and planted through the domain, so its
 steps' ids are the phone's, with the first 120 of the fixture's 1,800 done steps marked, since signed out each mark's
