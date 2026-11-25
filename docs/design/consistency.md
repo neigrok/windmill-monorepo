@@ -949,13 +949,15 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   differ by one step in one channel from the web's `locked/brick-glyph` (`#CC9987`), `locked/plum-fill` (`#E1D0D4`)
   and `locked/plum-ring` (`#4B2F41`), which the kit's Graph node binds and [Roadmap · iOS](ios/roadmap.md) names as
   their values. The app holds the web's. To fix in the file: the three variables.
-- **Roadmap · iOS · the Design System owes the room its door.** *Where to start?* with a third door, Roadmap, is
-  ✅ Ready for dev in the Shell file
-  ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)). The Design System has no
-  `iOS / Product card` · Roadmap variant and no `map` symbol, so the door is a detached copy; both belong in the
-  library (the build tree's step `m0-add-the-roadmap-door-to-the-library`). The sign-in and sign-out questions
-  that name roadmaps and conversations are ✅ Ready for dev on Roadmap · iOS (10.7, 10.8). To check: that the
-  Shell's own boards of those two questions say the same.
+- **Shell · iOS · the first-run doors draw two copies of the product card.** On *Where to start?*
+  ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)) the Roadmap door is an instance
+  of the Design System's published `iOS / Product card` · Roadmap; the Journal and Gym doors are instances of the
+  set's older copy, which Shell has not updated. The published Journal variant draws a `book.closed` symbol where
+  Shell's Journal door draws a plain bar, so accepting the library update changes that door's look. To decide: which
+  the Journal door draws, against the app, then accept the update or correct the variant.
+- **Roadmap · iOS · the sign-in questions in two files.** The sign-in and sign-out questions that name roadmaps and
+  conversations are ✅ Ready for dev on Roadmap · iOS (10.7, 10.8). To check: that the Shell's own boards of those two
+  questions say the same.
 - **iOS · system parts in the Design System predate the simulator probe.** A SwiftUI probe on the iOS 26.5
   simulator (2026-11-18) found that the system draws several parts otherwise than the library and the Gym and
   Journal iOS boards do: a menu's symbols and checkmark are on the leading side (`iOS / Menu item` puts the symbol
