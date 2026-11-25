@@ -5,7 +5,7 @@ corpus (`web/test/products/roadmap/domain/corpus.test.js`) claims every file by 
 complete outputs. The server's read domain (`backend/products/roadmap/domain/read/`) claims the reads
 the table marks as the server's, by JCS, in `backend/test/products/roadmap/domain/read/ReadVectorsTest.cpp`,
 which fails on a file it neither claims nor names as a device's. Swift's domain (`apps/ios/Domain/Sources/RoadmapDomain/`)
-claims, by JCS, in `apps/ios/Domain/Tests/RoadmapDomainTests/`, the reads' files (`account`, `activity`, `board`, `diagnostics`, `graph`,
+claims, by JCS, in `apps/ios/Domain/Tests/RoadmapDomainTests/`, the reads' files (`account`, `activity`, `board`, `diagnostics`, `effects`, `graph`,
 `guides`, `landing`, `legend`, `pointers`, `progress`, `replica` and `search`), `rules.json`, `values.json`, and every
 `*-actions.json` (`roadmaps`, `steps`, `kinds`, `progress`, `workspace` and `landing`), each action case with its records
 reversed too, and the scenes of `undo.json` (`UndoTests.swift`). Its `CorpusTests.swift` fails on a file it does not claim.
@@ -44,6 +44,7 @@ ID byte order.
 | `pointers` | Shortest pointer-loop paths and known dangling targets, with omission counts | yes |
 | `landing` | The device's own links (`edges`) whose current followed prerequisites bridge absence | no |
 | `activity` | A roadmap's Activity, or one step's History: each present step's creation and completion the copy holds a time for, newest first; null for an unread/hidden tree | no |
+| `effects` | What deleting `ids` or resetting one would do: the roadmap's one starting step (`kept`, null unless it has exactly one), a starting step being a present step that follows nothing; whether `ids` may be deleted (`deletable`), which they may not when empty, naming a step that is not present, or holding every starting step; the present steps outside `ids` that follow one of them, in authored order (`follow`); and, for one step the graph counts complete that holds a complete mark, those of them Up next, which a Reset returns to Locked (`relocks`) | no |
 | `roadmap` (`replica.json`) | One roadmap's records as a replica holds them, as the normalized tree | no |
 | `openings` (`replica.json`) | One tree's openings as `account` reads them, without reading every tree, with what a read elsewhere tells (`told`) | no |
 | `progress` (`replica.json`) | `progress` with what a read elsewhere tells (`told`) | no |
@@ -142,7 +143,7 @@ The harness inputs are `{operation, tree, subjects}` for `graph`, `{operation, t
 `{operation, trees, tree: id, step?}` for `activity`,
 `{operation, id, listed, tree, overlay: {drawn, queued} | null, read}` for `roadmap`, its records engine view records and
 `queued` the overlay's records (`{t, id}`) a queued entry still changes, `{operation, tree, query}` for `board` and
-`search`, `{operation, tree}` for `legend` and `diagnostics`, and
+`search`, `{operation, tree}` for `legend` and `diagnostics`, `{operation, tree, ids}` for `effects`, and
 `{operation, tree, own: {nodes: [id], edges: [[from,to]]}}` for `landing`. `subjects` selects detailed graph reads only;
 it never narrows states. `query` is Board's `{sort,kinds,search,branch,doneExpanded}` or MCP's `{query,color,kind}`.
 Optional query fields have the defaults in `reads.js`.
@@ -151,7 +152,7 @@ The read modules are `records.js` (normalized values, authored ordering, the dev
 tree's `TreeIndex`: its raw adjacency by slot and its own marks, derived once per tree), `graph.js` (iterative
 strongly connected components and compact prerequisite/debt closure over a tree's index), `account.js`
 (standing, least-fixed-point completion, effective dates, guides, one tree's openings and the person's list),
-`reads.js` (Board, legend, search, landing facts and Activity), `diagnostics.js` (bounded findings), and `readRoadmap` in
+`reads.js` (Board, legend, search, landing facts, Activity and effects), `diagnostics.js` (bounded findings), and `readRoadmap` in
 `roadmaps.js` (a replica's records as the normalized tree). Detailed followed provenance is enumerated on demand.
 A step's state, unmet count and first, followed count and owed count are kept by slot. A step whose parents
 are all present follows them directly; only an absent step, and a step behind one, takes a bitset row, so no
