@@ -307,7 +307,8 @@ std::vector<Door> doors() {
          auto rows = std::make_shared<FeedbackRows>();
          FeedbackApi api{rows, accounts.auth};
          const drogon::HttpRequestPtr req = received("POST", "/v1/feedback", lines, R"({"message":"The rule holds."})");
-         return statusOf(answerOf([&](HttpCallback&& reply) { api.submit(req, std::move(reply)); })) + authorOf(rows->authors);
+         const std::string status = statusOf(answerOf([&](HttpCallback&& reply) { api.submit(req, std::move(reply)); }));
+         return status + authorOf(rows->authors);
        },
        openDoor("202 from u1 rolled s-ann", "202 from anonymous")},
       {"POST /v1/events",
@@ -316,7 +317,8 @@ std::vector<Door> doors() {
          EventsApi api{batches, accounts.auth};
          const drogon::HttpRequestPtr req = received(
              "POST", "/v1/events", lines, R"({"sessionKey":"browser-abc","events":[{"name":"tree_opened","clientMs":1000}]})");
-         return statusOf(answerOf([&](HttpCallback&& reply) { api.ingest(req, std::move(reply)); })) + authorOf(batches->authors);
+         const std::string status = statusOf(answerOf([&](HttpCallback&& reply) { api.ingest(req, std::move(reply)); }));
+         return status + authorOf(batches->authors);
        },
        openDoor("202 from u1 rolled s-ann", "202 from anonymous")},
       {"GET /v1/journal/pages",
