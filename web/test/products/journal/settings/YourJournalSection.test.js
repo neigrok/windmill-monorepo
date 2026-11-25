@@ -60,9 +60,10 @@ async function section(t, { account = null, lapsed = false } = {}) {
       words: () => content().filter((element) => typeof element.type === 'string' && ['p', 'span'].includes(element.type)).map(textOf),
       button: () => button() && { label: textOf(button().props.children), disabled: button().props.disabled, busy: button().props.ariaBusy },
       outcome: () => content().filter((element) => element.type === 'p' && element.props.style?.color).map((line) => [textOf(line), line.props.style.color]),
-      press: () => button().props.onClick(),
-      // The press a second click makes before the page draws the first one's: the same handler, twice.
-      pressTwice: () => { const { onClick } = button().props; onClick(); onClick(); },
+      // A click, the first of a double click unless `detail` counts it further.
+      press: (detail = 1) => button().props.onClick({ detail }),
+      // Two clicks before the page draws the first one's: the same handler, twice.
+      pressTwice: () => { const { onClick } = button().props; onClick({ detail: 1 }); onClick({ detail: 1 }); },
       redraw: () => view.redraw(),
       unsent: () => content().find((element) => 'account' in element.props)?.props.account,
     };
@@ -151,15 +152,20 @@ test('over an account\'s replica with no account settled, the section says the p
   assert.deepEqual(told, { events: [['journal_export', { outcome: 'empty', seat: 'signed_in' }]], reports: [] });
 });
 
-test('a double click on Export my pages exports once', async (t) => {
+test('a double click on Export my pages exports once, its second click after the first export or during it', async (t) => {
   const { write, draw, told } = await section(t);
   await write('written on this browser');
   const files = downloads(t);
   const screen = draw();
   await settle();
-  screen.pressTwice();
+  screen.press(1);
+  await settle();
+  screen.press(2);
   await settle();
   assert.deepEqual({ files: files.length, told }, { files: 1, told: { events: [['journal_export', { outcome: 'ok', seat: 'signed_out' }]], reports: [] } });
+  screen.pressTwice();
+  await settle();
+  assert.deepEqual({ files: files.length, events: told.events.length }, { files: 2, events: 2 });
 });
 
 test('pages the section cannot count leave the export offered, and the count\'s failure is reported once', async (t) => {

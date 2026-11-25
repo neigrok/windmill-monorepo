@@ -39,9 +39,10 @@ export function YourJournalSection({ track = trackEvent, report = captureError }
   const browsersOwn = replica ? replica.state === 'anon' : !account;
   const working = attempt.phase === 'working';
 
-  // One export a press: a second click before the page draws the first one's finds it running.
-  const runExport = async () => {
-    if (exporting.current) return;
+  // One export a press: the second click of a double click is no new press, and a click while one runs, before the page
+  // draws it, finds it running.
+  const runExport = async (event) => {
+    if (event?.detail > 1 || exporting.current) return;
     exporting.current = true;
     setAttempt({ phase: 'working' });
     try {
