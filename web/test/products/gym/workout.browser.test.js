@@ -294,8 +294,9 @@ test('Chromium: a plan edit another tab made stale is refused, its draft kept, a
   await notice.waitFor();
   assert.equal(await notice.locator('h2').textContent(), 'Pull Up changed in another tab.');
   assert.equal(await two.getByLabel('Set 1 load, kg', { exact: true }).inputValue(), '12.5', 'the draft stays as typed');
-  assert.deepEqual(await two.locator('.gym-live-edit').getByRole('button').allTextContents(), ['×', '×', '×', '2:00▾', 'Use latest', 'Save mine'],
+  assert.deepEqual(await two.locator('.gym-live-edit').getByRole('button').allTextContents(), ['×', '×', '×', 'Use latest', 'Save mine'],
     'while the answer stands, Add set, Swap and Remove wait');
+  assert.equal(await two.locator('.gym-live-edit').getByRole('combobox').textContent(), '2:00▾', 'the rest stays to change');
   assert.equal(await two.locator('.gym-live-edit-save').isDisabled(), true);
   assert.deepEqual(await steps(two, 'gym_workout_plan_changed'), [{ action: 'retarget', door: 'workout', outcome: 'refused', code: 'domain', reason: 'stale' }]);
   await two.getByRole('button', { name: 'Save mine', exact: true }).click();
