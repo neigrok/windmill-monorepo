@@ -25,16 +25,32 @@ export function journalMarkdown(pages) {
 // What the export holds of a snapshot of the journal: the room's written pages, as the room shows them.
 export const exportablePages = (engine, snapshot) => pagesOf(engine, snapshot).filter(isWritten);
 
+// An export's own wait, which ends it as an outcome of its own and never as a failure: `no_replica` where the browser holds
+// no open replica, `first_pull_timeout` where a bound replica's first pull of the journal did not end within the wait, and
+// `replica_changed` where the account changed while it waited. Only `exportedPages` makes one, so these are every expected
+// outcome; any other error, a domain kit's that carries a reason of its own included, is a failure.
+class ExportWait extends Error {
+  constructor(reason) {
+    super('journal-export-wait');
+    this.reason = reason;
+  }
+}
+
+// A failure of the export, or of the count Settings shows before it, under its static operation with the step it met and
+// the error's stack, never its message.
+export function reportExportFailure(step, error, report = captureError) {
+  report('journal', 'journal-export', error?.stack ?? '', '/app/settings', { step });
+}
+
 // The room's written pages, as the room shows them. Signed out they are the browser's own; a bound replica first finishes
 // its first pull of the journal, so the file holds the account's pages, with what this browser holds in their day's place.
 export function exportedPages(engine, waitMs = 30_000) {
-  const failure = (reason) => Object.assign(new Error('journal-export-wait'), { reason });
-  if (!engine || engine.closed) return Promise.reject(failure('no_replica'));
+  if (!engine || engine.closed) return Promise.reject(new ExportWait('no_replica'));
   const hold = engine.observe(SCOPE);
   const replica = hold.getSnapshot().replica;
   return new Promise((resolve, reject) => {
     let unsubscribe = () => {};
-    const timer = setTimeout(() => settle(failure('first_pull_timeout')), waitMs);
+    const timer = setTimeout(() => settle(new ExportWait('first_pull_timeout')), waitMs);
     const settle = (error) => {
       clearTimeout(timer);
       unsubscribe();
@@ -46,7 +62,7 @@ export function exportedPages(engine, waitMs = 30_000) {
     };
     const look = () => {
       const snapshot = hold.getSnapshot();
-      if (snapshot.replica !== replica) settle(failure('replica_changed'));
+      if (snapshot.replica !== replica) settle(new ExportWait('replica_changed'));
       else if (snapshot.firstPullComplete) settle(null);
     };
     unsubscribe = hold.subscribe(look);
@@ -54,8 +70,8 @@ export function exportedPages(engine, waitMs = 30_000) {
   });
 }
 
-// Reading the pages, writing them as Markdown and handing the file to the browser, for the person on `seat` (`signed_in` or
-// `signed_out`): no written page is the outcome `empty` and downloads nothing, an expected wait or a replica gone is its
+// Reading the pages, writing them as Markdown and handing the file to the browser, told for the replica it reads (`seat`,
+// `signed_in` or `signed_out`): no written page is the outcome `empty` and downloads nothing, an export's own wait is its
 // outcome alone, and anything else in any step is a failure reported with that step and the error's stack.
 export async function buildJournalArchive(engine, seat, { track = trackEvent, report = captureError } = {}) {
   let step = 'pages';
@@ -69,19 +85,22 @@ export async function buildJournalArchive(engine, seat, { track = trackEvent, re
     const file = new Blob([journalMarkdown(pages)], { type: 'text/markdown' });
     step = 'download';
     const url = URL.createObjectURL(file);
+    const anchor = document.createElement('a');
     try {
-      const anchor = document.createElement('a');
       anchor.href = url;
       anchor.download = FILE_NAME;
       document.body.appendChild(anchor);
       anchor.click();
+    } finally {
       anchor.remove();
-    } finally { URL.revokeObjectURL(url); }
+      URL.revokeObjectURL(url);
+    }
     track('journal_export', { outcome: 'ok', seat });
     return { count: pages.length, file: FILE_NAME };
   } catch (error) {
-    track('journal_export', { outcome: error?.reason ?? 'failed', seat });
-    if (!error?.reason) report('journal', 'journal-export', error?.stack ?? '', '/app/settings', { step });
+    const waited = error instanceof ExportWait;
+    track('journal_export', { outcome: waited ? error.reason : 'failed', seat });
+    if (!waited) reportExportFailure(step, error, report);
     throw error;
   }
 }

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { BrowserSyncEngine } from '../../../../src/platform/sync/engine.js';
 import { buildJournalArchive, exportedPages, journalMarkdown } from '../../../../src/products/journal/settings/journalExport.js';
 import { savePage, SCOPE } from '../../../../src/products/journal/pages.js';
+import { EDITOR_DRAFT_KEY } from '../../../../src/products/journal/domain/page.js';
 import { environment, tick, until } from '../../../platform/sync/fakes.js';
 import { journalRegistry, journalProduct } from '../../../platform/sync/oracle-adapters/journal.js';
 import { ServerState } from '../../../../../packages/api-contract/sync/reference/server/state.js';
@@ -114,6 +115,34 @@ test('a download the browser refuses fails the export, reported with its step an
   await assert.rejects(buildJournalArchive(engine, 'signed_out', seams), refused);
   assert.deepEqual(told, { events: [['journal_export', { outcome: 'failed', seat: 'signed_out' }]],
     reports: [['journal', 'journal-export', refused.stack, '/app/settings', { step: 'download' }]] });
+});
+
+test('a download whose click throws leaves no anchor in the page', async (t) => {
+  const { engine } = await browser(t);
+  await savePage(engine, page('written on this browser'));
+  downloads(t);
+  const inPage = new Set();
+  const refused = new DOMException('blocked', 'NotAllowedError');
+  globalThis.document = { createElement: () => ({ click() { throw refused; }, remove() { inPage.delete(this); } }),
+    body: { appendChild: (anchor) => inPage.add(anchor) } };
+  const { told, ...seams } = telemetry();
+  await assert.rejects(buildJournalArchive(engine, 'signed_out', seams), refused);
+  assert.deepEqual({ anchors: inPage.size, told }, { anchors: 0, told: { events: [['journal_export', { outcome: 'failed', seat: 'signed_out' }]],
+    reports: [['journal', 'journal-export', refused.stack, '/app/settings', { step: 'download' }]] } });
+});
+
+test('a row the domain kit cannot decode fails the export and is reported, though its error carries a reason', async (t) => {
+  const { engine } = await browser(t);
+  await savePage(engine, page('a real page'));
+  await engine.write(null, (device) => {
+    device.activeReplica.device.journal = { ...(device.activeReplica.device.journal ?? {}),
+      [EDITOR_DRAFT_KEY]: { day: 42, document: { body: 'x', mood: null, energy: null, source: 'typed', stamp: '1:0:a' } } };
+  }, [SCOPE]);
+  const { told, ...seams } = telemetry();
+  const thrown = await buildJournalArchive(engine, 'signed_out', seams).catch((error) => error);
+  assert.deepEqual([thrown.constructor.name, thrown.reason], ['DecodeError', 'not a string']);
+  assert.deepEqual(told, { events: [['journal_export', { outcome: 'failed', seat: 'signed_out' }]],
+    reports: [['journal', 'journal-export', thrown.stack, '/app/settings', { step: 'pages' }]] });
 });
 
 test('pages the replica cannot hand fail the export at its first step, and an expected wait reports nothing', async (t) => {
