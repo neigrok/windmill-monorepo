@@ -9,13 +9,13 @@ import { createGymApi } from '../../../../src/products/gym/gymRuntime.js';
 import { environment, until } from '../../../platform/sync/fakes.js';
 import { browserWith, confirmed, elementsOf, gymAccount, loadScreen, renderHook, settle, textOf } from '../harness.mjs';
 
-// Your training log as Settings draws it over `engine`: its rows' words, the Select and the Switch as the section hands
-// them their props (a child component is not drawn here), and what the copy holds.
-async function drawn(t, engine) {
+// Your training log as Settings draws it over `engine` for the seat `auth` is: its rows' words, the Select and the Switch as
+// the section hands them their props (a child component is not drawn here), and what the copy holds.
+async function drawn(t, engine, auth = { status: 'signed-in', user: { id: 'A', name: 'Ann' } }) {
   const { GymSettingsSection } = await loadScreen('products/gym/settings/GymSettingsSection.jsx');
   const { Select } = await loadScreen('design-system/forms/Select.jsx');
   const { Switch } = await loadScreen('design-system/forms/Switch.jsx');
-  const screen = renderHook(t, () => GymSettingsSection(), { live: true });
+  const screen = renderHook(t, () => GymSettingsSection(), { live: true, context: auth });
   await settle();
   const one = (type) => elementsOf(screen.tree).find((item) => item.type === type);
   return {
@@ -33,9 +33,9 @@ async function drawn(t, engine) {
   };
 }
 
-async function section(t, preferences, rows = []) {
+async function section(t, preferences, rows = [], auth = undefined) {
   const gym = await gymAccount(t, [...(preferences ? [confirmed('prefs', 'prefs', preferences)] : []), ...rows]);
-  return { gym, ...await drawn(t, gym.engine) };
+  return { gym, ...await drawn(t, gym.engine, auth) };
 }
 
 const RESTING = 'UnitskglbDefault restFor movements on DefaultRest soundA tone and a buzz when rest is upNoteswhat you write for Coach›';
@@ -129,6 +129,58 @@ test('while a workout is open, Default rest names the workout that follows it', 
   assert.equal(words(), RESTING.replace('For movements on Default', 'For movements on Default · Upper A follows it'));
 });
 
+test('an open workout whose every movement has a rest of its own follows no default, and Default rest names none', async (t) => {
+  browserWith();
+  const startedAt = Date.now() - 10 * 60_000;
+  const { words } = await section(t, { restSeconds: 120 }, [confirmed('session', 'session_a', { startedAt,
+    plan: { routine: 'Own rest', entries: [{ exerciseId: 'bench-press', restSeconds: 90 }, { exerciseId: 'pull-up', restSeconds: 60 }] } })]);
+  assert.equal(words(), RESTING);
+});
+
+test('a lapsed session’s section, over the account’s copy with nobody signed in, leaves the account’s Notes out', async (t) => {
+  browserWith();
+  const { words } = await section(t, { restSeconds: 120 }, [], { status: 'ghost', user: null });
+  assert.equal(words(), 'UnitskglbDefault restFor movements on DefaultRest soundA tone and a buzz when rest is up');
+});
+
+test('a save still says Saved. when the tab draws its replica again before the save ends, a new api over the same binding', async (t) => {
+  browserWith();
+  const { gym, screen, words, select } = await section(t, { restSeconds: 90 });
+  const session = syncSession.getSnapshot();
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  const commit = gym.engine.commit.bind(gym.engine);
+  t.mock.method(gym.engine, 'commit', async (...args) => { await held; return commit(...args); });
+  select().onChange('120');
+  syncSession.getSnapshot.mock.mockImplementation(() => ({ ...session, ready: false }));
+  screen.redraw();
+  assert.equal(screen.tree, null, 'no replica drawn, no section');
+  syncSession.getSnapshot.mock.mockImplementation(() => session);
+  screen.redraw();
+  release();
+  await settle();
+  assert.deepEqual([select().value, words()], ['120', RESTING.replace('For movements on Default', 'Saved.')]);
+});
+
+test('while a signed-in copy’s first pull runs, the section draws nothing and spells no unit, then draws the account’s', async (t) => {
+  t.after(() => spellWeightsIn(KG));
+  browserWith();
+  spellWeightsIn(LB);
+  const gym = await gymAccount(t, []);
+  await gym.engine.write(null, (device) => {
+    device.activeReplica.cursors['self/gym'] = { ...device.activeReplica.cursorOf('self/gym'), booted: false };
+  }, ['self/gym']);
+  const { screen, words } = await drawn(t, gym.engine);
+  assert.deepEqual([screen.tree, weightUnit()], [null, 'lb']);
+  await gym.engine.write(null, (device) => {
+    device.activeReplica.putConfirmed('self/gym', { ...confirmed('prefs', 'prefs', { units: 'lb', restSeconds: 120 }), seq: 1 });
+    device.activeReplica.cursors['self/gym'] = { ...device.activeReplica.cursorOf('self/gym'), booted: true };
+  }, ['self/gym']);
+  await settle();
+  assert.deepEqual([words(), weightUnit()], ['UnitskglbA backfill, a correction, a routine target — typed in kg.Default restFor movements on Default'
+    + 'Rest soundA tone and a buzz when rest is upNoteswhat you write for Coach›', 'lb']);
+});
+
 test('signed out, the section runs on the browser’s own copy and leaves the account’s Notes out', async (t) => {
   browserWith();
   const env = environment();
@@ -137,7 +189,7 @@ test('signed out, the section runs on the browser’s own copy and leaves the ac
   t.after(() => engine.close());
   t.mock.method(syncSession, 'getSnapshot', () => ({ engine, ready: true, signedIn: false, account: null, online: true, error: false }));
   assert.equal(engine.getSnapshot().state, 'anon');
-  const { words, choose, stored } = await drawn(t, engine);
+  const { words, choose, stored } = await drawn(t, engine, { status: 'ghost', user: null });
   assert.equal(words(), 'UnitskglbDefault restFor movements on DefaultRest soundA tone and a buzz when rest is up');
   await choose('300');
   await until(() => engine.device.activeReplica.entries().length === 1);

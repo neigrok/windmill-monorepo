@@ -2,9 +2,10 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { Select, Switch } from '../../../design-system/index.js';
 import { Id } from '../../../platform/domain-kit/entities.js';
 import { useSyncReplica } from '../../../platform/sync/react.js';
-import { Section, styles } from '../../../shell/settings/Section.jsx';
+import { Section, styles, useSettingsSeat } from '../../../shell/settings/Section.jsx';
 import { Preferences, PreferencesValue, restSettings } from '../domain/preferences.js';
 import { TrainingLog } from '../domain/trainingReads.js';
+import { WorkoutRack } from '../domain/workoutRack.js';
 import { failureReason } from '../errors.js';
 import { useGymApi } from '../gymRuntime.js';
 import { t } from '../i18n/settings/index.js';
@@ -21,39 +22,41 @@ const SAVED = 'saved';
 const SAVED_FOR_MS = 1600;
 
 // Your training log in Settings (WD10), on the copy of the seat the tab draws: the account's signed in, the browser's own
-// signed out. Each setting applies as it is chosen and writes the copy at once; the line under its row says Saved. for a
-// beat, or why it did not save until the next change. Notes is the account's, so it is drawn signed in only.
+// signed out. It draws nothing until that copy is ready, so a bound replica's first pull never shows a fresh copy's
+// settings as the account's. Each setting applies as it is chosen and writes the copy at once; the line under its row says
+// Saved. for a beat, or why it did not save until the next change. Notes is the account's, so it is drawn signed in only.
 export function GymSettingsSection() {
   const api = useGymApi();
   const read = useDomainRead(settingsOf);
   const seat = useSyncReplica();
+  const signedIn = useSettingsSeat() === 'signed-in';
   const ids = useId();
   // A setting's value as the person chose it, drawn while its write is in flight; then the copy's.
   const [chosen, setChosen] = useState({});
   // Under a setting's row: `saved` for its beat, or the sentence its failed write left.
   const [said, setSaid] = useState({});
   const beats = useRef({});
-  const latest = useRef(api);
-  latest.current = api;
+  const binding = useRef(seat?.binding);
+  binding.current = seat?.binding;
   useEffect(() => () => Object.values(beats.current).forEach(clearTimeout), []);
   // Another seat's section starts with nothing chosen and nothing said.
   useEffect(() => { setChosen({}); setSaid({}); }, [seat?.binding]);
-  const stored = read.data;
+  const stored = api?.ready ? read.data : null;
   const units = chosen.units ?? stored?.units;
   useEffect(() => { if (units) spellWeightsIn(units); }, [units]);
   if (!stored) return null;
   const shown = { ...stored, ...chosen };
 
-  // One change, said only on the replica it was made on: a sign-in or a sign-out meanwhile draws another seat's section.
-  // A refusal says its own sentence; any other failure, the gym's reason. Units draws no Saved. beat.
+  // One change, said only on the replica it was made on, whose binding a sign-in or a sign-out meanwhile changes, drawing
+  // another seat's section. A refusal says its own sentence; any other failure, the gym's reason. Units draws no Saved. beat.
   const change = async (setting, value, save) => {
-    const made = api;
+    const madeOn = binding.current;
     clearTimeout(beats.current[setting]);
     setChosen((held) => ({ ...held, [setting]: value }));
     setSaid((held) => ({ ...held, [setting]: null }));
     const line = await save().then(() => SAVED, (error) => error?.sentence ?? t('gym.settings.notSaved', { reason: failureReason(error) }));
     setChosen((held) => (held[setting] === value ? without(held, setting) : held));
-    if (latest.current !== made) return;
+    if (binding.current !== madeOn) return;
     if (line !== SAVED) {
       setSaid((held) => ({ ...held, [setting]: line }));
       return;
@@ -111,7 +114,7 @@ export function GymSettingsSection() {
           onChange={(restSound) => change('restSound', restSound, () => api.saveRestSetting({ restSound }))} />
       </div>
 
-      {seat?.state !== 'anon' && (
+      {signedIn && (
         <a href={NOTES_HREF} style={look.row}>
           <span style={look.main}>
             <span style={styles.primaryText}>{NOTES_TITLE}</span>
@@ -127,13 +130,16 @@ export function GymSettingsSection() {
 export default GymSettingsSection;
 
 // What the section draws from the copy it runs on: the units, the rest settings, and the open workout a new default
-// reaches (WD10.6), named as its room names it; null while none is open.
+// reaches (WD10.6), named as its room names it: one with a movement on Default, which has no rest of its own in the plan or
+// is out of it; null while no such workout is open.
 function settingsOf(read) {
   const preferences = read.repository(Preferences).find(new Id('prefs', Preferences), 'drawn') ?? new PreferencesValue();
   const rest = restSettings(read);
   const open = new TrainingLog(read).open;
+  const rack = open === null ? null : WorkoutRack.of(read, open.id);
+  const followsDefault = rack !== null && rack.settled().order.some((movement) => (rack.entry(movement)?.restSeconds ?? null) === null);
   return { units: preferences.units, restSeconds: rest.seconds, restSound: rest.sound,
-    workout: open === null ? null : open.name ?? t('gym.workout.untitled') };
+    workout: followsDefault ? open.name ?? t('gym.workout.untitled') : null };
 }
 
 function restChoices(stored) {
