@@ -1386,8 +1386,17 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   - *Edit movement (WD3.1).* It opens the movement's record, which renames it; the web has no form for its equipment.
   - *A stale plan edit (WD5.1).* The drawn heading, *{movement} changed in another tab.*, stands also when a phone or
     Coach changed the plan.
-  - *The rest preference.* No board draws a control for the lifter's own rest target or rest sound on the web, so the web
-    reads them and writes neither; a movement's rest in this workout is Edit sets' *Rest*.
+  - *The rest preference.* The web reads the lifter's own rest target and rest sound and writes neither; a movement's rest
+    in this workout is Edit sets' *Rest*. WD10 (`2181:16061`, 🚧 awaiting the owner) draws both in Settings · Your
+    training log, and the Shell file's Settings signed out (`390:2417`, 🚧) draws the same rows signed out.
+  - *Where WD10 meets the phones.* Neither phone sets `restSeconds` or `restSound`: the shared vector "phone creates only
+    its three preferences" and engine.md (*Phones edit units, confirmHaptic, confirmSound*) pin that. No shared vector
+    covers `RestTarget.of`, which every surface reads the default through while it draws, so a changed default reaches
+    an open workout's movements on Default. The iPhone gates the rest-reached haptic on `confirmHaptic` where WD2.4 gates
+    the web's tone on `restSound`. The web's Settings keeps Units, which the phones dropped (9r).
+  - *The web's settings words.* `gym.settings.notSaved` is written lower-case at the section's foot where the gym's other
+    sentences are capitalised; the journal's export downloads a file holding only its title when there are no pages, and
+    then says *No pages to export yet.*, where Settings signed out (SO5) draws no button at all.
 ### Sets · product direction
 
 Sets have no type on any surface. Targets are references: actual weight/reps remain independent for every set, including extra or
@@ -2187,6 +2196,16 @@ Android. It and the product differ in these places.
 - **A list in the sign-in question.** WD9 writes *1 workout, 2 routines and 3 weigh-ins*; the web joins the kinds with
   the locale's list rule, as roadmap's landing lines do, and English's rule writes *1 workout, 2 routines, and 3
   weigh-ins*.
+- **Board status chips.** The Gym file's Board status set (`802:11855`) has Built, Ready, Archived, In progress and
+  Proposal: a 🔨 In dev board wears Ready and a 🚀 In production board wears Built. The WD parts section
+  (`2150:11608`) says its parts join Components · Gym web when the build lands; WD1–WD9 are built and the parts stay
+  local. The Shell file's ✅ section *Where to start? · the Roadmap door* (`326:7899`) holds boards named 🔨 In dev
+  (`326:7900`, `326:7971`).
+- **The Design System's Select** (`294:129`) draws rows about 100 px tall, where `forms/Select.jsx` draws compact ones;
+  WD3.2 and WD10 draw a compact local part.
+- **The Shell file's Settings boards.** Board 21 (`2:203`) lags the code (no Back, another Profile section, no Notes
+  door), and boards 21 and 30 (`2:464`) show a real account's name and email where boards use example data. The Gym
+  file's signed-in WD frames draw the signed-out seat in the head.
 
 - **Coach setup chrome.** The Design System's `iOS / Tab bar · Gym` (`118:93`) now draws Routines as
   `list.bullet.rectangle`, like the app; the Gym boards show it once the owner publishes the Design
