@@ -288,7 +288,18 @@ class ContextTest(Rows):
             self.vector('a conversation about all roadmaps', lambda result, case, c: result['trees'][0].update(counts={}), ': result.trees[0].counts.total: required'),
             self.vector('a conversation about all roadmaps', lambda result, case, c: result['trees'][0].pop('frontier'), ' · trees: no `frontier`'),
             self.vector('a conversation about all roadmaps', lambda result, case, c: result['trees'][0].update(part=1, parts=2), ' · trees: `part` is not one of its keys'),
-            self.vector('a conversation about all roadmaps', lambda result, case, c: result.update(nextCursor='1.1.0000000000000000'), ': result.nextCursor: a context is never paged'),
+            self.vector('a conversation about all roadmaps', lambda result, case, c: result.update(nextCursor='1.1.0000000000000000'), ': `nextCursor` is not one of its keys'),
+        ], 'check_context')
+
+    def test_all_roadmaps_past_the_bound_is_refused(self):
+        def one_more(result):
+            result['trees'].append({**result['trees'][0], 'id': 't_0000000000000100', 'title': 'Shelf 1'})
+            result['omitted'] -= 1
+        self.refused([
+            self.vector('a conversation about all roadmaps', lambda result, case, c: result.pop('omitted'), ': no `omitted`'),
+            self.vector('a conversation about 36 roadmaps', lambda result, case, c: result.update(omitted=2), ': 35 rows and 2 left off, of 36 roadmaps the person owns'),
+            self.vector('a conversation about 36 roadmaps', lambda result, case, c: result.update(omitted=-1), ': 35 rows and -1 left off, of 36 roadmaps the person owns'),
+            self.vector('a conversation about 36 roadmaps', lambda result, case, c: one_more(result), ': a context of 67174 bytes about all roadmaps, past CONTEXT_BYTES, 65536'),
         ], 'check_context')
 
     def test_a_roadmap_other_than_the_case_gives_is_refused(self):
@@ -336,7 +347,11 @@ class ContextTest(Rows):
             self.vector('a small roadmap', lambda result, case, c: result['tree']['guides'][0].update(text='Two steps a weekend.'), ': guides whose last is not the roadmap\'s own'),
             self.vector('a small roadmap', lambda result, case, c: result['tree']['guides'][0].update(text=''), ': a guide of `t_0000000000000001` that is not its words'),
             self.vector('a small roadmap', lambda result, case, c: result['tree']['guides'][0].pop('yours'), ' · tree.guides: no `yours`'),
-            self.vector('a small roadmap', lambda result, case, c: result['tree']['guides'].extend(result['tree']['guides'] * 8), ': guides that are not a list of at most eight'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree']['guides'].extend(result['tree']['guides'] * 8), ': guides that are not a list of at most eight, those left off counted in'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree'].update(guidesOmitted=1), ' · tree: `guidesOmitted` is not one of its keys'),
+            self.vector('a roadmap under seven', lambda result, case, c: result['tree'].update(guidesOmitted=0), ': `guidesOmitted` that is not a count from one'),
+            self.vector('a roadmap under seven', lambda result, case, c: result['tree'].update(guidesOmitted=2), ': guides that are not a list of at most eight, those left off counted in'),
+            self.vector('a roadmap under seven', lambda result, case, c: result['tree']['guides'].pop(), ': guides whose last is not the roadmap\'s own'),
             self.vector('a roadmap the person only reads', lambda result, case, c: result['tree']['guides'][0].update(yours=True), ': guides of a roadmap the person only reads other than its own alone, not theirs'),
         ], 'check_context')
 

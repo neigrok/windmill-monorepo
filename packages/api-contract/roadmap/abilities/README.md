@@ -72,12 +72,17 @@ gives the roadmaps as an ability's case does, and the conversation in place of a
   before it reads the case. The table only drops the keys every record repeats; what it gives is the same records.
 - `expect` is `{"result": …}`, or `{"refused": {"code", "id"}}` where a read of `about` would be refused:
   `roadmap-unavailable` or `unknown-roadmap`, naming `about`.
-- About all of the person's roadmaps, the result is `{trees}`: every row `list_trees` answers, whole and never paged.
+- About all of the person's roadmaps, the result is `{trees, omitted}`: the rows `list_trees` answers, in its order, each
+  whole and never paged, taken while the context stays within `CONTEXT_BYTES`; and how many rows are left off, which the
+  measure counts with its digits.
 - About one roadmap, the result holds:
   - `tree`: `{id, title, kinds, guides}`, the roadmap's id, its title and kinds as `get_tree`'s header gives them, and
     its guides as the server's `get_tree` gives them to an outside assistant, `{treeId, title, text, yours}`: on a
     roadmap the person owns, the domain's `guides` read (those of their roadmaps above it, then its own, farthest first,
-    at most eight), `yours` where the words are not inherited; on one they only read, its own alone, `yours: false`;
+    at most eight), `yours` where the words are not inherited; on one they only read, its own alone, `yours: false`.
+    Where the roadmap is given around where the person stands and its context with no line taken (`omitted` counting
+    every line) would pass `CONTEXT_BYTES`, guides give way from the first, the farthest, until it does not, and
+    `guidesOmitted`, beside them, counts them; it is there only where one gave way;
   - `diagnostics`: `get_diagnostics`' report in summary: for each of its lists, how many entries it holds, those left
     off counted in; and `smells` as the report gives them, each without its `nodes`;
   - `recent`: the ten newest completions that carry a date, `{id, label, at}`, newest first and in id byte order at one
@@ -87,8 +92,8 @@ gives the roadmaps as an ability's case does, and the conversation in place of a
     in `get_tree`'s order, and `completed`, what `get_progress` answers;
   - or else the roadmap around where the person stands: `counts`, the counts `list_trees` gives with `byKind`, the same
     counts for each kind in the room's order and, where a step wears a hue no kind owns, for `kind: null`; `steps`, the
-    lines in the order they are taken, while the whole context stays within `CONTEXT_BYTES`: every step of the kind
-    `milestone`, then every available step, then every step within two links of an available one, a link read both ways,
+    lines in the order they are taken, while the whole context stays within `CONTEXT_BYTES`: every available step, then
+    every step of the kind `milestone`, then every step within two links of an available one, a link read both ways,
     each group in `get_tree`'s order and a step in its first group alone; and `omitted`, how many of those lines are left
     off, which the measure counts with its digits;
   - `step`, in a conversation started from a step the roadmap shows: that step with every field of §5.1 but `summary`.
@@ -125,11 +130,12 @@ running an ability:
   the count of changes, the Shape rule's `changes[k]` and the first value past a cap, it is that;
 - a context's tables hold a value for each column, and its step and its refusal name what the case gives; a roadmap's
   context holds the parts its form holds, each line with §5.1's default fields and of a given step, guides that end
-  with the roadmap's own and, on a roadmap the person only reads, are its own alone, a roadmap given whole only within
-  both bounds and with every step's line, one given around its frontier within `CONTEXT_BYTES` with its lines and
-  `omitted` no more than its steps, counts that add up to the roadmap's steps, at most ten newest completions in their
-  order, and a step in full exactly where the conversation started from a step the roadmap shows; and a context about
-  all roadmaps holds whole rows of `list_trees`' shape.
+  with the roadmap's own and, on a roadmap the person only reads, are its own alone, at most eight with those left off,
+  a `guidesOmitted` from one and only around the frontier, a roadmap given whole only within both bounds and with every
+  step's line, one given around its frontier within `CONTEXT_BYTES` with its lines and `omitted` no more than its steps,
+  counts that add up to the roadmap's steps, at most ten newest completions in their order, and a step in full exactly
+  where the conversation started from a step the roadmap shows; and a context about all roadmaps holds whole rows of
+  `list_trees`' shape within `CONTEXT_BYTES`, with `omitted` no more than the person's roadmaps the case gives.
 
 It does not run an ability, so it does not check what only running one shows: the order of a read, a step's state,
 prerequisites and unlock count, a cursor's digest or where a page is cut, a fold's colours, which code a refusal is,

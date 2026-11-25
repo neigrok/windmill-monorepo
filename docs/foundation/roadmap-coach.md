@@ -188,17 +188,27 @@ A roadmap of more than 300 steps, or one whose context so given would pass `CONT
 a conversation started from not counted), is given instead around where the person stands: its step
 lines and its completed steps give way to counts by kind and state and to the lines of the steps
 around the frontier, and the rest of the context stays. Those lines are taken in this order, each
-group in `get_tree`'s order and a step in the first group it falls in: every step of the kind
-`milestone` where the roadmap has that kind; the frontier; and its two-hop neighbourhood, every step
-within two links of the frontier with each link read both ways: its prerequisites and theirs, the
-steps that wait on it and on those, the other steps that wait on its prerequisites, and the other
-prerequisites of the steps that wait on it.
-A line is taken while the whole context, its guides included, stays within `CONTEXT_BYTES`, and
-`omitted` counts the lines left off; Coach pages the rest with the read abilities. A conversation
-started from a step adds that step in full, every field §5.1 answers but the summary, where the
-roadmap shows the step.
+group in `get_tree`'s order and a step in the first group it falls in: the frontier, so it is never
+left off while a milestone is in; every step of the kind `milestone` where the roadmap has that kind;
+and the frontier's two-hop neighbourhood, every step within two links of it with each link read both
+ways: its prerequisites and theirs, the steps that wait on it and on those, the other steps that wait
+on its prerequisites, and the other prerequisites of the steps that wait on it. A line is taken while
+the whole context, its guides included, stays within `CONTEXT_BYTES`, and `omitted` counts the lines
+left off; Coach pages the rest with the read abilities.
 
-For a conversation about all roadmaps the context is what `list_trees` answers, and Coach reads one
+Of the rest, only the guides can carry the context past `CONTEXT_BYTES` before any line is taken.
+Stored text refuses NUL alone, and canonical text writes any other control character in six bytes, so
+at the caps (a title of 200 characters and a guide of 5,000, the registry's; six kinds, ids of 128
+characters, labels of 200, as `limits.json` holds them) the context with no line taken comes to at
+most 35,641 bytes without its guides, one guide adds up to 31,265, and eight bring it to 285,768.
+Where the context with no line taken would pass `CONTEXT_BYTES`, the guides give way, the farthest
+first and the roadmap's own last, and `guidesOmitted` counts them. A line never makes a guide give way.
+
+A conversation started from a step adds that step in full, every field §5.1 answers but the summary,
+where the roadmap shows the step.
+
+For a conversation about all roadmaps the context is the rows `list_trees` answers, in its order,
+while they stay within `CONTEXT_BYTES`, and `omitted` counts the rows left off; Coach reads one
 roadmap in full only when the question needs it (§10).
 
 Step text is the person's data. The prompt tells the model to treat it, a pasted text and an

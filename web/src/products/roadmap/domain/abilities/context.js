@@ -19,8 +19,8 @@ import { STEP_LINE, StandingRoadmaps } from './standing.js';
 export const ContextBounds = Object.freeze({
   // §5 A roadmap of more steps is given around where the person stands.
   steps: 300,
-  // §8 `CONTEXT_BYTES`: so is one whose context, given whole, would pass this many bytes of canonical text; and given
-  // around where the person stands, its lines are taken while the context stays within them.
+  // §8 `CONTEXT_BYTES`: so is one whose context, given whole, would pass this many bytes of canonical text; and a context
+  // given around where the person stands, or about all roadmaps, takes its lines or rows while it stays within them.
   bytes: 64 * 1024,
   // §5 How many of the newest completions that carry a date the context holds.
   recent: 10,
@@ -32,15 +32,17 @@ const STEP_IN_FULL = Object.freeze(['id', 'label', 'kind', 'state', 'prerequisit
 const MILESTONE = 'milestone';
 const HOPS = 2;
 
-// The context of a conversation: about all of the person's roadmaps, what list_trees answers; about one, what Coach is
-// told of it, with the step the conversation started from in full where the roadmap shows that step.
+// The context of a conversation: about all of the person's roadmaps, the rows list_trees answers, in its order, while
+// they stay within `CONTEXT_BYTES`; about one, what Coach is told of it, with the step the conversation started from in
+// full where the roadmap shows that step.
 /** @param {Standing} standing @param {ContextRequest} conversation @returns {AbilityResponse} */
 export function readContext(standing, { about, step = null }) {
   const roadmaps = StandingRoadmaps.of(standing);
   if (about === null) {
     precondition(step === null, 'a conversation started from a step is about that step\'s roadmap');
     if (!roadmaps.listRead) return refusal(AbilityCodes.roadmapUnavailable);
-    return { result: { trees: roadmaps.account.list().map((row) => roadmaps.row(row)) } };
+    const rows = roadmaps.account.list();
+    return { result: within({}, 'trees', rows.length, (index) => roadmaps.row(/** @type {{ id: string, title: string | null }} */ (rows[index]))) };
   }
   const opened = roadmaps.open(about, about);
   if (!('roadmap' in opened)) return opened;
@@ -51,34 +53,42 @@ export function readContext(standing, { about, step = null }) {
 
 // §5 What Coach is told of one roadmap: its id, title, kinds and guides, a summary of its diagnostics and its newest
 // dated completions; with every step's line and every completion where the roadmap is within the bounds, or else its
-// counts by kind and state and the lines of the steps around where the person stands, which Coach pages beyond.
+// counts by kind and state and the lines of the steps around where the person stands, which Coach pages beyond. Where
+// that context with no line taken would pass `CONTEXT_BYTES`, its guides give way, the farthest first and the roadmap's
+// own last, and `guidesOmitted` counts them.
 /** @param {StandingRoadmap} roadmap @returns {JsonObject} */
 function roadmapContext(roadmap) {
   const { title, kinds } = roadmap.header;
-  const lines = (/** @type {string[]} */ ids) => ids.map((id) => roadmap.step(id, STEP_LINE));
-  const told = { tree: { id: roadmap.id, title, kinds, guides: guides(roadmap) }, diagnostics: summary(roadmap.diagnostics),
-    recent: recent(roadmap) };
+  const shown = guides(roadmap);
+  const tree = (/** @type {number} */ left) => ({ id: roadmap.id, title, kinds, guides: shown.slice(left), ...(left ? { guidesOmitted: left } : {}) });
+  const told = { diagnostics: summary(roadmap.diagnostics), recent: recent(roadmap) };
   if (roadmap.graph.ids.length <= ContextBounds.steps) {
-    const whole = { ...told, steps: lines(roadmap.order()), completed: roadmap.completions };
+    const whole = { tree: tree(0), ...told, steps: roadmap.order().map((id) => roadmap.step(id, STEP_LINE)), completed: roadmap.completions };
     if (jcsBytes(whole).length <= ContextBounds.bytes) return whole;
   }
-  return taken({ ...told, counts: counts(roadmap) }, lines(around(roadmap)));
+  const ids = around(roadmap);
+  const counted = { ...told, counts: counts(roadmap) };
+  let left = 0;
+  while (left < shown.length && jcsBytes({ tree: tree(left), ...counted, steps: [], omitted: ids.length }).length > ContextBounds.bytes) left++;
+  return within({ tree: tree(left), ...counted }, 'steps', ids.length, (index) => roadmap.step(ids[index] ?? '', STEP_LINE));
 }
 
-// §5 The large form's lines, taken in order while the whole context stays within `CONTEXT_BYTES`, and how many are left
-// off. The context starts at its bytes with no line and `omitted: 0`; each line taken adds its own bytes and a comma
-// after the first, and `omitted` costs a byte more for each digit past its first.
-/** @param {JsonObject} context @param {JsonObject[]} lines @returns {JsonObject} */
-function taken(context, lines) {
-  let bytes = jcsBytes({ ...context, steps: [], omitted: 0 }).length;
-  let count = 0;
-  for (const line of lines) {
-    const next = bytes + jcsBytes(line).length + (count ? 1 : 0);
-    if (next + String(lines.length - count - 1).length - 1 > ContextBounds.bytes) break;
+// §5 The entries of a list, taken in order while the context holding them stays within `CONTEXT_BYTES`, under `list`,
+// and `omitted`, how many are left off. The context starts at its bytes with none taken and `omitted: 0`; each entry
+// taken adds its own bytes and a comma after the first, and `omitted` costs a byte more for each digit past its first.
+/** @param {JsonObject} context @param {string} list @param {number} count @param {(index: number) => JsonObject} entry @returns {JsonObject} */
+function within(context, list, count, entry) {
+  let bytes = jcsBytes({ ...context, [list]: [], omitted: 0 }).length;
+  /** @type {JsonObject[]} */
+  const taken = [];
+  for (let index = 0; index < count; index++) {
+    const value = entry(index);
+    const next = bytes + jcsBytes(value).length + (index ? 1 : 0);
+    if (next + String(count - index - 1).length - 1 > ContextBounds.bytes) break;
     bytes = next;
-    count++;
+    taken.push(value);
   }
-  return { ...context, steps: lines.slice(0, count), omitted: lines.length - count };
+  return { ...context, [list]: taken, omitted: count - taken.length };
 }
 
 // §5 The guides Coach reads before it works the roadmap, as the server's get_tree gives them to an outside assistant: on
@@ -124,9 +134,10 @@ function counts(roadmap) {
   return { ...roadmap.counts, byKind };
 }
 
-// §5 The steps a roadmap past the bounds is given the lines of, in the order they are taken: every step of the kind
-// `milestone`, then the frontier, which is the available steps, then every step within two links of the frontier, a link
-// read both ways; each group in get_tree's order, and a step in the first group it falls in.
+// §5 The steps a roadmap past the bounds is given the lines of, in the order they are taken: the frontier, which is the
+// available steps, so it is never left off while a milestone is in; then every step of the kind `milestone`; then every
+// step within two links of the frontier, a link read both ways; each group in get_tree's order, and a step in the first
+// group it falls in.
 /** @param {StandingRoadmap} roadmap */
 function around(roadmap) {
   const follows = roadmap.follows();
@@ -150,5 +161,5 @@ function around(roadmap) {
   const milestones = order.filter((slot) => roadmap.kindAt(slot) === MILESTONE);
   const frontier = order.filter((slot) => roadmap.stateAt[slot] === 'available');
   const neighbourhood = order.filter((slot) => near[slot] === 1);
-  return [...new Set([...milestones, ...frontier, ...neighbourhood])].map((slot) => roadmap.graph.ids[slot] ?? '');
+  return [...new Set([...frontier, ...milestones, ...neighbourhood])].map((slot) => roadmap.graph.ids[slot] ?? '');
 }
