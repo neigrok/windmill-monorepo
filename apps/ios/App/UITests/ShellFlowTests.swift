@@ -856,6 +856,19 @@ import XCTest
     XCTAssertTrue(app.buttons["roadmap-try-again"].isEnabled)
   }
 
+  // A write the phone's store cannot commit changes nothing and says nothing: the Board stands as the copy holds it, with
+  // no band and no Undo.
+  func testAWriteThePhoneCannotCommitLeavesTheBoardAsItWas() {
+    let app = launch("roadmap-unwritable")
+    XCTAssertTrue(app.roadmapStep("Read the wind").waitForExistence(timeout: 30))
+    XCTAssertTrue(app.staticTexts["3 of 8 done"].exists)
+    app.roadmapStep("Read the wind").swipeRight()
+    XCTAssertTrue(app.buttons["Complete"].waitForExistence(timeout: 5))
+    app.buttons["Complete"].tap()
+    XCTAssertFalse(app.buttons["roadmap-undo"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["3 of 8 done"].exists && app.buttons["roadmap-group-upNext"].label == "Up next, 2")
+  }
+
   // 27a–27d: the typed email confirms, the account closes, and Done returns to You signed out over Where to start?.
   func testDeleteAccountLeavesThePhoneSignedOut() {
     let app = launch("24a")
