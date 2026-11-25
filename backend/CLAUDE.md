@@ -190,6 +190,9 @@ on the other:
 - **jsoncpp** writes a non-finite double as a token no parser reads back, and older builds throw
   instead, so the two toolchains can disagree on the same value (`ToolArgs.cpp` names such a value
   rather than rendering it).
+- **The order a call's operands run in** is unspecified: Clang runs `a() + b()` left to right, GCC can
+  run `b()` first. When one side reads what the other side writes (a door's answer, then what the door
+  stored), take the first into a variable before the second.
 
 Watch `gh run list` after every backend push, because **a push to `main` IS a deploy**.
 `.github/workflows/backend.yml` builds, tests and publishes the image, and a green run triggers
