@@ -17,7 +17,7 @@ or explanatory field footer. Web preserves Other reads and includes only positiv
 
 ## Compatibility and deployment
 
-Both source registries are 12 / minimum 11 and retain the additive Coach records. Explicit Other is
+The composed source registries are 15 / minimum 15 and retain the additive Coach records. Explicit Other is
 accepted by the backend parser, database checks, generated schemas and all shared domains. Legacy
 records are retained without coercion. The conditional database upgrade widens the two existing
 checks once; an unchanged reapplication keeps their identities and every existing trigger.

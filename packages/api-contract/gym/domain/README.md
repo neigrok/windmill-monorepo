@@ -2,7 +2,7 @@
 
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
-v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; every file runs in all three but
+v15/minimum-15 registry composition and reproduce each `expect` by JCS equality; every file runs in all three but
 `refused-start-actions.json`, which the web alone runs while the phones' recovery of a start that lost a race waits on
 its design ([open problems](../../../../docs/foundation/local-first-open-problems.md) LP-6).
 `workout-plan-actions.json` and `workout-proposals-actions.json` hold the open workout's editable plan and its

@@ -17,7 +17,7 @@ names roadmap (A.1), whose rules the JS reference model server and the C++ bindi
 roadmap and withholds its scopes (§9.2) unless its deployment serves them, as production's does. Production's roadmaps
 were adopted by [Roadmap on the sync engine](roadmap-on-the-engine.md) §8.1.
 
-**Registry contract:** The composed source registry is version 14 with minimum version 11. Gym's
+**Registry contract:** The composed source registry is version 15 with minimum version 15. Gym's
 finite normalized loads have no fixed kg bounds; exact zero is a load and an absent target remains
 last time. Derived volume and estimates are explicit null when unavailable. Older clients must
 upgrade. The explicit `other` equipment value remains supported. All legacy
@@ -404,7 +404,9 @@ Roadmap's registry joins the composition at version 13, minimum 11 (A.1): its pr
 additive, and gym's and journal's registries carry version 13 with it, since the composed registries declare one
 version. Version 14, minimum 11, declares `values` on a restore that brings a keyed record back alive (§6.4): a
 client sends them only while the replica's latest hello served as its account advertised schema 14 or later, and
-otherwise the life alone, which every server admits.
+otherwise the life alone, which every server admits. Version 15 narrows roadmap's `meta.visibility` and `meta.reach` to
+private and public, and `reach` opens at public alone (A.1): a rule enforced by clients changes, so version 15 requires
+minimum 15.
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern` or `idDomain`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and
@@ -1073,9 +1075,7 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
    1. Every admission door takes the catalog's owner admission gate, then the in-process mutex of
       the origin scope key, each with timeout `LOCK_TIMEOUT_MS`. Both remain held through commit
       and publication. Target scopes acquire no process mutex. This contract has one active
-      admitting process; `ChangeFeed` is the boundary for a future multi-process relay. The one
-      by-hand exception is the tool that moves unlisted roadmaps to private
-      ([backend SPEC](../../backend/SPEC.md#unlisted-roadmaps-to-private), Beside the live server).
+      admitting process; `ChangeFeed` is the boundary for a future multi-process relay.
    2. `BEGIN`; `SET LOCAL lock_timeout`.
    3. A replica origin locks its `sync_replicas` row, inserting it with `last_n = 0` when absent,
       and re-checks, in this order, that the row is bound to the origin's account, else the push
@@ -3424,7 +3424,7 @@ type** (§9.2): `tree`. No type is the headline.
 | Type | Scope | Identity | Life | Fields | Rules |
 |---|---|---|---|---|---|
 | `tree` | self/roadmap | minted g, governs `tree:<id>` | terminal, keep | const server: `parent` `{tree, step}` or null (default null), whose `tree` is a tree of self/roadmap and `step` a node of `tree/<tree>` (E-8) | A replica-origin delete of a subtree's record → `not-a-root`. Its death kills every subtree under it; a root's also kills each step of the owner's other roadmaps whose alive pointer opens it. |
-| `meta` | tree | singleton | — | lww: `title` ≤200 chars, `guide` ≤5 000 chars, `visibility` ∈ {private, unlisted, public} (private); lww server: `guideInherited` (false), `reach` ∈ {private, unlisted, public}, which `opens` at {unlisted, public} (private); const server: `root` `ref<tree>`, unset on a root, which reads its own id; `parent` as `tree.parent`; `depth` 0–8 (0); `forkedFrom` a tree id | A delta writing `visibility` on a subtree's `meta` → `not-a-root`. A changed `guide` register clears `guideInherited` unless the intent writes it. `reach` is the root's `visibility` while the subtree stands, and `private` otherwise; a root's is its `visibility`. |
+| `meta` | tree | singleton | — | lww: `title` ≤200 chars, `guide` ≤5 000 chars, `visibility` ∈ {private, public} (private); lww server: `guideInherited` (false), `reach` ∈ {private, public}, which `opens` at {public} (private); const server: `root` `ref<tree>`, unset on a root, which reads its own id; `parent` as `tree.parent`; `depth` 0–8 (0); `forkedFrom` a tree id | A delta writing `visibility` on a subtree's `meta` → `not-a-root`. A changed `guide` register clears `guideInherited` unless the intent writes it. `reach` is the root's `visibility` while the subtree stands, and `private` otherwise; a root's is its `visibility`. |
 | `node` | tree | derived, by domain | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color` a hue (terracotta), `ord`, `status` null or ∈ {none, complete} (null), `description` ≤16 000 chars, `links` (`maxItems` 32 of {`url` ≤2 048 chars, `label` ≤200 chars}); lww server: `branch` `ref<tree>` or null (null) | Cap 10 000. A change carrying an alive life that joins dead is revived. A change of its presence writes the reach of the subtrees it owns. |
 | `edge` | tree | keyed `[from, to]`, `ref<node>` each | yes, keep | — | Cap 20 000. A loop is admitted. |
 | `kind` | tree | derived, by domain | revivable, keep | lww: `hue` a hue (terracotta), `label` ≤24 chars, `description` ≤80 chars, `ord` | Cap 6. Two kinds of one hue are admitted. A change carrying an alive life that joins dead is revived. |
