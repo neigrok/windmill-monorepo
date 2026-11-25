@@ -23,7 +23,7 @@ import { Contract, savedForm, viewRecords } from '../../../platform/domain-kit/v
 import { RoadmapTree } from '../../../../src/products/roadmap/domain/records.js';
 import { FollowGraph } from '../../../../src/products/roadmap/domain/graph.js';
 import { RoadmapAccount } from '../../../../src/products/roadmap/domain/account.js';
-import { ActivityRead, BoardRead, LegendRead, selectNodes, landingFacts } from '../../../../src/products/roadmap/domain/reads.js';
+import { ActivityRead, BoardRead, EffectsRead, LegendRead, selectNodes, landingFacts } from '../../../../src/products/roadmap/domain/reads.js';
 import { diagnose, pointerDiagnostics } from '../../../../src/products/roadmap/domain/diagnostics.js';
 
 /** @typedef {import('../../../../src/platform/domain-kit/values.js').Json} Json */
@@ -265,12 +265,16 @@ export function runRead(input) {
     return readRoadmap(input.id, { listed: input.listed, tree: reader(RoadmapScopes.tree(input.id), input.tree), read: input.read,
       overlay: input.overlay && reader(RoadmapScopes.overlay(input.id), input.overlay.drawn), queued: input.overlay?.queued ?? [] }).json;
   }
-  if (['account', 'activity', 'guides', 'pointers', 'progress', 'openings', 'list', 'listing'].includes(input.operation)) {
+  if (input.trees !== undefined) {
     const account = new RoadmapAccount(input.trees.map((/** @type {any} */ tree) => new RoadmapTree(tree)), { told: input.told ?? [] });
     if (input.operation === 'account') return account.result();
     if (input.operation === 'activity') {
       const graph = account.graph(input.tree);
       return graph === null ? null : new ActivityRead(graph, input.step ?? null).result();
+    }
+    if (input.operation === 'effects') {
+      const graph = account.graph(input.tree);
+      return graph === null ? null : new EffectsRead(graph, input.ids).result();
     }
     if (input.operation === 'progress') return account.progress(input.tree);
     if (input.operation === 'openings') return account.openingsOf(input.tree);
@@ -285,6 +289,7 @@ export function runRead(input) {
   if (input.operation === 'graph') return graph.result(input.subjects);
   if (input.operation === 'board') return new BoardRead(graph, input.query).result();
   if (input.operation === 'diagnostics') return diagnose(graph);
+  if (input.operation === 'effects') return new EffectsRead(graph, input.ids).result();
   if (input.operation === 'landing') return landingFacts(graph, input.edges);
   throw new Error(`Unclaimed roadmap read operation: ${input.operation}`);
 }

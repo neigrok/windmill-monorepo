@@ -379,7 +379,10 @@ makes it false.
   Roadmaps has no gallery. The foot's + held offers Paste Steps (§7.2). The shell's sign-in question names the roadmaps
   made signed out and its sign-out question counts roadmap's unconfirmed changes; neither names Coach's conversations.
   An Undo that brings
-  nothing back says so in the band. The Graph draws the picture, pans and zooms it, selects a step and opens its page,
+  nothing back says so in the band. The bar's subtitle joins *Offline* to the progress while the phone has no connection;
+  a change of the person's that met one made elsewhere, a step that now follows something else or one brought back, is
+  told once by the band, whose *Show* opens the step's page, and by that page's footer; and the changes that could not
+  land are listed in *Set Aside*, from the title menu's first row, with *Copy*, *Discard* and *Discard All*. The Graph draws the picture, pans and zooms it, selects a step and opens its page,
   lists the Up next steps under *Next*, brings the one chosen there or by *Open in Graph* into view, and shows the whole
   roadmap alone under
   *Fit*; it has no Find and draws no proposal; no Coach is built. A roadmap's link opens the room in Debug builds alone,

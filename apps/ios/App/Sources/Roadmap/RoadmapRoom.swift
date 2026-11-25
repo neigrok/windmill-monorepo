@@ -2,17 +2,20 @@ import SwiftUI
 import UIKit
 import RoadmapDomain
 
-// The Roadmap room (Roadmap · iOS S.1, S.2, 01.3, 01.5, 01.5b, 01.5c, 02.10, 02.16, 04.5, 04.7, 07.3, 11.22a): one stack,
+// The Roadmap room (Roadmap · iOS S.1, S.2, 01.3, 01.5, 01.5b, 01.5c, 02.10, 02.16, 04.5, 04.7, 07.3, 10.5b, 11.22a): one stack,
 // the open roadmap under its name with the switch row, its Board or its Graph, and at the foot the one band over New step,
 // whose long press also offers Paste Steps. All Roadmaps, Activity, a step's page, its note and its History, the list a
-// roadmap is attached from, and each roadmap gone into with its own screens are pushed on the stack; New Roadmap, Paste
-// Steps, the step form, Kinds and the Guide are its sheets, and a reader's cover of a roadmap someone else shared stands
-// over it full screen. What the band says is announced and felt once, whichever screen stands over it. While the Graph's
-// Fit stands, the bar, the switch row and the foot are away; while several steps are selected the bar and the bottom
-// toolbar are the selection's.
+// roadmap is attached from, and each roadmap gone into with its own screens are pushed on the stack; New Roadmap, Set
+// Aside, Paste Steps, the step form, Kinds and the Guide are its sheets, and a reader's cover of a roadmap someone else
+// shared stands over it full screen. What the band says is announced and felt once, whichever screen stands over it, and
+// the room offers the band a change of theirs that met one made elsewhere only while it stands before them, on screen
+// in the foreground with no sheet of the shell's over it. While the Graph's Fit stands, the bar, the switch row and the foot are away; while several steps are
+// selected the bar and the bottom toolbar are the selection's.
 struct RoadmapRoom: View {
   @Bindable var roadmap: RoadmapModel
   let app: AppModel
+  @Environment(\.scenePhase) private var scenePhase
+  @State private var onScreen = false
 
   var body: some View {
     NavigationStack(path: Binding(get: { roadmap.stack }, set: { roadmap.stack = $0 })) {
@@ -30,9 +33,15 @@ struct RoadmapRoom: View {
           }
         }.roomBar(.roadmap)
         .navigationDestination(for: RoadmapModel.Stacked.self) { stacked in RoadmapScreen(root: roadmap, stacked: stacked, app: app) }
-    }.onAppear { roadmap.roomOpened() }
+    }.onAppear {
+      onScreen = true
+      roadmap.roomOpened()
+    }
+      .onDisappear { onScreen = false }
+      .onChange(of: onScreen && scenePhase == .active && app.sheet == nil, initial: true) { _, faces in roadmap.faces = faces }
       .environment(app)
       .sheet(item: Binding(get: { roadmap.newRoadmap }, set: { if $0 == nil { roadmap.newRoadmap?.cancel() } })) { NewRoadmap(draft: $0) }
+      .sheet(isPresented: Binding(get: { roadmap.landed.listOpen }, set: { roadmap.landed.listOpen = $0 })) { SetAsideSheet(roadmap: roadmap) }
       .modifier(RoomSheets(roadmap: roadmap.deepest, app: app))
       .fullScreenCover(item: Binding(get: { roadmap.links?.cover }, set: { if $0 == nil { roadmap.links?.cover?.close(.closed) } })) { cover in
         RoadmapCoverScreen(cover: cover, app: app)
@@ -73,7 +82,8 @@ struct RoadmapRoom: View {
   }
 
   // 01.5b: before the first read of the phone's copy the room is its bar alone, and a large spinner shows only once the
-  // read has run half a second, so a quick read never flashes one. A spinner shown is told, and how its wait ended.
+  // read has run half a second, so a quick read never flashes one. A spinner shown is told, and how its wait ended. A
+  // read that ends as the half second does takes the view away before its wait resumes, which then tells nothing.
   struct FirstRead: View {
     let roadmap: RoadmapModel
     @State private var waited = false
@@ -83,7 +93,7 @@ struct RoadmapRoom: View {
         if waited { ProgressView().controlSize(.large).tint(RoadmapPalette.inkDim).accessibilityIdentifier("roadmap-first-read") }
       }.frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
-          guard (try? await Task.sleep(for: .milliseconds(500))) != nil else { return }
+          guard (try? await Task.sleep(for: .milliseconds(500))) != nil, !Task.isCancelled else { return }
           waited = true
           roadmap.firstReadWaits()
         }
@@ -192,6 +202,7 @@ struct RoomSheets: ViewModifier {
       .sheet(item: Binding(get: { roadmap.guide }, set: { if $0 == nil { roadmap.closeGuide() } })) { guide in
         RoadmapGuide(roadmap: roadmap, sheet: guide, signedIn: app.account != nil)
       }
+      // A landing line is announced as its band is drawn (`RoadmapFoot`), which may be later than it stands.
       .sensoryFeedback(trigger: roadmap.band) { _, band in
         switch band?.says {
         case .completed, .created, .planted, .added: .success
@@ -201,7 +212,9 @@ struct RoomSheets: ViewModifier {
         }
       }
       .onChange(of: roadmap.band) { _, band in
-        if let band { UIAccessibility.post(notification: .announcement, argument: band.says.words) }
+        guard let band else { return }
+        if case .landed = band.says { return }
+        UIAccessibility.post(notification: .announcement, argument: band.says.words)
       }
   }
 }
@@ -256,9 +269,10 @@ struct GlassCircle: ViewModifier {
   }
 }
 
-// The bar's title over the Board (Roadmap · iOS 01.3, 01.9, 01.10): the open roadmap's name over its progress. Its menu
-// lists the three most recent roadmaps, each over its progress and the open one checked, then All Roadmaps…, New Roadmap,
-// Guide, which counts the guides from above (08.5), Kinds, Activity, Rename and Delete Roadmap. Rename is the system's:
+// The bar's title over the Board (Roadmap · iOS 01.3, 01.9, 01.10, 10.1, 10.5a): the open roadmap's name over its progress,
+// with Offline joined to it while the phone has no connection. Its menu leads with Set Aside while a change is set aside,
+// then lists the three most recent roadmaps, each over its progress and the open one checked, then All Roadmaps…, New
+// Roadmap, Guide, which counts the guides from above (08.5), Kinds, Activity, Rename and Delete Roadmap. Rename is the system's:
 // it turns the bar into one field, whose return key commits a name and leaves the old one where the field was emptied.
 // Delete Roadmap asks under the title, on a view that stays on screen once the menu has closed. While several steps are
 // selected the title counts them, with no progress, no menu and no rename (02.10). The title stands on a view of its own behind the screen, which changes with it, so the screen
@@ -272,8 +286,13 @@ struct RoadmapTitle: ViewModifier {
       .overlay(alignment: .top) { Color.clear.frame(width: 1, height: 1).modifier(DeleteRoadmapQuestion(roadmap: roadmap, row: nil)) }
   }
 
-  // The title's menu: the three most recent roadmaps, then this roadmap's verbs.
+  // The title's menu: Set Aside while it holds a change, the three most recent roadmaps, then this roadmap's verbs.
   @ViewBuilder var menu: some View {
+    if !roadmap.landed.setAside.groups.isEmpty {
+      Button(String(localized: "\(roadmap.landed.setAside.changes.count) Set Aside", locale: .copy, comment: "The title menu's first row while changes are set aside: how many"),
+             systemImage: "tray.full") { roadmap.openSetAside() }.tint(RoadmapPalette.ink)
+      Divider()
+    }
     ForEach(roadmap.roadmaps.prefix(3), id: \.id) { listed in
       Toggle(isOn: Binding(get: { listed.id == open.listed.id }, set: { _ in roadmap.open(listed.id, from: .menu) })) {
         Text(listed.name)
@@ -301,9 +320,9 @@ struct RoadmapTitle: ViewModifier {
       SelectedTitle(selection: selection)
     } else if #available(iOS 26.0, *) {
       Color.clear.navigationTitle(Binding(get: { name }, set: { if $0 != name { roadmap.rename(to: $0) } }))
-        .navigationSubtitle(open.board.overall.progress).toolbarTitleMenu { menu }
+        .navigationSubtitle(roadmap.subtitle(of: open)).toolbarTitleMenu { menu }
     } else {
-      Color.clear.roomTitle(name, subtitle: open.board.overall.progress).toolbarTitleMenu { menu }
+      Color.clear.roomTitle(name, subtitle: roadmap.subtitle(of: open)).toolbarTitleMenu { menu }
     }
   }
 

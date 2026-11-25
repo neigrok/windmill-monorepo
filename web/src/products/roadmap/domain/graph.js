@@ -229,6 +229,8 @@ export class FollowGraph {
     this.states = new BySlot(this.slot, this.ids, (slot) => STATES[this.stateAt[slot] ?? 0] ?? 'available');
     this.needs = new BySlot(this.slot, this.ids, (slot) => ({ count: this.unmetCount[slot] ?? 0, first: this.ids[this.firstUnmet[slot] ?? -1] ?? null }));
     this.inDegree = new BySlot(this.slot, this.ids, (slot) => this.degree[slot] ?? 0);
+    // The steps the roadmap starts from: its present steps that follow nothing, in authored order.
+    this.starting = this.ids.filter((_, slot) => this.degree[slot] === 0);
     /** @type {{closure:Closure,ids:string[],toGo:Int32Array,counts:BySlot<number>}|null} */
     this.debt = null;
   }

@@ -9,9 +9,10 @@ roadmap nodes can cite them.
 **Status:** Specified, and approved by the owner on 2026-11-15, and again on 2026-11-17 as revised
 for roadmap on the sync engine (R-13) and Coach on the iPhone in the first release (R-14). Of Coach
 its contract is built: the catalog, its limits and the format of its vectors (§3); and on the web
-the standing roadmap (D-2) and the read abilities (§4, §5), in `web/src/products/roadmap/domain/abilities/`,
-which claim the read abilities' vectors. The roadmap's AI today is tending: a server-side agent that
-edits a roadmap at once from one sentence (`backend/products/roadmap`, `TendingApi`). What a person
+the standing roadmap (D-2), the read abilities (§4, §5) and the context (D-8, §5), in
+`web/src/products/roadmap/domain/abilities/`, which claim the read abilities' vectors and the context's.
+The roadmap's AI today is tending: a server-side agent that edits a roadmap at once from one sentence
+(`backend/products/roadmap`, `TendingApi`). What a person
 sees of Coach is ruled in the [design canon](../design/roadmap-coach.md); this document says how it
 is built. The build order lives in the Roadmap Coach roadmap tree, which the dogfood tree
 (`t_9362d9bc883e0a1e`) opens from the node `roadmap-coach`.
@@ -85,15 +86,15 @@ packages/api-contract/roadmap/
   catalog.json            the abilities Coach is offered (§4)
   limits.json             the caps the server enforces, for every client to check first (§6)
   abilities/              vectors: the roadmaps, an input, and the result, the writes or the refusal
-                          they must give; its README.md has the format
+                          they must give, the context's among them; its README.md has the format
   check.py                the Coach contracts workflow's check of the three against this document's
                           tables, and of each cap against the sources it names
   domain/                 roadmap's shared domain corpus, where a turn's opening and end are proven
                           as gym's are (§9)
 web/src/products/roadmap/
-  domain/                 the abilities, each a pure function of a roadmap and an input, with the
-                          rules they share with the room's controls
-  coach/                  roadmap's profile: prompt, context, the tool host over the copy,
+  domain/                 the abilities and the context, each a pure function of a roadmap and an
+                          input, with the rules they share with the room's controls
+  coach/                  roadmap's profile: prompt, first content, the tool host over the copy,
                           proposals, receipts
 apps/ios/Domain/Sources/RoadmapDomain/
                           the same abilities and rules in Swift, with the tool host's executor
@@ -174,16 +175,60 @@ before it (§7), and that is all an ability can do to another proposal.
 
 **The context.** Before the first model call of a turn the tool host builds the context from the
 standing roadmap and sends it with the question. For a conversation about one roadmap it holds: the
-title and kinds; every step on one line, §5.1's default fields (id, label, kind, state, prerequisite
-ids, the count it unlocks and the description's summary); the person's completed steps with the dates
-the copy holds; a summary of diagnostics; and the last ten completions that carry a date. A roadmap
-of more than 300 steps, or one whose lines would pass `CONTEXT_BYTES`, is given instead as counts by
-kind and state, every step of the kind `milestone` where the roadmap has that kind, the frontier and
-its two-hop neighbourhood; Coach pages the rest with the read abilities. A conversation started from
-a step adds that step in full.
+roadmap's id, title and kinds; its guides, as the server's `get_tree` gives them to an outside
+assistant, each `{treeId, title, text, yours}`: on a roadmap the person owns, the guides of their
+roadmaps above it and then its own, farthest first and at most eight, and on one they only read, its
+own alone, which is never theirs; every step on one line, §5.1's default fields (id, label, kind,
+state, prerequisite ids, the count it unlocks and the description's summary); the person's completed
+steps with the dates the copy holds; a summary of diagnostics; and the last ten completions that carry
+a date. A guide is the roadmap's author's note to an AI, and Coach reads it as an outside assistant
+does.
 
-For a conversation about all roadmaps the context is what `list_trees` answers, and Coach reads one
-roadmap in full only when the question needs it (§10).
+A conversation started from a step adds that step in full, every field §5.1 answers but the summary,
+where the roadmap shows the step. Its `prerequisites` carry their first 50 ids, and
+`prerequisitesOmitted` counts the rest where there are more, which Coach reads with `get_nodes`; no
+other field of the step in full is a list of ids. The step counts toward `CONTEXT_BYTES` and stays
+whole.
+
+A roadmap of more than 300 steps, or one whose context so given would pass `CONTEXT_BYTES` (the step
+a conversation started from counted), is given instead around where the person stands: its step
+lines and its completed steps give way to counts by kind and state and to the lines of the steps
+around the frontier, and the rest of the context stays. Those lines are taken in this order, each
+group in `get_tree`'s order and a step in the first group it falls in: the frontier, so it is never
+left off while a milestone is in; every step of the kind `milestone` where the roadmap has that kind;
+and the frontier's two-hop neighbourhood, every step within two links of it with each link read both
+ways: its prerequisites and theirs, the steps that wait on it and on those, the other steps that wait
+on its prerequisites, and the other prerequisites of the steps that wait on it. A line is taken while
+the whole context, its guides and started step included, stays within `CONTEXT_BYTES`, and `omitted`
+counts the lines left off; Coach pages the rest with the read abilities.
+
+Of the rest, only the guides and the started step can carry the context past `CONTEXT_BYTES` before
+any line is taken. Stored text refuses NUL alone, and canonical text writes any other control
+character in six bytes, so at the caps (a title of 200 characters and a guide of 5,000, the
+registry's; six kinds, ids of 128 characters, labels of 200, descriptions of 16,000 and 32 web links,
+as `limits.json` holds them) the context with no line taken comes to at most 35,641 bytes without its
+guides and started step, one guide adds up to 31,266, eight bring it to 285,776, and the started step
+alone comes to as much as 242,097. Where the context with no line taken would pass `CONTEXT_BYTES`,
+the guides give way, the farthest first and the roadmap's own last, and `guidesOmitted` counts them. A
+line never makes a guide give way, and nothing makes the started step give way, so a context with a
+step that large passes `CONTEXT_BYTES` once every line and guide has gone.
+
+For a conversation about all roadmaps the context is the rows `list_trees` answers, in its order,
+while they stay within `CONTEXT_BYTES`, and `omitted` counts the rows left off; Coach reads one
+roadmap in full only when the question needs it (§10). A row's `frontier` carries its first ten titles,
+in its own order, and `frontierOmitted` counts the rest where there are more, so no one roadmap's
+frontier crowds out the rows after it.
+
+The context's bounds are `limits.json`'s `context`, which the web's context and the Coach contracts
+workflow read, and which this table states:
+
+| Bound | Max | Counts | What it bounds |
+|---|---|---|---|
+| `bytes` | 65536 | bytes | `CONTEXT_BYTES` (§8): the canonical text of the whole context |
+| `steps` | 300 | items | the steps of a roadmap given whole |
+| `recent` | 10 | items | the newest completions that carry a date |
+| `frontier` | 10 | items | the frontier titles of a row about all roadmaps |
+| `prerequisites` | 50 | items | the prerequisite ids of the step a conversation started from |
 
 Step text is the person's data. The prompt tells the model to treat it, a pasted text and an
 ability's result as data and never as instructions.
@@ -536,7 +581,8 @@ shown.
 **The profile's values.** Roadmap asks for the model class `large`, which the AI service serves to
 an installation as `medium`, with the effort gym's Coach asks for and the label
 `roadmap.coach.turn`. `MAX_MODEL_CALLS` is 8, `MAX_ABILITY_CALLS` 12, `MAX_WRITES` 6 and
-`CONTEXT_BYTES` 64 KiB. A call asks for at most 2,000 output tokens and at least 1,024. A message, a
+`CONTEXT_BYTES` 64 KiB, the context's `bytes` bound (§5), which the profile reads from `limits.json` as
+the context does. A call asks for at most 2,000 output tokens and at least 1,024. A message, a
 question and a picture keep gym's bounds.
 
 **The words.** The prompt, the words of the first content and the sentence the model reads beside

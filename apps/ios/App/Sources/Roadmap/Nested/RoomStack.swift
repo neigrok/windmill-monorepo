@@ -67,10 +67,13 @@ extension RoadmapModel {
   }
 
   // Back from a roadmap gone into, however many rooms it passes: each room leaves with its screens, the deepest first, a
-  // note open on one saved and its Back told once. The band is the root's, so it stands on with its Undo for its time.
+  // note open on one saved and its Back told once. The band is the root's, so it stands on with its Undo for its time; the
+  // lines of the roadmap left go with it, and one of the roadmap now on top is offered.
   func cameBack(from room: RoadmapModel) {
     room.path = []
     inside = nil
+    root.landed.keep(Set(root.rooms.compactMap { $0.shown?.id }))
+    root.offerLanding()
     guard case .inside(_, let subtree) = room.role else { return }
     if subtree { telemetry.event("roadmap_subtree_back", properties: ["role": "owner"]) }
     else { telemetry.event("roadmap_tree_back") }

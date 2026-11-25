@@ -1073,7 +1073,9 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
    1. Every admission door takes the catalog's owner admission gate, then the in-process mutex of
       the origin scope key, each with timeout `LOCK_TIMEOUT_MS`. Both remain held through commit
       and publication. Target scopes acquire no process mutex. This contract has one active
-      admitting process; `ChangeFeed` is the boundary for a future multi-process relay.
+      admitting process; `ChangeFeed` is the boundary for a future multi-process relay. The one
+      by-hand exception is the tool that moves unlisted roadmaps to private
+      ([backend SPEC](../../backend/SPEC.md#unlisted-roadmaps-to-private), Beside the live server).
    2. `BEGIN`; `SET LOCAL lock_timeout`.
    3. A replica origin locks its `sync_replicas` row, inserting it with `last_n = 0` when absent,
       and re-checks, in this order, that the row is bound to the origin's account, else the push

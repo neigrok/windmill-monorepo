@@ -29,8 +29,19 @@ public struct LandingRead: Sendable {
   public let cameBack: [ID<RoadmapStep>]
   public let note: LandingNote
 
+  // A line comes from a step brought back, or from a link the note holds or one into a step it holds, out of a step whose
+  // delete has reached the device. Where the note holds none such, the roadmap's steps go unread: a room reads this after
+  // every change, and an entry no line can be said of stays in the note until its next write.
   public init(of tree: ID<RoadmapEntry>, in read: Reader) throws {
     let note = try LandingNote(of: tree, in: read)
+    let deleted = read.repository(RoadmapStep.self)
+    let bridging = note.isEmpty ? [] : try read.repository(RoadmapLink.self).all(in: .drawn).filter { (link: RoadmapLink) -> Bool in
+      note.nodes.contains(link.to) || note.edges.contains(link)
+    }
+    guard try !note.revived.isEmpty || bridging.contains(where: { (link: RoadmapLink) throws -> Bool in try deleted.spentSeq(link.from) != nil }) else {
+      (follows, cameBack, self.note) = ([], [], note)
+      return
+    }
     let steps = try DrawnSteps(of: tree, in: read)
     let roadmap = steps.roadmap
     let name = { (step: String) -> String? in roadmap.step(step)?.label ?? note.name(of: ID(RecordID(step))) }
@@ -86,9 +97,9 @@ public struct ClearLanding: ActAction {
   }
 }
 
-// §6 The one list of what cannot land, from the engine's notices of roadmap: each with its reason and what the person
-// wrote, to copy or discard. Every other notice is no refusal a person is shown; `unexpected` names it for the failure
-// report.
+// §6 The one list of what cannot land, from the engine's notices of roadmap: each with its reason, whether it made its
+// subject or changed one that stood, and what the person wrote, to copy or discard. Every other notice is no refusal a
+// person is shown; `unexpected` names it for the failure report.
 public struct CannotLand: Sendable {
   public enum Reason: String, Sendable {
     case roadmapDeleted, capFilled, accessEnded, noteTooLong
@@ -98,6 +109,8 @@ public struct CannotLand: Sendable {
     public let id: String
     public let gestureId: String
     public let reason: Reason
+    // The refused content creates its subject, its life made alive at its own birth, in its own writes or a dependent's.
+    public let made: Bool
     public let subject: RecordRef?
     // What the refused content wrote to its subject.
     public let values: [String: JSON]
@@ -120,10 +133,15 @@ public struct CannotLand: Sendable {
         unexpected.append((notice.id, notice.notice.code))
         continue
       }
-      listed.append(Entry(id: notice.id, gestureId: notice.gestureId, reason: reason, subject: notice.subject,
-                          values: notice.subject.map(notice.values(of:)) ?? [:]))
+      listed.append(Entry(id: notice.id, gestureId: notice.gestureId, reason: reason,
+                          made: notice.subject.map { Self.creates($0.key, in: notice.notice.content) } ?? false,
+                          subject: notice.subject, values: notice.subject.map(notice.values(of:)) ?? [:]))
     }
     self.listed = listed
     self.unexpected = unexpected
+  }
+
+  static func creates(_ record: RecordKey, in content: NoticeContent) -> Bool {
+    content.deltas.contains { $0.key == record && $0.creates } || content.dependents.contains { creates(record, in: $0) }
   }
 }

@@ -25,7 +25,7 @@ import SyncTesting
             allowed: Bool = true) -> RoadmapModel {
     RoadmapModel(records: { scope, type in try engine.records(scope, type, .drawn, visibleOnly: false) }, runner: runner, phone: memory,
                  telemetry: telemetry, wait: { _ in try await Task.sleep(for: .seconds(3_600)) },
-                 clipboard: Clipboard(holdsText: { copied != nil }, text: { allowed ? copied : nil }))
+                 clipboard: Clipboard(holdsText: { copied != nil }, text: { allowed ? copied : nil }, copy: { _ in }))
   }
 
   // *Learn to sail* as it opens on the Board, three steps done a minute apart.

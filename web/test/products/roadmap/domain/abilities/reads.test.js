@@ -28,6 +28,20 @@ test('list_trees names each roadmap\'s frontier in get_tree\'s order, and is ref
   assert.deepEqual(ReadAbilities.list_trees({ trees: [tree], listRead: false }, {}), { refused: { code: 'roadmap-unavailable' } });
 });
 
+test('get_diagnostics answers the caller its own report: what one caller changes in its answer is in no answer after it', () => {
+  const tree = { id: 't_0000000000000001', own: true, meta: { title: 'Knots' }, nodes: ['a', 'b', 'c'].map((id) => ({ id })),
+    edges: [{ from: 'a', to: 'b', present: true }, { from: 'b', to: 'a', present: true }, { from: 'c', to: 'z', present: true }] };
+  const standing = { trees: [tree] };
+  const first = /** @type {any} */ (ReadAbilities.get_diagnostics(standing, { treeId: tree.id }, tree.id));
+  const kept = structuredClone(first);
+  first.result.cycles[0].count = -1;
+  first.result.cycles[0].nodes.push('z');
+  first.result.dangling[0].to = 'y';
+  first.result.smells[0].kind = 'changed';
+  first.result.smells[1].nodes.length = 0;
+  assert.deepEqual(ReadAbilities.get_diagnostics(standing, { treeId: tree.id }, tree.id), kept);
+});
+
 test('get_diagnostics pages its lists, every page carrying each list and only the first the counts of what each leaves off', () => {
   const step = (/** @type {number} */ cycle, /** @type {number} */ member) => `c${String(cycle).padStart(2, '0')}-${'x'.repeat(110)}-${member}`;
   const loops = Array.from({ length: 55 }, (_, cycle) => Array.from({ length: 12 }, (__, member) => step(cycle, member)));
