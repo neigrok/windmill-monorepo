@@ -207,6 +207,17 @@ def within(piece, whole, part, parts):
     return any(whole[start:start + len(piece)] == piece for start in range(len(whole) - len(piece) + 1))
 
 # What a read answers of a step, held to the step the case gives, where a field is the step's own value (§5.1).
+# A context case's roadmap may give its steps, links and marks as a table, `{columns, rows}`, each row one record's values
+# in the columns' order (abilities/README.md, The context): spelled here as the records the rest of the check reads.
+def spelled(given, where):
+    for tree in given.get('trees', []) if isinstance(given, dict) and isinstance(given.get('trees'), list) else []:
+        for key in ('nodes', 'edges', 'marks'):
+            table = tree.get(key) if isinstance(tree, dict) else None
+            if not isinstance(table, dict): continue
+            members(table, {'columns', 'rows'}, f'{where} · {tree.get("id")}.{key}')
+            if any(not isinstance(row, list) or len(row) != len(table['columns']) for row in table['rows']): refuse(where, f'a row of {tree.get("id")}.{key} that does not hold a value for each column')
+            tree[key] = [dict(zip(table['columns'], row)) for row in table['rows']]
+
 def check_projection(item, node, where):
     for field in ['description', 'links']:
         if field not in item: continue
@@ -551,6 +562,7 @@ class Contract:
             where = f'{CONTEXT} · {case.get("case") if isinstance(case, dict) else "a case"}'
             members(case, {'case', 'about', 'step', 'given', 'expect'}, where)
             if not isinstance(case['case'], str) or not case['case']: refuse(where, 'a case that is not named')
+            spelled(case['given'], where)
             self.check_given(case, where)
             tree = next((tree for tree in case['given']['trees'] if tree['id'] == case['about']), None)
             if case['step'] is not None and tree is None: refuse(where, 'a conversation about all roadmaps started from a step')
@@ -572,18 +584,19 @@ class Contract:
         if code == 'roadmap-unavailable' and tree is not None and tree['read'] != 'unread': refuse(where, '`roadmap-unavailable` for a roadmap the device holds whole')
         if case['expect']['refused'].get('id', case['about']) != case['about']: refuse(where, 'a refusal that names a roadmap other than the conversation\'s')
 
-    # What Coach is told of one roadmap: its header, its diagnostics' summary and newest dated completions, and either every
-    # step's line and completion, within the bounds, or its counts and the lines around its frontier; and a step in full
-    # where the conversation started from one the roadmap shows.
+    # What Coach is told of one roadmap: its header with its guides, its diagnostics' summary and newest dated completions,
+    # and either every step's line and completion, within the bounds, or its counts and the lines around its frontier while
+    # the context stays within CONTEXT_BYTES; and a step in full where the conversation started from one the roadmap shows.
     def check_roadmap_context(self, case, tree, where):
         result, nodes = case['expect']['result'], {node['id']: node for node in tree['nodes']}
         present = [node for node in tree['nodes'] if node['present']]
         whole = 'counts' not in result
-        members(result, {'tree', 'steps', 'diagnostics', 'recent'} | ({'completed'} if whole else {'counts'}), where, {'step'})
-        members(result['tree'], {'id', 'title', 'kinds'}, f'{where} · tree')
+        members(result, {'tree', 'steps', 'diagnostics', 'recent'} | ({'completed'} if whole else {'counts', 'omitted'}), where, {'step'})
+        members(result['tree'], {'id', 'title', 'kinds', 'guides'}, f'{where} · tree')
         if (result['tree']['id'], result['tree']['title']) != (tree['id'], tree['meta']['title']): refuse(where, 'a header that is not the roadmap\'s')
         found = fault(result['tree']['kinds'], self.ability('get_tree')['result']['properties']['tree']['properties']['kinds'], 'result.tree.kinds')
         if found: refuse(where, found)
+        self.check_guides(result['tree']['guides'], tree, where)
         for item in result['steps']:
             found = fault(item, self.ability('get_tree')['result']['properties']['steps']['items'], 'result.steps[]')
             if found: refuse(where, found)
@@ -597,7 +610,10 @@ class Contract:
         if whole:
             found = fault(result['completed'], {'type': 'array', 'items': self.ability('get_progress')['result']['properties']['completed']['items']}, 'result.completed')
             if found: refuse(where, found)
-        else: self.check_counts(result['counts'], len(present), [kind['id'] for kind in result['tree']['kinds']], where)
+        else:
+            self.check_counts(result['counts'], len(present), [kind['id'] for kind in result['tree']['kinds']], where)
+            if type(result['omitted']) is not int or result['omitted'] < 0 or len(result['steps']) + result['omitted'] > len(present): refuse(where, f'{len(result["steps"])} lines and {result["omitted"]} left off, of a roadmap of {len(present)} steps')
+            if result['steps'] and len(told) > CONTEXT_BYTES: refuse(where, f'a context of {len(told)} bytes given around where the person stands, past CONTEXT_BYTES, {CONTEXT_BYTES}')
         members(result['diagnostics'], {'cycles', 'dangling', 'selfEdges', 'smells'} | ({'treeLoops', 'danglingPointers'} if tree['own'] else set()), f'{where} · diagnostics')
         recent = result['recent']
         if len(recent) > RECENT: refuse(where, f'{len(recent)} newest completions, past {RECENT}')
@@ -610,6 +626,18 @@ class Contract:
         if shown:
             if sorted(result['step']) != sorted(IN_FULL) or result['step']['id'] != case['step']: refuse(where, 'a step in full that is not the step started from with every field of §5.1 but its summary')
             check_projection(result['step'], nodes[case['step']], where)
+
+    # The guides Coach reads, as the server's get_tree gives them: each `{treeId, title, text, yours}`; on a roadmap the
+    # person owns, at most eight, farthest first, so its own last where it has one; on one they only read, its own alone.
+    def check_guides(self, guides, tree, where):
+        if not isinstance(guides, list) or len(guides) > 8: refuse(where, 'guides that are not a list of at most eight')
+        for guide in guides:
+            members(guide, {'treeId', 'title', 'text', 'yours'}, f'{where} · tree.guides')
+            if not all(isinstance(guide[key], str) for key in ('treeId', 'title', 'text')) or type(guide['yours']) is not bool or not guide['text']: refuse(where, f'a guide of `{guide["treeId"]}` that is not its words')
+        own = tree['meta']['guide']
+        mine = {'treeId': tree['id'], 'title': tree['meta']['title'], 'text': own}
+        if tree['own'] and own and {key: guides[-1][key] for key in mine} != mine: refuse(where, 'guides whose last is not the roadmap\'s own')
+        if not tree['own'] and guides != ([{**mine, 'yours': False}] if own else []): refuse(where, 'guides of a roadmap the person only reads other than its own alone, not theirs')
 
     def check_counts(self, counts, total, kinds, where):
         states = ['total', 'done', 'available', 'locked', 'unknown']

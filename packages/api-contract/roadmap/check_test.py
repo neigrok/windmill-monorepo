@@ -295,7 +295,7 @@ class ContextTest(Rows):
         def line(id): return {'id': id, 'label': 'Swim', 'kind': None, 'state': 'locked', 'prerequisites': [], 'unlockCount': 0, 'summary': ''}
         self.refused([
             self.vector('a small roadmap', lambda result, case, c: result.pop('recent'), ': no `recent`'),
-            self.vector('a small roadmap', lambda result, case, c: result.update(counts={}), ': `completed` is not one of its keys'),
+            self.vector('a small roadmap', lambda result, case, c: result.update(counts={}, omitted=0), ': `completed` is not one of its keys'),
             self.vector('a small roadmap', lambda result, case, c: result['tree'].update(title='Learn to swim'), ': a header that is not the roadmap\'s'),
             self.vector('a small roadmap', lambda result, case, c: result['tree'].update(guide=''), ' · tree: `guide` is not one of its keys'),
             self.vector('a small roadmap', lambda result, case, c: result['tree']['kinds'][0].pop('hue'), ': result.tree.kinds[0].hue: required'),
@@ -321,6 +321,34 @@ class ContextTest(Rows):
             self.vector('a small roadmap', lambda result, case, c: result['steps'].pop(), ': 14 lines of a roadmap given whole, where it holds 15 steps'),
             self.vector('a roadmap of 300 steps whose context, given whole, comes to', lambda result, case, c: grown(result, case), ': a roadmap of 301 steps given whole, past 300'),
             self.vector('a roadmap of 300 steps whose context, given whole, comes to', lambda result, case, c: lengthened(result, case), ': a context of 65537 bytes given whole, past CONTEXT_BYTES, 65536'),
+        ], 'check_context')
+
+    def test_a_table_of_records_out_of_shape_is_refused(self):
+        self.refused([
+            self.vector('a pasted checklist', lambda result, case, c: case['given']['trees'][0]['nodes']['rows'][0].pop(), ': a row of t_00000000000010aa.nodes that does not hold a value for each column'),
+            self.vector('a pasted checklist', lambda result, case, c: case['given']['trees'][0]['nodes'].pop('columns'), ' · t_00000000000010aa.nodes: no `columns`'),
+            self.vector('a pasted checklist', lambda result, case, c: case['given']['trees'][0]['nodes']['columns'].remove('icon'), ': a row of t_00000000000010aa.nodes that does not hold a value for each column'),
+        ], 'check_context')
+
+    def test_guides_other_than_the_roadmaps_are_refused(self):
+        self.refused([
+            self.vector('a small roadmap', lambda result, case, c: result['tree'].pop('guides'), ' · tree: no `guides`'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree']['guides'][0].update(text='Two steps a weekend.'), ': guides whose last is not the roadmap\'s own'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree']['guides'][0].update(text=''), ': a guide of `t_0000000000000001` that is not its words'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree']['guides'][0].pop('yours'), ' · tree.guides: no `yours`'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree']['guides'].extend(result['tree']['guides'] * 8), ': guides that are not a list of at most eight'),
+            self.vector('a roadmap the person only reads', lambda result, case, c: result['tree']['guides'][0].update(yours=True), ': guides of a roadmap the person only reads other than its own alone, not theirs'),
+        ], 'check_context')
+
+    def test_a_roadmap_given_around_its_frontier_past_the_bound_is_refused(self):
+        def one_more(result):
+            result['steps'].append({'id': 'c00527', 'label': 'Pack item 528', 'kind': 'learn', 'state': 'available', 'prerequisites': [], 'unlockCount': 0, 'summary': ''})
+            result['omitted'] -= 1
+        self.refused([
+            self.vector('a pasted checklist', lambda result, case, c: result.pop('omitted'), ': no `omitted`'),
+            self.vector('a pasted checklist', lambda result, case, c: result.update(omitted=10000), ': 527 lines and 10000 left off, of a roadmap of 10000 steps'),
+            self.vector('a pasted checklist', lambda result, case, c: result.update(omitted=-1), ': 527 lines and -1 left off, of a roadmap of 10000 steps'),
+            self.vector('a pasted checklist', lambda result, case, c: one_more(result), ': a context of 65659 bytes given around where the person stands, past CONTEXT_BYTES, 65536'),
         ], 'check_context')
 
     def test_counts_other_than_the_roadmaps_are_refused(self):

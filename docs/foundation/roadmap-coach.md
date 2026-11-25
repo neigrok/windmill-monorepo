@@ -175,13 +175,28 @@ before it (§7), and that is all an ability can do to another proposal.
 
 **The context.** Before the first model call of a turn the tool host builds the context from the
 standing roadmap and sends it with the question. For a conversation about one roadmap it holds: the
-title and kinds; every step on one line, §5.1's default fields (id, label, kind, state, prerequisite
-ids, the count it unlocks and the description's summary); the person's completed steps with the dates
-the copy holds; a summary of diagnostics; and the last ten completions that carry a date. A roadmap
-of more than 300 steps, or one whose lines would pass `CONTEXT_BYTES`, is given instead as counts by
-kind and state, every step of the kind `milestone` where the roadmap has that kind, the frontier and
-its two-hop neighbourhood; Coach pages the rest with the read abilities. A conversation started from
-a step adds that step in full.
+roadmap's id, title and kinds; its guides, as the server's `get_tree` gives them to an outside
+assistant, each `{treeId, title, text, yours}`: on a roadmap the person owns, the guides of their
+roadmaps above it and then its own, farthest first and at most eight, and on one they only read, its
+own alone, which is never theirs; every step on one line, §5.1's default fields (id, label, kind,
+state, prerequisite ids, the count it unlocks and the description's summary); the person's completed
+steps with the dates the copy holds; a summary of diagnostics; and the last ten completions that carry
+a date. A guide is the roadmap's author's note to an AI, and Coach reads it as an outside assistant
+does.
+
+A roadmap of more than 300 steps, or one whose context so given would pass `CONTEXT_BYTES` (the step
+a conversation started from not counted), is given instead around where the person stands: its step
+lines and its completed steps give way to counts by kind and state and to the lines of the steps
+around the frontier, and the rest of the context stays. Those lines are taken in this order, each
+group in `get_tree`'s order and a step in the first group it falls in: every step of the kind
+`milestone` where the roadmap has that kind; the frontier; and its two-hop neighbourhood, every step
+within two links of the frontier with each link read both ways: its prerequisites and theirs, the
+steps that wait on it and on those, the other steps that wait on its prerequisites, and the other
+prerequisites of the steps that wait on it.
+A line is taken while the whole context, its guides included, stays within `CONTEXT_BYTES`, and
+`omitted` counts the lines left off; Coach pages the rest with the read abilities. A conversation
+started from a step adds that step in full, every field §5.1 answers but the summary, where the
+roadmap shows the step.
 
 For a conversation about all roadmaps the context is what `list_trees` answers, and Coach reads one
 roadmap in full only when the question needs it (§10).

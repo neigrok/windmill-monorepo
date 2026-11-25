@@ -30,6 +30,16 @@ function cases(path) {
 
 const contextCases = /** @type {ContextCase[]} */ (Contract.json(contextFile));
 
+// A context case may give a large roadmap's steps, links and marks as a table, `{columns, rows}`, each row one record's
+// values in the columns' order (the README's The context); the standing roadmap takes them spelled as records.
+/** @param {Standing} given @returns {Standing} */
+function spelled(given) {
+  /** @param {any} records */
+  const read = (records) => (Array.isArray(records) ? records
+    : records.rows.map((/** @type {any[]} */ row) => Object.fromEntries(records.columns.map((/** @type {string} */ column, /** @type {number} */ at) => [column, row[at]]))));
+  return { ...given, trees: given.trees.map((tree) => ({ ...tree, nodes: read(tree.nodes), edges: read(tree.edges), marks: read(tree.marks) })) };
+}
+
 test('every read ability of the catalog runs, every read answers within its cap, and every read file and the context are claimed', () => {
   const reads = catalog.abilities.filter((ability) => ability.kind === 'read');
   assert.deepEqual(reads.map((ability) => ability.name).sort(), Object.keys(ReadAbilities).sort());
@@ -55,7 +65,7 @@ for (const path of readFiles) {
 
 for (const each of contextCases) {
   test(`${contextFile} · ${each.case}`, () => {
-    assert.equal(jcs(readContext(each.given, { about: each.about, step: each.step })), jcs(each.expect));
+    assert.equal(jcs(readContext(spelled(each.given), { about: each.about, step: each.step })), jcs(each.expect));
   });
 }
 
