@@ -53,13 +53,18 @@ struct RoadmapGraphCanvas: View {
     }
   }
 
-  // A drag moves the camera by what it adds to its translation, from its first report on; while a pinch is under way
-  // the pinch alone moves the camera, since its fingers drag too.
+  // How far a finger goes before a drag begins: the picture keeps still for that much of its way.
+  static let slop = 10.0
+
+  // A drag moves the camera by its translation past the slop, so a first report that comes late, carrying more of the
+  // finger's way, moves the picture all the same; while a pinch is under way the pinch alone moves the camera, since its
+  // fingers drag too.
   var moves: some Gesture {
-    DragGesture().updating($dragged) { drag, last, _ in
-      let from = last ?? drag.translation
-      last = drag.translation
-      if pinched == nil { roadmap.graph.pan(by: CGSize(width: drag.translation.width - from.width, height: drag.translation.height - from.height)) }
+    DragGesture(minimumDistance: Self.slop).updating($dragged) { drag, last, _ in
+      let way = drag.translation, reach = max(hypot(way.width, way.height), Self.slop)
+      let from = last ?? CGSize(width: way.width * Self.slop / reach, height: way.height * Self.slop / reach)
+      last = way
+      if pinched == nil { roadmap.graph.pan(by: CGSize(width: way.width - from.width, height: way.height - from.height)) }
     }.simultaneously(with: MagnifyGesture().updating($pinched) { pinch, last, _ in
       roadmap.graph.zoom(by: pinch.magnification / (last ?? 1), about: pinch.startLocation)
       last = pinch.magnification
