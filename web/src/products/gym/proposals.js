@@ -7,8 +7,7 @@
 // per set and `restSeconds` — so every reading here is `entryLabel`'s and `setReading`'s.
 
 import { t } from './i18n/index.js';
-import { entryLabel, sameSet, setReading } from './log.js';
-import { restLabel } from './settings/preferences.js';
+import { clockOf, entryLabel, sameSet, setReading } from './log.js';
 
 // Every other state is settled and stays settled; the wire has no path back.
 export function isPending(proposal) {
@@ -143,10 +142,10 @@ export function receiptLine({ verb, proposal }) {
   return t('gym.proposals.receiptAppliedCounted', { name, count: proposal.changeCount });
 }
 
-// An absent rest is the account's own target and not the settings screen's `off`.
+// An absent rest is the account's own target, the default rest Settings sets.
 function restReading(side) {
   if (side.restSeconds == null) return t('gym.proposals.yourRestTarget');
-  return restLabel(side.restSeconds);
+  return clockOf(side.restSeconds * 1000);
 }
 
 // The scheme moved: both readings in the scheme's formula, and the ladder behind them for the
@@ -214,7 +213,7 @@ export function diffRows(proposal) {
         exerciseId: change.exerciseId,
         targets: entryLabel(change.after),
         // An absent rest sets nothing — the line takes the account's own target — and draws no words.
-        rest: change.after.restSeconds == null ? null : restLabel(change.after.restSeconds),
+        rest: change.after.restSeconds == null ? null : clockOf(change.after.restSeconds * 1000),
         // Where it lands: the run is in order and removals sort last, so the row before an added one
         // is part of the routine it is joining.
         follows: index === 0 ? null : changes[index - 1].exerciseId,

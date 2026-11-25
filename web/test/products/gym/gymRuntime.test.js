@@ -608,6 +608,48 @@ test('domain preferences save only client fields, keep untouched registers, and 
   assert.deepEqual(failures, []);
 });
 
+// Settings' rest rows (WD10): one write of the setting changed, told as gym_preference_changed with no value.
+async function restSettings(t) {
+  const opened = await open(t);
+  const changed = [];
+  const api = createGymApi(opened.engine, { event: (operation, outcome) => opened.events.push({ operation, outcome }),
+    preferred: (setting, outcome) => changed.push({ setting, outcome }), failure: (operation) => opened.failures.push(operation) });
+  return { ...opened, api, changed };
+}
+
+test('a rest setting writes itself alone and is told as saved, its value never', async (t) => {
+  const { api, engine, events, failures, changed } = await restSettings(t);
+  await api.savePreferences({ units: 'lb' });
+  await api.saveRestSetting({ restSeconds: 90 });
+  await api.saveRestSetting({ restSound: false });
+  await api.saveRestSetting({ restSeconds: null });
+  assert.deepEqual(engine.device.activeReplica.entries().map(({ intent }) => intent.d.map(({ f }) => Object.fromEntries(Object.entries(f).map(([name, [value]]) => [name, value])))),
+    [[{ units: 'lb' }], [{ restSeconds: 90 }], [{ restSound: false }], [{ restSeconds: null }]]);
+  assert.deepEqual(await api.preferences(), { units: 'lb', confirmHaptic: true, confirmSound: false, restSound: false });
+  assert.deepEqual(changed, [{ setting: 'rest_default', outcome: 'saved' }, { setting: 'rest_sound', outcome: 'saved' },
+    { setting: 'rest_default', outcome: 'saved' }]);
+  assert.deepEqual(events, [{ operation: 'preferences-save', outcome: 'saved-local' }], 'a rest setting is told once, by its own event');
+  assert.deepEqual(failures, []);
+});
+
+test('a rest setting the store refuses is not_stored, the gym refuses is refused, and only an unexpected failure is an Issue', async (t) => {
+  const { api, engine, failures, changed } = await restSettings(t);
+  await assert.rejects(api.saveRestSetting({ restSeconds: 10 }), { code: 'invalid' });
+  const transact = t.mock.method(engine.store, 'transact', async () => { throw new DOMException('storage refused', 'QuotaExceededError'); });
+  await assert.rejects(api.saveRestSetting({ restSeconds: 120 }), isStoreFailure);
+  transact.mock.restore();
+  const commit = engine.commit.bind(engine);
+  const moved = t.mock.method(engine, 'commit', (scope, build) => commit(scope, (views) => build({ ...views, binding: '["rp_another","B"]' })));
+  await assert.rejects(api.saveRestSetting({ restSound: false }), { code: 'not-writable' });
+  moved.mock.restore();
+  t.mock.method(engine, 'commit', async () => { throw new Error('SECRET record values'); });
+  await assert.rejects(api.saveRestSetting({ restSeconds: 60 }), /SECRET/);
+  assert.deepEqual(changed, [{ setting: 'rest_default', outcome: 'refused' }, { setting: 'rest_default', outcome: 'not_stored' },
+    { setting: 'rest_sound', outcome: 'refused' }, { setting: 'rest_default', outcome: 'not_stored' }]);
+  assert.deepEqual(failures, ['rest-save']);
+  assert.deepEqual(engine.device.activeReplica.outbox, []);
+});
+
 test('domain weigh-in refusals write nothing and emit no Sentry failures', async (t) => {
   const { api, engine, events, failures } = await open(t);
   for (const [day, weightKg] of [['1970-01-02', 80], ['1970-02-30', 80], ['1970-01-01', 19]]) {

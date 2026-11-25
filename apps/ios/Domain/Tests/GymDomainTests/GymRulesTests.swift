@@ -14,8 +14,9 @@ struct GymRulesTests {
                    "catalogue-actions.json", "preferences-actions.json", "proposals-actions.json", "recovery-actions.json", "training-actions.json",
                    "coach-onboarding-actions.json", "coach-conversation-actions.json", "training-reads.json", "units.json", "workout-plan-actions.json",
                    "workout-proposals-actions.json"]
-    // Not applicable: the web's recovery of a start that lost a race, whose design on the phones is open (LP-6).
-    #expect(try Contract.files(under: "gym/domain") == (handled + ["refused-start-actions.json"]).map { "gym/domain/" + $0 }.sorted())
+    // Not applicable: the web's recovery of a start that lost a race, whose design on the phones is open (LP-6), and the web's
+    // Settings rows for the default rest and the rest sound, which no phone sets.
+    #expect(try Contract.files(under: "gym/domain") == (handled + ["refused-start-actions.json", "rest-settings-actions.json"]).map { "gym/domain/" + $0 }.sorted())
     #expect(try Contract.files(under: "gym/rules") == ["gym/rules/bodyweight.json", "gym/rules/collation.json"])
   }
 

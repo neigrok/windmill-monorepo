@@ -27,8 +27,21 @@ import { Shell } from '/src/shell/chrome/Shell.jsx';
 import { BrowserSyncEngine } from '/src/platform/sync/engine.js';
 import { registry } from '/src/platform/sync/schema.js';
 import { syncSession } from '/src/platform/sync/session.js';
+import { createGymApi } from '/src/products/gym/gymRuntime.js';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
+
+// The page's Web Audio and buzz, counted rather than heard, so a test can tell what a rest sounded.
+window.sounded = { tones: 0, buzzes: [] };
+window.AudioContext = class {
+  constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {}; }
+  resume() {}
+  createOscillator() { return { frequency: {}, connect: (next) => next, start: () => { window.sounded.tones += 1; }, stop() {} }; }
+  createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect: (next) => next }; }
+};
+navigator.vibrate = (ms) => { window.sounded.buzzes.push(ms); return true; };
+// Settings' Default rest or Rest sound, changed as its row changes it.
+window.restSetting = (change) => createGymApi(syncSession.engine).saveRestSetting(change);
 
 window.seed = async ({ response, rows }) => {
   const timing = { send: { wall: Date.now(), mono: 0, boot: 'seed' }, recv: { wall: Date.now(), mono: 0, boot: 'seed' } };
@@ -281,8 +294,9 @@ test('Chromium: a plan edit another tab made stale is refused, its draft kept, a
   await notice.waitFor();
   assert.equal(await notice.locator('h2').textContent(), 'Pull Up changed in another tab.');
   assert.equal(await two.getByLabel('Set 1 load, kg', { exact: true }).inputValue(), '12.5', 'the draft stays as typed');
-  assert.deepEqual(await two.locator('.gym-live-edit').getByRole('button').allTextContents(), ['×', '×', '×', '2:00▾', 'Use latest', 'Save mine'],
+  assert.deepEqual(await two.locator('.gym-live-edit').getByRole('button').allTextContents(), ['×', '×', '×', 'Use latest', 'Save mine'],
     'while the answer stands, Add set, Swap and Remove wait');
+  assert.equal(await two.locator('.gym-live-edit').getByRole('combobox').textContent(), '2:00▾', 'the rest stays to change');
   assert.equal(await two.locator('.gym-live-edit-save').isDisabled(), true);
   assert.deepEqual(await steps(two, 'gym_workout_plan_changed'), [{ action: 'retarget', door: 'workout', outcome: 'refused', code: 'domain', reason: 'stale' }]);
   await two.getByRole('button', { name: 'Save mine', exact: true }).click();
@@ -417,6 +431,31 @@ test('Chromium: the rest reaching its target is told and toned once with the wor
   await one.waitForTimeout(1500);
   const told = [...await steps(one, 'gym_rest_target_reached'), ...await steps(two, 'gym_rest_target_reached')];
   assert.deepEqual(told, [{ screen: 'workout' }]);
+});
+
+test('Chromium: a new default rest the rest has passed is told, toned and buzzed at once, and with Rest sound off the next is told in quiet', async (t) => {
+  // A movement on Default, which has no rest of its own, so the rest's target is the default rest, Off until Settings sets it.
+  const { tab } = await browserWith(t, { rows: [{ t: 'routine', id: 'routineQuick', born: stamp, life: ['alive', stamp],
+    f: { name: ['Quick', stamp], position: [1, stamp], entries: [[{ exerciseId: 'face-pull', sets: [{ reps: 15, weightKg: 15 }, { reps: 15, weightKg: 15 }, { reps: 15, weightKg: 15 }] }], stamp] } }] });
+  const page = await tab();
+  await page.locator('.gym-routine').filter({ hasText: 'Quick' }).getByRole('button', { name: 'Start', exact: true }).click();
+  await loggable(page);
+  await page.getByRole('button', { name: 'Log set', exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.gym-live-row.is-logged').length === 1);
+  await page.waitForTimeout(16000);
+  assert.equal(await page.locator('.gym-live-clocks.is-reached').count(), 0, 'Off sets no target');
+  await page.evaluate(() => window.restSetting({ restSeconds: 15 }));
+  await page.locator('.gym-live-clocks.is-reached').waitFor();
+  await page.waitForFunction(() => window.sounded.tones === 1);
+  assert.deepEqual([await steps(page, 'gym_rest_target_reached'), await page.evaluate(() => window.sounded)],
+    [[{ screen: 'workout' }], { tones: 1, buzzes: [10] }]);
+
+  await page.evaluate(() => window.restSetting({ restSound: false }));
+  await loggable(page);
+  await page.getByRole('button', { name: 'Log set', exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.gym-live-row.is-logged').length === 2);
+  await page.waitForFunction(() => (window.events ?? []).filter((event) => event.name === 'gym_rest_target_reached').length === 2, null, { timeout: 30000 });
+  assert.deepEqual(await page.evaluate(() => window.sounded), { tones: 1, buzzes: [10] }, 'Rest sound off: no tone and no buzz');
 });
 
 test('Chromium: a rack settle that fails is reported, says why Log set waits, and is tried again', async (t) => {

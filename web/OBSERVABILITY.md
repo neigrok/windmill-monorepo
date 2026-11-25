@@ -227,6 +227,10 @@ note save/reorder, bodyweight save, set/session correction, session import, prop
 delete, Undo, refusal and `workout-adopt`, the hook before the seat changes saving each signed-out workout for adoption in
 an act of its own, told once when it saved something (`saved-local`) and once for each workout refused or failed. Outcomes are `saved-local`, `unchanged` (a clean draft or a rename to the
 name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`.
+Settings' Default rest and Rest sound (WD10) tell `gym_preference_changed` in its place, once per change, through
+`preferenceStep` in `gymRuntime.js`: `setting` (`rest_default` or `rest_sound`) and `outcome`, `saved` once the copy holds it,
+`not_stored` when the copy could not keep it and `refused` when the gym refused it; never the value. A store failure there is
+the engine's to report; any other failure also reports `gym-rest-save` with the error's stack frames.
 A sign-in question in gym's count (WD9) tells `gym_signin_decision` with `step` (`shown` as it is asked, then `add`,
 `discard` or `cancel`) and `count_bucket` (`0/1/2-5/6-20/21+`), what it counted: the browser's workouts, routines,
 weigh-ins, movements and settings, or its changes where it holds none of them. How a copy In this browser
@@ -261,7 +265,9 @@ workout`), `gym_workout_plan_changed` (one per kind of edit a save makes, `actio
 movement in hand changed from the index, the arrows, the dots, a swipe or Next), each with `outcome` `ok`, `refused` with
 `code` (`not-writable` or `domain`) and, for a plan another tab or device changed first, `reason: stale`, or `failed`. The
 page tells `gym_rest_target_reached` (`screen: workout`) once per rest, from the tab the sync engine leads from (a tab on
-screen whenever one is) when it draws the workout, as the rest comes to its target; `gym_hidden_workout` (`action: hide` as the page is left with the
+screen whenever one is) when it draws the workout, as the rest comes to its target or, for a rest the tab drew short of its
+target, as a new default rest puts the target behind it; the tone and the buzz it plays while Rest sound is on are not
+reported; `gym_hidden_workout` (`action: hide` as the page is left with the
 workout open, `action: open` with `door: bar` from the bar over the tab rail); `gym_workout_popped_out` (`screen: workout`,
 `outcome` `ok` or `failed`) as Pop out opens its window or the browser refuses it; and the receipt's
 `gym_receipt_plan_saved` (`outcome`) when Done saves the plan's changes to the routine. An unexpected failure of a workout's
