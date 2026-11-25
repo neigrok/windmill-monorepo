@@ -104,7 +104,9 @@ the room shows them, read from the replica: signed out the browser's own, and on
 the engine's first pull of `self/journal` ends, the account's pages with this browser's unsent saves,
 refusal-held words and editor draft in their day's place. It fails after 30 seconds without that pull,
 and fails rather than export another account's pages when the account changes while it waits. It asks
-the backend for nothing.
+the backend for nothing. Settings shows it on both seats and counts those pages before anything is pressed, at once signed
+out and on a bound replica once that first pull ends; where there are none it offers no export, and an export that finds
+none hands the browser no file.
 
 Search (`search/`) indexes the corpus on the device: words first, then meaning, bge-small-en-v1.5 q8
 in a worker on wasm, never WebGPU, which miscomputes the quantized model. The worker takes its
@@ -135,11 +137,11 @@ The domain runner claims all four shared journal files: 203 comparisons, with ev
 scene also run in reverse record order. Engine and Chromium tests exercise transaction aborts,
 restart, offline writing, receipt arrival order and multiple tabs.
 
-`npm run test:journal:server -- /absolute/backend/build` runs eight journal Playwright acceptance
+`npm run test:journal:server -- /absolute/backend/build` runs eleven journal Playwright acceptance
 cases on ports 8094/5181 with its own database and `schema.sql`. Build `windmill_server` using
 `backend/RUNNING.md` first. It requires Postgres client tools (`/tmp` on macOS), stops its listeners
 by port and drops its database. `WM_E2E_PORT`, `WM_E2E_WEB_PORT` and `WM_E2E_DB_PREFIX` select isolated
-backend/web ports and a database prefix. Cases cover offline convergence, claim choices, the carry of an owed page
-from before the engine, current-session Keep/Discard, account closure, and two-tab account identity protection. Account
+backend/web ports and a database prefix. Cases cover offline convergence, Settings' export signed out, claim choices, the carry of
+an owed page from before the engine, current-session Keep/Discard, account closure, and two-tab account identity protection. Account
 flows wait for completed sign-out before navigating. The same script works in CI with a backend
 binary and Postgres tools; the web workflow runs the complete tests/build without a backend-stack step.

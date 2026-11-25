@@ -187,10 +187,12 @@ metadata's write failed, the stores before the refusal gone and the rest
 tried again at the next sign-out; a sign-out that finds none emits nothing. Only `failed` also reports
 `journal-restore`, `journal-discard` or `journal-forget` with the error's stack. No day, page body, scale, claim
 identifier, store key or account is reported.
-Settings' export emits `journal_export` with `outcome`: `ok`, `first_pull_timeout` (a bound replica's first pull of
-the journal did not end within 30 seconds), `replica_changed` (the account changed while it waited), `no_replica` (the
-browser holds no open replica) or `failed`, which alone also reports `journal-export` with the error's stack and `step`:
-`pages` (reading the pages), `file` (writing them as Markdown) or `download` (handing the file to the browser).
+Settings' export emits `journal_export` with `seat` (`signed_in` or `signed_out`, the seat the page was drawn for) and
+`outcome`: `ok`, `empty` (the replica held no written page, so no file was handed over), `first_pull_timeout` (a bound
+replica's first pull of the journal did not end within 30 seconds), `replica_changed` (the account changed while it
+waited), `no_replica` (the browser holds no open replica) or `failed`, which alone also reports `journal-export` with the
+error's stack and `step`: `pages` (reading the pages), `file` (writing them as Markdown) or `download` (handing the file to
+the browser).
 Search by meaning emits `journal_search_meaning` once for each opening of search, as its model comes up or does not,
 however often the pages change while it is open: `outcome` `ready`; `needs_connection` (the engine says the browser is
 offline or the server unreachable, and search by meaning never came up in this browser, so the search says it needs a
