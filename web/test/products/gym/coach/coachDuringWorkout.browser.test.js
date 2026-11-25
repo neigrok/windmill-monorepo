@@ -457,20 +457,23 @@ for (const [refusal, sentence, reason] of [
   });
 }
 
-test('Chromium: an Apply this copy refuses for a load under a movement\'s floor stands out of date with its one sentence, offers no Try again and is told refused (WD7.3)', async (t) => {
+test('Chromium: a change to the workout whose load the copy\'s floor refuses is out of date with its one sentence in every tab and after a reload, before anyone applies it, waits on no one and tells nothing (WD7.3)', async (t) => {
   const phone = await account(t);
-  const { page } = await visit(t, phone);
+  const belowFloor = 'This change sets a load below what one of its movements allows. Nothing was applied.';
+  const drawnCard = async (card) => ({ header: await card.locator('header').innerText(), buttons: await card.getByRole('button').count() });
+  const { page, tab } = await visit(t, phone, { width: 390, height: 844 });
   await withBrowserErrors(page, async () => {
     await loggable(page);
-    await page.getByRole('tab', { name: 'Coach', exact: true }).click();
-    const coach = page.getByRole('tabpanel', { name: 'Coach', exact: true });
+    await page.getByRole('button', { name: 'Coach', exact: true }).click();
+    const sheet = page.getByRole('dialog', { name: 'Coach', exact: true });
+    await sheet.waitFor();
     // Coach assists the pull-ups by 20 kg, which a bodyweight movement allows.
     await proposes(page, { plan: [entries[0], entries[1], { ...entries[2], sets: entries[2].sets.map((set) => ({ ...set, weightKg: -20 })) }] });
-    await ask(coach);
-    const card = coach.getByRole('region', { name: 'This workout', exact: true });
+    await ask(sheet);
+    const card = sheet.getByRole('region', { name: 'This workout', exact: true });
     await card.getByRole('button', { name: 'Apply', exact: true }).waitFor();
     await page.waitForFunction(() => window.unsent() === 0);
-    // The phone makes Pull Up a barbell movement, which carries 0 kg or more, and this copy hears of it before the Apply.
+    // The phone makes Pull Up a barbell movement, which carries 0 kg or more, and this copy hears of it.
     await catchUp(phone);
     const seed = SeedExercises.all.find((exercise) => exercise.id.record === 'pull-up');
     assert.equal((await phone.runner.run(new EditExercise(seed, seed.name, 'barbell', 1))).kind, 'committed');
@@ -478,24 +481,36 @@ test('Chromium: an Apply this copy refuses for a load under a movement\'s floor 
     await phone.sync();
     await page.evaluate(() => window.kick());
     await page.waitForFunction(() => window.holds('exerciseName', 'pull-up'));
-    await card.getByRole('button', { name: 'Apply', exact: true }).click();
-    const sentence = 'This change sets a load below what one of its movements allows. Nothing was applied.';
-    await card.getByText(sentence, { exact: true }).waitFor();
-    await told(page, 'gym_proposal_outcome', 1);
-    assert.deepEqual({
-      header: await card.locator('header').innerText(), buttons: await card.getByRole('button').count(),
-      focused: await page.evaluate(() => document.activeElement?.textContent), unsent: await page.evaluate(() => window.unsent()),
-      told: await steps(page, 'gym_proposal_outcome'), issues: await page.evaluate(() => window.issues ?? []),
-    }, {
-      header: 'This workout\nOut of date', buttons: 0, focused: sentence, unsent: 0,
-      told: [{ screen: 'coach', target: 'workout', action: 'apply', outcome: 'refused' }], issues: [],
-    });
+    await card.getByText(belowFloor, { exact: true }).waitFor();
+    const here = await drawnCard(card);
+    await sheet.getByRole('button', { name: 'Close', exact: true }).click();
+    await sheet.waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: 'Coach', exact: true }).click();
+    await sheet.waitFor();
+    const reopened = await sheet.getByText(question, { exact: true }).count();
+    const told = await steps(page, 'gym_proposal_outcome');
+    const thread = await page.evaluate((title) => window.thread(title), question);
+    const other = await tab(`#/gym/coach/threads/${thread}`);
+    const there = other.getByRole('region', { name: 'This workout', exact: true });
+    await there.getByText(belowFloor, { exact: true }).waitFor();
+    await page.reload();
+    await page.waitForFunction(() => window.entryReady);
+    await page.evaluate((where) => window.mount(where), `#/gym/coach/threads/${thread}`);
+    const again = page.getByRole('region', { name: 'This workout', exact: true });
+    await again.getByText(belowFloor, { exact: true }).waitFor();
+    const outOfDate = { header: 'This workout\nOut of date', buttons: 0 };
+    assert.deepEqual({ here, reopened, there: await drawnCard(there), reloaded: await drawnCard(again),
+      told: [...told, ...await steps(other, 'gym_proposal_outcome'), ...await steps(page, 'gym_proposal_outcome')],
+      unsent: await page.evaluate(() => window.unsent()), issues: await page.evaluate(() => window.issues ?? []) },
+    { here: outOfDate, reopened: 0, there: outOfDate, reloaded: outOfDate, told: [], unsent: 0, issues: [] });
   });
 });
 
-test('Chromium: a routine change whose Apply this copy refuses for a load under a movement\'s floor stands out of date with its sentence, offers no Try again and is told refused (08W.28)', async (t) => {
+test('Chromium: a routine change whose load the copy\'s floor refuses is out of date with its sentence in every tab and after a reload, before anyone applies it, and tells nothing (08W.28)', async (t) => {
   const phone = await account(t);
-  const { page } = await visit(t, phone);
+  const belowFloor = 'This change sets a load below what one of its movements allows. Nothing was applied.';
+  const drawnCard = async (card) => ({ header: await card.locator('header').innerText(), buttons: await card.getByRole('button').count() });
+  const { page, tab } = await visit(t, phone);
   await withBrowserErrors(page, async () => {
     await loggable(page);
     await page.getByRole('tab', { name: 'Coach', exact: true }).click();
@@ -506,7 +521,7 @@ test('Chromium: a routine change whose Apply this copy refuses for a load under 
     const card = coach.getByRole('region', { name: 'Upper A', exact: true });
     await card.getByRole('button', { name: 'Apply', exact: true }).waitFor();
     await page.waitForFunction(() => window.unsent() === 0);
-    // The phone makes Pull Up a barbell movement, which carries 0 kg or more, and this copy hears of it before the Apply.
+    // The phone makes Pull Up a barbell movement, which carries 0 kg or more, and this copy hears of it.
     await catchUp(phone);
     const seed = SeedExercises.all.find((exercise) => exercise.id.record === 'pull-up');
     assert.equal((await phone.runner.run(new EditExercise(seed, seed.name, 'barbell', 1))).kind, 'committed');
@@ -514,18 +529,23 @@ test('Chromium: a routine change whose Apply this copy refuses for a load under 
     await phone.sync();
     await page.evaluate(() => window.kick());
     await page.waitForFunction(() => window.holds('exerciseName', 'pull-up'));
-    await card.getByRole('button', { name: 'Apply', exact: true }).click();
-    const sentence = 'This change sets a load below what one of its movements allows. Nothing was applied.';
-    await card.getByText(sentence, { exact: true }).waitFor();
-    await told(page, 'gym_proposal_outcome', 1);
-    assert.deepEqual({
-      header: await card.locator('header').innerText(), buttons: await card.getByRole('button').count(),
-      focused: await page.evaluate(() => document.activeElement?.textContent), unsent: await page.evaluate(() => window.unsent()),
-      told: await steps(page, 'gym_proposal_outcome'), issues: await page.evaluate(() => window.issues ?? []),
-    }, {
-      header: `Upper A · Out of date\n${sentence}`, buttons: 0, focused: sentence, unsent: 0,
-      told: [{ screen: 'coach', target: 'routine', action: 'apply', outcome: 'refused' }], issues: [],
-    });
+    await card.getByText(belowFloor, { exact: true }).waitFor();
+    const here = await drawnCard(card);
+    const told = await steps(page, 'gym_proposal_outcome');
+    const thread = await page.evaluate((title) => window.thread(title), question);
+    const other = await tab(`#/gym/coach/threads/${thread}`);
+    const there = other.getByRole('region', { name: 'Upper A', exact: true });
+    await there.getByText(belowFloor, { exact: true }).waitFor();
+    await page.reload();
+    await page.waitForFunction(() => window.entryReady);
+    await page.evaluate((where) => window.mount(where), `#/gym/coach/threads/${thread}`);
+    const again = page.getByRole('region', { name: 'Upper A', exact: true });
+    await again.getByText(belowFloor, { exact: true }).waitFor();
+    const outOfDate = { header: `Upper A · Out of date\n${belowFloor}`, buttons: 0 };
+    assert.deepEqual({ here, there: await drawnCard(there), reloaded: await drawnCard(again),
+      told: [...told, ...await steps(other, 'gym_proposal_outcome'), ...await steps(page, 'gym_proposal_outcome')],
+      unsent: await page.evaluate(() => window.unsent()), issues: await page.evaluate(() => window.issues ?? []) },
+    { here: outOfDate, there: outOfDate, reloaded: outOfDate, told: [], unsent: 0, issues: [] });
   });
 });
 

@@ -4,7 +4,7 @@ import { Button } from '../../../design-system/index.js';
 import { Id } from '../../../platform/domain-kit/entities.js';
 import { useSyncRecords } from '../../../platform/sync/react.js';
 import { Catalogue } from '../domain/catalogue.js';
-import { Proposal, ProposalState } from '../domain/proposals.js';
+import { Proposal, ProposalApplication } from '../domain/proposals.js';
 import { ProposalDiff } from '../domain/proposalDiff.js';
 import { Routine } from '../domain/routines.js';
 import { Session } from '../domain/training.js';
@@ -30,27 +30,32 @@ function pairs(read, changes) {
 }
 
 // A routine proposal as its card reads it (08.2P in web form): the shared `ProposalDiff`'s blocks against the routine, its
-// name, whether Apply would still be taken, and whether a workout is open, so the routine waits for its next one (08.56P).
+// name, whether Apply would still be taken (out of date when the routine changed, floored when the copy's rules refuse a
+// load under a movement's floor), and whether a workout is open, so the routine waits for its next one (08.56P).
 function routineCard(read, record) {
   const proposal = read.repository(Proposal).find(new Id(record, Proposal), 'drawn');
   if (proposal === null) return null;
   const routine = read.repository(Routine).find(proposal.routineId, 'drawn');
+  const application = ProposalApplication.of(read, proposal.id);
+  const outOfDate = application.state.outOfDate === true;
   return { diff: ProposalDiff.ofRoutine(proposal, routine, GymUnits.reading(weightUnit()), pairs(read, proposal.changes)), state: proposal.state,
-    name: proposal.baseName ?? routine?.name ?? proposal.proposedName ?? '', outOfDate: ProposalState.of(read, proposal.id).outOfDate === true,
+    name: proposal.baseName ?? routine?.name ?? proposal.proposedName ?? '', outOfDate, floored: !outOfDate && application.underFloor,
     nextTime: new TrainingLog(read).open !== null };
 }
 
 // Coach's change to the open workout as its card reads it from the copy (WD7): its blocks against the workout's plan, how
-// many changes it suggests, and why it can no longer be applied when it cannot: the domain's reading of the copy, or else
-// the log's refusal of a decision on it, which stands among the copy's notices.
+// many changes it suggests, and why it can no longer be applied when it cannot: the domain's reading of the copy, else the
+// log's refusal of a decision on it, which stands among the copy's notices, else the copy's rules refusing a load under a
+// movement's floor, drawn as the log's `invalid`.
 function workoutCard(read, record, notices) {
   const proposal = read.repository(WorkoutProposal).find(new Id(record, WorkoutProposal), 'drawn');
   if (proposal === null) return null;
   const plan = read.repository(Session).find(proposal.sessionId, 'stored')?.plan ?? null;
+  const state = WorkoutProposalState.of(read, proposal.id);
   const refused = refusedDecision(notices, 'workout', record);
   return { diff: ProposalDiff.ofWorkout(proposal, plan, GymUnits.reading(weightUnit()), pairs(read, proposal.changes)), state: proposal.state,
-    count: proposal.countChanges(plan?.entries ?? []), stale: WorkoutProposalState.of(read, proposal.id).outOfDate
-      ?? (refused && decisionRefusal(refused.code, refused.detail)) };
+    count: proposal.countChanges(plan?.entries ?? []), stale: state.outOfDate ?? (refused && decisionRefusal(refused.code, refused.detail))
+      ?? (state.underFloor ? decisionRefusal('invalid') : null) };
 }
 
 // One line of a block, as the boards draw it: what changes, the old value struck through and the new one; a new or a gone
@@ -86,14 +91,11 @@ function Changes({ diff, movements, name }) {
 }
 
 // A card's decision while it runs (08W.26's decided states): which is on its way, *Applying…* with Reject held, and why
-// the last one did not land, said under the card with Apply reading *Try again*. An Apply this copy's rules refuse for a
-// load under a movement's floor could never land, so it settles the card out of date instead (`floored`), with no Try
-// again. Once one lands or is floored, the line it settles the card on takes the focus (`settled`), so a keyboard is not
-// left on a button that is gone.
+// the last one did not land, said under the card with Apply reading *Try again*. Once one lands, the line it settles the
+// card on takes the focus (`settled`), so a keyboard is not left on a button that is gone.
 function useDecision(run) {
   const [busy, setBusy] = useState(null);
   const [failure, setFailure] = useState('');
-  const [floored, setFloored] = useState(false);
   const settled = useRef(null);
   const [landed, setLanded] = useState(false);
   useEffect(() => {
@@ -109,15 +111,12 @@ function useDecision(run) {
       await run(verb);
       setLanded(true);
     } catch (error) {
-      if (error.code === 'load-floor') {
-        setFloored(true);
-        setLanded(true);
-      } else setFailure(error.sentence || t('gym.proposals.notDecided', { verb, reason: failureReason(error) }));
+      setFailure(error.sentence || t('gym.proposals.notDecided', { verb, reason: failureReason(error) }));
     } finally {
       setBusy(null);
     }
   };
-  return { busy, failure, floored, decide, settled };
+  return { busy, failure, decide, settled };
 }
 
 // Reject | Apply. In the room the card closes on its pills (08W.25); over a workout on design-system Buttons (WD7.1). Apply is
@@ -140,13 +139,13 @@ function Decision({ busy, failure, quiet, onDecide }) {
 }
 
 // A routine proposal under the answer whose call made it (08W.25–08W.28): pending with Reject and Apply, applied,
-// rejected, or out of date, its sentence saying why: the routine changed, or this copy's rules refused its Apply for a load
-// under a movement's floor; while a workout is open it waits for next time (WD7). Apply and Reject are the lifter's
+// rejected, or out of date, its sentence saying why: the routine changed, or this copy's rules would refuse its Apply for a
+// load under a movement's floor; while a workout is open it waits for next time (WD7). Apply and Reject are the lifter's
 // gestures and the server's commands; no ability decides one.
 export function CoachProposalCard({ id, movements }) {
   const api = useGymApi();
   const card = useDomainRead((read) => routineCard(read, id), [id]).data;
-  const { busy, failure, floored, decide, settled } = useDecision(async (verb) => {
+  const { busy, failure, decide, settled } = useDecision(async (verb) => {
     if (verb === 'apply') await api.applyProposal(id);
     else await api.dismissProposal(id);
   });
@@ -156,7 +155,7 @@ export function CoachProposalCard({ id, movements }) {
     return <p ref={settled} tabIndex={-1} className="gym-coach-proposal-rejected"><CircleSlash size={18} aria-hidden="true" />{t('gym.coach.proposal.rejected', { name })}</p>;
   }
   const applied = state === 'applied';
-  const pending = state === 'pending' && !card.outOfDate && !floored;
+  const pending = state === 'pending' && !card.outOfDate && !card.floored;
   const outOfDate = !applied && !pending;
   const Symbol = applied ? CircleCheck : outOfDate ? AlertCircle : List;
   const waiting = card.nextTime ? t('gym.coach.proposal.nextTime', { count: diff.blocks.length }) : t('gym.coach.proposal.suggested', { count: diff.blocks.length });
@@ -166,7 +165,7 @@ export function CoachProposalCard({ id, movements }) {
       <span>
         <strong>{applied ? t('gym.coach.proposal.applied', { name }) : outOfDate ? t('gym.coach.proposal.outOfDate', { name }) : name}</strong>
         {outOfDate ? <span ref={settled} tabIndex={-1} className="gym-coach-proposal-reason">
-          {floored ? t('gym.coach.proposal.belowFloor') : t('gym.coach.proposal.outOfDateLine', { name })}</span>
+          {card.floored ? t('gym.coach.proposal.belowFloor') : t('gym.coach.proposal.outOfDateLine', { name })}</span>
           : applied ? t('gym.coach.proposal.changes', { count: diff.blocks.length }) : waiting}
       </span>
     </header>
@@ -177,8 +176,8 @@ export function CoachProposalCard({ id, movements }) {
 
 // Why a workout proposal can no longer be applied, in one sentence and then that nothing was applied (08.57): the board's
 // for a movement logged since and a newer suggestion, a changed or finished workout; and, for what the log refused that the
-// copy does not show, a suggestion answered elsewhere, a load under a movement's floor (which this copy's rules refuse an
-// Apply for too, `floored`), or that it is out of date.
+// copy does not show, a suggestion answered elsewhere, a load under a movement's floor (which the copy's rules refuse too),
+// or that it is out of date.
 function staleLine(stale, movements) {
   switch (stale.reason) {
     case 'replaced': return t('gym.coach.workoutProposal.replaced');
@@ -195,13 +194,13 @@ function staleLine(stale, movements) {
 // Coach's change to the open workout under the answer whose call made it, this browser's or a phone's (WD7, 08.56P),
 // read from the copy: pending with Reject and the prominent Apply, which rewrites this workout's plan on the browser's copy
 // and never a logged movement; applied, one line; rejected, one line; out of date, one sentence of why and nothing applied
-// (WD7.3), which is also what a decision the log refused draws, never a failure, and an Apply this copy's rules refuse for a
-// load under a movement's floor (`floored`), drawn as the log's `invalid`.
+// (WD7.3), which is also what a decision the log refused draws, never a failure, and what a change the copy's rules would
+// refuse for a load under a movement's floor draws, before anyone asks.
 export function WorkoutProposalCard({ id, movements }) {
   const api = useGymApi();
   const { notices } = useSyncRecords('self/gym');
   const card = useDomainRead((read) => workoutCard(read, id, notices), [id, notices]).data;
-  const { busy, failure, floored, decide, settled } = useDecision((verb) => (verb === 'apply' ? api.applyWorkoutProposal(id) : api.dismissWorkoutProposal(id)));
+  const { busy, failure, decide, settled } = useDecision((verb) => (verb === 'apply' ? api.applyWorkoutProposal(id) : api.dismissWorkoutProposal(id)));
   if (!card) return null;
   const title = t('gym.coach.workoutProposal.title');
   if (card.state === 'dismissed') {
@@ -212,7 +211,7 @@ export function WorkoutProposalCard({ id, movements }) {
       <p ref={settled} tabIndex={-1} className="gym-coach-proposal-settled"><Check size={18} aria-hidden="true" className="gym-coach-made-check" />{t('gym.coach.workoutProposal.applied')}</p>
     </section>;
   }
-  const stale = card.stale ?? (floored ? decisionRefusal('invalid') : null);
+  const { stale } = card;
   return <section className={`gym-coach-proposal-card is-workout${stale ? ' is-out-of-date' : ''}`} aria-label={title}>
     <header>
       <ClipboardList size={20} aria-hidden="true" className="gym-coach-made-check" />

@@ -64,7 +64,7 @@ export function conversationView(read, threadId, runningHere) {
 }
 
 // Whether the conversation `threadId` holds a change to the workout `sessionId` that waits on the person: one a message of
-// it made, pending, which the workout can still take.
+// it made, pending, which the workout can still take: not out of date, and no load under a movement's floor.
 export function holdsUndecidedChange(read, threadId, sessionId) {
   const thread = read.repository(CoachThread).find(new Id(threadId, CoachThread), 'drawn');
   if (thread === null || sessionId === null) return false;
@@ -72,8 +72,11 @@ export function holdsUndecidedChange(read, threadId, sessionId) {
   return read.repository(CoachMessage).children(thread.id, 'threadId', 'drawn').filter((message) => message.isCoach)
     .flatMap((message) => made(read, message).workoutProposals)
     .map((id) => proposals.find(new Id(id, WorkoutProposal), 'drawn'))
-    .some((proposal) => proposal !== null && proposal.sessionId.record === sessionId && proposal.state === 'pending'
-      && WorkoutProposalState.of(read, proposal.id).outOfDate === null);
+    .some((proposal) => {
+      if (proposal === null || proposal.sessionId.record !== sessionId || proposal.state !== 'pending') return false;
+      const state = WorkoutProposalState.of(read, proposal.id);
+      return state.outOfDate === null && !state.underFloor;
+    });
 }
 
 // History, one list with the phones (gym Coach on the AI service §5): every conversation, newest first, with its first

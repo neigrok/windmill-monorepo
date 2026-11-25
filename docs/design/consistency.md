@@ -1389,10 +1389,10 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
     suggestion.*, *This workout has finished.* and *You logged a movement since this suggestion.* (a refusal that names no
     movement), and the web's own *This suggestion was already answered.*, *This change sets a load below what one of its
     movements allows.* and *This suggestion is out of date.*, each closing *Nothing was applied.* The load sentence stands
-    both for the log's refusal and for an Apply the browser's copy refuses for a load under a movement's floor, which the
-    card draws out of date with no *Try again*, since trying again cannot pass the floor. A routine's card (08W-P) says the
-    same sentence for its own floor refusal, under 08W.28's head *{routine} · Out of date* and in place of the drawn
-    *{routine} changed after this suggestion.*, with the sentence taking the focus; no board draws it. The phone's Coach button
+    both for the log's refusal and for a change the browser's copy would refuse for a load under a movement's floor, which
+    the card draws out of date as soon as the copy's rules would refuse it, in every tab and after a reload, with no Apply.
+    A routine's card (08W-P) says the same sentence for its own floor, under 08W.28's head *{routine} · Out of date* and in
+    place of the drawn *{routine} changed after this suggestion.*; no board draws it. The phone's Coach button
     reopens the sheet on the conversation the page holds while it has a turn running or a change to this workout waiting,
     and on a fresh chat otherwise, which no board draws. The rail's *This workout* and *Coach* are the design-system `Tabs`
     in their `line` variant, which the Design System file draws (`394:16`) and has not yet published, so the Gym file's
