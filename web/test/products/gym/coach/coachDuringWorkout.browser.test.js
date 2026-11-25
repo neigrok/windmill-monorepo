@@ -233,13 +233,13 @@ const loggable = (page) => page.locator('.gym-live-rack button[type="submit"]:no
 const steps = (page, name) => page.evaluate((wanted) => (window.events ?? []).filter((event) => event.name === wanted).map((event) => event.props), name);
 const told = (page, name, count) => page.waitForFunction(({ wanted, count }) => (window.events ?? []).filter((event) => event.name === wanted).length >= count,
   { wanted: name, count });
-// Coach answers the next question with a change to the open workout, `plan`, with `routine` the routine's change too, then
-// its words.
+// Coach answers the next question with a change to the open workout, `plan`, with `routine` the routine's change too (face
+// pulls added, or the entries it names), then its words.
 const proposes = (page, { plan = lighter, routine = false } = {}) => page.evaluate(({ plan, nextTime, words }) => {
   const workout = { name: 'propose_workout_change', input: { id: 'coach-names-it', sessionId: window.openWorkout(), entries: plan, summary: '' } };
   const upper = { name: 'propose_routine_change', input: { id: 'coach-names-it', routineId: 'routineUpperA', name: 'Upper A', entries: nextTime, summary: '' } };
   window.aiRounds = [{ calls: nextTime ? [workout, upper] : [workout] }, { text: words }];
-}, { plan, nextTime: routine ? [...entries, lighter[3]] : null, words: answer });
+}, { plan, nextTime: routine === true ? [...entries, lighter[3]] : routine || null, words: answer });
 const ask = async (scope, words = question) => {
   const field = scope.getByRole('textbox', { name: 'Ask about your training', exact: true });
   await field.fill(words);
@@ -489,6 +489,42 @@ test('Chromium: an Apply this copy refuses for a load under a movement\'s floor 
     }, {
       header: 'This workout\nOut of date', buttons: 0, focused: sentence, unsent: 0,
       told: [{ screen: 'coach', target: 'workout', action: 'apply', outcome: 'refused' }], issues: [],
+    });
+  });
+});
+
+test('Chromium: a routine change whose Apply this copy refuses for a load under a movement\'s floor stands out of date with its sentence, offers no Try again and is told refused (08W.28)', async (t) => {
+  const phone = await account(t);
+  const { page } = await visit(t, phone);
+  await withBrowserErrors(page, async () => {
+    await loggable(page);
+    await page.getByRole('tab', { name: 'Coach', exact: true }).click();
+    const coach = page.getByRole('tabpanel', { name: 'Coach', exact: true });
+    // Coach assists Upper A's pull-ups by 20 kg from next time, which a bodyweight movement allows.
+    await proposes(page, { routine: [entries[0], entries[1], { ...entries[2], sets: entries[2].sets.map((set) => ({ ...set, weightKg: -20 })) }] });
+    await ask(coach);
+    const card = coach.getByRole('region', { name: 'Upper A', exact: true });
+    await card.getByRole('button', { name: 'Apply', exact: true }).waitFor();
+    await page.waitForFunction(() => window.unsent() === 0);
+    // The phone makes Pull Up a barbell movement, which carries 0 kg or more, and this copy hears of it before the Apply.
+    await catchUp(phone);
+    const seed = SeedExercises.all.find((exercise) => exercise.id.record === 'pull-up');
+    assert.equal((await phone.runner.run(new EditExercise(seed, seed.name, 'barbell', 1))).kind, 'committed');
+    await phone.leave();
+    await phone.sync();
+    await page.evaluate(() => window.kick());
+    await page.waitForFunction(() => window.holds('exerciseName', 'pull-up'));
+    await card.getByRole('button', { name: 'Apply', exact: true }).click();
+    const sentence = 'This change sets a load below what one of its movements allows. Nothing was applied.';
+    await card.getByText(sentence, { exact: true }).waitFor();
+    await told(page, 'gym_proposal_outcome', 1);
+    assert.deepEqual({
+      header: await card.locator('header').innerText(), buttons: await card.getByRole('button').count(),
+      focused: await page.evaluate(() => document.activeElement?.textContent), unsent: await page.evaluate(() => window.unsent()),
+      told: await steps(page, 'gym_proposal_outcome'), issues: await page.evaluate(() => window.issues ?? []),
+    }, {
+      header: `Upper A · Out of date\n${sentence}`, buttons: 0, focused: sentence, unsent: 0,
+      told: [{ screen: 'coach', target: 'routine', action: 'apply', outcome: 'refused' }], issues: [],
     });
   });
 });

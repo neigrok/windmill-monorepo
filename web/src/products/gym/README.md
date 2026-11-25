@@ -161,8 +161,7 @@ it is one line, which takes the focus once the decision lands; out of date (`Wor
 in one sentence and offers nothing, and so does a change whose decision the log refused, read from the refusal's notice
 while the copy still takes it for current. That notice stands on the card for good, so a change the log refused keeps its
 sentence even once its cause is undone; the room's notice voice says nothing of it. An Apply the copy's rules refuse for a
-load under a movement's floor draws the log's sentence for that load, which takes the focus, and offers no Try again, which
-could not pass the floor. While a workout is open a routine
+load under a movement's floor draws the log's sentence for that load (below). While a workout is open a routine
 proposal waits for next time: its count says so and its Apply steps back for the workout's, a Secondary Button in the
 workout's Coach and the quiet pill in the room.
 
@@ -250,7 +249,9 @@ unresolved notices.
 
 A routine Coach creates exists the moment its call commits, as the lifter's own New routine would; its card links the
 routine. A routine proposal and a workout proposal, this browser's or a phone's, each stand under the answer whose call
-made them, with Reject and Apply, the lifter's gestures and the server's commands.
+made them, with Reject and Apply, the lifter's gestures and the server's commands. An Apply the copy's rules refuse for a
+load under a movement's floor settles either card out of date with that sentence, which takes the focus, and no Try again
+(`useDecision`'s `floored`).
 
 ## Gates
 
