@@ -81,10 +81,12 @@ extension XCUIApplication {
   }
 
   // A step's page in the Roadmap room, on screen once its name is the one page name there: a page going away keeps its
-  // own for a moment.
+  // own for a moment. The names are counted, which asks the app for no element that may just have gone; this page's
+  // first, since once it has come only another page's name can leave.
   func roadmapStepPage(_ name: String, timeout: TimeInterval = 10) -> Bool {
     let names = staticTexts.matching(identifier: "roadmap-step-name")
-    let alone = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in names.count == 1 && names.firstMatch.label == name }, object: nil)
+    let named = names.matching(NSPredicate(format: "label == %@", name))
+    let alone = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in named.count == 1 && names.count == 1 }, object: nil)
     return XCTWaiter.wait(for: [alone], timeout: timeout) == .completed
   }
 
