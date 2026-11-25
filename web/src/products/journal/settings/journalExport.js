@@ -36,9 +36,9 @@ class ExportWait extends Error {
   }
 }
 
-// A failure of the export, or of the count Settings shows before it, under its static operation with the step it met and
-// the error's stack, never its message.
-export function reportExportFailure(step, error, report = captureError) {
+// A failure of the export, or of the count Settings shows before it, told to `report` under its static operation with the
+// step it met and the error's stack, never its message.
+export function reportExportFailure(step, error, report) {
   report('journal', 'journal-export', error?.stack ?? '', '/app/settings', { step });
 }
 
