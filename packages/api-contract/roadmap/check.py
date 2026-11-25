@@ -40,12 +40,13 @@ POINTER = ({'node', 'present', 'opens'}, {'setAt'})
 # The codes that refuse a whole call, before any change of a proposal folds (§7).
 CALL_CODES = {'not-owner', 'roadmap-unavailable', 'unknown-roadmap'}
 # The context (§5): its cases' file, the bounds past which a roadmap is given around where the person stands (§5, and §8's
-# `CONTEXT_BYTES`), how many newest completions it holds, the fields of a step's line and of a step in full, and the
-# codes it refuses with.
+# `CONTEXT_BYTES`), how many newest completions it holds and how many frontier titles a row about all roadmaps holds,
+# the fields of a step's line and of a step in full, and the codes it refuses with.
 CONTEXT = 'abilities/context.json'
 CONTEXT_STEPS = 300
 CONTEXT_BYTES = 64 * 1024
 RECENT = 10
+FRONTIER = 10
 LINE = ['id', 'label', 'kind', 'state', 'prerequisites', 'unlockCount', 'summary']
 IN_FULL = ['id', 'label', 'kind', 'state', 'prerequisites', 'unlockCount', 'description', 'links', 'opens']
 CONTEXT_CODES = {'roadmap-unavailable', 'unknown-roadmap'}
@@ -574,14 +575,20 @@ class Contract:
             else: self.check_roadmap_context(case, tree, where)
         return len(self.context)
 
-    # What Coach is told of all the person's roadmaps: whole rows of list_trees' shape, never paged, taken while the context
-    # stays within CONTEXT_BYTES, and `omitted`, no more than the roadmaps of theirs the case gives.
+    # What Coach is told of all the person's roadmaps: whole rows of list_trees' shape, never paged, each with at most the
+    # first ten titles of its frontier and `frontierOmitted` counting the rest of its available steps where there are more;
+    # taken while the context stays within CONTEXT_BYTES, and `omitted`, no more than the roadmaps of theirs the case gives.
     def check_rows(self, case, where):
         result = case['expect']['result']
         members(result, {'trees', 'omitted'}, where)
-        found = fault({'trees': result['trees']}, result_schema(self.ability('list_trees')), 'result')
+        found = fault({'trees': [{key: value for key, value in row.items() if key != 'frontierOmitted'} for row in result['trees']]},
+                      result_schema(self.ability('list_trees')), 'result')
         if found: refuse(where, found)
-        for row in result['trees']: members(row, {'id', 'title', 'counts', 'frontier', 'lastCompletedAt'}, f'{where} · trees')
+        for row in result['trees']:
+            members(row, {'id', 'title', 'counts', 'frontier', 'lastCompletedAt'}, f'{where} · trees', {'frontierOmitted'})
+            frontier, left = row['frontier'] or [], row.get('frontierOmitted')
+            if len(frontier) > FRONTIER or left is not None and (type(left) is not int or left < 1 or len(frontier) < FRONTIER): refuse(where, f'`{row["id"]}`\'s frontier, which is not its first {FRONTIER} titles and a count of the rest from one')
+            if row['counts'] is not None and len(frontier) + (left or 0) != row['counts']['available']: refuse(where, f'`{row["id"]}`\'s frontier and the titles left off, which are not its {row["counts"]["available"]} available steps')
         own = sum(1 for tree in case['given']['trees'] if tree['own'])
         if type(result['omitted']) is not int or result['omitted'] < 0 or len(result['trees']) + result['omitted'] > own: refuse(where, f'{len(result["trees"])} rows and {result["omitted"]} left off, of {own} roadmaps the person owns')
         size = len(canonical(result, where))

@@ -297,9 +297,18 @@ class ContextTest(Rows):
             result['omitted'] -= 1
         self.refused([
             self.vector('a conversation about all roadmaps', lambda result, case, c: result.pop('omitted'), ': no `omitted`'),
-            self.vector('a conversation about 36 roadmaps', lambda result, case, c: result.update(omitted=2), ': 35 rows and 2 left off, of 36 roadmaps the person owns'),
-            self.vector('a conversation about 36 roadmaps', lambda result, case, c: result.update(omitted=-1), ': 35 rows and -1 left off, of 36 roadmaps the person owns'),
-            self.vector('a conversation about 36 roadmaps', lambda result, case, c: one_more(result), ': a context of 67174 bytes about all roadmaps, past CONTEXT_BYTES, 65536'),
+            self.vector('a conversation about 40 roadmaps', lambda result, case, c: result.update(omitted=4), ': 37 rows and 4 left off, of 40 roadmaps the person owns'),
+            self.vector('a conversation about 40 roadmaps', lambda result, case, c: result.update(omitted=-1), ': 37 rows and -1 left off, of 40 roadmaps the person owns'),
+            self.vector('a conversation about 40 roadmaps', lambda result, case, c: one_more(result), ': a context of 65658 bytes about all roadmaps, past CONTEXT_BYTES, 65536'),
+        ], 'check_context')
+
+    def test_a_row_frontier_past_ten_titles_is_refused(self):
+        def titles(result, more): result['trees'][0]['frontier'].extend(more)
+        self.refused([
+            self.vector('a roadmap whose frontier alone', lambda result, case, c: result['trees'][0].pop('frontierOmitted'), ': `t_0000000000000300`\'s frontier and the titles left off, which are not its 400 available steps'),
+            self.vector('a roadmap whose frontier alone', lambda result, case, c: titles(result, ['Read the Odyssey again']), ': `t_0000000000000300`\'s frontier, which is not its first 10 titles and a count of the rest from one'),
+            self.vector('a roadmap whose frontier alone', lambda result, case, c: result['trees'][0].update(frontierOmitted=0), ': `t_0000000000000300`\'s frontier, which is not its first 10 titles and a count of the rest from one'),
+            self.vector('a conversation about all roadmaps', lambda result, case, c: result['trees'][1].update(frontierOmitted=1), ': `t_0000000000000001`\'s frontier, which is not its first 10 titles and a count of the rest from one'),
         ], 'check_context')
 
     def test_a_roadmap_other_than_the_case_gives_is_refused(self):

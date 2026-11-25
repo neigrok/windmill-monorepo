@@ -24,6 +24,8 @@ export const ContextBounds = Object.freeze({
   bytes: 64 * 1024,
   // §5 How many of the newest completions that carry a date the context holds.
   recent: 10,
+  // §5 How many of a row's frontier titles a context about all roadmaps holds.
+  frontier: 10,
 });
 
 // §5 A step-started conversation's step in full: every field §5.1 answers, the whole description in place of its summary.
@@ -33,8 +35,9 @@ const MILESTONE = 'milestone';
 const HOPS = 2;
 
 // The context of a conversation: about all of the person's roadmaps, the rows list_trees answers, in its order, while
-// they stay within `CONTEXT_BYTES`; about one, what Coach is told of it, with the step the conversation started from in
-// full where the roadmap shows that step.
+// they stay within `CONTEXT_BYTES`, each with the first ten titles of its frontier and `frontierOmitted` counting the
+// rest where there are more, so no one roadmap's frontier crowds out the rows after it; about one, what Coach is told of
+// it, with the step the conversation started from in full where the roadmap shows that step.
 /** @param {Standing} standing @param {ContextRequest} conversation @returns {AbilityResponse} */
 export function readContext(standing, { about, step = null }) {
   const roadmaps = StandingRoadmaps.of(standing);
@@ -42,7 +45,12 @@ export function readContext(standing, { about, step = null }) {
     precondition(step === null, 'a conversation started from a step is about that step\'s roadmap');
     if (!roadmaps.listRead) return refusal(AbilityCodes.roadmapUnavailable);
     const rows = roadmaps.account.list();
-    return { result: within({}, 'trees', rows.length, (index) => roadmaps.row(/** @type {{ id: string, title: string | null }} */ (rows[index]))) };
+    return { result: within({}, 'trees', rows.length, (index) => {
+      const row = roadmaps.row(/** @type {{ id: string, title: string | null }} */ (rows[index]));
+      const frontier = Array.isArray(row.frontier) ? row.frontier : [];
+      if (frontier.length <= ContextBounds.frontier) return row;
+      return { ...row, frontier: frontier.slice(0, ContextBounds.frontier), frontierOmitted: frontier.length - ContextBounds.frontier };
+    }) };
   }
   const opened = roadmaps.open(about, about);
   if (!('roadmap' in opened)) return opened;

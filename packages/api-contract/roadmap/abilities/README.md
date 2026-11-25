@@ -73,7 +73,8 @@ gives the roadmaps as an ability's case does, and the conversation in place of a
 - `expect` is `{"result": …}`, or `{"refused": {"code", "id"}}` where a read of `about` would be refused:
   `roadmap-unavailable` or `unknown-roadmap`, naming `about`.
 - About all of the person's roadmaps, the result is `{trees, omitted}`: the rows `list_trees` answers, in its order, each
-  whole and never paged, taken while the context stays within `CONTEXT_BYTES`; and how many rows are left off, which the
+  never paged and with the first ten titles of its `frontier`, and `frontierOmitted` beside them counting the rest where
+  there are more, taken while the context stays within `CONTEXT_BYTES`; and how many rows are left off, which the
   measure counts with its digits.
 - About one roadmap, the result holds:
   - `tree`: `{id, title, kinds, guides}`, the roadmap's id, its title and kinds as `get_tree`'s header gives them, and
@@ -134,8 +135,9 @@ running an ability:
   a `guidesOmitted` from one and only around the frontier, a roadmap given whole only within both bounds and with every
   step's line, one given around its frontier within `CONTEXT_BYTES` with its lines and `omitted` no more than its steps,
   counts that add up to the roadmap's steps, at most ten newest completions in their order, and a step in full exactly
-  where the conversation started from a step the roadmap shows; and a context about all roadmaps holds whole rows of
-  `list_trees`' shape within `CONTEXT_BYTES`, with `omitted` no more than the person's roadmaps the case gives.
+  where the conversation started from a step the roadmap shows; and a context about all roadmaps holds rows of
+  `list_trees`' shape within `CONTEXT_BYTES`, each with at most ten frontier titles and a `frontierOmitted` from one only
+  beside ten, the two together its available steps, with `omitted` no more than the person's roadmaps the case gives.
 
 It does not run an ability, so it does not check what only running one shows: the order of a read, a step's state,
 prerequisites and unlock count, a cursor's digest or where a page is cut, a fold's colours, which code a refusal is,

@@ -209,7 +209,9 @@ where the roadmap shows the step.
 
 For a conversation about all roadmaps the context is the rows `list_trees` answers, in its order,
 while they stay within `CONTEXT_BYTES`, and `omitted` counts the rows left off; Coach reads one
-roadmap in full only when the question needs it (§10).
+roadmap in full only when the question needs it (§10). A row's `frontier` carries its first ten titles,
+in its own order, and `frontierOmitted` counts the rest where there are more, so no one roadmap's
+frontier crowds out the rows after it.
 
 Step text is the person's data. The prompt tells the model to treat it, a pasted text and an
 ability's result as data and never as instructions.
