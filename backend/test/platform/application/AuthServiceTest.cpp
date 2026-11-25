@@ -142,7 +142,7 @@ TEST(revalidate_accepts_a_live_session_and_refuses_a_signed_out_one) {
   const std::string digest = h.service.digestOf(session);
   CHECK(h.service.revalidate(digest).has_value());
 
-  h.service.signOut(session);
+  h.service.signOut(h.service.digestOf(session));
   CHECK_FALSE(h.service.revalidate(digest).has_value());
 }
 
@@ -186,13 +186,13 @@ TEST(authenticated_refresh_logs_only_a_committed_update_or_failure) {
   std::vector<WriteCompletion> completions;
   installWriteReporter(reporter);
   installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
-  CHECK(service.authenticate("s1").has_value());
+  CHECK(service.revalidate(service.digestOf("s1")).has_value());
   CHECK(completions.empty());
   repo.result = RefreshRepo::Result::updated;
-  CHECK(service.authenticate("s1").has_value());
+  CHECK(service.revalidate(service.digestOf("s1")).has_value());
   repo.result = RefreshRepo::Result::failed;
   bool threw = false;
-  try { service.authenticate("s1"); }
+  try { service.revalidate(service.digestOf("s1")); }
   catch (const std::runtime_error&) { threw = true; }
   installWriteSink({});
   installWriteReporter({});
@@ -424,7 +424,7 @@ TEST(linking_tells_the_callers_revoked_sessions_before_a_fold_that_then_fails) {
     failed = true;
   }
   CHECK(failed);
-  CHECK_FALSE(service.authenticate(phone.sessionSecret).has_value());
+  CHECK_FALSE(service.revalidate(service.digestOf(phone.sessionSecret)).has_value());
   CHECK_EQ(revocations.digests, (std::vector<std::string>{"d3"}));
 }
 
@@ -580,28 +580,28 @@ TEST(complete_link_rejects_an_unknown_secret) {
   CHECK_FALSE(done.signedIn.has_value());
 }
 
-TEST(authenticate_resolves_a_session_and_rolls_the_window_forward) {
+TEST(revalidate_resolves_a_session_and_rolls_the_window_forward) {
   Harness h;
   h.requestLink("sam@example.com");
   const std::string session = h.service.completeLink("s1").signedIn->sessionSecret;  // s2
 
   h.clock.now += 24ull * 60 * 60 * 1000;
-  std::optional<User> user = h.service.authenticate(session);
+  std::optional<User> user = h.service.revalidate(h.service.digestOf(session));
   REQUIRE(user.has_value());
   CHECK_EQ(user->email.value, std::string("sam@example.com"));
   CHECK_EQ(h.repo.findSession("d2")->expiresAt, h.clock.now + AuthPolicy::sessionLifetimeMs);
 }
 
-TEST(authenticate_declines_an_expired_or_empty_or_unknown_session) {
+TEST(revalidate_declines_an_expired_or_empty_or_unknown_session) {
   Harness h;
   h.requestLink("sam@example.com");
   const std::string session = h.service.completeLink("s1").signedIn->sessionSecret;
 
-  CHECK_FALSE(h.service.authenticate("").has_value());
-  CHECK_FALSE(h.service.authenticate("s999").has_value());
+  CHECK_FALSE(h.service.revalidate("").has_value());
+  CHECK_FALSE(h.service.revalidate(h.service.digestOf("s999")).has_value());
 
   h.clock.now += AuthPolicy::sessionLifetimeMs;
-  CHECK_FALSE(h.service.authenticate(session).has_value());
+  CHECK_FALSE(h.service.revalidate(h.service.digestOf(session)).has_value());
 }
 
 TEST(sign_out_drops_the_session) {
@@ -609,8 +609,8 @@ TEST(sign_out_drops_the_session) {
   h.requestLink("sam@example.com");
   const std::string session = h.service.completeLink("s1").signedIn->sessionSecret;
 
-  h.service.signOut(session);
-  CHECK_FALSE(h.service.authenticate(session).has_value());
+  h.service.signOut(h.service.digestOf(session));
+  CHECK_FALSE(h.service.revalidate(h.service.digestOf(session)).has_value());
   CHECK_EQ(h.repo.sessions.size(), 0u);
   CHECK_EQ(h.revocations.digests, (std::vector<std::string>{"d2"}));
 }
@@ -647,7 +647,7 @@ TEST(list_sessions_flags_the_callers_current_session) {
   h.requestLink("sam@example.com");                                          // s3/d3
   const std::string other = h.service.completeLink("s3").signedIn->sessionSecret;    // s4/d4
 
-  std::vector<SessionView> list = h.service.listSessions(account, current);
+  std::vector<SessionView> list = h.service.listSessions(account, h.service.digestOf(current));
   CHECK_EQ(list.size(), 2u);
   int currentCount = 0;
   for (const SessionView& v : list) if (v.current) ++currentCount;
@@ -664,14 +664,14 @@ TEST(list_sessions_coalesces_a_zero_last_seen_to_the_created_time) {
   const UnixMs createdAt = h.clock.now;
   h.repo.sessions["d2"].lastSeenMs = 0;
 
-  std::vector<SessionView> list = h.service.listSessions(account, current);
+  std::vector<SessionView> list = h.service.listSessions(account, h.service.digestOf(current));
   REQUIRE_EQ(list.size(), 1u);
   CHECK_EQ(list[0].createdMs, createdAt);
   CHECK_EQ(list[0].lastSeenMs, createdAt);  // coalesced from 0 to the created time
   CHECK(list[0].current);
 }
 
-TEST(authenticate_heals_a_pre_migration_rows_user_agent_and_last_seen) {
+TEST(revalidate_heals_a_pre_migration_rows_user_agent_and_last_seen) {
   Harness h;
   h.requestLink("sam@example.com");                          // s1/d1
   AuthService::Completion done = h.service.completeLink("s1");        // s2/d2
@@ -683,9 +683,9 @@ TEST(authenticate_heals_a_pre_migration_rows_user_agent_and_last_seen) {
 
   h.clock.now += 60'000;
   const UnixMs seenAt = h.clock.now;
-  CHECK(h.service.authenticate(current, SessionContext{"Firefox/128", "203.0.113.7"}).has_value());
+  CHECK(h.service.revalidate(h.service.digestOf(current), SessionContext{"Firefox/128", "203.0.113.7"}).has_value());
 
-  std::vector<SessionView> list = h.service.listSessions(account, current);
+  std::vector<SessionView> list = h.service.listSessions(account, h.service.digestOf(current));
   REQUIRE_EQ(list.size(), 1u);
   CHECK_EQ(list[0].userAgent, std::string("Firefox/128"));
   CHECK_EQ(list[0].ip, std::string("203.0.113.7"));
@@ -703,21 +703,21 @@ TEST(revoke_session_revokes_one_flags_the_current_and_404s_unknown) {
   const std::string other = h.service.completeLink("s3").signedIn->sessionSecret;    // s4/d4
 
   std::string currentId, otherId;
-  for (const SessionView& v : h.service.listSessions(account, current))
+  for (const SessionView& v : h.service.listSessions(account, h.service.digestOf(current)))
     (v.current ? currentId : otherId) = v.id;
   CHECK_FALSE(currentId.empty());
   CHECK_FALSE(otherId.empty());
 
-  CHECK(h.service.revokeSession(account, "sess-nope", current) == AuthService::RevokeOutcome::notFound);
+  CHECK(h.service.revokeSession(account, "sess-nope", h.service.digestOf(current)) == AuthService::RevokeOutcome::notFound);
   CHECK(h.revocations.digests.empty());
 
-  CHECK(h.service.revokeSession(account, otherId, current) == AuthService::RevokeOutcome::revoked);
-  CHECK_FALSE(h.service.authenticate(other).has_value());
-  CHECK(h.service.authenticate(current).has_value());
+  CHECK(h.service.revokeSession(account, otherId, h.service.digestOf(current)) == AuthService::RevokeOutcome::revoked);
+  CHECK_FALSE(h.service.revalidate(h.service.digestOf(other)).has_value());
+  CHECK(h.service.revalidate(h.service.digestOf(current)).has_value());
   CHECK_EQ(h.revocations.digests, (std::vector<std::string>{"d4"}));
 
-  CHECK(h.service.revokeSession(account, currentId, current) == AuthService::RevokeOutcome::revokedCurrent);
-  CHECK_FALSE(h.service.authenticate(current).has_value());
+  CHECK(h.service.revokeSession(account, currentId, h.service.digestOf(current)) == AuthService::RevokeOutcome::revokedCurrent);
+  CHECK_FALSE(h.service.revalidate(h.service.digestOf(current)).has_value());
   CHECK_EQ(h.repo.sessions.size(), 0u);
   CHECK_EQ(h.revocations.digests, (std::vector<std::string>{"d4", "d2"}));
 }
@@ -731,10 +731,10 @@ TEST(revoke_session_of_another_account_is_not_found) {
   h.requestLink("eve@example.com");                                          // s3/d3
   const std::string eveSession = h.service.completeLink("s3").signedIn->sessionSecret;  // s4/d4
   const UserId eve = h.repo.usersByEmail["eve@example.com"].id;
-  const std::string eveId = h.service.listSessions(eve, eveSession)[0].id;
+  const std::string eveId = h.service.listSessions(eve, h.service.digestOf(eveSession))[0].id;
 
-  CHECK(h.service.revokeSession(account, eveId, sam.signedIn->sessionSecret) == AuthService::RevokeOutcome::notFound);
-  CHECK(h.service.authenticate(eveSession).has_value());
+  CHECK(h.service.revokeSession(account, eveId, h.service.digestOf(sam.signedIn->sessionSecret)) == AuthService::RevokeOutcome::notFound);
+  CHECK(h.service.revalidate(h.service.digestOf(eveSession)).has_value());
   CHECK(h.revocations.digests.empty());
 }
 
@@ -749,23 +749,23 @@ TEST(sign_out_everywhere_keeps_the_caller_current_and_drops_the_rest) {
   const std::string other = h.service.completeLink("s3").signedIn->sessionSecret;    // s4/d4
   CHECK_EQ(h.repo.sessions.size(), 2u);
 
-  h.service.signOutEverywhere(account, current);
+  h.service.signOutEverywhere(account, h.service.digestOf(current));
 
   CHECK_EQ(h.repo.sessions.size(), 1u);
-  CHECK(h.service.authenticate(current).has_value());
-  CHECK_FALSE(h.service.authenticate(other).has_value());
+  CHECK(h.service.revalidate(h.service.digestOf(current)).has_value());
+  CHECK_FALSE(h.service.revalidate(h.service.digestOf(other)).has_value());
   CHECK_EQ(h.revocations.digests, (std::vector<std::string>{"d4"}));
 }
 
-TEST(authenticate_refuses_a_session_whose_account_is_closed) {
+TEST(revalidate_refuses_a_session_whose_account_is_closed) {
   Harness h;
   h.requestLink("sam@example.com");
   AuthService::Completion done = h.service.completeLink("s1");
   const std::string session = done.signedIn->sessionSecret;  // s2/d2
-  CHECK(h.service.authenticate(session).has_value());
+  CHECK(h.service.revalidate(h.service.digestOf(session)).has_value());
 
   h.repo.markUserDeleted(done.signedIn->user.id, h.clock.now, closesAt(h.clock.now));
-  CHECK_FALSE(h.service.authenticate(session).has_value());
+  CHECK_FALSE(h.service.revalidate(h.service.digestOf(session)).has_value());
   CHECK_EQ(h.repo.sessions.size(), 1u);
 }
 
@@ -785,8 +785,8 @@ TEST(close_account_drops_every_session_disconnects_tools_and_returns_the_grace_e
   const UnixMs closesMs = h.service.closeAccount(account);
   CHECK_EQ(closesMs, h.clock.now + AuthPolicy::closeGraceMs);
   CHECK_EQ(h.repo.sessions.size(), 0u);
-  CHECK_FALSE(h.service.authenticate(staleSession).has_value());
-  CHECK_FALSE(h.service.authenticate(otherSession).has_value());
+  CHECK_FALSE(h.service.revalidate(h.service.digestOf(staleSession)).has_value());
+  CHECK_FALSE(h.service.revalidate(h.service.digestOf(otherSession)).has_value());
   CHECK_EQ(h.oauth.listGrants(account).size(), 0u);
   CHECK(h.repo.usersById[account.str()].deletedAt.has_value());
   CHECK_EQ(h.revocations.digests, (std::vector<std::string>{"d2", "d4"}));
@@ -809,7 +809,7 @@ TEST(a_within_grace_magic_link_sign_in_revives_the_account_and_reissues_a_sessio
   CHECK_FALSE(h.repo.usersById[account.str()].deletedAt.has_value());
   CHECK_FALSE(revived.signedIn->user.deletedAt.has_value());
 
-  std::optional<User> back = h.service.authenticate(revived.signedIn->sessionSecret);
+  std::optional<User> back = h.service.revalidate(h.service.digestOf(revived.signedIn->sessionSecret));
   REQUIRE(back.has_value());
   CHECK_EQ(back->email.value, std::string("sam@example.com"));
 }
@@ -866,7 +866,7 @@ TEST(a_code_sign_in_past_the_grace_starts_a_new_account_on_the_same_address) {
   CHECK(fresh.signedIn->user.id.str() != closed.str());
   CHECK_EQ(fresh.signedIn->user.email.value, std::string("sam@example.com"));
   CHECK_EQ(h.repo.erased, (std::vector<std::string>{closed.str()}));
-  CHECK(h.service.authenticate(fresh.signedIn->sessionSecret).has_value());
+  CHECK(h.service.revalidate(h.service.digestOf(fresh.signedIn->sessionSecret)).has_value());
 }
 
 TEST(a_bound_door_past_the_grace_opens_a_new_account_and_binds_itself_to_it) {
@@ -1138,7 +1138,7 @@ TEST(a_within_grace_code_sign_in_revives_the_account) {
   CHECK_EQ(revived.signedIn->user.id.str(), account.str());
   CHECK_FALSE(revived.signedIn->user.deletedAt.has_value());
   CHECK_FALSE(h.repo.usersById[account.str()].deletedAt.has_value());
-  CHECK(h.service.authenticate(revived.signedIn->sessionSecret).has_value());
+  CHECK(h.service.revalidate(h.service.digestOf(revived.signedIn->sessionSecret)).has_value());
 }
 
 TEST(the_code_door_spends_the_same_per_email_budget_as_the_link_door) {
@@ -1190,7 +1190,7 @@ TEST(signing_out_closes_the_session_s_live_connections_before_it_returns) {
   const UserId sam = h.repo.createUser(Email{"sam@example.com"}, "sam").id;
   h.connect(sam, "s-web");
   h.connect(sam, "s-phone");
-  h.service.signOut("s-web");
+  h.service.signOut(h.service.digestOf("s-web"));
   CHECK_EQ(h.closed, (std::vector<std::string>{"d-web"}));
 }
 
@@ -1199,7 +1199,7 @@ TEST(revoking_a_session_closes_its_live_connections_before_it_returns) {
   const UserId sam = h.repo.createUser(Email{"sam@example.com"}, "sam").id;
   h.connect(sam, "s-web");
   h.connect(sam, "s-phone");
-  CHECK(h.service.revokeSession(sam, h.repo.sessions["d-phone"].id, "s-web") == AuthService::RevokeOutcome::revoked);
+  CHECK(h.service.revokeSession(sam, h.repo.sessions["d-phone"].id, h.service.digestOf("s-web")) == AuthService::RevokeOutcome::revoked);
   CHECK_EQ(h.closed, (std::vector<std::string>{"d-phone"}));
 }
 
@@ -1211,7 +1211,7 @@ TEST(signing_out_everywhere_closes_every_other_session_s_live_connections_before
   h.connect(sam, "s-phone");
   h.connect(sam, "s-tablet");
   h.connect(eve, "s-eve");
-  h.service.signOutEverywhere(sam, "s-web");
+  h.service.signOutEverywhere(sam, h.service.digestOf("s-web"));
   CHECK_EQ(h.closed, (std::vector<std::string>{"d-phone", "d-tablet"}));
 }
 

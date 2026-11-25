@@ -139,7 +139,12 @@ void GalleryApi::index(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     limit = static_cast<std::size_t>(value);
   }
 
-  const std::optional<UserId> caller = callerOf(req, *auth_);
+  const SentCaller sent = SentCaller::of(req, *auth_);
+  if (sent.refused()) {
+    callback(refusedCredentials());
+    return;
+  }
+  const std::optional<UserId> caller = sent.account();
   Viewer viewer;
   if (caller) {
     viewer.user = caller;

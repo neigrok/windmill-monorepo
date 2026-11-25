@@ -181,7 +181,7 @@ That order and that ceiling are both load-bearing: a closed loopback connection 
 
 ## A green local build is not a green CI
 
-macOS/Homebrew and the CI Linux image disagree on two things that compile green on one side and fail
+macOS/Homebrew and the CI Linux image disagree on three things that compile green on one side and fail
 on the other:
 
 - **libpqxx** names a result row `pqxx::row_ref` on macOS and `pqxx::row` on Linux. Read rows through
@@ -190,6 +190,9 @@ on the other:
 - **jsoncpp** writes a non-finite double as a token no parser reads back, and older builds throw
   instead, so the two toolchains can disagree on the same value (`ToolArgs.cpp` names such a value
   rather than rendering it).
+- **The order a call's operands run in** is unspecified: Clang runs `a() + b()` left to right, GCC can
+  run `b()` first. When one side reads what the other side writes (a door's answer, then what the door
+  stored), take the first into a variable before the second.
 
 Watch `gh run list` after every backend push, because **a push to `main` IS a deploy**.
 `.github/workflows/backend.yml` builds, tests and publishes the image, and a green run triggers

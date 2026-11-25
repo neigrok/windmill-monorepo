@@ -27,7 +27,7 @@ JournalApi::JournalApi(std::shared_ptr<JournalRepository> pages, std::shared_ptr
 
 void JournalApi::getPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                          const std::string& date) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your journal"));
     return;
@@ -46,7 +46,7 @@ void JournalApi::getPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
 }
 
 void JournalApi::listPages(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your journal"));
     return;
@@ -99,7 +99,7 @@ void JournalApi::listPages(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
 }
 
 void JournalApi::exportAll(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your journal"));
     return;

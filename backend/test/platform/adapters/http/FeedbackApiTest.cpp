@@ -3,6 +3,7 @@
 #include "platform/adapters/json/JsonText.h"
 #include "test/platform/Fakes.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <optional>
 #include <string>
@@ -62,7 +63,7 @@ drogon::HttpRequestPtr post(const Json::Value& body) {
 
 drogon::HttpResponsePtr send(FeedbackApi& api, const drogon::HttpRequestPtr& request) {
   drogon::HttpResponsePtr captured;
-  api.submit(request, [&](const drogon::HttpResponsePtr& response) { captured = response; });
+  api.submit(wm::test::DrogonLoopback::received(request), [&](const drogon::HttpResponsePtr& response) { captured = response; });
   return captured;
 }
 

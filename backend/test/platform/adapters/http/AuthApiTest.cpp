@@ -144,7 +144,7 @@ std::string checkSessionCookies(const drogon::HttpResponsePtr& response, bool se
 drogon::HttpResponsePtr call(Harness& h, void (AuthApi::*route)(const drogon::HttpRequestPtr&, HttpCallback&&),
                              const drogon::HttpRequestPtr& req) {
   drogon::HttpResponsePtr captured;
-  (h.api.get()->*route)(req, [&](const drogon::HttpResponsePtr& r) { captured = r; });
+  (h.api.get()->*route)(wm::test::DrogonLoopback::received(req), [&](const drogon::HttpResponsePtr& r) { captured = r; });
   return captured;
 }
 
@@ -161,7 +161,7 @@ drogon::HttpResponsePtr getMe(Harness& h, const std::vector<std::string>& lines 
 
 drogon::HttpResponsePtr revoke(Harness& h, const std::string& session, const std::string& id) {
   drogon::HttpResponsePtr captured;
-  h.api->revokeSession(request(drogon::Delete, "/v1/sessions/" + id, "", session),
+  h.api->revokeSession(wm::test::DrogonLoopback::received(request(drogon::Delete, "/v1/sessions/" + id, "", session)),
                        [&](const drogon::HttpResponsePtr& r) { captured = r; }, id);
   return captured;
 }
@@ -408,8 +408,8 @@ TEST(auth_closing_an_account_refuses_a_shared_cookie_for_another_account) {
   CHECK_FALSE(h.authRepo.findUserById(intended)->deletedAt);
   CHECK_FALSE(h.authRepo.findUserById(successor)->deletedAt);
   CHECK_EQ(h.authRepo.sessions.size(), std::size_t{2});
-  CHECK(h.auth->authenticate("s-intended"));
-  CHECK(h.auth->authenticate("s-successor"));
+  CHECK(h.auth->revalidate(h.auth->digestOf("s-intended")));
+  CHECK(h.auth->revalidate(h.auth->digestOf("s-successor")));
 }
 
 TEST(auth_closing_an_account_requires_the_intended_account) {
@@ -424,7 +424,7 @@ TEST(auth_closing_an_account_requires_the_intended_account) {
     CHECK_EQ(*response->getJsonObject(), expected);
     CHECK(sessionCookieLines(response).empty());
     CHECK_FALSE(h.authRepo.findUserById(mine)->deletedAt);
-    CHECK(h.auth->authenticate("s-live"));
+    CHECK(h.auth->revalidate(h.auth->digestOf("s-live")));
   }
 }
 
@@ -492,14 +492,12 @@ TEST(auth_a_bearer_token_opens_the_same_door_the_cookie_does) {
   CHECK_EQ(getMe(h, {"Authorization: bearer s-live"})->getStatusCode(), drogon::k200OK);
   CHECK_EQ(getMe(h, {"Authorization: s-live"})->getStatusCode(), drogon::k401Unauthorized);
 
-  // A cookie and a bearer of two accounts: GET /v1/me reads them as the sync doors do and serves neither, and the other
-  // REST doors read the cookie.
+  // A cookie and a bearer of two accounts: every door reads them as the sync doors do and serves neither.
   h.signIn("s-other", "ada@example.com");
   CHECK_EQ(getMe(h, {"Cookie: wm_session=s-live", "Authorization: Bearer s-other"})->getStatusCode(), drogon::k401Unauthorized);
   auto both = request(drogon::Patch, "/v1/me", R"({"name":"Sam"})", "s-live");
   both->addHeader("authorization", "Bearer s-other");
-  CHECK_EQ((*call(h, &AuthApi::patchMe, both)->getJsonObject())["user"]["email"].asString(),
-           std::string("sam@example.com"));
+  CHECK_EQ(call(h, &AuthApi::patchMe, both)->getStatusCode(), drogon::k401Unauthorized);
 }
 
 TEST(auth_a_blank_or_oversized_name_is_refused_and_a_good_one_comes_back_applied) {

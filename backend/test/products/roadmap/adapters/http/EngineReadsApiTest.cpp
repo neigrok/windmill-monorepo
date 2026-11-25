@@ -19,6 +19,7 @@
 #include "test/platform/application/sync/SyncFakes.h"
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <filesystem>
 #include <fstream>
@@ -202,7 +203,7 @@ struct Engine {
     auto request = drogon::HttpRequest::newHttpRequest();
     request->setMethod(drogon::Get);
     if (!session.empty()) request->addCookie("wm_session", session);
-    return request;
+    return wm::test::DrogonLoopback::received(request);
   }
 
   drogon::HttpResponsePtr activityOf(const std::string& session, const std::string& tree, const std::string& since = "") {

@@ -242,7 +242,7 @@ registration order and `{matchDay}` binds the literal `offer`. Do not sort that 
 
 Pair and page dismissal write content-hash dismissals and `not_useful` signals; offer dismissal
 keeps every pairing. Every signal and dismissal door answers 204 however many times it is pressed.
-Session-authenticated routes resolve identity via `callerUserOf`/`callerOf`, 401 early, and scope
+Session-authenticated routes resolve identity through `SentCaller`, 401 early, and scope
 queries to that caller with no visibility parameter. Mail pause and unsubscribe use only their
 mail secret and answer 204 even when it matches nothing. There is no page-write, page-delete,
 search, thread or share route, and no MCP `ToolHost`.

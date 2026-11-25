@@ -1088,7 +1088,7 @@ in-process).
   proposal targets an existing routine and its revision; Coach creates a new routine through its
   separately granted, durable `create_routine` operation. The tools are a second *door on the same
   core*, not a second client of the HTTP API. **Every tool acts as the caller**: the `ToolCaller`'s
-  `UserId` scopes every read and write, exactly as `callerOf(req, auth)` scopes the handlers.
+  `UserId` scopes every read and write, exactly as the caller `SentCaller` reads scopes the handlers.
 - **The refusals are the door's outcomes in words a model can act on**, each naming the tool that
   answers the question it should ask next. The domain's `InvalidTraining` sentence is forwarded
   **verbatim** behind the tool's name, as an `invalid-arguments` failure; a `GymUnavailable` names its

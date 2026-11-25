@@ -10,6 +10,7 @@
 
 #include "platform/application/WriteObservation.h"
 #include "platform/ports/FailureReporter.h"
+#include "test/DrogonLoopback.h"
 
 #include <algorithm>
 #include <chrono>
@@ -110,7 +111,7 @@ drogon::HttpRequestPtr getRequest(const std::string& session) {
   auto request = drogon::HttpRequest::newHttpRequest();
   request->setMethod(drogon::Get);
   if (!session.empty()) request->addCookie("wm_session", session);
-  return request;
+  return wm::test::DrogonLoopback::received(request);
 }
 
 drogon::HttpResponsePtr sendGetTree(TreeApi& api, const std::string& session, const std::string& id) {
@@ -149,7 +150,7 @@ drogon::HttpRequestPtr forkRequest(const Json::Value& body, const std::string& s
   request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   request->setBody(dump(body));
   if (!session.empty()) request->addCookie("wm_session", session);
-  return request;
+  return wm::test::DrogonLoopback::received(request);
 }
 
 drogon::HttpResponsePtr sendFork(TreeApi& api, const drogon::HttpRequestPtr& request,
@@ -1281,7 +1282,7 @@ TEST(fork_refuses_a_non_object_json_root_with_400) {
     fork->setBody(body);
     fork->addCookie("wm_session", "s-me");
     drogon::HttpResponsePtr forked;
-    h.api.forkTree(fork, [&](const drogon::HttpResponsePtr& r) { forked = r; }, "t_src");
+    h.api.forkTree(wm::test::DrogonLoopback::received(fork), [&](const drogon::HttpResponsePtr& r) { forked = r; }, "t_src");
     CHECK_EQ(forked->getStatusCode(), drogon::k400BadRequest);
     CHECK_EQ(dump(bodyOf(forked)), std::string(R"({"error":"invalid json body"})"));
   }

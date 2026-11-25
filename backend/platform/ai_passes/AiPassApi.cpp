@@ -53,6 +53,7 @@ void AiPassApi::sign(const drogon::HttpRequestPtr& request, std::function<void(c
       refuse(versionRefusal == "client-update-required" ? drogon::k426UpgradeRequired : drogon::k400BadRequest, versionRefusal.c_str()); return;
     }
     const SentCaller caller = SentCaller::of(sent, *auth_);
+    caller.leaveOn(request);
     const std::optional<User>& account = caller.user;
     if (caller.credential.fails() || (!account && !installationToken)) { refuse(drogon::k401Unauthorized, "unauthenticated"); return; }
     std::optional<AiInstallationPrincipal> installation;

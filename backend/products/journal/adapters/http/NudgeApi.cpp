@@ -64,7 +64,7 @@ NudgeApi::NudgeApi(std::shared_ptr<NudgeRepository> nudges, std::shared_ptr<Nudg
       tokens_(std::move(tokens)), clock_(std::move(clock)), adminToken_(std::move(adminToken)) {}
 
 void NudgeApi::getSettings(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to read your nudge"));
     return;
@@ -75,7 +75,7 @@ void NudgeApi::getSettings(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
 }
 
 void NudgeApi::patchSettings(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to change your nudge"));
     return;

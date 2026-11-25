@@ -80,7 +80,7 @@ drogon::HttpRequestPtr post(const std::string& audio, const std::string& session
   request->setBody(audio);
   request->addHeader("content-type", "audio/webm");
   if (!session.empty()) request->addCookie("wm_session", session);
-  return request;
+  return wm::test::DrogonLoopback::received(request);
 }
 
 // A vendor that takes the connection and never answers: the kernel completes the handshake and holds the request, and
