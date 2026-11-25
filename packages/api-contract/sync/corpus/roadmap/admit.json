@@ -30918,7 +30918,7 @@
               "kind": 3,
               "node": 2
             },
-            "digest": "a24310ac1e7b6cf05ddc646a0f5df2483b868876d66d61e7e48b18080bb960e3",
+            "digest": "caa71cf0c354f05e6b32acdd9a6453362dbc057750d3cf906a3d0acb8929f08c",
             "governedBy": "acct:A/roadmap#tree#t_0000000000000001"
           },
           "tree:t_0000000000000002": {
@@ -30929,7 +30929,7 @@
             "counters": {
               "node": 2
             },
-            "digest": "ad9d1f530bd0cc7828539cfa13a9619998f1dd49d57b7e010d52c1b7b2a36c90",
+            "digest": "bb573929af5020ef5ebf247ace11d0796064b2bc4d76c6276e52d0ca22f33f4a",
             "governedBy": "acct:A/roadmap#tree#t_0000000000000002"
           },
           "tree:t_0000000000000003": {
@@ -30940,7 +30940,7 @@
             "counters": {
               "node": 1
             },
-            "digest": "14d7fedf793b0b8b523e5989c26f4198fe1db7fb43ee143ad5ac411230241123",
+            "digest": "89863333f68f2ef7beff233ea2d8209778acaef7749f6b4af6c3584c713e2bba",
             "governedBy": "acct:A/roadmap#tree#t_0000000000000003"
           },
           "tree:t_0000000000000004": {
@@ -31260,16 +31260,16 @@
               "id": "meta",
               "f": {
                 "reach": [
-                  "public",
-                  "1100:0:srv"
+                  "private",
+                  "3000:0:srv"
                 ],
                 "title": [
                   "Learn Rust",
                   "1000:0:r_aaaaaaaaaaaa"
                 ],
                 "visibility": [
-                  "public",
-                  "1100:0:r_aaaaaaaaaaaa"
+                  "private",
+                  "3000:0:r_aaaaaaaaaaaa"
                 ]
               },
               "seq": 3,
@@ -31376,8 +31376,8 @@
                   "2000:0:srv"
                 ],
                 "reach": [
-                  "public",
-                  "2000:0:srv"
+                  "private",
+                  "3000:0:srv"
                 ],
                 "root": [
                   "t_0000000000000001",
@@ -31454,7 +31454,7 @@
                   "3000:0:srv"
                 ],
                 "reach": [
-                  "public",
+                  "private",
                   "3000:0:srv"
                 ],
                 "root": [
@@ -31636,7 +31636,7 @@
             "id": "meta",
             "f": {
               "visibility": [
-                "unlisted",
+                "public",
                 "5000:0:r_aaaaaaaaaaaa"
               ]
             }
@@ -31710,7 +31710,7 @@
               "kind": 3,
               "node": 2
             },
-            "digest": "44d4206a82cae20e5891fe9118e20f583f96176a860f386d2e9b3dcb042d24f2",
+            "digest": "d94075790b3b69ce246106b2e2104c76475afc68618cc22a4e22073fa997575a",
             "governedBy": "acct:A/roadmap#tree#t_0000000000000001"
           },
           "tree:t_0000000000000002": {
@@ -31721,7 +31721,7 @@
             "counters": {
               "node": 2
             },
-            "digest": "ab2febcbb08eadacb087079a57067b6ddf459795cb6b7e458db208a63d533f37",
+            "digest": "d968018b4d47307e1bd2aebfc532231890580472eb8f885275813a0e95ff2fe4",
             "governedBy": "acct:A/roadmap#tree#t_0000000000000002"
           },
           "tree:t_0000000000000003": {
@@ -31732,7 +31732,7 @@
             "counters": {
               "node": 1
             },
-            "digest": "4f5f6bf8c1722ff783d31c6a1a74db6db320a40579f687a7e9b61db4e948b76e",
+            "digest": "f8221061f480d71cde3b4a9505cb6f0f11a5bb864ccd8160c4fcbb48e9f3c8bf",
             "governedBy": "acct:A/roadmap#tree#t_0000000000000003"
           },
           "tree:t_0000000000000004": {
@@ -32052,7 +32052,7 @@
               "id": "meta",
               "f": {
                 "reach": [
-                  "unlisted",
+                  "public",
                   "10000:0:srv"
                 ],
                 "title": [
@@ -32060,7 +32060,7 @@
                   "1000:0:r_aaaaaaaaaaaa"
                 ],
                 "visibility": [
-                  "unlisted",
+                  "public",
                   "5000:0:r_aaaaaaaaaaaa"
                 ]
               },
@@ -32168,7 +32168,7 @@
                   "2000:0:srv"
                 ],
                 "reach": [
-                  "unlisted",
+                  "public",
                   "10000:0:srv"
                 ],
                 "root": [
@@ -32246,7 +32246,7 @@
                   "3000:0:srv"
                 ],
                 "reach": [
-                  "unlisted",
+                  "public",
                   "10000:0:srv"
                 ],
                 "root": [
