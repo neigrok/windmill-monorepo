@@ -198,8 +198,8 @@ final class RoadmapCover: Identifiable {
 // What a reader's room reads of one roadmap someone else shared (`RoadmapModel.Role.reader`): the roadmap and each roadmap
 // above it as the phone's copy holds them, each followed as the read comes to it, the open one with its owner's marks as
 // the server read them, which the phone holds none of, or the steps' own seeds where that read failed, as the web's room
-// falls back; and what the read came to, which the cover shows. A step the link names opens on the cover once, as the
-// web opens it on a share.
+// falls back, and each subtree its steps own counted as that read tells it, since the phone follows none of them; and what
+// the read came to, which the cover shows. A step the link names opens on the cover once, as the web opens it on a share.
 @Observable @MainActor
 final class SharedRead {
   // What the cover shows: the roadmap, once the phone's copy holds it and its owner's progress has answered; why it cannot,
@@ -213,8 +213,8 @@ final class SharedRead {
   let sources: RoadmapCover.Sources
   let telemetry: any Telemetry
   private(set) var state = State.reading
-  // The owner's marks as the server read them, nil until that read has settled, and whether it failed.
-  @ObservationIgnored var marks: [RoadmapTree.Mark]?
+  // The owner's progress as the server read it, nil until that read has settled, and whether it failed.
+  @ObservationIgnored var owners: OwnersProgress?
   @ObservationIgnored var seeded = false
   @ObservationIgnored var progress: Task<Void, Never>?
   // The scopes the read follows, and one the engine answered gone, which no pull brings back (INV-13).
@@ -231,11 +231,11 @@ final class SharedRead {
 
   func askProgress(for room: RoadmapModel) {
     progress?.cancel()
-    (marks, seeded) = (nil, false)
+    (owners, seeded) = (nil, false)
     progress = Task { [weak self, weak room, requests = sources.requests, tree = address.tree] in
       let read = try? await requests.progress(of: tree)
       guard let self, !Task.isCancelled else { return }
-      (marks, seeded) = (read ?? [], read == nil)
+      (owners, seeded) = (read ?? OwnersProgress(marks: []), read == nil)
       room?.observe()
     }
   }
@@ -264,14 +264,14 @@ final class SharedRead {
         let seeds = held.nodes.filter { $0.status == "complete" }.map {
           RoadmapTree.Mark(node: $0.id, status: "complete", outOfOrder: false, recordedAt: nil, deviceAt: nil)
         }
-        trees.append(trees.isEmpty ? RoadmapTree(held, marks: seeded ? seeds : marks ?? []) : held)
+        trees.append(trees.isEmpty ? RoadmapTree(held, marks: seeded ? seeds : owners?.marks ?? []) : held)
         next = held.parent?.tree
       }
       room.views = room.views.filter { scopes.contains($0.key.scope) }
-      room.account = RoadmapAccount(trees)
+      room.account = RoadmapAccount(trees, told: owners?.subtrees ?? [])
       let standing = room.account.listing(address.tree)
-      if let listed = standing, marks != nil, let open = RoadmapModel.OpenRoadmap(listed, in: room.account, owned: false) {
-        room.present(open, landing: .graph)
+      if let listed = standing, owners != nil, let open = RoadmapModel.OpenRoadmap(listed, in: room.account, owned: false) {
+        room.present(open, in: .graph)
         settle(.open)
         guard !stepOpened, let step = address.step, open.step(step) != nil else { return }
         stepOpened = true

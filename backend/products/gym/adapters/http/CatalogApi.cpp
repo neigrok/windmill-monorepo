@@ -15,7 +15,7 @@ CatalogApi::CatalogApi(std::shared_ptr<CatalogRepository> catalog,
     : catalog_(std::move(catalog)), training_(std::move(training)), auth_(std::move(auth)) {}
 
 void CatalogApi::listExercises(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
@@ -28,7 +28,7 @@ void CatalogApi::listExercises(const drogon::HttpRequestPtr& req, HttpCallback&&
 // A movement nobody has lifted answers 200 with zeroed counts; the 404 means no such movement.
 void CatalogApi::exerciseRecord(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                             const std::string& id) try {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;

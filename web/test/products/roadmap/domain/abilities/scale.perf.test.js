@@ -1,12 +1,14 @@
 // @ts-check
 // Roadmap Coach §5.2 at the steps cap: a roadmap of 10,000 steps read page by page through get_tree and find_nodes, no
-// page past 16,384 bytes of canonical text, and the pages joined again into the whole.
+// page past 16,384 bytes of canonical text, and the pages joined again into the whole; and told as the context (§5).
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { jcsBytes } from '../../../../../../packages/api-contract/sync/reference/core/jcs.js';
+import { ContextBounds, readContext } from '../../../../../src/products/roadmap/domain/abilities/context.js';
 import { MAX_BYTES } from '../../../../../src/products/roadmap/domain/abilities/pages.js';
 import { ReadAbilities } from '../../../../../src/products/roadmap/domain/abilities/reads.js';
+import { STEP_LINE } from '../../../../../src/products/roadmap/domain/abilities/standing.js';
 
 // A roadmap of 10,000 steps, each following the two before it so get_tree's order is the room's, the first 3,000
 // complete. Every thousandth step carries a description at its cap, in scalars of one to four bytes, and every five
@@ -83,6 +85,26 @@ test('find_nodes pages the steps a text matches within the cap, in the search\'s
   assert.equal(matched.length, 1111);
   assert.deepEqual(steps, matched.map((index) => line(index, ['label', 'kind', 'state', 'prerequisites', 'unlockCount', 'summary'])));
   t.diagnostic(`find_nodes: ${steps.length} steps in ${pages} pages, the largest ${largest} bytes, in ${elapsed.toFixed(0)} ms (${(elapsed / pages).toFixed(1)} ms a page)`);
+});
+
+test('a roadmap of 10,000 steps is told around its one available step: its counts, that step, then the steps within two links of it both ways', (t) => {
+  const { treeId, nodes, standing, line } = tenThousandSteps();
+  const start = performance.now();
+  const answer = /** @type {any} */ (readContext(standing, { about: treeId }));
+  const elapsed = performance.now() - start;
+  const near = [3000, 2996, 2997, 2998, 2999, 3001, 3002, 3003, 3004];
+  const counted = { total: 10_000, done: 3_000, available: 1, locked: 6_999, unknown: 0 };
+  assert.deepEqual(answer.result, {
+    tree: { id: treeId, title: 'Ten thousand steps', kinds: [], guides: [] },
+    diagnostics: { cycles: 0, dangling: 0, selfEdges: 0, smells: [{ kind: 'empty-legend' }, { kind: 'empty-icon', count: 10_000 }], treeLoops: 0, danglingPointers: 0 },
+    recent: nodes.slice(0, 10).map((node) => ({ id: node.id, label: node.label, at: 1_800_000_000_000 })),
+    counts: { ...counted, byKind: [{ kind: null, ...counted }] },
+    steps: near.map((index) => line(index, STEP_LINE.filter((field) => field !== 'id'))),
+    omitted: 0,
+  });
+  const bytes = jcsBytes(answer.result).length;
+  assert.ok(bytes <= ContextBounds.bytes, `${bytes} bytes`);
+  t.diagnostic(`context: 10,000 steps told in ${bytes} bytes, ${answer.result.steps.length} lines, in ${elapsed.toFixed(0)} ms`);
 });
 
 test('a step that follows 9,999 others with ids at their cap pages its prerequisites in parts, each part costing what it holds', (t) => {

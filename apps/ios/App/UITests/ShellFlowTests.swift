@@ -98,12 +98,13 @@ import XCTest
 
   // Roadmap · iOS 01.1 and 11.22a: the account's roadmap on its Board, Done folded, the switch, Find and the Board's
   // tool live, and New step at the foot.
-  func assertLearnToSailBoard(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+  func assertLearnToSailBoard(_ app: XCUIApplication, subtitle: String = "3 of 8 done", file: StaticString = #filePath,
+                              line: UInt = #line) {
     let locked = app.buttons["roadmap-group-locked"]
     XCTAssertTrue(locked.waitForExistence(timeout: 30), file: file, line: line)
     XCTAssertEqual(app.buttons["room-menu"].label, "Roadmap", file: file, line: line)
     XCTAssertTrue(app.navigationBars["Learn to sail"].exists, file: file, line: line)
-    XCTAssertTrue(app.staticTexts["3 of 8 done"].exists, file: file, line: line)
+    XCTAssertTrue(app.staticTexts[subtitle].waitForExistence(timeout: 5), file: file, line: line)
     let groups = ["upNext", "locked", "done"].map { (group: String) -> String in
       let header = app.buttons["roadmap-group-" + group]
       return "\(header.label) · \(header.value as? String ?? "")"
@@ -139,7 +140,8 @@ import XCTest
     app.terminate()
     app.launchArguments = ["-board", "roadmap-learn-to-sail", "-restore-board", "-server", "https://offline.invalid", "-offline-fixture", "no-network"]
     app.launch()
-    assertLearnToSailBoard(app)
+    // Roadmap · iOS 10.1: with no connection the subtitle joins Offline to the progress.
+    assertLearnToSailBoard(app, subtitle: "3 of 8 done · Offline")
   }
 
   // Roadmap · iOS 02.1 and 02.2: only an Up next row slides right to Complete, a full swipe stops at the button, and the
@@ -334,9 +336,9 @@ import XCTest
     XCTAssertTrue(reset.exists && !complete.exists)
   }
 
-  // Roadmap · iOS 03.7 to 03.9: the … menu holds Open in Graph, View Branch and Delete Step, which asks on the … button
-  // with what the delete costs; answered, the room stands on the Board without the step, and the band's Undo brings it
-  // back. The roadmap's one starting step's menu has no Delete Step.
+  // Roadmap · iOS 03.7 to 03.9: the … menu holds Open in Graph, View Branch, Attach a Roadmap and Delete Step, which asks
+  // on the … button with what the delete costs; answered, the room stands on the Board without the step, and the band's
+  // Undo brings it back. The roadmap's one starting step's menu has no Delete Step.
   func testDeletingAStepFromItsPageAsksThereAndReturnsToTheBoard() {
     let app = launch("roadmap-learn-to-sail", takingUndo: true)
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
@@ -346,8 +348,8 @@ import XCTest
     XCTAssertEqual(more.label, "More")
     more.tap()
     XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["Open in Graph"].exists && app.buttons["View Branch"].exists)
-    for unbuilt in ["Attach a Roadmap", "Copy Link"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
+    XCTAssertTrue(app.buttons["Open in Graph"].exists && app.buttons["View Branch"].exists && app.buttons["Attach a Roadmap"].exists)
+    XCTAssertFalse(app.buttons["Copy Link"].exists)
     confirm.tap()
     XCTAssertTrue(app.staticTexts["Delete Read the wind?"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Removes this step · 1 branch resplices"].exists)
@@ -501,9 +503,9 @@ import XCTest
     let name = stepForm(app, raisedBy: "roadmap-new-step")
     XCTAssertFalse(commit.isEnabled || refusal.exists)
     XCTAssertTrue(app.staticTexts["Lands in Up next"].exists)
-    // The rows whose screens are not built are left out: the form's Roadmap row would read as Kind's does.
+    // A new step's form has no Delete Step; its Roadmap row is driven in RoadmapNestedFlowTests.
     XCTAssertTrue(app.staticTexts["Links"].exists && app.buttons["roadmap-form-add-link"].exists)
-    for unbuilt in ["Roadmap, None", "Delete Step"] { XCTAssertFalse(app.staticTexts[unbuilt].exists || app.buttons[unbuilt].exists) }
+    XCTAssertFalse(app.staticTexts["Delete Step"].exists || app.buttons["Delete Step"].exists)
     name.tap()
     name.typeText("Reef")
     XCTAssertTrue(commit.wait(for: \.isEnabled, toEqual: true, timeout: 5))

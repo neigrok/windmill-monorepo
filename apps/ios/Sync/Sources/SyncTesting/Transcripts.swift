@@ -238,7 +238,8 @@ final class TranscriptDevice {
     }
     let ordinary = try line["lost"]?.asBool() == true ? nil : line["response"]?["body"]?["serverTime"].map { try $0.asInteger() }
     let device = try store.read { try $0.device(rows: true) }
-    differences += offsets.record(device, before: before, readiness: readiness, ordinary: ordinary, reading: reading)
+    differences += offsets.record(device, before: before, readiness: readiness, ordinary: ordinary, reading: reading,
+                                  readinessSchema: readiness.map { _ in Int64(around.registry.version) }, heard: call == "hello")
       .map { "\(place): \($0)" }
     return around.transport.settle() + differences
   }
@@ -255,19 +256,25 @@ final class TranscriptDevice {
 }
 
 // The runtime's readiness exchange is additional to the kernel transcript. Both offset histories are modeled in call
-// order: every actual sample is checked, and only the modeled readiness samples augment the unchanged end fixture.
+// order: every actual sample is checked, and only the modeled readiness samples augment the unchanged end fixture. A
+// readiness hello also records the server's schema (§9.2), which the end fixture takes until a transcript hello hears the
+// server again.
 struct TranscriptOffsets {
   var kernel: [String: ServerOffset]
   var runtime: [String: ServerOffset]
+  var readinessSchema: [String: Int64] = [:]
 
   init(_ device: LoadedDevice) {
     kernel = Dictionary(uniqueKeysWithValues: device.replicas.map { ($0.id, $0.meta.offset) })
     runtime = kernel
   }
 
-  mutating func record(_ device: LoadedDevice, before: ReplicaMeta?, readiness: Int64?, ordinary: Int64?, reading: ClockReading) -> [String] {
+  mutating func record(_ device: LoadedDevice, before: ReplicaMeta?, readiness: Int64?, ordinary: Int64?, reading: ClockReading,
+                       readinessSchema schema: Int64?, heard: Bool) -> [String] {
     var differences: [String] = []
     if let before {
+      if heard { readinessSchema[before.replica] = nil }
+      if let schema { readinessSchema[before.replica] = schema }
       if kernel[before.replica] == nil {
         kernel[before.replica] = ServerOffset(); runtime[before.replica] = ServerOffset()
       }
@@ -303,6 +310,7 @@ struct TranscriptOffsets {
       if meta.offset != ordinary { differences.append("\(meta.replica) ordinary offset samples differ from the unchanged transcript") }
       var augmented = meta
       augmented.offset = actual
+      if let schema = readinessSchema[meta.replica] { augmented.serverSchema = schema }
       row["meta"] = augmented.json
       return .object(row)
     })

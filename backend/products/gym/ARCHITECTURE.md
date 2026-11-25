@@ -79,7 +79,7 @@ refuses every other write: the write rules are the engine's, tested on the real 
 **The sync engine is the writer of gym's training records.** The binding lives in `sync/`: the pure rules and the nine
 commands in `GymRules`, their registry and binding in `GymProduct`, receipts and command books
 through `GymState`, and the stores over gym's tables in `PgGym`.
-`windmill_gym` embeds `gym.registry.json` (version 13, minimum 11), and
+`windmill_gym` embeds `gym.registry.json` (version 14, minimum 11), and
 `platform/infra/SyncProducts` seals it with journal's into the catalog `windmill_server` serves at
 `/v1/sync`. Phones and web write sets, deletions, corrections, routine edits, proposal apply and
 dismiss, renames, notes, weigh-ins and preferences through `/v1/sync`, as the registry and
@@ -1088,7 +1088,7 @@ in-process).
   proposal targets an existing routine and its revision; Coach creates a new routine through its
   separately granted, durable `create_routine` operation. The tools are a second *door on the same
   core*, not a second client of the HTTP API. **Every tool acts as the caller**: the `ToolCaller`'s
-  `UserId` scopes every read and write, exactly as `callerOf(req, auth)` scopes the handlers.
+  `UserId` scopes every read and write, exactly as the caller `SentCaller` reads scopes the handlers.
 - **The refusals are the door's outcomes in words a model can act on**, each naming the tool that
   answers the question it should ask next. The domain's `InvalidTraining` sentence is forwarded
   **verbatim** behind the tool's name, as an `invalid-arguments` failure; a `GymUnavailable` names its

@@ -25,7 +25,11 @@ struct CorpusTests {
     let operation = try input.member("operation").asString()
     if operation == "roadmap" { return try RoadmapTree(replica: input).form }
     if let trees = input["trees"] {
-      let account = RoadmapAccount(try trees.asArray().map(RoadmapTree.init(form:)))
+      let told = try (input["told"]?.asArray() ?? []).map { (row: JSON) throws -> RoadmapAccount.Told in
+        RoadmapAccount.Told(tree: try row.member("tree").asString(),
+                            counts: Counts(done: Int(try row.member("done").asInteger()), total: Int(try row.member("total").asInteger())))
+      }
+      let account = RoadmapAccount(try trees.asArray().map(RoadmapTree.init(form:)), told: told)
       switch operation {
       case "account": return account.form
       case "list": return .array(account.list().map(\.form))

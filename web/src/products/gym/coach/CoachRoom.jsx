@@ -1,17 +1,18 @@
-import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ArrowUpRight, BookOpen, ChevronRight, CircleCheck, History as HistoryIcon, ImageOff, ImagePlus, Plus, Smartphone, Square, WifiOff } from 'lucide-react';
-import { Dialog, Menu } from '../../../design-system/index.js';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { ArrowUpRight, BookOpen, ChevronRight, CircleCheck, History as HistoryIcon, ImageOff, ImagePlus, Plus, Smartphone, Square, WifiOff, X } from 'lucide-react';
+import { Button, Dialog, Menu, useMediaQuery } from '../../../design-system/index.js';
 import { Id } from '../../../platform/domain-kit/entities.js';
 import { useSyncEngine } from '../../../platform/sync/react.js';
 import { CoachThread } from '../domain/coach/conversation.js';
 import { Note } from '../domain/notes.js';
+import { coachStep, useGymApi } from '../gymRuntime.js';
 import { t } from '../i18n/index.js';
 import { COACH_HREF, NEW_ROUTINE_ID, NOTES_HREF, routineHref, shortDayLabel, THREADS_HREF, threadHref, timeLabel } from '../log.js';
 import { useDomainRead } from '../useDomainRead.js';
-import { coachWorkout } from './coach.js';
+import { COACH_TITLE, CoachForm } from './coach.js';
 import { coachTurnsOf } from './coachTurns.js';
-import { conversationView } from './conversations.js';
-import { CoachProposalCard } from './CoachProposal.jsx';
+import { conversationView, holdsUndecidedChange } from './conversations.js';
+import { CoachProposalCard, WorkoutProposalCard } from './CoachProposal.jsx';
 import { dayWords, deleteConversation, HistoryList, useHistoryRows } from './History.jsx';
 import { pictureSource, prepareCoachPicture } from './pictures.js';
 import './coach.css';
@@ -30,25 +31,47 @@ export function useCoachTurns() {
 }
 
 
-// The Coach room (08W): one conversation, or a fresh chat when `threadId` is null, with History beside it on a wide
-// screen. Coach stays closed while a workout is open.
-export function CoachRoom({ log, threadId = null }) {
+// Coach's tab while no account is settled (WD8.3): what Coach does and the shell's sign-in, a door rather than a room. On
+// a narrow screen it stands in the reach band above the tab bar, its Sign in as wide as the column; wider, at the head of
+// the reading column.
+export function CoachDoor({ onSignIn }) {
+  const narrow = useMediaQuery('(max-width: 800px)');
+  return (
+    <section className="gym-coach-door">
+      <h1 className="gym-title">{COACH_TITLE}</h1>
+      <p className="gym-coach-door-line">{t('gym.coach.door.line')}</p>
+      <Button size={narrow ? 'lg' : 'md'} full={narrow} onClick={onSignIn}>{t('gym.coach.door.signIn')}</Button>
+    </section>
+  );
+}
+
+// One conversation as the room or the workout draws it: Coach and what it says now, the conversation's view, History's
+// rows and whether Coach is switched off. A turn taken back with the conversation it opened leaves that conversation for
+// the fresh chat (`leave`).
+function useConversation(log, threadId, leave) {
   const { turns, snapshot } = useCoachTurns();
-  const { rows, ready } = useHistoryRows(log);
-  const notes = useDomainRead((read) => read.repository(Note).all('drawn').length, []);
+  const history = useHistoryRows(log);
   const running = snapshot?.turn ?? null;
   const view = useDomainRead((read) => (threadId ? conversationView(read, threadId, running?.coach ?? null) : null), [threadId, running]);
-  const off = snapshot?.refusal?.state === 'off';
-  const workout = log.phase !== 'ready' || Boolean(log.session);
-  // A turn taken back with the conversation it opened leaves that conversation's address for the fresh chat.
   const withdrawn = snapshot?.withdrawn;
   useEffect(() => {
-    if (withdrawn && withdrawn.thread === null && withdrawn.from.record === threadId) window.location.hash = COACH_HREF;
-  }, [withdrawn, threadId]);
+    if (withdrawn && withdrawn.thread === null && withdrawn.from.record === threadId) leave();
+  }, [withdrawn, threadId, leave]);
+  return { turns, snapshot, view, history, off: snapshot?.refusal?.state === 'off' };
+}
+
+const openThread = (record) => { window.location.hash = threadHref(record); };
+const leaveThread = () => { window.location.hash = COACH_HREF; };
+
+// The Coach room (08W): one conversation, or a fresh chat when `threadId` is null, with History beside it on a wide
+// screen.
+export function CoachRoom({ log, threadId = null }) {
+  const { turns, snapshot, view, history: { rows, ready }, off } = useConversation(log, threadId, leaveThread);
+  const notes = useDomainRead((read) => read.repository(Note).all('drawn').length, []);
 
   return (
     <div className={`gym-coach-room${off ? ' is-off' : ''}`}>
-      <section className={`gym-coach${workout ? ' is-workout' : ''}`}>
+      <section className="gym-coach">
         <header className="gym-coach-head">
           <h1 className="gym-title">{t('gym.coach.title')}</h1>
           {!off && <nav className="gym-coach-doors" aria-label={t('gym.coach.doors')}>
@@ -63,9 +86,9 @@ export function CoachRoom({ log, threadId = null }) {
           </nav>}
         </header>
         <p className="gym-coach-subtitle">{t('gym.coach.subtitle')}</p>
-        {workout ? <WorkoutInProgress log={log} />
-          : off ? <p className="gym-coach-off">{t('gym.coach.access.off')}</p>
-            : <Conversation turns={turns} snapshot={snapshot} view={view} threadId={threadId} movements={log.catalog} greet={!threadId && ready && rows.length === 0} />}
+        {off ? <p className="gym-coach-off">{t('gym.coach.access.off')}</p>
+          : <Conversation turns={turns} snapshot={snapshot} view={view} threadId={threadId} movements={log.catalog}
+            greet={!threadId && ready && rows.length === 0} onOpened={openThread} />}
       </section>
       {!off && <aside className="gym-coach-rail">
         <HistoryList rows={rows} current={threadId} onDelete={(id) => deleteConversation(log, turns, id, id === threadId)} ready={ready} />
@@ -78,23 +101,74 @@ export function CoachRoom({ log, threadId = null }) {
   );
 }
 
-function Conversation({ turns, snapshot, view, threadId, greet, movements }) {
+// Coach over a workout keeps one conversation for the life of the workout page (WD7.1), whichever form shows it, through a
+// flip of the rail's tabs and a resize across a desk and a phone. `enter` is the gesture that shows Coach: the rail's tab
+// shows the conversation it holds, a fresh chat the first time; the phone's sheet opens a fresh chat, as the phones do,
+// unless the conversation it holds still has a turn running or a change to this workout waiting on the person. A fresh
+// chat is told as Coach's new chat at the workout's door, from that gesture alone. `open` takes the conversation a fresh
+// chat's first question opens, or none when its turn is taken back.
+export function useWorkoutConversation(sessionId) {
+  const engine = useSyncEngine();
+  const api = useGymApi();
+  const [held, setHeld] = useState(null);
+  const open = useCallback((thread) => setHeld({ thread }), []);
+  const continues = (thread) => {
+    if (engine && coachTurnsOf(engine).getSnapshot()?.turn?.thread.record === thread) return true;
+    try { return Boolean(api?.read((reader) => holdsUndecidedChange(reader, thread, sessionId))); }
+    catch { return false; }
+  };
+  const enter = (door) => {
+    if (held !== null && (door === 'tab' || (held.thread !== null && continues(held.thread)))) return;
+    setHeld({ thread: null });
+    coachStep('gym_action', { screen: 'coach', action: 'new_chat', door: 'workout', outcome: 'ok' });
+  };
+  return { held: held !== null, thread: held?.thread ?? null, enter, open };
+}
+
+// Coach in its workout form (WD7.1): the conversation the workout page holds, alone, in the workout's rail beside the rack
+// on a desk, and in a sheet over the workout on a phone, under a head of its own: Coach, History and Close. The open workout
+// is part of what Coach reads (gym Coach on the AI service §4.1).
+export function WorkoutCoach({ log, thread, onThread, onClose = null }) {
+  const leave = useCallback(() => onThread(null), [onThread]);
+  const { turns, snapshot, view, history: { rows, ready }, off } = useConversation(log, thread, leave);
+  return (
+    <CoachForm.Provider value="workout">
+      <section className="gym-coach is-workout">
+        {onClose && <header className="gym-coach-sheet-head">
+          <h2>{t('gym.coach.title')}</h2>
+          <span>
+            <a className="gym-coach-sheet-tool" href={THREADS_HREF} aria-label={t('gym.coach.history.open')}><HistoryIcon size={18} aria-hidden="true" /></a>
+            <button type="button" className="gym-coach-sheet-tool" aria-label={t('gym.common.close')} onClick={onClose}><X size={18} aria-hidden="true" /></button>
+          </span>
+        </header>}
+        {off ? <p className="gym-coach-off">{t('gym.coach.access.off')}</p>
+          : <Conversation turns={turns} snapshot={snapshot} view={view} threadId={thread} movements={log.catalog}
+            greet={!thread && ready && rows.length === 0} onOpened={onThread} />}
+      </section>
+    </CoachForm.Provider>
+  );
+}
+
+// The conversation and its composer. `onOpened` takes the conversation a fresh chat's first question opens.
+function Conversation({ turns, snapshot, view, threadId, greet, movements, onOpened }) {
+  const form = useContext(CoachForm);
   const reading = useRef(null);
   const resend = useRef(null);
   const messages = view.data?.messages ?? [];
   const last = messages.at(-1);
-  // The newest words stay in sight: the room scrolls with the gym's page, so the page's scroller follows them.
+  // The newest words stay in sight: the room scrolls with the gym's page and Coach over a workout scrolls its reading alone,
+  // so that scroller follows them.
   useEffect(() => {
-    const scroller = reading.current?.closest('.gym-scroll');
+    const scroller = reading.current?.closest('.gym-coach.is-workout .gym-coach-reading, .gym-scroll');
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
   }, [messages.length, last?.text, snapshot?.live?.text, snapshot?.refusal, snapshot?.fault]);
   return <>
     <div className="gym-coach-reading" ref={reading}>
-      {greet && <Greeting turns={turns} />}
+      {greet && <Greeting turns={turns} onOpened={onOpened} />}
       {threadId && view.phase === 'ready' && view.data === null && <p className="gym-quiet">{t('gym.threads.absent')}</p>}
       <ol className="gym-coach-thread" role="log">
         {messages.map((message, index) => {
-          const stamp = index === 0 || message.at - messages[index - 1].at > 3_600_000;
+          const stamp = form === 'room' && (index === 0 || message.at - messages[index - 1].at > 3_600_000);
           return <React.Fragment key={message.id}>
             {stamp && message.role === 'lifter' && <li className="gym-coach-stamp">{t('gym.coach.when', { day: dayWords(message.at), time: timeLabel(message.at) })}</li>}
             {message.role === 'lifter' ? <LifterMessage message={message} />
@@ -106,13 +180,13 @@ function Conversation({ turns, snapshot, view, threadId, greet, movements }) {
     </div>
     <div className="gym-coach-bottom">
       <Notice snapshot={snapshot} onRetry={() => resend.current?.()} />
-      <Composer turns={turns} snapshot={snapshot} threadId={threadId} resend={resend} />
+      <Composer turns={turns} snapshot={snapshot} threadId={threadId} resend={resend} onOpened={onOpened} />
     </div>
   </>;
 }
 
 // Coach's greeting, which belongs to onboarding: it shows while the person has no conversation at all (08W.24).
-function Greeting({ turns }) {
+function Greeting({ turns, onOpened }) {
   const picker = useRef(null);
   const offers = [
     t('gym.coach.greeting.build', { lead: <strong>{t('gym.coach.greeting.buildName')}</strong> }),
@@ -129,7 +203,7 @@ function Greeting({ turns }) {
           const file = event.target.files?.[0];
           event.target.value = '';
           if (!file || !turns) return;
-          try { await sendPicture(turns, file, null); }
+          try { await sendPicture(turns, file, onOpened); }
           catch (error) { turns.pictureFailed(error); }
         }} />
       <button type="button" className="gym-coach-pill" onClick={() => picker.current?.click()}><ImagePlus size={18} aria-hidden="true" />{t('gym.coach.greeting.addScreenshot')}</button>
@@ -138,11 +212,12 @@ function Greeting({ turns }) {
   </section>;
 }
 
-async function sendPicture(turns, file, threadId) {
+// A picture sent from the greeting, which stands only in a fresh chat: its turn opens a conversation.
+async function sendPicture(turns, file, onOpened) {
   const picture = await prepareCoachPicture(file);
   turns.tells.picture('attached');
-  const turn = await turns.send({ question: '', picture, thread: threadId ? new Id(threadId, CoachThread) : null });
-  if (turn && !threadId) window.location.hash = threadHref(turn.thread.record);
+  const turn = await turns.send({ question: '', picture, thread: null });
+  if (turn) onOpened(turn.thread.record);
 }
 
 function LifterMessage({ message }) {
@@ -181,16 +256,13 @@ function CoachAnswer({ message, live, stopping, catalog, movements }) {
         <ArrowUpRight size={18} aria-hidden="true" />
       </a></li>)}
     </ul>}
-    {message.workoutProposals.map((proposal) => <div key={proposal.id} className="gym-coach-workout-proposal">
-      <Smartphone size={20} aria-hidden="true" />
-      <span><strong>{t('gym.coach.workoutProposal.title')}</strong>{t('gym.coach.workoutProposal.count', { count: proposal.changes })}</span>
-    </div>)}
     {end && <p className="gym-coach-end">{end}</p>}
     {message.answering === 'here'
       ? <p className="gym-coach-steps">{stopping ? t('gym.coach.stopping') : [...new Set(steps)].join(' · ')}</p>
       : message.read && <button type="button" className="gym-coach-receipt-door" onClick={() => setReading(true)}>
         <BookOpen size={16} aria-hidden="true" />{receiptWords(message.read)}<ChevronRight size={16} aria-hidden="true" />
       </button>}
+    {message.workoutProposals.map((id) => <WorkoutProposalCard key={id} id={id} movements={movements} />)}
     {message.proposals.map((id) => <CoachProposalCard key={id} id={id} movements={movements} />)}
     {reading && <WhatCoachRead message={message} catalog={catalog} onClose={() => setReading(false)} />}
   </li>;
@@ -257,22 +329,25 @@ function Notice({ snapshot, onRetry }) {
   }
 }
 
-function Composer({ turns, snapshot, threadId, resend }) {
+// The field and its Send, or Stop while this conversation's turn runs here. A question asked while a turn runs is refused
+// busy, said above the field, and stays in it. Over a workout the field is the board's filled one with a quiet Send (WD7.1).
+function Composer({ turns, snapshot, threadId, resend, onOpened }) {
+  const form = useContext(CoachForm);
   const picker = useRef(null);
   const [picture, setPicture] = useState(null);
   const [preparing, setPreparing] = useState(false);
   const draft = snapshot?.draft ?? '';
   const withdrawn = snapshot?.withdrawn;
   useEffect(() => { if (withdrawn?.picture) setPicture(withdrawn.picture); }, [withdrawn]);
-  const answeringHere = Boolean(snapshot?.turn);
+  const answeringHere = threadId !== null && snapshot?.turn?.thread.record === threadId;
   const closed = ['allowance', 'capacity', 'update', 'sign-in'].includes(snapshot?.refusal?.state);
   const send = async () => {
-    if (!turns || answeringHere || closed || (!draft.trim() && !picture)) return;
+    if (!turns || closed || (!draft.trim() && !picture)) return;
     const sent = picture;
     setPicture(null);
     const turn = await turns.send({ question: draft.trim(), picture: sent, thread: threadId ? new Id(threadId, CoachThread) : null });
     if (!turn) { setPicture(sent); return; }
-    if (!threadId) window.location.hash = threadHref(turn.thread.record);
+    if (!threadId) onOpened(turn.thread.record);
   };
   resend.current = send;
 
@@ -281,7 +356,7 @@ function Composer({ turns, snapshot, threadId, resend }) {
       <img className="gym-coach-picture" src={pictureSource(picture.original)} alt={t('gym.coach.photo.readyAlt')} />
       <button type="button" className="gym-coach-picture-remove" onClick={() => setPicture(null)}>{t('gym.coach.photo.remove')}</button>
     </div>}
-    <div className={`gym-coach-compose${closed ? ' is-closed' : ''}`}>
+    <div className={`gym-coach-compose${closed ? ' is-closed' : ''}${form === 'workout' ? ' is-filled' : ''}`}>
       <input ref={picker} className="gym-visually-hidden" type="file" accept="image/*" tabIndex={-1} aria-label={t('gym.coach.photo.choose')}
         onChange={async (event) => {
           const file = event.target.files?.[0];
@@ -304,37 +379,9 @@ function Composer({ turns, snapshot, threadId, resend }) {
       {answeringHere
         ? <button type="button" className="gym-coach-stop" aria-label={t('gym.coach.stopResponse')} disabled={snapshot.stopping}
           onClick={() => turns.stop()}><Square size={14} aria-hidden="true" fill="currentColor" /></button>
-        : <button type="button" className="gym-coach-send" disabled={closed || preparing || (!draft.trim() && !picture)} onClick={send}>{t('gym.coach.send')}</button>}
+        : form === 'workout'
+          ? <Button variant="secondary" size="sm" disabled={closed || preparing || (!draft.trim() && !picture)} onClick={send}>{t('gym.coach.send')}</Button>
+          : <button type="button" className="gym-coach-send" disabled={closed || preparing || (!draft.trim() && !picture)} onClick={send}>{t('gym.coach.send')}</button>}
     </div>
   </>;
-}
-
-export function WorkoutInProgress({ log }) {
-  const [showWorkout, setShowWorkout] = useState(false);
-  const mirror = useRef(null);
-  if (log.phase !== 'ready' || !log.session) return <p className="gym-quiet">{t('gym.coach.openingConversation')}</p>;
-  const workout = coachWorkout(log.session, log.sets, log.catalog);
-  const viewWorkout = () => {
-    setShowWorkout(true);
-    requestAnimationFrame(() => { mirror.current?.scrollIntoView({ block: 'start' }); mirror.current?.focus({ preventScroll: true }); });
-  };
-  return <div className={`gym-coach-workout${showWorkout ? ' is-expanded' : ''}`}>
-    <section className="gym-coach-workout-card" aria-label={t('gym.coach.workoutInProgress')}>
-      <p className="gym-coach-workout-kicker">{t('gym.coach.workoutInProgress')}</p>
-      <p>{t('gym.coach.workoutOnPhone')}</p>
-      <p className="gym-coach-workout-meta">{t('gym.coach.workoutMeta', { name: workout.name, started: <span>{workout.started}</span>, count: workout.count })}</p>
-      <div className="gym-coach-workout-doors"><button type="button" onClick={viewWorkout}>{t('gym.coach.viewWorkout')}</button><a href={NOTES_HREF}>{t('gym.coach.notesDoor')}</a></div>
-      <p className="gym-coach-workout-meta">{t('gym.coach.notesWhileTraining')}</p>
-    </section>
-    <section className="gym-coach-workout-mirror" ref={mirror} tabIndex={-1} aria-label={t('gym.coach.liveWorkout')}>
-      <header><span>{t('gym.coach.workoutHead', { name: workout.name })}</span><span>{workout.progress}</span></header>
-      {workout.groups.map((group) => <div className="gym-coach-mirror-movement" key={group.id}>
-        <div className="gym-coach-mirror-heading"><div><h2>{group.name}</h2>{group.scheme && <p>{group.scheme}</p>}</div>
-          {group.id !== workout.active && <span className="gym-coach-mirror-rail" aria-label={t('gym.coach.mirrorSets', { count: group.rows.length })}>{group.rows.map((row) => <i key={row.key} className={`is-${row.kind}`} />)}</span>}
-        </div>
-        {group.id === workout.active && <ul>{group.rows.map((row, index) => <li key={row.key} aria-label={row.spoken} className={`is-${row.kind}${row.kind === 'target' && group.rows[index - 1]?.kind !== 'target' ? ' is-next' : ''}`}><i aria-hidden="true" /><span>{row.label}</span></li>)}</ul>}
-      </div>)}
-      <p className="gym-coach-workout-meta">{t('gym.coach.mirrorNote')}</p>
-    </section>
-  </div>;
 }

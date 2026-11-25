@@ -93,22 +93,26 @@ bool PgOAuthRepository::insertCode(const std::string& codeDigest, const StoredCo
   if (session.empty()) return false;
   txn.exec_params(
       "INSERT INTO oauth_codes (code_hash, client_id, user_id, redirect_uri, code_challenge, "
-      "resource, scope, expires_ms, account_generation) VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8, $9)",
+      "resource, scope, expires_ms, account_generation, session_hash) VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10)",
       codeDigest, code.clientId, code.user.str(), code.redirectUri, code.codeChallenge, code.resource,
-      code.scope, static_cast<long long>(code.expiresAt), account[0][0].as<std::uint64_t>());
+      code.scope, static_cast<long long>(code.expiresAt), account[0][0].as<std::uint64_t>(), sessionDigest);
   txn.commit();
   return true;
 }
 
-std::optional<StoredCode> PgOAuthRepository::takeCode(const std::string& codeDigest) {
+std::optional<StoredCode> PgOAuthRepository::takeCode(const std::string& codeDigest, UnixMs now) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  // The code is spent whatever its session's state; the session is read in the statement that spends it. A code from
+  // before codes named their session names none, and is spent for nothing.
   pqxx::result rows = txn.exec_params(
-      "DELETE FROM oauth_codes WHERE code_hash = $1 "
-      "RETURNING client_id, user_id::text, redirect_uri, code_challenge, resource, scope, expires_ms, account_generation",
-      codeDigest);
+      "DELETE FROM oauth_codes c WHERE c.code_hash = $1 "
+      "RETURNING c.client_id, c.user_id::text, c.redirect_uri, c.code_challenge, c.resource, c.scope, c.expires_ms, "
+      "c.account_generation, EXISTS (SELECT 1 FROM sessions s WHERE s.token_hash = c.session_hash "
+      "AND s.user_id = c.user_id AND s.expires_ms > $2) AS session_live",
+      codeDigest, static_cast<long long>(now));
   txn.commit();
-  if (rows.empty()) return std::nullopt;
+  if (rows.empty() || !rows[0]["session_live"].as<bool>()) return std::nullopt;
   const auto& row = rows[0];
   return StoredCode{row["client_id"].as<std::string>(), UserId{row["user_id"].as<std::string>()},
                     row["redirect_uri"].as<std::string>(), row["code_challenge"].as<std::string>(),

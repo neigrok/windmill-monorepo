@@ -135,11 +135,8 @@ export const STORE_VERSION = 3;
 export class IndexedDBStore {
   constructor(database, keyRange) {
     this.database = database;
+    // Its IndexedDB version, which the tabs sharing it lead and talk under (engine.md §7.8).
     this.version = database.version;
-    // The name the tabs sharing this store lead and talk under (engine.md §7.8): every tab of its version.
-    this.coordination = database.version;
-    // It keeps the device past the page, until the browser clears it.
-    this.durable = true;
     this.generationRows = (generation) => keyRange.bound([generation], [generation, []]);
     this.closed = false;
     this.controls = null;

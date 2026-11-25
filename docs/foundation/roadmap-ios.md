@@ -368,24 +368,26 @@ makes it false.
   orders them, narrows them to the kinds a person picks or to a step's branch, and selects several steps to recolor or
   delete, each as one gesture with its Undo; New Step at a roadmap's cap of steps is refused where it is tapped; and a
   roadmap's kinds are added, named, described, recolored and removed in the Kinds sheet, from the title menu and from
-  the step form's *Edit Kinds*. The step form sets a step's name, description and kind, what it requires, what it opens
-  and the links it shares, and has no *Roadmap* row or Coach composer. A step's page holds the person's workspace of
+  the step form's *Edit Kinds*. The step form sets a step's name, description and kind, what it requires, what it opens,
+  the links it shares and the roadmap it opens, and has no Coach composer. A step's page holds the person's workspace of
   it, subtasks, a note and links read live from their overlay on the phone's copy, each written by an act of the
-  domain, and its History, and has no *Open Roadmap*, and its menu has no *Attach a Roadmap*, nor *Copy Link* but on a
-  reader's cover; the note's
-  field sets bold and italic alone, from the system's Format menu on iOS 26. The title menu's *Activity* and a step's
+  domain, and its History, and its menu has no *Copy Link* but on a reader's cover; the note's
+  field sets bold and italic alone, from the system's Format menu on iOS 26. A reader's cover shows what a step's
+  subtree has come to and does not go into it. The title menu's *Activity* and a step's
   *History* are the domain's read of the phone's copy (§3), and its *Guide* reads the roadmap's guide with the guides of
   the roadmaps above it, and writes the guide from one draft; the title menu has no *Share…* or *Export*, and All
   Roadmaps has no gallery. The foot's + held offers Paste Steps (§7.2). The shell's sign-in question names the roadmaps
   made signed out and its sign-out question counts roadmap's unconfirmed changes; neither names Coach's conversations.
   An Undo that brings
-  nothing back says so in the band. The Graph draws the picture, pans and zooms it, selects a step and opens its page,
+  nothing back says so in the band. The bar's subtitle joins *Offline* to the progress while the phone has no connection;
+  a change of the person's that met one made elsewhere, a step that now follows something else or one brought back, is
+  told once by the band, whose *Show* opens the step's page, and by that page's footer; and the changes that could not
+  land are listed in *Set Aside*, from the title menu's first row, with *Copy*, *Discard* and *Discard All*. The Graph draws the picture, pans and zooms it, selects a step and opens its page,
   lists the Up next steps under *Next*, brings the one chosen there or by *Open in Graph* into view, and shows the whole
   roadmap alone under
-  *Fit*; it has no Find, no mark on a step that opens a roadmap, and draws no proposal; no Coach is built. A roadmap's
-  link opens the room in Debug builds alone, whose entitlements claim the site's addresses: Release's entitlements and
-  the App ID carry no associated domain. A shared roadmap's cover reads no subtree's progress, so a step that owns one
-  stands as the domain reads it with that subtree unread. The app's onboarding says roadmap is on the web.
+  *Fit*; it has no Find and draws no proposal; no Coach is built. A roadmap's link opens the room in Debug builds alone,
+  whose entitlements claim the site's addresses: Release's entitlements and the App ID carry no associated domain. The
+  app's onboarding says roadmap is on the web.
 - `RoadmapDomain` holds the pure reads, the entities, the rule book, the replica read and every action of the
   room, of a roadmap, its steps, kinds, progress and workspace and of what a device tells once, plays every Undo scene,
   and holds the plan grammar's read, its planting and grafting and its writer (`RoadmapDomain/Plan/`), held to every
@@ -416,8 +418,9 @@ makes it false.
   Paste Steps' *Add* with one *Undo*; of a roadmap's kinds `CreateKind`, `ChangeKind` and `RecolourKind`, of which it keeps
   none, and `DeleteKind`, which the engine does not hold, with *Undo* for six seconds; and of a step's workspace
   `ChangeSubtask`, with *Undo* of a subtask checked, `DeleteSubtask` and `DeleteStepLink`, each held with *Undo*, and
-  `AddSubtask`, `AddStepLink` and the note's draft save, `SaveStepNote`, of which it keeps none. Every other action of
-  the domain has no door in the room: `MoveKind`, `MoveStep`, a subtask's or a link's change of words and its move
+  `AddSubtask`, `AddStepLink` and the note's draft save, `SaveStepNote`, of which it keeps none; and `PointStep`, a roadmap
+  attached to a step, changed and detached on its page, each with *Undo*, or set in the step form's one save. Every other
+  action of the domain has no door in the room: `MoveKind`, `MoveStep`, a subtask's or a link's change of words and its move
   among them.
 - Roadmaps that hold `unlisted` are not moved to private (R-9).
 

@@ -8,6 +8,12 @@
 
 namespace wm {
 
+void TreeUpgradeGate::doFilter(const drogon::HttpRequestPtr& req, drogon::FilterCallback&& refuse, drogon::FilterChainCallback&& pass) {
+  if (!collab()) return pass();
+  if (const std::optional<drogon::HttpResponsePtr> refusal = collab()->admit(req)) return refuse(*refusal);
+  pass();
+}
+
 void TreeSocket::handleNewConnection(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn) {
   if (collab()) collab()->onOpen(req, conn);
 }

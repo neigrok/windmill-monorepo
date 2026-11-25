@@ -209,5 +209,479 @@
         "danglingPointers": []
       }
     }
+  },
+  {
+    "case": "steps after a removed step are no masked work: neither its links nor those of a step under a delete the person can still undo are listed",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "⚓",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": false,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Rig the boat",
+              "icon": "🪢",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tack",
+              "icon": "⛵",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Gybe",
+              "icon": "⛵",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "h",
+              "present": false,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Heave to",
+              "icon": "⛵",
+              "color": "terracotta",
+              "ord": "a4",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "e",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Reef the sails",
+              "icon": "🪢",
+              "color": "olive",
+              "ord": "a5",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "b",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "d",
+              "present": true
+            },
+            {
+              "from": "c",
+              "to": "h",
+              "present": true
+            },
+            {
+              "from": "h",
+              "to": "e",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [],
+          "pointers": []
+        }
+      ],
+      "held": [
+        {
+          "tree": "t_0000000000000001",
+          "step": "h"
+        }
+      ]
+    },
+    "call": {
+      "name": "get_diagnostics",
+      "input": {
+        "treeId": "t_0000000000000001"
+      }
+    },
+    "expect": {
+      "result": {
+        "cycles": [],
+        "dangling": [],
+        "selfEdges": [],
+        "smells": [],
+        "treeLoops": [],
+        "danglingPointers": []
+      }
+    }
+  },
+  {
+    "case": "a step whose roadmap leads back is a loop of roadmaps the device holds, a step opening a removed roadmap dangles, and one opening a roadmap the device does not hold is neither",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "p",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail to the island",
+              "icon": "⛵",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Race the regatta",
+              "icon": "⛵",
+              "color": "terracotta",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "u",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Cross the channel",
+              "icon": "⛵",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [],
+          "pointers": [
+            {
+              "node": "p",
+              "present": true,
+              "opens": "t_0000000000000002"
+            },
+            {
+              "node": "d",
+              "present": true,
+              "opens": "t_0000000000000004"
+            },
+            {
+              "node": "u",
+              "present": true,
+              "opens": "t_0000000000000009"
+            }
+          ]
+        },
+        {
+          "id": "t_0000000000000002",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Navigate",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000002",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "q",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Plan the passage",
+              "icon": "🧭",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [],
+          "pointers": [
+            {
+              "node": "q",
+              "present": true,
+              "opens": "t_0000000000000001"
+            }
+          ]
+        },
+        {
+          "id": "t_0000000000000004",
+          "present": false,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Old plans",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000004",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [],
+          "edges": [],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "call": {
+      "name": "get_diagnostics",
+      "input": {
+        "treeId": "t_0000000000000001"
+      }
+    },
+    "expect": {
+      "result": {
+        "cycles": [],
+        "dangling": [],
+        "selfEdges": [],
+        "smells": [],
+        "treeLoops": [
+          {
+            "node": "p",
+            "path": [
+              {
+                "treeId": "t_0000000000000002",
+                "title": "Navigate"
+              },
+              {
+                "treeId": "t_0000000000000001",
+                "title": "Learn to sail"
+              }
+            ]
+          }
+        ],
+        "danglingPointers": [
+          {
+            "node": "d",
+            "treeId": "t_0000000000000004"
+          }
+        ]
+      }
+    }
   }
 ]

@@ -49,7 +49,6 @@ jobs:
     uses: ./.github/workflows/ios-ui-tests.yml
     with:
       shard: nightly
-      timeout: 75
       nightly: true
       tests: >-
         -only-testing:WindmillUITests/NightlyFlowTests

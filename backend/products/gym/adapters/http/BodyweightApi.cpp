@@ -16,7 +16,7 @@ BodyweightApi::BodyweightApi(std::shared_ptr<BodyweightRepository> bodyweight,
 // `latest` is the account's newest day whatever the window asked for, so one windowed read draws
 // both the chart and the reading at the head of the log.
 void BodyweightApi::listEntries(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;

@@ -277,17 +277,19 @@ async function run() {
       await phone.commit('self/gym', [], { cmd: { name: 'gym.start', args: { id: 'ses_fixture_phone', routineId: 'rt_fixture_main', startedAt: phoneStart, joinOpenSession: true } },
         predict: [{ op: 'create', t: 'session', id: 'ses_fixture_phone', f: { startedAt: phoneStart } }] });
       await pushFromPhone();
-      await page.locator('.gym-mirror-head').filter({ hasText: 'Training now' }).waitFor(); e2e++;
-      assert.equal(await page.locator('.gym-mirror button').count(), 0, 'mirror must never control a live workout');
+      // The phone's workout is the account's open workout: the bar stands for it, and its page continues it here.
+      await page.locator('.gym-live-bar').waitFor(); e2e++;
+      assert.equal(await page.getByRole('button', { name: 'Start', exact: true }).count(), 0, 'no start beside the account’s open workout');
+      await page.locator('.gym-live-bar').click();
       await phone.commit('self/gym', [{ op: 'create', t: 'set', id: 'set_fixture_phone', f: { sessionId: 'ses_fixture_phone', exerciseId: 'back-squat',
         weightKg: 92.5, reps: 5, rpe: null, note: '', completedAt: Date.now() - 5000 } }]);
       await pushFromPhone();
-      await page.locator('.gym-mirror-line').filter({ hasText: '92.5 × 5' }).waitFor(); e2e++;
+      await page.locator('.gym-live-row.is-logged .gym-live-reading').filter({ hasText: '92.5 × 5' }).waitFor(); e2e++;
       const phoneFinish = Date.now() - 1000;
       await phone.commit('self/gym', [], { cmd: { name: 'gym.finish', args: { sessionId: 'ses_fixture_phone', finishedAt: phoneFinish } },
         predict: [{ op: 'update', t: 'session', id: 'ses_fixture_phone', f: { finishedAt: phoneFinish } }] });
       await pushFromPhone();
-      await page.locator('.gym-mirror').waitFor({ state: 'detached' }); e2e++;
+      await page.locator('.gym-live-hand').waitFor({ state: 'detached' }); e2e++;
 
       await goto('#/gym/routines/rt_fixture_main');
       await page.getByRole('textbox', { name: 'Routine name', exact: true }).fill('Fixture Web Edited');
@@ -443,7 +445,7 @@ async function run() {
       await page.getByRole('link', { name: 'Fixture Web Edited', exact: false }).first().waitFor();
       assert.ok(await page.getByRole('status').filter({ hasText: 'Offline.' }).count()); e2e++;
       assert.deepEqual(pageErrors, []);
-      assert.deepEqual(gymRequests.filter((request) => request !== 'GET /v1/gym/threads'), [], 'web mirror and engine writes must use no replaced REST door');
+      assert.deepEqual(gymRequests.filter((request) => request !== 'GET /v1/gym/threads'), [], 'the web’s training room and engine writes must use no replaced REST door');
       await context.close();
       console.log(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 13, pending: 0, persistedGymOperations: 7, syncWriteLog: true, ports: [backendPort, webPort] }));
     }

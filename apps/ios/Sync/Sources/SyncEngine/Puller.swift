@@ -275,6 +275,9 @@ package actor Puller {
       }
       guard let applied else { return .again }
       replica = applied.replica
+      // §7.5 step 1: an epoch the replica did not hold wakes the sender, for a slot that waited for one and for the
+      // entries an epoch change returned to ready.
+      if case .epoch(let epoch) = step, meta.serverEpoch?.utf8.elementsEqual(epoch.utf8) != true { core.wakes.sender.kick() }
       guard case .page(let page, _, let chunk) = step else { continue }
       let took = applied.outcome == nil || applied.outcome == .applied ? chunk.rows.count : 0
       core.slices.withLock { $0.record(.chunk(page.scope), took: took, held: held) }

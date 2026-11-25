@@ -82,10 +82,11 @@ export function loggedRefusal(movement, subject) {
   return GymRefusals.ofRefused(new Refused('plan-logged', subject, { exerciseId: movement.json }, 'predicted'));
 }
 
-// One edit of the plan. It names the entry it edits by `index`, a planned set of that entry by `set`, and the movement it
-// brings into the plan by `movement`; the plan checks each name before the edit changes its lines.
+// One edit of the plan, of its `kind`. It names the entry it edits by `index`, a planned set of that entry by `set`, and the
+// movement it brings into the plan by `movement`; the plan checks each name before the edit changes its lines.
 /**
- * @typedef {{ index: number | null, set: number | null, movement: ExerciseId | null,
+ * @typedef {{ kind: 'retarget' | 'addSet' | 'removeSet' | 'swap' | 'addMovement' | 'removeMovement' | 'setRest',
+ *   index: number | null, set: number | null, movement: ExerciseId | null,
  *   changed: (lines: readonly PlanLine[], catalogue: Catalogue) => readonly PlanLine[] }} PlanOperation
  */
 
@@ -94,22 +95,22 @@ function rewriting(lines, index, edit) { return lines.map((line, at) => at === i
 
 export const PlanOperations = Object.freeze({
   /** @param {number} index @param {number} set @param {SetTarget} target @returns {PlanOperation} */
-  retarget: (index, set, target) => Object.freeze({ index, set, movement: null,
+  retarget: (index, set, target) => Object.freeze({ kind: 'retarget', index, set, movement: null,
     changed: (lines) => rewriting(lines, index, (entry) => new RoutineEntry(entry.exerciseId,
       (entry.sets ?? []).map((planned, at) => at === set ? target : planned), entry.restSeconds)) }),
   /** @param {number} index @returns {PlanOperation} */
-  addSet: (index) => Object.freeze({ index, set: null, movement: null,
+  addSet: (index) => Object.freeze({ kind: 'addSet', index, set: null, movement: null,
     changed: (lines) => rewriting(lines, index, (entry) => new RoutineEntry(entry.exerciseId,
       [...entry.sets ?? [], entry.sets?.at(-1) ?? new SetTarget()], entry.restSeconds)) }),
   /** @param {number} index @param {number} set @returns {PlanOperation} */
-  removeSet: (index, set) => Object.freeze({ index, set, movement: null,
+  removeSet: (index, set) => Object.freeze({ kind: 'removeSet', index, set, movement: null,
     changed: (lines) => rewriting(lines, index, (entry) => {
       const sets = (entry.sets ?? []).filter((_, at) => at !== set);
       return new RoutineEntry(entry.exerciseId, sets.length === 0 ? null : sets, entry.restSeconds);
     }) }),
   // A movement in another's place keeps its planned sets and rest; its loads stand only where both read in the same unit.
   /** @param {number} index @param {ExerciseId} exerciseId @returns {PlanOperation} */
-  swap: (index, exerciseId) => Object.freeze({ index, set: null, movement: exerciseId,
+  swap: (index, exerciseId) => Object.freeze({ kind: 'swap', index, set: null, movement: exerciseId,
     changed: (lines, catalogue) => rewriting(lines, index, (entry) => {
       /** @param {ExerciseId} id */
       const unit = (id) => {
@@ -120,13 +121,13 @@ export const PlanOperations = Object.freeze({
         : entry.sets?.map((target) => new SetTarget(target.reps, null)) ?? null, entry.restSeconds);
     }) }),
   /** @param {ExerciseId} exerciseId @returns {PlanOperation} */
-  addMovement: (exerciseId) => Object.freeze({ index: null, set: null, movement: exerciseId,
+  addMovement: (exerciseId) => Object.freeze({ kind: 'addMovement', index: null, set: null, movement: exerciseId,
     changed: (lines) => [...lines, { entry: new RoutineEntry(exerciseId), written: true }] }),
   /** @param {number} index @returns {PlanOperation} */
-  removeMovement: (index) => Object.freeze({ index, set: null, movement: null,
+  removeMovement: (index) => Object.freeze({ kind: 'removeMovement', index, set: null, movement: null,
     changed: (lines) => lines.filter((_, at) => at !== index) }),
   /** @param {number} index @param {number | null} restSeconds @returns {PlanOperation} */
-  setRest: (index, restSeconds) => Object.freeze({ index, set: null, movement: null,
+  setRest: (index, restSeconds) => Object.freeze({ kind: 'setRest', index, set: null, movement: null,
     changed: (lines) => rewriting(lines, index, (entry) => new RoutineEntry(entry.exerciseId, entry.sets, restSeconds)) }),
 });
 

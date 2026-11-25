@@ -1,6 +1,7 @@
 #include "platform/adapters/http/AccessLog.h"
 #include "platform/adapters/http/JsonReply.h"
 #include "platform/adapters/http/WriteRoutes.h"
+#include "platform/ai_passes/AiPassApi.h"
 
 #include "test/testing.h"
 
@@ -47,6 +48,11 @@ TEST(access_log_reads_an_expected_5xx_refusal_as_a_warning_and_keeps_failures_er
   CHECK(accessSeverity(unrouted, answer(drogon::k503ServiceUnavailable, "unavailable")) == Severity::warn);
   CHECK(accessSeverity(unrouted, answer(drogon::k503ServiceUnavailable, "anonymous_ai_unavailable")) == Severity::error);
   CHECK(accessSeverity(written("ai.installation.issue"), answer(drogon::k503ServiceUnavailable, "ai_accounting_unavailable")) == Severity::error);
+  // A route's own policy names the 503s it expects, as the pass door's does.
+  const auto pass = request(drogon::Post, "/v1/test/access");
+  beginWriteRequest(pass, {"/v1/test/access", "ai.pass.sign", "platform", "rest", {drogon::Post}, false, kAiPassRoutePolicy});
+  CHECK(accessSeverity(pass, answer(drogon::k503ServiceUnavailable, "anonymous_ai_unavailable")) == Severity::warn);
+  CHECK(accessSeverity(pass, answer(drogon::k503ServiceUnavailable, "ai_accounting_unavailable")) == Severity::error);
   CHECK(accessSeverity(unrouted, answer(drogon::k500InternalServerError, "unavailable")) == Severity::error);
   CHECK(accessSeverity(unrouted, answer(drogon::k502BadGateway, "")) == Severity::error);
   CHECK(accessSeverity(unrouted, answer(drogon::k404NotFound, "not_found")) == Severity::warn);

@@ -2,6 +2,7 @@
 
 #include <drogon/HttpAppFramework.h>
 #include <drogon/WebSocketController.h>
+#include <drogon/utils/Utilities.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -20,7 +21,9 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <vector>
 
 namespace wm::test {
 
@@ -66,6 +69,51 @@ public:
     auto response = drogon::HttpResponse::newHttpResponse();
     response->setStatusCode(drogon::k204NoContent);
     return response;
+  }
+
+  // The request Drogon parses from `method target`, `fields`, each a whole field line, and `body`, sent on a connection of
+  // its own. It travels under /loopback, a path no route a test registers on the app answers, so the loopback hands it
+  // over, and it carries its own path.
+  static drogon::HttpRequestPtr received(std::string_view method, const std::string& target, const std::vector<std::string>& fields,
+                                         std::string_view body = "") {
+    constexpr std::string_view under = "/loopback";
+    std::string bytes = std::string(method) + " " + std::string(under) + target + " HTTP/1.1\r\n";
+    for (const std::string& field : fields) bytes += field + "\r\n";
+    bytes += "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n" + std::string(body);
+    Connection connection;
+    Exchange exchange = connection.exchange(bytes);
+    if (!exchange.request) throw std::runtime_error("Drogon answered the request without handing it over: " + exchange.answer);
+    exchange.request->setPath(exchange.request->path().substr(under.size()));
+    return exchange.request;
+  }
+
+  // The request Drogon parses from `built`, one a test assembled: its method, path, query, every header field, its cookies
+  // on one Cookie line, its JSON, form, text or PNG content type, its body, and, when it has no body, its parameters. Every
+  // door reads a request's credentials from the lines it was received with, which only a request Drogon parsed carries;
+  // one it parsed already is answered as it is.
+  static drogon::HttpRequestPtr received(const drogon::HttpRequestPtr& built) {
+    if (!built->headerOccurrences().empty()) return built;
+    std::string target = built->path().empty() ? "/" : built->path();
+    std::string query = built->query();
+    // A built request with a body reads that body as form parameters, so only a bodiless one's parameters are its own.
+    if (built->body().empty())
+      for (const auto& [name, value] : built->getParameters())
+        query += (query.empty() ? "" : "&") + drogon::utils::urlEncodeComponent(name) + "=" + drogon::utils::urlEncodeComponent(value);
+    if (!query.empty()) target += "?" + query;
+    std::vector<std::string> fields;
+    if (built->getHeader("host").empty()) fields.push_back("Host: localhost");
+    for (const auto& [name, value] : built->headers())
+      if (name != "content-length") fields.push_back(name + ": " + value);
+    std::string cookies;
+    for (const auto& [name, value] : built->cookies()) cookies += (cookies.empty() ? "" : "; ") + name + "=" + value;
+    if (!cookies.empty()) fields.push_back("Cookie: " + cookies);
+    if (built->getHeader("content-type").empty()) {
+      if (built->contentType() == drogon::CT_APPLICATION_JSON) fields.push_back("Content-Type: application/json");
+      if (built->contentType() == drogon::CT_APPLICATION_X_FORM) fields.push_back("Content-Type: application/x-www-form-urlencoded");
+      if (built->contentType() == drogon::CT_TEXT_PLAIN) fields.push_back("Content-Type: text/plain");
+      if (built->contentType() == drogon::CT_IMAGE_PNG) fields.push_back("Content-Type: image/png");
+    }
+    return received(built->methodString(), target, fields, built->body());
   }
 
   // One client connection, kept alive across the requests sent on it. A read waits at most 30 s for its next bytes.

@@ -7,7 +7,7 @@ import { CONSTANTS } from '../core/constants.js';
 import { admit } from '../server/admit.js';
 import { ServerState } from '../server/state.js';
 import { EffectPlanProduct } from './effect-plan.js';
-import { overlayScope, product, productScope, registry, row, serverState, st, treeScope, vector } from './fixtures.js';
+import { OTHER, overlayScope, product, productScope, registry, row, serverState, st, treeScope, vector } from './fixtures.js';
 
 const NOW = 1_000_000;
 const A = { kind: 'replica', account: 'A', replica: 'rp_0000000000000000000000000000000a', n: 1 };
@@ -21,9 +21,11 @@ function admitted(name, state, intent) {
   return vector(name, { state, origin: A, intent, serverNow: NOW }, { result: outcome.result, state: outcome.state.toJSON() });
 }
 
+const ALIVE_LINK = row({ t: 'link', id: ['oak', 'elm'], life: ['alive', st(5000)], f: { strength: [3, st(5000)] }, seq: 5 });
+
 // A's product scope with a card, A's tree with a tag, a dead tag, a link and a meta, and A's overlay with a
 // mark, all at known stamps and sequences.
-function world() {
+function world(link = ALIVE_LINK) {
   return serverState({
     scopes: { 'acct:A/probe': productScope('A'), [`tree:${BOARD}`]: treeScope('A', BOARD), [`acct:A/overlay/${BOARD}`]: overlayScope('A', BOARD) },
     rows: {
@@ -35,7 +37,7 @@ function world() {
         row({ t: 'meta', id: 'meta', f: { title: ['Grown', st(5000)] }, seq: 4 }),
         row({ t: 'tag', id: 'oak', born: st(3000), life: ['alive', st(3000)], f: { label: ['Oak', st(3000)] }, seq: 2 }),
         row({ t: 'tag', id: 'elm', born: st(3100), life: ['dead', st(5000)], f: { label: ['Elm', st(3100)] }, seq: 3 }),
-        row({ t: 'link', id: ['oak', 'elm'], life: ['alive', st(5000)], f: { strength: [3, st(5000)] }, seq: 5 }),
+        link,
       ],
       [`acct:A/overlay/${BOARD}`]: [row({ t: 'mark', id: 'oak', x: { memo: { text: 'mine', rev: 2, merged: false } }, seq: 2 })],
     },
@@ -96,8 +98,40 @@ function creations() {
   return [deleted, rowMoved, changed, absent, present, stillUnset, otherBirth, nowSet];
 }
 
+// A keyed record keeps no field once dead (§6.10 G1): a life operation that brings it back alive carries the values its
+// preimage read and writes them with the life, under the server stamp; one that skips writes none of them, and one that
+// finds the record alive leaves its fields as another device wrote them.
+function keyedRevivals() {
+  const dead = world(row({ t: 'link', id: ['oak', 'elm'], life: ['dead', st(5000)], seq: 5 }));
+  const revive = (expected) => restore(`tree/${BOARD}`, 'probe.restoreTree', [
+    { kind: 'field', t: 'link', id: ['oak', 'elm'], slot: { kind: 'life' }, expected, before: 'alive', values: { f: { strength: 3 } } }]);
+  const linkOf = (sample) => sample.expect.state.rows[`tree:${BOARD}`].find((stored) => stored.t === 'link');
+  const back = admitted('a keyed record brought back alive takes back the values its restore carries', dead, revive(stamp(5000)));
+  assert.deepEqual(back.expect.result.detail.command.inverse.outcomes, [{ index: 0, s: 'applied' }]);
+  assert.deepEqual([linkOf(back).life[0], linkOf(back).f], ['alive', { strength: [3, linkOf(back).life[1]] }]);
+  const moved = admitted('a keyed record\'s life that moved since skips, and writes none of the values', dead, revive(stamp(4000)));
+  assert.deepEqual(moved.expect.result.detail.command.inverse.outcomes, [{ index: 0, s: 'skipped', code: 'version-changed' }]);
+  assert.deepEqual(linkOf(moved), linkOf({ expect: { state: dead } }));
+  const theirs = world(row({ t: 'link', id: ['oak', 'elm'], life: ['alive', st(5000)], f: { strength: [9, st(8000, 0, OTHER)] }, seq: 5 }));
+  const kept = admitted('a keyed record found alive at its life\'s version keeps the fields another device wrote: the values write nothing',
+    theirs, revive(stamp(5000)));
+  assert.deepEqual(kept.expect.result.detail.command.inverse.outcomes, [{ index: 0, s: 'applied' }]);
+  assert.deepEqual(linkOf(kept).f, { strength: [9, st(8000, 0, OTHER)] });
+  return [back, moved, kept];
+}
+
 function malformed() {
+  const linkLife = (before, values) => ({ kind: 'field', t: 'link', id: ['oak', 'elm'], slot: { kind: 'life' }, expected: stamp(5000), before, values });
   return [
+    ['values beside a field', [{ ...cardTitle(stamp(5000)), values: { f: { title: 'New' } } }]],
+    ['values beside a revivable record\'s life', [{ kind: 'field', t: 'tag', id: 'elm', slot: { kind: 'life' }, expected: stamp(5000), before: 'alive', values: { f: { label: 'Elm' } } }]],
+    ['values beside a life it takes away', [linkLife('dead', { f: { strength: 3 } })]],
+    ['values of a field its type does not hold', [linkLife('alive', { f: { weight: 3 } })]],
+    ['values off their domain', [linkLife('alive', { f: { strength: 12 } })]],
+    ...[['a number', 3], ['null', null], ['an array', []]].map(([what, f]) => [`values whose fields are ${what}`, [linkLife('alive', { f })]]),
+    ['values whose texts are a boolean', [linkLife('alive', { x: true })]],
+    ['a create whose fields are a number', [{ kind: 'createRecord', t: 'card', id: 'card0002', values: { f: 3 } }]],
+    ['a create whose texts are a boolean', [{ kind: 'createRecord', t: 'card', id: 'card0002', values: { x: true } }]],
     ['born, which nothing restores', [{ kind: 'field', t: 'card', id: 'card0001', slot: { kind: 'born' }, expected: stamp(2000), before: 'alive' }]],
     ['a governing record', [{ kind: 'createdRecord', t: 'board', id: BOARD, rowSeq: 1, footprint: [{ slot: { kind: 'born' }, version: stamp(1000) }] }]],
     ['the life of a record no write brings back', [{ kind: 'field', t: 'card', id: 'card0001', slot: { kind: 'life' }, expected: stamp(2000), before: 'alive' }]],
@@ -148,5 +182,5 @@ function unbranch() {
 }
 
 export function files() {
-  return { 'admit/restore.json': [...fields(), ...creations(), ...malformed(), ...unbranch()] };
+  return { 'admit/restore.json': [...fields(), ...creations(), ...keyedRevivals(), ...malformed(), ...unbranch()] };
 }

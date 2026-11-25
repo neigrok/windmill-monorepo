@@ -13,10 +13,10 @@ import SyncSchema
   let shipped = AppSettings(arguments: ["app"], bundle: Bundle(for: TelemetryRecorder.self))
   let debug = AppSettings(arguments: ["app"])
 
-  // The composition is windmill's three registries at 13 / minimum 11; the engine carries roadmap only with its room.
+  // The composition is windmill's three registries at 14 / minimum 11; the engine carries roadmap only with its room.
   @Test func theEngineCarriesRoadmapOnlyWhereTheBuildCarriesItsRoom() {
     #expect(SyncSchema.registry.products.map(\.name) == ["gym", "journal", "roadmap"])
-    #expect(SyncSchema.version == 13 && SyncSchema.registry.minVersion == 11)
+    #expect(SyncSchema.version == 14 && SyncSchema.registry.minVersion == 11)
     #expect(!shipped.roadmapRoom && shipped.engineConfig.products(of: SyncSchema.registry) == ["gym", "journal"])
     #expect(debug.roadmapRoom && debug.engineConfig.products(of: SyncSchema.registry) == ["gym", "journal", "roadmap"])
   }

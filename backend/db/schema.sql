@@ -423,6 +423,8 @@ create table if not exists oauth_codes (
 );
 
 alter table oauth_codes add column if not exists account_generation bigint not null default 0;
+-- The digest of the session the code's consent was given through: the code exchanges only while that session is live.
+alter table oauth_codes add column if not exists session_hash text;
 
 create table if not exists oauth_tokens (
   token_hash         text primary key,  -- digest of the access token

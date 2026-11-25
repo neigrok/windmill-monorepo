@@ -77,6 +77,11 @@ enum Schema {
     migrator.registerMigration("v5") { db in
       try db.execute(sql: "ALTER TABLE spent ADD COLUMN seq INTEGER NULL")
     }
+    // §9.2: the schema the latest hello served as the replica's account advertised, which gates what a version declares
+    // (§2.4). A replica from before holds none until its next hello.
+    migrator.registerMigration("v6") { db in
+      try db.execute(sql: "ALTER TABLE replica ADD COLUMN server_schema INTEGER NULL")
+    }
     return migrator
   }
 

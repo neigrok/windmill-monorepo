@@ -2,6 +2,7 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
+#include "platform/adapters/http/PageShell.h"
 #include "products/roadmap/domain/Access.h"
 
 #include <cstddef>
@@ -29,7 +30,7 @@ OgVideoApi::OgVideoApi(std::shared_ptr<OgVideoRepository> videos, std::shared_pt
     : videos_(std::move(videos)), rooms_(std::move(rooms)), auth_(std::move(auth)), engine_(std::move(engine)) {}
 
 void OgVideoApi::putVideo(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id) {
-  const std::optional<UserId> caller = callerOf(req, *auth_);
+  const std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to update the share video"));
     return;
@@ -63,22 +64,25 @@ void OgVideoApi::putVideo(const drogon::HttpRequestPtr& req, HttpCallback&& call
 }
 
 void OgVideoApi::getVideo(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id) {
-  // Anyone may request a share video: ask the access gate, never the whole lattice.
-  const std::optional<UserId> caller = callerOf(req, *auth_);
+  // Anyone may request a share video: ask the access gate, never the whole lattice. A video shows an anonymous caller
+  // public content alone, so credentials that serve no account read as anonymous.
+  const std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   const std::optional<TreeAccess> tree = engine_ ? engine_->access(TreeId{id}, caller) : rooms_->accessOf(TreeId{id});
-  if (!tree || !canRead(caller, tree->owner, tree->visibility)) {
-    callback(error(drogon::k404NotFound, "no such video"));
-    return;
-  }
+  // No video, which no cache keeps when the answer is the caller's alone.
+  const auto noVideo = [&callback](Audience audience) {
+    auto response = error(drogon::k404NotFound, "no such video");
+    if (audience == Audience::caller) response->addHeader("Cache-Control", cacheControlFor(audience));
+    callback(response);
+  };
+  if (!tree || !canRead(caller, tree->owner, tree->visibility)) return noVideo(Audience::caller);
+  // Only the video of a tree anyone with its address may read is the same for everyone; its owner's private one is theirs.
+  const Audience audience = canRead(std::nullopt, tree->owner, tree->visibility) ? Audience::everyone : Audience::caller;
   const std::optional<StoredVideo> video = videos_->get(id);
-  if (!video) {
-    callback(error(drogon::k404NotFound, "no such video"));
-    return;
-  }
+  if (!video) return noVideo(audience);
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k200OK);
   response->setContentTypeString(video->mime);
-  response->addHeader("Cache-Control", "public, max-age=300");
+  response->addHeader("Cache-Control", cacheControlFor(audience));
   response->setBody(std::move(video->bytes));
   callback(response);
 }

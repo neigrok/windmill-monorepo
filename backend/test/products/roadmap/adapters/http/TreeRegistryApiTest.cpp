@@ -9,6 +9,7 @@
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <map>
 #include <mutex>
@@ -59,7 +60,7 @@ drogon::HttpRequestPtr post(const Json::Value& body, const std::string& session 
   request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   request->setBody(dump(body));
   if (!session.empty()) request->addCookie("wm_session", session);
-  return request;
+  return wm::test::DrogonLoopback::received(request);
 }
 
 drogon::HttpResponsePtr create(TreeRegistryApi& api, const drogon::HttpRequestPtr& request) {
@@ -73,7 +74,7 @@ void retire(TreeRegistryApi& api, const std::string& id, const std::string& sess
   request->setMethod(drogon::Delete);
   request->addCookie("wm_session", session);
   drogon::HttpResponsePtr captured;
-  api.deleteTree(request, [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
+  api.deleteTree(wm::test::DrogonLoopback::received(request), [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
   CHECK_EQ(captured->getStatusCode(), drogon::k200OK);
   CHECK_EQ(parse(std::string(captured->body())), parse(R"({"removed":[],"branch":{"subtrees":0,"steps":0}})"));
 }
@@ -99,7 +100,7 @@ drogon::HttpRequestPtr patch(const Json::Value& body, const std::string& session
   request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   request->setBody(dump(body));
   if (!session.empty()) request->addCookie("wm_session", session);
-  return request;
+  return wm::test::DrogonLoopback::received(request);
 }
 
 drogon::HttpResponsePtr sendPatch(TreeRegistryApi& api, const drogon::HttpRequestPtr& request,
@@ -622,7 +623,7 @@ TEST(create_and_patch_refuse_a_non_object_json_root_with_400) {
     request->setBody(body);
     request->addCookie("wm_session", "s-me");
     drogon::HttpResponsePtr created;
-    h.api.createTree(request, [&](const drogon::HttpResponsePtr& r) { created = r; });
+    h.api.createTree(wm::test::DrogonLoopback::received(request), [&](const drogon::HttpResponsePtr& r) { created = r; });
     CHECK_EQ(created->getStatusCode(), drogon::k400BadRequest);
     CHECK_EQ(dump(*created->getJsonObject()), std::string(R"({"error":"invalid json body"})"));
 
@@ -632,7 +633,7 @@ TEST(create_and_patch_refuse_a_non_object_json_root_with_400) {
     patch->setBody(body);
     patch->addCookie("wm_session", "s-me");
     drogon::HttpResponsePtr patched;
-    h.api.patchTree(patch, [&](const drogon::HttpResponsePtr& r) { patched = r; }, "t_whatever");
+    h.api.patchTree(wm::test::DrogonLoopback::received(patch), [&](const drogon::HttpResponsePtr& r) { patched = r; }, "t_whatever");
     CHECK_EQ(patched->getStatusCode(), drogon::k400BadRequest);
     CHECK_EQ(dump(*patched->getJsonObject()), std::string(R"({"error":"invalid json body"})"));
   }
@@ -691,7 +692,7 @@ TEST(patch_with_a_body_that_does_not_parse_as_json_is_400_and_an_empty_one_still
     request->setContentTypeCode(type);
     request->setBody(body);
     request->addCookie("wm_session", "s-live");
-    return sendPatch(h.api, request, "t");
+    return sendPatch(h.api, wm::test::DrogonLoopback::received(request), "t");
   };
 
   for (const std::string& body : {std::string(R"({"guide": "unterminated)"), std::string(R"({"guide":"x \ud83d"})"),
@@ -740,7 +741,7 @@ TEST(list_rows_carry_their_openers_and_delete_answers_the_steps_that_went_with_t
     auto made = drogon::HttpRequest::newHttpRequest();
     made->setMethod(method);
     made->addCookie("wm_session", "s-live");
-    return made;
+    return wm::test::DrogonLoopback::received(made);
   };
   const auto remove = [&](const std::string& id) {
     drogon::HttpResponsePtr captured;
@@ -811,7 +812,7 @@ TEST(list_holds_roots_alone_and_patch_renames_a_subtree_through_its_owning_step)
     request->setMethod(drogon::Get);
     request->addCookie("wm_session", "s-live");
     drogon::HttpResponsePtr listed;
-    h.api.listTrees(request, [&](const drogon::HttpResponsePtr& response) { listed = response; });
+    h.api.listTrees(wm::test::DrogonLoopback::received(request), [&](const drogon::HttpResponsePtr& response) { listed = response; });
     const Json::Value body = bodyOf(listed);
     std::map<std::string, std::string> doneOfTotal;
     for (const Json::Value& row : body["trees"])
@@ -900,7 +901,7 @@ TEST(a_subtree_is_never_deleted_or_planted_by_its_id_and_a_roots_row_counts_its_
     auto made = drogon::HttpRequest::newHttpRequest();
     made->setMethod(method);
     made->addCookie("wm_session", "s-live");
-    return made;
+    return wm::test::DrogonLoopback::received(made);
   };
   const auto remove = [&](const std::string& id) {
     drogon::HttpResponsePtr captured;
@@ -950,7 +951,7 @@ TEST(delete_counts_the_branch_only_once_the_removal_passed_its_gates) {
     made->setMethod(drogon::Delete);
     made->addCookie("wm_session", session);
     drogon::HttpResponsePtr captured;
-    h.api.deleteTree(made, [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
+    h.api.deleteTree(wm::test::DrogonLoopback::received(made), [&](const drogon::HttpResponsePtr& response) { captured = response; }, id);
     return captured;
   };
 
@@ -987,7 +988,7 @@ struct SubtreeDoor {
     WriteObservation route{"roadmap.PUT.v1.trees.tree.steps.step.subtree", "roadmap", "rest"};
     WriteContext context{route};
     drogon::HttpResponsePtr answered;
-    api.createSubtree(request, [&](const drogon::HttpResponsePtr& response) { answered = response; }, tree, step);
+    api.createSubtree(wm::test::DrogonLoopback::received(request), [&](const drogon::HttpResponsePtr& response) { answered = response; }, tree, step);
     route.finish(writeHttpOutcome(answered, "roadmap.PUT.v1.trees.tree.steps.step.subtree"));
     return std::to_string(answered->getStatusCode()) + " " + dump(parse(std::string(answered->getBody())));
   }

@@ -2,7 +2,9 @@
 
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
-v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; every file runs in all three.
+v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; every file runs in all three but
+`refused-start-actions.json`, which the web alone runs while the phones' recovery of a start that lost a race waits on
+its design ([open problems](../../../../docs/foundation/local-first-open-problems.md) LP-6).
 `workout-plan-actions.json` and `workout-proposals-actions.json` hold the open workout's editable plan and its
 workout proposals. R118 metadata reads remain optional
 for legacy records. The pinned rule book covers ten entities, `WorkoutProposal` the newest; `RoutineCreation`
@@ -41,6 +43,7 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `preferences-actions.json` | Draft preference saves and rest defaults |
 | `training-actions.json` | Start, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
 | `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery, discard, and the proposal a signed-out phone held minted again once the account holds its workout. Swift `GymDomain`, Kotlin `:gym:domain` and the web claim the cases |
+| `refused-start-actions.json` | A start refused `session-open`, as one that lost a race with another device's is: the sets its notice holds saved as a copy under `rack:adoption` for the review, and what saves nothing. The web claims the cases; both phones list the file as not applicable |
 | `proposals-actions.json` | Propose, apply/dismiss, the proposal state's refusals and out of date, ordered diff, change count, the card's change blocks, provenance and optional R118 metadata reads |
 | `workout-plan-actions.json` | Every `ReviseWorkoutPlan` operation, the logged-movement refusal per operation, stale bases, closed and missing workouts, unknown and duplicate movements, bounds; and the reads over an edited plan: prefill, the workout and review documents, the receipt's plan changes |
 | `workout-proposals-actions.json` | Propose a workout change (diff, swap, reorder, unchanged, refusals), apply/dismiss with every out-of-date reason, and the card's `WorkoutOutOfDate` |
@@ -162,6 +165,7 @@ separately and is outside the v4 rule book because v4 has no such type.
 | `AdoptWorkout` | `{id, mode: "keep" \| "restart", revised?}` over the saved copy under `rack:adoption` | `null`; keep imports the copy after the phone's checks (window, past now, movements, crossing); restart queues the start and every set in one plan or refuses the first set the phone would |
 | `RecoverStrandedSets` | `{id, placement: "intoWorkout" \| "separately", revised?}` | `null`; the window's sets append to an open workout or correct into a finished one; the rest become a saved copy of their own with its import queued |
 | `DiscardSignedOutWorkout` | `{id}` | `null`; the copy leaves the device key |
+| `SaveRefusedStart` | `{notice}`, a `gym.start` refused `session-open` in the kit's notice form, its sets folded into its dependents | `null`; the start's workout as it predicted it (`historyRoutineId` its `routineId`), finished where a folded `gym.finish` says, with every set born in the notice as its last write there left it and a set deleted there left out, saved beside the other copies; nothing for another notice, a notice holding no set, a copy already saved or a workout the log holds |
 | `ProposeRoutine` | `{id,routineId,name,entries,summary,removing?}` | Proposal id; guards routine name and entries |
 | `ApplyProposal`, `DismissProposal` | `{id}` | `null` |
 | `ReviseWorkoutPlan` | `{sessionId,base,operations}`; `base` is the plan the editor read, `operations` a non-empty list applied in order (below) | `null`; one guarded write of the whole `plan`, or nothing when the plan stands |

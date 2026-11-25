@@ -1,10 +1,12 @@
 // commit/*.json (§7.1): one gesture on the active replica, through the client-step language.
 
+import assert from 'node:assert/strict';
 import { freshMeta } from '../client/replica.js';
 import { ZERO_DIGEST } from '../core/digest.js';
 import { Cursor, widestAloneBytes } from '../core/wire.js';
-import { OTHER, row, st } from './fixtures.js';
-import { runSteps, settle, stepsVector } from './steps.js';
+import { ServerState } from '../server/state.js';
+import { OTHER, productScope, row, serverState, st, treeScope } from './fixtures.js';
+import { runSteps, Session, settle, stepsVector } from './steps.js';
 
 const REPLICA = 'rp_00000000000000000000000000000001';
 const BOARD = 'b_00000001';
@@ -46,6 +48,7 @@ const TREE_ROWS = [
   row({ t: 'tag', id: 'elm', life: ['alive', st(1000)], born: st(1000), f: { label: ['Elm', st(1000)] }, seq: 3 }),
   row({ t: 'tag', id: 'oak', life: ['alive', st(1000)], born: st(1000), f: { label: ['Oak', st(1000)] }, seq: 4 }),
 ];
+const LINKED = [row({ t: 'link', id: ['oak', 'elm'], life: ['alive', st(1000)], f: { strength: [3, st(1000)] }, seq: 1 }), ...TREE_ROWS.slice(1)];
 const MARK = row({ t: 'mark', id: 'oak', f: { done: [false, st(1000)] }, x: { memo: { text: 'first draft', rev: 7, merged: false } }, seq: 7 });
 const CARD2_ORD = row({ t: 'card', id: 'card0002', life: ['alive', st(1100)], born: st(1100), f: { ord: ['a2', st(1100)], title: ['Two', st(1100)] }, seq: 2 });
 const LISTED = { 'self/probe': [CARD, CARD2_ORD, RUN, BOARD_ROW] };
@@ -57,6 +60,32 @@ const FACTS = { 'self/probe': [CARD, CARD2, RUN, BOARD_ROW, FACT_ROW] };
 const saveFact = (value, at, opts, deviceNow) => commitStep('self/probe', [{ op: 'put', t: 'fact', id: DAY, f: { value, at } }], opts, deviceNow);
 const below = (id) => ({ field: 'ord', below: id });
 const COMMAND = { name: 'probe.end', args: { runId: RUN.id, endedAt: 6000 } };
+
+// A link written and synced, a put removing it, a put making it present again with the strength its dead row in
+// drawn still shows, then one sync, against the reference server. The server keeps no field of a dead keyed record
+// (§6.10 G1), so the link comes back with its strength only because the revive writes it.
+function keyedRevive() {
+  const session = new Session({
+    device: device(bound({ confirmed: { [TREE]: LINKED } })),
+    state: new ServerState(serverState({
+      scopes: { 'acct:A/probe': productScope('A'), [`tree:${BOARD}`]: treeScope('A', BOARD) },
+      rows: { 'acct:A/probe': [BOARD_ROW], [`tree:${BOARD}`]: LINKED },
+    })),
+  });
+  session.local(
+    commitStep(TREE, [{ op: 'put', t: 'link', id: ['oak', 'elm'], present: false }]),
+    commitStep(TREE, [{ op: 'put', t: 'link', id: ['oak', 'elm'], f: { strength: 3 } }], undefined, 5001),
+  );
+  session.push();
+  session.pull([TREE]);
+  const revived = session.local({ op: 'view', scope: TREE, withHeld: true })
+    .vector('a keyed put that makes a record present again writes every field it names, though its dead row in drawn still shows the value, so one sync brings the record back whole');
+  const [, { stamp }, request, , , , drawnAfter] = revived.expect.returns;
+  const link = { t: 'link', id: ['oak', 'elm'], life: ['alive', stamp], f: { strength: [3, stamp] } };
+  assert.deepEqual(request.intents[1].d, [link], 'the revive writes the field its dead row shows');
+  assert.deepEqual(drawnAfter.records.find((record) => record.t === 'link'), link, 'the server keeps the field the revive wrote');
+  return revived;
+}
 
 function deltas() {
   return [
@@ -150,6 +179,7 @@ function deltas() {
       device: device(bound({ confirmed: { [TREE]: TREE_ROWS } })),
       steps: [commitStep(TREE, [{ op: 'put', t: 'link', id: ['elm', 'oak'], present: false }])],
     }),
+    keyedRevive(),
     stepsVector('a revive takes the born of a record dead in drawn', {
       device: device(bound({ confirmed: { [TREE]: TREE_ROWS } })),
       steps: [

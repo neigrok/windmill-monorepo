@@ -149,10 +149,15 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
     return;
   }
 
-  const std::optional<SharedRoadmap> shared = sharedOf(id, callerOf(req, *auth_));
+  // A page shows an anonymous caller public content alone, so credentials that serve no account read as anonymous.
+  const std::optional<SharedRoadmap> shared = sharedOf(id, SentCaller::of(req, *auth_).account());
   const bool hasVideo = shared && videos_->has(id);
+  // Only a roadmap anyone with its address may read is one page for everyone. Every other answer is the caller's alone,
+  // the shell an absent id gets included, so it reads like the shell an unreadable one gets.
+  const Audience audience = shared && shared->visibility != Visibility::private_ ? Audience::everyone : Audience::caller;
   callback(htmlPage(shared ? renderShell(shell, appOrigin_, shared->title, shared->steps, shared->visibility, id, shared->lineage, hasVideo)
-                           : shell));
+                           : shell,
+                    audience));
 }
 
 }

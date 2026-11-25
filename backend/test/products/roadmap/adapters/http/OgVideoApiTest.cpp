@@ -4,6 +4,7 @@
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <memory>
 #include <optional>
@@ -55,14 +56,14 @@ drogon::HttpRequestPtr putReq(const std::string& session, const std::string& bod
   if (!session.empty()) req->addCookie("wm_session", session);
   req->setContentTypeString("video/mp4");
   req->setBody(body);
-  return req;
+  return wm::test::DrogonLoopback::received(req);
 }
 
 drogon::HttpRequestPtr getReq(const std::string& session) {
   auto req = drogon::HttpRequest::newHttpRequest();
   req->setMethod(drogon::Get);
   if (!session.empty()) req->addCookie("wm_session", session);
-  return req;
+  return wm::test::DrogonLoopback::received(req);
 }
 
 drogon::HttpResponsePtr sendPut(OgVideoApi& api, const std::string& session, const std::string& id,

@@ -13,7 +13,7 @@ import { orderedScopes } from '../core/receipts.js';
 import { isVisible, recordKey } from '../core/rows.js';
 import { checkId, roundToDomain } from '../core/values.js';
 import { holdsNul, widestAloneBytes } from '../core/wire.js';
-import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
+import { deltasOf, foldSilently, ownCommandOf, silentFoldOf } from './dependents.js';
 import { settleEnded } from './journal.js';
 import { predictionsOf } from './projections.js';
 import { drawn, foldDelta, RecordView, stored, visibleCount } from './views.js';
@@ -204,6 +204,8 @@ class DeltaBuilder {
     return delta;
   }
 
+  // §7.1 step 4: a put that makes the record present diffs against no record, since the server keeps no field of a
+  // dead keyed record (G1).
   put(type, change) {
     if (type.identity !== 'keyed' || !type.life) throw new CommitError(`${type.type} is not keyed with life`);
     const current = this.drawnView.get(recordKey(type.type, change.id));
@@ -211,12 +213,13 @@ class DeltaBuilder {
     const present = change.present ?? true;
     if (type.wholePut && present) return this.wholePut(type, change);
     if (type.wholePut && Object.keys({ ...change.f, ...change.x }).length) throw new CommitError(`a removal of ${type.type} carries its life alone`);
+    const makesPresent = present && !presentBefore;
     let life = current?.life;
-    if (present && !presentBefore) life = ['alive', this.stamp];
+    if (makesPresent) life = ['alive', this.stamp];
     if (!present && presentBefore) life = ['dead', this.stamp];
     if (life === undefined) return null;
     const delta = { t: type.type, id: change.id, life };
-    const changed = this.withChanges(type, delta, change, current);
+    const changed = this.withChanges(type, delta, change, makesPresent ? undefined : current);
     return changed || !sameJson(life, current?.life ?? null) ? delta : null;
   }
 
@@ -373,13 +376,12 @@ function cappedType(registry, storedView, deltas) {
   });
 }
 
-// §7.1 step 4: the held gestures of the scope that carry no command and whose every delta removes
-// (life → dead) a record `retire` names, as their entries. A capture command is the ordinary deltas' own.
+// §7.1 step 4: the held gestures of the scope that carry no command of their own and whose every delta
+// removes (life → dead) a record `retire` names, as their entries.
 function retiringEntries(replica, registry, scope, retire) {
   if (retire.length === 0) return [];
   const named = new Set(retire.map(({ t, id }) => recordKey(t, id)));
-  const commandFree = (entry) => entry.intent.cmd === undefined || registry.command(entry.intent.cmd.name)?.engine === 'capture';
-  const removes = (entry) => commandFree(entry) && (entry.intent.d ?? []).length > 0
+  const removes = (entry) => ownCommandOf(registry, entry) === undefined && (entry.intent.d ?? []).length > 0
     && entry.intent.d.every((delta) => delta.life?.[0] === 'dead' && named.has(recordKey(delta.t, delta.id)));
   const gestures = new Map();
   for (const entry of replica.entries()) gestures.set(entry.gestureId, [...(gestures.get(entry.gestureId) ?? []), entry]);
@@ -505,7 +507,7 @@ export function commitGesture(replica, ctx, physNow, scope, changes, opts, act =
 
   for (const entry of retiring) moveEntry(replica, ctx.ended, entry, 'retire');
   for (const entry of superseding) if (replica.entry(entry.localId)) moveEntry(replica, ctx.ended, entry, 'silent-fold');
-  foldSilently(replica, ctx.ended, folded);
+  foldSilently(replica, registry, ctx.ended, folded);
   settleEnded(replica, 'undone');
   replica.meta.hlc = clock.pair;
   const firstOrder = act ? act.firstOrder + act.offset : replica.nextCommitOrder();

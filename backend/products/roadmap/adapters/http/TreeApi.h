@@ -46,8 +46,6 @@ public:
                                             std::size_t limit);
 
 private:
-  std::optional<UserId> callerOf(const drogon::HttpRequestPtr& req) const;
-
   // The read gate every room-backed read shares: holds the tree's strand, and answers false
   // without a reason when the caller may not have the tree.
   bool readRoom(const std::string& treeId, const std::optional<UserId>& caller,

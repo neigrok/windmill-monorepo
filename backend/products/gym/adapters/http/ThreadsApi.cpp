@@ -18,7 +18,7 @@ ThreadsApi::ThreadsApi(std::shared_ptr<ThreadService> threads, std::shared_ptr<A
 
 
 void ThreadsApi::listThreads(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
@@ -59,7 +59,7 @@ void ThreadsApi::listThreads(const drogon::HttpRequestPtr& req, HttpCallback&& c
 
 void ThreadsApi::getThread(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                        const std::string& id) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
@@ -98,7 +98,7 @@ void ThreadsApi::getThread(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
 // The turns go with the row; the proposals it minted stay.
 void ThreadsApi::deleteThread(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                           const std::string& id) try {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
@@ -121,7 +121,7 @@ void ThreadsApi::deleteThread(const drogon::HttpRequestPtr& req, HttpCallback&& 
 
 
 void ThreadsApi::putImage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& id) {
-  const auto caller = callerOf(req, *auth_);
+  const auto caller = SentCaller::of(req, *auth_).account();
   if (!caller) { cb(error(drogon::k401Unauthorized, "sign in to upload a photo")); return; }
   if (!wellFormedId(thread) || !wellFormedId(id)) { cb(error(drogon::k400BadRequest, "invalid attachment identity")); return; }
   if (req->body().size() > kMaxCoachImageBytes) { cb(error(drogon::k413RequestEntityTooLarge, "choose a photo smaller than 5 MiB")); return; }
@@ -156,7 +156,7 @@ void ThreadsApi::putImage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, 
 }
 
 void ThreadsApi::getImage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& id) {
-  const auto caller = callerOf(req, *auth_);
+  const auto caller = SentCaller::of(req, *auth_).account();
   if (!caller) { cb(error(drogon::k401Unauthorized, "sign in to open a photo")); return; }
   const auto image = threads_->image(*caller, ThreadId{thread}, id);
   if (!image) { cb(error(drogon::k404NotFound, "no such photo")); return; }
@@ -170,7 +170,7 @@ void ThreadsApi::getImage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, 
 
 void ThreadsApi::confirmRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     const std::string& thread, const std::string& requestId, const std::string& operationId) {
-  const auto caller = callerOf(req, *auth_);
+  const auto caller = SentCaller::of(req, *auth_).account();
   if (!caller) { cb(error(drogon::k401Unauthorized, "sign in to save this routine")); return; }
   if (!ask_) { cb(error(drogon::k503ServiceUnavailable, "Coach is unavailable")); return; }
   if (!wellFormedId(thread) || !wellFormedId(requestId) || !wellFormedId(operationId)) {
@@ -210,7 +210,7 @@ void ThreadsApi::confirmRoutine(const drogon::HttpRequestPtr& req, HttpCallback&
 }
 
 void ThreadsApi::stopGeneration(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& requestId) try {
-  const auto caller = callerOf(req, *auth_);
+  const auto caller = SentCaller::of(req, *auth_).account();
   if (!caller) { cb(error(drogon::k401Unauthorized, "sign in to stop Coach")); return; }
   const auto generation = ask_ ? ask_->stop(*caller, ThreadId{thread}, requestId)
                                : threads_->stopGeneration(*caller, ThreadId{thread}, requestId);

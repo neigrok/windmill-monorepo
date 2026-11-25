@@ -104,7 +104,8 @@ test('the log draws arrived sessions without claiming the initial history has en
   await settle();
   const rows = () => elementsOf(view.tree).find((each) => typeof each.type === 'function' && each.type.name === 'HistoryIndex').props.sessions;
   assert.deepEqual(rows().map(({ id }) => id), ['session0001']);
-  assert.deepEqual(findByClass(view.tree, 'gym-history-end').map(textOf), []);
+  assert.deepEqual(findByClass(view.tree, 'gym-history-end').map(textOf), ['Getting your log…']);
+  assert.deepEqual(findByClass(view.tree, 'gym-log-count'), [], 'no totals over a history this browser does not hold yet');
 
   await engine.write(null, (device) => { device.activeReplica.cursors['self/gym'].booted = true; }, ['self/gym']);
   await settle();

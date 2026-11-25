@@ -9,7 +9,7 @@ McpKeyApi::McpKeyApi(std::shared_ptr<AuthService> auth, std::shared_ptr<McpKeySe
 
 void McpKeyApi::createKey(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   // Mint a key for the caller and return its secret — the one and only time it is ever shown.
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to create an MCP key"));
     return;
@@ -29,7 +29,7 @@ void McpKeyApi::createKey(const drogon::HttpRequestPtr& req, HttpCallback&& call
 
 void McpKeyApi::listKeys(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   // The caller's keys, newest first, without the token — lastUsedMs null until a key first acts.
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to see your MCP keys"));
     return;
@@ -52,7 +52,7 @@ void McpKeyApi::listKeys(const drogon::HttpRequestPtr& req, HttpCallback&& callb
 void McpKeyApi::revokeKey(const drogon::HttpRequestPtr& req, HttpCallback&& callback,
                           const std::string& id) {
   // Revoke one key by id, scoped to the owner: a foreign or unknown id is a 404.
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to revoke an MCP key"));
     return;

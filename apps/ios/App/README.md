@@ -110,9 +110,11 @@ open, else the most recent, and makes no request. `open(_:from:)` makes another 
 (`RoadmapModel.lastOpen`), and a roadmap the room made, or brought back by Undo, is opened once the list holds it
 (`arriving`). The model keeps which groups stand folded, Done at rest and open by itself once every step is done, another
 roadmap opening with its Board at rest, and the screens on the room's stack (`path`, each a `Visit`: All Roadmaps, a
-roadmap's Activity, a step's page with what opened it, a step's note over its page, or a step's History), which empties
-once a step whose page, note or History is open goes, deleted here or by another device, once the roadmap whose Activity
-is open is the open one no longer (`Visit.stands(in:)`), or once the last roadmap goes. It also holds the draft the step form stands
+roadmap's Activity, a step's page with what opened it, a step's note over its page, a step's History, the list a roadmap
+is attached from, or a roadmap gone into, after which the screens are that roadmap's room's), which empties once a step
+whose page, note, History or attach list is open goes, deleted here or by another device, once the roadmap whose Activity
+is open is the open one no longer, once no step leads into a roadmap gone into (`Visit.stands(in:)`), or once the last
+roadmap goes. It also holds the draft the step form stands
 open on (`draft`), which it lets go once the draft's roadmap is not the open one or the step it edits is gone, and the
 draft the note's screen stands open on (`note`, a `StepNoteDraft`), made as that screen is pushed and saved as it
 leaves the stack, the app leaves the front or the account changes (`flush()`), and the Guide sheet (`guide`, a
@@ -192,8 +194,10 @@ and plays the band's haptic once, whichever screen stands over it. The foot's + 
 long press offers *New Step* and *Paste Steps* (02.16). Before the phone's copy is first read the room is its
 bar alone, the room capsule and the account, and a large spinner shows once the read has run half a second
 (`RoadmapRoom.FirstRead`, 01.5b), which is told, and how the wait ended: read, failed, or the room put away first; a read that fails says *Couldn’t load this roadmap* and *The copy on this iPhone
-couldn’t be read.* with *Try Again*, which asks the engine for every view anew (01.5c). The title's menu (`RoadmapTitle`,
-`.toolbarTitleMenu`) lists the three most recent roadmaps, each name over its progress and the open one checked, then
+couldn’t be read.* with *Try Again*, which asks the engine for every view anew (01.5c). The title's progress is joined by
+*Offline* while the engine's status says the phone has no connection (10.1). The title's menu (`RoadmapTitle`,
+`.toolbarTitleMenu`) leads with *N Set Aside* while a change is set aside (10.5a), then lists the three most recent
+roadmaps, each name over its progress and the open one checked, then
 *All Roadmaps…*, *New Roadmap*, *Guide*, *Kinds*, *Activity*, *Rename* and *Delete Roadmap*. *Rename* is the system's (`RenameButton` over a title that is a binding): the bar
 becomes one field, and its return key commits. A name the domain refuses leaves the old one; the field itself commits no
 empty name, so the old one stays there too; and a name of blanks alone is written empty, so the roadmap reads *Untitled
@@ -227,8 +231,9 @@ cannot be read, in place of the system's importer (`RoadmapFixture.chosenFile()`
 signed in or out.
 
 `Board/RoadmapBoard.swift` is the Board's list, its groups under headers that fold them, as the Board's reading keeps
-them. A row opens its step's page. An Up next row that opens no roadmap slides right for *Complete*; every row but the
-kept one slides left for *Delete*, which asks once on the row with what it costs; a long press lists *Complete*, *Edit*,
+them. A row opens its step's page; a step that opens a roadmap carries its pill, the roadmap's name and count with a bar
+or the short words of an odd end. An Up next row that opens no roadmap slides right for *Complete*, and a row that opens
+one it can go into for *Open*; every row but the kept one slides left for *Delete*, which asks once on the row with what it costs; a long press lists *Complete*, *Edit*,
 which raises the step's form, *Open in Graph*, *Select* and *Delete Step*. A full swipe commits neither. The long-press
 menu's other items wait for their screens and are left out: *Ask Coach*, and *Copy Link* on a public roadmap. Find, the
 switch row's magnifying glass, gives the list the system's search while it is up, its field at the foot above the
@@ -258,21 +263,55 @@ paste* too. The read-back is a medium sheet of its counts and each step in the s
 (`Graft.landing(in:)`); *Add* writes the steps with the marks the text brings done and the kinds it adds as one act, and
 the band says *Added N steps* with *Undo* for six seconds over the steps washed in their groups; an *Add* the domain
 refuses leaves the sheet open, *Add* off, and says why under its counts in the room's words (`pasteWords`); *Cancel*
-writes nothing. The room reads the clipboard through a `Clipboard`, the system's in the app and a test's own in a test;
-the system's text is read off the main actor, which the system's question would otherwise hold until it is answered.
+writes nothing. The room reads the clipboard through a `Clipboard`, which Set Aside's *Copy* writes to, the system's in
+the app and a test's own in a test; the system's text is read off the main actor, which the system's question would
+otherwise hold until it is answered.
 
 `Step/RoadmapStepPage.swift` is a step's page, pushed on the room's stack: one list under the step's name, which the bar
 takes once it has scrolled away; the status row, with the state, the kind's name (the hue's where no kind names it) and why
 the step stands there, or on a Done step what Reset would return to Locked beside *Reset*; the description and the step's
 shared links, each opened where its address is `http`, `https` or `mailto`; and *Requires* and *Opens* with their counts,
-each row opening its step. An Up next step that opens no roadmap has *Complete* at its foot: the page stays, and the band says
-what opened. *Reset* asks nothing. *Edit* in the bar raises the step's form over the page. The … menu holds *Open in Graph*,
+each row opening its step. A step that opens a roadmap has its Roadmap section between the two, *Subtree* for one it owns
+(`Nested/`). An Up next step that opens no roadmap has *Complete* at its foot: the page stays, and the band says what
+opened; one that opens a roadmap has *Open Roadmap*, *Open Subtree* or, where it cannot be found, *Choose Roadmap*.
+*Reset* asks nothing. *Edit* in the bar raises the step's form over the page. The … menu holds *Open in Graph*,
 *View Branch* on a step that is not Locked, as the web offers it, which returns to the Board staying in the step's branch,
-and *Delete Step*, which asks on the … button and,
+*Attach a Roadmap* on a step that opens none, and *Delete Step*, which asks on the … button and,
 answered, returns to the Board with the step held; the roadmap's one starting step's menu has no *Delete Step*. After
 *Opens* the page lists the person's workspace of the step, and its foot is away while *Add Subtask* has the keyboard; its
-last row opens the step's *History*. Left out until their screens are built: the menu's *Attach a Roadmap* and *Copy
-Link*, the Coach circle and composer, and a step that opens a roadmap's pill and *Open Roadmap*.
+last row opens the step's *History*. Left out until their screens are built: the menu's *Copy Link* and the Coach circle
+and composer.
+
+`Nested/` is a step that opens a roadmap ([Roadmap on iOS](../../../docs/foundation/roadmap-ios.md) §6, boards 04.6 and
+07.1 to 07.12b). `OpenedRoadmap.swift` is what a row holds of the roadmap its step opens (`RoadmapModel.Opened`, from the
+domain's `OpeningRead`): the roadmap, whether the step owns it as its subtree, the one of the web's faces it comes to
+(open, complete, empty, loop, missing, unread; a pointer at a roadmap the phone holds no copy of, or one that is not the
+person's, reads as missing), its name and count, and the words the Board's pill, the Graph's line, the page's Roadmap
+row, its status row, its footer and its foot say of it. A step that opens a roadmap is complete as the roadmap is, so it
+takes no *Complete* or *Reset*, and a Done mark made by hand is set aside while it opens one, which its footer says with
+the steps that lock again. `RoomStack.swift` is the room's one stack: going in (`goIn(_:by:)`) pushes a `Visit.roadmap`
+on the room's path, and the room makes the roadmap a room of its own (`inside`, in the role `.inside`, one deeper than the
+room it was gone into from, `outside`), which reads the phone's copy as that room last read it and holds its own Board,
+Graph, step pages and sheets. A roadmap a room on the stack already shows is gone into no deeper (`goesIn(to:)`), so a
+loop is gone round once. The root's stack is every room's path in turn (`stack`, each visit a `Stacked` by its depth),
+and a screen keeps the room it last found while it slides away (`RoadmapScreen`). A room whose visit leaves the stack
+goes, however many Back passes at once: each from the deepest first, its note saved and its Back told (`cameBack(from:)`),
+and the app leaving the front or the account changing saves the note of every room on the stack (`flush()`). The band is
+the stack's one, kept by the root's room, so going in or back leaves its Undo standing, and the sheets stand on the
+stack, raised by the room on top (`deepest`). `NestedScreens.swift` is the pill (`OpeningPill`), the page's section
+(`OpenedSection`), with the owner's … menu of *Change Roadmap* and *Detach Roadmap* over the row, the foot's control
+(`OpenedPrimary`), and a roadmap gone into (`RoadmapInside`): Back, its name over its progress and a … menu of *Guide*,
+*Kinds* and *Activity*; one the phone has yet to read waits with a spinner, or with no connection says *Needs a
+connection*. `AttachRoadmap.swift` is the list a roadmap is attached from, pushed from the page as `Visit.attach` and
+from the step form's Roadmap row: the person's roadmaps found by name, the one the step stands in dimmed, the one it opens
+checked under *None*; a choice on the page runs `PointStep` at once (`attach(_:to:)`, `detach(_:)`), each with *Undo* for
+six seconds, a refused one saying why under the list, and in the form sets the draft, which its save writes. A pasted link
+to one of the person's roadmaps or a subtree of one chooses it (`ownRoot(of:)`), and one to the roadmap the step stands in
+is refused in its row's words; to someone else's, `PastedRoadmap` follows its tree scope through the engine while the list
+stands and names it above theirs with *Fork Roadmap*, which needs a connection, its band says so otherwise, and a
+session, signed out *Sign In to Fork* raising the shell's sign-in; to none they can read, the list says so under the
+pasted row. A reader's cover shows the section with no door and no menu, the subtree counted as the owner's progress
+tells it.
 
 `Activity/RoadmapActivity.swift` is a roadmap's Activity and a step's History (boards 01.13, 01.13b, 01.15 and 03.12),
 each pushed on the room's stack, from the title menu's *Activity* and from a step page's *History*. Both show the
@@ -290,6 +329,33 @@ creation and a check for a completion, in its kind's colour, its name and its ti
 event tells with door activity; VoiceOver reads *Completed Rig the boat, 9:12*, and the fold *Added 12 steps, 8:02*. A
 roadmap with no step says *No activity yet*. History is the same read narrowed to the step, *Completed* and *Added* with
 their times under the step's name, and opens nothing. Opening either is told with what its read came to.
+
+`Landing/` is what the room says of a change that met one made elsewhere and the one list of what could not land
+([Roadmap on the sync engine](../../../docs/foundation/roadmap-on-the-engine.md) §6, boards 10.2 to 10.5c). The model
+reads sync beside its records through `RoadmapModel.Sync`: the engine's status for *Offline*, roadmap's `NoticesView`,
+which the person's own room holds so it stays live and observed, and a notice's dismissal; a reader's cover and a test
+that tells nothing of them read `Sync.none`. The root's room keeps all of it in one `RoadmapModel.Landed` (`Landed.swift`),
+which an account change empties. Each room reads the domain's `LandingRead` of the roadmap it shows, after every read,
+into lines (`Landed.Line`): a step the person made or linked that now follows something else through a step deleted
+elsewhere before their change landed, and a step their change brought back, the second once the server's revival has
+brought its name, since a step the phone knew only by its spent id holds no more than the change wrote until then. A
+line no board words, of a step that follows nothing past the deleted one or one whose removed step's name the note never
+kept, stays in the note untold. One place offers the band the next line waiting of the roadmap on top of the stack
+(`offerLanding`), whenever the band frees, a line is heard, the room comes before the person (`faces`: on screen, in the
+foreground, under no sheet of the shell's) or the stack changes, and a landing band of a roadmap no longer on top leaves.
+The line is told only once its band is drawn (`seen`, from the band's own view): a foot draws the band only where it can
+be seen (`drawsBand`), not while it is away and, on the room's own screens, not under a sheet or a cover the room raised
+(`raisesSheet`). Its *Show* pushes the step's page, whose footer under the status row says the step's lines while its
+roadmap stands on the stack, and tells one the band has not yet. A line told is let go from the phone's note by the
+domain's `ClearLanding`, out of the Undo stack, so a later launch is quiet, and the note of a roadmap that leaves the
+person's list goes whole. `SetAside.swift` is the one list: roadmap's notices read through the domain's `CannotLand`, each
+change with words of the person's under the roadmap its notice's scope names and its reason, named by what it wrote or
+by the name the room last read since the account last changed (`Landed.remembered`), the phone keeping nothing of a
+roadmap deleted elsewhere; a note goes by its step's name. Its sheet, from the title menu's first row, groups the changes
+by roadmap with the reason as the footer; a row's … menu and its trailing swipe offer *Copy*, every word the person
+wrote, and *Discard*, which asks nothing and dismisses the notice; *Discard All* asks once on its row; the sheet closes
+once the list holds nothing. Each change that cannot land is told once on this phone, by the ids of the notices it has
+told that the engine still holds (`RoadmapModel.toldNotices`), which signing out and deleting the account clear.
 
 `Step/StepWorkspace.swift` is a step's private workspace as its page reads it, and its acts. `StepWorkspace.read(_:)`
 composes every step's workspace from one overlay's records, as the web's room does (`HeldRoadmap.workspace`): the
@@ -374,9 +440,9 @@ over the first Up next step with a menu of every Up next step in Roadmap Order, 
 one is Up next, whose pick selects a step and brings it to the centre of the canvas; and `GraphStepBar`, the selected
 step, which pushes the step's page. VoiceOver hears the
 canvas as one element, *Graph*, with the roadmap's progress and the hint that the Board lists every step, or under Fit
-that a tap brings the bars back. Left out until
-their screens are built: Find on the Graph,
-the mark and progress of a step that opens a roadmap, and a proposal's changes.
+that a tap brings the bars back. A step that opens a roadmap wears the stack mark before its caption and the
+roadmap's line under it (`RoadmapGraph.marks`). Left out until their screens are built: Find on the Graph and a
+proposal's changes.
 
 `Sharing/` is a roadmap's link and a shared roadmap's cover ([Roadmap on iOS](../../../docs/foundation/roadmap-ios.md) §3
 and §4, boards 09.4 to 09.11). The app claims the site's roadmap addresses in Debug builds alone: `project.yml` selects
@@ -392,7 +458,9 @@ that names no roadmap opens All Roadmaps; any other raises a `RoadmapCover` over
 (`RoadmapLinks.cover`), closing one that stands, which stays where it shows that same roadmap. A cover holds a room in
 the reader's role, which its `SharedRead` reads: the roadmap's tree scope, and each one above it as their metas name
 them, followed through the engine (`RoadmapCover.Sources`) and let go as the cover closes, with the owner's progress from
-the backend (`RoadmapSharing.progress`), or the steps' own seeds where that read fails, as the web's room falls back. The
+the backend (`RoadmapSharing.progress`, an `OwnersProgress`), or the steps' own seeds where that read fails, as the web's
+room falls back. The cover follows no subtree its steps own: the account counts each as that answer's `subtrees` row tells
+it (`RoadmapAccount(_:told:)`), so a step that owns one is Done once every step inside is, as on the web's cover. The
 room's switch row (`SwitchRow`), Board, Graph, step page and History draw it, the `OpenRoadmap` offering no Complete,
 Reset or Delete, and the Board and the page leaving out what the boards do not draw there: swipes, the long-press menu,
 *Select Steps*, New Step, *Edit* and the workspace. Every screen on the cover's stack finds the cover in its environment,
@@ -414,18 +482,18 @@ taking no second tap. The room opens the copy once its list holds it, on its Boa
 planted* and no Undo, and the cover closes then, or after fifteen seconds, leaving the room to open the copy when it
 lands. A fork that comes to nothing says *Couldn’t fork this roadmap. Try again.* in the band slot. `SharingRequests`
 makes the two requests over HTTP with the account's token; a 503 is the server busy, and a request given up is no
-failure. A step that owns a subtree stands on a cover as the domain reads it with that subtree unread, since the cover
-reads none of the server's `subtrees`.
+failure.
 
 `Step/StepDraft.swift` is the step form's draft, which `newStep(from:)` and `edit(_:)` make and the model holds while the
-form is open: what a person sets of a step (its name, description and kind, the steps it requires, the steps it opens and
-the links it shares) beside what the step held as the form opened, so `isChanged` and `commits` say what *Create* or
+form is open: what a person sets of a step (its name, description and kind, the steps it requires, the steps it opens,
+the links it shares and the roadmap it opens) beside what the step held as the form opened, so `isChanged` and `commits` say what *Create* or
 *Save* would write. A new
 step's id is minted as the form opens. `save()` is the draft's one write, through the model's door as one gesture:
-`CreateStep` with what the step requires and the links it shares, then `ChangePrerequisites` on each step it opens; or,
-for a step, `ChangeStep` with the fields that differ, its shared links written whole where one was added or removed, and
-`ChangePrerequisites` for each link between steps taken or dropped, the ones dropped first, so the domain reads every
-loop over those links as they will stand. The draft lists every link the step shares, whatever its address, so a save
+`CreateStep` with what the step requires and the links it shares, then `ChangePrerequisites` on each step it opens, then
+`PointStep` where it opens a roadmap; or, for a step, `ChangeStep` with the fields that differ, its shared links written
+whole where one was added or removed, `ChangePrerequisites` for each link between steps taken or dropped, the ones dropped
+first, so the domain reads every loop over those links as they will stand, and `PointStep` where the roadmap it opens
+changed. A step that owns a subtree keeps it: the form names it and changes nothing of it. The draft lists every link the step shares, whatever its address, so a save
 drops none, and offers no more at the domain's 32. Written, the form closes and the band holds *Undo* for six
 seconds, which takes the whole gesture back; a new step's group opens on the Board, which scrolls to the step and washes
 it while the band stands. Refused or failed, the form stays open. What a name, a description and a link may be, and every
@@ -442,8 +510,8 @@ and a tap on a step that would close a loop. A loop the domain refuses at the sa
 closes one.
 
 `Step/RoadmapStepForm.swift` is the form: a large sheet with its own stack, which `RoadmapRoom` presents over the Board or
-over a step's page while the model holds a draft. Name and Description, then *Kind*, *Requires* and *Opens*, each a list
-pushed inside the sheet and bound to the draft, with no Apply: *Kind* returns with the kind chosen, and a tap in
+over a step's page while the model holds a draft. Name and Description, then *Kind*, *Requires*, *Opens* and *Roadmap*,
+each a list pushed inside the sheet and bound to the draft, with no Apply (*Roadmap* is the attach list of `Nested/`): *Kind* returns with the kind chosen, and a tap in
 *Requires* or *Opens* takes or drops a step in place, the steps chosen as the list opened heading it under *Selected*.
 Under *Kind*'s six choices *Edit Kinds* raises the Kinds sheet over the form.
 The steps that would close a loop stand dimmed in their own group, whose footer says why; they are drawn dimmed and not
@@ -453,7 +521,7 @@ and asks *Discard draft?* on a changed one, which a swipe down does not send awa
 change. A step that may go has *Delete Step* in the form, which asks there as its page does. The room's band stands at
 the sheet's foot, away while a field has the keyboard. Under the placement footer *Links* lists the links the step
 shares, each sliding left for *Delete*, over *Add Link*, which raises New Link over the form; a link there only stands,
-and opens on the step's page. Left out until their screens are built: the *Roadmap* row and Coach's composer.
+and opens on the step's page. Left out until its screen is built: Coach's composer.
 
 `Kinds/` is a roadmap's kinds. `Kinds/RoadmapLegend.swift` is the legend the open roadmap reads once. `Kinds/KindActs.swift`
 is the Kinds sheet's acts, each one act of the domain through the door, on an entry by its subject as the legend holds it
@@ -524,16 +592,40 @@ behind it; `-board roadmap-unreadable` opens the room over views it cannot make;
 and make it public, signs the phone in to an account of its own and opens the roadmap's link, and
 `-board roadmap-cover-signed-out` opens it signed out; `-board roadmap-cover-offline` opens it with no connection;
 `-board roadmap-cover-private` and `roadmap-cover-private-signed-out` open the link to it left private; and
-`-board roadmap-cover-no-connection` opens a link with no connection to a roadmap the phone holds no copy of. On these
-boards the board's own requests stand in for the backend's (`RoadmapFixture.BoardSharing`): the owner's progress is
-read from the owner's phone, and a fork is made by another phone of the reader's account, so the copy arrives by sync;
-`-fork-held` leaves a fork unanswered. A simulator launch with
+`-board roadmap-cover-no-connection` opens a link with no connection to a roadmap the phone holds no copy of. Nested
+roadmaps (`RoadmapFixture.prepareNested`): `-board roadmap-nested` has another account make *Reefing course* public and
+puts its link on the pasteboard, and another phone of the person's account plant *Learn to sail* with three steps done,
+*Become a day skipper* as the boards draw it (`plantSkipper`), its *Learn to sail* opening *Learn to sail*, and *Spanish
+B1* and *Coastal navigation handbook* far smaller than the boards count them, a second apart so the list stands as 07.6
+draws it, and opens the room on *Become a day skipper* signed in; `-board roadmap-nested-offline` is the same with no
+connection for the board's requests; `-board roadmap-nested-signed-out` plants the person's roadmaps on the phone itself,
+never signed in; `-board roadmap-nested-done` has every step of *Learn to sail* done; `-board
+roadmap-nested-unattached` is the same whose *Learn to sail* opens no roadmap yet; `-board roadmap-nested-odd` is the
+boards' variation whose *Learn to sail* opens a roadmap that leads back, *Night passage* one with no steps and *Log 100
+miles* one no phone holds; and `-board roadmap-nested-subtree` the variation whose *Night passage* owns a subtree of five
+steps, one done. On the cover's and the nested boards the board's own requests stand in for the backend's
+(`RoadmapFixture.BoardSharing`): the owner's progress is read from the owner's phone, each subtree counted as the owner's
+account reads it, and a fork is made by another phone of the reader's account, so the copy arrives by sync;
+`-fork-held` leaves a fork unanswered. Section 10's boards (`RoadmapFixture.prepareSync`) have another phone of the
+person's account plant their roadmaps, sign the phone in, and once the room has read them, take the model server's
+connection from the phone (`BoardConnectivity`, the connection every model-server launch has, online until a board cuts
+it): `-board roadmap-sync-offline` makes *Reefing basics* in the room's own form with no connection (10.1);
+`-board roadmap-sync-landed` does the same while the other phone deletes *Read the wind*, lets the receipt go and gives
+the connection back, so the step lands following *Name the boat parts* (10.2, 10.3); `-board roadmap-sync-came-back`
+has the other phone delete *Reefing basics* and, once that has reached the phone, writes an edit of it there, which
+brings it back (10.4); and `-board roadmap-sync-set-aside` holds *Winter refit* beside *Learn to sail*, *Spanish B1* and
+*Coastal navigation handbook*, which the other phone deletes while the phone, offline, adds *Anchor at night* to it and
+writes the note of its *Plan the watch rota*, and gives the connection back, so neither lands (10.5a to 10.5c). A
+simulator launch with
 `-graph-measures <path>` appends what the Graph measures of itself to that file, and with `-board-measures <path>` what
 the Board measures, one JSON line a measure; with
 `-graph-pinch <way>` it keeps a pinch's frames that way, and with `-graph-crowd <count>` it does so from that many
 steps in view, so a way can act on a board of eight steps. With `-band-stands <seconds>` every band stands that long
 in place of its six seconds or the hold's nine (`RoadmapFixture.wait()`): the flows that take a band's Undo launch with
-it, so a slow runner cannot outlast the band, and the flows that watch a band leave launch without it. The roadmaps
+it, so a slow runner cannot outlast the band, and the flows that watch a band leave launch without it. A flow holds
+that a control not built yet is absent with `for unbuilt in [...]`, so a change that builds one searches `UITests/` for
+`unbuilt` and takes it off the list, and a change to words the room shows, a subtitle or a label, searches `UITests/`
+for those words too. The roadmaps
 under *Learn to sail* hold a few steps
 each, not the counts the boards draw, and the account's board holds three roadmaps, not nine: it is planted by a
 second engine on the model server, which takes about half a second longer for every roadmap the account already
@@ -1130,7 +1222,7 @@ and Daylight. `DesignCapture.swift` holds the shared base: launch, capture, the 
 the opt-in skip. XCTest skips every capture unless the test runner sees `WM_DESIGN_CAPTURE=1`; Xcode forwards
 `TEST_RUNNER_`-prefixed variables to the runner without the prefix. Each area keeps its captures in its own file and
 class, a subclass of `DesignCapture`: `ShellCaptures`, `JournalCaptures`, `ChromeCaptures`, `CoachCaptures`,
-`NotesCaptures`, `RoutinesCaptures`, `WorkoutCaptures`, `LogCaptures`, `RecoveryCaptures` and `RoadmapCaptures`. The CI shards leave
+`NotesCaptures`, `RoutinesCaptures`, `WorkoutCaptures`, `LogCaptures`, `RecoveryCaptures`, `RoadmapCaptures` and `RoadmapNestedCaptures`. The CI shards leave
 the suite out and check that its guard remains.
 
 A capture's name is its screen, then `-375` on a 375 pt phone, `-ax3` at the largest text, and its appearance:

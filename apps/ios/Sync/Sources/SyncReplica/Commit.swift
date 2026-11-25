@@ -274,16 +274,13 @@ public struct CommitPlanner: Sendable {
     return try ScopeView(replica, governing.scope, .stored, registry: registry).record(governing.key)?.lattice.life?.state == .dead
   }
 
-  // Step 4's retire: the held gestures of the scope with no command, whose every delta removes a named record.
-  // A capture command is the ordinary deltas' own, so it does not stop a retire.
+  // Step 4's retire: the held gestures of the scope with no command of their own, whose every delta removes a named
+  // record.
   func retiringEntries(of retire: [RecordRef], in scope: ScopeRef, replica: LoadedReplica) -> [OutboxEntry] {
     guard !retire.isEmpty else { return [] }
     let named = Set(retire.map(\.key))
-    let commandFree = { (entry: OutboxEntry) -> Bool in
-      entry.intent.command.map { (command: Command) -> Bool in self.registry.command(command.name)?.engine == .capture } ?? true
-    }
     let removesNamed = { (entry: OutboxEntry) -> Bool in
-      commandFree(entry) && !entry.intent.deltas.isEmpty
+      self.registry.ownCommand(of: entry) == nil && !entry.intent.deltas.isEmpty
         && entry.intent.deltas.allSatisfy { $0.removes && named.contains($0.key) }
     }
     var gestures: [(id: String, entries: [OutboxEntry])] = []
@@ -673,9 +670,10 @@ struct DeltaBuilder {
     return delta
   }
 
-  // A keyed put's life: alive when it makes the record present, dead when it removes it, else the drawn life unchanged. A
-  // put that leaves a `wholePut` record present is a whole put; any other carries its life alone, since §6.1 step 2 refuses
-  // a dead whole delta with a field register, so one that names a field value throws.
+  // A keyed put's life: alive when it makes the record present, dead when it removes it, else the drawn life unchanged.
+  // A put that makes the record present diffs against no record, since the server keeps no field of a dead keyed one (G1).
+  // A put that leaves a `wholePut` record present is a whole put; any other carries its life alone, since §6.1 step 2
+  // refuses a dead whole delta with a field register, so one that names a field value throws.
   mutating func put(_ type: TypeDef, _ id: RecordID, present: Bool?, values: [String: JSON], texts edits: [String: TextEdit]) throws -> Delta? {
     guard type.identity == .keyed, type.life else { throw CommitFailure.malformed("\(type.name) is not keyed with life") }
     let key = RecordKey(type.name, id)
@@ -685,12 +683,13 @@ struct DeltaBuilder {
     let present = present ?? presentBefore
     if present && type.wholePut { return try wholePut(type, key, values: values, texts: edits) }
     guard !type.wholePut || (values.isEmpty && edits.isEmpty) else { throw CommitFailure.malformed("a removal of \(key) carries its life alone") }
+    let makesPresent = present && !presentBefore
     var life = current?.lattice.life
-    if present && !presentBefore { life = Life(.alive, stamp) }
+    if makesPresent { life = Life(.alive, stamp) }
     if !present && presentBefore { life = Life(.dead, stamp) }
     guard let life else { return nil }
     var delta = Delta(key: key, lattice: Lattice(life: life))
-    let changed = try withChanges(&delta, type, values, edits, current: current)
+    let changed = try withChanges(&delta, type, values, edits, current: makesPresent ? nil : current)
     return changed || life != current?.lattice.life ? delta : nil
   }
 

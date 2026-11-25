@@ -2,6 +2,7 @@
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/http/WriteRoutes.h"
 #include "test/DrogonLoopback.h"
+#include "platform/adapters/http/Caller.h"
 #include "test/platform/Fakes.h"
 #include "test/platform/FakeAiBudgetRepository.h"
 #include "test/testing.h"
@@ -64,6 +65,7 @@ struct PassFixture {
   AiPassApi api{passes, auth, installations, entitlements, limiter, clock, {"https://windmill.works"}, AiInstallationProxy::Direct};
   wm::test::DrogonLoopback::Connection wire;
   std::vector<WriteCompletion> completions;
+  drogon::HttpRequestPtr last;
   const User account{UserId{"44444444-4444-4444-4444-444444444444"}, Email{"private@example.test"}, "Private name", {}};
 
   explicit PassFixture(Allowlists lists = {})
@@ -81,6 +83,7 @@ struct PassFixture {
     const auto request = wire.exchange("POST /v1/ai/passes HTTP/1.1\r\nHost: localhost\r\n" + contentType +
         "Content-Length: " + std::to_string(body.size()) + "\r\n" + headers + "\r\n" + body).request;
     if (!request) throw std::runtime_error("pass request did not parse");
+    last = request;
     beginWriteRequest(request, {"/v1/ai/passes", "ai.pass.sign", "platform", "rest", {drogon::Post}, false, kAiPassRoutePolicy});
     drogon::HttpResponsePtr response;
     observeHttpWork(request, [&] { api.sign(request, [&](const auto& result) { response = result; }); });
@@ -88,6 +91,11 @@ struct PassFixture {
     applyWriteResponsePolicy(request, response);
     CHECK_EQ(response->getHeader("cache-control"), "no-store");
     return response;
+  }
+
+  // The caller the last request left for its access line: an account's id, `refused` or `lapsed`, or anon for none.
+  std::string caller() const {
+    return last->attributes()->find(kCallerAttribute) ? last->attributes()->get<std::string>(kCallerAttribute) : "anon";
   }
 };
 
@@ -118,6 +126,7 @@ TEST(ai_pass_accounts_and_installations_have_exact_claims_and_one_private_observ
   Json::Value expected;
   std::istringstream(R"({"aud":"ai","env":"development","iat":1800000000000,"exp":1800000600000,"sub":{"account":"44444444-4444-4444-4444-444444444444"},"plan":"none","client":"web"})") >> expected;
   CHECK(claims(account) == expected);
+  CHECK_EQ(fixture.caller(), fixture.account.id.str());
   CHECK_EQ((*account->getJsonObject())["expiresIn"].asInt64(), 600'000);
   const std::string installation = "X-Windmill-Installation: " + issued.credential + "\r\n";
   CHECK(claims(fixture.call("Authorization: Bearer session\r\n" + installation)) == expected);
@@ -131,6 +140,7 @@ TEST(ai_pass_accounts_and_installations_have_exact_claims_and_one_private_observ
   expected["sub"]["installation"] = anonymous.principal->id();
   const auto anonymousAnswer = fixture.call("X-Windmill-Installation: " + anonymous.credential + "\r\n");
   CHECK(claims(anonymousAnswer) == expected);
+  CHECK_EQ(fixture.caller(), std::string("anon"));
   CHECK_EQ(fixture.rows.admissions.size(), std::size_t{1});
   CHECK_EQ(fixture.rows.admissions.front().limit, 30);
   std::size_t passCompletions = 0;
@@ -161,6 +171,10 @@ TEST(ai_pass_authentication_transport_and_json_refusals_never_fall_back) {
       {"Cookie: wm_session=session; wm_session=session\r\nOrigin: https://windmill.works\r\n", "unauthenticated"},
       {"Authorization: Bearer session\r\nCookie: wm_session=invalid\r\nOrigin: https://windmill.works\r\n", "unauthenticated"}})
     CHECK_EQ((*fixture.call(headers)->getJsonObject())["code"].asString(), code);
+  fixture.call("Authorization: Bearer session\r\nCookie: wm_session=invalid\r\nOrigin: https://windmill.works\r\n");
+  CHECK_EQ(fixture.caller(), std::string("refused"));
+  fixture.call(installation + "Authorization: Bearer invalid\r\n");
+  CHECK_EQ(fixture.caller(), std::string("lapsed"));
   for (const auto& body : {R"({"client":"web","use":"gym.coach","version":2,"version":2})", R"({"client":"web","use":"unknown","version":2})"}) {
     CHECK_EQ((*fixture.call("Authorization: Bearer session\r\n", body)->getJsonObject())["code"].asString(), "invalid_request");
     CHECK(fixture.completions.back().metadata.empty());

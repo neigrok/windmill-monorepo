@@ -77,6 +77,14 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild build -scheme WindmillSync-Package -destination 'generic/platform=iOS Simulator'
 ```
 
+The App's tests call the packages' public API too, so a change that renames or removes a public symbol also builds
+them, from `apps/ios/App` after `python3 Tools/generate_project.py`:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcodebuild build-for-testing -project Windmill.xcodeproj -scheme Windmill -destination 'generic/platform=iOS Simulator'
+```
+
 Keep the full monorepo: the corpus runner finds `packages/api-contract/sync/corpus/` by walking up from
 its own file. `WINDMILL_SYNC_CORPUS=<path>` points it elsewhere.
 
@@ -164,9 +172,15 @@ app and `WindmillTests` without the UI tests. Three UI shards, balanced on measu
 
 | Shard | Classes |
 |---|---|
-| `integration-roadmap` | `GymIntegrationFlowTests`, `RoadmapFlowTests` |
-| `gym-journal` | `GymCoachFlowTests`, `GymAnonymousCoachFlowTests`, `GymWorkoutFlowTests`, `GymRecoveryFlowTests`, `JournalFlowTests`, `JournalIntegrationFlowTests`, `JournalEchoFlowTests` |
+| `integration-roadmap` | `GymIntegrationFlowTests`, `RoadmapFlowTests`, `RoadmapLandingFlowTests` |
+| `gym-journal` | `GymCoachFlowTests`, `GymAnonymousCoachFlowTests`, `GymWorkoutFlowTests`, `GymRecoveryFlowTests`, `JournalFlowTests`, `JournalIntegrationFlowTests`, `JournalEchoFlowTests`, `RoadmapNestedFlowTests` |
 | `shell-offline-system` | `OfflineFlowTests`, `OnboardingFlowTests`, `ShellFlowTests`, `RoadmapSharingFlowTests`, `WorkoutActivityFlowTests`, `WorkoutOutsideFlowTests` |
+
+A local Xcode newer than CI's 26.3 (Swift 6.2) accepts code that CI rejects:
+- **Nested test classes:** a class nested in a test suite that builds an App type in a stored property's default value
+  needs `@MainActor`, since the App's types are main-actor-isolated.
+- **Long `+` chains:** a long chain that mixes `CGFloat` and `Double` needs one type.
+- **`ID` inside an `Identifiable` type:** name it `DomainKit.ID`.
 
 Each test job builds its own App, and the packages job checks that the UI class partition stays complete. The opt-in
 classes stay out of it and keep their guards: the design capture suite in `App/UITests/DesignCapture/` (how to run and
@@ -180,6 +194,7 @@ Intelligence notification state before boot, waits for boot completion, then set
 automation, UTC, a fixed status bar and the software keyboard, with autocorrection and predictions off. The shard
 builds its tests before it runs them, so the build's memory is free before the first launch, turns off Spotlight
 indexing on the runner, and logs the runner's load every 15 seconds. Tests run serially on that UUID, and a result check requires every selected test to pass
-exactly once. A failed shard prints each failed test's app hierarchy at its failure and retains its logs and xcresult
+exactly once. A shard's budget for setup, build, tests and cleanup is 75 minutes; the shards take 40 to 62 minutes. A
+failed shard prints each failed test's app hierarchy at its failure and retains its logs and xcresult
 bundle for three days. Cleanup deletes the device even after failure. CI does not run `e2e.sh`, which needs the local
 backend.

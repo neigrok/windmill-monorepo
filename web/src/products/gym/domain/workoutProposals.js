@@ -51,6 +51,11 @@ export class WorkoutProposalValue {
   }
 
   get document() { return RoutineChange.document(this.changes); }
+
+  // The count its card, History and its receipt say: the log's once it has counted, else every line that is not kept and
+  // every kept line that moves in the plan it changes.
+  /** @param {readonly RoutineEntry[]} base */
+  countChanges(base) { return this.changeCount ?? RoutineChange.count(base, this.changes); }
 }
 
 /** @type {EntityType<WorkoutProposalValue, string>} */
@@ -176,6 +181,12 @@ export class WorkoutProposalState {
     }
     const moved = proposal.changes.find((change) => change.kind !== 'kept' && workout.isLogged(change.exerciseId));
     return moved === undefined ? null : { reason: 'workout-moved', exerciseId: moved.exerciseId.json };
+  }
+
+  // Whether applying it now would be refused for a load under a movement's floor, read in the catalogue the Apply floors it in.
+  get underFloor() {
+    const proposal = this.proposal;
+    return proposal?.state === 'pending' && this.workout !== null && RoutineChange.underFloor(proposal.changes, this.workout.catalogue);
   }
 
   // What the log would answer the decision, said before it is sent. Applying asks more than turning down: the workout must be

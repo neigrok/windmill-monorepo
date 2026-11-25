@@ -1,5 +1,4 @@
 import { IndexedDBStore, WriterSlice, frozen } from './store.js';
-import { MemoryStore } from './memoryStore.js';
 import { ProductNotices, ScopeObservation } from './observation.js';
 import { TabLeadership } from './leadership.js';
 import { HttpTransport, LiveChannel } from './transport.js';
@@ -19,7 +18,7 @@ import { effectsOf } from '../../../../packages/api-contract/sync/reference/clie
 import { cancelSignIn, engineStart, epochChange, signIn, signOut } from '../../../../packages/api-contract/sync/reference/client/lifecycle.js';
 import { applyChunk, applyPage, finishPage, onFrame, onPullResponse, pullRequest, settle } from '../../../../packages/api-contract/sync/reference/client/puller.js';
 import { dismiss } from '../../../../packages/api-contract/sync/reference/client/refusal.js';
-import { applyPushResult, nextPush, onHello, onPushResponse, SenderWait, validatePushEnvelope, validatePushReceipts } from '../../../../packages/api-contract/sync/reference/client/sender.js';
+import { applyPushResult, hasWorkToSend, nextPush, onHello, onPushResponse, SenderWait, validatePushEnvelope, validatePushReceipts } from '../../../../packages/api-contract/sync/reference/client/sender.js';
 import { Doubts, firstPullComplete, reconcile, subscribe, subscriptionsOf, unsubscribe } from '../../../../packages/api-contract/sync/reference/client/subscriptions.js';
 import { viewRecord } from '../../../../packages/api-contract/sync/reference/client/views.js';
 
@@ -112,12 +111,11 @@ export class BrowserSyncEngine {
     this.sessionRead = null;
   }
 
-  // `inMemory` holds the device in this tab alone (`MemoryStore`), for a browser that offers no store; else IndexedDB keeps it.
   static async open(options = {}) {
     let store;
     try {
-      store = options.store ?? await (options.inMemory ? MemoryStore : IndexedDBStore).open({ indexedDB: options.indexedDB,
-        keyRange: options.keyRange, name: options.name, newReplicaId: options.newReplicaId ?? replicaId });
+      store = options.store ?? await IndexedDBStore.open({ indexedDB: options.indexedDB, keyRange: options.keyRange,
+        name: options.name, newReplicaId: options.newReplicaId ?? replicaId });
       const engine = new BrowserSyncEngine({ ...options, store });
       await engine.refresh();
       return engine;
@@ -348,7 +346,7 @@ export class BrowserSyncEngine {
   async start() {
     if (this.started || this.closed) return;
     this.started = true;
-    try { this.coordination = new TabLeadership({ locks: this.navigator?.locks, store: this.store.coordination,
+    try { this.coordination = new TabLeadership({ locks: this.navigator?.locks, store: this.store.version,
       visible: this.visible, ...this.leadershipOptions,
       readReplica: () => this.refresh(), onLeader: (leader) => {
         this.leader = leader;
@@ -796,13 +794,16 @@ export class BrowserSyncEngine {
     }
   }
 
+  // One sender round (engine.md §7.4): a hello, then a push of what the replica numbers. A round with nothing to push
+  // asks nothing and waits for a kick; one that pushed, failed its hello, was overtaken by a change of the replica or
+  // waits out the server's retry goes again.
   async send({ leave = false } = {}) {
     if (!this.canSync() || this.sending || (!leave && !this.wait.due(this.monotonic()))
       || (leave && !this.wait.leaveMayPush(this.monotonic())) || (this.helloRetryAt ?? 0) > this.monotonic()) return;
     this.sending = true;
     let request;
     let handle;
-    let checkedHello = false;
+    let again = false;
     try {
       const { device: before } = await this.store.read([]);
       const seat = before.activeReplica;
@@ -810,9 +811,7 @@ export class BrowserSyncEngine {
       const network = this.networkGeneration;
       const lifecycle = this.lifecycleGeneration;
       const epoch = seat.meta.serverEpoch;
-      if (seat.meta.state !== 'bound' || seat.meta.authPaused || this.signOutPaused(before)
-        || !seat.outbox.some((entry) => entry.state === 'ready' || entry.state === 'sent')) return;
-      checkedHello = true;
+      if (seat.meta.state !== 'bound' || seat.meta.authPaused || this.signOutPaused(before) || !hasWorkToSend(seat, this.registry)) return;
       const hello = await this.request('hello');
       this.validateResponse('hello', hello.response);
       if (hello.response.status === 200 && hello.response.body?.minSchema > this.registry.version) { await this.upgrade(); return; }
@@ -823,12 +822,12 @@ export class BrowserSyncEngine {
         && device.activeReplica.meta.state === 'bound' && !device.activeReplica.meta.authPaused && !this.signOutPaused(device);
       const ready = await this.write(null, (device, ctx) => {
         if (!current(device)) return false;
-        if (hello.response.status === 200) onHello(device.activeReplica, ctx, hello.response, hello.timing);
-        else if (device.activeReplica.isUnauthenticated(hello.response)) device.activeReplica.meta.authPaused = true;
+        if (hello.response.status === 200 || device.activeReplica.isUnauthenticated(hello.response)) onHello(device.activeReplica, ctx, hello.response, hello.timing);
         return !device.activeReplica.meta.authPaused && hello.response.status === 200
           && hello.response.body?.as === seat.meta.account && hello.response.body.schema >= this.registry.minVersion;
       });
       if (!ready) {
+        again = true;
         if (!current(this.device)) return;
         this.wait.backoff(this.monotonic(), this.draw, { liveHint: this.liveHint(this.device.activeReplica) });
         this.helloRetryAt = Math.max(this.wait.until, this.monotonic() + this.limits.BACKOFF_BASE_MS,
@@ -838,11 +837,15 @@ export class BrowserSyncEngine {
       this.helloRetryAt = null;
       request = await this.write(null, (device, ctx) => {
         handle = device.activeReplica.storageHandle;
-        if (!current(device) || device.activeReplica.meta.authPaused || device.activeReplica.meta.state !== 'bound'
-          || this.signOutPaused(device) || (device.activeReplica.meta.pushRetryAt ?? 0) > this.now() || device.meta.upgradeStops?.[`${this.appVersion}:${this.registry.version}`] === true) return null;
+        if (!current(device) || (device.activeReplica.meta.pushRetryAt ?? 0) > this.now()) {
+          again = true;
+          return null;
+        }
+        if (device.meta.upgradeStops?.[`${this.appVersion}:${this.registry.version}`] === true) return null;
         return structuredClone(nextPush(device.activeReplica, ctx, this.pushLimit ? { limit: this.pushLimit } : {}));
       });
       if (!request) return;
+      again = true;
       if (leave) {
         while (request.intents.length && bodyBytes(request) > this.limits.KEEPALIVE_BYTES) request.intents.pop();
         if (!request.intents.length) return;
@@ -887,7 +890,7 @@ export class BrowserSyncEngine {
             session.phase = 'decision';
         }).catch(() => {});
       }
-      if (request || checkedHello) this.scheduleSender();
+      if (again) this.scheduleSender();
     }
   }
 
@@ -974,6 +977,8 @@ export class BrowserSyncEngine {
       this.validateResponse('pull', response, request);
       // An answer that lands after a sign-in, a sign-out or a re-identify changed the replica it was asked for applies
       // nothing, pauses nothing and backs nothing off; its scopes are pulled again for the replica now active (engine.md §7.12).
+      // An epoch the replica did not hold kicks the sender (engine.md §7.5 step 1).
+      let newEpoch = false;
       const answer = await this.write(null, (device, ctx) => {
         const replica = device.activeReplica;
         if (replica.id !== seat.replica || bindingOf(replica) !== seat.binding) return 'overtaken';
@@ -981,9 +986,15 @@ export class BrowserSyncEngine {
           replica.meta.authPaused = true;
           return 'refused';
         }
+        const held = replica.meta.serverEpoch;
         onPullResponse(replica, ctx, request, { ...response, body: { ...response.body, pages: [] } }, timing);
+        newEpoch = replica.meta.serverEpoch !== held;
         return response.status === 200 && !replica.meta.authPaused ? 'accepted' : 'refused';
       });
+      if (newEpoch) {
+        this.wait.kick(this.monotonic());
+        this.scheduleSender();
+      }
       if (answer !== 'accepted') {
         for (const { scope } of request.scopes) this.pullDirty.add(scope);
         if (answer === 'overtaken') return;
@@ -1330,13 +1341,13 @@ export class BrowserSyncEngine {
     await this.write(null, (device, ctx) => this.markCleared(device, ctx)).catch((error) => this.unheard(error));
   }
 
-  // The account a cleared store lost its work for, or null: a store that keeps the device past the page, whose active
-  // replica is bound to the account of the session owner's last read, and which neither holds nor let go of the replica that
-  // account's session last pushed for, was cleared by the browser (web-device-parity.md §7 Cleared).
+  // The account a cleared store lost its work for, or null: a store whose active replica is bound to the account of the
+  // session owner's last read, and which neither holds nor let go of the replica that account's session last pushed for,
+  // was cleared by the browser (web-device-parity.md §7 Cleared).
   clearedFor(device) {
     const read = this.sessionRead;
     const { state, account } = device.activeReplica.meta;
-    if (!read?.syncReplica || !this.store.durable || device.meta.storeCleared || state !== 'bound' || account !== read.account) return null;
+    if (!read?.syncReplica || device.meta.storeCleared || state !== 'bound' || account !== read.account) return null;
     return [...device.replicas.map(({ id }) => id), ...(device.meta.formerReplicas ?? [])].includes(read.syncReplica) ? null : account;
   }
 

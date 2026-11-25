@@ -318,11 +318,6 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 val active = engine.device.current()
                 if (allowed() && active.id == sentFor.first && active.account == sentFor.second) {
                     engine.onHello(response, RequestTiming(send, recv))
-                    engine.write(EngineOperation.hello) { replica ->
-                        if (response.unauthenticated(replica.account)) replica.meta = replica.meta.with("serverSchema" to null)
-                        else if (response.status == 200 && replica.account != null && response.body?.get("as") == Json.of(replica.account!!))
-                            response.body["schema"]?.let { replica.meta = replica.meta.with("serverSchema" to it) }
-                    }
                 }
             }
             else response.body?.get("serverTime")?.let { time -> engine.write(EngineOperation.hello) { engine.offset(it, time.long(), RequestTiming(send, recv)) } }
@@ -509,7 +504,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 changedEpoch = engine.device.current().meta["serverEpoch"] != epoch
                 if (changedEpoch) null else engine.nextPush(pushLimit)
             } ?: run {
-                // An epoch learned during the hello needs another hello before numbering, and a pull never wakes the sender.
+                // An epoch learned during the hello needs another hello before numbering.
                 if (!changedEpoch) return@withLock SenderTurn.rest
                 senderWake.trySend(Unit)
                 return@withLock SenderTurn.helloAgain
@@ -623,10 +618,16 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 if (response?.requiresUpgrade == true) { requireUpgrade(); break }
                 if (!current(seat)) break
                 if (response != null) {
+                    var newEpoch = false
                     val outcomes = engine.lock.withLock {
                         if (!activityAllowed() || !current(seat)) return@withLock null
+                        val held = engine.device.current().meta["serverEpoch"]
                         engine.onPullResponse(request, response, RequestTiming(send, recv), appVersion = appVersion, replicaID = seat.replica)
+                            .also { newEpoch = engine.device.current().meta["serverEpoch"] != held }
                     } ?: break
+                    // §7.5 step 1: an epoch the replica did not hold wakes the sender, for a slot that waited for one and for the entries an
+                    // epoch change returned to ready.
+                    if (newEpoch) launchWorker(EngineOperation.sync) { senderTurn.withLock { wait.kick(mono()) }; senderWake.trySend(Unit) }
                     for (result in outcomes) {
                         val target = ScopeRef(result.member("scope"))
                         val outcome = result.member("outcome").str()

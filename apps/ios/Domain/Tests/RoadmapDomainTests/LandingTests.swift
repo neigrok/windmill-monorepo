@@ -216,7 +216,7 @@ extension LandingRead {
 extension CannotLand {
   var form: JSON {
     let listed: [JSON] = self.listed.map { (entry: Entry) -> JSON in
-      ["id": .string(entry.id), "gestureId": .string(entry.gestureId), "reason": .string(entry.reason.rawValue),
+      ["id": .string(entry.id), "gestureId": .string(entry.gestureId), "reason": .string(entry.reason.rawValue), "made": .bool(entry.made),
        "subject": entry.subject?.form ?? .null, "values": .object(fields: entry.values)]
     }
     let unexpected: [JSON] = self.unexpected.map { ["id": .string($0.id), "code": $0.code.json] }

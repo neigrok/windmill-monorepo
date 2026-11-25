@@ -6,6 +6,7 @@ import { Plan, Prediction } from '../../../platform/domain-kit/plans.js';
 import { Refused } from '../../../platform/domain-kit/refusals.js';
 import { Valid } from '../../../platform/domain-kit/validation.js';
 import { Path, Violation, precondition } from '../../../platform/domain-kit/values.js';
+import { jcs } from '../../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { Stamp } from '../../../../../packages/api-contract/sync/reference/core/stamp.js';
 import { GymRefusals } from './gymRules.js';
 import { Session, SessionRules, SetRules, TrainingSet } from './training.js';
@@ -23,6 +24,8 @@ import { WorkoutProposal } from './workoutProposals.js';
 /** @typedef {import('./training.js').TrainingSetValue} TrainingSetValue */
 /** @typedef {import('./workoutProposals.js').WorkoutProposalValue} WorkoutProposalValue */
 /** @typedef {import('../../../platform/domain-kit/refusals.js').DomainNotice<GymRefusal>} GymNotice */
+/** @typedef {import('../../../platform/domain-kit/refusals.js').NoticeContent} NoticeContent */
+/** @typedef {import('../../../platform/domain-kit/entities.js').RecordID} RecordID */
 
 /** @param {string} code @param {import('../../../platform/domain-kit/entities.js').RecordRef} subject @param {Json | null} [detail] */
 const predicted = (code, subject, detail = null) => GymRefusals.ofRefused(new Refused(code, subject, detail, 'predicted'));
@@ -65,6 +68,44 @@ export class SignedOutWorkout {
       return WorkoutProposal.decode(Fields.values(WorkoutProposal.type, proposalFields.ref('id', WorkoutProposal).record, proposalFields.values));
     }) : [];
     return new SignedOutWorkout(session, sets, proposals);
+  }
+
+  // The workout a start the account refused `session-open` was logged as, from the notice that holds it: the start's
+  // session as the start predicted it, finished where a finish folded into the notice says, and every set born in the
+  // notice as its last write there left it, a set deleted before the refusal left out. A workout deleted before the
+  // refusal keeps none of its sets. Null for a notice of anything else.
+  /** @param {GymNotice} notice */
+  static ofRefusedStart(notice) {
+    const { code, content } = notice.notice;
+    const start = content.cmd;
+    if (code !== 'session-open' || start?.name !== 'gym.start') return null;
+    const id = /** @type {RecordID} */ (start.args.id);
+    /** @type {Json} */
+    let finishedAt = null;
+    let deleted = false;
+    /** @type {Map<string, { id: RecordID, alive: boolean }>} */
+    const born = new Map();
+    /** @param {NoticeContent} part */
+    const walk = (part) => {
+      if (part.cmd?.name === 'gym.finish' && sameJson(part.cmd.args.sessionId ?? null, id)) finishedAt = part.cmd.args.finishedAt ?? null;
+      for (const delta of part.d ?? []) {
+        if (delta.life === undefined) continue;
+        if (delta.t === Session.type && sameJson(delta.id, id)) deleted = delta.life[0] === 'dead';
+        if (delta.t !== TrainingSet.type) continue;
+        const key = jcs(delta.id);
+        if (delta.life[0] === 'alive' && delta.life[1] === delta.born) born.set(key, { id: delta.id, alive: true });
+        const set = born.get(key);
+        if (set !== undefined) set.alive = delta.life[0] === 'alive';
+      }
+      for (const dependent of part.dependents ?? []) walk(dependent);
+    };
+    walk(content);
+    const routineId = start.args.routineId ?? null;
+    const session = Session.decode(Fields.values(Session.type, id, { startedAt: start.args.startedAt ?? null, routineId, historyRoutineId: routineId,
+      finishedAt, closedBy: finishedAt === null ? null : 'finish', ...notice.values({ t: Session.type, id }) }));
+    const sets = deleted ? [] : [...born.values()].filter((set) => set.alive)
+      .map((set) => TrainingSet.decode(Fields.values(TrainingSet.type, set.id, notice.values({ t: TrainingSet.type, id: set.id }))));
+    return new SignedOutWorkout(session, sets);
   }
 
   get json() {

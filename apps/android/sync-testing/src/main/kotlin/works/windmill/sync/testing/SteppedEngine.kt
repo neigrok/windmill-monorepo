@@ -125,7 +125,7 @@ object ClientCorpus {
         UndoSegment(segment.member("index").long(0).toInt(), segment.member("recipes").arr().map(UndoRecipe::read))
     }
     fun handlers(probe: Registry): Map<String, Handler> {
-        val paths = listOf("commit/deltas.json", "commit/acts.json", "commit/ids.json", "commit/guards.json", "commit/supersede.json")
+        val paths = listOf("commit/acts.json", "commit/ids.json", "commit/guards.json", "commit/supersede.json")
         return paths.associateWith { { input: Json -> steps(probe, input) } } + mapOf(
             "view/drawn.json" to { input: Json -> view(probe, input, ViewMode.drawn) },
             "view/stored.json" to { input: Json -> view(probe, input, ViewMode.stored) },

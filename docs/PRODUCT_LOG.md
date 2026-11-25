@@ -55,8 +55,8 @@ Current behavior and privacy boundaries are in
 ## Gym
 
 Serve a lifter following a repeatable program. Reliable records and a useful prefilled weight make
-logging fast. Native apps own workout entry; the web provides a live mirror, planning, history and
-Coach.
+logging fast. Every surface logs a workout — the phones and the web alike, on each device's own copy — and the web
+also provides planning, history and Coach.
 
 Connected assistants can record supplied workout facts and create a requested routine. Changes to
 an existing routine remain proposals until the lifter applies them. Coach keeps its conversation,

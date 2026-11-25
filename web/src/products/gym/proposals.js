@@ -95,6 +95,10 @@ export const TURN_DOWN_VERB = t('gym.proposals.turnDown');
 // edit the log has not confirmed, or out of sight) has no Apply and no Turn this down; this line stands where they stood.
 export const OUT_OF_DATE_LINE = t('gym.proposals.outOfDate');
 
+// So has one whose Apply this copy's rules would refuse for a load under a movement's floor
+// (`ProposalApplication.underFloor`); the Coach card's sentence for that load stands there instead.
+export const BELOW_FLOOR_LINE = t('gym.coach.proposal.belowFloor');
+
 // Above the diff and never in the band: a session's plan is frozen, so applying now changes nothing
 // about the workout in progress, and a line inside the band would move Apply.
 export const MID_WORKOUT_CAVEAT = t('gym.proposals.midWorkout');

@@ -132,3 +132,49 @@ test('gym registers its settings as one section, in the product zone and never b
   assert.equal(fs.existsSync(path.join(GYM, 'settings', 'GymSettingsSection.jsx')), true);
   assert.equal(fs.existsSync(path.join(GYM, 'settings', 'GymDataSection.jsx')), false);
 });
+
+test('gym hands the engine its sign-in hooks: the saved workouts and the drafts the account refused are its device work', () => {
+  const { sync } = gymRoutes;
+  assert.deepEqual(Object.keys(sync).sort(), ['adoptDeviceRows', 'liveHint', 'onPushResult', 'pendingDeviceWork', 'prepare',
+    'seatWillChange', 'signInWork', 'signOutBegins', 'signOutForgets'], 'gym answers no sign-in question by itself: it asks whenever the account holds gym records');
+  const copy = { session: { id: 'copyA001' }, sets: [] };
+  const rows = { 'rack:adoption': { copyA001: copy }, 'rack:workoutDrafts': { 'import:a': { status: 'accepted' }, 'correction:b': { status: 'refused' } },
+    runningTurn: { message: 'm1' } };
+  assert.deepEqual({
+    both: sync.pendingDeviceWork('gym', rows),
+    accepted: sync.pendingDeviceWork('gym', { ...rows, 'rack:workoutDrafts': { 'import:a': { status: 'accepted' }, 'import:c': { status: 'pending' } } }),
+    none: sync.pendingDeviceWork('gym', { runningTurn: { message: 'm1' } }),
+    journal: sync.pendingDeviceWork('journal', rows),
+  }, { both: ['rack:adoption', 'rack:workoutDrafts'], accepted: ['rack:adoption'], none: [], journal: [] });
+});
+
+test('a sign-in joining the account\'s dormant replica merges the saved workouts and drafts entry by entry, the account\'s standing on an entry both hold', () => {
+  const { adoptDeviceRows } = gymRoutes.sync;
+  const incoming = { 'rack:adoption': { copyB: 'browser B', copyA: 'browser A' }, 'rack:workoutDrafts': { 'import:b': 'browser draft' },
+    'rack:rest': 'browser rest', picture: 'browser picture' };
+  const kept = { 'rack:adoption': { copyA: 'account A' }, 'rack:rest': 'account rest' };
+  assert.deepEqual(adoptDeviceRows('gym', incoming, kept), {
+    'rack:adoption': { copyB: 'browser B', copyA: 'account A' }, 'rack:workoutDrafts': { 'import:b': 'browser draft' },
+    'rack:rest': 'account rest', picture: 'browser picture',
+  });
+  assert.equal(adoptDeviceRows('journal', incoming, kept), undefined);
+});
+
+test('on the engine, a browser\'s saved workouts join the account beside those its dormant replica keeps', async (t) => {
+  const { BrowserSyncEngine } = await import('../../../src/platform/sync/engine.js');
+  const { environment } = await import('../../platform/sync/fakes.js');
+  const env = environment();
+  const { pendingDeviceWork, adoptDeviceRows } = gymRoutes.sync;
+  // No connection, so the sign-out decides at once with nothing to flush.
+  const engine = await BrowserSyncEngine.open({ ...env.options, navigator: { ...env.options.navigator, onLine: false }, pendingDeviceWork, adoptDeviceRows });
+  t.after(() => engine.close());
+  const keep = (copies) => engine.write(null, (device) => { device.activeReplica.device.gym = { ...device.activeReplica.device.gym, 'rack:adoption': copies }; });
+  env.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, true);
+  await keep({ accountCopy: { session: { id: 'accountCopy' }, sets: [] } });
+  await engine.beginSignOut();
+  assert.equal((await engine.finishSignOut({ choice: 'keep' })).complete, true);
+  await keep({ browserCopy: { session: { id: 'browserCopy' }, sets: [] } });
+  assert.equal((await engine.signIn('A')).complete, true);
+  assert.deepEqual(Object.keys(engine.readDeviceRows('gym')['rack:adoption']).sort(), ['accountCopy', 'browserCopy']);
+});

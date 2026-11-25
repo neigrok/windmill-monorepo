@@ -26,7 +26,7 @@ struct RoadmapGuide: View {
         .background { RoadmapPalette.canvas.ignoresSafeArea() }
         .navigationTitle("Guide").navigationBarTitleDisplayMode(.inline)
         .toolbar { bar }.roomBar(.roadmap)
-        .roadmapFoot(roadmap, away: writing) {}
+        .roadmapFoot(roadmap, away: writing, inSheet: true) {}
     }.tint(RoadmapPalette.accent).presentationDetents([.large]).presentationDragIndicator(.visible)
       .interactiveDismissDisabled(sheet.draft?.changed ?? false)
   }
