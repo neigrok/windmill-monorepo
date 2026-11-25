@@ -589,7 +589,7 @@ test('Chromium: at a desk Coach opens in the rail beside the rack, and its chang
   });
 });
 
-test('Chromium: on a phone Coach is a sheet over the workout at its large detent, and Close returns to the rack as it was (WD7.1 · 390)', async (t) => {
+test('Chromium: on a phone Coach is a sheet over the workout at its large detent, its change rejected there, and Close returns to the rack as it was (WD7.1 · 390)', async (t) => {
   const { tab } = await browserWith(t, { width: 390, height: 844 });
   const page = await tab();
   await withBrowserErrors(page, async () => {
@@ -608,12 +608,18 @@ test('Chromium: on a phone Coach is a sheet over the workout at its large detent
     await sheet.getByRole('region', { name: 'This workout', exact: true }).getByRole('button', { name: 'Apply', exact: true }).waitFor();
     const field = await sheet.getByRole('textbox', { name: 'Ask about your training', exact: true }).boundingBox();
     assert.ok(field.y + field.height <= 844, 'the composer stays at the sheet\'s foot');
+    await sheet.getByRole('region', { name: 'This workout', exact: true }).getByRole('button', { name: 'Reject', exact: true }).click();
+    await sheet.getByText('Rejected · this workout', { exact: true }).waitFor();
+    assert.deepEqual(await coachSteps(page), {
+      opened: [{ screen: 'coach', action: 'new_chat', door: 'workout', outcome: 'ok' }],
+      shown: [{ screen: 'coach', target: 'workout', state: 'pending' }, { screen: 'coach', target: 'workout', state: 'rejected' }],
+      decided: [{ screen: 'coach', target: 'workout', action: 'reject', outcome: 'decided' }] });
     await sheet.getByRole('button', { name: 'Close', exact: true }).click();
     await sheet.waitFor({ state: 'detached' });
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Coach', 'focus is back on Coach');
     assert.deepEqual(await ledger(page), ['100 × 5']);
     assert.equal(await page.locator('.gym-live-load input').inputValue(), '100');
-    assert.deepEqual(await steps(page, 'gym_action'), [{ screen: 'coach', action: 'new_chat', door: 'workout', outcome: 'ok' }]);
+    assert.equal(await page.locator('.gym-live-movement-title').textContent(), 'Back Squat', 'the movement in hand is the one it was');
   });
 });
 

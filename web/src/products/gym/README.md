@@ -276,7 +276,7 @@ favicon follow the rest clock; Enter lands a field and logs nothing; a step of t
 both count; the rest is told once across two tabs; a settle that fails is reported, said and tried again; Edit sets closes
 when a set lands on its movement; and Pop out's open is told and its refusal reported. Coach during a workout runs there too,
 its AI service played round by round: Coach in the rail beside the rack, its change to the workout applied and the card
-collapsed (WD7.1, WD7.2); the sheet at a phone's width and its Close (WD7.1 · 390); a change out of date once its movement
+collapsed (WD7.1, WD7.2); the sheet at a phone's width, its change rejected there, and its Close (WD7.1 · 390); a change out of date once its movement
 is logged (WD7.3); a phone's workout proposal in History with its card, applied in one tab and read applied in the other;
 and an Apply the domain refuses as out of date, drawn as the card's sentence with nothing said or reported. Its page loads
 the app's fonts, and `WM_WORKOUT_SHOTS` names a folder for the logging page and Coach's states at 1440 and 390. Shared training
