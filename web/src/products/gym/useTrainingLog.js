@@ -214,6 +214,8 @@ export function useTrainingLog() {
       const fingerprint = JSON.stringify(notice.content);
       if (seen.current.get(notice.id) === fingerprint) continue;
       seen.current.set(notice.id, fingerprint);
+      // A refusal a saved copy's card names, or a start that lost a race, is recovery's to say (recovery/InThisBrowser.jsx).
+      if (api.recoveryAnswers(notice)) continue;
       const commands = [notice.content?.cmd, ...(notice.content?.dependents ?? []).map((part) => part.cmd)].filter(Boolean);
       const workout = commands.length ? api.workoutSaves().find((receipt) => receipt.status === 'refused' && commands.some((command) =>
         command.name === receipt.command.name && (command.name === 'gym.importSession' ? command.args.id === receipt.sessionId
@@ -222,7 +224,8 @@ export function useTrainingLog() {
         const href = workout.command.name === 'gym.importSession'
           ? backfillHref(workout.command.args.routineId ?? FREE_SESSION) : `${sessionHref(workout.sessionId)}/edit`;
         say(t('gym.app.workoutRefused', { sentence: workout.error.sentence }), { action: { label: t('gym.app.reviewWorkout'), run: () => { window.location.hash = href; } } });
-      } else say(t('gym.app.changeRefused'));
+      } else if (notice.code === 'session-finished') say(t('gym.app.workoutFinished'));
+      else say(t('gym.app.changeRefused'));
       gymStep('refusal', 'refused', 'domain');
     }
   }, [records.notices, say, api]);

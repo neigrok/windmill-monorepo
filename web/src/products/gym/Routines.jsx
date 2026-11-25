@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { Button, Icon, Menu, Tag } from '../../design-system/index.js';
 import { Id } from '../../platform/domain-kit/entities.js';
 import { Back } from './Back.jsx';
@@ -9,9 +10,8 @@ import { routineDocument, useGymApi } from './gymRuntime.js';
 import {
   agoLabel, backfillHref, cappedName, FROM_ROUTINE_MENU, isNameOverCap, MOVEMENTS_HREF,
   movementOf, nameCountLabel, nameOfMovement, NEW_ROUTINE_ID, routineHref,
-  ROUTINES_HREF, schemeParts, showsNameCount,
+  ROUTINES_HREF, schemeParts, showsNameCount, WORKOUT_HREF,
 } from './log.js';
-import { LiveMirror } from './Mirror.jsx';
 import { mintId } from './mint.js';
 import { ProposalPreview, ProposalPanel } from './Proposals.jsx';
 import { useRail } from './rail.js';
@@ -26,7 +26,8 @@ import { useDomainRead } from './useDomainRead.js';
 import { TargetEditor } from './planning/TargetEditor.jsx';
 import './planning/planning.css';
 
-export function RoutinesList({ log, reviewing = null }) {
+// Signed out (`anonymous`) a routine's menu holds Delete alone: Log past opens the past-workout form, a server command (R-5).
+export function RoutinesList({ log, reviewing = null, anonymous = false }) {
   const api = useGymApi();
   const view = useGymRead(() => api.routines(), [], { sync: true, ready: Boolean(api?.ready) });
   const program = useDomainRead((read) => ({ routines: read.repository(Routine).all('stored'), isComplete: read.firstPullComplete() }));
@@ -39,6 +40,20 @@ export function RoutinesList({ log, reviewing = null }) {
   const routines = view.phase === 'ready' ? view.data.filter((routine) => !gone.has(routine.id) && !hidden.has(routine.id)) : [];
   const hasProgram = (program.data?.routines.length ?? 0) > 0;
   const complete = program.phase === 'ready' && program.data.isComplete;
+  // Before the first pull the log may hold only part of the account's routines: one status line says so, and New routine
+  // stays, as WD6.1 draws it.
+  const firstPull = program.phase === 'ready' && !complete;
+  const doors = hasProgram || firstPull;
+  // A workout starts from a routine or empty once the log is all here, and never beside the account's open workout,
+  // whichever device holds it (web-device-parity §2, §4): before the first pull a start could open a second one.
+  const startable = complete && !log.session;
+  const start = async (routineId = null) => {
+    try {
+      await api.startWorkout({ routineId });
+      window.location.hash = WORKOUT_HREF;
+    } catch (error) { log.say(error.sentence ?? t('gym.routines.notStarted', { reason: failureReason(error) })); }
+  };
+  const emptyWorkout = startable && <Button variant="secondary" onClick={() => start()}>{t('gym.routines.emptyWorkout')}</Button>;
 
   const remove = (routine) => log.holdDelete({
     kind: 'routine',
@@ -53,10 +68,12 @@ export function RoutinesList({ log, reviewing = null }) {
 
         <span className="gym-head-doors">
           <a className="gym-door-past" href={MOVEMENTS_HREF}>{t('gym.routines.movementsDoor')}</a>
-          {hasProgram && <span className="gym-new-routine-wide"><Button href={routineHref(NEW_ROUTINE_ID)}>{t('gym.routines.newRoutine')}</Button></span>}
+          {doors && <span className="gym-new-routine-wide">{emptyWorkout}<Button href={routineHref(NEW_ROUTINE_ID)}>{t('gym.routines.newRoutine')}</Button></span>}
         </span>
       </header>
-      {log.session && <LiveMirror log={log} />}
+      {firstPull && (
+        <p className="gym-first-pull" role="status"><RefreshCw size={14} aria-hidden="true" /> {t('gym.common.gettingLog')}</p>
+      )}
 
       {reviewId && <ProposalPanel key={reviewId} id={reviewId} log={log} onChanged={view.refresh} />}
       {removals.phase === 'ready' && removals.data.filter((proposal) => proposal.id !== reviewId).map((proposal) =>
@@ -65,7 +82,7 @@ export function RoutinesList({ log, reviewing = null }) {
             <button className="gym-proposal-review" type="button" onClick={() => setReviewId(proposal.id)}>{t('gym.routines.viewReceipt')}</button></header>
           <p className="gym-proposal-line">{t('gym.routines.removalOutcome', { outcome: proposal.removalOutcome })}</p>
         </section>)}
-      {view.phase === 'loading' && <p className="gym-quiet">{t('gym.routines.opening')}</p>}
+      {view.phase === 'loading' && !firstPull && <p className="gym-quiet">{t('gym.routines.opening')}</p>}
       {view.phase === 'failed' && (
         <p className="gym-read-failed">
           {t('gym.routines.loadFailed')}
@@ -75,32 +92,40 @@ export function RoutinesList({ log, reviewing = null }) {
 
       {view.phase === 'ready' && complete && !hasProgram && (
         <section className="gym-plan-empty">
-          <p>{t('gym.routines.empty')}</p>
-          <Button href={routineHref(NEW_ROUTINE_ID)}>{t('gym.routines.newRoutine')}</Button>
+          <p className="gym-plan-empty-title">{t('gym.routines.emptyTitle')}</p>
+          <p className="gym-plan-empty-line">{t('gym.routines.emptyLine')}</p>
+          <span className="gym-plan-empty-actions">{emptyWorkout}<Button href={routineHref(NEW_ROUTINE_ID)}>{t('gym.routines.newRoutine')}</Button></span>
         </section>
       )}
       {view.phase === 'ready' && routines.length > 0 && (
         <ul className="gym-routines">
-          {routines.map((routine) => (
-            <li className={`gym-routine${routine.pendingProposal ? ' has-proposal' : ''}`} key={routine.id}>
-              <a className="gym-routine-open" href={routineHref(routine.id)}>
-                <span className="gym-routine-card-head"><span className="gym-routine-name">{routine.name}</span><span className="gym-routine-trained">{routine.lastTrainedAt ? <><span className="gym-routine-trained-prefix">{t('gym.routines.trainedPrefix')} </span>{agoLabel(routine.lastTrainedAt)}</> : complete ? t('gym.routines.neverTrained') : null}</span></span>
-                <span className="gym-routine-card-body"><span className="gym-routine-meta">{(routine.entries ?? []).map((entry) => nameOfMovement(log.catalog, entry.exerciseId)).join(' · ')}</span>
-                <span className="gym-routine-rails" aria-hidden="true">{(routine.entries ?? []).map((entry, index) => <span key={index}>{Array.from({ length: entry.sets?.length ?? 1 }, (_, tick) => <i key={tick} />)}</span>)}</span></span>
-              </a>
-              <Menu
-                label={t('gym.routines.moreFor', { name: routine.name })}
-                items={[
-                  { label: t('gym.routines.logPast'), run: () => { window.location.hash = backfillHref(routine.id, FROM_ROUTINE_MENU); } },
-                  { label: t('gym.routines.delete'), run: () => remove(routine) },
-                ]}
-              />
-              {routine.pendingProposal && routine.pendingProposal.id !== reviewId && <ProposalPreview routine={routine} onExpand={setReviewId} log={log} />}
-            </li>
-          ))}
+          {routines.map((routine) => {
+            const inProgress = log.session?.routineId === routine.id;
+            return (
+              <li className={`gym-routine${routine.pendingProposal ? ' has-proposal' : ''}`} key={routine.id}>
+                <a className="gym-routine-open" href={routineHref(routine.id)}>
+                  <span className="gym-routine-card-head"><span className="gym-routine-name">{routine.name}</span>{!inProgress && complete && <span className="gym-routine-trained">{routine.lastTrainedAt ? <><span className="gym-routine-trained-prefix">{t('gym.routines.trainedPrefix')} </span>{agoLabel(routine.lastTrainedAt)}</> : t('gym.routines.neverTrained')}</span>}</span>
+                  <span className="gym-routine-card-body"><span className="gym-routine-meta">{(routine.entries ?? []).map((entry) => nameOfMovement(log.catalog, entry.exerciseId)).join(' · ')}</span>
+                  <span className="gym-routine-rails" aria-hidden="true">{(routine.entries ?? []).map((entry, index) => <span key={index}>{Array.from({ length: entry.sets?.length ?? 1 }, (_, tick) => <i key={tick} />)}</span>)}</span></span>
+                </a>
+                <span className="gym-routine-actions">
+                  {inProgress && <span className="gym-routine-in-progress">{t('gym.routines.inProgress')}</span>}
+                  {startable && <Button variant="secondary" size="sm" onClick={() => start(routine.id)}>{t('gym.routines.start')}</Button>}
+                  <Menu
+                    label={t('gym.routines.moreFor', { name: routine.name })}
+                    items={[
+                      ...(anonymous ? [] : [{ label: t('gym.routines.logPast'), run: () => { window.location.hash = backfillHref(routine.id, FROM_ROUTINE_MENU); } }]),
+                      { label: t('gym.routines.delete'), run: () => remove(routine) },
+                    ]}
+                  />
+                </span>
+                {routine.pendingProposal && routine.pendingProposal.id !== reviewId && <ProposalPreview routine={routine} onExpand={setReviewId} log={log} />}
+              </li>
+            );
+          })}
         </ul>
       )}
-      {hasProgram && <div className="gym-new-routine-small"><Button full href={routineHref(NEW_ROUTINE_ID)}>{t('gym.routines.newRoutine')}</Button></div>}
+      {doors && <div className="gym-new-routine-small">{emptyWorkout}<Button full href={routineHref(NEW_ROUTINE_ID)}>{t('gym.routines.newRoutine')}</Button></div>}
     </section>
   );
 }

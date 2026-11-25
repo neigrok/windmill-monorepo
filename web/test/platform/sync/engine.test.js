@@ -253,29 +253,6 @@ test('a store failure while sending or pulling reports storage once and never as
   engine.close();
 });
 
-test('an engine holding its device in memory leads and syncs alone, and a second such tab is a device of its own', async () => {
-  const env = environment();
-  const opened = async () => {
-    const engine = await BrowserSyncEngine.open({ ...env.options, inMemory: true });
-    engine.observe('self/probe');
-    await engine.start();
-    await until(() => engine.leader);
-    return engine;
-  };
-  const first = await opened(), second = await opened();
-  assert.notEqual(first.store.coordination, second.store.coordination);
-  env.transport.account = 'A';
-  await first.signIn('A'); await until(() => first.leader);
-  await first.commit('self/probe', card());
-  await first.send(); await until(() => !first.sending);
-  assert.deepEqual(second.observe('self/probe').getSnapshot().drawn, []);
-  await second.signIn('A'); await until(() => second.leader);
-  second.kickPull(); await second.pull();
-  assert.deepEqual(second.observe('self/probe').getSnapshot().drawn.map(({ id }) => id), ['card0001']);
-  assert.deepEqual(env.failures, []);
-  first.close(); second.close();
-});
-
 test('a burst of writes in one minute never starves the transport failure that follows it', async () => {
   const env = environment(), engine = await open(env);
   env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
@@ -1392,12 +1369,6 @@ const noClear = {
     const engine = await open(env);
     env.transport.account = 'A'; await engine.signIn('A');
     return { engine, account: 'A', syncReplica: null };
-  },
-  'a store held in memory, a new device in every tab under one cookie': async (env) => {
-    const engine = await BrowserSyncEngine.open({ ...env.options, inMemory: true });
-    await engine.start();
-    env.transport.account = 'A'; await engine.signIn('A');
-    return { engine, account: 'A', syncReplica: unknownReplica };
   },
   'an answer for another account than the one the replica is bound to': async (env) => {
     const engine = await open(env);

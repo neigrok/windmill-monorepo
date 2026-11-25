@@ -160,19 +160,20 @@ test('Chromium: a paused session keeps the room, with sign-in at the account sea
     await page.locator('.gym-routine-name').waitFor();
     assert.deepEqual(await page.locator('.gym-routine-name').allTextContents(), ['Held routine A']);
     assert.deepEqual(await page.evaluate(() => [document.getElementById('auth-state').textContent, window.replica().state]), ['ghost', 'bound']);
-    assert.equal(await page.locator('.gym-door').count(), 0, 'no sign-in pitch stands in the room’s place');
+    assert.equal(await page.locator('.gym-coach-door').count(), 0, 'no sign-in pitch stands in the room’s place');
     await page.getByRole('button', { name: 'Account', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Sign in', exact: true }).waitFor();
     assert.deepEqual(await page.evaluate(() => window.issues ?? []), []);
   });
 });
 
-test('Chromium: a browser signed out keeps the sign-in pitch', async (t) => {
+test('Chromium: a browser signed out draws the room on its own copy', async (t) => {
   const { page } = await boot(t, { seeded: false, me: 'nobody' });
   await withBrowserErrors(page, async () => {
-    await page.locator('.gym-door').waitFor();
-    assert.equal(await page.locator('.gym-door .gym-door-line').textContent(), 'Sign in to open your training log.');
-    assert.equal(await page.locator('.gym-routine-name').count(), 0);
+    await page.locator('.gym-room').waitFor();
+    await page.waitForFunction(() => document.getElementById('auth-state').textContent === 'ghost');
+    assert.equal(await page.locator('.gym-coach-door').count(), 0, 'no sign-in pitch stands in the room’s place');
+    assert.equal(await page.locator('.gym-tabs a').count(), 3);
     assert.deepEqual(await page.evaluate(() => [window.replica().state, window.issues ?? []]), ['anon', []]);
   });
 });

@@ -98,12 +98,6 @@
   "gym.log.bodyweightSet": "bodyweight × {reps}",
   "gym.log.setLoadWithBasis": "{load} {basis} × {reps}",
   "gym.log.noRoutine": "Free session",
-  "gym.mirror.workoutTime": "Workout time",
-  "gym.mirror.sinceLastSet": "Since last set",
-  "gym.mirror.sinceStart": "Since start",
-  "gym.mirror.hours": "{count, plural, one {# hour} other {# hours}}",
-  "gym.mirror.minutes": "{count, plural, one {# minute} other {# minutes}}",
-  "gym.mirror.seconds": "{count, plural, one {# second} other {# seconds}}",
   "gym.fix.notRated": "Not rated",
   "gym.fix.setNote": "Set note",
   "gym.fix.setNoteCaption": "A record for you — not an instruction to Coach.",
@@ -213,5 +207,14 @@
   "gym.bodyweight.notSaved": "That weigh-in wasn’t saved — {reason}.",
   "gym.bodyweight.deleteFailed": "That weigh-in wasn’t deleted. Try again in a moment.",
   "gym.bodyweight.notDeleted": "That weigh-in wasn’t deleted — {reason}.",
-  "gym.common.apply": "Apply"
+  "gym.common.apply": "Apply",
+  "gym.signedOutWork.workouts": "{count, plural, one {# workout} other {# workouts}}",
+  "gym.signedOutWork.routines": "{count, plural, one {# routine} other {# routines}}",
+  "gym.signedOutWork.weighIns": "{count, plural, one {# weigh-in} other {# weigh-ins}}",
+  "gym.signedOutWork.movements": "{count, plural, one {# movement} other {# movements}}",
+  "gym.signedOutWork.settings": "your settings",
+  "gym.signedOutWork.changes": "{count, plural, one {# change} other {# changes}}",
+  "gym.signedOutWork.oneWorkout": "{name} · {day}",
+  "gym.signedOutWork.since": "since {day}",
+  "gym.signedOutWork.held": "training"
 }

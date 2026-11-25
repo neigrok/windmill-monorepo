@@ -26,7 +26,7 @@ import { PlanChanges, PlanOperations, ReviseWorkoutPlan } from '../../../../src/
 import { ApplyWorkoutProposal, DismissWorkoutProposal, ProposeWorkout, ReissueWorkoutProposal, WorkoutProposal, WorkoutProposalState } from '../../../../src/products/gym/domain/workoutProposals.js';
 import { AdoptWorkout, SignedOutWorkout } from '../../../../src/products/gym/domain/workoutAdoption.js';
 import { CoachRoutineImport, ImportCoachRoutineBatch } from '../../../../src/products/gym/domain/coachOnboarding.js';
-import { DiscardSignedOutWorkout, RecoverStrandedSets, SetFix, WorkoutFix, WorkoutRecovery } from '../../../../src/products/gym/domain/workoutRecovery.js';
+import { DiscardSignedOutWorkout, RecoverStrandedSets, SaveRefusedStart, SetFix, WorkoutFix, WorkoutRecovery } from '../../../../src/products/gym/domain/workoutRecovery.js';
 import { DomainNotice } from '../../../../src/platform/domain-kit/refusals.js';
 import { AbilityCall, CoachMessage, CoachThread, Picture, ReadServed } from '../../../../src/products/gym/domain/coach/conversation.js';
 import { BeginRound, DeleteConversation, EndTurn, ForgetRunningTurn, OpenTurn, RecoverMark, StreamTurnText, WithdrawTurn } from '../../../../src/products/gym/domain/coach/turn.js';
@@ -453,6 +453,12 @@ const handlers = {
       case 'DiscardSignedOutWorkout': return corpus.decision(DiscardSignedOutWorkout(id), vector, () => null, refusalForm);
       default: throw new Error(`unclaimed recovery action ${vector.input.action}`);
     }
+  },
+  // A start that lost a race, its sets saved from its notice as a copy the review offers.
+  'gym/domain/refused-start-actions.json': (vector) => {
+    assert.equal(vector.input.action, 'SaveRefusedStart', 'unclaimed refused start action');
+    const notice = new DomainNotice(/** @type {any} */ (vector.input.input).notice, book.registry, GymRefusals);
+    return corpus.decision(SaveRefusedStart(notice), vector, () => null, refusalForm);
   },
   'gym/domain/coach-onboarding-actions.json': (vector) => {
     const input = vector.input.input;

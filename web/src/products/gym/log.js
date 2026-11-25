@@ -49,6 +49,18 @@ export function routineHref(id) {
 // `#/gym` IS the routines home; `#/gym/routines` is an alias that still resolves to it.
 export const ROUTINES_HREF = '#/gym';
 
+// The open workout's page, and the receipt of one this page just finished.
+export const WORKOUT_HREF = '#/gym/workout';
+
+export function receiptHref(id) {
+  return `${WORKOUT_HREF}/receipt/${id}`;
+}
+
+export function receiptIdOf(hash) {
+  const match = /^#\/gym\/workout\/receipt\/([A-Za-z0-9_-]+)/.exec(hash || '');
+  return match ? match[1] : null;
+}
+
 // The blank editor's id — a mint can never produce it, every real one being `rt_` and sixteen hex.
 export const NEW_ROUTINE_ID = 'new';
 
@@ -180,6 +192,7 @@ export function screenOf(hash) {
   if (/^#\/gym\/(movement|stats)(\/|$|\?)/.test(hash || '')) return 'record';
   if (/^#\/gym\/log(\/|$|\?)/.test(hash || '')) return 'log';
   if (/^#\/gym\/bodyweight(\/|$|\?)/.test(hash || '')) return 'bodyweight';
+  if (/^#\/gym\/workout(\/|$|\?)/.test(hash || '')) return 'workout';
   return 'routines';
 }
 
@@ -257,27 +270,6 @@ export function clockOf(ms) {
   const seconds = total % 60;
   const head = hours ? `${hours}:${String(minutes).padStart(2, '0')}` : String(minutes);
   return `${head}:${String(seconds).padStart(2, '0')}`;
-}
-
-export function workoutClocks(session, sets, now) {
-  const end = session.finishedAt ?? now;
-  const latest = sets.length ? Math.max(...sets.map((set) => set.completedAt)) : session.startedAt;
-  return [
-    { label: t('gym.mirror.workoutTime'), anchor: session.startedAt },
-    { label: sets.length ? t('gym.mirror.sinceLastSet') : t('gym.mirror.sinceStart'), anchor: latest },
-  ].map(({ label, anchor }) => {
-    const elapsed = Math.max(0, end - anchor);
-    const total = Math.floor(elapsed / 1000);
-    const hours = Math.floor(total / 3600);
-    const minutes = Math.floor(total % 3600 / 60);
-    const seconds = total % 60;
-    const spoken = [
-      hours > 0 ? t('gym.mirror.hours', { count: hours }) : null,
-      minutes > 0 ? t('gym.mirror.minutes', { count: minutes }) : null,
-      seconds > 0 ? t('gym.mirror.seconds', { count: seconds }) : null,
-    ].filter(Boolean).join(' ') || t('gym.mirror.seconds', { count: 0 });
-    return { label, elapsed, spoken };
-  });
 }
 
 export function durLabel(ms) {

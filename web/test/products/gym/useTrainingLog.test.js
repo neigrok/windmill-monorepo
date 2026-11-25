@@ -114,6 +114,18 @@ test('asynchronous engine refusals remain durable and are announced once', (t) =
   assert.equal(view.log.transient.text, 'A later step.');
 });
 
+test('a start that lost a race is left to recovery to say, and a set refused because its workout had finished is said in the iPhone’s words', (t) => {
+  const { view, update } = log(t);
+  const lostRace = { id: 'notice:start', scope: 'self/gym', code: 'session-open',
+    content: { d: [], cmd: { name: 'gym.start', args: { id: 'lostS001', startedAt: 1000, joinOpenSession: false } } } };
+  update({ notices: [lostRace] });
+  assert.equal(view.log.transient, null);
+  const finished = { id: 'notice:set', scope: 'self/gym', code: 'session-finished',
+    content: { d: [row('set', 'set0000001', { sessionId: 'session0001', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 2000 })] } };
+  update({ notices: [lostRace, finished] });
+  assert.equal(view.log.transient.text, 'This workout has already finished.');
+});
+
 test('a stalled durable writer keeps its Undo offer and creates no clock after room exit', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   browserWith();

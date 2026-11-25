@@ -92,6 +92,13 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
     what the phone holds (12n). iOS asks in these words (`AdoptionQuestion.swift`); Android words it
     differently (`app/MainActivity.kt:287-304`). The first-run READ ME line `2:1029` still says
     signed-out work *moves to the account on sign-in* with no question.
+  - The web's gym question (WD9) asks whenever the account holds gym records of its own, and names every kind of gym work
+    the browser holds, so its Add and Discard cover only what it named. Beside the drawn workouts, routines and weigh-ins
+    it names, in words no board draws, the movements the browser made or renamed (*2 movements* over their names) and its
+    settings (*your settings*), which 12n leaves unnamed on the phones; where the browser's gym work draws none of these
+    any longer, a workout made and deleted, it counts its changes (*2 changes*), as iOS does for a room holding only
+    unnamed kinds. Its confirmation reads *Discard 2 movements and your settings?* (`gymRuntime.js` `signInWork`).
+    Designer to draw the extra rows, or rule that the phones name them too.
 - **7g · Notes account-only.** Signed out, Notes is a sign-in door, and the signed-out Coach greeting
   (boards 01.1–01.2) offers saving notes only after sign-in. `../foundation/mobile/gym_coach.md`
   Appendix C gives `save_note` `seats: bound` to match, so a signed-out Coach turn is not offered it.
@@ -106,8 +113,7 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
   it.*; `web/src/products/gym/errors.js` `failureReason`) and keeps *the log didn’t answer. Try again
   when you have signal* for its REST doors. The journal says *not saved — no room on this device*
   (`Canvas.jsx`) for every failed save, which claims a full store when the store may be closed or
-  failing instead. Confirm one storage sentence for both products. The Shell file's proposal (`368:645`,
-  boards 07 and 08) words a full store and any other store failure apart, for both products.
+  failing instead. Confirm one storage sentence for both products.
 - **7k · A guard read beside a write.** `../foundation/domain-kit.md` §8.3 rule 2 refuses a plan in
   which two operations name one record. Android's kit counts a `guardRead` among them (`Plans.kt`);
   iOS's counts only writing operations (`Translation.swift`); no iOS plan guards and writes one
@@ -1360,14 +1366,24 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 ## Gym
 
 - **The web as a device (owner, 2026-11-17).** [The web as a device](../foundation/web-device-parity.md) rules
-  full workout entry on the web and a gym room that opens signed out. Both are drawn as 🧪 proposals awaiting the
-  owner: the workout, another device, a stale plan edit, the room before its first pull, Coach during a workout and
-  the signed-out room with its sign-in in the Gym file's Web page (WD1–WD9, components `2150:11606`, READ ME
-  `2168:16052`); and, for every room, a browser that keeps nothing, is blocked, fails a write or was cleared in the
-  Shell file (`368:645`, READ ME `380:2404`). Each READ ME lists the questions the owner rules on approval. On
-  approval: the Gym file's START HERE · Gym web (`804:5811`) still says the phone owns live training, against R-2;
-  the 🚧 Plan / Routines / Training now boards (`1828:53034`, `1828:53151`, `1828:53298`, `1828:53416`) draw the
-  mirror's card that WD3.4 and WD4.1 replace and are archived.
+  full workout entry on the web and a gym room that opens signed out. The owner approved their boards as drawn on
+  2026-11-25 (R-10): the Gym file's Web page, WD1–WD9 (components `2150:11606`, READ ME `2168:16052`), the drawing
+  answering the READ ME's questions. A browser that cannot keep a copy is not supported (R-7), so the Shell file's
+  boards for it (`368:645`) are rejected. With the approval, the Gym file's START HERE · Gym web (`804:5811`), which says
+  the phone owns live training, is rewritten, and the 🚧 Plan / Routines / Training now boards (`1828:53034`,
+  `1828:53151`, `1828:53298`, `1828:53416`), which draw the mirror's card that WD3.4 and WD4.1 replace, are archived.
+  Where the build of WD1–WD6 parts from the boards:
+  - *Coach during a workout (WD7).* The index draws *This workout* alone and the narrow toolbar no Coach button, and the
+    receipt has no *Share with Coach*: Coach on the web takes no handed question yet. Until it does, Coach speaks in
+    interim words no board draws, which claim nothing about a phone: closed while a workout is open, *Coach opens again
+    when this workout is over.*; its workout panel *This workout as logged so far. Nothing here logs a set.*; an empty
+    History *No conversations yet. What you ask Coach is listed here.* (`coach/CoachRoom.jsx`, `coach/History.jsx`). The
+    panel reads a planned set's load as *last* (`coach/coach.js`).
+  - *Edit movement (WD3.1).* It opens the movement's record, which renames it; the web has no form for its equipment.
+  - *A stale plan edit (WD5.1).* The drawn heading, *{movement} changed in another tab.*, stands also when a phone or
+    Coach changed the plan.
+  - *The rest preference.* No board draws a control for the lifter's own rest target or rest sound on the web, so the web
+    reads them and writes neither; a movement's rest in this workout is Edit sets' *Rest*.
 ### Sets · product direction
 
 Sets have no type on any surface. Targets are references: actual weight/reps remain independent for every set, including extra or
@@ -1644,9 +1660,8 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     scrim reads #5e5c5b against the board's #6a6866.
   - *Proposal diff.* The review sheet writes a load change as *30kg → 32.5kg*, with no space before
     the unit (`ui/ReviewSheet.kt:384` over `presentation/Proposal.kt`); every other Android readout spaces it.
-  - *Web planned rows.* Android and iOS planned rows read the load the plan expects
-    (*100 kg total × max*); the web live mirror, which has no rack, still reads *last × max*
-    (`web/src/products/gym/log.js`).
+  - *Web planned rows.* Android, iOS and the web's workout page read a planned row at the load the plan expects
+    (*100 kg total × max*); Coach's workout panel on the web still reads *last × max* (`web/src/products/gym/coach/coach.js`).
 - **11w · An answer's proposal still arriving (designer, design brief QW2, task 103).** On the phone that ran a turn its
   proposal commits with its call, so the card stands with the answer. A conversation synced from another phone can land an
   answer before its proposal. Android then says *Reading proposal…* until a read misses, and until the miss settles draws
@@ -2048,6 +2063,17 @@ Android. It and the product differ in these places.
 
 ### Native and web differences
 
+- **One sign-in question for every room due.** 12n and WD9's note ask one question naming every room due (*… 1 workout,
+  2 routines, 3 weigh-ins and 4 journal pages …*); the web asks each due product in turn, gym's and the journal's in the
+  shell's words and roadmap's in flow 50's.
+- **The confirmation of a sign-in a product words.** 7d's second confirmation is drawn for gym (WD9.2) and the journal
+  in the shell's words; flow 50 draws none for roadmap's *Add your roadmaps?*, whose Discard on the web now asks *Discard
+  all of it?* / *They are deleted from this browser. You can’t undo this.* Designer to draw roadmap's.
+- **In this browser has no editor.** WD9.3 draws a copy waiting on the account's open workout (*Keep as finished*) and
+  one the retry answers (*Add to your log*). The web has no Fix workout, so a copy refused for its times, its sets, its
+  movements or a spent id says why in one undrawn sentence (`gym.recovery.reason.*`) and offers Discard alone, held
+  with Undo as the room's deletes are. Designer to rule those sentences and whether the web gets the phones' editor.
+
 - **A retargeted line that moved, on the web.** A proposal's count is every line not kept and every kept line that moved, and the
   phones draw a move as *Order* on its row. The web never sees the base, so it marks the order only when the count holds more than
   its marked rows: one *order* row however many kept lines moved, and none when the only line that moved was also retargeted.
@@ -2142,16 +2168,23 @@ Android. It and the product differ in these places.
 
 ### Figma reconciliation
 
+- **Enter on the web's rack.** The Gym file's component Gym / Workout / Rack (`2151:11710`) says Enter logs from either
+  field. The build follows the iPhone (`docs/design/ios/workout-in-flight.md`, 03.23D.4): Enter, a phone keyboard's done
+  key included, lands the value and drops the field, and only Log set logs, so a lifter who taps done after typing a load
+  does not log the set before lifting it. The component's description is corrected, or the owner rules otherwise.
 - **The web's desktop head.** The Gym file's 08W boards and the Shell file's board 20 draw the desktop head with the
-  brand mark and centred rooms; `chrome.css` hides the mark from 744 px and left-aligns the rooms. The storage
-  proposal (`368:645`) follows the code.
+  brand mark and centred rooms; `chrome.css` hides the mark from 744 px and left-aligns the rooms.
 - **The published Gym library lags its file** (last published 2026-09-25): its Web shell / Desktop lacks the mark and
   bottom panel, and its Gym Tab, Set row, Set line, Editable number and Action band bind the retired Gym · Colour
   collection. It needs the owner's Publish.
 - **Dialog and Toast in the Design System.** The Dialog pins Theme=Light on itself, so a Night board shows it light
   until its mode is set; the Toast has no Neutral tone, which the web's `Toast tone="neutral"` has.
-- **The sign-in question's weight.** 7d asks for Add and Discard of equal weight; the web's `SyncDecisions.jsx`
-  draws Discard as ghost and Add as primary. The Gym proposal WD9 draws them equal; the owner rules on approval.
+- **The sign-in question's dialog.** WD9 draws the shell's question 480 px wide with a 17 px Nunito title and medium
+  answers, and its answers start at the left; the web builds flow 50's `AccountDecision` for every product (540 px, the
+  28 px display title, large answers at the right, Cancel sign-in at the left). One of the two drawings follows the other.
+- **A list in the sign-in question.** WD9 writes *1 workout, 2 routines and 3 weigh-ins*; the web joins the kinds with
+  the locale's list rule, as roadmap's landing lines do, and English's rule writes *1 workout, 2 routines, and 3
+  weigh-ins*.
 
 - **Coach setup chrome.** The Design System's `iOS / Tab bar · Gym` (`118:93`) now draws Routines as
   `list.bullet.rectangle`, like the app; the Gym boards show it once the owner publishes the Design

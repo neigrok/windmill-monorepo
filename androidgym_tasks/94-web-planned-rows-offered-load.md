@@ -1,21 +1,25 @@
-# The web live mirror's planned rows read the load the plan expects
+# Coach's workout panel on the web reads the load the plan expects
 
-**Status:** Waits for the designer to confirm the web mirror's planned-row text: design brief item QW7.
+**Status:** Waits for Coach during a workout on the web (WD7, the Web page of the Gym file), which draws Coach beside the
+rack.
 
-**Figma:** the web live mirror board QW7 names, once ✅ Ready for dev ([design brief](design-brief-quality-wave.md)). The phones' rule is drawn on 03.34 ([Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-40960)).
+**Figma:** WD7 on the Gym file's Web page (`2150:11627`), approved 2026-11-25. The phones' rule is drawn on 03.34
+([Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-40960)).
 
-**Context:** Android and iOS planned rows read the load the plan expects (*100 kg total × max*, or *— × max* while last time is unread), never a set logged today. The web live mirror still reads *last × max* (ledger 11v).
+**Context:** Android, iOS and the web's workout page (`web/src/products/gym/workout/`, WD2) read a planned row at the load
+the plan expects (*100 kg total × max*, or *— × max* while last time is unread), never a set logged today, through the
+domain's `Prefill.expectedLoads`. Coach's workout panel on the web still reads *last × max* (ledger 11v).
 
 **Current implementation**
-- Web's slot rows use `setReading`, which prints `'last'` and `'max'` (`web/src/products/gym/log.js:365-367,514-521`), drawn by `Mirror.jsx`.
-- Web's domain holds the phones' read, `Prefill.expectedLoads` (`web/src/products/gym/domain/trainingReads.js`). Web's UI does not call it.
+- Coach's workout panel draws slot rows through `slotRows` and `setReading`, which print `'last'` and `'max'`
+  (`web/src/products/gym/coach/coach.js`, `web/src/products/gym/log.js`).
 
 **Change**
-- The mirror's planned rows read `Prefill.expectedLoads`, formatted with the equipment-aware unit, as QW7 draws.
+- The panel's planned rows read `Prefill.expectedLoads`, as the workout page's ledger does, in the form WD7 draws.
 - Remove the 11v *Web planned rows* line from the ledger in the same change.
 
 **Done when**
-- A web test shows a planned row as *100 kg total × max* with last time's last load 100, whatever was logged today, and *— × max* before last time is read.
-- The mirror matches QW7's board in both themes.
+- A web test shows the panel's planned row as *100 kg total × max* with last time's last load 100, whatever was logged
+  today, and *— × max* before last time is read.
 
-**Depends on:** 58, design brief QW7. Tree: `web-mirror-planned-rows-offered-load`.
+**Depends on:** WD7. Tree: `web-mirror-planned-rows-offered-load`.
