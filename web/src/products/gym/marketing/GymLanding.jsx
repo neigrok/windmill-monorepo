@@ -395,7 +395,7 @@ function Exchange() {
         </div>
         <p style={{ margin: '9px 0 0', fontSize: 15, lineHeight: 1.5, color: 'var(--gym-ink)' }}>{EXCHANGE.asked}</p>
       </div>
-      <div className="gyw gym-skin gycard" data-theme="dark" data-brand="gym" style={{ borderColor: 'var(--color-brand)', background: 'var(--color-brand-soft)' }}>
+      <div className="gyw gym-skin gycard gycard-landed" data-theme="dark" data-brand="gym">
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--color-brand)' }}>
           {EXCHANGE.landedLabel}
         </div>
