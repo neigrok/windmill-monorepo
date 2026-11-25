@@ -16,17 +16,20 @@ export function YourJournalSection() {
   const { account } = useAuth();
   const replica = useSyncReplica();
   const records = useSyncRecords(SCOPE);
-  const [run, setRun] = useState({ phase: 'idle' }); // idle | working | done, with its count and file | failed
+  const [attempt, setAttempt] = useState({ phase: 'idle' }); // idle | working | done, with its count and file | failed
   const engine = replica?.engine ?? null;
   const written = engine && records.loaded && records.firstPullComplete ? exportablePages(engine, records).length : null;
-  const working = run.phase === 'working';
+  // The file holds the browser's own pages where the replica is the anon one; a bound replica's, a lapsed seat's included,
+  // are the account's.
+  const browsersOwn = replica ? replica.state === 'anon' : !account;
+  const working = attempt.phase === 'working';
 
   const runExport = async () => {
-    setRun({ phase: 'working' });
+    setAttempt({ phase: 'working' });
     try {
-      setRun({ phase: 'done', ...(await buildJournalArchive(engine, account ? 'signed_in' : 'signed_out')) });
+      setAttempt({ phase: 'done', ...(await buildJournalArchive(engine, account ? 'signed_in' : 'signed_out')) });
     } catch {
-      setRun({ phase: 'failed' });
+      setAttempt({ phase: 'failed' });
     }
   };
 
@@ -40,13 +43,13 @@ export function YourJournalSection() {
             <Button variant="secondary" size="sm" disabled={working} ariaBusy={working} onClick={runExport}>
               {working ? t('journal.settings.preparing') : t('journal.settings.export')}
             </Button>
-            <span style={styles.actionLine}>{account ? t('journal.settings.exportNote') : t('journal.settings.exportNoteHere')}</span>
+            <span style={styles.actionLine}>{browsersOwn ? t('journal.settings.exportNoteHere') : t('journal.settings.exportNote')}</span>
           </div>
           <div aria-live="polite">
-            {run.phase === 'done' && run.count > 0 && (
-              <p style={{ ...outcome, color: 'var(--color-success)' }}>{t('journal.settings.exported', { count: run.count, file: run.file })}</p>
+            {attempt.phase === 'done' && attempt.count > 0 && (
+              <p style={{ ...outcome, color: 'var(--color-success)' }}>{t('journal.settings.exported', { count: attempt.count, file: attempt.file })}</p>
             )}
-            {run.phase === 'failed' && <p style={{ ...outcome, color: 'var(--color-danger)' }}>{t('journal.settings.exportFailed')}</p>}
+            {attempt.phase === 'failed' && <p style={{ ...outcome, color: 'var(--color-danger)' }}>{t('journal.settings.exportFailed')}</p>}
           </div>
         </>
       )}

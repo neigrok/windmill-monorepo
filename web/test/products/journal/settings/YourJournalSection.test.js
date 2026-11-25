@@ -17,8 +17,8 @@ import { elementsOf, loadScreen, renderHook, settle, textOf } from '../../gym/ha
 const day = '2026-09-27';
 
 // A browser whose engine answers to the engine's reference server, signed in to `account` or signed out, and the section
-// drawn over it as the settings page draws it for that seat.
-async function section(t, { account = null } = {}) {
+// drawn over it as the settings page draws it for that seat; a `lapsed` seat is signed out over the account's replica.
+async function section(t, { account = null, lapsed = false } = {}) {
   const env = environment();
   env.timers.time = Date.parse(`${day}T12:00:00Z`);
   let state = ServerState.empty({ epoch: 'ep-1', accounts: { A: {} } });
@@ -41,11 +41,12 @@ async function section(t, { account = null } = {}) {
     env.transport.account = account;
     await engine.signIn(account);
   }
-  t.mock.method(syncSession, 'getSnapshot', () => ({ engine, ready: true, signedIn: Boolean(account), account, online: true, error: false }));
+  const seat = lapsed ? null : account;
+  t.mock.method(syncSession, 'getSnapshot', () => ({ engine, ready: true, signedIn: Boolean(seat), account: seat, online: true, error: false }));
   const { YourJournalSection } = await loadScreen('products/journal/settings/YourJournalSection.jsx');
   const write = (body) => savePage(engine, { day, body, mood: 3, energy: null, source: 'typed' });
   const draw = () => {
-    const view = renderHook(t, () => YourJournalSection(), { live: true, context: { account: account && { id: account } } });
+    const view = renderHook(t, () => YourJournalSection(), { live: true, context: { account: seat && { id: seat } } });
     const content = () => elementsOf(view.tree.props.children);
     const button = () => content().find((element) => element.props.variant === 'secondary') ?? null;
     return {
@@ -124,4 +125,15 @@ test('signed in, the export stands in today\'s words until the first pull says t
   await engine.pull();
   await settle();
   assert.deepEqual({ button: screen.button(), words: screen.words() }, { button: null, words: ['No pages to export yet.'] });
+});
+
+test('a lapsed seat\'s page is signed out over the account\'s replica, and says its pages are the account\'s, not this browser\'s', async (t) => {
+  const { draw } = await section(t, { account: 'A', lapsed: true });
+  const screen = draw();
+  await settle();
+  assert.deepEqual({ button: screen.button(), words: screen.words(), unsent: screen.unsent() }, {
+    button: { label: 'Export my pages', disabled: false, busy: false },
+    words: ['One Markdown file — every page you have written, oldest first.'],
+    unsent: null,
+  });
 });
