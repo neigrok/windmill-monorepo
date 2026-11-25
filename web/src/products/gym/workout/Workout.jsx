@@ -69,8 +69,8 @@ function useNarrow() {
   return narrow;
 }
 
-// The rest tone, best effort: a short note through Web Audio when the lifter turned sound on. A browser lets a page
-// sound only after a gesture, so Log set wakes the context the tone plays through.
+// The rest tone, best effort: a short note through Web Audio while Rest sound is on. A browser lets a page sound only
+// after a gesture, so Log set wakes the context the tone plays through.
 const tone = { context: null };
 function wakeTone() {
   try {
@@ -120,27 +120,37 @@ function useSettledRack(api, ready, view) {
   return due && times > 0;
 }
 
-// The rest reached, once per rest (iOS 03.21): the tab the sync engine leads from, drawing the workout, tells it and sounds
-// the tone at the instant the rest comes to its target. A browser has one leading tab at a time, and the engine hands the
-// lead to a tab on screen whenever one is, so two tabs tell it once and a browser whose tabs are all hidden still tells it,
-// as late as the browser slows a hidden tab's timers. A rest that came to its target before this tab drew it is not told.
+// The rest reached, once per rest (iOS 03.21): the tab the sync engine leads from, drawing the workout, tells it at the
+// instant the rest comes to its target, and while Rest sound is on sounds the tone and, on a phone's browser, a buzz. A
+// browser has one leading tab at a time, and the engine hands the lead to a tab on screen whenever one is, so two tabs tell
+// it once and a browser whose tabs are all hidden still tells it, as late as the browser slows a hidden tab's timers. A rest
+// that came to its target before this tab drew it is not told; one this tab drew short of its target is told at once when
+// its target moves behind it, as a new default rest can move it (WD10.7).
 function useRestTold(api, view) {
   const due = view && view.restSeconds !== null && view.lastSetAt !== null ? view.lastSetAt + view.restSeconds * 1000 : null;
   const setId = view?.latestSetId ?? null;
   const told = useRef(null);
-  const alerts = useRef({ sound: false, haptic: false });
-  alerts.current = { sound: Boolean(view?.sound), haptic: Boolean(view?.haptic) };
+  const drawnShort = useRef(null);
+  const sounds = useRef(false);
+  sounds.current = Boolean(view?.restSound);
   useEffect(() => {
-    if (!api || due === null || told.current === setId) return undefined;
-    const wait = due - api.now();
-    if (wait <= 0) return undefined;
-    const timer = setTimeout(() => {
+    if (!api || setId === null || told.current === setId) return undefined;
+    const tell = () => {
       if (!api.leads()) return;
       told.current = setId;
       workoutStep('gym_rest_target_reached', { screen: 'workout' });
-      if (alerts.current.sound) playTone();
-      if (alerts.current.haptic) navigator.vibrate?.(10);
-    }, wait);
+      if (!sounds.current) return;
+      playTone();
+      navigator.vibrate?.(10);
+    };
+    const wait = due === null ? null : due - api.now();
+    if (wait === null || wait > 0) drawnShort.current = setId;
+    if (wait === null) return undefined;
+    if (wait <= 0) {
+      if (drawnShort.current === setId) tell();
+      return undefined;
+    }
+    const timer = setTimeout(tell, wait);
     return () => clearTimeout(timer);
   }, [api, due, setId]);
 }
@@ -693,7 +703,7 @@ function Rack({ view, log, api, exercise, waiting }) {
     event.preventDefault();
     const form = event.currentTarget;
     if (busy || !view.offer) return;
-    if (view.sound) wakeTone();
+    if (view.restSound) wakeTone();
     const weightKg = typed === null ? rack.weightKg : typedNumber(typed);
     const reps = typedReps === null ? rack.reps : countOf(typedReps);
     if (weightKg === null || reps === null) { log.say(t('gym.workout.checkSet')); return; }

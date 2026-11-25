@@ -22,7 +22,7 @@ import { Bodyweight, DeleteWeighIn, WeighIn, WeighInValue } from './domain/bodyw
 import { Catalogue, CreateExercise, Exercise, ExerciseName, ExerciseValue, RenameExercise, defaultStepKg } from './domain/catalogue.js';
 import { GymRefusals, RoutineRules } from './domain/gymRules.js';
 import { DeleteNote, MoveNote, Note, NoteRules, NoteValue } from './domain/notes.js';
-import { ChangePreferences, Preferences, PreferencesValue, restSettings } from './domain/preferences.js';
+import { ChangePreferences, Preferences, PreferencesValue, SaveRestSettings, restSettings } from './domain/preferences.js';
 import { DeleteRoutine, PlanSnapshot, Routine, RoutineValue, SetTarget } from './domain/routines.js';
 import { AcknowledgeRoutineRemoval, ApplyProposalKeepingReceipt, DismissProposal, Proposal, ProposalApplication,
   REMOVAL_RECEIPTS, removalReceipts } from './domain/proposals.js';
@@ -49,7 +49,7 @@ const OPERATIONS = new Set(['routine-create', 'routine-save', 'exercise-create',
   'preferences-save', 'note-save', 'note-reorder', 'bodyweight-save', 'set-correct', 'delete', 'undo',
   'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'workout-adopt', 'workout-recover', 'refusal',
   'workout-start', 'rack-settle', 'rack-turn', 'set-log', 'plan-revise', 'workout-finish', 'pop-out',
-  'workout-proposal-apply', 'workout-proposal-dismiss']);
+  'workout-proposal-apply', 'workout-proposal-dismiss', 'rest-save']);
 const OUTCOMES = new Set(['saved-local', 'unchanged', 'failed', 'held', 'undone', 'closed', 'refused']);
 // What refused a write: the replica moved under the room, or the gym's rules, this device's or the server's.
 const REFUSED_BY = new Set(['not-writable', 'domain']);
@@ -78,6 +78,15 @@ const RECOVERY_REASONS = new Set(['session-open', 'session-overlap', 'id-taken',
 export function gymRecovery(outcome, reason) {
   if (!RECOVERY_OUTCOMES.has(outcome) || !RECOVERY_REASONS.has(reason)) return;
   try { track('gym_recovery', { outcome, reason }); } catch { /* reporting cannot stop a recovery */ }
+}
+
+// A rest setting changed in Settings (WD10): which one, and whether this device's copy kept it (`saved`), could not
+// (`not_stored`) or the gym refused it (`refused`); never its value.
+const PREFERENCE_SETTINGS = new Set(['rest_default', 'rest_sound']);
+const PREFERENCE_OUTCOMES = new Set(['saved', 'not_stored', 'refused']);
+export function preferenceStep(setting, outcome) {
+  if (!PREFERENCE_SETTINGS.has(setting) || !PREFERENCE_OUTCOMES.has(outcome)) return;
+  try { track('gym_preference_changed', { setting, outcome }); } catch { /* reporting cannot stop a save */ }
 }
 
 // A workout's steps, told under the iPhone's event names (web-device-parity §10), each property one of a closed set of
@@ -386,10 +395,14 @@ export function noteDraft(note) {
 // engine's `ReplicaChanged`); nothing in it asks a person to sign in.
 const notWritable = () => new GymRefusal('not-writable', { sentence: t('gym.runtime.notWritable') });
 
+// What a write that threw answers its caller: the refusal a moved replica is, else what it threw.
+const writeError = (thrown) => (thrown instanceof ReplicaChanged || (thrown instanceof CommitError && thrown.kind === 'not-writable')
+  ? notWritable() : thrown);
+
 // The API stands on the engine's binding as it is made: the replica's storage and its account, which a re-identify keeps.
 // A sign-in or a sign-out changes it, the anon replica bound in place included, and every read and write then is refused.
-export function createGymApi(engine, { event = gymStep, recovered = gymRecovery, told = workoutStep, coached = coachStep, failure = gymFailure,
-  zone = deviceZone } = {}) {
+export function createGymApi(engine, { event = gymStep, recovered = gymRecovery, told = workoutStep, coached = coachStep, preferred = preferenceStep,
+  failure = gymFailure, zone = deviceZone } = {}) {
   const owner = engine.activeBinding();
   if (shownRemovals.get(engine)?.owner !== owner) shownRemovals.set(engine, { owner, proposals: new Map() });
   const shown = shownRemovals.get(engine).proposals;
@@ -419,8 +432,7 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
   const boundary = async (operation, body) => {
     try { return await body(); }
     catch (thrown) {
-      const moved = thrown instanceof ReplicaChanged || (thrown instanceof CommitError && thrown.kind === 'not-writable');
-      const error = moved ? notWritable() : thrown;
+      const error = writeError(thrown);
       if (error instanceof GymRefusal) event(operation, 'refused', error.code === 'not-writable' ? 'not-writable' : 'domain');
       else event(operation, 'failed');
       if (!(error instanceof GymRefusal) && !isStoreFailure(error)) failure(operation, error);
@@ -436,8 +448,7 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
       if (happened) tell({ outcome: 'ok' });
       return result;
     } catch (thrown) {
-      const moved = thrown instanceof ReplicaChanged || (thrown instanceof CommitError && thrown.kind === 'not-writable');
-      const error = moved ? notWritable() : thrown;
+      const error = writeError(thrown);
       if (error instanceof GymRefusal) {
         tell({ outcome: 'refused', code: error.code === 'not-writable' ? 'not-writable' : 'domain', ...(error.code === 'stale' ? { reason: 'stale' } : {}) });
       } else {
@@ -595,8 +606,7 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
     try {
       outcome = await runner.run(applying ? ApplyWorkoutProposal(id) : DismissWorkoutProposal(id));
     } catch (thrown) {
-      const moved = thrown instanceof ReplicaChanged || (thrown instanceof CommitError && thrown.kind === 'not-writable');
-      const error = moved ? notWritable() : thrown;
+      const error = writeError(thrown);
       step.tell({ outcome: 'failed' });
       if (!(error instanceof GymRefusal) && !isStoreFailure(error)) failure(applying ? 'workout-proposal-apply' : 'workout-proposal-dismiss', error);
       throw error;
@@ -624,8 +634,7 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
       recovered(outcome, row.reason);
       return true;
     } catch (thrown) {
-      const moved = thrown instanceof ReplicaChanged || (thrown instanceof CommitError && thrown.kind === 'not-writable');
-      const error = moved ? notWritable() : thrown;
+      const error = writeError(thrown);
       recovered(error instanceof GymRefusal ? 'refused' : 'failed', row.reason);
       if (!(error instanceof GymRefusal) && !isStoreFailure(error)) failure('workout-recover', error);
       throw error;
@@ -897,6 +906,18 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
       event('preferences-save', outcome.kind === 'committed' ? 'saved-local' : 'unchanged');
       return outcome.result.fields();
     }),
+    // Settings' Default rest (`{ restSeconds }`, null for Off) or Rest sound (`{ restSound }`), told as it ends.
+    saveRestSetting: async (change) => {
+      const setting = 'restSeconds' in change ? 'rest_default' : 'rest_sound';
+      try { await ran(SaveRestSettings(change)); }
+      catch (thrown) {
+        const error = writeError(thrown);
+        preferred(setting, error instanceof GymRefusal ? 'refused' : 'not_stored');
+        if (!(error instanceof GymRefusal) && !isStoreFailure(error)) failure('rest-save', error);
+        throw error;
+      }
+      preferred(setting, 'saved');
+    },
     deleteBodyweight: (date) => remove(DeleteWeighIn(new Id(date, WeighIn))),
     // A workout on this browser's copy (web-device-parity §4): the domain's actions, each one write; the clock the log
     // stamps with, this device's corrected by the server's offset; and whether this tab leads the browser's tabs.
