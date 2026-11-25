@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ArrowLeftRight as SwapIcon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock3, Dumbbell, List, MessagesSquare, Minus, Pencil, Plus,
   Timer,
 } from 'lucide-react';
 import { Button, Menu, Sheet, Tabs } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
-import { WorkoutCoach } from '../coach/CoachRoom.jsx';
+import { useWorkoutConversation, WorkoutCoach } from '../coach/CoachRoom.jsx';
 import { WeightLadder } from '../domain/units.js';
 import { failureReason } from '../errors.js';
 import { fixFailure } from '../fix.js';
@@ -145,6 +145,35 @@ function useRestTold(api, view) {
   }, [api, due, setId]);
 }
 
+// The rail's Coach stands as tall as the page's scroller leaves below its top, at most the board's 783, so its composer stays
+// clear of the tab rail under the page at any height (WD7.1 · 1440).
+function useFitBelow(panel, shown) {
+  useLayoutEffect(() => {
+    const node = panel.current;
+    const scroller = node?.closest('.gym-scroll');
+    if (!shown || !scroller) return undefined;
+    const fit = () => {
+      const top = node.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+      node.style.setProperty('--gym-live-coach-height', `${Math.min(783, Math.max(420, scroller.clientHeight - top - 24))}px`);
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, [panel, shown]);
+}
+
+// A movement's scheme in the index: a plan of the same reps at zero load on every set reads as bodyweight, as The log reads
+// it; any other, its plan's reading.
+function indexScheme(entry) {
+  const sets = entry.sets ?? [];
+  const first = sets[0];
+  if (typeof first?.reps === 'number' && sets.every((set) => set.weightKg === 0 && set.reps === first.reps)) {
+    return t('gym.logbook.schemeBodyweight', { sets: sets.length, reps: first.reps });
+  }
+  return entryLabel(entry);
+}
+
 function OpenWorkout({ log, signedIn }) {
   const api = useGymApi();
   const narrow = useNarrow();
@@ -153,9 +182,14 @@ function OpenWorkout({ log, signedIn }) {
   const now = useServerNow(api);
   const [panel, setPanel] = useState(null);
   const [index, setIndex] = useState(false);
-  // What stands beside the rack (WD7.1): this workout's movements, or Coach, the rail's tab on a desk and a sheet on a
-  // phone, which closing leaves as it was.
+  // Coach over the workout (WD7.1): the rail's tab beside the rack on a desk, a sheet over it on a phone, which closing leaves
+  // as it was, and one conversation for the life of this page, whichever shows it.
   const [side, setSide] = useState('workout');
+  const [sheet, setSheet] = useState(false);
+  const coach = useWorkoutConversation(view?.id ?? null);
+  const coachPanel = useRef(null);
+  useFitBelow(coachPanel, !narrow && side === 'coach');
+  useEffect(() => { if (!narrow) setSheet(false); }, [narrow]);
   const [firstClosed, setFirstClosed] = useState(false);
   const leaving = useRef(false);
   const ready = Boolean(api?.ready) && read.phase === 'ready';
@@ -248,7 +282,7 @@ function OpenWorkout({ log, signedIn }) {
               onClick={() => { setIndex(false); setPanel(null); select(movement.exerciseId); }}>
               <span className="gym-live-movement-words">
                 <span className="gym-live-movement-name">{movementName(movement.exerciseId)}</span>
-                {movement.entry && <span className="gym-live-movement-scheme">{entryLabel(movement.entry)}</span>}
+                {movement.entry && <span className="gym-live-movement-scheme">{indexScheme(movement.entry)}</span>}
               </span>
               <SetRail ticks={movement.ticks} />
             </button>
@@ -261,17 +295,23 @@ function OpenWorkout({ log, signedIn }) {
     </>
   );
   const thisWorkout = <p className="gym-live-tab"><span>{t('gym.workout.thisWorkout')}</span></p>;
-  // On a desk the rail's Tabs switch This workout to Coach, whose panel stands beside the rack (WD7.1 · 1440).
-  const rail = (
+  const movementIndex = <nav className="gym-live-index-card" aria-label={t('gym.workout.thisWorkout')}>{movementList}</nav>;
+  // On a desk the rail's Tabs switch This workout to Coach beside the rack (WD7.1 · 1440); both panels stay, the one not
+  // chosen hidden. Signed out, Coach is left out and the rail is this workout's movements alone.
+  const rail = signedIn ? (
     <div className="gym-live-index">
-      {signedIn ? <Tabs variant="line" id="gym-live-side" value={side} onChange={setSide}
-        tabs={[{ value: 'workout', label: t('gym.workout.thisWorkout') }, { value: 'coach', label: t('gym.coach.title') }]} /> : thisWorkout}
-      <div className={`gym-live-side is-${side}`}
-        {...(signedIn ? { role: 'tabpanel', id: `gym-live-side-${side}-panel`, 'aria-labelledby': `gym-live-side-${side}` } : {})}>
-        {side === 'coach' ? <WorkoutCoach log={log} /> : <nav className="gym-live-index-card" aria-label={t('gym.workout.thisWorkout')}>{movementList}</nav>}
+      <Tabs variant="line" label={t('gym.workout.railTabs')} panels="gym-live-side" value={side}
+        onChange={(chosen) => { setSide(chosen); if (chosen === 'coach') coach.enter('tab'); }}
+        tabs={[{ value: 'workout', label: t('gym.workout.thisWorkout') }, { value: 'coach', label: t('gym.coach.title') }]} />
+      <div className="gym-live-side" role="tabpanel" id="gym-live-side-workout-panel" aria-labelledby="gym-live-side-workout" hidden={side !== 'workout'}>
+        {movementIndex}
+      </div>
+      <div className="gym-live-side is-coach" ref={coachPanel} role="tabpanel" id="gym-live-side-coach-panel" aria-labelledby="gym-live-side-coach"
+        hidden={side !== 'coach'}>
+        {coach.held && <WorkoutCoach log={log} thread={coach.thread} onThread={coach.open} />}
       </div>
     </div>
-  );
+  ) : <div className="gym-live-index">{thisWorkout}{movementIndex}</div>;
   // The picker, or Edit sets: in the task pane on a desk, a sheet on a phone.
   const panelBody = (
     <>
@@ -302,8 +342,8 @@ function OpenWorkout({ log, signedIn }) {
           <a className="gym-live-tool" href={ROUTINES_HREF} aria-label={t('gym.workout.hide')}><ChevronDown size={18} aria-hidden="true" /></a>
           <button type="button" className="gym-live-tool" aria-label={t('gym.workout.thisWorkout')} aria-expanded={index}
             onClick={() => setIndex(true)}><ClipboardList size={18} aria-hidden="true" /></button>
-          {signedIn && <button type="button" className="gym-live-tool" aria-label={t('gym.coach.title')} aria-expanded={side === 'coach'}
-            onClick={() => setSide('coach')}><MessagesSquare size={18} aria-hidden="true" /></button>}
+          {signedIn && <button type="button" className="gym-live-tool" aria-label={t('gym.coach.title')} aria-expanded={sheet}
+            onClick={() => { coach.enter('sheet'); setSheet(true); }}><MessagesSquare size={18} aria-hidden="true" /></button>}
         </span>
         <span className="gym-live-titles">
           <h1 id="gym-live-title" className="gym-title">{name}</h1>
@@ -320,9 +360,9 @@ function OpenWorkout({ log, signedIn }) {
         {narrow ? index && (
           <Sheet label={t('gym.workout.thisWorkout')} onClose={() => setIndex(false)}><div className="gym-live-index-card">{thisWorkout}{movementList}</div></Sheet>
         ) : rail}
-        {narrow && side === 'coach' && (
-          <Sheet label={t('gym.coach.title')} detent="large" onClose={() => setSide('workout')} className="gym-live-coach-sheet">
-            <WorkoutCoach log={log} onClose={() => setSide('workout')} />
+        {narrow && sheet && (
+          <Sheet label={t('gym.coach.title')} detent="large" onClose={() => setSheet(false)} className="gym-live-coach-sheet">
+            <WorkoutCoach log={log} thread={coach.thread} onThread={coach.open} onClose={() => setSheet(false)} />
           </Sheet>
         )}
         <div className="gym-live-pane">

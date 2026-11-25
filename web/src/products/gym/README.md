@@ -147,15 +147,22 @@ phone's conversations open here as the browser's do.
 Coach is open during a workout (web-device-parity §4, boards WD7): `WorkoutCoach` is the room's conversation alone, in the
 workout page's rail on a desk, whose design-system `Tabs` switch *This workout* to *Coach* beside the rack, and on a phone in
 a `Sheet` at its large detent that the toolbar's Coach button opens over the workout, under a head of Coach, History and
-Close; Close leaves the rack as it was. Each opening is a fresh chat that keeps the conversation it starts while it stays
-open, and the turn reads the open workout at its opening. Signed out, the workout page leaves Coach out. The profile offers
-catalog/3's `propose_workout_change` in a group of its own, as the phones do, and its card (`WorkoutProposalCard` in
-`coach/CoachProposal.jsx`) reads the domain: pending, it lists the change in `ProposalDiff.ofWorkout`'s blocks against the
-workout's plan with Reject and the one prominent Apply, which runs `ApplyWorkoutProposal` on the browser's copy (the
-runtime's `applyWorkoutProposal`); applied or rejected, it is one line; out of date (`WorkoutProposalState.outOfDate`), it
-says why in one sentence and offers nothing. An Apply the domain refuses as out of date answers its reason and draws that
-sentence, and a decision the log refused is the card's to say, so the room's notice voice says nothing of it. While a
-workout is open a routine proposal waits for next time: its count says so and its Apply steps back for the workout's.
+Close; Close leaves the rack as it was. The workout page holds one conversation (`useWorkoutConversation`) through a flip of
+the tabs and a resize across a desk and a phone: the Coach tab shows it, a fresh chat the first time, and the phone's sheet
+opens a fresh chat, as the phones do, unless the conversation it holds has a turn running or a change to this workout
+waiting on the person. A question asked while a turn runs stays in the field under the busy notice. The turn reads the open
+workout at its opening. Signed out, the workout page leaves Coach out. The profile offers catalog/3's
+`propose_workout_change` in a group of its own, as the phones do, and its card (`WorkoutProposalCard` in
+`coach/CoachProposal.jsx`) reads the copy: pending, it lists what the change changes in `ProposalDiff.ofWorkout`'s blocks
+against the workout's plan, a line that stays the same left out, with Reject and the one prominent Apply, which runs
+`ApplyWorkoutProposal` on the browser's copy (the runtime's `applyWorkoutProposal`): design-system Buttons in the workout's
+Coach (`CoachForm`), the room's pills in History. Applied or rejected,
+it is one line, which takes the focus once the decision lands; out of date (`WorkoutProposalState.outOfDate`), it says why
+in one sentence and offers nothing, and so does a change whose decision the log refused, read from the refusal's notice
+while the copy still takes it for current. That notice stands on the card for good, so a change the log refused keeps its
+sentence even once its cause is undone; the room's notice voice says nothing of it. While a workout is open a routine
+proposal waits for next time: its count says so and its Apply steps back for the workout's, a Secondary Button in the
+workout's Coach and the quiet pill in the room.
 
 `TrainingHistory` composes typed domain reads into screen documents. The global seed catalogue
 is outside sync and is checked against `schema.sql` in CI. Observation updates refresh local reads
@@ -216,12 +223,15 @@ device changed first) or `failed`; and from the screens `gym_rest_target_reached
 unexpected failures report `gym-workout-start`, `gym-rack-settle`, `gym-rack-turn`, `gym-set-log`, `gym-plan-revise`,
 `gym-workout-finish` and, for a pop-out window the browser would not open, `gym-pop-out`. Coach during a workout tells its steps
 under the iPhone's names through `coachStep`, from the same closed sets: `gym_action` (`screen: coach`, `action: new_chat`,
-`door: workout`, `outcome: ok`) as Coach opens over the workout; `gym_proposal_shown` (`target: workout`, `state`
-`pending`, `applied`, `rejected` or `out-of-date` with its `reason`) once for each state a workout proposal's card stands
-in; and `gym_proposal_outcome` (`target` `workout` or `routine`, `action` `apply` or `reject`, `outcome` `decided`, `refused`
-with its `reason`, or `failed`) for each decision on a card in Coach, and for a decision on a workout proposal the log
-refused. A workout proposal's decision that fails unexpectedly reports `gym-workout-proposal-apply` or
-`gym-workout-proposal-dismiss`. Engine-backed writes otherwise emit first-party `gym_action` events with allowlisted `operation` and
+`door: workout`, `outcome: ok`) from the gesture that starts a fresh chat over the workout; and `gym_proposal_outcome`
+(`screen: coach`, `target` `workout` or `routine`, `action` `apply` or `reject`) once for each decision on either card or in
+the routines review, from the page that made it, as the log answers it: `decided`, or `failed` with the log's `reason`;
+`decided` at once for a decision that finds the proposal standing as asked while no other page's decision waits on the log;
+`refused` for a value this copy's rules hold invalid, such as a load under a movement's floor, and `failed` with its
+`reason` for any other refusal of them;
+`failed` for a decision that broke; and `stalled` once besides for a routine's decision the log has not answered in 15 s.
+A reload, a remount or another tab tells nothing of it. A workout proposal's decision that fails unexpectedly reports
+`gym-workout-proposal-apply` or `gym-workout-proposal-dismiss`. Engine-backed writes otherwise emit first-party `gym_action` events with allowlisted `operation` and
 `outcome` only, and a `refused` one also `code`: `not-writable` when the replica moved under the room, `domain` when the
 gym's rules refused it, this device's or the server's. Operations cover routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
@@ -274,12 +284,16 @@ quiet; a plan edit another tab made stale is refused with its draft kept, and Sa
 connection is kept through a reload, taken by the reference server once it answers and drawn after; the tab's title and
 favicon follow the rest clock; Enter lands a field and logs nothing; a step of the ladder and of the reps in each of two tabs
 both count; the rest is told once across two tabs; a settle that fails is reported, said and tried again; Edit sets closes
-when a set lands on its movement; and Pop out's open is told and its refusal reported. Coach during a workout runs there too,
-its AI service played round by round: Coach in the rail beside the rack, its change to the workout applied and the card
-collapsed (WD7.1, WD7.2); the sheet at a phone's width, its change rejected there, and its Close (WD7.1 · 390); a change out of date once its movement
-is logged (WD7.3); a phone's workout proposal in History with its card, applied in one tab and read applied in the other;
-and an Apply the domain refuses as out of date, drawn as the card's sentence with nothing said or reported. Its page loads
-the app's fonts, and `WM_WORKOUT_SHOTS` names a folder for the logging page and Coach's states at 1440 and 390. Shared training
+when a set lands on its movement; and Pop out's open is told and its refusal reported. Its page loads the app's fonts, and
+`WM_WORKOUT_SHOTS` names a folder for the logging page at 1440 and 390. Coach during a workout has a file of
+its own, `coach/coachDuringWorkout.browser.test.js`, over the engine's reference server with a phone of the account, its AI
+service played round by round: Coach in the rail beside the rack, its change applied and the conversation kept through a flip
+of the tabs (WD7.1, WD7.2); a resize from a desk to a phone and back, which keeps it; the sheet at a phone's width, its change
+rejected there, its Close and the fresh chat after (WD7.1 · 390); Coach closed mid-answer and reopened on it, a question
+asked meanwhile kept under the busy notice; a change out of date once the phone logs its movement, and current again once
+the phone deletes it (WD7.3); an Apply the log refuses as `invalid` or `plan-logged`, its sentence standing in two tabs and
+told once; and a phone's workout proposal in History, applied in two tabs at once and told once. `WM_COACH_SHOTS` names a
+folder for Coach's states at 1440 and 390, and the rail's foot at 1440 × 1000 and 1440 × 900. Shared training
 reads run on web, Swift and Kotlin. The local stack checks domain reads over an actual disposable
 backend account and persisted browser-engine observations. Chromium acceptance has twelve checks: a phone replica's open workout draws the bar, its page
 continues it, the phone's set lands in its ledger and the phone's `gym.finish` closes it; web routine edits, backfills, additive recovery, weigh-ins and unit changes converge; a held weigh-in delete can be

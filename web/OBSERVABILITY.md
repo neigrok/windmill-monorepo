@@ -292,18 +292,23 @@ deleted on another device under a running turn, and a turn ended by a sign-out, 
 question, answer, picture, call input or result, id, pass or call id enters an event or a report.
 
 Coach during a workout (WD7) tells its steps under the iPhone's names through `coachStep` in `gymRuntime.js`, each property
-one of a closed set of labels and never a name or an id of a workout, a routine, a movement or a proposal, nor Coach's words:
-`gym_action` (`screen: coach`, `action: new_chat`, `door: workout`, `outcome: ok`) as Coach opens over the workout, in the
-rail's Coach tab or the phone's sheet, a fresh chat each time; `gym_proposal_shown` (`screen: coach`, `target: workout`,
-`state`: `pending`, `applied`, `rejected` or `out-of-date`, the last with `reason`: `replaced`, `workout-changed`,
-`workout-moved` or `workout-finished`) once a page for each state a workout proposal's card stands in; and
-`gym_proposal_outcome` (`screen: coach`, `target`: `workout` or `routine`, `action`: `apply` or `reject`, `outcome`:
-`decided`, `refused` with `reason`, one of the four above, `settled` when another device decided it first, `load-floor`,
-`not-writable` or `other`, or `failed`) for each decision on a card in Coach. A workout proposal's decision that fails
-unexpectedly reports `gym-workout-proposal-apply` or `gym-workout-proposal-dismiss` with the error's stack frames; an Apply
-the domain refuses as out of date is the card's sentence, a refusal and no Issue. A decision on a workout proposal the log
-refused is the card's to say, so the room voices no notice and tells no `refusal` step for it: it tells
-`gym_proposal_outcome` with `outcome: refused` and the log's reason, a reason no label names reading `other`.
+one of a closed set of labels and never a name or an id of a workout, a routine, a movement or a proposal, nor Coach's words.
+`gym_action` (`screen: coach`, `action: new_chat`, `door: workout`, `outcome: ok`) comes from the gesture that starts a fresh
+chat over the workout alone: the rail's Coach tab the first time the page shows it, or the phone's Coach button when the sheet
+holds no conversation with a turn running or a change to this workout waiting; a flip of the tabs or a resize tells nothing.
+`gym_proposal_outcome` (`screen: coach`, `target`: `workout` or `routine`, `action`: `apply` or `reject`) is told once for
+each decision on a proposal's card in Coach or in the routines review, by the page that made it and as the log answers it:
+`outcome: decided` once the log took it, or `failed` with `reason` once the log refused it: `replaced`, `workout-changed`,
+`workout-moved` (a movement logged since, also the log's `plan-logged`), `workout-finished`, `routine-changed`, `settled`
+(decided on another device first), `invalid` (a load under a movement's floor), `gone` (the proposal or its workout deleted)
+or `other`. A decision that finds the proposal standing as asked writes nothing and is `decided` at once, unless another
+page's decision on it waits on the log and tells it. One this copy's rules refuse is told at once: `refused` for a value they hold
+invalid, such as a load under a movement's floor, `failed` with its `reason` otherwise; one that broke is `failed` with no reason; and a routine's decision
+the log has not answered in 15 s is told `stalled` once besides. A reload, a remount or another tab tells nothing of a
+decision, and a page that closes before the log answers tells nothing of it either. A workout proposal's decision that fails
+unexpectedly reports `gym-workout-proposal-apply` or `gym-workout-proposal-dismiss` with the error's stack frames; a refusal,
+the copy's or the log's, is the card's sentence and no Issue. A decision on a workout proposal the log refused is the card's
+to say, so the room voices no notice and tells no `refusal` step for it.
 
 ## Roadmap
 

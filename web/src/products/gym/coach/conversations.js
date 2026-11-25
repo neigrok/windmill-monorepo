@@ -5,7 +5,7 @@ import { Proposal } from '../domain/proposals.js';
 import { ProposalDiff } from '../domain/proposalDiff.js';
 import { Routine } from '../domain/routines.js';
 import { Session } from '../domain/training.js';
-import { WorkoutProposal } from '../domain/workoutProposals.js';
+import { WorkoutProposal, WorkoutProposalState } from '../domain/workoutProposals.js';
 import { CONTEXT_CALL_PREFIX } from './turnHost.js';
 
 // What a Coach message made, from the records its calls created: the routines, still standing, with their movements;
@@ -61,6 +61,19 @@ export function conversationView(read, threadId, runningHere) {
         ownMark: mark.names(message.id), read: readOf(message), steps: stepsOf(message), ...made(read, message) };
     }),
   };
+}
+
+// Whether the conversation `threadId` holds a change to the workout `sessionId` that waits on the person: one a message of
+// it made, pending, which the workout can still take.
+export function holdsUndecidedChange(read, threadId, sessionId) {
+  const thread = read.repository(CoachThread).find(new Id(threadId, CoachThread), 'drawn');
+  if (thread === null || sessionId === null) return false;
+  const proposals = read.repository(WorkoutProposal);
+  return read.repository(CoachMessage).children(thread.id, 'threadId', 'drawn').filter((message) => message.isCoach)
+    .flatMap((message) => made(read, message).workoutProposals)
+    .map((id) => proposals.find(new Id(id, WorkoutProposal), 'drawn'))
+    .some((proposal) => proposal !== null && proposal.sessionId.record === sessionId && proposal.state === 'pending'
+      && WorkoutProposalState.of(read, proposal.id).outOfDate === null);
 }
 
 // History, one list with the phones (gym Coach on the AI service §5): every conversation, newest first, with its first

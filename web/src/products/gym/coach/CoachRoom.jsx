@@ -1,17 +1,17 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ArrowUpRight, BookOpen, ChevronRight, CircleCheck, History as HistoryIcon, ImageOff, ImagePlus, Plus, Smartphone, Square, WifiOff, X } from 'lucide-react';
 import { Button, Dialog, Menu, useMediaQuery } from '../../../design-system/index.js';
 import { Id } from '../../../platform/domain-kit/entities.js';
 import { useSyncEngine } from '../../../platform/sync/react.js';
 import { CoachThread } from '../domain/coach/conversation.js';
 import { Note } from '../domain/notes.js';
-import { coachStep } from '../gymRuntime.js';
+import { coachStep, useGymApi } from '../gymRuntime.js';
 import { t } from '../i18n/index.js';
 import { COACH_HREF, NEW_ROUTINE_ID, NOTES_HREF, routineHref, shortDayLabel, THREADS_HREF, threadHref, timeLabel } from '../log.js';
 import { useDomainRead } from '../useDomainRead.js';
-import { COACH_TITLE } from './coach.js';
+import { COACH_TITLE, CoachForm } from './coach.js';
 import { coachTurnsOf } from './coachTurns.js';
-import { conversationView } from './conversations.js';
+import { conversationView, holdsUndecidedChange } from './conversations.js';
 import { CoachProposalCard, WorkoutProposalCard } from './CoachProposal.jsx';
 import { dayWords, deleteConversation, HistoryList, useHistoryRows } from './History.jsx';
 import { pictureSource, prepareCoachPicture } from './pictures.js';
@@ -101,33 +101,57 @@ export function CoachRoom({ log, threadId = null }) {
   );
 }
 
-// Coach in its workout form (WD7.1): the conversation alone, in the workout's rail beside the rack on a desk, and in a sheet
-// over the workout on a phone, under a head of its own: Coach, History and Close. Opening it is a deliberate entry, so it
-// starts a fresh chat and keeps the conversation it starts while it stays open; the open workout is part of what Coach
-// reads (gym Coach on the AI service §4.1).
-export function WorkoutCoach({ log, onClose = null }) {
-  const [threadId, setThreadId] = useState(null);
-  const leave = useCallback(() => setThreadId(null), []);
-  const { turns, snapshot, view, history: { rows, ready }, off } = useConversation(log, threadId, leave);
-  useEffect(() => { coachStep('gym_action', { screen: 'coach', action: 'new_chat', door: 'workout', outcome: 'ok' }); }, []);
+// Coach over a workout keeps one conversation for the life of the workout page (WD7.1), whichever form shows it, through a
+// flip of the rail's tabs and a resize across a desk and a phone. `enter` is the gesture that shows Coach: the rail's tab
+// shows the conversation it holds, a fresh chat the first time; the phone's sheet opens a fresh chat, as the phones do,
+// unless the conversation it holds still has a turn running or a change to this workout waiting on the person. A fresh
+// chat is told as Coach's new chat at the workout's door, from that gesture alone. `open` takes the conversation a fresh
+// chat's first question opens, or none when its turn is taken back.
+export function useWorkoutConversation(sessionId) {
+  const engine = useSyncEngine();
+  const api = useGymApi();
+  const [held, setHeld] = useState(null);
+  const open = useCallback((thread) => setHeld({ thread }), []);
+  const continues = (thread) => {
+    if (engine && coachTurnsOf(engine).getSnapshot()?.turn?.thread.record === thread) return true;
+    try { return Boolean(api?.read((reader) => holdsUndecidedChange(reader, thread, sessionId))); }
+    catch { return false; }
+  };
+  const enter = (door) => {
+    if (held !== null && (door === 'tab' || (held.thread !== null && continues(held.thread)))) return;
+    setHeld({ thread: null });
+    coachStep('gym_action', { screen: 'coach', action: 'new_chat', door: 'workout', outcome: 'ok' });
+  };
+  return { held: held !== null, thread: held?.thread ?? null, enter, open };
+}
+
+// Coach in its workout form (WD7.1): the conversation the workout page holds, alone, in the workout's rail beside the rack
+// on a desk, and in a sheet over the workout on a phone, under a head of its own: Coach, History and Close. The open workout
+// is part of what Coach reads (gym Coach on the AI service §4.1).
+export function WorkoutCoach({ log, thread, onThread, onClose = null }) {
+  const leave = useCallback(() => onThread(null), [onThread]);
+  const { turns, snapshot, view, history: { rows, ready }, off } = useConversation(log, thread, leave);
   return (
-    <section className="gym-coach is-workout">
-      {onClose && <header className="gym-coach-sheet-head">
-        <h2>{t('gym.coach.title')}</h2>
-        <span>
-          <a className="gym-coach-sheet-tool" href={THREADS_HREF} aria-label={t('gym.coach.history.open')}><HistoryIcon size={18} aria-hidden="true" /></a>
-          <button type="button" className="gym-coach-sheet-tool" aria-label={t('gym.common.close')} onClick={onClose}><X size={18} aria-hidden="true" /></button>
-        </span>
-      </header>}
-      {off ? <p className="gym-coach-off">{t('gym.coach.access.off')}</p>
-        : <Conversation turns={turns} snapshot={snapshot} view={view} threadId={threadId} movements={log.catalog}
-          greet={!threadId && ready && rows.length === 0} onOpened={setThreadId} />}
-    </section>
+    <CoachForm.Provider value="workout">
+      <section className="gym-coach is-workout">
+        {onClose && <header className="gym-coach-sheet-head">
+          <h2>{t('gym.coach.title')}</h2>
+          <span>
+            <a className="gym-coach-sheet-tool" href={THREADS_HREF} aria-label={t('gym.coach.history.open')}><HistoryIcon size={18} aria-hidden="true" /></a>
+            <button type="button" className="gym-coach-sheet-tool" aria-label={t('gym.common.close')} onClick={onClose}><X size={18} aria-hidden="true" /></button>
+          </span>
+        </header>}
+        {off ? <p className="gym-coach-off">{t('gym.coach.access.off')}</p>
+          : <Conversation turns={turns} snapshot={snapshot} view={view} threadId={thread} movements={log.catalog}
+            greet={!thread && ready && rows.length === 0} onOpened={onThread} />}
+      </section>
+    </CoachForm.Provider>
   );
 }
 
 // The conversation and its composer. `onOpened` takes the conversation a fresh chat's first question opens.
 function Conversation({ turns, snapshot, view, threadId, greet, movements, onOpened }) {
+  const form = useContext(CoachForm);
   const reading = useRef(null);
   const resend = useRef(null);
   const messages = view.data?.messages ?? [];
@@ -144,7 +168,7 @@ function Conversation({ turns, snapshot, view, threadId, greet, movements, onOpe
       {threadId && view.phase === 'ready' && view.data === null && <p className="gym-quiet">{t('gym.threads.absent')}</p>}
       <ol className="gym-coach-thread" role="log">
         {messages.map((message, index) => {
-          const stamp = index === 0 || message.at - messages[index - 1].at > 3_600_000;
+          const stamp = form === 'room' && (index === 0 || message.at - messages[index - 1].at > 3_600_000);
           return <React.Fragment key={message.id}>
             {stamp && message.role === 'lifter' && <li className="gym-coach-stamp">{t('gym.coach.when', { day: dayWords(message.at), time: timeLabel(message.at) })}</li>}
             {message.role === 'lifter' ? <LifterMessage message={message} />
@@ -305,17 +329,20 @@ function Notice({ snapshot, onRetry }) {
   }
 }
 
+// The field and its Send, or Stop while this conversation's turn runs here. A question asked while a turn runs is refused
+// busy, said above the field, and stays in it. Over a workout the field is the board's filled one with a quiet Send (WD7.1).
 function Composer({ turns, snapshot, threadId, resend, onOpened }) {
+  const form = useContext(CoachForm);
   const picker = useRef(null);
   const [picture, setPicture] = useState(null);
   const [preparing, setPreparing] = useState(false);
   const draft = snapshot?.draft ?? '';
   const withdrawn = snapshot?.withdrawn;
   useEffect(() => { if (withdrawn?.picture) setPicture(withdrawn.picture); }, [withdrawn]);
-  const answeringHere = Boolean(snapshot?.turn);
+  const answeringHere = threadId !== null && snapshot?.turn?.thread.record === threadId;
   const closed = ['allowance', 'capacity', 'update', 'sign-in'].includes(snapshot?.refusal?.state);
   const send = async () => {
-    if (!turns || answeringHere || closed || (!draft.trim() && !picture)) return;
+    if (!turns || closed || (!draft.trim() && !picture)) return;
     const sent = picture;
     setPicture(null);
     const turn = await turns.send({ question: draft.trim(), picture: sent, thread: threadId ? new Id(threadId, CoachThread) : null });
@@ -329,7 +356,7 @@ function Composer({ turns, snapshot, threadId, resend, onOpened }) {
       <img className="gym-coach-picture" src={pictureSource(picture.original)} alt={t('gym.coach.photo.readyAlt')} />
       <button type="button" className="gym-coach-picture-remove" onClick={() => setPicture(null)}>{t('gym.coach.photo.remove')}</button>
     </div>}
-    <div className={`gym-coach-compose${closed ? ' is-closed' : ''}`}>
+    <div className={`gym-coach-compose${closed ? ' is-closed' : ''}${form === 'workout' ? ' is-filled' : ''}`}>
       <input ref={picker} className="gym-visually-hidden" type="file" accept="image/*" tabIndex={-1} aria-label={t('gym.coach.photo.choose')}
         onChange={async (event) => {
           const file = event.target.files?.[0];
@@ -352,7 +379,9 @@ function Composer({ turns, snapshot, threadId, resend, onOpened }) {
       {answeringHere
         ? <button type="button" className="gym-coach-stop" aria-label={t('gym.coach.stopResponse')} disabled={snapshot.stopping}
           onClick={() => turns.stop()}><Square size={14} aria-hidden="true" fill="currentColor" /></button>
-        : <button type="button" className="gym-coach-send" disabled={closed || preparing || (!draft.trim() && !picture)} onClick={send}>{t('gym.coach.send')}</button>}
+        : form === 'workout'
+          ? <Button variant="secondary" size="sm" disabled={closed || preparing || (!draft.trim() && !picture)} onClick={send}>{t('gym.coach.send')}</Button>
+          : <button type="button" className="gym-coach-send" disabled={closed || preparing || (!draft.trim() && !picture)} onClick={send}>{t('gym.coach.send')}</button>}
     </div>
   </>;
 }

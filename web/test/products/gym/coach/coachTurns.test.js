@@ -20,6 +20,9 @@ const { StartWorkout } = await import('../../../../src/products/gym/domain/worko
 const { WorkoutProposal } = await import('../../../../src/products/gym/domain/workoutProposals.js');
 const { conversationView } = await import('../../../../src/products/gym/coach/conversations.js');
 const { createGymApi } = await import('../../../../src/products/gym/gymRuntime.js');
+const { SeedExercises } = await import('../../../../src/products/gym/domain/seedExercises.js');
+const { Proposal, ProposeRoutine } = await import('../../../../src/products/gym/domain/proposals.js');
+const { BrowserSyncEngine } = await import('../../../../src/platform/sync/engine.js');
 const { CoachTurns } = await import('../../../../src/products/gym/coach/coachTurns.js');
 const { GymProfile } = await import('../../../../src/products/gym/coach/profile.js');
 const { GymTurnTelemetry } = await import('../../../../src/products/gym/coach/turnTelemetry.js');
@@ -124,7 +127,7 @@ async function workoutOpen(phone) {
   return session;
 }
 
-test('Coach over an open workout proposes a change to it, the browser\'s copy applies it, and a set logged since makes it out of date', async (t) => {
+test('Coach over an open workout proposes a change to it, the browser\'s copy applies it, and each decision is told once as the log answers it', async (t) => {
   const entries = [{ exerciseId: 'dumbbell-bench-press', restSeconds: 120, sets: [{ reps: 8, weightKg: 16 }, { reps: 8, weightKg: 16 }] },
     { exerciseId: 'pull-up', restSeconds: 120, sets: [{ reps: 8, weightKg: 0 }, { reps: 8, weightKg: 0 }] },
     { exerciseId: 'face-pull', sets: [{ reps: 15, weightKg: 15 }, { reps: 15, weightKg: 15 }] }];
@@ -142,7 +145,9 @@ test('Coach over an open workout proposes a change to it, the browser\'s copy ap
   ];
   const rounds = proposing(entries);
   const { phone, turns } = await room(t, playedAi(rounds));
+  phone.server.product.seeds = Object.fromEntries(SeedExercises.all.map((seed) => [String(seed.id.record), seed.fields()]));
   const session = await workoutOpen(phone);
+  await phone.sync();
   const turn = await turns.send({ question: 'My shoulder feels off on bench today.' });
   await settle(turns);
   const coach = coachOf(phone, turn);
@@ -152,32 +157,99 @@ test('Coach over an open workout proposes a change to it, the browser\'s copy ap
   const id = String(call.created[0].id);
   const view = phone.runner.read(CoachMessage.scope, (read) => conversationView(read, turn.thread.record, null));
   assert.deepEqual(view.messages.at(-1).workoutProposals, [id]);
+  await phone.sync();
 
   const failures = [];
-  const api = createGymApi(phone.engine, { event() {}, failure: (operation) => failures.push(operation) });
-  assert.deepEqual(await api.applyWorkoutProposal(id), { outcome: 'decided' });
+  const told = [];
+  const api = createGymApi(phone.engine, { event() {}, failure: (operation) => failures.push(operation), coached: (name, props) => told.push([name, props]) });
+  const outcome = (action, answer) => ['gym_proposal_outcome', { screen: 'coach', target: 'workout', action, ...answer }];
+  const answered = async () => { await phone.sync(); await new Promise((resolve) => setImmediate(resolve)); };
+  await api.applyWorkoutProposal(id);
   const applied = phone.runner.read(Session.scope, (read) => ({ proposal: read.repository(WorkoutProposal).find(new Id(id, WorkoutProposal), 'drawn'),
     plan: read.repository(Session).find(session, 'drawn').plan.entries.map((entry) => entry.json) }));
   assert.equal(applied.proposal.state, 'applied');
   assert.deepEqual(applied.plan, entries);
-  assert.deepEqual(await api.applyWorkoutProposal(id), { outcome: 'decided' }, 'a second Apply finds it applied and writes nothing');
+  assert.deepEqual(told, [], 'nothing is told before the log answers');
+  await answered();
+  assert.deepEqual(told, [outcome('apply', { outcome: 'decided' })]);
+  await api.applyWorkoutProposal(id);
+  assert.deepEqual(told.at(-1), outcome('apply', { outcome: 'decided' }), 'an Apply that finds it applied writes nothing and is decided, as the iPhone tells it');
 
-  // A second proposal, then a pull-up logged before it is applied: Apply writes nothing and answers why.
+  // A second proposal; another device of the account logs a pull-up before this one hears of it, so the log refuses the Apply
+  // this copy still took for current.
   rounds.push(...proposing(entries.map((entry) => (entry.exerciseId === 'pull-up' ? { ...entry, sets: [{ reps: 6, weightKg: 0 }, { reps: 6, weightKg: 0 }] } : entry))));
   const second = await turns.send({ question: 'Fewer pull-ups?', thread: turn.thread });
   await settle(turns);
   const later = String(coachOf(phone, second).calls.find((each) => each.name === 'propose_workout_change').created[0].id);
-  const logged = new TrainingSetValue(new Id('set1', TrainingSet), session, new Id('pull-up', Exercise), 0, 8, new Instant(phone.runner.moment().now.ms));
-  assert.equal((await phone.runner.run(AppendSet(logged))).kind, 'committed');
-  assert.deepEqual(await api.applyWorkoutProposal(later), { outcome: 'out-of-date', reason: 'workout-moved' });
+  await phone.sync();
+  const other = await phone.device();
+  t.after(() => other.close());
+  await phone.sync();
+  await phone.advance(60_000);
+  const logged = new TrainingSetValue(new Id('setPullUp0000001', TrainingSet), session, new Id('pull-up', Exercise), 0, 8, new Instant(other.runner.moment().now.ms));
+  assert.equal((await other.runner.run(AppendSet(logged))).kind, 'committed');
+  assert.equal(await other.senderStep(), true, 'the log holds the other device\'s pull-up');
+  told.length = 0;
+  await api.applyWorkoutProposal(later);
+  assert.deepEqual(told, []);
+  await answered();
+  assert.deepEqual(told, [outcome('apply', { outcome: 'failed', reason: 'workout-moved' })], 'the log refused it, with its reason');
   assert.equal(phone.runner.read(Session.scope, (read) => read.repository(WorkoutProposal).find(new Id(later, WorkoutProposal), 'drawn').state), 'pending');
+  await api.applyWorkoutProposal(later);
+  assert.deepEqual(told.at(-1), outcome('apply', { outcome: 'failed', reason: 'workout-moved' }), 'this copy now refuses it itself, for the same reason');
   assert.deepEqual(failures, [], 'out of date is a refusal, never a failure');
 
-  // A store that breaks under a decision is a failure: it throws, and goes to Sentry under its static name.
+  // A store that breaks under a decision is a failure: it throws, is told failed, and goes to Sentry under its static name.
   const broken = new Error('the store broke');
   t.mock.method(phone.engine, 'commit', async () => { throw broken; });
   await assert.rejects(api.dismissWorkoutProposal(later), (error) => error === broken);
-  assert.deepEqual(failures, ['workout-proposal-dismiss']);
+  assert.deepEqual([failures, told.at(-1)], [['workout-proposal-dismiss'], outcome('reject', { outcome: 'failed' })]);
+});
+
+test('a routine\'s decision the log has not answered in 15 s is told stalled once and then decided as it answers, and another tab\'s Apply on it tells nothing', async (t) => {
+  const { phone } = await room(t, playedAi([]));
+  phone.server.product.seeds = Object.fromEntries(SeedExercises.all.map((seed) => [String(seed.id.record), seed.fields()]));
+  const upper = new RoutineValue(new Id('routine1', Routine), 'Upper A', 0, [new RoutineEntry(new Id('pull-up', Exercise), [new SetTarget(8, 10)], 120)]);
+  assert.equal((await phone.runner.save(Draft.new(upper), GymRefusals)).result.kind, 'saved');
+  const proposal = new Id('proposal0000001', Proposal);
+  assert.equal((await phone.runner.run(ProposeRoutine({ id: proposal, routineId: upper.id, name: 'Upper A', summary: '',
+    entries: [new RoutineEntry(new Id('pull-up', Exercise), [new SetTarget(8, 10)], 120), new RoutineEntry(new Id('face-pull', Exercise), [new SetTarget(15, 15)])] }))).kind, 'committed');
+  await phone.sync();
+  const told = { one: [], two: [] };
+  const second = await BrowserSyncEngine.open(phone.options);
+  t.after(() => second.close());
+  second.observe(Proposal.scope);
+  const one = createGymApi(phone.engine, { event() {}, failure() {}, coached: (name, props) => told.one.push(props) });
+  const two = createGymApi(second, { event() {}, failure() {}, coached: (name, props) => told.two.push(props) });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  await one.applyProposal(proposal.record);
+  await second.refresh();
+  await two.applyProposal(proposal.record);
+  assert.deepEqual(told, { one: [], two: [] }, 'nothing is told before the log answers, and the second Apply writes nothing');
+  t.mock.timers.tick(15_000);
+  assert.deepEqual(told.one, [{ screen: 'coach', target: 'routine', action: 'apply', outcome: 'stalled' }]);
+  t.mock.timers.reset();
+  await phone.sync();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(told, { one: [{ screen: 'coach', target: 'routine', action: 'apply', outcome: 'stalled' }, { screen: 'coach', target: 'routine', action: 'apply', outcome: 'decided' }],
+    two: [] });
+});
+
+test('a refusal that answered one question stands no longer: one that fits is sent after one too long, and one asked while an answer runs is refused busy and sent once it ends', async (t) => {
+  let finish;
+  const answering = new Promise((resolve) => { finish = resolve; });
+  const ai = playedAi([async () => { await answering; return ended('completed', [{ text: 'First.' }]); }, async () => ended('completed', [{ text: 'Second.' }])]);
+  const { turns } = await room(t, ai);
+  assert.equal(await turns.send({ question: 'x'.repeat(9_000) }), null);
+  assert.deepEqual(turns.getSnapshot().refusal, { state: 'too-long' });
+  const first = await turns.send({ question: 'How heavy today?' });
+  assert.ok(first, 'a question that fits is sent');
+  assert.equal(await turns.send({ question: 'And tomorrow?', thread: first.thread }), null);
+  assert.deepEqual(turns.getSnapshot().refusal, { state: 'busy' });
+  finish();
+  await settle(turns);
+  assert.equal(turns.getSnapshot().refusal, null, 'the answer ended, and busy with it');
+  assert.ok(await turns.send({ question: 'And tomorrow?', thread: first.thread }));
 });
 
 test('a question sent with no connection writes nothing and stays in the field', async (t) => {

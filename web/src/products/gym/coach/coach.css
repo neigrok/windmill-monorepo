@@ -18,6 +18,8 @@
 .gym-root .gym-coach .gym-coach-input { height: 44px; padding: 11px 4px; border: 0; background: transparent; font-size: 14px; line-height: 20px; }
 .gym-root .gym-coach .gym-coach-send { height: 36px; min-width: 74px; width: auto; padding: 0 20px; border-radius: var(--radius-full); font: 700 14px/20px var(--font-body); }
 .gym-root .gym-coach .gym-coach-add-photo { width: 32px; height: 40px; }
+.gym-root .gym-coach .gym-coach-input:focus { outline: none; }
+.gym-root .gym-coach .gym-coach-input:focus-visible, .gym-root .gym-coach .gym-coach-add-photo:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
 .gym-root .gym-coach-side { display: none; }
 @media (min-width: 1100px) {
   .gym-root .gym-coach-side { position: absolute; display: flex; flex-direction: column; gap: 0; top: 0; left: 672px; width: 352px; }
@@ -173,24 +175,28 @@
 .gym-root .gym-coach-proposal-card { display: flex; flex-direction: column; padding: 16px; border-radius: var(--radius-md); background: var(--gym-surface); }
 .gym-root .gym-coach-proposal-card > header { display: flex; align-items: center; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--gym-line); }
 .gym-root .gym-coach-proposal-card > header > span { display: flex; flex-direction: column; gap: 4px; font: 400 13px/18px var(--font-body); color: var(--gym-ink-dim); }
-.gym-root .gym-coach-proposal-card > header strong { font: 400 15px/22px var(--font-body); color: var(--gym-ink); }
+.gym-root .gym-coach-proposal-card > header strong { font: 600 15px/22px var(--font-body); color: var(--gym-ink); }
 .gym-root .gym-coach-proposal-blocks { margin: 0; padding: 0; list-style: none; }
 .gym-root .gym-coach-proposal-block { padding: 12px 0; border-bottom: 1px solid var(--gym-line); }
-.gym-root .gym-coach-proposal-movement { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font: 400 15px/22px var(--font-body); }
+.gym-root .gym-coach-proposal-movement { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font: 600 15px/22px var(--font-body); }
 .gym-root .gym-coach-proposal-movement svg { color: var(--color-brand); }
 .gym-root .gym-coach-proposal-movement a { color: var(--gym-ink); text-decoration: none; }
 .gym-root .gym-coach-proposal-line, .gym-root .gym-coach-proposal-note { display: flex; justify-content: space-between; gap: 12px; margin: 0; padding-left: 26px;
   font: 400 13px/28px var(--font-body); color: var(--gym-ink-dim); }
-.gym-root .gym-coach-proposal-line s { color: var(--gym-ink-faint); font-family: var(--font-mono); }
-.gym-root .gym-coach-proposal-line strong { color: var(--gym-ink); font: 700 14px/28px var(--font-mono); }
-.gym-root .gym-coach-proposal-line.is-same > span:last-child { color: var(--gym-ink-dim); font: 400 14px/28px var(--font-mono); }
+.gym-root .gym-coach-proposal-line > span:last-child { display: inline-flex; align-items: center; gap: 8px; }
+.gym-root .gym-coach-proposal-line s { color: var(--gym-ink-faint); font: 400 13px/18px var(--font-mono); }
+.gym-root .gym-coach-proposal-line strong { color: var(--gym-ink); font: 700 14px/20px var(--font-body); }
 .gym-root .gym-coach-proposal-more { align-self: stretch; display: flex; justify-content: space-between; padding: 12px 0; border: 0; background: transparent;
   color: var(--color-brand); font: 600 14px/20px var(--font-body); text-align: left; cursor: pointer; }
 .gym-root .gym-coach-proposal-decide { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
-.gym-root .gym-coach-proposal-decide button { height: 44px; border: 0; border-radius: var(--radius-full); font: 600 15px/22px var(--font-body); cursor: pointer; }
+.gym-root .gym-coach-proposal-reject, .gym-root .gym-coach-proposal-apply { height: 44px; border: 0; border-radius: var(--radius-full); font: 600 15px/22px var(--font-body); cursor: pointer; }
 .gym-root .gym-coach-proposal-reject, .gym-root .gym-coach-proposal-apply.is-quiet { background: var(--gym-raised); color: var(--gym-ink); }
 .gym-root .gym-coach-proposal-apply { background: var(--color-brand); color: var(--gym-on-accent); }
-.gym-root .gym-coach-proposal-decide button:disabled { opacity: 0.6; cursor: default; }
+.gym-root .gym-coach-proposal-reject:disabled, .gym-root .gym-coach-proposal-apply:disabled { opacity: 0.6; cursor: default; }
+/* After a decision the line it settles the card on takes the focus, and wears the brand ring when the keyboard holds it. */
+.gym-root .gym-coach-proposal-settled:focus, .gym-root .gym-coach-proposal-rejected:focus, .gym-root .gym-coach-proposal-card > header:focus { outline: none; }
+.gym-root .gym-coach-proposal-settled:focus-visible, .gym-root .gym-coach-proposal-rejected:focus-visible,
+.gym-root .gym-coach-proposal-card > header:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; border-radius: 4px; }
 /* The workout's card applied is one line (WD7.2); out of date, its head and one sentence of why (WD7.3). */
 .gym-root .gym-coach-proposal-settled { display: flex; align-items: center; gap: 12px; margin: 0; font: 600 15px/22px var(--font-body); color: var(--gym-ink); }
 .gym-root .gym-coach-proposal-card.is-workout.is-out-of-date > header { padding-bottom: 0; border-bottom: 0; }
@@ -223,6 +229,14 @@
 .gym-root .gym-coach.is-workout .gym-coach-turn { gap: 16px; }
 .gym-root .gym-coach.is-workout .gym-coach-greeting { margin-top: 0; }
 .gym-root .gym-coach.is-workout .gym-coach-bottom { background: transparent; }
+.gym-root .gym-coach.is-workout .gym-coach-turn.is-lifter { align-self: flex-end; align-items: flex-end; max-width: calc(100% - 48px); }
+.gym-root .gym-coach.is-workout .gym-coach-bubble { border-radius: 16px; font: 400 14px/21px var(--font-body); }
+.gym-root .gym-coach.is-workout .gym-coach-turn.is-coach .gym-coach-text { font: 400 14px/21px var(--font-body); }
+/* The composer over a workout is the board's filled field: the surface, no border, a quiet Send (WD7.1). */
+.gym-root .gym-coach.is-workout .gym-coach-compose.is-filled { min-height: 52px; gap: 12px; padding: 0 12px; box-shadow: none; border-radius: 12px;
+  background: var(--gym-surface); }
+.gym-root .gym-coach.is-workout .gym-coach-compose.is-filled .gym-coach-add-photo { width: 24px; height: 36px; }
+.gym-root .gym-coach.is-workout .gym-coach-compose.is-filled .gym-coach-input { height: 36px; padding: 7px 0; font: 400 14px/21px var(--font-body); }
 .gym-root .gym-coach-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 16px; }
 .gym-root .gym-coach-sheet-head h2 { margin: 0; font: 700 17px/24px var(--font-body); color: var(--gym-ink); }
 .gym-root .gym-coach-sheet-head > span { display: flex; gap: 4px; }

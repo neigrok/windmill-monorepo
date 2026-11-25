@@ -135,10 +135,13 @@ export class CoachTurns {
     const seat = this.seatHeld;
     const allowance = await this.ai.allowance({ use: GymProfile.name, version: GymProfile.version });
     if (allowance?.failure || seat !== this.seatHeld) return;
-    this.publish({ allowance, refusal: allowance.code === 'ok' ? this.unlessCapped() : refusalOf({ code: allowance.code, allowance }) });
+    this.publish({ allowance, refusal: allowance.code === 'ok' ? this.standing() : refusalOf({ code: allowance.code, allowance }) });
   }
 
-  unlessCapped() { return ['allowance', 'capacity'].includes(this.snapshot.refusal?.state) ? null : this.snapshot.refusal; }
+  // What still stands between the person and a question once a new one is asked, the allowance reads open or a turn
+  // answers: the seat's own state (Coach switched off, an update, a sign-in). A refusal that answered one question (busy,
+  // offline, too long, no answer) or a cap the allowance has since lifted stands no longer.
+  standing() { return SEAT_REFUSALS.has(this.snapshot.refusal?.state) ? this.snapshot.refusal : null; }
 
   // Coach engine §5, the process ends: the turn the mark names, while its writer has not ended it, is recovered when its
   // last round's answer can still be read, and ended `interrupted` otherwise; the engine decides which. A mark naming a
@@ -177,7 +180,7 @@ export class CoachTurns {
   // gym Coach on the AI service §4.1, in order: the turn it opened, or null with the reason in the snapshot and the draft
   // kept. A picture is `{ original, model }`, two `PictureCopy`s the room prepared.
   async send({ question, picture = null, thread = null }) {
-    this.publish({ refusal: this.unlessCapped(), fault: null, withdrawn: null });
+    this.publish({ refusal: this.standing(), fault: null, withdrawn: null });
     if (this.running) return this.refusing({ state: 'busy' });
     if (this.snapshot.refusal) return this.refusing(this.snapshot.refusal);
     if (lengthIn('bytes', question) > CoachRules.maxQuestionBytes) return this.refusing({ state: 'too-long' });
@@ -265,7 +268,7 @@ export class CoachTurns {
     }
     const refusal = end.state === 'failed' ? refusalOf(failure?.code === end.code ? failure : { source: 'engine', code: end.code }) : null;
     if (!recover) this.tells.asked({ completed: 'answered', stopped: 'cancelled', declined: 'refused', interrupted: 'interrupted' }[end.state] ?? 'failed', durationMs);
-    this.publish({ refusal: refusal && refusal.state !== 'did-not-answer' ? refusal : this.unlessCapped() });
+    this.publish({ refusal: refusal && refusal.state !== 'did-not-answer' ? refusal : this.standing() });
     if (failure?.allowance) this.publish({ allowance: failure.allowance });
   }
 
@@ -349,6 +352,7 @@ export class CoachTurns {
 }
 
 const OPENING = 'gym-opening';
+const SEAT_REFUSALS = new Set(['off', 'update', 'sign-in']);
 const EMPTY = Object.freeze({ draft: '', turn: null, stopping: false, refusal: null, fault: null, withdrawn: null, allowance: null, live: null });
 
 // The account's replica, read and written as Coach's turns are, with no page Coach to run them.

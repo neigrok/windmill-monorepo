@@ -22,9 +22,10 @@
 
 .gym-live-split { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 420px); gap: 32px; align-items: start; }
 .gym-live-index, .gym-live-index-card { display: flex; flex-direction: column; gap: 4px; }
-/* The rail's Coach tab (WD7.1 · 1440): Coach beside the rack, as tall as the page lets it stand, its reading scrolling and
-   its composer at its foot, so a set is logged mid-answer. */
-.gym-live-side.is-coach { display: flex; flex-direction: column; height: max(420px, min(783px, calc(100dvh - 330px))); margin-top: 12px; }
+/* The rail's Coach tab (WD7.1 · 1440): Coach beside the rack, as tall as the page's scroller leaves it (`useFitBelow`), its
+   reading scrolling and its composer at its foot, so a set is logged mid-answer. */
+.gym-live-side[hidden] { display: none; }
+.gym-live-side.is-coach:not([hidden]) { display: flex; flex-direction: column; height: var(--gym-live-coach-height, 640px); margin-top: 12px; }
 .gym-live-side.is-coach > .gym-coach { flex: 1; min-height: 0; }
 .gym-live-tab { margin: 0; display: flex; border-bottom: 1px solid var(--gym-line); }
 .gym-live-tab span { padding-bottom: 8px; border-bottom: 2px solid var(--color-brand); margin-bottom: -1px; font: 700 14px/20px var(--font-body); color: var(--gym-ink); }
