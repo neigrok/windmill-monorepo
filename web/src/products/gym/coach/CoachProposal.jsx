@@ -179,7 +179,7 @@ export function WorkoutProposalCard({ id, movements }) {
     if (answer.outcome === 'out-of-date') setRefused({ reason: answer.reason });
     return answer.outcome === 'decided' ? { outcome: 'decided' } : { outcome: 'refused', reason: answer.reason ?? 'settled' };
   });
-  const outOfDate = card?.outOfDate ?? refused ?? (card?.state === 'superseded' ? { reason: 'replaced' } : null);
+  const outOfDate = card?.outOfDate ?? refused;
   const stance = !card ? null : card.state === 'dismissed' ? 'rejected' : card.state === 'applied' ? 'applied' : outOfDate ? 'out-of-date' : 'pending';
   useEffect(() => {
     if (stance === null || toldStates.has(`${id}:${stance}`)) return;

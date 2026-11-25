@@ -153,8 +153,9 @@ function OpenWorkout({ log, signedIn }) {
   const now = useServerNow(api);
   const [panel, setPanel] = useState(null);
   const [index, setIndex] = useState(false);
-  // Coach over the workout (WD7.1): the rail's Coach tab on a desk, a sheet on a phone; closing it leaves the rack as it was.
-  const [coach, setCoach] = useState(false);
+  // What stands beside the rack (WD7.1): this workout's movements, or Coach, the rail's tab on a desk and a sheet on a
+  // phone, which closing leaves as it was.
+  const [side, setSide] = useState('workout');
   const [firstClosed, setFirstClosed] = useState(false);
   const leaving = useRef(false);
   const ready = Boolean(api?.ready) && read.phase === 'ready';
@@ -261,14 +262,13 @@ function OpenWorkout({ log, signedIn }) {
   );
   const thisWorkout = <p className="gym-live-tab"><span>{t('gym.workout.thisWorkout')}</span></p>;
   // On a desk the rail's Tabs switch This workout to Coach, whose panel stands beside the rack (WD7.1 · 1440).
-  const side = coach ? 'coach' : 'workout';
   const rail = (
     <div className="gym-live-index">
-      {signedIn ? <Tabs variant="line" id="gym-live-side" value={side} onChange={(chosen) => setCoach(chosen === 'coach')}
+      {signedIn ? <Tabs variant="line" id="gym-live-side" value={side} onChange={setSide}
         tabs={[{ value: 'workout', label: t('gym.workout.thisWorkout') }, { value: 'coach', label: t('gym.coach.title') }]} /> : thisWorkout}
       <div className={`gym-live-side is-${side}`}
         {...(signedIn ? { role: 'tabpanel', id: `gym-live-side-${side}-panel`, 'aria-labelledby': `gym-live-side-${side}` } : {})}>
-        {coach ? <WorkoutCoach log={log} /> : <nav className="gym-live-index-card" aria-label={t('gym.workout.thisWorkout')}>{movementList}</nav>}
+        {side === 'coach' ? <WorkoutCoach log={log} /> : <nav className="gym-live-index-card" aria-label={t('gym.workout.thisWorkout')}>{movementList}</nav>}
       </div>
     </div>
   );
@@ -302,8 +302,8 @@ function OpenWorkout({ log, signedIn }) {
           <a className="gym-live-tool" href={ROUTINES_HREF} aria-label={t('gym.workout.hide')}><ChevronDown size={18} aria-hidden="true" /></a>
           <button type="button" className="gym-live-tool" aria-label={t('gym.workout.thisWorkout')} aria-expanded={index}
             onClick={() => setIndex(true)}><ClipboardList size={18} aria-hidden="true" /></button>
-          {signedIn && <button type="button" className="gym-live-tool" aria-label={t('gym.coach.title')} aria-expanded={coach}
-            onClick={() => setCoach(true)}><MessagesSquare size={18} aria-hidden="true" /></button>}
+          {signedIn && <button type="button" className="gym-live-tool" aria-label={t('gym.coach.title')} aria-expanded={side === 'coach'}
+            onClick={() => setSide('coach')}><MessagesSquare size={18} aria-hidden="true" /></button>}
         </span>
         <span className="gym-live-titles">
           <h1 id="gym-live-title" className="gym-title">{name}</h1>
@@ -320,9 +320,9 @@ function OpenWorkout({ log, signedIn }) {
         {narrow ? index && (
           <Sheet label={t('gym.workout.thisWorkout')} onClose={() => setIndex(false)}><div className="gym-live-index-card">{thisWorkout}{movementList}</div></Sheet>
         ) : rail}
-        {narrow && coach && (
-          <Sheet label={t('gym.coach.title')} detent="large" onClose={() => setCoach(false)} className="gym-live-coach-sheet">
-            <WorkoutCoach log={log} onClose={() => setCoach(false)} />
+        {narrow && side === 'coach' && (
+          <Sheet label={t('gym.coach.title')} detent="large" onClose={() => setSide('workout')} className="gym-live-coach-sheet">
+            <WorkoutCoach log={log} onClose={() => setSide('workout')} />
           </Sheet>
         )}
         <div className="gym-live-pane">

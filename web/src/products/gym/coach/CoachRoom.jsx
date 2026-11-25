@@ -111,9 +111,9 @@ export function WorkoutCoach({ log, onClose = null }) {
   const { turns, snapshot, view, history: { rows, ready }, off } = useConversation(log, threadId, leave);
   useEffect(() => { coachStep('gym_action', { screen: 'coach', action: 'new_chat', door: 'workout', outcome: 'ok' }); }, []);
   return (
-    <section className="gym-coach is-workout" aria-label={onClose ? undefined : t('gym.coach.title')} aria-labelledby={onClose ? 'gym-coach-sheet-title' : undefined}>
+    <section className="gym-coach is-workout">
       {onClose && <header className="gym-coach-sheet-head">
-        <h2 id="gym-coach-sheet-title">{t('gym.coach.title')}</h2>
+        <h2>{t('gym.coach.title')}</h2>
         <span>
           <a className="gym-coach-sheet-tool" href={THREADS_HREF} aria-label={t('gym.coach.history.open')}><HistoryIcon size={18} aria-hidden="true" /></a>
           <button type="button" className="gym-coach-sheet-tool" aria-label={t('gym.common.close')} onClick={onClose}><X size={18} aria-hidden="true" /></button>
