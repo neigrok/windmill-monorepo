@@ -656,8 +656,9 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.watch(syncEngine, systemClock, sentry);
 
   // Every server write for a person goes through roadmap's door where the engine serves roadmap's scopes (Roadmap on the
-  // sync engine §7): MCP's tools, tending, the fork and the fork at sign-up, beside the engine's own admissions on its
-  // store and clock. Elsewhere they write through roadmap's rooms.
+  // sync engine §7): MCP's tools, tending, the fork and the fork at sign-up here, and the move of unlisted roadmaps to
+  // private in roadmaps_to_private.cpp, beside the engine's own admissions on its store and clock. Elsewhere they write
+  // through roadmap's rooms.
   const bool roadmapOnEngine = productsCatalog->serves("roadmap");
   auto roadmapDoor = std::make_shared<roadmap::RoadmapDoor>(*productsCatalog, syncEngine->store, *syncEngine->live,
                                                            syncEngine->serverClock, *systemClock, *sentry);

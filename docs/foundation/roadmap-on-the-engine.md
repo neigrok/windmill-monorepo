@@ -302,8 +302,9 @@ What a device tells a person when a change of theirs met one made elsewhere.
   consequences to roadmap's tables, with the bounds and caps of §4.
 - **The door.** Every server write for a person goes through one door that admits server-origin
   intents (E-4): MCP's write tools, tending until [Roadmap Coach](roadmap-coach.md) retires it, the
-  fork of a roadmap, and the fork at sign-up. Each MCP write tool takes an optional `requestId`, so
-  a retried call writes once.
+  fork of a roadmap, the fork at sign-up, and the by-hand tool that moves unlisted roadmaps to private
+  ([backend SPEC](../../backend/SPEC.md#unlisted-roadmaps-to-private)). Each MCP write tool takes an
+  optional `requestId`, so a retried call writes once.
 - **MCP keeps its meanings.** `delete_node` deletes a step, with `prune`, the `branches` it must
   confirm and the caller's own marks cleared, as today. `import_subgraph` and `change_edges` land a
   loop and name it in their answer, as today. `expectedSeq` is the tree scope's sequence number,

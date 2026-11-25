@@ -92,8 +92,9 @@ class FailureTest(ToolTest):
 
 
 # The real server on a database of its own serves roadmap through the engine, and every roadmap is made by its owner's
-# pushes, so every row the tool reads and writes is one the engine made. The tool then runs beside the server, as it does
-# inside production's server container, and the server's pulls read its writes back.
+# pushes, so every row the tool reads and writes is one the engine made, but for one root's reach, which the seed sets
+# unlisted under its private visibility by hand. The tool then runs beside the server, as it does inside production's
+# server container, and the server's pulls read its writes back.
 @unittest.skipUnless(os.environ.get("WM_PG_TEST"), "SKIP: set WM_PG_TEST and DATABASE_URL for Postgres cases")
 class MoveTest(ToolTest):
     @classmethod
@@ -212,6 +213,8 @@ class MoveTest(ToolTest):
         cls.deeper = cls.roadmap(mine, None, "Spiccato", parent=(cls.subtree, "step-spiccato"))
         cls.bare = cls.roadmap(mine, "unlisted", "Bake bread")
         cls.private = cls.roadmap(mine, "private", "Run a marathon")
+        cls.reach_only = cls.roadmap(mine, "private", "Learn to juggle")
+        psql(cls.url, "-c", f"UPDATE roadmap_metas SET reach = 'unlisted' WHERE scope_key = 'tree:{cls.reach_only}' AND id = 'meta'")
         cls.public = cls.roadmap(mine, "public", "Grow tomatoes", steps=("step-soil",))
         cls.under_public = cls.roadmap(mine, None, "Soil", parent=(cls.public, "step-soil"))
         cls.deleted = cls.roadmap(mine, "unlisted", "Learn Welsh")
@@ -262,30 +265,59 @@ class MoveTest(ToolTest):
         return json.loads(result.stdout), [(line["operation"], line["door"], line["outcome"], line.get("refused"))
                                            for line in self.lines(result)]
 
-    def test_a_dry_run_writes_nothing_and_a_write_moves_each_people_s_unlisted_roadmap_once_and_never_the_house_s(self):
+    def test_a_dry_run_writes_nothing_and_writes_move_each_people_s_unlisted_root_once_a_busy_one_on_a_run_again(self):
         counted = lambda people, house: {"people": {"roots": people[0], "subtrees": people[1]},
                                          "house": {"roots": house[0], "subtrees": house[1]}}
         cursors = {tree: self.pull(self.mine, f"tree/{tree}")[2] for tree in (self.unlisted, self.subtree)}
         self.assertEqual(self.pull(self.reader, f"tree/{self.unlisted}")[0], "rows")
         metas = self.metas()
         self.assertEqual({tree for tree, meta in metas.items() if "unlisted" in (meta[0], meta[2])},
-                         self.moved | {self.deleted, self.house, self.under_house})
+                         self.moved | {self.reach_only, self.deleted, self.house, self.under_house})
 
         snapshot = self.snapshot()
         counts, lines = self.run_tool()
         self.assertEqual(counts, {"write": False,
-                                  "unlisted": {"before": counted((3, 2), (1, 1)), "after": counted((3, 2), (1, 1))},
-                                  "roots": {"toMove": 3, "moved": 0, "unchanged": 0, "refused": {"house-roadmap": 1}}})
+                                  "unlisted": {"before": counted((4, 2), (1, 1)), "after": counted((4, 2), (1, 1))},
+                                  "roots": {"toMove": 3, "moved": 0, "unchanged": 0, "busy": 0, "reachOnly": 1,
+                                            "refused": {"house-roadmap": 1}}})
         self.assertEqual(lines, [("roadmap.unlisted.to_private", "tool", "dry-run", 1)])
         self.assertEqual(self.snapshot(), snapshot)
 
+        # Another writer holds their roadmap's scope row past the engine's lock timeout while the tool writes: that root
+        # is busy and written nothing, and the run goes on to the others.
+        holder = subprocess.Popen(["psql", self.url, "-XAtq", "-v", "ON_ERROR_STOP=1"], stdin=subprocess.PIPE,
+                                  stdout=subprocess.DEVNULL, text=True)
+        self.addCleanup(holder.kill)
+        holder.stdin.write(f"BEGIN;\nSELECT 1 FROM sync_scopes WHERE key = 'tree:{self.theirs}' FOR UPDATE;\n")
+        holder.stdin.flush()
+        until = time.time() + 30
+        while psql(self.url, "-c", f"SELECT key FROM sync_scopes WHERE key = 'tree:{self.theirs}' FOR UPDATE SKIP LOCKED"):
+            self.assertLess(time.time(), until, "the holder did not take the scope's row within 30 s")
+            time.sleep(0.05)
+        counts, lines = self.run_tool("--write")
+        holder.communicate("COMMIT;\n", timeout=30)
+        self.assertEqual(holder.returncode, 0)
+        self.assertEqual(counts, {"write": True,
+                                  "unlisted": {"before": counted((4, 2), (1, 1)), "after": counted((2, 0), (1, 1))},
+                                  "roots": {"toMove": 3, "moved": 2, "unchanged": 0, "busy": 1, "reachOnly": 1,
+                                            "refused": {"house-roadmap": 1}}})
+        self.assertEqual(sorted(lines), [("roadmap.server_call", "tool", "busy", None),
+                                         ("roadmap.unlisted.move", "tool", "busy", None),
+                                         ("roadmap.unlisted.move", "tool", "house-roadmap", None),
+                                         ("roadmap.unlisted.move", "tool", "moved", None),
+                                         ("roadmap.unlisted.move", "tool", "moved", None),
+                                         ("roadmap.unlisted.to_private", "tool", "busy", 1),
+                                         ("sync.admit", "server-origin", "unavailable", None)])
+        after = self.metas()
+        self.assertEqual({tree for tree in metas if after[tree] != metas[tree]}, self.moved - {self.theirs})
+
+        # A run again moves the busy root.
         counts, lines = self.run_tool("--write")
         self.assertEqual(counts, {"write": True,
-                                  "unlisted": {"before": counted((3, 2), (1, 1)), "after": counted((0, 0), (1, 1))},
-                                  "roots": {"toMove": 3, "moved": 3, "unchanged": 0, "refused": {"house-roadmap": 1}}})
+                                  "unlisted": {"before": counted((2, 0), (1, 1)), "after": counted((1, 0), (1, 1))},
+                                  "roots": {"toMove": 1, "moved": 1, "unchanged": 0, "busy": 0, "reachOnly": 1,
+                                            "refused": {"house-roadmap": 1}}})
         self.assertEqual(sorted(lines), [("roadmap.unlisted.move", "tool", "house-roadmap", None),
-                                         ("roadmap.unlisted.move", "tool", "moved", None),
-                                         ("roadmap.unlisted.move", "tool", "moved", None),
                                          ("roadmap.unlisted.move", "tool", "moved", None),
                                          ("roadmap.unlisted.to_private", "tool", "moved", 1)])
         after = self.metas()
@@ -309,11 +341,13 @@ class MoveTest(ToolTest):
         self.assertEqual(self.pull(self.reader, f"tree/{self.unlisted}")[0], "not-found")
         self.assertEqual(self.pull(self.reader, f"tree/{self.public}")[0], "rows")
 
+        # A run after that writes nothing, and the root whose reach alone reads unlisted is still counted, never written.
         snapshot = self.snapshot()
         counts, lines = self.run_tool("--write")
         self.assertEqual(counts, {"write": True,
-                                  "unlisted": {"before": counted((0, 0), (1, 1)), "after": counted((0, 0), (1, 1))},
-                                  "roots": {"toMove": 0, "moved": 0, "unchanged": 0, "refused": {"house-roadmap": 1}}})
+                                  "unlisted": {"before": counted((1, 0), (1, 1)), "after": counted((1, 0), (1, 1))},
+                                  "roots": {"toMove": 0, "moved": 0, "unchanged": 0, "busy": 0, "reachOnly": 1,
+                                            "refused": {"house-roadmap": 1}}})
         self.assertEqual(sorted(lines), [("roadmap.unlisted.move", "tool", "house-roadmap", None),
                                          ("roadmap.unlisted.to_private", "tool", "unchanged", 1)])
         self.assertEqual(self.snapshot(), snapshot)

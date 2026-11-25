@@ -453,10 +453,13 @@ databases of its own beside `DATABASE_URL`'s, which the role must be allowed to 
 counts the tool prints, that they name no tree, account or title, that the tool writes nothing, and that
 it counts a chain of 200,001 trees to its end. `roadmaps_to_private` checks the refusals of the tool that moves unlisted
 roadmaps to private; under `WM_PG_TEST` it builds a database of its own beside `DATABASE_URL`'s, starts `windmill_server`
-on it with `ROADMAP_ENGINE_ENABLED` set, makes every roadmap by its owner's pushes, and checks that a dry run writes
-nothing, that a write moves exactly people's unlisted roadmaps, their subtrees' reach with them, while the owner's pull
-carries the change and a reader's answers `not-found`, that a second write writes nothing, that the house's roadmap is
-refused, and that nothing it prints names a roadmap, an account or a title. `roadmap_adopt` checks the roadmap adoption tool's refusals; under `WM_PG_TEST`
+on it with `ROADMAP_ENGINE_ENABLED` set, makes every roadmap by its owner's pushes but for one root's reach, which it
+sets unlisted under a private visibility by hand, and checks that a dry run writes nothing, that a write moves exactly
+people's roots whose visibility reads unlisted, their subtrees' reach with them, while the owner's pull carries the change
+and a reader's answers `not-found`, that a root whose scope another writer holds counts `busy` while the run moves the
+rest and a run again moves it, that the root whose reach alone reads unlisted is counted and never written, that a write
+after that writes nothing, that the house's roadmap is refused, and that nothing it prints names a roadmap, an account
+or a title. `roadmap_adopt` checks the roadmap adoption tool's refusals; under `WM_PG_TEST`
 it builds databases of its own beside `DATABASE_URL`'s from `db/schema.sql` and `test/platform/infra/roadmap_adopt_fixture.sql`
 and runs every stage on them: their counts, a second run that writes nothing, a run killed between stages and in the middle
 of its adoption, a stage refused beside another client, which it watches for from `DATABASE_URL`'s database, the rows

@@ -30,23 +30,33 @@ constexpr const char* kFailed =
 constexpr const char* kNotTaken =
     "The move of unlisted roadmaps to private ran to its end, and stdout did not take its counts.\n";
 constexpr const char* kHouseRoadmap = "house-roadmap";
+constexpr const char* kBusy = "busy";
 
-// Every alive roadmap that reads as unlisted, with whose it is and where it sits: a root by the visibility its meta
-// holds, a subtree by its reach, since only a root holds a visibility, as the subtree inventory counts them.
+// Every alive roadmap that reads as unlisted, with whose it is and where it sits: by its `reach`, the field that opens its
+// link (roadmap.registry.json), or a root by the `visibility` its owner chose, which only a root holds.
 constexpr const char* kUnlisted = R"(
-select t.id, s.owner::text, coalesce(jsonb_typeof(t.parent) = 'object', false)
-from roadmap_trees t
-join sync_scopes s on s.key = t.scope_key
-join roadmap_metas m on m.scope_key = 'tree:' || t.id and m.id = 'meta'
-where t.life = 'alive'
-  and case when jsonb_typeof(t.parent) = 'object' then m.reach else m.visibility end = 'unlisted'
-order by t.id)";
+with roadmaps as (
+  select t.id, s.owner::text as owner, coalesce(jsonb_typeof(t.parent) = 'object', false) as subtree,
+         coalesce(m.reach = 'unlisted', false) as reach_unlisted,
+         coalesce(m.visibility = 'unlisted', false) as visibility_unlisted
+  from roadmap_trees t
+  join sync_scopes s on s.key = t.scope_key
+  join roadmap_metas m on m.scope_key = 'tree:' || t.id and m.id = 'meta'
+  where t.life = 'alive')
+select id, owner, subtree, reach_unlisted, visibility_unlisted and not subtree
+from roadmaps
+where reach_unlisted or (visibility_unlisted and not subtree)
+order by id)";
 
 // An alive roadmap the engine's tables hold as unlisted.
 struct Unlisted {
   std::string tree;
   wm::UserId owner;
   bool subtree = false;
+  // Its link opens to whoever holds it.
+  bool reachUnlisted = false;
+  // A root its owner set unlisted: what a write run writes private.
+  bool visibilityUnlisted = false;
 
   bool house() const { return owner == wm::kHouseAccount; }
 };
@@ -59,34 +69,40 @@ std::vector<Unlisted> unlistedIn(wm::PgPool& pool) {
   txn.exec("SET LOCAL statement_timeout = '60s'");
   std::vector<Unlisted> unlisted;
   for (const auto& row : txn.exec(kUnlisted))
-    unlisted.push_back(Unlisted{row[0].as<std::string>(), wm::UserId{row[1].as<std::string>()}, row[2].as<bool>()});
+    unlisted.push_back(Unlisted{row[0].as<std::string>(), wm::UserId{row[1].as<std::string>()}, row[2].as<bool>(),
+                                row[3].as<bool>(), row[4].as<bool>()});
   return unlisted;
 }
 
-// The unlisted roadmaps as counts, the house's apart from people's and roots apart from subtrees: nothing that names a
-// roadmap or an account.
+// The roadmaps whose link opens as unlisted, by their reach, as counts, the house's apart from people's and roots apart
+// from subtrees: nothing that names a roadmap or an account.
 Json::Value countsOf(const std::vector<Unlisted>& unlisted) {
   Json::Value out(Json::objectValue);
   for (const char* account : {"people", "house"})
     for (const char* place : {"roots", "subtrees"}) out[account][place] = Json::UInt64(0);
   for (const Unlisted& roadmap : unlisted) {
+    if (!roadmap.reachUnlisted) continue;
     Json::Value& bucket = out[roadmap.house() ? "house" : "people"][roadmap.subtree ? "subtrees" : "roots"];
     bucket = Json::UInt64(bucket.asUInt64() + 1);
   }
   return out;
 }
 
-// What the run did with the unlisted roots it read: people's it set out to move, what each came to, and what it refused,
-// the house's by `house-roadmap` and any other by the engine's code.
+// What the run did with the unlisted roots it read: people's it set out to move and what each came to, people's whose
+// reach alone reads unlisted, which it leaves alone, and what it refused, the house's by `house-roadmap` and any other by
+// the engine's code.
 struct Moves {
   std::size_t toMove = 0;
   std::size_t moved = 0;
   std::size_t unchanged = 0;
+  std::size_t busy = 0;
+  std::size_t reachOnly = 0;
   std::map<std::string, std::size_t> refused{{kHouseRoadmap, 0}};
 
   void count(const std::string& outcome) {
     if (outcome == "moved") ++moved;
     else if (outcome == "unchanged") ++unchanged;
+    else if (outcome == kBusy) ++busy;
     else ++refused[outcome];
   }
 
@@ -101,6 +117,8 @@ struct Moves {
     out["toMove"] = Json::UInt64(toMove);
     out["moved"] = Json::UInt64(moved);
     out["unchanged"] = Json::UInt64(unchanged);
+    out["busy"] = Json::UInt64(busy);
+    out["reachOnly"] = Json::UInt64(reachOnly);
     out["refused"] = Json::Value(Json::objectValue);
     for (const auto& [code, count] : refused) out["refused"][code] = Json::UInt64(count);
     return out;
@@ -110,7 +128,8 @@ struct Moves {
 // One people's root made private by its owner's server-origin intent through roadmap's door (engine.md §6.3): admission
 // mints the stamps, and the binding writes the root's reach and the reach of every subtree under it (Appendix A.1,
 // Visibility), so every replica pulls the change. Under the scope's lock a root that no longer reads unlisted, since its
-// owner chose again, is left as its owner left it: `unchanged`. An engine refusal answers its code.
+// owner chose again, is left as its owner left it: `unchanged`. A scope that stays locked past the engine's lock timeout
+// answers `busy`, written nothing, for a run again to move. An engine refusal answers its code.
 std::string moveToPrivate(wm::roadmap::RoadmapDoor& door, const Unlisted& root) {
   bool built = false;
   const wm::roadmap::RoadmapDoor::Build privateWhileUnlisted = [&](wm::sync::SyncTxn& txn) -> std::optional<Json::Value> {
@@ -125,15 +144,19 @@ std::string moveToPrivate(wm::roadmap::RoadmapDoor& door, const Unlisted& root) 
   };
   Json::Value args(Json::objectValue);
   args["tree"] = root.tree;
-  const Json::Value landed = door.run(root.owner, std::nullopt, "ops.roadmaps_to_private", args, [&](auto& call) {
-    return call.admitBuilt(wm::roadmap::treePlaceholder(root.tree), privateWhileUnlisted);
-  });
-  if (!wm::roadmap::landed(landed)) return wm::roadmap::refusalOf(landed);
-  return built ? "moved" : "unchanged";
+  try {
+    const Json::Value landed = door.run(root.owner, std::nullopt, "ops.roadmaps_to_private", args, [&](auto& call) {
+      return call.admitBuilt(wm::roadmap::treePlaceholder(root.tree), privateWhileUnlisted);
+    });
+    if (!wm::roadmap::landed(landed)) return wm::roadmap::refusalOf(landed);
+    return built ? "moved" : "unchanged";
+  } catch (const wm::roadmap::DoorBusy&) {
+    return kBusy;
+  }
 }
 
-// One root the run writes, its own write line at the tool's door: `moved`, `unchanged`, or the refusal that wrote
-// nothing, `house-roadmap` for a house account's, which answers links and sign-up forks and is nobody's to move here.
+// One root the run writes, its own write line at the tool's door: `moved`, `unchanged`, `busy`, or the refusal that
+// wrote nothing, `house-roadmap` for a house account's, which answers links and sign-up forks and is nobody's to move here.
 std::string moveOne(wm::roadmap::RoadmapDoor& door, const Unlisted& root) {
   wm::WriteObservation observation("roadmap.unlisted.move", "roadmap", "tool", wm::freshWriteRequestId());
   wm::WriteContext context(observation);
@@ -158,10 +181,10 @@ std::string moveOne(wm::roadmap::RoadmapDoor& door, const Unlisted& root) {
 }
 
 // Moves every unlisted roadmap of the engine's to private, people's alone (SPEC.md, Unlisted roadmaps to private): a dry
-// run by default, writing only with --write. It prints one JSON object on stdout — the unlisted roadmaps counted before
-// and after, and what came of each root — and nothing that names a roadmap, an account or a text. A failure prints one
-// fixed sentence on stderr and exits 2 for its usage or without DATABASE_URL, 1 when a read or a write fails or stdout
-// does not take the counts.
+// run by default, writing only with --write. It prints one JSON object on stdout — the roadmaps whose reach reads
+// unlisted counted before and after, and what came of each root, a busy one included — and nothing that names a roadmap,
+// an account or a text. A failure prints one fixed sentence on stderr and exits 2 for its usage or without DATABASE_URL,
+// 1 when a read or a write fails or stdout does not take the counts.
 int main(int argc, char** argv) {
   using namespace wm;
   installToolObservability(true);
@@ -191,12 +214,16 @@ int main(int argc, char** argv) {
 
     const std::vector<Unlisted> before = unlistedIn(*pool);
     Moves moves;
-    // A subtree follows its root's visibility, so only roots are written.
+    // A subtree follows its root's visibility, so only roots are written, and only one whose visibility reads unlisted:
+    // a root whose reach alone does is not the owner's choice, and the run leaves it as it stands.
     for (const Unlisted& root : before) {
       if (root.subtree) continue;
-      if (!root.house()) ++moves.toMove;
-      if (write) moves.count(moveOne(door, root));
-      else if (root.house()) moves.count(kHouseRoadmap);
+      if (root.house()) moves.count(write ? moveOne(door, root) : kHouseRoadmap);
+      else if (!root.visibilityUnlisted) ++moves.reachOnly;
+      else {
+        ++moves.toMove;
+        if (write) moves.count(moveOne(door, root));
+      }
     }
     Json::Value counts(Json::objectValue);
     counts["write"] = write;
@@ -210,6 +237,7 @@ int main(int argc, char** argv) {
     }
     run.countRefused(moves.refusals());
     if (!write) run.succeed("dry-run");
+    else if (moves.busy) run.finish(kBusy);
     else if (moves.moved) run.succeed("moved");
     else run.finish("unchanged");
     return 0;

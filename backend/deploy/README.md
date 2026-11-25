@@ -794,20 +794,23 @@ pulls the change. A house account's roadmap is refused and never written.
 
 Dispatch **Ops · roadmaps to private** (`ops-roadmaps-to-private.yml`) from `main`, first with `write`
 unset: that run is a dry run, which counts what it would move and writes nothing. Open its block, and
-dispatch it again with `write` set to move them; a run after that finds nothing to move and writes
-nothing. Its first job refuses a run from any other branch, and while any workflow whose concurrency
-takes the `deploy-vps` lock has a run queued or running, as the copy's does; only then does the move
-job queue for the lock, so no deploy recreates the server container under the tool. It runs
-`windmill_roadmaps_to_private`, with `--write` when `write` is set, inside the live `server` container,
-which already holds `DATABASE_URL` and `ROADMAP_ENGINE_ENABLED`; no credential leaves the host.
+dispatch it again with `write` set to move them. A root whose scope another write held past the
+engine's lock timeout counts `busy`, and a run again moves it; once none is left, a run finds nothing
+to move and writes nothing. Its first job refuses a run from any other branch, and while any workflow
+whose concurrency takes the `deploy-vps` lock has a run queued or running, as the copy's does; only
+then does the move job queue for the lock, so no deploy recreates the server container under the tool.
+It runs `windmill_roadmaps_to_private`, with `--write` when `write` is set, inside the live `server`
+container, which already holds `DATABASE_URL` and `ROADMAP_ENGINE_ENABLED`; no credential leaves the
+host.
 
 Everything the tool says is private: its counts and its write lines, one per roadmap it writes, say how
 someone shares their roadmaps where few people hold any, and this repository's logs are public. So the
 host merges the tool's stderr into its stdout, the runner seals the whole stream to
 `.github/ops/inventory-recipient.pem` as it arrives, and the job log shows the sealed block alone. The
 block is printed whether the tool finished or stopped, since what it moved before a stop stays private;
-the job then fails with the tool's exit named. If the stream cannot be sealed, nothing is printed.
-Against an image that does not carry the tool, it says so.
+the job then fails with the tool's exit named. If the stream cannot be sealed, nothing is printed and
+the job fails, but what the tool moved stays moved, and a dry run counts what is left. Against an image
+that does not carry the tool, it says so.
 
 To read it, save the block, from `-----BEGIN PKCS7-----` to `-----END PKCS7-----`, as `moved.pem`, and
 open it with the private key that belongs to the certificate:
@@ -817,8 +820,8 @@ openssl smime -decrypt -inform PEM -inkey <key> -in moved.pem
 ```
 
 It holds the tool's JSON object of counts ([SPEC.md](../SPEC.md#unlisted-roadmaps-to-private)) and its
-`write` lines: one `roadmap.unlisted.move` per root a write run acts on, `moved`, `unchanged` or
-refused, and the run's `roadmap.unlisted.to_private`. From `~/windmill` on the host, the tool prints
+`write` lines: one `roadmap.unlisted.move` per root a write run acts on, `moved`, `unchanged`, `busy`
+or refused, and the run's `roadmap.unlisted.to_private`. From `~/windmill` on the host, the tool prints
 them in the clear:
 
 ```sh
