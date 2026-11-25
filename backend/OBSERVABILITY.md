@@ -40,7 +40,9 @@ matching HTTP routes. Accounting failures and unknown 503 responses remain Issue
 The access log writes one `http …` line per request a handler takes, at the same split: ERROR once the request's write
 observation failed or reported a failure, whatever it answered; otherwise INFO for traffic, WARN for every
 4xx and for a 5xx its route reads as an expected refusal (`writeHttpOutcome` under the route's static
-operation, a read route's included), ERROR for every other 5xx.
+operation, a read route's included), ERROR for every other 5xx. Its `caller=` is the account the request was served as,
+`anon` for one that sends no credential, or `refused` or `lapsed` for credentials that fail (`SentCaller`,
+`platform/adapters/http/Caller.h`), so a refused credential is a WARN line and never an Issue.
 A full worker-pool queue answers 503 `unavailable` (the App Store claim door, `subscriptions_unavailable`) and files one
 `worker_pool.saturated` Issue per five minutes per pool (`FailureWindow`), the pool named in its detail; a stopping pool files none. A push whose
 bind fails transiently answers 503 `unavailable` and files one `sync.push.bind_unavailable` Issue per five

@@ -53,11 +53,11 @@ std::optional<OAuthClient> OAuthService::describeClient(const std::string& clien
 
 std::string OAuthService::issueCode(const std::string& clientId, const std::string& redirectUri,
                                     const std::string& codeChallenge, const std::string& resource,
-                                    const std::string& scope, const UserId& user, const std::string& sessionSecret) {
+                                    const std::string& scope, const UserId& user, const std::string& sessionDigest) {
   const MintedToken code = tokens_.mint();
   const UnixMs now = clock_.nowMs();
   if (!repo_.insertCode(code.digest, StoredCode{clientId, user, redirectUri, codeChallenge,
-                         canonicalResource(resource), scope, codeExpiry(now)}, tokens_.digestOf(sessionSecret), now)) return "";
+                         canonicalResource(resource), scope, codeExpiry(now)}, sessionDigest, now)) return "";
   return code.secret;
 }
 

@@ -149,7 +149,12 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
     return;
   }
 
-  const std::optional<SharedRoadmap> shared = sharedOf(id, callerOf(req, *auth_));
+  const SentCaller caller = SentCaller::of(req, *auth_);
+  if (caller.refused()) {
+    callback(refusedCredentials());
+    return;
+  }
+  const std::optional<SharedRoadmap> shared = sharedOf(id, caller.account());
   const bool hasVideo = shared && videos_->has(id);
   callback(htmlPage(shared ? renderShell(shell, appOrigin_, shared->title, shared->steps, shared->visibility, id, shared->lineage, hasVideo)
                            : shell));

@@ -29,7 +29,7 @@ OgVideoApi::OgVideoApi(std::shared_ptr<OgVideoRepository> videos, std::shared_pt
     : videos_(std::move(videos)), rooms_(std::move(rooms)), auth_(std::move(auth)), engine_(std::move(engine)) {}
 
 void OgVideoApi::putVideo(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id) {
-  const std::optional<UserId> caller = callerOf(req, *auth_);
+  const std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to update the share video"));
     return;
@@ -64,7 +64,12 @@ void OgVideoApi::putVideo(const drogon::HttpRequestPtr& req, HttpCallback&& call
 
 void OgVideoApi::getVideo(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& id) {
   // Anyone may request a share video: ask the access gate, never the whole lattice.
-  const std::optional<UserId> caller = callerOf(req, *auth_);
+  const SentCaller sent = SentCaller::of(req, *auth_);
+  if (sent.refused()) {
+    callback(refusedCredentials());
+    return;
+  }
+  const std::optional<UserId> caller = sent.account();
   const std::optional<TreeAccess> tree = engine_ ? engine_->access(TreeId{id}, caller) : rooms_->accessOf(TreeId{id});
   if (!tree || !canRead(caller, tree->owner, tree->visibility)) {
     callback(error(drogon::k404NotFound, "no such video"));

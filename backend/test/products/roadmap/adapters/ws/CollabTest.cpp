@@ -18,6 +18,7 @@
 #include "test/testing.h"
 
 #include "platform/application/WriteObservation.h"
+#include "test/DrogonLoopback.h"
 
 #include <trantor/net/EventLoopThread.h>
 #include <trantor/net/InetAddress.h>
@@ -122,7 +123,7 @@ struct Harness {
     auto req = drogon::HttpRequest::newHttpRequest();
     if (!session.empty()) req->addCookie("wm_session", session);
     if (!origin.empty()) req->addHeader("Origin", origin);
-    return req;
+    return wm::test::DrogonLoopback::received(req);
   }
 };
 
@@ -358,6 +359,32 @@ TEST(ws_non_owner_on_a_private_tree_is_rejected_and_never_joins_the_bus) {
 
   broadcastTo(h.bus, "t_priv");
   CHECK_EQ(conn->sent.size(), 1u);
+}
+
+// The upgrade reads its caller as every door does (platform/adapters/http/Caller.h): credentials that resolve open the
+// owner's private tree, none or one lapsed credential join as a guest the tree refuses, and credentials the rule refuses
+// close the socket.
+TEST(ws_an_upgrade_reads_its_caller_as_every_door_does) {
+  const auto opened = [](const std::vector<std::string>& fields) {
+    Harness h;
+    const UserId owner = h.signIn("s-owner", "owner@example.com");
+    h.signIn("s-other", "other@example.com");
+    h.seed("t_priv", owner, Visibility::private_);
+    auto conn = std::make_shared<FakeSocket>();
+    h.collab.onOpen(wm::test::DrogonLoopback::received("GET", "/v1/socket", fields), conn);
+    if (!conn->open) return std::string("closed");
+    h.collab.onMessage(conn, subscribeFrame("t_priv"));
+    return frameType(conn->sent.at(0));
+  };
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-owner"}), std::string("subgraph"));
+  CHECK_EQ(opened({"Host: collab", "Authorization: bearer s-owner"}), std::string("subgraph"));
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-owner", "Authorization: Bearer s-owner"}), std::string("subgraph"));
+  CHECK_EQ(opened({"Host: collab"}), std::string("reject"));
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-gone"}), std::string("reject"));
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-owner", "Authorization: Bearer s-other"}), std::string("closed"));
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-owner; wm_session=s-other"}), std::string("closed"));
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session"}), std::string("closed"));
+  CHECK_EQ(opened({"Host: collab", "Authorization: Basic s-owner"}), std::string("closed"));
 }
 
 TEST(ws_anon_on_an_unlisted_tree_receives_the_delta_and_joins_the_bus) {

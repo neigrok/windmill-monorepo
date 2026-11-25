@@ -709,6 +709,7 @@ target_compile_definitions(windmill_sync_scale PRIVATE WM_PG_TEST_URL_ENV="WM_SC
 add_executable(windmill_adapters_tests
   test/http_main.cpp
   test/platform/adapters/http/AuthApiTest.cpp
+  test/platform/adapters/http/CallerTest.cpp
   test/platform/adapters/http/AccountDeletionTest.cpp
   test/platform/adapters/http/AppleLinkingApiTest.cpp
   test/platform/adapters/http/OAuthApiTest.cpp
@@ -815,7 +816,7 @@ add_executable(windmill_adapters_tests
   test/products/gym/adapters/postgres/PgPreferencesRepositoryTest.cpp
   test/products/gym/adapters/postgres/PgNotesRepositoryTest.cpp
   test/products/gym/adapters/postgres/PgBodyweightRepositoryTest.cpp)
-target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_product_sync)
+target_link_libraries(windmill_adapters_tests PRIVATE windmill_roadmap windmill_product_sync windmill_probe)
 # The gym door harness re-plants the catalog seed exactly as the schema writes it.
 target_compile_definitions(windmill_adapters_tests PRIVATE WM_API_CONTRACT_DIR="${WM_API_CONTRACT_DIR}" WM_SCHEMA_SQL="${CMAKE_SOURCE_DIR}/db/schema.sql"
   WM_GYM_DOMAIN_DIR="${WM_API_CONTRACT_DIR}/gym/domain"

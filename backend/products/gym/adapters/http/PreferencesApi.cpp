@@ -15,7 +15,7 @@ PreferencesApi::PreferencesApi(std::shared_ptr<PreferencesRepository> preference
 
 // A lifter with no row is answered with the defaults; nothing is written on the way out.
 void PreferencesApi::preferences(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;

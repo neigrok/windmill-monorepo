@@ -160,7 +160,7 @@ TEST(sync_api_answers_401_to_credentials_sent_that_do_not_resolve_whatever_their
   const std::string ann = harness.signIn("ann");
   const std::string bob = harness.signIn("bob");
   const std::string revoked = harness.signIn("cat");
-  harness.auth->signOut(revoked);
+  harness.auth->signOut(harness.auth->digestOf(revoked));
   auto hello = [&api](const sync::HeaderOccurrences& fields) {
     return answer(&sync::SyncApi::hello, api, request("GET", "/v1/sync/hello", "", "2", fields));
   };

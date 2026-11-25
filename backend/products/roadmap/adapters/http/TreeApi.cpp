@@ -23,10 +23,6 @@ TreeApi::TreeApi(std::shared_ptr<RoomRegistry> registry, std::shared_ptr<TreeRep
     : registry_(std::move(registry)), trees_(std::move(trees)), progress_(std::move(progress)),
       ops_(std::move(ops)), auth_(std::move(auth)), fork_(std::move(fork)), engine_(std::move(engine)), failures_(std::move(failures)) {}
 
-std::optional<UserId> TreeApi::callerOf(const drogon::HttpRequestPtr& req) const {
-  return wm::callerOf(req, *auth_);
-}
-
 // An absent tree, one this caller may not read, and an infrastructure failure all answer false,
 // so all three become one 404 and a failure never tells a stranger which ids are real. The failure
 // alone files an Issue, under one static operation. `read` runs under the strand.
@@ -79,7 +75,12 @@ std::optional<Place> TreeApi::placeOf(const TreeId& tree) {
 }
 
 void TreeApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
-  std::optional<UserId> caller = callerOf(req);
+  const SentCaller sent = SentCaller::of(req, *auth_);
+  if (sent.refused()) {
+    callback(refusedCredentials());
+    return;
+  }
+  const std::optional<UserId> caller = sent.account();
   Json::Value body(Json::objectValue);
   TreeData data;
   bool mine = false;
@@ -151,7 +152,12 @@ void TreeApi::getTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback
 }
 
 void TreeApi::getGuides(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
-  const std::optional<UserId> caller = callerOf(req);
+  const SentCaller sent = SentCaller::of(req, *auth_);
+  if (sent.refused()) {
+    callback(refusedCredentials());
+    return;
+  }
+  const std::optional<UserId> caller = sent.account();
   Guide own;
   bool mine = false;
   bool subtree = false;
@@ -195,7 +201,12 @@ void TreeApi::getGuides(const drogon::HttpRequestPtr& req, HttpCallback&& callba
 }
 
 void TreeApi::getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
-  const std::optional<UserId> caller = callerOf(req);
+  const SentCaller sent = SentCaller::of(req, *auth_);
+  if (sent.refused()) {
+    callback(refusedCredentials());
+    return;
+  }
+  const std::optional<UserId> caller = sent.account();
   TreeDiagnostics graph;
   std::optional<std::map<NodeId, TreeId>> pointers;
   if (!readRoom(treeId, caller, [&](TreeRoom& room) {
@@ -228,7 +239,7 @@ void TreeApi::getDiagnostics(const drogon::HttpRequestPtr& req, HttpCallback&& c
 }
 
 void TreeApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
-  std::optional<UserId> caller = callerOf(req);
+  const std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to fork"));
     return;
@@ -290,7 +301,12 @@ void TreeApi::forkTree(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
 }
 
 void TreeApi::getProgress(const drogon::HttpRequestPtr& req, HttpCallback&& callback, const std::string& treeId) {
-  const std::optional<Json::Value> answer = progressAnswer(treeId, callerOf(req));
+  const SentCaller sent = SentCaller::of(req, *auth_);
+  if (sent.refused()) {
+    callback(refusedCredentials());
+    return;
+  }
+  const std::optional<Json::Value> answer = progressAnswer(treeId, sent.account());
   if (!answer) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;
@@ -336,7 +352,12 @@ void TreeApi::getActivity(const drogon::HttpRequestPtr& req, HttpCallback&& call
     callback(error(drogon::k400BadRequest, "since and limit must be numbers"));
     return;
   }
-  const std::optional<Json::Value> answer = activityAnswer(treeId, callerOf(req), since, limit);
+  const SentCaller sent = SentCaller::of(req, *auth_);
+  if (sent.refused()) {
+    callback(refusedCredentials());
+    return;
+  }
+  const std::optional<Json::Value> answer = activityAnswer(treeId, sent.account(), since, limit);
   if (!answer) {
     callback(error(drogon::k404NotFound, "no such tree"));
     return;

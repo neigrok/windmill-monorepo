@@ -5,6 +5,7 @@
 #include "test/platform/Fakes.h"
 #include "test/products/journal/Fakes.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -45,7 +46,7 @@ drogon::HttpRequestPtr getRequest(const std::string& path, const std::string& se
   request->setMethod(drogon::Get);
   request->setPath(path);
   if (!session.empty()) request->addCookie("wm_session", session);
-  return request;
+  return wm::test::DrogonLoopback::received(request);
 }
 
 drogon::HttpResponsePtr sendGet(JournalApi& api, const drogon::HttpRequestPtr& request,

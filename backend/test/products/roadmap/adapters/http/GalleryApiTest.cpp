@@ -7,6 +7,7 @@
 #include "test/testing.h"
 
 #include "platform/application/WriteObservation.h"
+#include "test/DrogonLoopback.h"
 
 #include <trantor/utils/Logger.h>
 
@@ -114,7 +115,7 @@ drogon::HttpRequestPtr galleryReq(const std::string& session = "", const std::st
   if (!session.empty()) req->addCookie("wm_session", session);
   if (!limit.empty()) req->setParameter("limit", limit);
   if (!cursor.empty()) req->setParameter("cursor", cursor);
-  return req;
+  return wm::test::DrogonLoopback::received(req);
 }
 
 drogon::HttpResponsePtr sendIndex(GalleryApi& api, const drogon::HttpRequestPtr& req) {

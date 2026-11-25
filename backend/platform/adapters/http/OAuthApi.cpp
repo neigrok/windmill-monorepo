@@ -175,8 +175,8 @@ void OAuthApi::authorize(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
 }
 
 void OAuthApi::decision(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
-  if (!caller) {
+  const SentCaller caller = SentCaller::of(req, *auth_);
+  if (!caller.user) {
     cb(oauthError("login_required", "sign in to authorize", drogon::k401Unauthorized));
     return;
   }
@@ -203,7 +203,8 @@ void OAuthApi::decision(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   if (!approve) {
     out["redirect"] = headerSafe(redirectUri) + "?error=access_denied&state=" + enc(state);
   } else {
-    const std::string code = oauth_->issueCode(clientId, redirectUri, codeChallenge, resource, scope, *caller, sessionSecretOf(req));
+    const std::string code = oauth_->issueCode(clientId, redirectUri, codeChallenge, resource, scope, caller.user->id,
+                                               *caller.credential.session());
     if (code.empty()) {
       cb(oauthError("login_required", "sign in to authorize", drogon::k401Unauthorized));
       return;
@@ -246,7 +247,7 @@ void OAuthApi::token(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
 }
 
 void OAuthApi::listGrants(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(oauthError("login_required", "sign in to see your connected tools", drogon::k401Unauthorized));
     return;
@@ -269,7 +270,7 @@ void OAuthApi::listGrants(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
 
 void OAuthApi::disconnectGrant(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                                const std::string& clientId) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(oauthError("login_required", "sign in to disconnect a tool", drogon::k401Unauthorized));
     return;

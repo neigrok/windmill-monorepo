@@ -133,7 +133,7 @@ drogon::HttpResponsePtr VoiceApi::admissionRefusal(const User& caller, const std
 }
 
 void VoiceApi::transcribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<User> caller = callerUserOf(req, *auth_);
+  std::optional<User> caller = SentCaller::of(req, *auth_).user;
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to talk"));
     return;

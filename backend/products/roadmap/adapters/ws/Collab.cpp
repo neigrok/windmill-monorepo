@@ -118,13 +118,19 @@ void Collab::onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketCo
     return;
   }
 
-  // Frames carry no cookie: resolve the session at the upgrade; anyone else is a read-only guest.
-  const std::string secret = sessionSecretOf(req);
-  std::optional<User> user = auth_.authenticate(secret);
-  // Keep the digest, never the secret, so a write can re-prove the session.
-  if (user) {
-    conn->setContext(std::make_shared<Principal>(user->id, true, sharableName(*user),
-                                                 auth_.digestOf(secret), clock_.nowMs()));
+  // Frames carry no cookie: resolve the session at the upgrade; anyone else is a read-only guest, and credentials the rule
+  // refuses (SentCaller) close the socket.
+  const SentCaller caller = SentCaller::of(req, auth_);
+  if (caller.refused()) {
+    LOG_WARN << "ws upgrade refused: credentials refused";
+    conn->setContext(std::make_shared<Principal>(UserId{"u0"}, false, "", "", 0));
+    conn->forceClose();
+    return;
+  }
+  // The session's digest, so a write can re-prove the session.
+  if (caller.user) {
+    conn->setContext(std::make_shared<Principal>(caller.user->id, true, sharableName(*caller.user),
+                                                 *caller.credential.session(), clock_.nowMs()));
   } else {
     conn->setContext(
         std::make_shared<Principal>(UserId{"u" + std::to_string(++actorSeq_)}, false, "", "", 0));
