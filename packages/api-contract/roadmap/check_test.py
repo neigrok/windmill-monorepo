@@ -329,10 +329,12 @@ class ContextTest(Rows):
 
     def test_a_roadmap_given_whole_past_the_bounds_is_refused(self):
         def grown(result, case):
+            check.spelled(case['given'], 'a case')
             tree = case['given']['trees'][0]
             tree['nodes'].append({**tree['nodes'][-1], 'id': 'zz', 'ord': '~'})
             result['steps'].append({**next(item for item in result['steps'] if item['id'] == tree['nodes'][-2]['id']), 'id': 'zz', 'prerequisites': [], 'state': 'available'})
         def lengthened(result, case):
+            check.spelled(case['given'], 'a case')
             item = next(item for item in result['steps'] if item['state'] == 'locked')
             node = next(node for node in case['given']['trees'][0]['nodes'] if node['id'] == item['id'])
             node['label'] += '!'
@@ -400,7 +402,27 @@ class ContextTest(Rows):
         ], 'check_context')
 
 
+    def test_a_started_step_past_its_bounds_is_refused(self):
+        def one_more(result):
+            result['steps'].append({'id': 'c00426', 'label': 'Pack item 427', 'kind': 'learn', 'state': 'available', 'prerequisites': [], 'unlockCount': 0, 'summary': ''})
+            result['omitted'] -= 1
+        self.refused([
+            self.vector('a step started from that follows sixty', lambda result, case, c: result['step']['prerequisites'].append('r59'), ': a step in full whose prerequisites are not their first 50 ids and a count of the rest from one'),
+            self.vector('a step started from that follows sixty', lambda result, case, c: result['step'].update(prerequisitesOmitted=0), ': a step in full whose prerequisites are not their first 50 ids and a count of the rest from one'),
+            self.vector('a conversation started from a step adds', lambda result, case, c: result['step'].update(prerequisitesOmitted=1), ': a step in full whose prerequisites are not their first 50 ids and a count of the rest from one'),
+            self.vector('a step-started checklist', lambda result, case, c: one_more(result), ': a context of 65555 bytes given around where the person stands, past CONTEXT_BYTES, 65536'),
+        ], 'check_context')
+
+
 class LimitsTest(Rows):
+    def test_the_context_bounds_other_than_section_5_states_are_refused(self):
+        stated = check.Contract.read().spec.bounds
+        changed = {**stated, 'recent': {'max': 11, 'unit': 'items'}}
+        self.refused([
+            (lambda c: c.limits.pop('context'), 'limits.json: no `context`'),
+            (lambda c: c.limits['context']['recent'].update(max=11), f'limits.json: context bounds {changed}, where §5 has {stated}'),
+        ], 'check_limits')
+
     def test_a_cap_other_than_section_6_states_is_refused(self):
         self.refused([
             (lambda c: c.limits['limits'].pop('kinds'), "limits.json: caps ['kinds'] in one of limits.json and §6 alone"),

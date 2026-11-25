@@ -93,13 +93,15 @@ test('a roadmap of 10,000 steps is told around its one available step: its count
   const answer = /** @type {any} */ (readContext(standing, { about: treeId }));
   const elapsed = performance.now() - start;
   const near = [3000, 2996, 2997, 2998, 2999, 3001, 3002, 3003, 3004];
-  assert.deepEqual(Object.keys(answer.result).sort(), ['counts', 'diagnostics', 'omitted', 'recent', 'steps', 'tree']);
-  assert.deepEqual(answer.result.tree, { id: treeId, title: 'Ten thousand steps', kinds: [], guides: [] });
-  assert.equal(answer.result.omitted, 0);
-  assert.deepEqual(answer.result.counts, { total: 10_000, done: 3_000, available: 1, locked: 6_999, unknown: 0,
-    byKind: [{ kind: null, total: 10_000, done: 3_000, available: 1, locked: 6_999, unknown: 0 }] });
-  assert.deepEqual(answer.result.steps, near.map((index) => line(index, STEP_LINE.filter((field) => field !== 'id'))));
-  assert.deepEqual(answer.result.recent, nodes.slice(0, 10).map((node) => ({ id: node.id, label: node.label, at: 1_800_000_000_000 })));
+  const counted = { total: 10_000, done: 3_000, available: 1, locked: 6_999, unknown: 0 };
+  assert.deepEqual(answer.result, {
+    tree: { id: treeId, title: 'Ten thousand steps', kinds: [], guides: [] },
+    diagnostics: { cycles: 0, dangling: 0, selfEdges: 0, smells: [{ kind: 'empty-legend' }, { kind: 'empty-icon', count: 10_000 }], treeLoops: 0, danglingPointers: 0 },
+    recent: nodes.slice(0, 10).map((node) => ({ id: node.id, label: node.label, at: 1_800_000_000_000 })),
+    counts: { ...counted, byKind: [{ kind: null, ...counted }] },
+    steps: near.map((index) => line(index, STEP_LINE.filter((field) => field !== 'id'))),
+    omitted: 0,
+  });
   const bytes = jcsBytes(answer.result).length;
   assert.ok(bytes <= ContextBounds.bytes, `${bytes} bytes`);
   t.diagnostic(`context: 10,000 steps told in ${bytes} bytes, ${answer.result.steps.length} lines, in ${elapsed.toFixed(0)} ms`);

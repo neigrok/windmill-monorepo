@@ -160,16 +160,22 @@ export class StandingRoadmaps {
     return !tree.own && (opening.status === 'unread' || opening.status === 'unknown') ? tree.marks.get(opening.node) ?? null : null;
   }
 
-  // §5.1 list_trees' row of a roadmap the person owns: its title, its steps by state, the titles of its available steps in
-  // get_tree's order and its newest completion's date. A roadmap the device has not finished bringing has its counts,
-  // frontier and date null, and the title the device holds of it, null where it holds none.
+  // §5.1, §10 The person's roadmaps as list_trees lists them, in the order of the domain's `list` read, newest first; while
+  // the device does not hold their whole list, the refusal, so no roadmap of theirs goes unlisted.
+  /** @returns {{ rows: { id: string, title: string | null }[] } | AbilityResponse} */
+  list() {
+    return this.listRead ? { rows: this.account.list() } : refusal(AbilityCodes.roadmapUnavailable);
+  }
+
+  // §5.1 list_trees' row of a roadmap the person owns: its title, its steps by state, the titles of its frontier and its
+  // newest completion's date. A roadmap the device has not finished bringing has its counts, frontier and date null, and
+  // the title the device holds of it, null where it holds none.
   /** @param {{ id: string, title: string | null }} listed @returns {JsonObject} */
   row({ id, title }) {
     const opened = this.open(id, null);
     if (!('roadmap' in opened)) return { id, title: title ?? this.account.trees.get(id)?.meta?.title ?? null, counts: null, frontier: null, lastCompletedAt: null };
     const { roadmap } = opened;
-    const frontier = roadmap.order().filter((step) => roadmap.state(step) === 'available').map((step) => roadmap.tree.nodesById.get(step)?.label ?? '');
-    return { id, title, counts: roadmap.counts, frontier, lastCompletedAt: roadmap.lastCompletedAt };
+    return { id, title, counts: roadmap.counts(), frontier: roadmap.frontier().map((step) => roadmap.label(step)), lastCompletedAt: roadmap.lastCompletedAt };
   }
 
   // §5 Whether what an opening comes to waits on a roadmap the device has not brought: one it has not finished bringing
@@ -222,8 +228,6 @@ export class StandingRoadmap {
   #follows = null;
   /** @type {string[] | null} */
   #order = null;
-  /** @type {DiagnosticLists | null} */
-  #diagnostics = null;
 
   /** @param {StandingRoadmaps} roadmaps @param {RoadmapTree} tree */
   constructor(roadmaps, tree) {
@@ -287,6 +291,12 @@ export class StandingRoadmap {
     return slot === undefined ? null : this.stateAt[slot] ?? null;
   }
 
+  // §5.1 A present step's title.
+  /** @param {string} id */
+  label(id) {
+    return this.tree.nodesById.get(id)?.label ?? '';
+  }
+
   // §5.1 The id of the kind that owns the hue of the step at `slot`; null where none does.
   /** @param {number} slot */
   kindAt(slot) {
@@ -315,6 +325,11 @@ export class StandingRoadmap {
     }
     this.#order = [...order, ...ids.filter((_, slot) => !placed[slot]).sort(compareText)];
     return this.#order;
+  }
+
+  // §5.1 The frontier: the available steps, in get_tree's order.
+  frontier() {
+    return this.order().filter((id) => this.state(id) === 'available');
   }
 
   // §5.1 get_tree's header: the roadmap's title, its kinds as the legend shows them, its own guide and how many steps it has.
@@ -347,10 +362,14 @@ export class StandingRoadmap {
     return Object.fromEntries([['id', id], ...fields.filter((name) => name !== 'id' && field[name]).map((name) => [name, field[name]?.() ?? null])]);
   }
 
-  // §5.1 list_trees' counts: every present step, and how many stand in each state.
-  get counts() {
-    const counts = { total: this.stateAt.length, done: 0, available: 0, locked: 0, unknown: 0 };
-    for (const state of this.stateAt) counts[state === 'complete' ? 'done' : state]++;
+  // §5.1 list_trees' counts: the present steps `keep` takes, every one where it takes all, and how many stand in each state.
+  counts(keep = (/** @type {number} */ slot) => true) {
+    const counts = { total: 0, done: 0, available: 0, locked: 0, unknown: 0 };
+    for (const [slot, state] of this.stateAt.entries()) {
+      if (!keep(slot)) continue;
+      counts.total++;
+      counts[state === 'complete' ? 'done' : state]++;
+    }
     return counts;
   }
 
@@ -362,9 +381,9 @@ export class StandingRoadmap {
   }
 
   // §5.1 get_diagnostics' report: what is wrong with the roadmap's graph, from the domain's `diagnostics` read, and on a
-  // roadmap of the person's own what the roadmaps its steps open come to, from its `pointers` read.
-  get diagnostics() {
-    if (this.#diagnostics) return this.#diagnostics;
+  // roadmap of the person's own what the roadmaps its steps open come to, from its `pointers` read. Each answer builds its
+  // own, so no caller holds what another answer reads.
+  diagnostics() {
     const found = diagnose(this.graph);
     /** @type {DiagnosticLists} */
     const lists = {
@@ -383,7 +402,6 @@ export class StandingRoadmap {
         path: path.map(({ tree, title }) => ({ treeId: tree, title })), ...(pathOmitted > 0 ? { pathOmitted } : {}) })) };
       lists.danglingPointers = { omitted: pointers.danglingPointersOmitted, entries: pointers.danglingPointers.map(({ node, tree }) => ({ node, treeId: tree })) };
     }
-    this.#diagnostics = lists;
     return lists;
   }
 

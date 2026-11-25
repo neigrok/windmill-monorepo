@@ -39,14 +39,9 @@ MARK = ({'node', 'status', 'outOfOrder', 'recordedAt', 'deviceAt'}, {'stamp'})
 POINTER = ({'node', 'present', 'opens'}, {'setAt'})
 # The codes that refuse a whole call, before any change of a proposal folds (§7).
 CALL_CODES = {'not-owner', 'roadmap-unavailable', 'unknown-roadmap'}
-# The context (§5): its cases' file, the bounds past which a roadmap is given around where the person stands (§5, and §8's
-# `CONTEXT_BYTES`), how many newest completions it holds and how many frontier titles a row about all roadmaps holds,
-# the fields of a step's line and of a step in full, and the codes it refuses with.
+# The context (§5): its cases' file, the fields of a step's line and of a step in full, and the codes it refuses with.
+# Its bounds are limits.json's `context`, held to §5's table.
 CONTEXT = 'abilities/context.json'
-CONTEXT_STEPS = 300
-CONTEXT_BYTES = 64 * 1024
-RECENT = 10
-FRONTIER = 10
 LINE = ['id', 'label', 'kind', 'state', 'prerequisites', 'unlockCount', 'summary']
 IN_FULL = ['id', 'label', 'kind', 'state', 'prerequisites', 'unlockCount', 'description', 'links', 'opens']
 CONTEXT_CODES = {'roadmap-unavailable', 'unknown-roadmap'}
@@ -80,6 +75,7 @@ class Spec:
                      for row in self.table(text, '## §6 Writing', 1)}
         self.codes = {ticked(row[0])[0] for row in self.table(text, '### §6.1 Refusals')}
         self.ops = {ticked(row[0])[0]: (ticked(row[1]), ticked(row[2])) for row in self.table(text, '## §7 Proposals')}
+        self.bounds = {ticked(row[0])[0]: {'max': int(row[1]), 'unit': row[2]} for row in self.table(text, '## §5 Reading')}
 
     @staticmethod
     def table(text, heading, skip=0):
@@ -255,6 +251,10 @@ class Contract:
         self.check_limits()
         return self.check_vectors() + self.check_context()
 
+    # A bound of the context, as limits.json holds it.
+    def bound(self, name):
+        return self.limits['context'][name]['max']
+
     def ability(self, name):
         return next(ability for ability in self.catalog['abilities'] if ability['name'] == name)
 
@@ -339,7 +339,8 @@ class Contract:
     # --- the caps
     def check_limits(self):
         limits, spec = self.limits, self.spec
-        members(limits, {'backend', 'registry', 'web', 'limits'}, 'limits.json')
+        members(limits, {'backend', 'registry', 'web', 'limits', 'context'}, 'limits.json')
+        if limits['context'] != spec.bounds: refuse('limits.json', f'context bounds {limits["context"]}, where §5 has {spec.bounds}')
         if sorted(limits['limits']) != sorted(spec.caps): refuse('limits.json', f'caps {sorted(set(limits["limits"]) ^ set(spec.caps))} in one of limits.json and §6 alone')
         constants = {}
         for name, value in CONSTANT.findall(self.header):
@@ -587,12 +588,12 @@ class Contract:
         for row in result['trees']:
             members(row, {'id', 'title', 'counts', 'frontier', 'lastCompletedAt'}, f'{where} · trees', {'frontierOmitted'})
             frontier, left = row['frontier'] or [], row.get('frontierOmitted')
-            if len(frontier) > FRONTIER or left is not None and (type(left) is not int or left < 1 or len(frontier) < FRONTIER): refuse(where, f'`{row["id"]}`\'s frontier, which is not its first {FRONTIER} titles and a count of the rest from one')
+            if len(frontier) > self.bound('frontier') or left is not None and (type(left) is not int or left < 1 or len(frontier) < self.bound('frontier')): refuse(where, f'`{row["id"]}`\'s frontier, which is not its first {self.bound("frontier")} titles and a count of the rest from one')
             if row['counts'] is not None and len(frontier) + (left or 0) != row['counts']['available']: refuse(where, f'`{row["id"]}`\'s frontier and the titles left off, which are not its {row["counts"]["available"]} available steps')
         own = sum(1 for tree in case['given']['trees'] if tree['own'])
         if type(result['omitted']) is not int or result['omitted'] < 0 or len(result['trees']) + result['omitted'] > own: refuse(where, f'{len(result["trees"])} rows and {result["omitted"]} left off, of {own} roadmaps the person owns')
         size = len(canonical(result, where))
-        if result['trees'] and size > CONTEXT_BYTES: refuse(where, f'a context of {size} bytes about all roadmaps, past CONTEXT_BYTES, {CONTEXT_BYTES}')
+        if result['trees'] and size > self.bound('bytes'): refuse(where, f'a context of {size} bytes about all roadmaps, past CONTEXT_BYTES, {self.bound("bytes")}')
 
     def check_context_refusal(self, case, tree, where):
         members(case['expect']['refused'], {'code'}, f'{where} · refused', {'id'})
@@ -620,20 +621,20 @@ class Contract:
             if sorted(item) != sorted(LINE): refuse(where, f'`{item["id"]}`\'s line, whose fields are not §5.1\'s default')
             if item['id'] not in nodes or not nodes[item['id']]['present']: refuse(where, f'a step `{item["id"]}` the roadmap does not hold')
             check_projection(item, nodes[item['id']], where)
-        told = canonical({key: value for key, value in result.items() if key != 'step'}, where)
+        told = canonical(result, where)
         if whole and len(result['steps']) != len(present): refuse(where, f'{len(result["steps"])} lines of a roadmap given whole, where it holds {len(present)} steps')
-        if whole and len(present) > CONTEXT_STEPS: refuse(where, f'a roadmap of {len(present)} steps given whole, past {CONTEXT_STEPS}')
-        if whole and len(told) > CONTEXT_BYTES: refuse(where, f'a context of {len(told)} bytes given whole, past CONTEXT_BYTES, {CONTEXT_BYTES}')
+        if whole and len(present) > self.bound('steps'): refuse(where, f'a roadmap of {len(present)} steps given whole, past {self.bound("steps")}')
+        if whole and len(told) > self.bound('bytes'): refuse(where, f'a context of {len(told)} bytes given whole, past CONTEXT_BYTES, {self.bound("bytes")}')
         if whole:
             found = fault(result['completed'], {'type': 'array', 'items': self.ability('get_progress')['result']['properties']['completed']['items']}, 'result.completed')
             if found: refuse(where, found)
         else:
             self.check_counts(result['counts'], len(present), [kind['id'] for kind in result['tree']['kinds']], where)
             if type(result['omitted']) is not int or result['omitted'] < 0 or len(result['steps']) + result['omitted'] > len(present): refuse(where, f'{len(result["steps"])} lines and {result["omitted"]} left off, of a roadmap of {len(present)} steps')
-            if result['steps'] and len(told) > CONTEXT_BYTES: refuse(where, f'a context of {len(told)} bytes given around where the person stands, past CONTEXT_BYTES, {CONTEXT_BYTES}')
+            if result['steps'] and len(told) > self.bound('bytes'): refuse(where, f'a context of {len(told)} bytes given around where the person stands, past CONTEXT_BYTES, {self.bound("bytes")}')
         members(result['diagnostics'], {'cycles', 'dangling', 'selfEdges', 'smells'} | ({'treeLoops', 'danglingPointers'} if tree['own'] else set()), f'{where} · diagnostics')
         recent = result['recent']
-        if len(recent) > RECENT: refuse(where, f'{len(recent)} newest completions, past {RECENT}')
+        if len(recent) > self.bound('recent'): refuse(where, f'{len(recent)} newest completions, past {self.bound("recent")}')
         for item in recent:
             members(item, {'id', 'label', 'at'}, f'{where} · recent')
             if type(item['at']) is not int or item['id'] not in nodes or item['label'] != nodes[item['id']]['label']: refuse(where, f'a newest completion `{item["id"]}` that is not a dated step of the roadmap')
@@ -641,8 +642,11 @@ class Contract:
         shown = case['step'] is not None and nodes[case['step']]['present']
         if shown != ('step' in result): refuse(where, 'a step in full where the conversation started from no step the roadmap shows' if not shown else 'no step in full, where the conversation started from a step the roadmap shows')
         if shown:
-            if sorted(result['step']) != sorted(IN_FULL) or result['step']['id'] != case['step']: refuse(where, 'a step in full that is not the step started from with every field of §5.1 but its summary')
-            check_projection(result['step'], nodes[case['step']], where)
+            step, cap = result['step'], self.bound('prerequisites')
+            if sorted(set(step) - {'prerequisitesOmitted'}) != sorted(IN_FULL) or step['id'] != case['step']: refuse(where, 'a step in full that is not the step started from with every field of §5.1 but its summary')
+            left = step.get('prerequisitesOmitted')
+            if len(step['prerequisites']) > cap or left is not None and (type(left) is not int or left < 1 or len(step['prerequisites']) < cap): refuse(where, f'a step in full whose prerequisites are not their first {cap} ids and a count of the rest from one')
+            check_projection(step, nodes[case['step']], where)
 
     # The guides Coach reads, as the server's get_tree gives them: each `{treeId, title, text, yours}`; on a roadmap the
     # person owns, at most eight, farthest first, so its own last where it has one; on one they only read, its own alone.

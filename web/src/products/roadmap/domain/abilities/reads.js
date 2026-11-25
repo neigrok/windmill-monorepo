@@ -88,7 +88,7 @@ function getProgress(standing, { treeId, cursor }, about) {
 function getDiagnostics(standing, { treeId, cursor }, about) {
   const opened = StandingRoadmaps.of(standing).open(treeId, about);
   if (!('roadmap' in opened)) return opened;
-  const lists = opened.roadmap.diagnostics;
+  const lists = opened.roadmap.diagnostics();
   const names = Object.keys(lists).sort(compareText);
   const entries = names.flatMap((name) => (lists[name]?.entries ?? []).map((entry) => ({ under: name, make: () => entry })));
   const first = Object.fromEntries(names.flatMap((name) => (lists[name]?.omitted ? [[`${name}Omitted`, lists[name]?.omitted ?? 0]] : [])));
@@ -101,8 +101,9 @@ function getDiagnostics(standing, { treeId, cursor }, about) {
 /** @param {Standing} standing @param {TreesRequest} input @returns {AbilityResponse} */
 function listTrees(standing, { cursor }) {
   const roadmaps = StandingRoadmaps.of(standing);
-  if (!roadmaps.listRead) return refusal(AbilityCodes.roadmapUnavailable);
-  const rows = roadmaps.account.list();
+  const listed = roadmaps.list();
+  if (!('rows' in listed)) return listed;
+  const { rows } = listed;
   return paged(new Pages({ lists: ['trees'], entries: rows.map((row) => ({ under: 'trees', make: () => roadmaps.row(row) })), read: rows.map((row) => row.id) }), cursor);
 }
 

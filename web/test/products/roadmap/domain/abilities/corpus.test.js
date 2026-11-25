@@ -74,10 +74,10 @@ test('the corpus\'s read cases, counted by ability, and the size of each context
   t.diagnostic(`roadmap abilities: ${readFiles.length} read files claimed (${counted.join(', ')}), ${unclaimed.length} write files unclaimed`);
   for (const each of contextCases) {
     if (!('result' in each.expect)) continue;
-    const { step, ...told } = each.expect.result;
-    const bytes = jcsBytes(told).length;
-    t.diagnostic(`context: ${bytes} bytes (${(bytes / ContextBounds.bytes * 100).toFixed(1)}% of CONTEXT_BYTES)${step ? ` and ${jcsBytes(step).length} of its step` : ''}, `
-      + `${told.steps?.length ?? told.trees?.length} ${told.trees ? 'roadmaps' : `lines${told.counts ? ` of ${told.counts.total} steps` : ''}`}`
-      + `${told.omitted ? `, ${told.omitted} left off` : ''}${told.tree?.guidesOmitted ? `, ${told.tree.guidesOmitted} guides given way` : ''} · ${each.case.slice(0, 72)}`);
+    const context = each.expect.result;
+    const bytes = jcsBytes(context).length;
+    t.diagnostic(`context: ${bytes} bytes (${(bytes / ContextBounds.bytes * 100).toFixed(1)}% of CONTEXT_BYTES)${context.step ? `, ${jcsBytes(context.step).length} of them its step` : ''}, `
+      + `${context.steps?.length ?? context.trees?.length} ${context.trees ? 'roadmaps' : `lines${context.counts ? ` of ${context.counts.total} steps` : ''}`}`
+      + `${context.omitted ? `, ${context.omitted} left off` : ''}${context.tree?.guidesOmitted ? `, ${context.tree.guidesOmitted} guides given way` : ''} · ${each.case.slice(0, 72)}`);
   }
 });
