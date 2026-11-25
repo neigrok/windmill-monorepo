@@ -88,6 +88,7 @@ packages/api-contract/roadmap/
                           they must give; its README.md has the format
   check.py                the Coach contracts workflow's check of the three against this document's
                           tables, and of each cap against the sources it names
+  coach/                  the words the model reads: the system prompt, as gym's coach/ holds them
   domain/                 roadmap's shared domain corpus, where a turn's opening and end are proven
                           as gym's are (§9)
 web/src/products/roadmap/
