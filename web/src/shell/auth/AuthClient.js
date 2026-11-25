@@ -7,8 +7,13 @@ import { API_BASE } from '../apiBase.js';
 const LINK_SENT_KEY = 'windmill:link-sent';
 const LINK_SENT_TTL_MS = 15 * 60 * 1000;
 // One tab at a time changes the browser's session cookie: a sign-in that sets it (`verifyToken`) and the clearing of one no
-// live session holds (`clearLapsedCookie`). A sign-in whose cookie arrives on a navigation, Google's callback, holds none.
+// live session holds (`clearLapsedCookie`). A sign-in whose cookie arrives on a navigation, Google's callback, holds none, and
+// a browser without Web Locks runs each change as it comes.
 const COOKIE_LOCK = 'windmill:auth-cookie';
+function holdingCookie(options, run) {
+  const locks = globalThis.navigator?.locks;
+  return locks ? locks.request(COOKIE_LOCK, options, run) : run();
+}
 
 export class AuthError extends Error {
   constructor(message, { code, detail, status, said }) {
@@ -40,9 +45,10 @@ export function pendingMagicLink() {
   }
 }
 
+// Holds the cookie lock no longer than its request's 10 seconds.
 export async function verifyToken(token) {
-  return navigator.locks.request(COOKIE_LOCK, async () => {
-    const response = await send('/v1/auth/verify', { token });
+  return holdingCookie({}, async () => {
+    const response = await send('/v1/auth/verify', { token }, AbortSignal.timeout(10000));
     if (response.ok) {
       const body = await response.json();
       return { user: body.user, forkedTree: body.forkedTree };
@@ -80,11 +86,11 @@ export async function logout() {
 // under the cookie lock `lapse.cleared()` first says whether a page or tab already cleared it (then nothing is sent and this
 // answers null), and then `read`, the account's read, decides: no session still, and the logout expires the cookie and
 // `lapse.record()` notes it (`cleared`); a sign-in another tab made meanwhile, which stays (`kept`); no answer, no lock within
-// 10 s or a logout that fails (`failed`, the logout's `error` with it), noted nowhere, so the next read that lapses the seat
-// tries again. Answers that read, undefined when there was none.
+// 10 s or a logout that fails (`failed`, the logout's `error` with it), noted nowhere, so the next page tries again. Answers
+// the read made under the lock, undefined when there was none to take, so its caller keeps its own.
 export async function clearLapsedCookie(read, lapse) {
   try {
-    return await navigator.locks.request(COOKIE_LOCK, { signal: AbortSignal.timeout(10000) }, async () => {
+    return await holdingCookie({ signal: AbortSignal.timeout(10000) }, async () => {
       if (lapse.cleared()) return null;
       const account = await read();
       if (account?.user !== null) return { read: account, outcome: account ? 'kept' : 'failed' };
@@ -97,13 +103,14 @@ export async function clearLapsedCookie(read, lapse) {
   }
 }
 
-async function send(path, body) {
+async function send(path, body, signal) {
   try {
     return await fetch(`${API_BASE}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       credentials: 'include',
+      ...(signal ? { signal } : {}),
     });
   } catch {
     throw new AuthError('Network request failed', { code: 'unreachable', status: 0 });

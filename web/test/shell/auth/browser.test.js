@@ -388,6 +388,104 @@ test('Chromium: a lapsed session\'s cookie is cleared once a lapse: one logout a
   } finally { await context.close(); }
 });
 
+// Another page of the origin holds the cookie lock and never lets it go, as a sign-in whose request hangs would.
+test('Chromium: a lapse read while the cookie lock stays held lapses the seat anyway, tells failed once, marks nothing and waits no more at later reads', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    const server = { cookie: 's1', sessions: new Set(['s1']), logouts: 0 };
+    await context.route('**/v1/me', (route) => {
+      const user = server.sessions.has(server.cookie) ? { id: 'A', name: 'Ada', email: 'ada@example.test' } : null;
+      return route.fulfill({ status: user ? 200 : 401, contentType: 'application/json', body: JSON.stringify(user ? { user } : {}) });
+    });
+    await context.route('**/v1/sessions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"sessions":[]}' }));
+    await context.route('**/v1/auth/logout', (route) => { server.logouts += 1; return route.fulfill({ status: 204 }); });
+    const page = await context.newPage();
+    await page.goto(`${origin}/auth-test`);
+    await page.waitForFunction(() => typeof mountAuth === 'function');
+    await page.evaluate(() => mountAuth('auth-lock-held', false));
+    await page.waitForFunction(() => document.getElementById('auth-state')?.textContent === 'signed-in');
+    const holder = await context.newPage();
+    await holder.goto(`${origin}/auth-test`);
+    await holder.evaluate(() => { navigator.locks.request('windmill:auth-cookie', () => new Promise(() => {})); });
+    await holder.waitForFunction(() => {
+      navigator.locks.query().then(({ held }) => { window.holding = held.some((lock) => lock.name === 'windmill:auth-cookie'); });
+      return window.holding === true;
+    });
+    server.sessions.delete('s1');
+    const seat = () => page.evaluate(async () => {
+      await new Promise(requestAnimationFrame);
+      return { state: document.getElementById('auth-state').textContent, lapsed: auth.lapsed, hint: JSON.parse(localStorage.getItem('windmill:auth-hint')),
+        told: (window.events ?? []).filter((event) => event.name === 'auth_session_cleared').map((event) => event.props.outcome) };
+    });
+    await page.evaluate(() => auth.refresh());
+    const lapsed = await seat();
+    const started = Date.now();
+    await page.evaluate(() => auth.refresh());
+    await page.evaluate(() => auth.refresh());
+    const waited = Date.now() - started;
+    assert.deepEqual({ lapsed, later: await seat(), quick: waited < 5000, logouts: server.logouts }, {
+      lapsed: { state: 'ghost', lapsed: true, hint: { status: 'ghost' }, told: ['failed'] },
+      later: { state: 'ghost', lapsed: true, hint: { status: 'ghost' }, told: ['failed'] },
+      quick: true, logouts: 0,
+    });
+  } finally { await context.close(); }
+});
+
+test('Chromium: a magic-link verify the server never answers gives up after its 10 seconds as unreachable and lets go of the cookie lock', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    await context.route('**/v1/auth/verify', () => {});
+    const page = await context.newPage();
+    await page.goto(`${origin}/auth-test`);
+    await page.waitForFunction(() => typeof verifyToken === 'function');
+    const outcome = await page.evaluate(() => Promise.race([verifyToken('link').then(() => 'verified', (error) => error.code),
+      new Promise((resolve) => { setTimeout(() => resolve('still waiting'), 15000); })]));
+    const held = await page.evaluate(async () => (await navigator.locks.query()).held.filter((lock) => lock.name === 'windmill:auth-cookie').length);
+    assert.deepEqual({ outcome, held }, { outcome: 'unreachable', held: 0 });
+  } finally { await context.close(); }
+});
+
+test('Chromium: a browser without Web Locks verifies a magic link, so the person is signed in, and clears a lapsed cookie without the lock', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    await context.addInitScript(() => { Object.defineProperty(Navigator.prototype, 'locks', { get: () => undefined, configurable: true }); });
+    const server = { cookie: null, sessions: new Set(), logouts: [] };
+    await context.route('**/v1/me', (route) => {
+      const user = server.sessions.has(server.cookie) ? { id: 'A', name: 'Ada', email: 'ada@example.test' } : null;
+      return route.fulfill({ status: user ? 200 : 401, contentType: 'application/json', body: JSON.stringify(user ? { user } : {}) });
+    });
+    await context.route('**/v1/auth/verify', (route) => {
+      server.cookie = 's2'; server.sessions.add('s2');
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ user: { id: 'A', name: 'Ada', email: 'ada@example.test' } }) });
+    });
+    await context.route('**/v1/auth/logout', (route) => {
+      server.logouts.push(server.cookie); server.sessions.delete(server.cookie); server.cookie = null;
+      return route.fulfill({ status: 204 });
+    });
+    const page = await context.newPage();
+    await page.goto(`${origin}/auth-test`);
+    await page.waitForFunction(() => typeof verifyToken === 'function');
+    const signedIn = await page.evaluate(async () => {
+      const { fetchMe } = await import('/src/shell/auth/AuthClient.js');
+      const { user } = await verifyToken('link');
+      return { locks: typeof navigator.locks, verified: user.id, me: (await fetchMe()).user?.id ?? null };
+    });
+    server.sessions.delete('s2');
+    const cleared = await page.evaluate(async () => {
+      const { clearLapsedCookie, fetchMe } = await import('/src/shell/auth/AuthClient.js');
+      let marked = false;
+      const outcome = await clearLapsedCookie(() => fetchMe(), { cleared: () => false, record: () => { marked = true; } });
+      return { outcome: outcome.outcome, marked };
+    });
+    assert.deepEqual({ signedIn, cleared, logouts: server.logouts }, {
+      signedIn: { locks: 'undefined', verified: 'A', me: 'A' }, cleared: { outcome: 'cleared', marked: true }, logouts: ['s2'],
+    });
+  } finally { await context.close(); }
+});
+
 test('Chromium: account closure discards without asking; failed server and local cleanup remain retryable', async () => {
   await ready;
   const context = await browser.newContext();

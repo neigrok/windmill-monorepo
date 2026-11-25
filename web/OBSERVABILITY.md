@@ -82,8 +82,9 @@ kind `auth`; a cookie cleanup that fails is the engine's `sync-auth`. Opening an
 The read of `/v1/me` that lapses the seat clears the browser's cookie once a lapse ([CLAUDE.md](CLAUDE.md), Offline rooms
 and browser replicas) and emits `auth_session_cleared` with `outcome`: `cleared` (the logout answered), `kept` (the read
 under the cookie lock found a session another tab signed in meanwhile, and nothing was sent) or `failed` (the read had no
-answer, the lock did not come within 10 s, or the logout failed, which reports `auth-session-clear` with its stack frames).
-A lapse already cleared, by another tab or an earlier page, emits nothing, and neither does a browser signed out all along.
+answer, the lock did not come within 10 s, or the logout failed, which reports `auth-session-clear` with its stack frames);
+a failed clear leaves the seat lapsed and tells nothing more on that page. A lapse already cleared, by another tab or an
+earlier page, emits nothing, and neither does a browser signed out all along.
 The update-required reload emits `sync_upgrade` with `pending`, `ok` or `failed`; a failed
 shell update reports the static `offline-shell-update` operation. A persisted page restore
 reports storage failures and keeps its local records available for a retry.

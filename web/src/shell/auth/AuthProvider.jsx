@@ -270,8 +270,8 @@ export default function AuthProvider({ children }) {
     const revision = roomOwnership.current.revision;
     let read = await readAccount(engine);
     // The read that lapses the seat finds a cookie no live session holds: it goes, once a lapse, so no door refuses this
-    // browser for it (AUTH.md), and the read made under the cookie lock, a sign-in another tab made meanwhile included, is
-    // the one this takes.
+    // browser for it (AUTH.md). The read made under the cookie lock, a sign-in another tab made meanwhile included, is the
+    // one this takes; a clear that made none keeps this 401, so the seat lapses and the next page tries again.
     if (seat.lapses(read?.user, engine, { signedOut })) {
       const account = seat.previousAccount;
       const cleared = await clearLapsedCookie(() => readAccount(engine),
@@ -279,7 +279,7 @@ export default function AuthProvider({ children }) {
       if (cleared) {
         if (cleared.error) captureError('auth', 'auth-session-clear', cleared.error.stack ?? '', '/auth');
         track('auth_session_cleared', { outcome: cleared.outcome });
-        read = cleared.read;
+        read = cleared.read ?? read;
       }
     }
     const me = read?.user;
