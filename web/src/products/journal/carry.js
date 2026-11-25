@@ -8,8 +8,8 @@
 // replica's ledger records leave their stores too (`settleSeat`), so a Discard of the replica takes with it the old pages
 // it counted, as the work they were carried into; the pages not yet carried, and the entries that do not read, wait for
 // that seat's next replica. An account's closure deletes every page of its seat (`forgetClosedAccount`). The pages that
-// bundle could not attribute (`.unclaimed`) stay in the browser's storage until a signed-in person restores or discards
-// them in Settings, or a sign-out forgets them (`forgetUnclaimedPages`).
+// bundle could not attribute (`.unclaimed`) stay in the browser's storage until Settings restores them, which takes an
+// account, or discards them, signed in or out, or a sign-out forgets them (`forgetUnclaimedPages`).
 
 import { jcs } from '../../../../packages/api-contract/sync/reference/core/jcs.js';
 import { ActionRunner, EngineReplica } from '../../platform/domain-kit/runner.js';

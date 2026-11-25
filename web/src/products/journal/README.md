@@ -84,8 +84,8 @@ closure then deletes every store of its seat, carried or not, the entries that d
 `forgetDevice`, which the shell tells `closed`): the account no longer exists.
 
 The pages that bundle could not attribute (`.unclaimed`, the owed pages of its first version's unscoped store, and the
-pages returned from the engine's metadata below) stay in the browser's storage, which is their only record, and the
-signed-in person decides in Settings: Restore claims them into the account's replica through the runner, joined onto
+pages returned from the engine's metadata below) stay in the browser's storage, which is their only record, and Settings
+offers them on both seats: Restore, which takes an account, claims them into the account's replica through the runner, joined onto
 that day's page as a claim is, each other page of a day as a draft to recover, each act's pages leaving their stores as
 it commits; Discard deletes the pages Settings listed, and no page that arrived since, and writes nothing to the engine.
 The first version's unscoped store also cached an account's pages beside the writes it owed: those copies are neither
