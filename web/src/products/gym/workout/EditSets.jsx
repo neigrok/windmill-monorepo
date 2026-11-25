@@ -145,7 +145,7 @@ export function EditSets({ view, exerciseId, log, movementName, onRevise, onSwap
       )}
       <div className="gym-live-edit-rest">
         <span id="gym-live-rest">{t('gym.workout.rest')}</span>
-        <Select value={draft.rest === null ? 'default' : String(draft.rest)} onChange={(value) => setDraft(draft.with({ rest: value === 'default' ? null : Number(value) }))}
+        <Select labelledBy="gym-live-rest" value={draft.rest === null ? 'default' : String(draft.rest)} onChange={(value) => setDraft(draft.with({ rest: value === 'default' ? null : Number(value) }))}
           options={[{ value: 'default', label: t('gym.workout.restDefault') }, ...RESTS.map((seconds) => ({ value: String(seconds), label: clockOf(seconds * 1000) }))]} />
       </div>
       {refusal && <p className="gym-live-refusal" role="alert">{refusal}</p>}

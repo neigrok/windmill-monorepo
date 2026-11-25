@@ -70,7 +70,8 @@ function useNarrow() {
 }
 
 // The rest tone, best effort: a short note through Web Audio while Rest sound is on. A browser lets a page sound only
-// after a gesture, so Log set wakes the context the tone plays through.
+// after a gesture, so every Log set wakes the context the tone plays through, Rest sound on or not, since it can be turned
+// on before the rest is up.
 const tone = { context: null };
 function wakeTone() {
   try {
@@ -120,15 +121,17 @@ function useSettledRack(api, ready, view) {
   return due && times > 0;
 }
 
-// The rest reached, once per rest (iOS 03.21): the tab the sync engine leads from, drawing the workout, tells it at the
-// instant the rest comes to its target, and while Rest sound is on sounds the tone and, on a phone's browser, a buzz. A
-// browser has one leading tab at a time, and the engine hands the lead to a tab on screen whenever one is, so two tabs tell
-// it once and a browser whose tabs are all hidden still tells it, as late as the browser slows a hidden tab's timers. A rest
-// that came to its target before this tab drew it is not told; one this tab drew short of its target is told at once when
-// its target moves behind it, as a new default rest can move it (WD10.7).
+// The rest reached, once per rest, the time after a set (iOS 03.21): the tab the sync engine leads from, drawing the
+// workout, tells it at the instant the rest comes to its target, and while Rest sound is on sounds the tone and, on a
+// phone's browser, a buzz. A browser has one leading tab at a time, and the engine hands the lead to a tab on screen
+// whenever one is, so two tabs tell it once and a browser whose tabs are all hidden still tells it, as late as the browser
+// slows a hidden tab's timers. A rest that came to its target before this tab drew it is not told, nor one the rack turns
+// to a movement whose target it has already passed; one this tab drew short of the target of the movement in hand is told
+// at once when that target moves behind it, as a new default rest can move it (WD10.7).
 function useRestTold(api, view) {
   const due = view && view.restSeconds !== null && view.lastSetAt !== null ? view.lastSetAt + view.restSeconds * 1000 : null;
   const setId = view?.latestSetId ?? null;
+  const inHand = setId === null ? null : `${setId}:${view.movement?.exerciseId ?? ''}`;
   const told = useRef(null);
   const drawnShort = useRef(null);
   const sounds = useRef(false);
@@ -144,15 +147,15 @@ function useRestTold(api, view) {
       navigator.vibrate?.(10);
     };
     const wait = due === null ? null : due - api.now();
-    if (wait === null || wait > 0) drawnShort.current = setId;
+    if (wait === null || wait > 0) drawnShort.current = inHand;
     if (wait === null) return undefined;
     if (wait <= 0) {
-      if (drawnShort.current === setId) tell();
+      if (drawnShort.current === inHand) tell();
       return undefined;
     }
     const timer = setTimeout(tell, wait);
     return () => clearTimeout(timer);
-  }, [api, due, setId]);
+  }, [api, due, setId, inHand]);
 }
 
 // The rail's Coach stands as tall as the page's scroller leaves below its top, at most the board's 783, so its composer stays
@@ -703,7 +706,7 @@ function Rack({ view, log, api, exercise, waiting }) {
     event.preventDefault();
     const form = event.currentTarget;
     if (busy || !view.offer) return;
-    if (view.restSound) wakeTone();
+    wakeTone();
     const weightKg = typed === null ? rack.weightKg : typedNumber(typed);
     const reps = typedReps === null ? rack.reps : countOf(typedReps);
     if (weightKg === null || reps === null) { log.say(t('gym.workout.checkSet')); return; }

@@ -4,7 +4,8 @@ import { Check, ChevronDown } from 'lucide-react';
 // One choice of a short list: a button showing the current option and, while open, its listbox below it. Enter, Space or
 // ↓ opens it on the current option; ↑ and ↓ move, Enter or Space chooses, and Escape, Tab or a pointer landing outside
 // closes it, the focus staying on the button throughout. `compact` is a settings row's: no label, the value in mono, and
-// the listbox under the button's right edge with a check by the current option; `labelledBy` then names it from the row.
+// the listbox under the button's right edge with a check by the current option. `labelledBy` names it from an element
+// beside it, a row's or a field's label, in place of its own `label`.
 // Opening it, or moving with the arrows, scrolls the option it lands on into view. Styled by `.wm-select-*` in
 // styles/global.css.
 export function Select({ label, value, onChange, options, compact = false, labelledBy }) {

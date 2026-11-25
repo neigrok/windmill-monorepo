@@ -296,7 +296,8 @@ test('Chromium: a plan edit another tab made stale is refused, its draft kept, a
   assert.equal(await two.getByLabel('Set 1 load, kg', { exact: true }).inputValue(), '12.5', 'the draft stays as typed');
   assert.deepEqual(await two.locator('.gym-live-edit').getByRole('button').allTextContents(), ['×', '×', '×', 'Use latest', 'Save mine'],
     'while the answer stands, Add set, Swap and Remove wait');
-  assert.equal(await two.locator('.gym-live-edit').getByRole('combobox').textContent(), '2:00▾', 'the rest stays to change');
+  assert.equal(await two.locator('.gym-live-edit').getByRole('combobox', { name: 'Rest', exact: true }).textContent(), '2:00▾',
+    'the rest, named by its label, stays to change');
   assert.equal(await two.locator('.gym-live-edit-save').isDisabled(), true);
   assert.deepEqual(await steps(two, 'gym_workout_plan_changed'), [{ action: 'retarget', door: 'workout', outcome: 'refused', code: 'domain', reason: 'stale' }]);
   await two.getByRole('button', { name: 'Save mine', exact: true }).click();
@@ -456,6 +457,40 @@ test('Chromium: a new default rest the rest has passed is told, toned and buzzed
   await page.waitForFunction(() => document.querySelectorAll('.gym-live-row.is-logged').length === 2);
   await page.waitForFunction(() => (window.events ?? []).filter((event) => event.name === 'gym_rest_target_reached').length === 2, null, { timeout: 30000 });
   assert.deepEqual(await page.evaluate(() => window.sounded), { tones: 1, buzzes: [10] }, 'Rest sound off: no tone and no buzz');
+});
+
+test('Chromium: turning the rack to a movement whose rest has already passed tells, tones and buzzes nothing', async (t) => {
+  const { tab } = await browserWith(t, { rows: [{ t: 'routine', id: 'routineTurn', born: stamp, life: ['alive', stamp],
+    f: { name: ['Turn', stamp], position: [1, stamp], entries: [[
+      { exerciseId: 'face-pull', sets: [{ reps: 15, weightKg: 15 }, { reps: 15, weightKg: 15 }], restSeconds: 600 },
+      { exerciseId: 'pull-up', sets: [{ reps: 8, weightKg: 0 }, { reps: 8, weightKg: 0 }], restSeconds: 15 }], stamp] } }] });
+  const page = await tab();
+  await page.locator('.gym-routine').filter({ hasText: 'Turn' }).getByRole('button', { name: 'Start', exact: true }).click();
+  await loggable(page);
+  await page.getByRole('button', { name: 'Log set', exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.gym-live-row.is-logged').length === 1);
+  await page.waitForTimeout(16000);
+  await page.locator('.gym-live-movement').filter({ hasText: 'Pull Up' }).click();
+  await page.locator('.gym-live-movement-title').filter({ hasText: 'Pull Up' }).waitFor();
+  await page.locator('.gym-live-clocks.is-reached').waitFor();
+  await page.waitForTimeout(1000);
+  assert.deepEqual([await steps(page, 'gym_rest_target_reached'), await page.evaluate(() => window.sounded)], [[], { tones: 0, buzzes: [] }]);
+});
+
+test('Chromium: Rest sound turned on after Log set and before the rest is up sounds the tone', async (t) => {
+  const { tab } = await browserWith(t, { rows: [{ t: 'routine', id: 'routineQuick', born: stamp, life: ['alive', stamp],
+    f: { name: ['Quick', stamp], position: [1, stamp], entries: [[{ exerciseId: 'face-pull', sets: [{ reps: 15, weightKg: 15 }, { reps: 15, weightKg: 15 }], restSeconds: 15 }], stamp] } }] });
+  const page = await tab();
+  await engineOpen(page);
+  await page.evaluate(() => window.restSetting({ restSound: false }));
+  await page.locator('.gym-routine').filter({ hasText: 'Quick' }).getByRole('button', { name: 'Start', exact: true }).click();
+  await loggable(page);
+  await page.getByRole('button', { name: 'Log set', exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.gym-live-row.is-logged').length === 1);
+  await page.evaluate(() => window.restSetting({ restSound: true }));
+  await page.waitForFunction(() => (window.events ?? []).some((event) => event.name === 'gym_rest_target_reached'), null, { timeout: 30000 });
+  assert.deepEqual([await steps(page, 'gym_rest_target_reached'), await page.evaluate(() => window.sounded)],
+    [[{ screen: 'workout' }], { tones: 1, buzzes: [10] }]);
 });
 
 test('Chromium: a rack settle that fails is reported, says why Log set waits, and is tried again', async (t) => {
