@@ -253,7 +253,7 @@ made them, with Reject and Apply, the lifter's gestures and the server's command
 that load's sentence and no Apply, in every tab and after a reload, as soon as the copy's rules would refuse its Apply for a
 load under a movement's floor: the domain reads it with the rule the Apply refuses by (`WorkoutProposalState.underFloor`,
 `ProposalApplication.underFloor`), so the card asks no one and tells nothing, and such a change to the workout does not wait
-on the person.
+on the person. The routines review reads a routine proposal's floor the same way (below).
 
 ## Gates
 
@@ -264,9 +264,11 @@ and a replica change recomputes each read once. These render checks have no timi
 The gym domain claims every corpus file but those of catalog/2, the server's turn wire and the words Coach's model
 reads, which the web never speaks or which are no vectors; it runs every vector it claims, compared by JCS and with
 reversed record order; the weight ladder runs directly too. Nothing remains pending.
-The proposal review reads `outOfDate` from `ProposalState` through the runtime's proposal document, never from the
+The proposal review reads its Apply from `ProposalApplication` through the runtime's proposal document, never from the
 proposal's state alone: a pending proposal whose routine moved on the log, in an edit the log has not confirmed, or out
-of sight has no Apply and no Turn this down, and says so where they stood. Harness tests exercise adopted-workout Finish, held set deletion and Undo,
+of sight (`outOfDate`), or whose Apply this copy's rules would refuse for a load under a movement's floor (`underFloor`), has
+no Apply and no Turn this down, and says why where they stood, the floor in the Coach card's sentence, so it asks no one
+and tells nothing. Harness tests exercise adopted-workout Finish, held set deletion and Undo,
 failed commits, command refusals, raw receipt replay and additive correction recovery.
 Screen tests run over a real browser engine for a signed-in account (`gymAccount` in
 `test/products/gym/harness.mjs`) and assert what the account still owes the server. `boot.browser.test.js` boots the

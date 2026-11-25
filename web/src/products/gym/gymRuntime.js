@@ -24,7 +24,7 @@ import { GymRefusals, RoutineRules } from './domain/gymRules.js';
 import { DeleteNote, MoveNote, Note, NoteRules, NoteValue } from './domain/notes.js';
 import { ChangePreferences, Preferences, PreferencesValue, restSettings } from './domain/preferences.js';
 import { DeleteRoutine, PlanSnapshot, Routine, RoutineValue, SetTarget } from './domain/routines.js';
-import { AcknowledgeRoutineRemoval, ApplyProposalKeepingReceipt, DismissProposal, Proposal, ProposalState,
+import { AcknowledgeRoutineRemoval, ApplyProposalKeepingReceipt, DismissProposal, Proposal, ProposalApplication,
   REMOVAL_RECEIPTS, removalReceipts } from './domain/proposals.js';
 import { exerciseDocument, proposalDocument, proposalsDocument, sessionDocument, setDocument, TrainingHistory } from './domain/trainingHistory.js';
 import { Session, SessionRules, SetRules, TrainingSet } from './domain/training.js';
@@ -520,9 +520,13 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
     event(operation, saved.result.receipt ? 'saved-local' : 'unchanged');
     return routineDocument(saved.draft.current);
   };
-  // The review's document: the shared proposal document plus the domain's Apply rule, never the proposal's state alone.
-  const reviewDocument = (reader, value) => value === null ? null
-    : { ...proposalDocument(reader, value), outOfDate: ProposalState.of(reader, value.id).outOfDate };
+  // The review's document: the shared proposal document plus the domain's reading of its Apply (`ProposalApplication`),
+  // never the proposal's state alone: out of date, and under a movement's floor, as the Coach card reads them.
+  const reviewDocument = (reader, value) => {
+    if (value === null) return null;
+    const application = ProposalApplication.of(reader, value.id);
+    return { ...proposalDocument(reader, value), outOfDate: application.state.outOfDate, underFloor: application.underFloor };
+  };
   const removalDocument = (reader, receipt) => ({ ...reviewDocument(reader, receipt.proposal),
     removalOutcome: receipt.outcome, removalOwner: owner,
     ...(receipt.outcome === 'refused' ? { removalRefusal: gymRefusalError(GymRefusals.ofRefused(new Refused(
