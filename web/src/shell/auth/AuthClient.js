@@ -1,10 +1,14 @@
 // The magic-link API. Every failure throws an AuthError whose `code` maps to copy and whose `said` is the
-// server's own sentence, shown as received; fetchMe answers a `user` of null only for a real 401 and undefined for a blip.
+// server's own sentence, shown as received; fetchMe answers a `user` of null only for a real 401 and undefined for a blip,
+// and clearLapsedCookie answers what it did.
 
 import { API_BASE } from '../apiBase.js';
 
 const LINK_SENT_KEY = 'windmill:link-sent';
 const LINK_SENT_TTL_MS = 15 * 60 * 1000;
+// One tab at a time changes the browser's session cookie: a sign-in that sets it (`verifyToken`) and the clearing of one no
+// live session holds (`clearLapsedCookie`). A sign-in whose cookie arrives on a navigation, Google's callback, holds none.
+const COOKIE_LOCK = 'windmill:auth-cookie';
 
 export class AuthError extends Error {
   constructor(message, { code, detail, status, said }) {
@@ -37,12 +41,14 @@ export function pendingMagicLink() {
 }
 
 export async function verifyToken(token) {
-  const response = await send('/v1/auth/verify', { token });
-  if (response.ok) {
-    const body = await response.json();
-    return { user: body.user, forkedTree: body.forkedTree };
-  }
-  throw await errorFrom(response);
+  return navigator.locks.request(COOKIE_LOCK, async () => {
+    const response = await send('/v1/auth/verify', { token });
+    if (response.ok) {
+      const body = await response.json();
+      return { user: body.user, forkedTree: body.forkedTree };
+    }
+    throw await errorFrom(response);
+  });
 }
 
 // What the server says of this browser's session: its `user`, and `syncReplica`, the replica the session last pushed for
@@ -68,6 +74,23 @@ export async function logout() {
   try { sessionStorage.removeItem(LINK_SENT_KEY); } catch { /* storage unavailable */ }
   const response = await fetch(`${API_BASE}/v1/auth/logout`, { method: 'POST', credentials: 'include', signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new AuthError('Sign out failed', { code: 'unreachable', status: response.status });
+}
+
+// Clears the cookie of a session the server no longer holds. JavaScript cannot see the HttpOnly cookie, so `read`, the
+// account's read, decides under the cookie lock: no session still, and the logout expires the cookie (`cleared`); a
+// sign-in another tab made meanwhile, which stays (`kept`); no answer, no lock within 10 s or a logout that fails
+// (`failed`, the logout's `error` with it). Answers that read, undefined when there was none.
+export async function clearLapsedCookie(read) {
+  try {
+    return await navigator.locks.request(COOKIE_LOCK, { signal: AbortSignal.timeout(10000) }, async () => {
+      const account = await read();
+      if (account?.user !== null) return { read: account, outcome: account ? 'kept' : 'failed' };
+      try { await logout(); } catch (error) { return { read: account, outcome: 'failed', error }; }
+      return { read: account, outcome: 'cleared' };
+    });
+  } catch {
+    return { read: undefined, outcome: 'failed' };
+  }
 }
 
 async function send(path, body) {

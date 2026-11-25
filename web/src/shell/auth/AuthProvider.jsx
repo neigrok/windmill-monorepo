@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { flushSync } from 'react-dom';
 import { API_BASE } from '../apiBase.js';
-import { fetchMe, logout } from './AuthClient.js';
+import { clearLapsedCookie, fetchMe, logout } from './AuthClient.js';
 import { closeAccount as requestAccountClosure, listSessions } from './AccountClient.js';
 import { DeviceSeat, DocumentDataScope, ProductQuestions } from './accountChange.js';
 import { requestNavigation } from '../navigation.js';
@@ -262,7 +262,15 @@ export default function AuthProvider({ children }) {
     await engine.cleanupCredentials();
     if (engine.device.meta.clearCredential) { settle(null, { signedOut: true }); return null; }
     const revision = roomOwnership.current.revision;
-    const read = await readAccount(engine);
+    let read = await readAccount(engine);
+    // The read that lapses the seat finds a cookie no live session holds: it goes, so no door refuses this browser for it
+    // (AUTH.md), and the read made under the cookie lock, a sign-in another tab made meanwhile included, is the one this takes.
+    if (seat.lapses(read?.user, engine, { signedOut })) {
+      const cleared = await clearLapsedCookie(() => readAccount(engine));
+      if (cleared.error) captureError('auth', 'auth-session-clear', cleared.error.stack ?? '', '/auth');
+      track('auth_session_cleared', { outcome: cleared.outcome });
+      read = cleared.read;
+    }
     const me = read?.user;
     if (revision !== roomOwnership.current.revision) return undefined;
     const confirmedRevision = confirmRoom(me);

@@ -11,7 +11,7 @@ import { gymRoutes } from '../../../src/products/gym/routes.js';
 import { PRODUCTS } from '../../../src/shell/products.js';
 import { ANONYMOUS_OWNER, LAPSED_SESSION, SYNC_STATUS } from '../../../src/products/roadmap/copy.js';
 
-async function account(t) {
+async function account(t, { me: signedIn = { id: 'A', name: 'Ada' } } = {}) {
   let view;
   t.after(() => view?.unmount());
   const env = environment();
@@ -38,9 +38,10 @@ async function account(t) {
   window.localStorage = localStorage;
   let engine = await BrowserSyncEngine.open(env.options);
   t.after(() => engine.close());
-  env.transport.account = 'A';
-  let me = { id: 'A', name: 'Ada' };
-  t.mock.method(globalThis, 'fetch', async () => ({ ok: !!me, status: me ? 200 : 401, json: async () => ({ user: me }) }));
+  env.transport.account = signedIn?.id ?? null;
+  let me = signedIn;
+  t.mock.method(globalThis, 'fetch', async (url) => (String(url).endsWith('/v1/auth/logout') ? { ok: true, status: 204, json: async () => ({}) }
+    : { ok: !!me, status: me ? 200 : 401, json: async () => ({ user: me }) }));
   const forgotten = [];
   t.mock.method(roadmapRoutes, 'forgetDevice', (change) => forgotten.push(change));
   let opened;
@@ -54,8 +55,7 @@ async function account(t) {
   const { default: AuthProvider } = await loadScreen('shell/auth/AuthProvider.jsx');
   view = renderHook(t, () => AuthProvider({ children: null }));
   const auth = () => view.tree.props.value;
-  await until(() => auth().status === 'signed-in');
-  assert.equal(auth().status, 'signed-in');
+  await until(() => auth().status === (signedIn ? 'signed-in' : 'ghost'));
   await engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0001', f: { title: 'pending' } }]);
   const replica = engine.device.activeReplica.id;
   const entries = structuredClone(engine.device.activeReplica.outbox);
@@ -104,6 +104,47 @@ for (const trigger of ['refresh', 'poll']) {
     assert.deepEqual(state.env.failures, []);
   });
 }
+
+test('the read that lapses the seat clears the cookie no live session holds, once a page and again after the next sign-in lapses, keeping the account\'s copy', async (t) => {
+  const state = await account(t);
+  const calls = () => globalThis.fetch.mock.calls.map((call) => new URL(String(call.arguments[0])).pathname);
+  const logouts = () => calls().filter((path) => path === '/v1/auth/logout').length;
+  const before = calls().length;
+  state.setMe(null);
+  await state.auth().refresh();
+  const lapse = calls().slice(before);
+  await state.auth().refresh();
+  t.mock.timers.tick(20000);
+  await state.auth().refresh();
+  const lapsed = { logouts: logouts(), status: state.auth().status, lapsed: state.auth().lapsed,
+    replica: state.engine.device.activeReplica.meta.state, outbox: state.engine.device.activeReplica.outbox, forgotten: state.forgotten };
+  await state.reload();
+  await until(() => state.auth().lapsed);
+  const reloaded = logouts();
+  state.setMe({ id: 'A', name: 'Ada' });
+  await state.auth().signIn({ id: 'A', name: 'Ada' });
+  const signedIn = logouts();
+  state.setMe(null);
+  await state.auth().refresh();
+  assert.deepEqual({ lapse, lapsed, reloaded, signedIn, again: logouts(), failures: state.env.failures }, {
+    lapse: ['/v1/me', '/v1/me', '/v1/auth/logout'],
+    lapsed: { logouts: 1, status: 'ghost', lapsed: true, replica: 'bound', outbox: state.entries, forgotten: [] },
+    reloaded: 2, signedIn: 2, again: 3, failures: [],
+  });
+});
+
+test('a browser signed out all along reads no session at every refresh and never logs out', async (t) => {
+  const state = await account(t, { me: null });
+  await state.auth().refresh();
+  t.mock.timers.tick(20000);
+  await state.auth().refresh();
+  await state.reload();
+  await until(() => state.auth().status === 'ghost');
+  await state.auth().refresh();
+  assert.deepEqual({ status: state.auth().status, lapsed: state.auth().lapsed, replica: state.engine.device.activeReplica.meta.state,
+    logouts: globalThis.fetch.mock.calls.filter((call) => String(call.arguments[0]).endsWith('/v1/auth/logout')).length },
+  { status: 'ghost', lapsed: false, replica: 'anon', logouts: 0 });
+});
 
 test('an account the page starts on with no connection is the cached one until the server answers for it, and a later blip does not unsay the answer', async (t) => {
   const state = await account(t);

@@ -66,6 +66,13 @@ export class DeviceSeat {
     }
   }
 
+  // Whether `me`, a read of the account, is the one that lapses the seat: no session, outside a sign-out, while the seat holds
+  // an account and the engine's replica is still bound. The browser's cookie is then one no live session holds.
+  lapses(me, engine, { signedOut = false } = {}) {
+    return me === null && !signedOut && !this.lapsed && Boolean(this.previousAccount)
+      && engine.device.activeReplica.meta.state === 'bound';
+  }
+
   // `me` is a user, null for a real 401, undefined for a blip. Returns null when nothing changes.
   receive(me, { signedOut = false } = {}) {
     if (me === undefined) {

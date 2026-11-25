@@ -27,6 +27,7 @@ const ready = (async () => {
         import React from 'react';
         import { createRoot } from 'react-dom/client';
         import AuthProvider, { useAuth } from '/src/shell/auth/AuthProvider.jsx';
+        import { verifyToken } from '/src/shell/auth/AuthClient.js';
         import { CloseAccountSection } from '/src/shell/settings/CloseAccountSection.jsx';
         import { SessionsSection } from '/src/shell/settings/SessionsSection.jsx';
         import { syncSession } from '/src/platform/sync/session.js';
@@ -40,6 +41,7 @@ const ready = (async () => {
         import { useRoomSyncNotices } from '/src/products/roadmap/sync/useRoomSyncNotices.js';
         import '/src/styles/global.css';
         const nothing = () => {};
+        window.verifyToken = verifyToken;
         function LiveRoom() {
           const { status, lapsed } = useAuth();
           const [session, setSession] = React.useState(null);
@@ -234,6 +236,93 @@ test('Chromium: revoking this session waits for Keep/Discard; Cancel and storage
     } finally { await context.close(); }
   }
 });
+
+// Two tabs of one browser signed in on session s1, which another device revokes. The context's routes play the server and
+// the browser's one cookie jar the tabs share: a request carries the cookie the jar holds as it arrives, a verify sets s2,
+// a logout ends the session its cookie names and empties the jar. Tab A's read of the account is held where `moment` says,
+// its answer taken as it arrived, while tab B completes a magic-link sign-in.
+for (const moment of ['before the clear reads again', 'while the clear holds the cookie']) {
+  test(`Chromium: a tab clears the cookie of a revoked session once, and a sign-in another tab completes ${moment} stays signed in`, async () => {
+    await ready;
+    const context = await browser.newContext();
+    try {
+      const server = { cookie: 's1', sessions: new Set(['s1']), reads: [], logouts: [], hold: null };
+      const pages = new Map();
+      await context.route('**/v1/me', async (route) => {
+        const { cookie } = server;
+        const user = server.sessions.has(cookie) ? { id: 'A', name: 'Ada', email: 'ada@example.test' } : null;
+        const tab = pages.get(route.request().frame().page());
+        server.reads.push({ tab, cookie });
+        if (server.hold?.tab === tab && server.reads.filter((read) => read.tab === tab).length === server.hold.read) {
+          server.hold.reached();
+          await server.hold.released;
+        }
+        return route.fulfill({ status: user ? 200 : 401, contentType: 'application/json', body: JSON.stringify(user ? { user } : {}) });
+      });
+      await context.route('**/v1/auth/verify', (route) => {
+        server.cookie = 's2'; server.sessions.add('s2'); server.verified?.();
+        return route.fulfill({ status: 200, contentType: 'application/json',
+          body: JSON.stringify({ user: { id: 'A', name: 'Ada', email: 'ada@example.test' } }) });
+      });
+      await context.route('**/v1/sessions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"sessions":[]}' }));
+      await context.route('**/v1/auth/logout', (route) => {
+        server.logouts.push({ tab: pages.get(route.request().frame().page()), cookie: server.cookie });
+        server.sessions.delete(server.cookie); server.cookie = null;
+        return route.fulfill({ status: 204 });
+      });
+      const errors = [];
+      const open = async (tab) => {
+        const page = await context.newPage();
+        pages.set(page, tab);
+        page.on('pageerror', (error) => errors.push(`${tab}: ${error.message}`));
+        await page.goto(`${origin}/auth-test`);
+        await page.waitForFunction(() => typeof mountAuth === 'function');
+        await page.evaluate(() => mountAuth('auth-lapsed-cookie', false));
+        await page.waitForFunction(() => document.getElementById('auth-state')?.textContent === 'signed-in');
+        return page;
+      };
+      const a = await open('A');
+      const b = await open('B');
+      server.sessions.delete('s1');
+      const reached = new Promise((resolve) => {
+        server.hold = { tab: 'A', read: server.reads.filter((read) => read.tab === 'A').length + (moment.startsWith('before') ? 1 : 2), reached: resolve };
+      });
+      let release;
+      server.hold.released = new Promise((resolve) => { release = resolve; });
+      await a.evaluate(() => { window.refreshing = auth.refresh(); });
+      await reached;
+      const signIn = () => b.evaluate(() => { window.signingIn = verifyToken('link').then(({ user }) => auth.signIn(user)); });
+      if (moment.startsWith('before')) {
+        await signIn();
+        await b.evaluate(() => window.signingIn);
+      } else {
+        // B's verify either waits for the cookie, or reaches the server first and sets s2 before A's held read answers.
+        const verified = new Promise((resolve) => { server.verified = resolve; });
+        await signIn();
+        const waiting = b.waitForFunction(() => {
+          navigator.locks.query().then(({ pending }) => { window.waitsForCookie = pending.some((lock) => lock.name === 'windmill:auth-cookie'); });
+          return window.waitsForCookie === true;
+        });
+        waiting.catch(() => {});
+        await Promise.race([verified, waiting]);
+      }
+      release();
+      await a.evaluate(() => window.refreshing);
+      await b.evaluate(() => window.signingIn);
+      await a.evaluate(async () => { await auth.refresh(); await new Promise(requestAnimationFrame); });
+      assert.deepEqual({
+        cookie: server.cookie, live: [...server.sessions], logouts: server.logouts, errors,
+        a: await a.locator('#auth-state').textContent(), b: await b.locator('#auth-state').textContent(),
+        told: { a: await a.evaluate(() => (window.events ?? []).filter((event) => event.name === 'auth_session_cleared')),
+          b: await b.evaluate(() => (window.events ?? []).filter((event) => event.name === 'auth_session_cleared')) },
+      }, {
+        cookie: 's2', live: ['s2'], errors: [], a: 'signed-in', b: 'signed-in',
+        logouts: moment.startsWith('before') ? [] : [{ tab: 'A', cookie: 's1' }],
+        told: { a: [{ name: 'auth_session_cleared', props: { outcome: moment.startsWith('before') ? 'kept' : 'cleared' } }], b: [] },
+      });
+    } finally { await context.close(); }
+  });
+}
 
 test('Chromium: account closure discards without asking; failed server and local cleanup remain retryable', async () => {
   await ready;
