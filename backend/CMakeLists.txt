@@ -752,6 +752,7 @@ add_executable(windmill_adapters_tests
   test/platform/adapters/postgres/PgAiBudgetRepositoryTest.cpp
   test/platform/adapters/postgres/PgAuthRepositoryTest.cpp
   test/platform/adapters/postgres/PgAccountClosureTest.cpp
+  test/platform/adapters/postgres/PgOAuthRepositoryTest.cpp
   test/platform/adapters/postgres/PgAppleLinkingTest.cpp
   test/platform/adapters/postgres/PgPoolTest.cpp
   test/products/roadmap/adapters/json/SubgraphJsonTest.cpp

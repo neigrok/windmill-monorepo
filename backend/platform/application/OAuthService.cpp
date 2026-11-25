@@ -66,7 +66,7 @@ OAuthService::TokenResult OAuthService::exchangeCode(const std::string& code, co
                                                      const std::string& codeVerifier,
                                                      const std::string& resource) {
   const UnixMs now = clock_.nowMs();
-  const std::optional<StoredCode> stored = repo_.takeCode(tokens_.digestOf(code));
+  const std::optional<StoredCode> stored = repo_.takeCode(tokens_.digestOf(code), now);
   if (!stored || stored->expiresAt <= now) return {GrantError::invalidGrant, std::nullopt};
   if (stored->clientId != clientId) return {GrantError::invalidClient, std::nullopt};
   if (stored->redirectUri != redirectUri) return {GrantError::badRedirect, std::nullopt};
