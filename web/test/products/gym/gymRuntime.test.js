@@ -632,7 +632,7 @@ test('a rest setting writes itself alone and is told as saved, its value never',
   assert.deepEqual(failures, []);
 });
 
-test('a rest setting the store refuses is not_stored, the gym refuses is refused, and only an unexpected failure is an Issue', async (t) => {
+test('a rest setting the store refuses is not_stored, the gym or a moved replica refuses is refused, and an unexpected failure is failed and an Issue', async (t) => {
   const { api, engine, failures, changed } = await restSettings(t);
   await assert.rejects(api.saveRestSetting({ restSeconds: 10 }), { code: 'invalid' });
   const transact = t.mock.method(engine.store, 'transact', async () => { throw new DOMException('storage refused', 'QuotaExceededError'); });
@@ -645,7 +645,7 @@ test('a rest setting the store refuses is not_stored, the gym refuses is refused
   t.mock.method(engine, 'commit', async () => { throw new Error('SECRET record values'); });
   await assert.rejects(api.saveRestSetting({ restSeconds: 60 }), /SECRET/);
   assert.deepEqual(changed, [{ setting: 'rest_default', outcome: 'refused' }, { setting: 'rest_default', outcome: 'not_stored' },
-    { setting: 'rest_sound', outcome: 'refused' }, { setting: 'rest_default', outcome: 'not_stored' }]);
+    { setting: 'rest_sound', outcome: 'refused' }, { setting: 'rest_default', outcome: 'failed' }]);
   assert.deepEqual(failures, ['rest-save']);
   assert.deepEqual(engine.device.activeReplica.outbox, []);
 });

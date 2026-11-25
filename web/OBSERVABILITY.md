@@ -231,8 +231,9 @@ an act of its own, told once when it saved something (`saved-local`) and once fo
 name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`.
 Settings' Default rest and Rest sound (WD10) tell `gym_preference_changed` in its place, once per change, through
 `preferenceStep` in `gymRuntime.js`: `setting` (`rest_default` or `rest_sound`) and `outcome`, `saved` once the copy holds it,
-`not_stored` when the copy could not keep it and `refused` when the gym refused it; never the value. A store failure there is
-the engine's to report; any other failure also reports `gym-rest-save` with the error's stack frames.
+`not_stored` when the copy could not keep it, `refused` when the gym refused the value or the replica moved under the save,
+and `failed` for any other failure, which alone also reports `gym-rest-save` with the error's stack frames; never the value.
+A store failure there is the engine's to report.
 A sign-in question in gym's count (WD9) tells `gym_signin_decision` with `step` (`shown` as it is asked, then `add`,
 `discard` or `cancel`) and `count_bucket` (`0/1/2-5/6-20/21+`), what it counted: the browser's workouts, routines,
 weigh-ins, movements and settings, or its changes where it holds none of them. How a copy In this browser

@@ -81,9 +81,10 @@ export function gymRecovery(outcome, reason) {
 }
 
 // A rest setting changed in Settings (WD10): which one, and whether this device's copy kept it (`saved`), could not
-// (`not_stored`) or the gym refused it (`refused`); never its value.
+// (`not_stored`), the gym refused the value or the replica moved under the save (`refused`), or it broke (`failed`); never
+// its value.
 const PREFERENCE_SETTINGS = new Set(['rest_default', 'rest_sound']);
-const PREFERENCE_OUTCOMES = new Set(['saved', 'not_stored', 'refused']);
+const PREFERENCE_OUTCOMES = new Set(['saved', 'not_stored', 'refused', 'failed']);
 export function preferenceStep(setting, outcome) {
   if (!PREFERENCE_SETTINGS.has(setting) || !PREFERENCE_OUTCOMES.has(outcome)) return;
   try { track('gym_preference_changed', { setting, outcome }); } catch { /* reporting cannot stop a save */ }
@@ -912,8 +913,9 @@ export function createGymApi(engine, { event = gymStep, recovered = gymRecovery,
       try { await ran(SaveRestSettings(change)); }
       catch (thrown) {
         const error = writeError(thrown);
-        preferred(setting, error instanceof GymRefusal ? 'refused' : 'not_stored');
-        if (!(error instanceof GymRefusal) && !isStoreFailure(error)) failure('rest-save', error);
+        const outcome = error instanceof GymRefusal ? 'refused' : isStoreFailure(error) ? 'not_stored' : 'failed';
+        preferred(setting, outcome);
+        if (outcome === 'failed') failure('rest-save', error);
         throw error;
       }
       preferred(setting, 'saved');

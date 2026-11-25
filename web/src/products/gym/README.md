@@ -239,8 +239,8 @@ the routines review, from the page that made it, as the log answers it: `decided
 `failed` for a decision that broke; and `stalled` once besides for a routine's decision the log has not answered in 15 s.
 A reload, a remount or another tab tells nothing of it. A workout proposal's decision that fails unexpectedly reports
 `gym-workout-proposal-apply` or `gym-workout-proposal-dismiss`. Settings' Default rest and Rest sound tell
-`gym_preference_changed` (`setting` `rest_default` or `rest_sound`, `outcome` `saved`, `not_stored` or `refused`, never the
-value) and report an unexpected failure as `gym-rest-save`. Engine-backed writes otherwise emit first-party `gym_action` events with allowlisted `operation` and
+`gym_preference_changed` (`setting` `rest_default` or `rest_sound`, `outcome` `saved`, `not_stored`, `refused` or `failed`,
+never the value) and report a `failed` one as `gym-rest-save`. Engine-backed writes otherwise emit first-party `gym_action` events with allowlisted `operation` and
 `outcome` only, and a `refused` one also `code`: `not-writable` when the replica moved under the room, `domain` when the
 gym's rules refused it, this device's or the server's. Operations cover routine create/save, exercise create/rename, preferences save,
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
