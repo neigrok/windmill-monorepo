@@ -1,11 +1,11 @@
 .gym-root .gym-proposal-inline { margin-top: 0; padding: 16px; border: 0; box-shadow: inset 0 0 0 1px var(--gym-line); border-radius: var(--radius-md); background: var(--gym-surface); }
-.gym-root .gym-proposal-inline .gym-proposal-kicker { margin: 0 0 12px; color: var(--color-brand); display: flex; gap: 0; text-transform: none; letter-spacing: 0; font: 700 13px/18px var(--font-body); }
+.gym-root .gym-proposal-inline .gym-proposal-kicker { margin: 0 0 12px; color: var(--text-link); display: flex; gap: 0; text-transform: none; letter-spacing: 0; font: 700 13px/18px var(--font-body); }
 .gym-root .gym-proposal-inline .gym-proposal-band { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 4px; }
 .gym-root .gym-proposal-inline .gym-proposal-band > button:first-child { align-self: flex-start; width: auto; height: 44px; padding: 0 20px !important; border: 0 !important; border-radius: var(--radius-full) !important; box-shadow: none !important; font: 600 15px/22px var(--font-body) !important; }
 .gym-root .gym-proposal-inline .gym-proposal-turn-down { position: relative; align-self: flex-start; min-height: 18px; text-align: left; padding: 0; color: var(--alarm-ink); font: 700 13px/18px var(--font-body); }
 .gym-root .gym-proposal-inline .gym-proposal-turn-down::before { content: ''; position: absolute; inset: -8px 0; }
 .gym-root .gym-proposal-inline .gym-proposal-atomic { margin: 0; text-align: left; font: 400 13px/18px var(--font-body); color: var(--gym-ink-faint); }
-.gym-root .gym-proposal-inline .gym-coach-receipt { margin-bottom: 0; color: var(--color-brand); margin-top: 16px; font: 600 13px/20px var(--font-body); }
+.gym-root .gym-proposal-inline .gym-coach-receipt { margin-bottom: 0; color: var(--text-link); margin-top: 16px; font: 600 13px/20px var(--font-body); }
 .gym-root .gym-proposal-inline .gym-proposal-thread { font-size: 12px; }
 .gym-root .gym-coach { position: relative; width: 640px; max-width: 100%; }
 
@@ -26,7 +26,7 @@
   .gym-coach-side > a { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--gym-line); color: var(--gym-ink); text-decoration: none; }
   .gym-coach-side span, .gym-root .gym-coach-connect p { color: var(--gym-ink-faint); font-size: 13px; line-height: 18px; }
   .gym-coach-connect { border: 1px dashed var(--gym-line-strong); border-radius: var(--radius-lg); padding: 16px; margin-top: 24px; font-size: 14px; }
-  .gym-coach-connect a { color: var(--color-brand); text-decoration: none; }
+  .gym-coach-connect a { color: var(--text-link); text-decoration: none; }
 }
 @media (prefers-reduced-motion: no-preference) { .gym-proposal-inline { transition: border-color 280ms, background-color 280ms; }
 }
@@ -47,12 +47,12 @@
 .gym-root .gym-proposal-inline .gym-diff-unfold { min-height: 18px; padding: 0; text-decoration: none; font: 400 13px/18px var(--font-body); }
 .gym-root .gym-proposal-inline .gym-diff-was { text-decoration: none; }
 
-.gym-root .gym-coach-side a[aria-current='page'] { color: var(--color-brand); border-left: 2px solid var(--color-brand); padding-left: 14px; }
+.gym-root .gym-coach-side a[aria-current='page'] { color: var(--text-link); border-left: 2px solid var(--color-brand); padding-left: 14px; }
 
 .gym-coach-shortcuts { display: none; }
 @media(max-width:1099px) {
   .gym-coach-shortcuts { display: flex; gap: 16px; margin-top: 16px; font-size: 14px; }
-  .gym-coach-shortcuts a { color: var(--color-brand); text-decoration: none; }
+  .gym-coach-shortcuts a { color: var(--text-link); text-decoration: none; }
 }
 .gym-root .gym-proposal-inline.is-applied, .gym-root .gym-proposal-inline.is-dismissed { min-height: 172px; box-sizing: border-box; }
 .gym-root .gym-proposal-inline.is-dismissed .gym-coach-receipt { color: var(--gym-ink-faint); }
@@ -109,13 +109,13 @@
   font: 400 13px/18px var(--font-body); color: var(--gym-ink-dim); }
 .gym-root .gym-coach-made strong { font: 400 15px/22px var(--font-body); color: var(--gym-ink); }
 .gym-root .gym-coach-made a > svg:last-child { color: var(--gym-ink-dim); }
-.gym-root .gym-coach-made-check { color: var(--color-brand); flex: none; }
+.gym-root .gym-coach-made-check { color: var(--text-link); flex: none; }
 
 .gym-root .gym-coach-greeting { display: flex; flex-direction: column; gap: 6px; margin-top: 24px; }
 .gym-root .gym-coach-greeting p { margin: 0; font: 400 16px/24px var(--font-body); color: var(--gym-ink); }
 .gym-root .gym-coach-greeting-doors { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .gym-root .gym-coach-pill { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border: 0; border-radius: var(--radius-full);
-  background: var(--color-brand-soft); color: var(--color-brand); font: 600 14px/20px var(--font-body); text-decoration: none; cursor: pointer; }
+  background: var(--color-brand-soft); color: var(--text-link); font: 600 14px/20px var(--font-body); text-decoration: none; cursor: pointer; }
 
 .gym-root .gym-coach-notice { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; row-gap: 4px; margin: 0 0 16px; padding: 12px 16px;
   border-radius: var(--radius-md); background: var(--gym-surface); box-shadow: inset 0 0 0 1px var(--gym-line); }
@@ -127,7 +127,7 @@
   text-decoration: none; cursor: pointer; }
 .gym-root .gym-coach .gym-coach-compose.is-closed { opacity: 0.6; }
 .gym-root .gym-coach .gym-coach-input { resize: none; }
-.gym-root .gym-coach .gym-coach-send { background: var(--color-brand-soft); color: var(--color-brand); }
+.gym-root .gym-coach .gym-coach-send { background: var(--color-brand-soft); color: var(--text-link); }
 .gym-root .gym-coach .gym-coach-send:not(:disabled) { background: var(--color-brand); color: var(--gym-on-accent); }
 .gym-root .gym-coach-stop { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex: none; border: 0;
   border-radius: 50%; background: var(--gym-raised); color: var(--gym-ink); cursor: pointer; }
@@ -179,7 +179,7 @@
 .gym-root .gym-coach-proposal-blocks { margin: 0; padding: 0; list-style: none; }
 .gym-root .gym-coach-proposal-block { padding: 12px 0; border-bottom: 1px solid var(--gym-line); }
 .gym-root .gym-coach-proposal-movement { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font: 600 15px/22px var(--font-body); }
-.gym-root .gym-coach-proposal-movement svg { color: var(--color-brand); }
+.gym-root .gym-coach-proposal-movement svg { color: var(--text-link); }
 .gym-root .gym-coach-proposal-movement a { color: var(--gym-ink); text-decoration: none; }
 .gym-root .gym-coach-proposal-line, .gym-root .gym-coach-proposal-note { display: flex; justify-content: space-between; gap: 12px; margin: 0; padding-left: 26px;
   font: 400 13px/28px var(--font-body); color: var(--gym-ink-dim); }
@@ -187,7 +187,7 @@
 .gym-root .gym-coach-proposal-line s { color: var(--gym-ink-faint); font: 400 13px/18px var(--font-mono); }
 .gym-root .gym-coach-proposal-line strong { color: var(--gym-ink); font: 700 14px/20px var(--font-body); }
 .gym-root .gym-coach-proposal-more { align-self: stretch; display: flex; justify-content: space-between; padding: 12px 0; border: 0; background: transparent;
-  color: var(--color-brand); font: 600 14px/20px var(--font-body); text-align: left; cursor: pointer; }
+  color: var(--text-link); font: 600 14px/20px var(--font-body); text-align: left; cursor: pointer; }
 .gym-root .gym-coach-proposal-decide { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
 .gym-root .gym-coach-proposal-reject, .gym-root .gym-coach-proposal-apply { height: 44px; border: 0; border-radius: var(--radius-full); font: 600 15px/22px var(--font-body); cursor: pointer; }
 .gym-root .gym-coach-proposal-reject, .gym-root .gym-coach-proposal-apply.is-quiet { background: var(--gym-raised); color: var(--gym-ink); }
@@ -212,7 +212,7 @@
   .gym-root .gym-coach-read-dialog { align-self: flex-end; width: 100% !important; max-width: 100vw !important;
     border-radius: var(--radius-2xl) var(--radius-2xl) 0 0 !important; }
 }
-.gym-root .gym-coach-picture-remove { padding: 0; border: 0; background: transparent; color: var(--color-brand); font: 600 14px/20px var(--font-body); cursor: pointer; }
+.gym-root .gym-coach-picture-remove { padding: 0; border: 0; background: transparent; color: var(--text-link); font: 600 14px/20px var(--font-body); cursor: pointer; }
 
 /* Coach's door while no account is settled (WD8.3): the reading column at the head of the page; on a narrow screen it
    stands in the reach band, 24px above the tab bar. */
