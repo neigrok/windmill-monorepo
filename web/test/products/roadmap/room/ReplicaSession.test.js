@@ -328,6 +328,33 @@ test('the legend’s gestures and a step’s pointer: a kind made, named, descri
   }
 });
 
+test('a removed kind’s Undo brings nothing back while a kind made since wears its hue, and is told unavailable; with the hue free it brings the kind back', async () => {
+  const { a, tree, reading, session, told } = await gestures();
+  try {
+    const { CreateKind } = await import('../../../../src/products/roadmap/domain/kinds.js');
+    const legend = () => reading.roadmap().account.trees.get(tree).kinds.filter((kind) => kind.present).map(({ hue, label }) => `${label} ${hue}`);
+    const undo = async () => { session.undo(); await session.redoStack.at(-1).inverse; };
+    await session.dispatch({ kind: 'AddKind', id: 'legend-sea', hue: 'sky' }).act;
+    const sea = reading.roadmap().account.trees.get(tree).kinds.find((kind) => kind.hue === 'sky').id;
+    await session.dispatch({ kind: 'RenameKind', id: sea, label: 'Sea' }).act;
+    await session.dispatch({ kind: 'RemoveKind', id: sea }).act;
+    committed(await a.runner.runAct(new CreateKind(tree, { hue: 'sky', label: 'Weather' })));
+    await undo();
+    assert.deepEqual(legend(), ['Build terracotta', 'Learn olive', 'Milestone gold', 'Weather sky']);
+
+    await session.dispatch({ kind: 'RemoveKind', id: 'milestone' }).act;
+    await undo();
+    await until(() => legend().length === 4, 1000);
+    assert.deepEqual({ legend: legend(), events: told.events }, {
+      legend: ['Build terracotta', 'Learn olive', 'Milestone gold', 'Weather sky'],
+      events: [['roadmap_undo', { action: 'undo', outcome: 'unavailable' }]],
+    });
+  } finally {
+    reading.close();
+    a.close();
+  }
+});
+
 test('a roadmap’s deletion is held nine seconds: hidden from the person’s list at once, taken back within the hold, and permanent once it ends', async () => {
   const { a, tree } = await sailing();
   try {

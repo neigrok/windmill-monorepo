@@ -276,6 +276,14 @@ public struct ProductSlot: Sendable {
   }
 }
 
+// What an act's Undo must find standing where it is asked, read in one scope: `check` throws the `Violation` the Undo
+// would break, as a decide does, and the Undo then writes nothing. A product hands it from the act it checks the Undo of
+// to the Undo it asks.
+public protocol UndoCheck: Sendable {
+  var scope: ScopeRef { get }
+  func check(_ read: Reader) throws
+}
+
 // §8.3 a plan translation refuses: a programming fault that fails the run and any test reaching it. `rule` is §8.3's
 // number, or 0 for a write §8.2's table has no cell for.
 public struct PlanError: Error, Hashable, Sendable, CustomStringConvertible {

@@ -221,7 +221,7 @@ Before the tree scope's first pull completes nothing has landed.
 | `DeleteStep` | `{tree, step}` | `null`; held; the step's death alone |
 | `ChangePrerequisites` | `{tree, step, add, remove}` | `null`; a removed prerequisite followed through an absent step retires each link the step reaches it by; an added link is noted with the name of the step it comes from |
 | `ImportSteps` | `{tree, imported, under?, done?}` | `{key: id}`; under `under`, each step the import has no prerequisite for follows it; the landing note takes the name of each step a link comes from; each key of `done` takes the person's `mark`, complete, in a segment of the same act in their overlay |
-| `CreateKind`, `ChangeKind`, `MoveKind`, `DeleteKind` | `{tree, kind: {hue, label?, description?}}`, `{tree, kind, changes}`, `{tree, kind, below}`, `{tree, kind}` | the kind's id, or `null` |
+| `CreateKind`, `ChangeKind`, `MoveKind`, `DeleteKind` | `{tree, kind: {hue, label?, description?}}`, `{tree, kind, changes}`, `{tree, kind, below}`, `{tree, kind}` | the kind's id, or `null`; a delete answers the kind's restore `{tree, kind, hue}`, which its Undo is checked by, and `null` where it wrote nothing |
 | `RecolourKind` | `{tree, kind, hue}` | `null`; the command, predicting the kind's hue and every step the device holds wearing the old hue, present or not, by id; a kind the device knows as deleted is revived in a segment before it, and of one it knows only by its spent id it predicts the kind's hue alone, the server recolouring the steps |
 | `Complete`, `Reset` | `{tree, step, outOfOrder?, opensStanding?}`, `{tree, step}` | `null`; the step's `mark`; `opensStanding`, read by the caller from the account, says the step's pointer opens a standing roadmap |
 | `SetPointer`, `ClearPointer` | `{tree, step, opens}`, `{tree, step}` | `null` |
@@ -262,7 +262,7 @@ value equivalent to unset; `createdRecord`; or a product `command` with its evid
 |---|---|---|
 | A change of a step or a kind, a move of either | `roadmap.restoreTree` of each changed field, and of the life where the device held the record as deleted; of a record it knows only by its spent id, the life alone (`dead`), its earlier values being the server's | writes the change back |
 | Create a step, a link, a kind; an import's steps and links | `createdRecord` of each, deleted again while its own writes are all that changed it, and of an import's marks `roadmap.restoreOverlay` of each `mark`, unset `{status: none, outOfOrder: false}`; one act, so one Undo takes every chunk and every mark | revives the step, link or kind |
-| Delete a step or a kind; remove a link | the life (`roadmap.restoreTree`); a step's delete is held, and an Undo in its hold cancels it in place | deletes it again |
+| Delete a step or a kind; remove a link | the life (`roadmap.restoreTree`); a step's delete is held, and an Undo in its hold cancels it in place. A kind's Undo makes the kind again, so the kind's restore, the delete's answer, checks it where it is asked as a kind made is checked: while another present kind wears its hue it is refused before anything is written, `unavailable` (`refused`) | deletes it again |
 | A roadmap's title, guide or visibility | the field (`meta`, unset `""` and `private`); the server writes the branch's reach back | writes the change back |
 | Recolour a kind | the kind's `hue` and the `color` of each step that wore it; a revival before the command, its life; of a kind known only by its spent id, its life alone | writes them back |
 | Complete, Reset | `roadmap.restoreOverlay` of the `mark`, unset `{status: none, outOfOrder: false}` | writes the mark back |
@@ -277,9 +277,10 @@ value equivalent to unset; `createdRecord`; or a product `command` with its evid
 
 **Scenes** (`undo.json`). `{steps}` → `{outcomes}`, run on the kit's harness over the reference server with roadmap's
 binding, and in Swift over the model server with `RoadmapServerRules`. A step is `{run: <action>, input, as?, on?}`, `{save: "StepNote", input: {tree, step, text}, as?}`, `{sync: true}`, `{advance: ms}`, `{undo | redo | read | cancelHeld:
-<role>}` (`subtree: true` gives a Redo the product's slots), `{device: <name>}` or `{inspect: {scope, t, fields}}`. An
+<role>}` (`subtree: true` gives a Redo the product's slots; an Undo passes the check its role's act answered, a kind's
+restore), `{device: <name>}` or `{inspect: {scope, t, fields}}`. An
 input names a role's result as `$role` or `$role.path`. Outcomes are a run's kind, a save's result kind, the `InverseResult` without its ids,
-`{cancelHeld}`, and an inspection's visible records, each id named by the first role holding it, any other minted id
+`{cancelHeld}`, and an inspection's visible records, each minted id named by the first role holding it, any other
 `<new>`. A product inverse (`undoCreateRoadmap`, `undoCreateSubtree`, `redoCreateSubtree`) draws nothing until the server
 answers, so with no connection such an Undo waits and the roadmap or subtree stays drawn. Every restore draws at once:
 fields and texts written back, a created record deleted, and a record revived with the fields it had (the Undo of a

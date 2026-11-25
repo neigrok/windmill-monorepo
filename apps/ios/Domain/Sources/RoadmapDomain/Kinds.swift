@@ -237,7 +237,22 @@ public struct RecolourKind: ActAction {
   }
 }
 
-// A kind's death, which an Undo writes back.
+// What a kind's delete is undone by: the kind back on the hue it wore. Its Undo makes the kind again, so it is checked where
+// it is asked as a kind made is (§4): refused while another present kind wears that hue. The device keeps no hue of a kind
+// once its delete has reached it, so the delete hands it on.
+public struct KindRestore: UndoCheck, Equatable {
+  public let tree: ID<RoadmapEntry>
+  public let kind: ID<RoadmapKind>
+  public let hue: String
+
+  public var scope: ScopeRef { tree.tree }
+
+  public func check(_ read: Reader) throws {
+    try RoadmapKind(id: kind, hue: hue).checkHueUnworn(among: try read.repository(RoadmapKind.self).all(in: .drawn))
+  }
+}
+
+// A kind's death, which an Undo writes back. It answers the kind's restore, which that Undo is checked by.
 public struct DeleteKind: ActAction {
   public let tree: ID<RoadmapEntry>
   public let kind: ID<RoadmapKind>
@@ -251,11 +266,11 @@ public struct DeleteKind: ActAction {
     try read.inScope(tree.tree) { (scope: Reader) throws -> RoadmapKind? in try scope.repository(RoadmapKind.self).find(kind, in: .drawn) }
   }
 
-  public func decide(_ drawn: RoadmapKind?, ids: ActIDSource) -> ActDecision<Void, RoadmapRefusal> {
-    guard drawn != nil else { return .unchanged(()) }
+  public func decide(_ drawn: RoadmapKind?, ids: ActIDSource) -> ActDecision<KindRestore?, RoadmapRefusal> {
+    guard let drawn else { return .unchanged(nil) }
     var plan = Plan()
     plan.remove(kind)
     plan.undoBy(.restoring(kind, life: true, by: Roadmap.Commands.restoreTree))
-    return .write(plan, in: tree.tree, ())
+    return .write(plan, in: tree.tree, KindRestore(tree: tree, kind: kind, hue: drawn.hue))
   }
 }

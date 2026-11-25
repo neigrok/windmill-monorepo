@@ -11,7 +11,7 @@ client's design, whose public API the kit binds to.
 implementation passes the shared vectors of §15. `WindmillKit` supplies the product-neutral AI
 client and Coach runtime; the shipped app lives in `apps/ios/App` and keeps its product UI there. Undo of an act (§9.6)
 is built in the web, Swift and Kotlin kits over their engines, with the held-only `undo` named `cancelHeld`,
-each passing `run/undo.json`.
+each passing `run/undo.json`; an Undo's checks (`UndoCheck`) are built in the web and Swift kits.
 
 **The kit is pure logic.** It is the layer every Windmill feature's domain logic is declared on, on iOS
 and Android: §3–§15 and the layering tests of §2. It provides base interfaces and base implementations;
@@ -1178,7 +1178,7 @@ public final class ActionRunner: Sendable {
   public func run<A: Action>(_ action: A) throws -> Outcome<A.Result, A.Refusal>
   public func read<T>(_ scope: ScopeRef, _ body: (Reader) throws -> T) throws -> T
   public func cancelHeld(_ gestureId: String) throws -> Bool
-  public func undo(_ actId: String) throws -> InverseResult                                  // §9.6
+  public func undo(_ actId: String, checking checks: [any UndoCheck] = []) throws -> InverseResult  // §9.6
   public func redo(_ requestId: String, productSlots: [ProductSlot]? = nil) throws -> InverseResult
   public func inverseResult(_ requestId: String) -> InverseResult
   public func release(_ actId: String) throws
@@ -1329,6 +1329,10 @@ public enum InverseResult: Sendable, Equatable {
   case unavailable(requestId: String?, reason: String)
 }
 public struct ProductSlot: Sendable { public let index: Int; public let scope: ScopeRef; public let plan: Plan }
+public protocol UndoCheck: Sendable {                  // what an Undo must find standing where it is asked
+  var scope: ScopeRef { get }
+  func check(_ read: Reader) throws                    // throws the Violation the Undo would break
+}
 ```
 
 - **Opting in.** A plan names its Undo recipes with `undoBy`: earlier values of client fields, texts and
@@ -1352,6 +1356,11 @@ public struct ProductSlot: Sendable { public let index: Int; public let scope: S
   once, with the values it had, though its death was already pulled. An act that did not opt in is
   `unavailable`.
   `inverseResult(requestId)` reads the result as it stands.
+- **Checked where it is asked.** An Undo can break a LOCAL rule its act kept: a kind's restore can bring the kind back
+  onto a hue another kind has come to wear. `undo(actId, checking:)` reads each check's scope first; a check that throws
+  its `Violation` answers `unavailable` (`refused`), and nothing is written. The act whose Undo a check guards knows what
+  that Undo brings back and answers the check as its result, and the product passes it to the Undo it asks: the engine
+  journals no check, and the device may keep nothing else of what the act took.
 - **Redo** is `redo(requestId)`: the inverse of the Undo, which writes back the values the act wrote, only
   where the Undo applied, and re-creates no terminal record. `productSlots` replaces the stored recipes whole,
   by the inverse act's source ordinal, each with the scope that source wrote: a product's Redo of a creation

@@ -319,7 +319,8 @@ final class RoadmapModel {
       case pasteRefused
     }
 
-    // A receipt's Undo: the gesture its act wrote, whether the engine holds that act, and the act it takes back.
+    // A receipt's Undo: the gesture its act wrote, whether the engine holds that act, the act it takes back, and the kinds
+    // it brings back, each only while no other kind wears its hue.
     struct Undo: Equatable {
       // An act on a roadmap's steps, kinds or guide, or on a workspace, by its name in the room's events, or a roadmap's
       // delete, with the roadmap where the room had it open, which its Undo opens again.
@@ -339,6 +340,7 @@ final class RoadmapModel {
       let gesture: String
       let held: Bool
       let act: Act
+      let restores: [KindRestore]
     }
 
     let says: Says
@@ -349,10 +351,10 @@ final class RoadmapModel {
     let lasts: Duration
 
     // A receipt: a removal the engine holds offers its Undo for the engine's hold, any other act for six seconds.
-    init(_ says: Says, of receipt: ActReceipt, act: Undo.Act, arrived: [String] = []) {
+    init(_ says: Says, of receipt: ActReceipt, act: Undo.Act, restoring restores: [KindRestore] = [], arrived: [String] = []) {
       let held = receipt.releaseAt != nil
       self.says = says
-      undo = Undo(gesture: receipt.gestureId, held: held, act: act)
+      undo = Undo(gesture: receipt.gestureId, held: held, act: act, restores: restores)
       self.arrived = arrived
       lasts = held ? .milliseconds(Constants.holdMs) : RoadmapModel.bandLasts
     }
@@ -1050,8 +1052,9 @@ final class RoadmapModel {
   // The band's Undo: a removal the engine holds is cancelled while it is held, and any other act, or a step's delete whose
   // hold has ended, is taken back by the kit's Undo of it. The engine then keeps nothing more of the act, nor of its Undo,
   // which the room never redoes. A roadmap brought back is the open one again where it was. An Undo that brought nothing
-  // back, a roadmap's delete or a workspace removal past its hold, an act the engine keeps no Undo of, or one whose every
-  // restore a write elsewhere stood in the way of, says so in the band's place, with a warning (02.10d, 06.5c).
+  // back, a roadmap's delete or a workspace removal past its hold, an act the engine keeps no Undo of, one whose every
+  // restore a write elsewhere stood in the way of, or a kind's removal whose hue another kind has come to wear, which the
+  // domain refuses before anything is written, says so in the band's place, with a warning (02.10d, 06.5c).
   func undo() {
     guard root === self else { return root.undo() }
     guard let receipt = band, let undo = receipt.undo else { return }
@@ -1061,7 +1064,7 @@ final class RoadmapModel {
       var taken = false
       if undo.held { taken = try runner.cancelHeld(undo.gesture) }
       if !taken && (!undo.held || undo.act.outlivesHold) {
-        switch try runner.undo(undo.gesture) {
+        switch try runner.undo(undo.gesture, checking: undo.restores) {
         case .cancelled(_, let inverse, let changed), .pending(_, let inverse, let changed), .settled(_, let inverse, let changed, _, _):
           taken = changed
           try runner.release(inverse)

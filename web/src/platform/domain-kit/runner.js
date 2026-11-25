@@ -386,12 +386,22 @@ export class ActionRunner {
   }
 
   // K-3 (engine §7.3 Undo of an act): the inverse of an act opted into Undo. A wholly held act is cancelled in
-  // place; otherwise the inverse is reserved at once and settles as its sources do.
+  // place; otherwise the inverse is reserved at once and settles as its sources do. One a check refuses over what stands
+  // where it is asked writes nothing and is unavailable (`refused`).
   /**
    * @param {string} actId
+   * @param {readonly import('./plans.js').UndoCheck[]} [checks]
    * @returns {Promise<InverseResult>}
    */
-  async undo(actId) {
+  async undo(actId, checks = []) {
+    for (const undoCheck of checks) {
+      try {
+        this.read(undoCheck.scope, (read) => undoCheck.check(read));
+      } catch (error) {
+        if (error instanceof Violation) return { kind: 'unavailable', requestId: null, reason: 'refused' };
+        throw error;
+      }
+    }
     return this.port('requestInverse')(actId);
   }
 

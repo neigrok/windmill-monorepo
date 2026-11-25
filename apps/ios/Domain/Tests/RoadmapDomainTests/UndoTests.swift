@@ -17,12 +17,14 @@ struct UndoTests {
 }
 
 // A scene's phones, `a` first, and the roles its steps name, in the order they were first named: what each act or save was
-// given and answered, the act its Undo names, and the request of its latest Undo or Redo, which a Redo and a read name.
+// given and answered, the act its Undo names with what that Undo is checked by (an answer that is an Undo's check), and
+// the request of its latest Undo or Redo, which a Redo and a read name.
 struct UndoScene {
   struct Role {
     let input: JSON
     let result: JSON
     let actId: String?
+    var checks: [any UndoCheck] = []
     var requestId: String?
   }
 
@@ -45,12 +47,12 @@ struct UndoScene {
   mutating func play(_ step: JSON, on phone: Harness) throws -> JSON? {
     if let action = step["run"] {
       let input = try bound(step.member("input"))
-      let (outcome, result, actId): (JSON, JSON, String?) = switch try RoadmapAct(try action.asString(), input).run(phone.runner) {
-      case .committed(let result, let receipt): ("committed", result, receipt.gestureId)
-      case .unchanged(let result): ("unchanged", result, nil)
-      case .refused(let refusal): (["refused": refusal.form], .null, nil)
+      let (outcome, result, actId, checks): (JSON, JSON, String?, [any UndoCheck]) = switch try RoadmapAct(try action.asString(), input).run(phone.runner) {
+      case .committed(let result, let receipt): ("committed", result.form, receipt.gestureId, [result.value].compactMap { $0 as? any UndoCheck })
+      case .unchanged(let result): ("unchanged", result.form, nil, [])
+      case .refused(let refusal): (["refused": refusal.form], .null, nil, [])
       }
-      try remember(step, Role(input: input, result: result, actId: actId))
+      try remember(step, Role(input: input, result: result, actId: actId, checks: checks))
       return outcome
     }
     if let saved = step["save"] {
@@ -78,7 +80,7 @@ struct UndoScene {
     if let name = step["undo"] {
       let (index, role) = try self.role(name)
       guard let actId = role.actId else { throw ContractError("\(name) committed no act") }
-      let undone = try phone.runner.undo(actId)
+      let undone = try phone.runner.undo(actId, checking: role.checks)
       roles[index].role.requestId = undone.requestId ?? role.requestId
       return undone.form
     }
@@ -163,12 +165,14 @@ struct UndoScene {
     return found
   }
 
-  // What a scene reads back, each id named by the first role holding it, any other minted id `<new>`.
+  // What a scene reads back, each minted id named by the first role holding it, any other `<new>`.
   func named(_ value: JSON) -> JSON {
+    let minted = /t_[0-9a-f]{16}|[0-9a-z]{16}/
     var known: [(id: String, path: String)] = []
     func walk(_ found: JSON, _ path: String) {
       switch found {
-      case .string(let text) where !known.contains(where: { $0.id.utf8.elementsEqual(text.utf8) }): known.append((text, path))
+      case .string(let text) where text.wholeMatch(of: minted) != nil && !known.contains(where: { $0.id.utf8.elementsEqual(text.utf8) }):
+        known.append((text, path))
       case .array(let items): for (index, item) in items.enumerated() { walk(item, "\(path).\(index)") }
       case .object(let object): for member in object.members { walk(member.value, "\(path).\(member.key)") }
       default: break
@@ -179,7 +183,7 @@ struct UndoScene {
       switch item {
       case .string(let text):
         if let path = known.first(where: { $0.id.utf8.elementsEqual(text.utf8) })?.path { return .string(path) }
-        return text.wholeMatch(of: /t_[0-9a-f]{16}|[0-9a-z]{16}/) == nil ? item : "<new>"
+        return text.wholeMatch(of: minted) == nil ? item : "<new>"
       case .array(let items): return .array(items.map(rename))
       case .object(let object): return .object(JSON.Object(uniqueKeysWithValues: object.members.map { ($0.key, rename($0.value)) }))
       default: return item

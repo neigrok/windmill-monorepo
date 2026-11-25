@@ -97,15 +97,15 @@ extension RoadmapModel {
   }
 
   // Delete in the sheet's edit mode, or a row's swipe: a kind no step wears goes at once, with no question, and the band
-  // at the sheet's foot holds Undo for six seconds (06.5b). It answers whether the kind went; only then does the sheet let
-  // its row go.
+  // at the sheet's foot holds Undo for six seconds (06.5b), which brings the kind back only while no other kind wears its
+  // hue (06.5c). It answers whether the kind went; only then does the sheet let its row go.
   @discardableResult
   func remove(_ subject: RoadmapLegend.Subject) -> Bool {
     guard let shown, let entry = shown.legend.entry(subject), let kind = entry.kind, entry.removable,
           let written = write(DeleteKind(tree: shown.id, kind: ID(RecordID(kind.id))), as: "RemoveKind").committed else { return false }
     removedKinds[subject] = written.receipt.gestureId
     telemetry.event("roadmap_board_edit", properties: ["step": "saved", "legend": "remove"])
-    show(Band(.removedKind(entry.name), of: written.receipt, act: .step("removeKind")))
+    show(Band(.removedKind(entry.name), of: written.receipt, act: .step("removeKind"), restoring: written.result.map { [$0] } ?? []))
     return true
   }
 }

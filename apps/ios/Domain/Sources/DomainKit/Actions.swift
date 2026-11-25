@@ -137,9 +137,17 @@ public final class ActionRunner: Sendable {
   }
 
   // §9.6 the inverse of an act opted into Undo: a wholly held act is cancelled in place; otherwise the inverse is reserved
-  // at once and settles as the act's sources do. An act that did not opt in is unavailable.
-  public func undo(_ actId: String) throws -> InverseResult {
-    try replica.requestInverse(actId, slots: nil)
+  // at once and settles as the act's sources do. An act that did not opt in is unavailable, and so is one a check refuses
+  // over what stands where it is asked (`refused`), which writes nothing.
+  public func undo(_ actId: String, checking checks: [any UndoCheck] = []) throws -> InverseResult {
+    for undoCheck in checks {
+      do {
+        try read(undoCheck.scope) { (read: Reader) throws in try undoCheck.check(read) }
+      } catch is Violation {
+        return .unavailable(requestId: nil, reason: "refused")
+      }
+    }
+    return try replica.requestInverse(actId, slots: nil)
   }
 
   // The inverse of an Undo: the values the act wrote, only where the Undo applied, or what `productSlots` name instead. A

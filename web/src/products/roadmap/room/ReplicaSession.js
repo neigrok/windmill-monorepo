@@ -16,7 +16,7 @@ import { t } from '../i18n/index.js';
 import { InadmissibleGuide, admitsGuide } from '../guide/GuideDraft.js';
 import { workspaceLink } from '../model/NodeWorkspace.js';
 import { BoundaryFailure, reportRoadmapFailure } from '../reportFailure.js';
-import { ChangeKind, CreateKind, DeleteKind, RecolourKind } from '../domain/kinds.js';
+import { ChangeKind, CreateKind, DeleteKind, KindRestore, RecolourKind } from '../domain/kinds.js';
 import { ClearPointer, Complete, Reset, SetPointer } from '../domain/progress.js';
 import { RoadmapChecks, RoadmapRefusals, RoadmapScopes } from '../domain/roadmapRules.js';
 import { DeleteRoadmap, SetVisibility, WriteRoadmap } from '../domain/roadmaps.js';
@@ -314,16 +314,18 @@ export class ReplicaSession {
   }
 
   // A gesture's act taken back, answering its Undo (null where it wrote nothing or has none); the act itself leaves the
-  // engine's journal once its Undo is asked.
+  // engine's journal once its Undo is asked. A kind the gesture deleted comes back only while no other kind wears its hue,
+  // as its restore checks.
   async inverse(done) {
     const act = await done.act;
     if (act === null) {
       this.trackInverse('undo', NOTHING_TO_TAKE_BACK);
       return null;
     }
+    const restores = ((await done.landed) ?? []).filter((result) => result instanceof KindRestore);
     let result = null;
     try {
-      result = await this.runner.undo(act);
+      result = await this.runner.undo(act, restores);
     } catch (error) {
       this.report('roadmap-replica-write', error, { write: 'undo' });
     }

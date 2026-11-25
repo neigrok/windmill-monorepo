@@ -241,6 +241,31 @@ export class RecolourKind {
   }
 }
 
+// What a kind's delete is undone by: the kind back on the hue it wore. Its Undo makes the kind again, so it is checked
+// where it is asked as a kind made is (§4): refused while another present kind wears that hue. The device keeps no hue of
+// a kind once its delete has reached it, so the delete hands it on.
+export class KindRestore {
+  /**
+   * @param {string} tree
+   * @param {string} kind
+   * @param {string} hue
+   */
+  constructor(tree, kind, hue) {
+    this.tree = tree;
+    this.kind = kind;
+    this.hue = hue;
+    Object.freeze(this);
+  }
+
+  get scope() { return RoadmapScopes.tree(this.tree); }
+
+  get json() { return { tree: this.tree, kind: this.kind, hue: this.hue }; }
+
+  /** @param {Reader} read */
+  check(read) { wearing(read.repository(RoadmapKind).all('drawn'), this.hue, this.kind); }
+}
+
+// A kind's death, which an Undo writes back. It answers the kind's restore, which that Undo is checked by.
 export class DeleteKind {
   /**
    * @param {string} tree
@@ -262,6 +287,6 @@ export class DeleteKind {
     const plan = new Plan();
     plan.remove(this.id);
     plan.undoBy(restoring(Restore.tree, this.id, [], { life: true }));
-    return writeIn(RoadmapScopes.tree(this.tree), plan, null);
+    return writeIn(RoadmapScopes.tree(this.tree), plan, new KindRestore(this.tree, String(this.id.record), kind.hue));
   }
 }

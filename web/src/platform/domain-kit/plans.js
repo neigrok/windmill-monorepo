@@ -212,6 +212,11 @@ export const UndoRecipe = Object.freeze({
     Object.freeze({ kind: 'command', command, input, evidence: Object.freeze({ ownedFields, unchangedCreatedRecords, unchangedCreatedScopes }) }),
 });
 
+// K-3: what an act's Undo must find standing where it is asked, read in one scope: `check` throws the `Violation` the
+// Undo would break, as a decide does, and the Undo then writes nothing. A product hands it from the act it checks the
+// Undo of to the Undo it asks.
+/** @typedef {{ scope: string, check(read: import('./reading.js').Reader): void }} UndoCheck */
+
 export class Plan {
   constructor() {
     /** @type {Operation[]} */

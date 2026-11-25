@@ -189,6 +189,32 @@ import SyncTesting
     #expect(told(telemetry).last == "roadmap_board_undo act=removeKind outcome=unavailable")
   }
 
+  // 06.5c: a removed kind cannot come back onto a hue another kind has come to wear since, as it could not be made on it:
+  // the domain refuses its Undo before anything is written, and the band names the kind, with no Undo.
+  @Test func aKindRemovedCannotComeBackOntoAHueAnotherKindHasComeToWear() async throws {
+    let (engine, runner, memory, suite) = phone()
+    defer { memory.removePersistentDomain(forName: suite) }
+    let telemetry = TelemetryRecorder()
+    let model = try await learnToSail(engine, runner, memory, telemetry: telemetry)
+    let practice = try #require(model.addKind())
+    await reads(model, on: engine) { $0.shown?.legend.entry(practice) != nil }
+    _ = model.name(practice, "Practice")
+    await reads(model, on: engine) { $0.shown?.legend.entry(practice)?.name == "Practice" }
+    #expect(model.remove(practice))
+    await reads(model, on: engine) { $0.shown?.legend.entry(practice) == nil }
+    #expect(model.recolour(.kind("learn"), to: "brick") == .kind("learn"))
+    await reads(model, on: engine) { $0.shown?.legend.entry(.kind("learn"))?.hue == "brick" }
+
+    #expect(model.band?.says == .removedKind("Practice") && model.band?.undo != nil)
+    model.undo()
+    #expect(model.band?.says == .unrestored(.removedKind("Practice")) && model.band?.undo == nil)
+    await engine.settleViews()
+    model.observe()
+    #expect(entries(model) == ["Build terracotta 3 · Things you make", "Learn brick 2 · Things you figure out", "Milestone gold 1 · Moments that matter",
+                               "Sky sky 2"])
+    #expect(told(telemetry).last == "roadmap_board_undo act=removeKind outcome=unavailable")
+  }
+
   // 06.5b: the sheet lets a removed kind's row go before the phone's copy is read again, and Undo may come first; the row
   // stands again as the Undo is taken, and otherwise once a read no longer holds the kind.
   @Test func aKindUndoneBeforeTheCopyIsReadAgainStandsInTheSheetAgain() async throws {

@@ -14,7 +14,7 @@ import { Harness } from '../../../platform/domain-kit/harness.js';
 import { RoadmapRules } from '../../../../src/products/roadmap/domain/ruleBook.js';
 import { ProductCorpus } from '../../../platform/domain-kit/productCorpus.js';
 import { ChangePrerequisites, ChangeStep, CreateStep, DeleteStep, ImportSteps, MoveStep } from '../../../../src/products/roadmap/domain/steps.js';
-import { ChangeKind, CreateKind, DeleteKind, MoveKind, RecolourKind } from '../../../../src/products/roadmap/domain/kinds.js';
+import { ChangeKind, CreateKind, DeleteKind, KindRestore, MoveKind, RecolourKind } from '../../../../src/products/roadmap/domain/kinds.js';
 import { ClearPointer, Complete, Reset, SetPointer } from '../../../../src/products/roadmap/domain/progress.js';
 import { AddStepLink, AddSubtask, ChangeStepLink, ChangeSubtask, DeleteStepLink, DeleteSubtask, MoveStepLink, MoveSubtask, SaveStepNote, StepNote, StepNoteValue } from '../../../../src/products/roadmap/domain/workspace.js';
 import { ClearLanding, cannotLand, landingOf } from '../../../../src/products/roadmap/domain/landing.js';
@@ -123,7 +123,7 @@ export function runAction(vector) {
   /** @type {any} */
   let decided = null;
   const form = /** @type {any} */ (corpus.act({ refusals: act.refusals, load: (read) => act.load(read), decide: (loaded, ids) => (decided = act.decide(loaded, ids)) },
-    vector, (result) => /** @type {Json} */ (result), refusalForm));
+    vector, (result) => /** @type {Json} */ (result instanceof KindRestore ? result.json : result), refusalForm));
   if (!form.decision.write) return form;
   // K-3: each segment's Undo recipes as the engine journals them (translateUndo), where the segment opts in.
   form.decision.write.segments = form.decision.write.segments.map((/** @type {any} */ segment, /** @type {number} */ index) => {
@@ -134,8 +134,9 @@ export function runAction(vector) {
 }
 
 // K-3 scenes (`undo.json`): acts and a note's draft saves on the kit's harness over the reference server with roadmap's
-// binding, then their Undo and Redo. A step names a role's result by `$role` or `$role.path`, also inside a scope; what a scene reads back
-// names each id by the first role that holds it, and any other minted id `<new>`.
+// binding, then their Undo and Redo, an Undo checked by an act's answer that is its check (a kind's restore). A step names a
+// role's result by `$role` or `$role.path`, also inside a scope; what a scene reads back names each minted id by the first
+// role that holds it, and any other `<new>`.
 /** @param {Vector} vector */
 export async function runScene(vector) {
   const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
@@ -157,19 +158,20 @@ export async function runScene(vector) {
     if (whole) return lookup(whole[1] ?? '');
     return value.replace(/\$([\w.]+)/g, (_, path) => String(lookup(path)));
   };
+  const minted = /^(t_[0-9a-f]{16}|[0-9a-z]{16})$/;
   /** @param {any} value @returns {any} */
   const named = (value) => {
     /** @type {Map<string, string>} */
     const known = new Map();
     /** @param {any} found @param {string} path */
     const walk = (found, path) => {
-      if (typeof found === 'string') { if (!known.has(found)) known.set(found, path); }
+      if (typeof found === 'string') { if (minted.test(found) && !known.has(found)) known.set(found, path); }
       else if (found !== null && typeof found === 'object') for (const [key, item] of Object.entries(found)) walk(item, `${path}.${key}`);
     };
     for (const [role, { result }] of Object.entries(roles)) walk(result, `$${role}`);
     /** @param {any} item @returns {any} */
     const rename = (item) => {
-      if (typeof item === 'string') return known.get(item) ?? (/^(t_[0-9a-f]{16}|[0-9a-z]{16})$/.test(item) ? '<new>' : item);
+      if (typeof item === 'string') return known.get(item) ?? (minted.test(item) ? '<new>' : item);
       if (Array.isArray(item)) return item.map(rename);
       if (item !== null && typeof item === 'object') return Object.fromEntries(Object.entries(item).map(([key, inner]) => [key, rename(inner)]));
       return item;
@@ -225,7 +227,8 @@ export async function runScene(vector) {
         const fresh = step.redo && step.subtree ? String(phone.runner.mint(Roadmap).record) : null;
         const slots = fresh === null ? undefined : redoCreateSubtree({ ...role.input, ...role.result }, fresh);
         if (fresh !== null) for (const scope of [RoadmapScopes.tree(fresh), RoadmapScopes.overlay(fresh)]) a.observe(scope);
-        const result = step.undo ? await phone.runner.undo(String(role.actId)) : await phone.runner.redo(String(role.requestId), slots);
+        const checks = role.result instanceof KindRestore ? [role.result] : [];
+        const result = step.undo ? await phone.runner.undo(String(role.actId), checks) : await phone.runner.redo(String(role.requestId), slots);
         if (result.kind !== 'unavailable') role.requestId = result.requestId;
         outcomes.push(inverse(result));
       } else if (step.read) {
