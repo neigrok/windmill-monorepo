@@ -312,7 +312,18 @@ it plants through MCP (`scripts/roadmap-rig/planter.mjs`); it is a measuring too
 
 ## Offline rooms and browser replicas
 
-The auth provider opens the browser sync engine once for this document and owns cookie cleanup.
+The auth provider opens the browser sync engine once for this document and owns cookie cleanup. The read of `/v1/me` that
+lapses the seat (a `401` outside a sign-out, while the seat holds the account the engine's replica is still bound to) clears
+the cookie no live session holds any more, once a lapse: under the `windmill:auth-cookie` Web Lock, which a magic-link
+verify also holds for no longer than its 10-second request, it reads the account again and logs out if still no session
+holds the cookie, then marks the auth hint `{ status: 'ghost', cleared: <account> }`, so another tab or a later page sends
+nothing more. Every writer of the hint, the static pages' `nav-auth.js` among them, keeps the mark on a signed-out hint and
+drops it on a signed-in one, since the cookie comes back only through a sign-in. A clear that failed, because the lock did
+not come within 10 seconds, the read had no answer or the logout failed, marks nothing: the seat lapses on the first read
+all the same, and the next page tries again. A sign-in another tab completes meanwhile is read under the lock and kept. A
+sign-in whose cookie arrives on a navigation, Google's callback, holds no lock, so one landing between that read and the
+logout can still be ended. A browser without Web Locks verifies and clears without the lock. The account's copy stays, as
+a lapse keeps it.
 Product preparations run before networking; occupied rooms pin Add/Discard, and sign-out pins
 Keep/Discard after the bounded flush. A product's `signOutNotice()` adds a line to the sign-out question, with a download
 of what signing out discards from the tab (the journal's kept Talk take), and its `forgetDevice` drops it. A product's

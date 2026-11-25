@@ -160,7 +160,8 @@ Coach (`CoachForm`), the room's pills in History. Applied or rejected,
 it is one line, which takes the focus once the decision lands; out of date (`WorkoutProposalState.outOfDate`), it says why
 in one sentence and offers nothing, and so does a change whose decision the log refused, read from the refusal's notice
 while the copy still takes it for current. That notice stands on the card for good, so a change the log refused keeps its
-sentence even once its cause is undone; the room's notice voice says nothing of it. While a workout is open a routine
+sentence even once its cause is undone; the room's notice voice says nothing of it. A change whose load the copy's floor
+refuses draws the log's sentence for that load (below). While a workout is open a routine
 proposal waits for next time: its count says so and its Apply steps back for the workout's, a Secondary Button in the
 workout's Coach and the quiet pill in the room.
 
@@ -248,7 +249,11 @@ unresolved notices.
 
 A routine Coach creates exists the moment its call commits, as the lifter's own New routine would; its card links the
 routine. A routine proposal and a workout proposal, this browser's or a phone's, each stand under the answer whose call
-made them, with Reject and Apply, the lifter's gestures and the server's commands.
+made them, with Reject and Apply, the lifter's gestures and the server's commands. Either card is drawn out of date, with
+that load's sentence and no Apply, in every tab and after a reload, as soon as the copy's rules would refuse its Apply for a
+load under a movement's floor: the domain reads it with the rule the Apply refuses by (`WorkoutProposalState.underFloor`,
+`ProposalApplication.underFloor`), so the card asks no one and tells nothing, and such a change to the workout does not wait
+on the person.
 
 ## Gates
 

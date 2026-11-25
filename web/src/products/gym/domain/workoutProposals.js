@@ -183,6 +183,12 @@ export class WorkoutProposalState {
     return moved === undefined ? null : { reason: 'workout-moved', exerciseId: moved.exerciseId.json };
   }
 
+  // Whether applying it now would be refused for a load under a movement's floor, read in the catalogue the Apply floors it in.
+  get underFloor() {
+    const proposal = this.proposal;
+    return proposal?.state === 'pending' && this.workout !== null && RoutineChange.underFloor(proposal.changes, this.workout.catalogue);
+  }
+
   // What the log would answer the decision, said before it is sent. Applying asks more than turning down: the workout must be
   // in sight and the proposal current.
   /** @param {Id<WorkoutProposalValue>} id @param {boolean} applying @returns {GymRefusal | null} */

@@ -4,7 +4,7 @@ import { Button } from '../../../design-system/index.js';
 import { Id } from '../../../platform/domain-kit/entities.js';
 import { useSyncRecords } from '../../../platform/sync/react.js';
 import { Catalogue } from '../domain/catalogue.js';
-import { Proposal, ProposalState } from '../domain/proposals.js';
+import { Proposal, ProposalApplication } from '../domain/proposals.js';
 import { ProposalDiff } from '../domain/proposalDiff.js';
 import { Routine } from '../domain/routines.js';
 import { Session } from '../domain/training.js';
@@ -30,27 +30,32 @@ function pairs(read, changes) {
 }
 
 // A routine proposal as its card reads it (08.2P in web form): the shared `ProposalDiff`'s blocks against the routine, its
-// name, whether Apply would still be taken, and whether a workout is open, so the routine waits for its next one (08.56P).
+// name, whether Apply would still be taken (out of date when the routine changed, floored when the copy's rules refuse a
+// load under a movement's floor), and whether a workout is open, so the routine waits for its next one (08.56P).
 function routineCard(read, record) {
   const proposal = read.repository(Proposal).find(new Id(record, Proposal), 'drawn');
   if (proposal === null) return null;
   const routine = read.repository(Routine).find(proposal.routineId, 'drawn');
+  const application = ProposalApplication.of(read, proposal.id);
+  const outOfDate = application.state.outOfDate === true;
   return { diff: ProposalDiff.ofRoutine(proposal, routine, GymUnits.reading(weightUnit()), pairs(read, proposal.changes)), state: proposal.state,
-    name: proposal.baseName ?? routine?.name ?? proposal.proposedName ?? '', outOfDate: ProposalState.of(read, proposal.id).outOfDate === true,
+    name: proposal.baseName ?? routine?.name ?? proposal.proposedName ?? '', outOfDate, floored: !outOfDate && application.underFloor,
     nextTime: new TrainingLog(read).open !== null };
 }
 
 // Coach's change to the open workout as its card reads it from the copy (WD7): its blocks against the workout's plan, how
-// many changes it suggests, and why it can no longer be applied when it cannot: the domain's reading of the copy, or else
-// the log's refusal of a decision on it, which stands among the copy's notices.
+// many changes it suggests, and why it can no longer be applied when it cannot: the domain's reading of the copy, else the
+// log's refusal of a decision on it, which stands among the copy's notices, else the copy's rules refusing a load under a
+// movement's floor, drawn as the log's `invalid`.
 function workoutCard(read, record, notices) {
   const proposal = read.repository(WorkoutProposal).find(new Id(record, WorkoutProposal), 'drawn');
   if (proposal === null) return null;
   const plan = read.repository(Session).find(proposal.sessionId, 'stored')?.plan ?? null;
+  const state = WorkoutProposalState.of(read, proposal.id);
   const refused = refusedDecision(notices, 'workout', record);
   return { diff: ProposalDiff.ofWorkout(proposal, plan, GymUnits.reading(weightUnit()), pairs(read, proposal.changes)), state: proposal.state,
-    count: proposal.countChanges(plan?.entries ?? []), stale: WorkoutProposalState.of(read, proposal.id).outOfDate
-      ?? (refused && decisionRefusal(refused.code, refused.detail)) };
+    count: proposal.countChanges(plan?.entries ?? []), stale: state.outOfDate ?? (refused && decisionRefusal(refused.code, refused.detail))
+      ?? (state.underFloor ? decisionRefusal('invalid') : null) };
 }
 
 // One line of a block, as the boards draw it: what changes, the old value struck through and the new one; a new or a gone
@@ -134,7 +139,8 @@ function Decision({ busy, failure, quiet, onDecide }) {
 }
 
 // A routine proposal under the answer whose call made it (08W.25–08W.28): pending with Reject and Apply, applied,
-// rejected, or out of date; while a workout is open it waits for next time (WD7). Apply and Reject are the lifter's
+// rejected, or out of date, its sentence saying why: the routine changed, or this copy's rules would refuse its Apply for a
+// load under a movement's floor; while a workout is open it waits for next time (WD7). Apply and Reject are the lifter's
 // gestures and the server's commands; no ability decides one.
 export function CoachProposalCard({ id, movements }) {
   const api = useGymApi();
@@ -149,7 +155,7 @@ export function CoachProposalCard({ id, movements }) {
     return <p ref={settled} tabIndex={-1} className="gym-coach-proposal-rejected"><CircleSlash size={18} aria-hidden="true" />{t('gym.coach.proposal.rejected', { name })}</p>;
   }
   const applied = state === 'applied';
-  const pending = state === 'pending' && !card.outOfDate;
+  const pending = state === 'pending' && !card.outOfDate && !card.floored;
   const outOfDate = !applied && !pending;
   const Symbol = applied ? CircleCheck : outOfDate ? AlertCircle : List;
   const waiting = card.nextTime ? t('gym.coach.proposal.nextTime', { count: diff.blocks.length }) : t('gym.coach.proposal.suggested', { count: diff.blocks.length });
@@ -158,7 +164,9 @@ export function CoachProposalCard({ id, movements }) {
       <Symbol size={22} aria-hidden="true" className={outOfDate ? undefined : 'gym-coach-made-check'} />
       <span>
         <strong>{applied ? t('gym.coach.proposal.applied', { name }) : outOfDate ? t('gym.coach.proposal.outOfDate', { name }) : name}</strong>
-        {outOfDate ? t('gym.coach.proposal.outOfDateLine', { name }) : applied ? t('gym.coach.proposal.changes', { count: diff.blocks.length }) : waiting}
+        {outOfDate ? <span ref={settled} tabIndex={-1} className="gym-coach-proposal-reason">
+          {card.floored ? t('gym.coach.proposal.belowFloor') : t('gym.coach.proposal.outOfDateLine', { name })}</span>
+          : applied ? t('gym.coach.proposal.changes', { count: diff.blocks.length }) : waiting}
       </span>
     </header>
     <Changes diff={diff} movements={movements} name={name} />
@@ -168,7 +176,8 @@ export function CoachProposalCard({ id, movements }) {
 
 // Why a workout proposal can no longer be applied, in one sentence and then that nothing was applied (08.57): the board's
 // for a movement logged since and a newer suggestion, a changed or finished workout; and, for what the log refused that the
-// copy does not show, a suggestion answered elsewhere, a load under a movement's floor, or that it is out of date.
+// copy does not show, a suggestion answered elsewhere, a load under a movement's floor (which the copy's rules refuse too),
+// or that it is out of date.
 function staleLine(stale, movements) {
   switch (stale.reason) {
     case 'replaced': return t('gym.coach.workoutProposal.replaced');
@@ -177,7 +186,7 @@ function staleLine(stale, movements) {
     case 'workout-moved': return typeof stale.exerciseId === 'string'
       ? t('gym.coach.workoutProposal.logged', { movement: nameOfMovement(movements, stale.exerciseId) }) : t('gym.coach.workoutProposal.loggedMovement');
     case 'settled': return t('gym.coach.workoutProposal.answered');
-    case 'invalid': return t('gym.coach.workoutProposal.belowFloor');
+    case 'invalid': return t('gym.coach.proposal.belowFloor');
     default: return t('gym.coach.workoutProposal.stale');
   }
 }
@@ -185,7 +194,8 @@ function staleLine(stale, movements) {
 // Coach's change to the open workout under the answer whose call made it, this browser's or a phone's (WD7, 08.56P),
 // read from the copy: pending with Reject and the prominent Apply, which rewrites this workout's plan on the browser's copy
 // and never a logged movement; applied, one line; rejected, one line; out of date, one sentence of why and nothing applied
-// (WD7.3), which is also what a decision the log refused draws, never a failure.
+// (WD7.3), which is also what a decision the log refused draws, never a failure, and what a change the copy's rules would
+// refuse for a load under a movement's floor draws, before anyone asks.
 export function WorkoutProposalCard({ id, movements }) {
   const api = useGymApi();
   const { notices } = useSyncRecords('self/gym');
@@ -207,7 +217,7 @@ export function WorkoutProposalCard({ id, movements }) {
       <ClipboardList size={20} aria-hidden="true" className="gym-coach-made-check" />
       <span><strong>{title}</strong>{stale ? t('gym.coach.workoutProposal.outOfDate') : t('gym.coach.workoutProposal.count', { count: card.count })}</span>
     </header>
-    {stale ? <p className="gym-coach-proposal-why">{staleLine(stale, movements)}</p> : <>
+    {stale ? <p ref={settled} tabIndex={-1} className="gym-coach-proposal-why">{staleLine(stale, movements)}</p> : <>
       <Changes diff={card.diff} movements={movements} name={title} />
       <Decision busy={busy} failure={failure} quiet={false} onDecide={decide} />
     </>}

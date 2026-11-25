@@ -7,11 +7,11 @@ import { Draft } from '../../../../src/platform/domain-kit/drafts.js';
 import { DecodeError, Id } from '../../../../src/platform/domain-kit/entities.js';
 import { Reader, Views } from '../../../../src/platform/domain-kit/reading.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
-import { Exercise } from '../../../../src/products/gym/domain/catalogue.js';
-import { GymRefusals } from '../../../../src/products/gym/domain/gymRules.js';
-import { AcknowledgeRoutineRemoval, ApplyProposalKeepingReceipt, Proposal, ProposeRoutine,
+import { EditExercise, Exercise } from '../../../../src/products/gym/domain/catalogue.js';
+import { GymRefusals, RoutineRules } from '../../../../src/products/gym/domain/gymRules.js';
+import { AcknowledgeRoutineRemoval, ApplyProposal, ApplyProposalKeepingReceipt, Proposal, ProposalApplication, ProposeRoutine,
   REMOVAL_RECEIPTS, removalReceipts } from '../../../../src/products/gym/domain/proposals.js';
-import { Routine, RoutineEntry, RoutineValue } from '../../../../src/products/gym/domain/routines.js';
+import { Routine, RoutineEntry, RoutineValue, SetTarget } from '../../../../src/products/gym/domain/routines.js';
 import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
 import { Harness } from '../../../platform/domain-kit/harness.js';
 import { Contract, momentOf, viewRecords } from '../../../platform/domain-kit/vectors.js';
@@ -122,4 +122,24 @@ test('a removal receipt and command commit together, survive restart and do not 
   assert.deepEqual(await phone.runner.run(ApplyProposalKeepingReceipt(id)), { kind: 'unchanged', result: null });
   assert.deepEqual(await phone.runner.run(AcknowledgeRoutineRemoval(id)), { kind: 'unchanged', result: null });
   assert.equal(phone.engine.device.activeReplica.entries().filter((/** @type {any} */ entry) => entry.intent.cmd?.name === 'gym.applyProposal').length, 1);
+});
+
+test('a routine proposal reads under its floor exactly when its Apply refuses a load under a movement\'s floor', async (t) => {
+  const phone = await Harness.open({ registry, product: new GymProduct(), scope: Proposal.scope });
+  t.after(() => phone.close());
+  phone.server.product.seeds = Object.fromEntries(SeedExercises.all.map((seed) => [String(seed.id.record), seed.fields()]));
+  const pullUp = new Id('pull-up', Exercise);
+  const routine = new RoutineValue(new Id('routine1', Routine), 'Upper A', 0, [new RoutineEntry(pullUp, [new SetTarget(8, 10)])]);
+  assert.equal((await phone.runner.save(Draft.new(routine), GymRefusals)).result.kind, 'saved');
+  await phone.sync();
+  assert.equal((await phone.runner.run(ProposeRoutine({ id, routineId: routine.id, name: null,
+    entries: [new RoutineEntry(pullUp, [new SetTarget(8, -20)])], summary: '' }))).kind, 'committed');
+  const underFloor = () => phone.runner.read(Proposal.scope, (read) => ProposalApplication.of(read, id).underFloor);
+  const assisted = underFloor();
+  const seed = SeedExercises.all.find((exercise) => exercise.id.equals(pullUp)) ?? assert.fail();
+  assert.equal((await phone.runner.run(new EditExercise(seed, seed.name, 'barbell', 1))).kind, 'committed');
+  const barbell = underFloor();
+  const applied = await phone.runner.run(ApplyProposal(id));
+  assert.deepEqual({ assisted, barbell, applied: applied.kind === 'refused' && applied.refusal.kind === 'invalid' ? applied.refusal.violation.rule : applied.kind },
+    { assisted: false, barbell: true, applied: RoutineRules.loadFloor });
 });

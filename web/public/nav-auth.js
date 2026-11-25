@@ -24,10 +24,14 @@
     if (nameEl && user) nameEl.textContent = user.name || 'My account';
   }
 
+  // A signed-out hint keeps the app's mark of whose lapsed session's cookie it already cleared (`cleared`); a signed-in one
+  // drops it, since that cookie comes back only through a sign-in.
   function remember(user) {
+    var cleared = null;
+    try { cleared = JSON.parse(localStorage.getItem('windmill:auth-hint') || 'null').cleared || null; } catch (e) { /* none */ }
     try {
-      localStorage.setItem('windmill:auth-hint',
-        JSON.stringify(user ? { status: 'signed-in', user: user } : { status: 'ghost' }));
+      localStorage.setItem('windmill:auth-hint', JSON.stringify(user ? { status: 'signed-in', user: user }
+        : cleared ? { status: 'ghost', cleared: cleared } : { status: 'ghost' }));
     } catch (e) { /* storage unavailable — the hint is never load-bearing */ }
   }
 

@@ -79,6 +79,12 @@ kind `store` reported as `sync-storage` as any write the store did not commit, s
 The shell reports session transition failures as `auth-session`, a refused auth-hint storage write as
 `auth-hint-storage` and a read of `/v1/me` the engine could not take as `auth-credential-held`, each with
 kind `auth`; a cookie cleanup that fails is the engine's `sync-auth`. Opening and warming the offline shell reports `offline-shell` to Sentry.
+The read of `/v1/me` that lapses the seat clears the browser's cookie once a lapse ([CLAUDE.md](CLAUDE.md), Offline rooms
+and browser replicas) and emits `auth_session_cleared` with `outcome`: `cleared` (the logout answered), `kept` (the read
+under the cookie lock found a session another tab signed in meanwhile, and nothing was sent) or `failed` (the read had no
+answer, the lock did not come within 10 s, or the logout failed, which reports `auth-session-clear` with its stack frames);
+a failed clear leaves the seat lapsed and tells nothing more on that page. A lapse already cleared, by another tab or an
+earlier page, emits nothing, and neither does a browser signed out all along.
 The update-required reload emits `sync_upgrade` with `pending`, `ok` or `failed`; a failed
 shell update reports the static `offline-shell-update` operation. A persisted page restore
 reports storage failures and keeps its local records available for a retry.
@@ -600,6 +606,7 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-sync-discard` | An unexpected discard failure | The refusal stays |
 | `roadmap-sync-refused` | An unexpected refusal, once per bounded code per session, with `code` as a tag | The refusal notice |
 | `auth-session` | An unexpected account refresh failure | The session's existing path |
+| `auth-session-clear` | The logout that clears the cookie of a lapsed session failed: a network error, its 10-second limit, or an answer other than 2xx; stack frames only | The seat lapses as it would have, and nothing marks the lapse cleared: the next page whose read lapses the seat tries again, unless a sign-in replaces the cookie first |
 | `auth-credential-held` | Telling the engine whose credential a read of `/v1/me` found threw, its store having failed or closed underneath it (a store failure the engine reports as `sync-storage` too); once a page, stack frames only | The read goes on: the shell settles the account it read, and the engine hears the next read, 20 seconds on at most |
 | `auth-seat-will-change` | A product's hook before the seat changes (`sync.seatWillChange`, before a sign-in binds the device and before a sign-out finishes) threw (`outcome: failed`, its stack frames) or outlasted its five seconds (`outcome: timeout`), tagged `product`, the route table's id. Never a record, a count or an account | The seat changes without it: the next product's hook runs, then the sign-in or the sign-out; a write the late hook makes afterwards is refused by the binding it was issued under and writes nothing (gym's one act, `not-writable`) |
 | `auth-product-words` | A product's hook into an account-change question threw, tagged `question`: `adoption` (`adoptionAnswer`, the product's own answer to a sign-in question), `signin` (`signInWords`, `signInWork` or `adoptionCount`, the sign-in question's words or its count of the product's records), `signout` (`signOutWords`), `step` (the words' `onStep`, a step of the question told to the product), `begin` (`signOutBegins`, what the product does as a sign-out begins, before the engine sends what the device holds), `forget` (`signOutForgets`, the device rows the product's finished sign-out takes) or `notice` (`signOutNotice`, the product's line on what signing out discards from this tab). Stack frames only: never the product's words, a count or an account | The shell asks as it would of a product that says nothing: the person answers the sign-in question, in the shell's words with the engine's count, and the sign-out question in the next product's words or the shell's, without that product's line or its step event, so signing in and out go on |

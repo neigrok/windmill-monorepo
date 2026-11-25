@@ -109,7 +109,8 @@ function visit(page, account, { signOutFirst = false } = {}) {
 }
 
 // One visit of account A's, then a fresh document at `hash` whose `/v1/me` is `me`: held (never answered), `nobody`,
-// answering that no one is signed in, or `A`, answering A and its sync hello. Every other `/v1` request is held.
+// answering that no one is signed in, or `A`, answering A and its sync hello. A logout answers 204, as the server's always
+// does; every other `/v1` request is held.
 async function boot(t, { seeded, me, hash = '#/gym' }) {
   await ready;
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -121,6 +122,7 @@ async function boot(t, { seeded, me, hash = '#/gym' }) {
     asked.push(path);
     if (path === '/v1/me' && me === 'nobody') return route.fulfill({ status: 200, contentType: 'application/json', body: '{"user":null}' });
     if (path === '/v1/me' && me === 'A') return route.fulfill({ status: 200, contentType: 'application/json', body: '{"user":{"id":"A","name":"Ann"}}' });
+    if (path === '/v1/auth/logout') return route.fulfill({ status: 204 });
     if (path === '/v1/sync/hello' && me === 'A') return route.fulfill({ status: 200, contentType: 'application/json',
       body: JSON.stringify(hello({ state: ServerState.empty({ epoch: 'gym-boot', accounts: { A: { name: 'A' } } }), registry, account: 'A', serverTime: Date.now() }).body) });
     return undefined;
@@ -153,8 +155,8 @@ test('Chromium: the gym room draws from the browser’s copy while the account�
   });
 });
 
-test('Chromium: a paused session keeps the room, with sign-in at the account seat beside it', async (t) => {
-  const { page } = await boot(t, { seeded: true, me: 'nobody' });
+test('Chromium: a paused session keeps the room, with sign-in at the account seat beside it, and clears its cookie once', async (t) => {
+  const { page, asked } = await boot(t, { seeded: true, me: 'nobody' });
   await withBrowserErrors(page, async () => {
     await page.waitForFunction(() => document.getElementById('auth-state').textContent === 'ghost' && window.replica()?.authPaused === true);
     await page.locator('.gym-routine-name').waitFor();
@@ -163,18 +165,20 @@ test('Chromium: a paused session keeps the room, with sign-in at the account sea
     assert.equal(await page.locator('.gym-coach-door').count(), 0, 'no sign-in pitch stands in the room’s place');
     await page.getByRole('button', { name: 'Account', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Sign in', exact: true }).waitFor();
-    assert.deepEqual(await page.evaluate(() => window.issues ?? []), []);
+    assert.deepEqual({ issues: await page.evaluate(() => window.issues ?? []), logouts: asked.filter((path) => path === '/v1/auth/logout').length },
+      { issues: [], logouts: 1 });
   });
 });
 
 test('Chromium: a browser signed out draws the room on its own copy', async (t) => {
-  const { page } = await boot(t, { seeded: false, me: 'nobody' });
+  const { page, asked } = await boot(t, { seeded: false, me: 'nobody' });
   await withBrowserErrors(page, async () => {
     await page.locator('.gym-room').waitFor();
     await page.waitForFunction(() => document.getElementById('auth-state').textContent === 'ghost');
     assert.equal(await page.locator('.gym-coach-door').count(), 0, 'no sign-in pitch stands in the room’s place');
     assert.equal(await page.locator('.gym-tabs a').count(), 3);
     assert.deepEqual(await page.evaluate(() => [window.replica().state, window.issues ?? []]), ['anon', []]);
+    assert.equal(asked.filter((path) => path === '/v1/auth/logout').length, 0, 'a browser signed out all along sends no logout');
   });
 });
 
