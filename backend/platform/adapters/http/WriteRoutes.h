@@ -49,6 +49,8 @@ drogon::HttpResponsePtr retiredRouteResponse();
 std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr& request);
 std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr& request,
                                                   const WriteRoute& route);
+// The policy of the write route the request matched, none for any other request.
+WriteRoutePolicy writeRoutePolicy(const drogon::HttpRequestPtr& request);
 void applyWriteResponsePolicy(const drogon::HttpRequestPtr& request, const drogon::HttpResponsePtr& response);
 void finishWriteRequest(const drogon::HttpRequestPtr& request, const drogon::HttpResponsePtr& response);
 // The static operation of the route the request matched: its write route's, else its declared read route's, else empty.

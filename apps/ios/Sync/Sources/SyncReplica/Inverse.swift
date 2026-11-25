@@ -149,10 +149,7 @@ public struct Inverses: Sendable {
       (scope, Array(Set(replica.outbox.flatMap { $0.deltas(in: scope) }.map(\.key))).sorted())
     })
     let before = try views(of: scopes, in: replica)
-    let ordinary = { (entry: OutboxEntry) -> Bool in
-      guard let command = entry.intent.command else { return true }
-      return registry.command(command.name)?.engine == .capture
-    }
+    let ordinary = { (entry: OutboxEntry) -> Bool in registry.ownCommand(of: entry) == nil }
     let written: [(entry: OutboxEntry, scope: ScopeRef, delta: Delta)] = entries.filter(ordinary).flatMap { (entry: OutboxEntry) in
       entry.intent.deltas.map { (entry, entry.scope, $0) }
     }
@@ -558,9 +555,12 @@ public struct Inverses: Sendable {
     }
   }
 
-  // A Redo of a cancellation waits while an entry its references name has no result yet.
+  // A Redo of a cancellation waits while the replica holds no epoch, in which a waiting slot's references bind, and while
+  // an entry its references name has no result yet.
   func referencesAuthoritative(_ request: InverseRequest, in replica: LoadedReplica) -> Bool {
-    request.slots.filter { $0.state == .waiting }.flatMap(\.recipe.pendingLocalIds).allSatisfy { replica.named($0) == nil }
+    let waiting = request.slots.filter { $0.state == .waiting }
+    if replica.meta.serverEpoch == nil && !waiting.isEmpty { return false }
+    return waiting.flatMap(\.recipe.pendingLocalIds).allSatisfy { replica.named($0) == nil }
   }
 
   // The accepted receipts the act's sources own in the current epoch, in commit order; a source whose history is

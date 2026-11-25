@@ -2,6 +2,7 @@
 
 #include "test/platform/Fakes.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <json/json.h>
 
@@ -46,7 +47,7 @@ drogon::HttpRequestPtr request(drogon::HttpMethod method, const std::string& pat
     req->setBody(body);
   }
   if (!session.empty()) req->addCookie("wm_session", session);
-  return req;
+  return wm::test::DrogonLoopback::received(req);
 }
 
 drogon::HttpResponsePtr create(Harness& h, const std::string& session, const std::string& body) {

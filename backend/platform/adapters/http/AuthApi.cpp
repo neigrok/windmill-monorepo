@@ -14,6 +14,7 @@
 #include <ctime>
 #include <iterator>
 #include <optional>
+#include <set>
 #include <string_view>
 #include <vector>
 
@@ -460,10 +461,14 @@ void AuthApi::apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback) 
   if (name.size() > 200) name.clear();
 
   const SessionContext ctx = contextOf(req);
-  const std::optional<User> caller = auth_->authenticate(sessionSecretOf(req), ctx);
+  const SentCaller caller = SentCaller::of(req, *auth_, ctx);
+  if (caller.refused()) {
+    callback(refusedCredentials());
+    return;
+  }
 
   apple_->exchangeCode(
-      code, observedHttpCallback(req, [auth = auth_, secure = secureCookies_, scopes = cookieScopes_, name, caller, ctx,
+      code, observedHttpCallback(req, [auth = auth_, secure = secureCookies_, scopes = cookieScopes_, name, caller = caller.user, ctx,
              callback = std::move(callback)](std::optional<ProviderIdentity> identity) mutable {
         respondApple(*auth, secure, scopes, identity, name, caller, ctx, callback);
       }));
@@ -485,9 +490,13 @@ void AuthApi::appleNative(const drogon::HttpRequestPtr& req, HttpCallback&& call
   std::string name = json && (*json)["name"].isString() ? (*json)["name"].asString() : "";
   if (name.size() > 200) name.clear();
   const SessionContext ctx = contextOf(req);
-  const std::optional<User> caller = auth_->authenticate(sessionSecretOf(req), ctx);
+  const SentCaller caller = SentCaller::of(req, *auth_, ctx);
+  if (caller.refused()) {
+    callback(refusedCredentials());
+    return;
+  }
   appleNative_->verify(token, nonce,
-      observedHttpCallback(req, [auth = auth_, secure = secureCookies_, scopes = cookieScopes_, name, caller, ctx,
+      observedHttpCallback(req, [auth = auth_, secure = secureCookies_, scopes = cookieScopes_, name, caller = caller.user, ctx,
        callback = std::move(callback)](std::optional<ProviderIdentity> identity) mutable {
         respondApple(*auth, secure, scopes, identity, name, caller, ctx, callback);
       }));
@@ -507,7 +516,7 @@ void AuthApi::appleCreate(const drogon::HttpRequestPtr& req, HttpCallback&& call
 
 void AuthApi::removeApple(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   if (!allowAppleMutation(req, callback, false)) return;
-  const auto caller = auth_->authenticate(sessionSecretOf(req), contextOf(req));
+  const std::optional<User> caller = SentCaller::of(req, *auth_, contextOf(req)).user;
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to remove Apple"));
     return;
@@ -525,7 +534,7 @@ void AuthApi::removeApple(const drogon::HttpRequestPtr& req, HttpCallback&& call
 // provider doors with it. Refused unless the caller's account is empty.
 void AuthApi::link(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   const SessionContext ctx = contextOf(req);
-  const std::optional<User> caller = auth_->authenticate(sessionSecretOf(req), ctx);
+  const std::optional<User> caller = SentCaller::of(req, *auth_, ctx).user;
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to link this account"));
     return;
@@ -598,7 +607,13 @@ void AuthApi::me(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
 }
 
 void AuthApi::logout(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  auth_->signOut(sessionSecretOf(req));
+  // Each token the request sends proves its session, so every one is ended, whatever shape the credentials take and
+  // whether or not its session is live; a credential that carries no token ends nothing. The cookie goes either way.
+  const sync::SentCredentials sent = sentCredentialsOf(req, *auth_);
+  SentCaller::read(sent, *auth_).leaveOn(req);
+  std::set<std::string> ended;
+  for (const sync::SentCredential& credential : sent.each())
+    if (credential.digest && ended.insert(*credential.digest).second) auth_->signOut(*credential.digest);
 
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
@@ -607,8 +622,7 @@ void AuthApi::logout(const drogon::HttpRequestPtr& req, HttpCallback&& callback)
 }
 
 void AuthApi::patchMe(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  const std::string secret = sessionSecretOf(req);
-  std::optional<User> caller = auth_->authenticate(secret, contextOf(req));
+  const std::optional<User> caller = SentCaller::of(req, *auth_, contextOf(req)).user;
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to edit your profile"));
     return;
@@ -636,17 +650,17 @@ void AuthApi::deleteMe(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
         callback(closureFailure(drogon::k400BadRequest, "refused", "malformed"));
         return;
       }
-      const auto secret = sessionSecretOf(req);
-      const auto caller = auth_->authenticate(secret, contextOf(req));
-      if (!caller) {
+      const SentCaller caller = SentCaller::of(req, *auth_, contextOf(req));
+      if (!caller.user) {
         callback(closureResponse({ClosureOutcome::unauthorized}));
         return;
       }
-      if (caller->id.str() != request->account) {
+      if (caller.user->id.str() != request->account) {
         callback(closureFailure(drogon::k409Conflict, "refused", "account-mismatch"));
         return;
       }
-      const auto result = auth_->closeAccount(caller->id, request->operationId, request->proof, request->requestedAt, secret);
+      const auto result = auth_->closeAccount(caller.user->id, request->operationId, request->proof, request->requestedAt,
+                                              *caller.credential.session());
       auto response = closureResponse(result.receipt);
       if (!result.revokedSessions.empty()) clearSessionCookie(response, secureCookies_, cookieScopes_);
       callback(response);
@@ -660,8 +674,7 @@ void AuthApi::deleteMe(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     return;
   }
   // Soft-close with a 30-day grace; every session and grant is signed out.
-  const std::string secret = sessionSecretOf(req);
-  std::optional<User> caller = auth_->authenticate(secret, contextOf(req));
+  const std::optional<User> caller = SentCaller::of(req, *auth_, contextOf(req)).user;
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to close your account"));
     return;
@@ -704,14 +717,13 @@ void AuthApi::deletionResult(const drogon::HttpRequestPtr& req, HttpCallback&& c
 }
 
 void AuthApi::listSessions(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  const std::string secret = sessionSecretOf(req);
-  std::optional<User> caller = auth_->authenticate(secret, contextOf(req));
-  if (!caller) {
+  const SentCaller caller = SentCaller::of(req, *auth_, contextOf(req));
+  if (!caller.user) {
     callback(error(drogon::k401Unauthorized, "sign in to see your devices"));
     return;
   }
   Json::Value list(Json::arrayValue);
-  for (const SessionView& view : auth_->listSessions(caller->id, secret)) {
+  for (const SessionView& view : auth_->listSessions(caller.user->id, *caller.credential.session())) {
     Json::Value row(Json::objectValue);
     row["id"] = view.id;
     row["userAgent"] = view.userAgent;
@@ -729,13 +741,12 @@ void AuthApi::listSessions(const drogon::HttpRequestPtr& req, HttpCallback&& cal
 void AuthApi::revokeSession(const drogon::HttpRequestPtr& req, HttpCallback&& callback,
                             const std::string& sessionId) {
   // Revoking the current session also clears this cookie.
-  const std::string secret = sessionSecretOf(req);
-  std::optional<User> caller = auth_->authenticate(secret, contextOf(req));
-  if (!caller) {
+  const SentCaller caller = SentCaller::of(req, *auth_, contextOf(req));
+  if (!caller.user) {
     callback(error(drogon::k401Unauthorized, "sign in to revoke a device"));
     return;
   }
-  const AuthService::RevokeOutcome outcome = auth_->revokeSession(caller->id, sessionId, secret);
+  const AuthService::RevokeOutcome outcome = auth_->revokeSession(caller.user->id, sessionId, *caller.credential.session());
   if (outcome == AuthService::RevokeOutcome::notFound) {
     callback(error(drogon::k404NotFound, "no such session"));
     return;
@@ -749,13 +760,12 @@ void AuthApi::revokeSession(const drogon::HttpRequestPtr& req, HttpCallback&& ca
 
 void AuthApi::signOutEverywhere(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   // Every other device; the caller's own session is left alive.
-  const std::string secret = sessionSecretOf(req);
-  std::optional<User> caller = auth_->authenticate(secret, contextOf(req));
-  if (!caller) {
+  const SentCaller caller = SentCaller::of(req, *auth_, contextOf(req));
+  if (!caller.user) {
     callback(error(drogon::k401Unauthorized, "sign in to sign out your other devices"));
     return;
   }
-  auth_->signOutEverywhere(caller->id, secret);
+  auth_->signOutEverywhere(caller.user->id, *caller.credential.session());
 
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);

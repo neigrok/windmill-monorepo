@@ -122,8 +122,17 @@ public struct Dependents: Sendable {
   }
 }
 
+extension Registry {
+  // The command an entry runs of its own, nil for none or a capture command, which is the ordinary deltas' own (§7.3 Undo
+  // of an act, Capture): an entry carrying one folds, retires and empties as an ordinary entry does.
+  public func ownCommand(of entry: OutboxEntry) -> Command? {
+    entry.intent.command.flatMap { command($0.name)?.engine == .capture ? nil : $0 }
+  }
+}
+
 extension OutboxEntry {
-  public var isEmpty: Bool { intent.deltas.isEmpty && intent.command == nil }
+  // No delta and no command of its own: a fold that leaves an entry so ends it.
+  public func isEmpty(in registry: Registry) -> Bool { intent.deltas.isEmpty && registry.ownCommand(of: self) == nil }
 }
 
 // MARK: - Hold, release, undo (§7.3)
@@ -173,6 +182,7 @@ public struct Hold: Sendable {
 // stays within the records whose entries the load read; otherwise it reaches entries the load left unread, and the
 // commit plans again over every entry.
 struct SilentFold {
+  let registry: Registry
   let ending: [(entry: OutboxEntry, event: IntentEvent)]
   let parts: [(entry: OutboxEntry, part: Dependents.Part)]
   let reachesUnreadEntries: Bool
@@ -191,6 +201,7 @@ struct SilentFold {
       dependents.absorb(part, of: entry)
       parts.append((entry, part))
     }
+    self.registry = registry
     self.ending = ending
     self.parts = parts
     reachesUnreadEntries = !replica.holdsEveryEntry && !dependents.staysWithin(replica)
@@ -201,7 +212,7 @@ struct SilentFold {
     for (entry, event) in ending { try replica.move(entry.localId, event) }
     for (entry, part) in parts {
       replica.update(entry: entry.localId) { _ = Dependents.remove(part, from: &$0) }
-      if replica.entry(entry.localId)!.isEmpty { try replica.move(entry.localId, .silentFold) }
+      if replica.entry(entry.localId)!.isEmpty(in: registry) { try replica.move(entry.localId, .silentFold) }
     }
     replica.settleEnded(code: "undone")
   }

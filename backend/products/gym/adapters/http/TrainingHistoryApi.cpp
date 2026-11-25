@@ -49,7 +49,7 @@ Json::Value ownerShare(const LogShare& share, const std::string& baseUrl) {
 }
 
 void TrainingApi::history(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
-  const auto caller = callerOf(req, *auth_);
+  const auto caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
@@ -64,7 +64,7 @@ void TrainingApi::history(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
 }
 
 void TrainingApi::createLogShare(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
-  const auto caller = callerOf(req, *auth_);
+  const auto caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to share your training log"));
     return;
@@ -106,7 +106,7 @@ void TrainingApi::createLogShare(const drogon::HttpRequestPtr& req, HttpCallback
 }
 
 void TrainingApi::listLogShares(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  const auto caller = callerOf(req, *auth_);
+  const auto caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your share links"));
     return;
@@ -120,7 +120,7 @@ void TrainingApi::listLogShares(const drogon::HttpRequestPtr& req, HttpCallback&
 
 void TrainingApi::revokeLogShare(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     const std::string& id) {
-  const auto caller = callerOf(req, *auth_);
+  const auto caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to revoke a share link"));
     return;

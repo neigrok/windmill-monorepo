@@ -26,7 +26,6 @@ void AiAllowanceApi::get(const drogon::HttpRequestPtr& request,
       answer(error(drogon::k401Unauthorized, "Sign in to view your AI allowance.", "unauthenticated"));
       return;
     }
-    request->attributes()->insert(kCallerAttribute, account->id.str());
     if (!entitlements_->aiAllowancesEnabled()) {
       answer(error(drogon::k503ServiceUnavailable, "AI allowances are not enabled.", "ai_allowance_disabled"));
       return;

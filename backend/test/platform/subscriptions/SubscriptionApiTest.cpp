@@ -8,6 +8,7 @@
 #include "test/platform/Fakes.h"
 #include "test/platform/subscriptions/FeedFixture.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <pqxx/pqxx>
 
@@ -247,7 +248,7 @@ struct Door {
     request->setPath("/v1/subscription");
     if (!account.empty()) request->addCookie("wm_session", "s-" + account);
     drogon::HttpResponsePtr answer;
-    api.get(request, [&](const drogon::HttpResponsePtr& response) { answer = response; });
+    api.get(wm::test::DrogonLoopback::received(request), [&](const drogon::HttpResponsePtr& response) { answer = response; });
     return answer;
   }
 
@@ -255,10 +256,11 @@ struct Door {
   // follows the feed, or, `following` false, the one whose follower is off.
   Sent send(const std::string& account, const Json::Value& body, bool following = true) {
     SubscriptionApi& api = following ? followingDoor() : offDoor();
-    auto request = drogon::HttpRequest::newHttpJsonRequest(body);
-    request->setMethod(drogon::Post);
-    request->setPath("/v1/subscription/app-store/claims");
-    if (!account.empty()) request->addCookie("wm_session", "s-" + account);
+    auto built = drogon::HttpRequest::newHttpJsonRequest(body);
+    built->setMethod(drogon::Post);
+    built->setPath("/v1/subscription/app-store/claims");
+    if (!account.empty()) built->addCookie("wm_session", "s-" + account);
+    const drogon::HttpRequestPtr request = wm::test::DrogonLoopback::received(built);
     const WriteRoute route{"/v1/subscription/app-store/claims", "subscription.claim", "platform", "rest", {drogon::Post}};
     auto handler = [&api](const drogon::HttpRequestPtr& incoming, WriteHttpCallback&& reply) {
       api.claimAppStore(incoming, std::move(reply));

@@ -40,10 +40,11 @@ public:
   // The registered client, for the consent screen to show verified name/redirects.
   std::optional<OAuthClient> describeClient(const std::string& clientId);
 
-  // Mints a single-use authorization code bound to the grant; only its digest is stored.
+  // Mints a single-use authorization code bound to the grant and to the session `sessionDigest` keys; only its digest is
+  // stored.
   std::string issueCode(const std::string& clientId, const std::string& redirectUri,
                         const std::string& codeChallenge, const std::string& resource,
-                        const std::string& scope, const UserId& user, const std::string& sessionSecret);
+                        const std::string& scope, const UserId& user, const std::string& sessionDigest);
 
   struct Tokens {
     std::string accessToken;

@@ -14,7 +14,7 @@ ProgramApi::ProgramApi(std::shared_ptr<ProgramRepository> program, std::shared_p
     : program_(std::move(program)), auth_(std::move(auth)) {}
 
 void ProgramApi::listRoutines(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
@@ -27,7 +27,7 @@ void ProgramApi::listRoutines(const drogon::HttpRequestPtr& req, HttpCallback&& 
 
 void ProgramApi::getRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                         const std::string& id) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
@@ -48,7 +48,7 @@ void ProgramApi::getRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb
 
 // One read serves all three questions; a settled proposal stays in the list.
 void ProgramApi::listProposals(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
@@ -65,7 +65,7 @@ void ProgramApi::listProposals(const drogon::HttpRequestPtr& req, HttpCallback&&
 // Absent, another account's and never-existed are one answer.
 void ProgramApi::getProposal(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                          const std::string& id) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;

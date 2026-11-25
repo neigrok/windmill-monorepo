@@ -146,7 +146,7 @@ function foldDependents(replica, ctx, source, origin) {
     dependents.absorbPart(entry, part);
     const scoped = source.predictions || entry.predictions;
     folded.push({ ...removeDependent(entry, part), ...(scoped ? { scope: entry.scope } : {}) });
-    if (isEmpty(entry)) {
+    if (isEmpty(ctx.registry, entry)) {
       entry.orphanOf = origin;
       moveEntry(replica, ctx.ended, entry, 'fold');
     }

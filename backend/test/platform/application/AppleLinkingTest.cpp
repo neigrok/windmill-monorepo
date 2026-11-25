@@ -184,7 +184,7 @@ TEST(apple_takeover_recheck_can_refuse_without_mutation_and_removal_keeps_email_
   CHECK(methods[0].relay);
   CHECK(f.auth->removeApple(mine.id));
   CHECK(f.auth->signInMethods(mine.id).empty());
-  CHECK(f.auth->authenticate("s-mine"));
+  CHECK(f.auth->revalidate(f.auth->digestOf("s-mine")));
 }
 
 TEST(apple_subject_only_attachment_reuses_or_moves_existing_doors_but_cannot_bind_a_new_one) {

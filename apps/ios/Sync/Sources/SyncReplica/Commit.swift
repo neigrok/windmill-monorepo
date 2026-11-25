@@ -274,16 +274,13 @@ public struct CommitPlanner: Sendable {
     return try ScopeView(replica, governing.scope, .stored, registry: registry).record(governing.key)?.lattice.life?.state == .dead
   }
 
-  // Step 4's retire: the held gestures of the scope with no command, whose every delta removes a named record.
-  // A capture command is the ordinary deltas' own, so it does not stop a retire.
+  // Step 4's retire: the held gestures of the scope with no command of their own, whose every delta removes a named
+  // record.
   func retiringEntries(of retire: [RecordRef], in scope: ScopeRef, replica: LoadedReplica) -> [OutboxEntry] {
     guard !retire.isEmpty else { return [] }
     let named = Set(retire.map(\.key))
-    let commandFree = { (entry: OutboxEntry) -> Bool in
-      entry.intent.command.map { (command: Command) -> Bool in self.registry.command(command.name)?.engine == .capture } ?? true
-    }
     let removesNamed = { (entry: OutboxEntry) -> Bool in
-      commandFree(entry) && !entry.intent.deltas.isEmpty
+      self.registry.ownCommand(of: entry) == nil && !entry.intent.deltas.isEmpty
         && entry.intent.deltas.allSatisfy { $0.removes && named.contains($0.key) }
     }
     var gestures: [(id: String, entries: [OutboxEntry])] = []

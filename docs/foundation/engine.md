@@ -1823,7 +1823,8 @@ intent (§7.1 step 7), and the sender numbers ready entries in commit order, pas
 held-back entries (§7.4). An epoch change preserves those positions: old acknowledgements return
 ahead of later dependent edits and deletes, including entries already numbered before the change.
 Before its result, an entry changes only by a fold (§7.3, §7.7 step 3), a
-restamp or a write map (§7.7), or ends before binding by a supersede (§7.1 step 4).
+restamp or a write map (§7.7), or, while held or ready, by the capture command a later act's preimage joins
+to it (§7.3 Undo of an act, Capture), or ends before binding by a supersede (§7.1 step 4).
 
 ### §7.3 Hold, release, undo
 
@@ -1903,14 +1904,19 @@ type UndoRecipe =
   commit order at the capture for an entry already acknowledged, and in the entry's ACK transaction (§7.4)
   for one acknowledged later, while the act's source entry is still in the outbox. A preimage taken before
   the replica held an epoch takes the receipt's. So the Undo of a removal walks from a birth the device made,
-  though the act that made it keeps no journal. An ordinary entry's answer carries no receipt and moves
-  nothing, so a row it wrote breaks the walk (Materialize). A life's preimage also keeps the record as read
-  (`record`: its birth, field registers and texts), which a revival draws. An unset slot takes the target's
+  though the act that made it keeps no journal. An ordinary entry's answer carries no receipt, so the act's
+  transaction gives each entry a journaled preimage read over that is still held or ready and carries no
+  command its scope kind's one `engine: "capture"` command (none, or several, throws malformed): its ACK then
+  carries the receipt the walk steps over, signed in or signed out. An entry already sent keeps its intent
+  (§7.2), and so does one the command would carry past `PUSH_MAX_BYTES` alone (§7.4), since a person's own write
+  always lands: its answer moves nothing, and a row it wrote breaks the walk (Materialize). A life's preimage also keeps
+  the record as read (`record`: its birth, field registers and texts), which a revival draws. An unset slot takes the target's
   `defaultValue`, the product's value equivalent to unset (`null` is a value); without one the act throws
   malformed. A named segment runs as one
   scoped intent: a segment with its own command needs `scopedEffects`, and any other gets its scope kind's
   one `engine: "capture"` command when it writes a delta (none, or several, throws malformed). A capture
-  command does not stop a retire (§7.1 step 4) from matching its removal.
+  command does not stop a retire (§7.1 step 4) from matching its removal, and an entry left with no delta and
+  only a capture command is empty: the fold that left it so ends it (Silent fold, §7.7 step 3).
 - **Record.** The act's transaction writes its `ReversibleAct` (§2.5), `actId` its gesture id: one source
   entry per named segment that left an entry, with its recipes, its preimages and the value the act left in
   each target (`written`). A segment that writes nothing leaves none, and an act left with none records
@@ -2007,7 +2013,9 @@ an accepted version of this epoch, or an absence in that birth (`expected: {kind
 created record is created again (`createRecord`) only while wholly absent. A pending reference binds in its
 entry's ACK transaction to the version that entry wrote: from its receipt, or an ordinary entry's own delta
 stamp, which the restore's condition checks; a text without a receipt binds nothing (`unbound`). The slots
-wait while an entry a reference names is queued; a reference left unbound, or whose entry ended without an
+wait while the replica holds no epoch, in which their references bind, so a Redo asked signed out draws its
+record at once and goes up once the replica holds an epoch: at sign-in, the account's dormant replica's, or
+the first a fresh replica's pull takes (§7.5 step 1); and they wait while an entry a reference names is queued. A reference left unbound, or whose entry ended without an
 ACK, skips its operation `reference-unbound`, never substituting what is visible now. A cancellation of an
 act that ran a product command has no generic Redo: without `inverseSlots` it answers `{kind:
 'unavailable', requestId: null, reason: 'product-redo-required'}`. The receipt, and the acts whose sources
@@ -2065,12 +2073,17 @@ loop while state = bound ∧ ¬authPaused ∧ online:
 backoff: sleep random(0, min(ceiling, 1 s · 2^k)), then k += 1; ceiling = liveHint ? 30 s : 300 s; k resets
          on a response with results, unless one of them is `clock-skew`
          (liveHint: computed now by the product's view rule, Appendix A)
-kick (wake now, k := 0): commit, release, undo, connectivity change, foreground, auth refresh; a kick
+kick (wake now, k := 0): commit, release, undo, connectivity change, foreground, auth refresh, a
+         pull's epoch the replica did not hold (§7.5 step 1); a kick
          never cuts short, or resets k during, the backoff after a clock-skew recovery
 server-requested wait: a 503's or a retry's retryAfterMs, from the response's receipt; no push
          starts before it ends: a kick wakes the sender no earlier, and a leave (§7.3) attempts no
          push during it
 ```
+
+A round with nothing to push, no sent entry and no ready entry the sender would number before a held-back
+command entry or an inverse slot that cannot bind yet, asks the server nothing, not even a hello, and waits
+for a kick: a held entry's release, a commit, an undo, a pull's new epoch and a sign-in each are one.
 
 **What holds work back.** The Swift and Kotlin engines publish it as `SyncStatus`: `online`,
 `authPaused`, `upgradeRequired` and `failedPushes`, the records of the unsent entries of each scope
@@ -2187,6 +2200,10 @@ engine stops on any `426`.
    2. Every cursor becomes `null`, and every staging is dropped.
    3. Every `acked` entry with `resultEpoch ≠ epoch` returns to `ready` at its commit position.
    4. Re-identify (§7.11).
+
+   A pull that gives the replica an epoch it did not hold, its first or a changed one, kicks the sender
+   (§7.4), so an inverse slot that waited for an epoch (§7.3) and an entry the change returned to `ready`
+   go without another trigger.
 
    The epoch change is never split (§2.5). Split, a process death between its parts could leave
    acked entries of the old epoch that no rule returns to ready or resolves (INV-3), or ready entries

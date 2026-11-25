@@ -6,6 +6,7 @@
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <chrono>
 #include <filesystem>
@@ -87,7 +88,7 @@ drogon::HttpRequestPtr getReq(const std::string& session) {
   auto req = drogon::HttpRequest::newHttpRequest();
   req->setMethod(drogon::Get);
   if (!session.empty()) req->addCookie("wm_session", session);
-  return req;
+  return wm::test::DrogonLoopback::received(req);
 }
 
 drogon::HttpResponsePtr sendPage(SharePageApi& api, const std::string& session, const std::string& id) {

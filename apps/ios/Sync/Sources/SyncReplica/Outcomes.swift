@@ -476,7 +476,7 @@ public struct PushPlanner: Sendable {
       replica.update(entry: entry.localId) { removed = Dependents.remove(part, from: &$0) }
       if crossing { removed.scope = entry.scope }
       folded.append(removed)
-      if replica.entry(entry.localId)!.isEmpty {
+      if replica.entry(entry.localId)!.isEmpty(in: registry) {
         replica.update(entry: entry.localId) { $0.orphanOf = origin }
         try replica.move(entry.localId, .fold)
       }

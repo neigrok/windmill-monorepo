@@ -63,7 +63,7 @@ TrainingApi::TrainingApi(std::shared_ptr<TrainingService> training, std::shared_
 // `GET /v1/gym/sessions/{id}` does — 201 when it landed now, 200 when this exact import landed
 // before. A refusal naming one set says which as `sets[i] (id)`.
 void TrainingApi::importSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
@@ -139,7 +139,7 @@ void TrainingApi::importSession(const drogon::HttpRequestPtr& req, HttpCallback&
 }
 
 void TrainingApi::listSessions(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
@@ -184,7 +184,7 @@ void TrainingApi::listSessions(const drogon::HttpRequestPtr& req, HttpCallback&&
 
 void TrainingApi::getSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                         const std::string& id) try {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
@@ -218,7 +218,7 @@ void TrainingApi::getSession(const drogon::HttpRequestPtr& req, HttpCallback&& c
 
 void TrainingApi::reviewSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                            const std::string& id) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
@@ -238,7 +238,7 @@ void TrainingApi::reviewSession(const drogon::HttpRequestPtr& req, HttpCallback&
 //
 // A first-ever movement answers 200 with the movement echoed back and nothing else.
 void TrainingApi::lastTime(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
@@ -258,7 +258,7 @@ void TrainingApi::lastTime(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
 
 // A movement absent here has never been logged.
 void TrainingApi::lastSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
@@ -269,7 +269,7 @@ void TrainingApi::lastSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
 }
 
 void TrainingApi::stats(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
@@ -287,7 +287,7 @@ void TrainingApi::stats(const drogon::HttpRequestPtr& req, HttpCallback&& cb) tr
 // always carries the expiry of the link it hands over.
 void TrainingApi::shareSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                           const std::string& id) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
@@ -307,7 +307,7 @@ void TrainingApi::shareSession(const drogon::HttpRequestPtr& req, HttpCallback&&
 // The row is the capability, so revoking deletes it. Nothing to revoke gets the absent-session 404.
 void TrainingApi::revokeShare(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                          const std::string& id) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
