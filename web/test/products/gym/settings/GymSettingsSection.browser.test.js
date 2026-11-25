@@ -12,7 +12,7 @@ import { Id } from '../../../../src/platform/domain-kit/entities.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
 import { Exercise } from '../../../../src/products/gym/domain/catalogue.js';
 import { GymRefusals } from '../../../../src/products/gym/domain/gymRules.js';
-import { Preferences, SaveRestSettings, restSettings } from '../../../../src/products/gym/domain/preferences.js';
+import { ChangePreferences, Preferences, SaveRestSettings, restSettings } from '../../../../src/products/gym/domain/preferences.js';
 import { Routine, RoutineEntry, RoutineValue } from '../../../../src/products/gym/domain/routines.js';
 import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
 import { Session } from '../../../../src/products/gym/domain/training.js';
@@ -37,6 +37,7 @@ import { Shell } from '/src/shell/chrome/Shell.jsx';
 import { SettingsPage } from '/src/shell/settings/SettingsPage.jsx';
 import { syncSession } from '/src/platform/sync/session.js';
 import { GymSettingsSection } from '/src/products/gym/settings/GymSettingsSection.jsx';
+import { weightUnit } from '/src/products/gym/units.js';
 import '/src/styles/fonts.js';
 import '/src/styles/global.css';
 
@@ -52,6 +53,9 @@ window.replica = () => syncSession.engine?.getSnapshot() ?? null;
 window.outbox = () => syncSession.engine.device.activeReplica.outbox.length;
 window.pulled = () => syncSession.engine.observe('self/gym').getSnapshot().firstPullComplete;
 window.prefs = () => syncSession.engine.observe('self/gym').getSnapshot().drawn.find((record) => record.t === 'prefs')?.f ?? null;
+window.unit = () => weightUnit();
+// This tab's engine writes break from here on, as a bug in one would.
+window.breakCommits = () => { syncSession.engine.commit = async () => { throw new Error('the write broke'); }; };
 window.entryReady = true;
 `;
 
@@ -104,8 +108,9 @@ async function account(t, { open = false } = {}) {
 }
 
 // A browser of its own whose `/v1` the reference server answers over `phone`'s state, signed in as A or not; what the server
-// does not serve is held, as no answer at all.
-async function visit(t, phone, { signedIn, width = 1440, height = 1000 }) {
+// does not serve is held, as no answer at all. Its pulls wait for `pullsWaitFor` where it is given, and the visit then ends
+// as the replica is bound, before the section can draw.
+async function visit(t, phone, { signedIn, width = 1440, height = 1000, pullsWaitFor = null }) {
   await ready;
   const context = await browser.newContext({ viewport: { width, height }, colorScheme: 'dark' });
   context.setDefaultTimeout(20000);
@@ -122,6 +127,7 @@ async function visit(t, phone, { signedIn, width = 1440, height = 1000 }) {
       return json(answer.status, answer.body);
     }
     if (path === '/v1/sync/push' || path === '/v1/sync/pull') {
+      if (path.endsWith('pull')) await pullsWaitFor;
       const out = (path.endsWith('push') ? push : pull)({ state: phone.world.server, registry, product: phone.world.product, account,
         request: request.postDataJSON(), serverNow: Date.now() });
       phone.world.server = out.state;
@@ -138,6 +144,7 @@ async function visit(t, phone, { signedIn, width = 1440, height = 1000 }) {
   await page.waitForFunction(() => window.entryReady);
   await page.evaluate((seat) => window.mount(seat), signedIn);
   await page.waitForFunction((state) => window.replica()?.state === state, signedIn ? 'bound' : 'anon');
+  if (pullsWaitFor) return page;
   if (signedIn) await page.waitForFunction(() => window.pulled());
   await page.getByText('Rest sound', { exact: true }).waitFor();
   return page;
@@ -214,6 +221,35 @@ test('Chromium: while a workout is open on the phone, Default rest names it, and
   await says(page, 'Default rest', 'Saved.');
   await says(page, 'Default rest', 'For movements on Default · Upper A follows it');
   assert.deepEqual(await phoneReads(page, phone), { seconds: 90, sound: true });
+});
+
+test('Chromium: signed in, the section draws nothing while the first pull runs, then the account’s lb and 2:00', async (t) => {
+  const phone = await account(t);
+  assert.equal((await phone.runner.run(ChangePreferences({ units: 'lb' }))).kind, 'committed');
+  await phone.sync();
+  let release;
+  const page = await visit(t, phone, { signedIn: true, pullsWaitFor: new Promise((resolve) => { release = resolve; }) });
+  await page.getByRole('heading', { name: 'Your journal', exact: true }).waitFor();
+  await page.waitForTimeout(1000);
+  assert.deepEqual([await page.evaluate(() => window.pulled()), await page.getByRole('heading', { name: 'Your training log', exact: true }).count(),
+    await page.evaluate(() => window.unit())], [false, 0, 'kg']);
+  release();
+  await page.getByText('Rest sound', { exact: true }).waitFor();
+  assert.deepEqual(await rows(page), ['Units kg lb A backfill, a correction, a routine target — typed in kg.', 'Default rest For movements on Default 2:00',
+    'Rest sound A tone and a buzz when rest is up', 'Notes what you write for Coach ›']);
+  assert.deepEqual([await page.getByRole('button', { name: 'lb', exact: true }).getAttribute('aria-pressed'), await page.evaluate(() => window.unit())],
+    ['true', 'lb']);
+});
+
+test('Chromium: a rest save that breaks is told failed and reported as gym-rest-save, its value never', async (t) => {
+  const page = await visit(t, await account(t), { signedIn: true });
+  await page.evaluate(() => window.breakCommits());
+  await page.getByRole('combobox', { name: 'Default rest', exact: true }).click();
+  await page.getByRole('option', { name: '1:30', exact: true }).click();
+  await page.getByText('That setting didn’t save', { exact: false }).waitFor();
+  assert.equal(await page.getByRole('combobox', { name: 'Default rest', exact: true }).innerText(), '2:00');
+  assert.deepEqual([await events(page), await page.evaluate(() => window.issues ?? [])],
+    [[{ setting: 'rest_default', outcome: 'failed' }], ['gym-rest-save']]);
 });
 
 test('Chromium: signed out, the section runs on the browser’s own copy, Off and sound on, with no Notes', async (t) => {
