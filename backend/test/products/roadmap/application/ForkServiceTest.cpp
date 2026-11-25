@@ -30,7 +30,7 @@ struct Harness {
   ForkService service{rooms, trees, tokens, clock};
 
   void seedSource(const char* id, const char* title) {
-    seedSource(id, title, uid("owner"), Visibility::unlisted);
+    seedSource(id, title, uid("owner"), Visibility::public_);
   }
   void seedSource(const char* id, const char* title, const UserId& owner, Visibility visibility) {
     TreeData data;
@@ -122,7 +122,7 @@ TEST(fork_clears_the_source_status_seeds) {
 
 TEST(a_fork_of_someone_elses_tree_opens_nothing_and_a_fork_of_your_own_keeps_every_pointer) {
   Harness h;
-  h.seedSource("t_sams", "Learn to sail", uid("sam"), Visibility::unlisted);
+  h.seedSource("t_sams", "Learn to sail", uid("sam"), Visibility::public_);
   h.seedSource("t_eves", "Eve's knots", uid("eve"), Visibility::private_);
   GraphState pointers;
   for (const auto& [step, tree] : std::vector<std::pair<const char*, const char*>>{
@@ -257,9 +257,9 @@ TEST(fork_of_your_own_private_source_succeeds) {
   CHECK(*h.trees.byId["t_d1"].owner == uid("me"));
 }
 
-TEST(fork_of_an_unlisted_source_by_a_stranger_succeeds) {
+TEST(fork_of_a_public_source_by_a_stranger_succeeds) {
   Harness h;
-  h.seedSource("t_shared", "A shared plan", uid("owner"), Visibility::unlisted);
+  h.seedSource("t_shared", "A shared plan", uid("owner"), Visibility::public_);
 
   ForkService::Result result = h.service.fork(TreeId{"t_shared"}, "", "", uid("stranger"), std::nullopt);
   CHECK(result.outcome == ForkService::Outcome::forked);
@@ -330,7 +330,7 @@ TEST(the_signup_seam_writes_1_step_not_1_steps) {
   data.nodes = {root};
   GraphState state = LooseGraph(data, Hlc{1, 0, "seed"}).exportState();
   h.trees.byId["t_one"] = StoredTree{state, LegendState{}, {"Plant one seed", {}}, 0, uid("owner"),
-                                     Visibility::unlisted};
+                                     Visibility::public_};
   ForkSignup signup{h.service};
 
   std::optional<ForkDescription> described = signup.describe("t_one");

@@ -80,9 +80,8 @@ std::optional<std::string> staleExpectedSeq(const Json::Value& args, const TreeR
 // Every pointer a call sends a step that owns no subtree must be valid (OpenedTrees::pointsAt): a standing root of the
 // caller's, asked of the registry once for the whole call. A pointer sent a step that owns a subtree, present or deleted,
 // is judged by the step's register alone (refusedPointersOf), whatever it names, so it never refuses the rest of the call.
-// One sentence serves a tree that is not there, one whose branch is hidden and one that is someone else's: a tree id is
-// the read capability of an unlisted tree, so telling them apart would say which ids exist. A subtree of the caller's that
-// stands is told as one, since they may read it. The refusal carries its own outcome code, so a write line tells a pointer
+// One sentence serves a tree that is not there, one whose branch is hidden and one that is someone else's: telling them
+// apart would say which ids exist. A subtree of the caller's that stands is told as one, since they may read it. The refusal carries its own outcome code, so a write line tells a pointer
 // at a tree that is not the caller's from a mistyped argument.
 std::optional<ToolResult> checkPointers(TreeRegistry& trees, const UserId& caller, const TreeRoom& room,
                                         const std::vector<SentPointer>& sent) {

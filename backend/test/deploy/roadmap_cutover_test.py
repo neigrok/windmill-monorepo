@@ -324,8 +324,7 @@ class WorkflowShapeTest(unittest.TestCase):
         guard = workflow()["jobs"]["guard"]["steps"][1]["run"]
         workflows = sorted(path.name for path in (REPOSITORY / ".github/workflows").glob("*.yml") if "deploy-vps" in path.read_text())
         self.assertEqual(workflows, ["deploy.yml", "gym-backup.yml", "ops-roadmap-copy.yml", "ops-roadmap-restore.yml",
-                                     "ops-roadmaps-to-private.yml", "ops-subtree-inventory.yml", "roadmap-cutover.yml",
-                                     "sync-digest-resum.yml", "web.yml"])
+                                     "ops-subtree-inventory.yml", "roadmap-cutover.yml", "sync-digest-resum.yml", "web.yml"])
         statuses = ["queued", "in_progress", "waiting", "requested", "pending"]
         for busy, status, outcome in ((None, None, (0, "")), ("roadmap-cutover.yml", "queued",
                                       (1, "Not now: roadmap-cutover.yml has a run queued. Dispatch the cutover again once it has finished.\n"))):

@@ -106,7 +106,7 @@ bool has(std::string_view body, std::string_view needle) {
 // ---- renderShell: the pure templating boundary -------------------------------------------
 
 TEST(render_shell_injects_the_trees_own_meta_and_keeps_the_sentinels) {
-  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "My Tree", 3, Visibility::unlisted, "t_abc", ForkLineage{}, false);
+  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "My Tree", 3, Visibility::private_, "t_abc", ForkLineage{}, false);
 
   CHECK(has(html, "<!-- meta:unfurl:start -->"));
   CHECK(has(html, "<!-- meta:unfurl:end -->"));
@@ -117,7 +117,7 @@ TEST(render_shell_injects_the_trees_own_meta_and_keeps_the_sentinels) {
   CHECK(has(html, "content=\"https://share.example/og/t_abc.png\""));  // per-tree og:image + twitter:image
   CHECK_FALSE(has(html, "og-image.png"));
   CHECK_FALSE(has(html, "og:video"));                       // no uploaded loop → no video tag, only the poster
-  CHECK(has(html, "content=\"noindex\""));                  // unlisted is not indexable
+  CHECK(has(html, "content=\"noindex\""));                  // private is not indexable
   CHECK(has(html, "content=\"summary_large_image\""));      // large card preserved
   CHECK_FALSE(has(html, "Windmill root"));
   CHECK(has(html, "/favicon.ico"));
@@ -125,7 +125,7 @@ TEST(render_shell_injects_the_trees_own_meta_and_keeps_the_sentinels) {
 }
 
 TEST(render_shell_emits_the_video_tags_alongside_the_poster_when_a_loop_exists) {
-  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "My Tree", 3, Visibility::unlisted, "t_abc", ForkLineage{}, true);
+  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "My Tree", 3, Visibility::public_, "t_abc", ForkLineage{}, true);
 
   CHECK(has(html, "content=\"https://share.example/og/t_abc.png\""));
   CHECK(has(html, "<meta property=\"og:video\" content=\"https://share.example/v1/trees/t_abc/og-video\" />"));
@@ -179,15 +179,15 @@ TEST(render_shell_names_a_public_source_and_counts_forks) {
   lineage.isFork = true;
   lineage.sourceTitle = "Learn to sail";
   lineage.forkCount = 12;
-  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "My voyage", 5, Visibility::unlisted, "t_x", lineage, false);
+  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "My voyage", 5, Visibility::public_, "t_x", lineage, false);
   CHECK(has(html, "A fork of \xE2\x80\x9CLearn to sail\xE2\x80\x9D \xE2\x80\x94 5 steps. Forked 12 times."));
 }
 
 TEST(render_shell_keeps_an_unnamed_source_anonymous_and_singularizes_one_fork) {
   ForkLineage lineage;
-  lineage.isFork = true;  // sourceTitle empty — the source was unlisted/private, never revealed
+  lineage.isFork = true;  // sourceTitle empty — the source was private, never revealed
   lineage.forkCount = 1;
-  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "Mine", 3, Visibility::unlisted, "t_x", lineage, false);
+  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "Mine", 3, Visibility::public_, "t_x", lineage, false);
   CHECK(has(html, "A forked Windmill skill tree \xE2\x80\x94 3 steps. Forked 1 time."));
   CHECK_FALSE(has(html, "A fork of"));  // no source named
 }
@@ -196,19 +196,19 @@ TEST(render_shell_escapes_a_forked_source_title) {
   ForkLineage lineage;
   lineage.isFork = true;
   lineage.sourceTitle = "<b>x</b>";
-  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "Mine", 2, Visibility::unlisted, "t_x", lineage, false);
+  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "Mine", 2, Visibility::public_, "t_x", lineage, false);
   CHECK(has(html, "&lt;b&gt;x&lt;/b&gt;"));
   CHECK_FALSE(has(html, "<b>x</b>"));
 }
 
 TEST(render_shell_html_escapes_the_title) {
-  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "<script>alert(1)</script>&\"x", 2, Visibility::unlisted, "t_x", ForkLineage{}, false);
+  std::string html = SharePageApi::renderShell(SHELL, "https://share.example", "<script>alert(1)</script>&\"x", 2, Visibility::public_, "t_x", ForkLineage{}, false);
   CHECK_FALSE(has(html, "<script>alert(1)"));
   CHECK(has(html, "&lt;script&gt;alert(1)&lt;/script&gt;&amp;&quot;x"));
 }
 
 TEST(render_shell_falls_back_to_untitled_and_returns_a_fenceless_shell_unchanged) {
-  std::string named = SharePageApi::renderShell(SHELL, "https://share.example", "", 2, Visibility::unlisted, "t_x", ForkLineage{}, false);
+  std::string named = SharePageApi::renderShell(SHELL, "https://share.example", "", 2, Visibility::public_, "t_x", ForkLineage{}, false);
   CHECK(has(named, "<title>Untitled tree \xE2\x80\x94 Windmill</title>"));
 
   const std::string fenceless = "<html><head><title>No fence</title></head></html>";
@@ -217,9 +217,9 @@ TEST(render_shell_falls_back_to_untitled_and_returns_a_fenceless_shell_unchanged
 
 // ---- page(): read gating + response shape ------------------------------------------------
 
-TEST(page_serves_an_unlisted_tree_with_its_meta_and_cache_headers) {
+TEST(page_serves_a_public_tree_with_its_meta_and_cache_headers) {
   Harness h;
-  h.seed("t_shared", "Shared plan", UserId{"owner"}, Visibility::unlisted, 2);
+  h.seed("t_shared", "Shared plan", UserId{"owner"}, Visibility::public_, 2);
   SharePageApi api = h.make(makeWebRoot(SHELL));
 
   drogon::HttpResponsePtr resp = sendPage(api, "", "t_shared");
@@ -235,9 +235,9 @@ TEST(page_serves_an_unlisted_tree_with_its_meta_and_cache_headers) {
 TEST(page_of_a_fork_names_its_public_source_and_counts_its_own_forks) {
   Harness h;
   h.seed("t_src", "Learn to sail", UserId{"owner"}, Visibility::public_, 4);   // the public origin
-  h.seed("t_fork", "My voyage", UserId{"me"}, Visibility::unlisted, 5);        // an unlisted fork of it
+  h.seed("t_fork", "My voyage", UserId{"me"}, Visibility::public_, 5);         // a public fork of it
   h.seedFork("t_fork", "t_src");
-  h.seed("t_grandchild", "Their voyage", UserId{"other"}, Visibility::unlisted, 3);
+  h.seed("t_grandchild", "Their voyage", UserId{"other"}, Visibility::public_, 3);
   h.seedFork("t_grandchild", "t_fork");                                        // one fork OF the fork
   SharePageApi api = h.make(makeWebRoot(SHELL));
 
@@ -245,16 +245,16 @@ TEST(page_of_a_fork_names_its_public_source_and_counts_its_own_forks) {
   CHECK(has(body, "A fork of \xE2\x80\x9CLearn to sail\xE2\x80\x9D \xE2\x80\x94 5 steps. Forked 1 time."));
 }
 
-TEST(page_of_a_fork_hides_an_unlisted_source_title) {
+TEST(page_of_a_fork_hides_a_private_source_title) {
   Harness h;
-  h.seed("t_src", "Someone's private-ish plan", UserId{"owner"}, Visibility::unlisted, 4);  // not public
-  h.seed("t_fork", "My copy", UserId{"me"}, Visibility::unlisted, 2);
+  h.seed("t_src", "Someone's private plan", UserId{"owner"}, Visibility::private_, 4);  // not public
+  h.seed("t_fork", "My copy", UserId{"me"}, Visibility::public_, 2);
   h.seedFork("t_fork", "t_src");
   SharePageApi api = h.make(makeWebRoot(SHELL));
 
   std::string body{sendPage(api, "", "t_fork")->getBody()};
   CHECK(has(body, "A forked Windmill skill tree \xE2\x80\x94 2 steps."));
-  CHECK_FALSE(has(body, "Someone's private-ish plan"));
+  CHECK_FALSE(has(body, "Someone's private plan"));
 }
 
 TEST(page_private_denial_is_byte_identical_to_absent_and_to_the_raw_shell) {
@@ -290,8 +290,8 @@ TEST(page_owner_sees_their_private_trees_meta_but_it_stays_noindex) {
 
 TEST(page_advertises_og_video_only_when_the_tree_carries_an_uploaded_loop) {
   Harness h;
-  h.seed("t_withvideo", "Has a loop", UserId{"owner"}, Visibility::unlisted, 2);
-  h.seed("t_novideo", "No loop", UserId{"owner"}, Visibility::unlisted, 2);
+  h.seed("t_withvideo", "Has a loop", UserId{"owner"}, Visibility::public_, 2);
+  h.seed("t_novideo", "No loop", UserId{"owner"}, Visibility::public_, 2);
   h.videos->byId["t_withvideo"] = StoredVideo{"mp4-bytes", "video/mp4"};
   SharePageApi api = h.make(makeWebRoot(SHELL));
 
@@ -306,7 +306,7 @@ TEST(page_advertises_og_video_only_when_the_tree_carries_an_uploaded_loop) {
 
 TEST(page_falls_back_to_a_hash_redirect_when_the_web_root_is_missing) {
   Harness h;
-  h.seed("t_shared", "Shared", UserId{"owner"}, Visibility::unlisted, 2);
+  h.seed("t_shared", "Shared", UserId{"owner"}, Visibility::public_, 2);
   SharePageApi api = h.make("");
 
   drogon::HttpResponsePtr resp = sendPage(api, "", "t_shared");

@@ -56,7 +56,6 @@ check the Web Deploy run of the last merge that touched the web and re-run it if
 | Promote the candidate files, prove Caddy loaded them, verify both ledger databases and start their services (runs on the VPS) | `deploy/deploy-production.sh` |
 | Disk report, and by choice a clean of unused images, build cache and the journal beyond 200 MB (by hand) | `/.github/workflows/ops-disk.yml` |
 | Count how the roadmap's pointers between trees meet one owned subtree per step, its roadmaps by owner and visibility and its pointers alive with no `opens` (by hand, never during a deploy; reads only) | `/.github/workflows/ops-subtree-inventory.yml` |
-| Move every unlisted roadmap of people's to private through the sync engine, a dry run unless `write` is set (by hand, from `main`, never during a deploy) | `/.github/workflows/ops-roadmaps-to-private.yml` |
 | Copy roadmap's rows for a rehearsal of its cutover, encrypted to the owner (by hand, with the owner's approval, never during a deploy; reads only), and its test | `/.github/workflows/ops-roadmap-copy.yml`, `test/deploy/ops_roadmap_copy_test.py` |
 | Roadmap's cutover onto the sync engine (by hand; it moved production in run 44846026848 and refuses there now), its host stages and their test, which also drives it against a local stack | `/.github/workflows/roadmap-cutover.yml`, `deploy/roadmap-cutover.sh`, `test/deploy/roadmap_cutover_test.py` |
 | Pause the site or lift the pause (by hand) | `/.github/workflows/ops-maintenance.yml` |
@@ -373,7 +372,7 @@ the grace that container was created with, so a changed value holds from the dep
 
 ## Coordinated client cutoff
 
-The repository registry is schema 14 / minimum 11. Every schema in that interval carries explicit gym
+The repository registry is schema 15 / minimum 15. Every schema in that interval carries explicit gym
 `other`, finite normalized loads without a fixed kg cap, nullable derived metrics and sets without a kind. Production hello advertises
 schema 13 / minimum 11, verified on 2026-11-21 by the start stage of
 [Roadmap cutover 44846026848](https://github.com/neigrok/windmill-monorepo/actions/runs/44846026848).
@@ -387,6 +386,12 @@ once the live hello admits it. The last complete promotion is
 The run before it, 41319412052, failed mid-rsync with no space left on the VPS; the host's free disk
 is not monitored. Queued client delivery and final native
 availability remain unverified. The deployment guard requires exact acknowledgement for any further minimum change.
+
+Schema 15 narrows roadmap's `meta.visibility` and `meta.reach` to private and public, and `reach` opens a roadmap at
+public alone (engine.md §2.4, A.1): Share has two states, and no roadmap holds `unlisted`. A rule clients enforce
+changes, so the minimum rises to 15 with it. A server at 15 answers a client of 14 or older `426 upgrade-required` at
+hello, push, pull and the live upgrade; Web Deploy holds a schema 15 web until the live hello advertises 15; and Deploy
+to VPS takes the raise only with its exact acknowledgement (step 4 below).
 
 Schema 14 adds `values` to a restore that brings a keyed record back alive (engine.md §6.4) and keeps minimum 11, so
 the promotion rule below admits a schema 14 web against a schema 13 server; a client sends the values only once a
@@ -784,53 +789,6 @@ docker compose exec -T server windmill_subtree_inventory
 
 Exit 0 means the counts were printed, 2 means `DATABASE_URL` is unset, and 1 means the read failed or
 stdout did not take the counts.
-
-## Move unlisted roadmaps to private
-
-Share has two states, public and private, so every unlisted roadmap of people's becomes private
-([SPEC.md](../SPEC.md#unlisted-roadmaps-to-private)): each unlisted root takes `visibility` private by
-its owner's server-origin write through the sync engine, its subtrees' reach follows, and every replica
-pulls the change. A house account's roadmap is refused and never written.
-
-Dispatch **Ops · roadmaps to private** (`ops-roadmaps-to-private.yml`) from `main`, first with `write`
-unset: that run is a dry run, which counts what it would move and writes nothing. Open its block, and
-dispatch it again with `write` set to move them. A root whose scope another write held past the
-engine's lock timeout counts `busy`, and a run again moves it; once none is left, a run finds nothing
-to move and writes nothing. Its first job refuses a run from any other branch, and while any workflow
-whose concurrency takes the `deploy-vps` lock has a run queued or running, as the copy's does; only
-then does the move job queue for the lock, so no deploy recreates the server container under the tool.
-It runs `windmill_roadmaps_to_private`, with `--write` when `write` is set, inside the live `server`
-container, which already holds `DATABASE_URL` and `ROADMAP_ENGINE_ENABLED`; no credential leaves the
-host.
-
-Everything the tool says is private: its counts and its write lines, one per roadmap it writes, say how
-someone shares their roadmaps where few people hold any, and this repository's logs are public. So the
-host merges the tool's stderr into its stdout, the runner seals the whole stream to
-`.github/ops/inventory-recipient.pem` as it arrives, and the job log shows the sealed block alone. The
-block is printed whether the tool finished or stopped, since what it moved before a stop stays private;
-the job then fails with the tool's exit named. If the stream cannot be sealed, nothing is printed and
-the job fails, but what the tool moved stays moved, and a dry run counts what is left. Against an image
-that does not carry the tool, it says so.
-
-To read it, save the block, from `-----BEGIN PKCS7-----` to `-----END PKCS7-----`, as `moved.pem`, and
-open it with the private key that belongs to the certificate:
-
-```sh
-openssl smime -decrypt -inform PEM -inkey <key> -in moved.pem
-```
-
-It holds the tool's JSON object of counts ([SPEC.md](../SPEC.md#unlisted-roadmaps-to-private)) and its
-`write` lines: one `roadmap.unlisted.move` per root a write run acts on, `moved`, `unchanged`, `busy`
-or refused, and the run's `roadmap.unlisted.to_private`. From `~/windmill` on the host, the tool prints
-them in the clear:
-
-```sh
-docker compose exec -T server windmill_roadmaps_to_private            # dry run
-docker compose exec -T server windmill_roadmaps_to_private --write
-```
-
-Exit 0 means the run reached its end and printed its counts, 2 means its usage was wrong or
-`DATABASE_URL` is unset, and 1 means a read or a write failed or stdout did not take the counts.
 
 ## Copy production's roadmaps for a rehearsal
 

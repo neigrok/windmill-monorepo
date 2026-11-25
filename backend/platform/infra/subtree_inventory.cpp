@@ -71,7 +71,7 @@ Json::Value countsOf(const wm::SubtreeInventory& counted) {
 // visibility. A roadmap with no meta, or a meta that holds none, is unset.
 constexpr const char* kRoadmapsByVisibility = R"(
 select account, place,
-       case when held is null then 'unset' when held in ('private', 'unlisted', 'public') then held else 'other' end,
+       case when held is null then 'unset' when held in ('private', 'public') then held else 'other' end,
        count(*)
 from (select case when t.scope_key = $1 then 'house' else 'people' end as account,
              case when jsonb_typeof(t.parent) = 'object' then 'subtrees' else 'roots' end as place,
@@ -97,7 +97,7 @@ Json::Value engineCountsOf(wm::PgPool& pool) {
   Json::Value out(Json::objectValue);
   for (const char* account : {"house", "people"})
     for (const char* place : {"roots", "subtrees"})
-      for (const char* held : {"private", "unlisted", "public", "unset", "other"})
+      for (const char* held : {"private", "public", "unset", "other"})
         out["visibility"][account][place][held] = Json::UInt64(0);
   for (const char* door : {"restore", "clientPut"}) out["pointersWithoutOpens"][door] = Json::UInt64(0);
   wm::PgLease conn{pool};

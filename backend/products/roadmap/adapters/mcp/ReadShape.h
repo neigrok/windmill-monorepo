@@ -24,8 +24,8 @@ namespace wm {
 // description's first kSummaryChars code points, cut at a word and marked with an ellipsis when
 // cut. `kind` is the legend kind whose hue the node wears, omitted when no kind wears it. `opens` is
 // the tree the node opens, as {treeId, title, state}: answered only to a caller who can write the tree
-// being read, and only while the opened tree stands and is theirs — a tree id is the read capability
-// of an unlisted tree, and a title is its owner's words. `subtree` is the subtree a step owns, as
+// being read, and only while the opened tree stands and is theirs — the opened tree may be private,
+// and a title is its owner's words. `subtree` is the subtree a step owns, as
 // {id, done, total, state} off the owner's marks, answered to anyone who may read the tree, whose subtrees are
 // as readable as it is. `url` is where the node's step opens on the web for the caller (domain/WebAddress.h).
 enum class NodeField { id, label, icon, color, kind, order, prerequisites, status, seedStatus,

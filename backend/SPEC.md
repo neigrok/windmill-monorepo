@@ -28,7 +28,7 @@ rejected for structure. Validity is a read model, not a gate.
   must be valid (Legacy pointers), judged on one read for the whole call
   (`TreeRepository::pointerTargets`), or the call is refused with nothing written (Legacy pointers).
   That read is made under the strand of the tree being written, not the target's, so an edit racing the
-  target's removal can still set a pointer at it, which then points nowhere. A node may open the tree it is in. A tree id is the read capability of an unlisted tree, so only a caller who
+  target's removal can still set a pointer at it, which then points nowhere. A node may open the tree it is in. The tree a node opens may be private, so only a caller who
   can write the tree receives the pointer: `readerView` (`domain/Subgraph.h`) is what every other
   reader gets from `GET /v1/trees/{id}` (`data` and `state`), the subscribe delta and a live frame —
   a document node without `opens`, a
@@ -820,16 +820,16 @@ Rules:
 
 ## Authorization
 
-Read: `canRead(caller, owner, visibility)` — `private` is owner-only; `unlisted` and `public` are
-readable by anyone holding the id. `parseVisibility` fails closed to private. New trees are
-private.
+Read: `canRead(caller, owner, visibility)` — `private` is owner-only; `public` is readable by anyone
+holding the id. `parseVisibility` fails closed: any text but `public`, `unlisted` among them, reads as
+private. New trees are private.
 
 Write: `canWrite(caller, owner)` — a tree is its owner's to change and nobody else's. An unowned
 tree is readable by the world and writable by no one. `WriteRefusal ∈ {notYours, nobodysTree}`;
 clients branch on the code, humans read the sentence.
 
-`unlisted` vs `public` is consent, not permission: `public` admits the tree to the gallery and
-lets its share page be indexed.
+`public` is consent as well as permission: it admits the tree to the gallery and lets its share page
+be indexed.
 
 A subtree's access is its root's (Model, Subtrees), read at every access: the root's owner and
 visibility, none at all while its root is deleted, and none while an owning step on its path is
@@ -1310,12 +1310,12 @@ large table is counted, not cut off, and a read past a minute fails like any oth
   root by the `visibility` its meta holds, and `subtrees` counts a roadmap whose `tree` record holds a
   `parent` by its `reach`, since only a root holds a visibility
   (`docs/foundation/roadmap-on-the-engine.md` §4). Each splits into:
-  - `private`, `unlisted` and `public`. A subtree's `private` includes the subtrees whose owning step
-    is deleted, since that step's death writes their reach private.
+  - `private` and `public`. A subtree's `private` includes the subtrees whose owning step is deleted,
+    since that step's death writes their reach private.
   - `unset`, no meta or a meta that holds none, which reads as private. Among roots it holds one whose
     creation or fork is under way, which has no meta yet, stands nowhere and is hidden, and a fork's
     copy whose visibility nobody has set since, as a fork writes none.
-  - `other`, any other value, which admission refuses.
+  - `other`, any other value, `unlisted` among them, which admission refuses.
 - `pointersWithoutOpens` — the `pointer` rows alive with no `opens` in an overlay that is alive, by the
   door their life stamp's actor names: `restore` for the server's `srv`, as an Undo's restore that
   wrote the life alone leaves it, and `clientPut` for any other actor, a client's put that revived the
@@ -1343,66 +1343,6 @@ What the counts beside `engine` do not measure, because it is not in `trees` or 
   never backfilled, and `load` backfills them on the tree's first open. Nothing has written the column
   since rows replaced it, before `opens` existed, so it holds no pointer; the inventory does not read
   it.
-
-## Unlisted roadmaps to private
-
-Share has two states, public and private, so every roadmap whose visibility is unlisted becomes
-private. `windmill_roadmaps_to_private` (`platform/infra/roadmaps_to_private.cpp`) makes them so through
-the sync engine. It reads `DATABASE_URL`, and composes the catalog as the server does, roadmap served
-where `ROADMAP_ENGINE_ENABLED` says so. Without an argument it is a dry run that writes nothing; it
-writes only when given `--write`, and refuses any other argument.
-
-- **What it reads.** Every alive roadmap of the engine's tables whose `reach`, the field that opens its
-  link (`roadmap.registry.json`), reads unlisted, and every alive root whose `visibility` does, in one
-  `REPEATABLE READ READ ONLY` snapshot with a 60 s `statement_timeout`. It counts roots and subtrees
-  alike by `reach`, so an `after` of none says no link opens as unlisted.
-- **What it writes.** Each people's root whose `visibility` reads unlisted takes `visibility` private
-  by its owner's server-origin intent through `RoadmapDoor`
-  (`products/roadmap/application/RoadmapDoor.h`; engine.md §6.3): `tree/<id>` with the one delta
-  `meta.visibility = private`, the call the corpus case *the server's door writes a root's visibility
-  as the owner does* pins. Admission mints the stamps, and the binding writes the root's `reach` and
-  the reach of every subtree under it (engine.md Appendix A.1, Visibility), so every replica pulls the
-  change and a reader's next pull of the roadmap answers `not-found`. A subtree is never written: it
-  follows its root. A people's root whose `reach` reads unlisted while its `visibility` does not is
-  no choice of its owner's that the tool writes: it is counted, in `unlisted` and `reachOnly`, and
-  left as it stands.
-- **Under the lock.** The intent is built under the scope's lock. A root whose `visibility` no longer
-  reads unlisted there, because its owner chose again since the read, is left as its owner left it
-  and counts `unchanged`. A visibility write records no deed, so the roadmap's activity tells nothing.
-- **Busy.** A root whose scope stays locked past `LOCK_TIMEOUT_MS` is written nothing and counts
-  `busy`. The run goes on to the other roots, prints its counts and exits 0, and a run again moves it.
-- **The house.** A root of the house account (`kHouseAccount`) is refused `house-roadmap` and never
-  written: the house's unlisted and public roadmaps answer links and sign-up forks.
-- **Idempotent.** A second run finds no people's root whose `visibility` reads unlisted, so it writes
-  nothing.
-- **Beside the live server.** The tool is the one by-hand exception to engine.md §6.1's one admitting
-  process: a second process admitting into the server's tables. Every scope it writes is serialized
-  with the server's admissions by the scope row's lock, and its stamps observe the stored registers
-  (engine.md §10.3), so neither process's write overtakes the other's. Its committed changes are
-  published to no socket, so the move does not end a live subscription opened before it: a reader
-  with the roadmap open keeps the copy they hold until their client's next pull, which answers
-  `not-found` (at most `PULL_FALLBACK_MS`, 5 minutes, in the foreground, or on return to it or a
-  reconnect; engine.md §7.5), or until the owner's next change, whose publication sends them
-  `not-found` in its place. A person's own Share to private ends it at once (engine.md §6.8). A cached
-  share page may answer for up to 5 minutes, as after a person's own Share to private.
-
-It prints one JSON object on stdout and nothing that names a roadmap, an account or a text:
-
-- `write` — whether the run wrote.
-- `unlisted.before` and `unlisted.after` — the roadmaps whose `reach` reads unlisted, read before the
-  moves and after them, `people` and `house` apart, each split into `roots` and `subtrees`.
-- `roots` — `toMove`, the people's roots whose `visibility` reads unlisted; `moved`, `unchanged` and
-  `busy`, what each write came to; `reachOnly`, the people's roots whose `reach` alone reads unlisted,
-  never written; and `refused`, by code: `house-roadmap` for the house's, in a dry run too, and the
-  engine's code for a write the engine refused.
-
-Each root a write run acts on logs one `roadmap.unlisted.move` line at door `tool`, and the run one
-`roadmap.unlisted.to_private` line (`OBSERVABILITY.md`). A failure prints one fixed sentence on stderr
-and exits 2 for its usage or without `DATABASE_URL`, 1 when a read or a write fails or stdout does not
-take the counts; what it moved before a failure stays private, and a run again moves the rest. On
-production it runs inside the live server container through the **Ops · roadmaps to private**
-workflow, which seals everything the tool says to the owner's certificate before the public job log
-sees it (`deploy/README.md`).
 
 ## Open items
 

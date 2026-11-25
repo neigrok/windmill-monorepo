@@ -154,7 +154,7 @@ void SharePageApi::page(const drogon::HttpRequestPtr& req, HttpCallback&& callba
   const bool hasVideo = shared && videos_->has(id);
   // Only a roadmap anyone with its address may read is one page for everyone. Every other answer is the caller's alone,
   // the shell an absent id gets included, so it reads like the shell an unreadable one gets.
-  const Audience audience = shared && shared->visibility != Visibility::private_ ? Audience::everyone : Audience::caller;
+  const Audience audience = shared && opensToReaders(shared->visibility) ? Audience::everyone : Audience::caller;
   callback(htmlPage(shared ? renderShell(shell, appOrigin_, shared->title, shared->steps, shared->visibility, id, shared->lineage, hasVideo)
                            : shell,
                     audience));

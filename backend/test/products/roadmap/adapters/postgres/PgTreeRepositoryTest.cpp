@@ -308,7 +308,7 @@ TEST(pg_a_fork_plants_the_title_and_guide_at_its_planting_stamp_for_the_new_owne
   FakeBus bus;
   RoomRegistry registry(trees, log, bus);
   trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Sam's tree", kSam);
-  registry.setVisibility(kTree, Visibility::unlisted);
+  registry.setVisibility(kTree, Visibility::public_);
   registry.open(kTree)->setGuide("Rig first, then sail.", 1'700'000'000'000);
   FakeTokens tokens;
   FakeClock clock;
@@ -342,7 +342,7 @@ TEST(pg_a_forks_copied_guide_stays_inherited_until_its_owner_writes_one_across_r
     FakeBus bus;
     RoomRegistry registry(trees, log, bus);
     trees.create(kTree, LooseGraph().exportState(), LegendState{}, "Sam's tree", kSam);
-    registry.setVisibility(kTree, Visibility::unlisted);
+    registry.setVisibility(kTree, Visibility::public_);
     registry.open(kTree)->setGuide("Rig first, then sail.", 1'700'000'000'000);
     REQUIRE(registry.persist(kTree).wait() == Saved::saved);
     FakeTokens tokens;
@@ -1567,13 +1567,13 @@ TEST(pg_a_subtree_takes_its_place_from_its_parents_row_and_a_retry_after_a_resta
   resetSubtrees();
   Forest forest;
   forest.plant(kParent, kAda, {{"rig", nullptr}});
-  REQUIRE(forest.registry.setVisibility(kParent, kAda, Visibility::unlisted) ==
+  REQUIRE(forest.registry.setVisibility(kParent, kAda, Visibility::public_) ==
           (std::variant<TreeRegistry::VisibilityChange, NotARoot>{TreeRegistry::VisibilityChange::changed}));
   const Subtree child{kChild, kParent, OwningStep{kParent, nid("rig")}, 1, 0};
 
   CHECK(forest.create(kParent, "rig", kChild) == (SubtreeAnswer{SubtreeCreation{true, child, 2}}));
   CHECK_EQ(placeOf(kChild), kParent.str() + " rig " + kParent.str() + " 1 " + kAda.str() + " private [] 0");
-  CHECK_EQ(placeOf(kParent), "- - " + kParent.str() + " 0 " + kAda.str() + " unlisted [Planted] 2");
+  CHECK_EQ(placeOf(kParent), "- - " + kParent.str() + " 0 " + kAda.str() + " public [Planted] 2");
   CHECK_EQ(kindsOf(kChild), std::string("build:terracotta:Build,learn:olive:Learn,milestone:gold:Milestone"));
   CHECK(forest.bus.subtreeBroadcasts == (std::vector<FakeBus::SubtreeBroadcast>{{kParent.str(), 2, nid("rig"), child}}));
 

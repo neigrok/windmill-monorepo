@@ -70,8 +70,8 @@ alter table trees add column if not exists guide_hlc text not null default '';
 alter table trees add column if not exists guide_ms bigint not null default 0;
 alter table trees add column if not exists guide_counter bigint not null default 0;
 alter table trees add column if not exists guide_inherited boolean not null default false;
--- visibility gates every read: 'private' is owner-only, 'unlisted'/'public' are readable by anyone
--- holding the id.
+-- visibility gates every read: 'public' is readable by anyone holding the id, and any other value
+-- reads as 'private', owner-only.
 alter table trees add column if not exists visibility text not null default 'private';
 alter table trees alter column visibility set default 'private';
 

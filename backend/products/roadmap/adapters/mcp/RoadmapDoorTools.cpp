@@ -80,8 +80,6 @@ ToolResult refusedByEngine(const Json::Value& result, const TreeId& tree) {
   return ToolResult::failure("the roadmap refused this write (" + code + "); nothing was written.", code);
 }
 
-bool opensToReaders(Visibility reach) { return reach == Visibility::unlisted || reach == Visibility::public_; }
-
 // One roadmap as its caller reads it, in one snapshot: the tree's rows with the caller's marks, the owner's roadmaps
 // read together with the owner's marks — what an opened roadmap comes to is the owner's for everyone (SPEC.md, Model,
 // Subtrees) — and this roadmap with the caller's marks, which their states are read over.

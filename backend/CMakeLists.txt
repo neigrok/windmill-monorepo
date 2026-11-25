@@ -583,10 +583,6 @@ target_link_libraries(windmill_resum_sync_digests PRIVATE windmill_product_sync)
 add_executable(windmill_subtree_inventory platform/infra/subtree_inventory.cpp)
 target_link_libraries(windmill_subtree_inventory PRIVATE windmill_roadmap)
 
-# Moves every unlisted roadmap of people's to private through roadmap's door, a dry run unless told --write.
-add_executable(windmill_roadmaps_to_private platform/infra/roadmaps_to_private.cpp)
-target_link_libraries(windmill_roadmaps_to_private PRIVATE windmill_product_sync)
-
 # Roadmap's cutover onto the sync engine, stage by stage (products/roadmap/adoption/README.md).
 add_executable(windmill_roadmap_adopt platform/infra/roadmap_adopt.cpp)
 target_link_libraries(windmill_roadmap_adopt PRIVATE windmill_product_sync)
@@ -608,12 +604,6 @@ add_test(NAME subtree_inventory COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/platform/infra/subtree_inventory_test.py $<TARGET_FILE:windmill_subtree_inventory>
   ${CMAKE_SOURCE_DIR}/db/schema.sql)
 set_tests_properties(subtree_inventory PROPERTIES TIMEOUT 120)
-# The move of unlisted roadmaps to private; under WM_PG_TEST it drives the tool beside the real server on a database of
-# its own, which the server's pulls read back.
-add_test(NAME roadmaps_to_private COMMAND ${Python3_EXECUTABLE}
-  ${CMAKE_SOURCE_DIR}/test/platform/infra/roadmaps_to_private_test.py $<TARGET_FILE:windmill_roadmaps_to_private>
-  $<TARGET_FILE:windmill_server> ${CMAKE_SOURCE_DIR}/db/schema.sql)
-set_tests_properties(roadmaps_to_private PROPERTIES TIMEOUT 300 RUN_SERIAL TRUE)
 # Roadmap's adoption onto the sync engine, stage by stage (products/roadmap/adoption/README.md); its Postgres cases build
 # databases of their own beside DATABASE_URL's, under WM_PG_TEST.
 add_test(NAME roadmap_adopt COMMAND ${Python3_EXECUTABLE}

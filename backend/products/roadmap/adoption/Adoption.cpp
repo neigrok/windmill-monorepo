@@ -131,6 +131,7 @@ std::map<std::string, std::string> kindKeys(const std::vector<OldKind>& kinds) {
 namespace {
 
 constexpr std::size_t kMaxIdChars = 128;
+// The visibilities the old tables hold. An unlisted one is adopted as private, as every read of it reads it (domain/Access.h).
 const std::set<std::string> kVisibilities{"private", "unlisted", "public"};
 const std::set<std::string> kStatuses{"none", "complete", "active", "inProgress"};
 
@@ -356,7 +357,7 @@ void Survey::place(const std::string& id) {
     stop(id, "stop.unknownVisibility");
     return;
   }
-  surveyed.visibility = root.visibility;
+  surveyed.visibility = toString(parseVisibility(root.visibility));
   if (surveyed.deleted) return;
 
   surveyed.stands = true;

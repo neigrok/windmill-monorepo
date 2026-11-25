@@ -323,7 +323,7 @@ TEST(patch_guide_on_a_fork_makes_the_copied_guide_its_owners_own) {
 TEST(patch_guide_refuses_a_non_owner_with_403_and_a_guide_that_is_not_a_string_with_400) {
   Harness h;
   h.signIn("s-live", "sam@example.com");
-  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Theirs", {}}, 0, uid("owner"), Visibility::unlisted};
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Theirs", {}}, 0, uid("owner"), Visibility::public_};
 
   drogon::HttpResponsePtr stranger = sendPatch(h.api, patch(guided("Mine now"), "s-live"), "t");
   CHECK_EQ(stranger->getStatusCode(), drogon::k403Forbidden);
@@ -357,10 +357,10 @@ TEST(patch_visibility_owner_flip_returns_204_and_reshares) {
   UserId me = h.signIn("s-live", "sam@example.com");
   h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Mine", {}}, 0, me};
 
-  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("unlisted"), "s-live"), "t");
+  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("public"), "s-live"), "t");
 
   CHECK_EQ(response->getStatusCode(), drogon::k204NoContent);
-  CHECK(h.trees.byId["t"].visibility == Visibility::unlisted);
+  CHECK(h.trees.byId["t"].visibility == Visibility::public_);
 }
 
 // A subtree is shared as its root is: aimed at a subtree, the change is refused 409 `not-a-root`, naming the step it hangs
@@ -389,11 +389,12 @@ TEST(patch_visibility_rejects_an_unknown_value_with_400) {
   UserId me = h.signIn("s-live", "sam@example.com");
   h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Mine", {}}, 0, me};
 
-  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("world-readable"), "s-live"), "t");
+  for (const char* unknown : {"unlisted", "world-readable"}) {
+    drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo(unknown), "s-live"), "t");
 
-  CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
-  CHECK_EQ(dump(bodyOf(response)),
-           std::string(R"({"error":"visibility must be private, unlisted, or public"})"));
+    CHECK_EQ(response->getStatusCode(), drogon::k400BadRequest);
+    CHECK_EQ(dump(bodyOf(response)), std::string(R"({"error":"visibility must be private or public"})"));
+  }
   CHECK(h.trees.byId["t"].visibility == Visibility::private_);
 }
 
@@ -401,14 +402,14 @@ TEST(patch_visibility_rejects_an_unknown_value_with_400) {
 TEST(patch_visibility_refuses_a_non_owner_with_403) {
   Harness h;
   h.signIn("s-live", "sam@example.com");
-  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Theirs", {}}, 0, uid("owner"), Visibility::unlisted};
+  h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"Theirs", {}}, 0, uid("owner"), Visibility::public_};
 
-  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("public"), "s-live"), "t");
+  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("private"), "s-live"), "t");
 
   CHECK_EQ(response->getStatusCode(), drogon::k403Forbidden);
   CHECK_EQ(dump(bodyOf(response)),
            std::string(R"({"code":"not-yours","error":"this tree belongs to another account"})"));
-  CHECK(h.trees.byId["t"].visibility == Visibility::unlisted);
+  CHECK(h.trees.byId["t"].visibility == Visibility::public_);
 }
 
 TEST(patch_visibility_of_an_unowned_tree_says_it_is_nobodys) {
@@ -429,7 +430,7 @@ TEST(patch_visibility_without_a_session_is_401) {
   Harness h;
   h.trees.byId["t"] = StoredTree{GraphState{}, LegendState{}, {"X", {}}, 0, uid("owner")};
 
-  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("unlisted")), "t");
+  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("public")), "t");
 
   CHECK_EQ(response->getStatusCode(), drogon::k401Unauthorized);
   CHECK(h.trees.byId["t"].visibility == Visibility::private_);
@@ -439,7 +440,7 @@ TEST(patch_visibility_of_an_absent_tree_is_404) {
   Harness h;
   h.signIn("s-live", "sam@example.com");
 
-  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("unlisted"), "s-live"), "t_ghost");
+  drogon::HttpResponsePtr response = sendPatch(h.api, patch(shareTo("public"), "s-live"), "t_ghost");
 
   CHECK_EQ(response->getStatusCode(), drogon::k404NotFound);
 }
@@ -879,7 +880,7 @@ TEST(patch_from_a_stranger_answers_a_private_tree_as_an_absent_one_at_every_dept
   CHECK_EQ(h.trees.byId["t_a"].title.value, std::string("Private year"));
   CHECK(h.trees.byId["t_a"].visibility == Visibility::private_);
   CHECK_EQ(sendPatch(h.api, patch(titled("My year"), "s-live"), "t_a")->getStatusCode(), drogon::k204NoContent);
-  CHECK_EQ(sendPatch(h.api, patch(shareTo("unlisted"), "s-live"), "t_a")->getStatusCode(), drogon::k204NoContent);
+  CHECK_EQ(sendPatch(h.api, patch(shareTo("public"), "s-live"), "t_a")->getStatusCode(), drogon::k204NoContent);
 }
 
 // A subtree is never removed or planted by its own id: DELETE aimed at one is refused 409 `not-a-root` to its owner,

@@ -86,7 +86,7 @@ drogon::HttpResponsePtr sendGet(OgVideoApi& api, const std::string& session, con
 TEST(put_stores_an_mp4_for_the_owner_as_video_mp4_and_answers_204) {
   Harness h;
   UserId me = h.signIn("s-me");
-  h.seed("t_mine", me, Visibility::unlisted);
+  h.seed("t_mine", me, Visibility::public_);
   OgVideoApi api = h.make();
 
   drogon::HttpResponsePtr resp = sendPut(api, "s-me", "t_mine", MP4);
@@ -100,7 +100,7 @@ TEST(put_stores_an_mp4_for_the_owner_as_video_mp4_and_answers_204) {
 TEST(put_stores_a_webm_as_video_webm_and_answers_204) {
   Harness h;
   UserId me = h.signIn("s-me");
-  h.seed("t_mine", me, Visibility::unlisted);
+  h.seed("t_mine", me, Visibility::public_);
   OgVideoApi api = h.make();
 
   drogon::HttpResponsePtr resp = sendPut(api, "s-me", "t_mine", WEBM);
@@ -112,7 +112,7 @@ TEST(put_stores_a_webm_as_video_webm_and_answers_204) {
 
 TEST(put_by_an_anonymous_caller_is_401_and_stores_nothing) {
   Harness h;
-  h.seed("t_mine", UserId{"owner"}, Visibility::unlisted);
+  h.seed("t_mine", UserId{"owner"}, Visibility::public_);
   OgVideoApi api = h.make();
 
   drogon::HttpResponsePtr resp = sendPut(api, "", "t_mine", MP4);
@@ -124,7 +124,7 @@ TEST(put_by_an_anonymous_caller_is_401_and_stores_nothing) {
 TEST(put_by_a_signed_in_non_owner_is_403_and_stores_nothing) {
   Harness h;
   h.signIn("s-other", "other@example.com");
-  h.seed("t_mine", UserId{"owner"}, Visibility::unlisted);
+  h.seed("t_mine", UserId{"owner"}, Visibility::public_);
   OgVideoApi api = h.make();
 
   drogon::HttpResponsePtr resp = sendPut(api, "s-other", "t_mine", MP4);
@@ -164,7 +164,7 @@ TEST(put_to_an_absent_tree_is_404) {
 TEST(put_over_the_3mb_cap_is_413_even_with_a_valid_container) {
   Harness h;
   UserId me = h.signIn("s-me");
-  h.seed("t_mine", me, Visibility::unlisted);
+  h.seed("t_mine", me, Visibility::public_);
   OgVideoApi api = h.make();
   std::string tooBig = std::string("\x00\x00\x00\x18", 4) + "ftypisom" + std::string(3 * 1024 * 1024, 'x');
 
@@ -177,7 +177,7 @@ TEST(put_over_the_3mb_cap_is_413_even_with_a_valid_container) {
 TEST(put_of_a_non_video_body_is_400) {
   Harness h;
   UserId me = h.signIn("s-me");
-  h.seed("t_mine", me, Visibility::unlisted);
+  h.seed("t_mine", me, Visibility::public_);
   OgVideoApi api = h.make();
 
   drogon::HttpResponsePtr shortBody = sendPut(api, "s-me", "t_mine", "abc");
