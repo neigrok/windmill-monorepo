@@ -104,9 +104,10 @@ run() {
   done
   xcrun simctl terminate "$SIMULATOR" "$bundle" 2>/dev/null || true
   local result="$PROBE_OUT/results/probe-$appearance.xcresult"
+  local xctestrun=("$PROBE_DERIVED_DATA"/Build/Products/*.xctestrun)
   rm -rf "$result"
   TEST_RUNNER_PROBE_OUT="$PROBE_OUT" TEST_RUNNER_PROBE_APPEARANCE="$appearance" \
-    xcodebuild test-without-building -xctestrun "$(ls "$PROBE_DERIVED_DATA"/Build/Products/*.xctestrun | head -1)" \
+    xcodebuild test-without-building -xctestrun "${xctestrun[0]}" \
     -destination "platform=iOS Simulator,id=$SIMULATOR" -resultBundlePath "$result" \
     -test-timeouts-enabled YES -default-test-execution-time-allowance 300 -maximum-test-execution-time-allowance 600 "$@" \
     2>&1 | tee "$PROBE_OUT/logs/uitests-$appearance.log" \

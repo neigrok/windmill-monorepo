@@ -1,0 +1,366 @@
+name: iOS probe runtimes
+
+# Evidence from runtimes this repo's Macs cannot run, built by CI's Xcode 26.3, on a branch that is never merged. A
+# failing test fails no step: each job's summary tables the outcomes and its artifact keeps them for 7 days.
+
+on:
+  push:
+    branches: [ios-probe-runtimes]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+  TZ: UTC
+
+jobs:
+  # The design probe's stills, UI tests and element trees in Dark, then Light.
+  ios18-probe:
+    name: iOS 18 · design probe
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      PROBE_DERIVED_DATA: ${{ github.workspace }}/build/probe
+      PROBE_OUT: ${{ github.workspace }}/evidence/ios18-probe
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Show the image's Xcodes and simulator runtimes
+        run: |
+          echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+          ls -d /Applications/Xcode*
+          env -u DEVELOPER_DIR xcrun simctl list runtimes
+
+      - name: Select Xcode 26.3
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install xcodegen
+
+      - name: Stop Spotlight indexing
+        run: |
+          sudo mdutil -a -i off || true
+          mdutil -s /System/Volumes/Data
+
+      # An iPhone 16 Pro is 402 × 874 pt, the size the boards are drawn at.
+      - name: Create and prepare an iPhone on the newest iOS 18
+        timeout-minutes: 10
+        working-directory: apps/ios/App
+        run: |
+          RUNTIME=$(xcrun simctl list runtimes --json | python3 -c '
+          import json, sys
+          runtimes = [r for r in json.load(sys.stdin)["runtimes"] if r["platform"] == "iOS" and r["isAvailable"] and r["version"].split(".")[0] == "18"]
+          print(max(runtimes, key=lambda r: [int(part) for part in r["version"].split(".")])["identifier"])')
+          echo "Runtime: $RUNTIME"
+          SIMULATOR=$(xcrun simctl create "Probe iOS 18" com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro "$RUNTIME")
+          echo "SIMULATOR=$SIMULATOR" >> "$GITHUB_ENV"
+          python3 Tools/prepare_simulator.py "$SIMULATOR" || xcrun simctl bootstatus "$SIMULATOR" -b
+
+      - name: Build the probe
+        timeout-minutes: 15
+        run: probe/roadmap-design/probe.sh build
+
+      - name: Shoot and test the probe in Dark
+        timeout-minutes: 30
+        run: probe/roadmap-design/probe.sh run dark
+
+      - name: Shoot and test the probe in Light
+        if: ${{ !cancelled() }}
+        timeout-minutes: 30
+        run: probe/roadmap-design/probe.sh run light
+
+      - name: Table the probe's results
+        if: ${{ always() }}
+        run: python3 probe/roadmap-design/results.py "$PROBE_OUT/results/probe-dark.xcresult" "$PROBE_OUT/results/probe-light.xcresult"
+
+      - name: Keep the probe's shots, trees and results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios18-probe
+          path: ${{ env.PROBE_OUT }}
+          retention-days: 7
+
+      - name: Delete the simulator
+        if: ${{ always() && env.SIMULATOR != '' }}
+        timeout-minutes: 2
+        run: xcrun simctl delete "$SIMULATOR"
+
+  # The room's own captures on the same iPhone. The captures of section 12's boards run first; the rest of the class
+  # follows in runs of 20 while the job has time. testFiveThousandSteps needs a Release build, so it is left out.
+  ios18-room:
+    name: iOS 18 · the room's captures
+    runs-on: macos-15
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/ios/App
+    env:
+      IOS_SENTRY_DSN: https://nonproduction@example.invalid/1
+      ROOM_OUT: ${{ github.workspace }}/evidence/ios18-room
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Show the image's Xcodes and simulator runtimes
+        run: |
+          echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+          ls -d /Applications/Xcode*
+          env -u DEVELOPER_DIR xcrun simctl list runtimes
+
+      - name: Select Xcode 26.3
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install xcodegen
+
+      - name: Stop Spotlight indexing
+        run: |
+          sudo mdutil -a -i off || true
+          mdutil -s /System/Volumes/Data
+
+      - name: Create and prepare an iPhone on the newest iOS 18
+        timeout-minutes: 10
+        run: |
+          RUNTIME=$(xcrun simctl list runtimes --json | python3 -c '
+          import json, sys
+          runtimes = [r for r in json.load(sys.stdin)["runtimes"] if r["platform"] == "iOS" and r["isAvailable"] and r["version"].split(".")[0] == "18"]
+          print(max(runtimes, key=lambda r: [int(part) for part in r["version"].split(".")])["identifier"])')
+          echo "Runtime: $RUNTIME"
+          SIMULATOR=$(xcrun simctl create "Room iOS 18" com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro "$RUNTIME")
+          echo "SIMULATOR=$SIMULATOR" >> "$GITHUB_ENV"
+          python3 Tools/prepare_simulator.py "$SIMULATOR" || xcrun simctl bootstatus "$SIMULATOR" -b
+
+      - name: Build the App's UI tests
+        timeout-minutes: 30
+        run: |
+          python3 Tools/generate_project.py
+          xcodebuild build-for-testing -project Windmill.xcodeproj -scheme Windmill \
+            -destination "platform=iOS Simulator,id=$SIMULATOR" -derivedDataPath "$RUNNER_TEMP/app-build"
+
+      # Captures start until minute 78 of the job, which leaves its export and upload time before minute 90.
+      - name: Run the room's captures
+        timeout-minutes: 75
+        env:
+          CAPTURES_UNTIL_MINUTE: "78"
+          FIRST_CAPTURES: >-
+            testBoardAtRest testStepUpNext testNewStep testStepDeleteQuestion testDeleteQuestion testTitleMenu
+            testRenaming testRoomMenu testLongPressMenu testStepMenu testSwipeRightRevealsComplete
+            testSwipeLeftRevealsDelete testFindResults testFindNothing testKeyboardUp testSortAndFilterMenu
+            testDeleteRoadmapQuestion
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+          import sys
+          import time
+          from pathlib import Path
+
+          deadline = int(os.environ["JOB_STARTED"]) + int(os.environ["CAPTURES_UNTIL_MINUTE"]) * 60
+          out = Path(os.environ["ROOM_OUT"])
+          (out / "results").mkdir(parents=True, exist_ok=True)
+          (out / "logs").mkdir(parents=True, exist_ok=True)
+          xctestrun = next(Path(os.environ["RUNNER_TEMP"], "app-build/Build/Products").glob("*.xctestrun"))
+          every = re.findall(r"^  func (test\w+)\(\)", Path("UITests/DesignCapture/RoadmapCaptures.swift").read_text(), re.M)
+          first = os.environ["FIRST_CAPTURES"].split()
+          if missing := [test for test in first if test not in every]:
+              raise SystemExit(f"RoadmapCaptures has no {missing}")
+          rest = [test for test in every if test not in first and test != "testFiveThousandSteps"]
+          runs = [first] + [rest[start:start + 20] for start in range(0, len(rest), 20)]
+          seconds_per_test = 75
+          for number, tests in enumerate(runs, 1):
+              left = int(deadline - time.time())
+              if left < 60 or (number > 1 and left < seconds_per_test * len(tests)):
+                  skipped = [test for later in runs[number - 1:] for test in later]
+                  print(f"::warning::{left // 60} minutes left, too few for the next {len(tests)} captures. Not run: {' '.join(skipped)}")
+                  break
+              started = time.time()
+              command = ["perl", "-e", "alarm shift; exec @ARGV", str(left), "xcodebuild", "test-without-building",
+                         "-xctestrun", str(xctestrun), "-destination", f"platform=iOS Simulator,id={os.environ['SIMULATOR']}",
+                         "-parallel-testing-enabled", "NO", "-testLanguage", "en", "-testRegion", "US",
+                         "-test-timeouts-enabled", "YES", "-default-test-execution-time-allowance", "240",
+                         "-maximum-test-execution-time-allowance", "300",
+                         "-resultBundlePath", str(out / "results" / f"room-captures-{number}.xcresult"),
+                         *[f"-only-testing:WindmillUITests/RoadmapCaptures/{test}" for test in tests]]
+              with open(out / "logs" / f"room-captures-{number}.log", "w") as log:
+                  process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                             text=True, env={**os.environ, "TEST_RUNNER_WM_DESIGN_CAPTURE": "1"})
+                  for line in process.stdout:
+                      sys.stdout.write(line)
+                      log.write(line)
+                  print(f"Run {number} of {len(runs)} ended with {process.wait()} after {int(time.time() - started)} s.")
+              seconds_per_test = (time.time() - started) / len(tests)
+          PY
+
+      - name: Export the room's captures
+        if: ${{ always() }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, "Tools")
+          from export_design_captures import export
+
+          out = Path(os.environ["ROOM_OUT"])
+          captures = out / "captures"
+          entries = []
+          for result in sorted((out / "results").glob("room-captures-*.xcresult")):
+              try:
+                  entries += export(result, captures)
+              except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
+                  print(f"::warning::{result.name}: {error}")
+          captures.mkdir(parents=True, exist_ok=True)
+          (captures / "capture-manifest.json").write_text(json.dumps(entries, indent=2) + "\n")
+          print(f"Exported {len(entries)} named captures to {captures}")
+          PY
+
+      - name: Table the captures' results
+        if: ${{ always() }}
+        run: python3 ../../../probe/roadmap-design/results.py "$ROOM_OUT"/results/*.xcresult
+
+      - name: Keep the room's captures and results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios18-room
+          path: ${{ env.ROOM_OUT }}
+          retention-days: 7
+
+      - name: Delete the simulator
+        if: ${{ always() && env.SIMULATOR != '' }}
+        timeout-minutes: 2
+        run: xcrun simctl delete "$SIMULATOR"
+
+  # The room's + on iOS 26.3, three times, then once on the image's iOS 26.5.
+  ios263:
+    name: iOS 26.3 · the room's +
+    runs-on: macos-26
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/ios/App
+    env:
+      IOS_SENTRY_DSN: https://nonproduction@example.invalid/1
+      PLUS_OUT: ${{ github.workspace }}/evidence/ios263
+      PLUS_TEST: -only-testing:WindmillUITests/RoadmapNestedFlowTests/testANewStepOpensTheRoadmapChosenInItsForm
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select Xcode 26.3
+        run: |
+          ls -d /Applications/Xcode*
+          sudo xcode-select -s /Applications/Xcode_26.3.app
+          xcodebuild -version
+          xcrun simctl list runtimes
+
+      - name: Install XcodeGen
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install xcodegen
+
+      - name: Stop Spotlight indexing
+        run: |
+          sudo mdutil -a -i off || true
+          mdutil -s /System/Volumes/Data
+
+      # Without an iOS 26.3 runtime the job still runs 26.5, and the log says what the download answered.
+      - name: Find or download iOS 26.3
+        timeout-minutes: 30
+        run: |
+          mkdir -p "$PLUS_OUT/logs" "$PLUS_OUT/results"
+          if xcrun simctl list runtimes | grep "^iOS 26\.3 "; then
+            echo "The image has iOS 26.3."
+          else
+            perl -e 'alarm shift; exec @ARGV' 1500 xcodebuild -downloadPlatform iOS -buildVersion 26.3 2>&1 \
+              | tee "$PLUS_OUT/logs/download-ios-26.3.log" || echo "The download ended with $?."
+            xcrun simctl list runtimes
+          fi
+
+      - name: Create the simulators
+        timeout-minutes: 5
+        run: |
+          runtime() {
+            xcrun simctl list runtimes --json | python3 -c '
+          import json, sys
+          version = sys.argv[1]
+          runtimes = [r for r in json.load(sys.stdin)["runtimes"] if r["platform"] == "iOS" and r["isAvailable"] and (r["version"] == version or r["version"].startswith(version + "."))]
+          print(max(runtimes, key=lambda r: [int(part) for part in r["version"].split(".")])["identifier"] if runtimes else "")' "$1"
+          }
+          echo "SIMULATOR_265=$(xcrun simctl create "Plus iOS 26.5" com.apple.CoreSimulator.SimDeviceType.iPhone-17 "$(runtime 26.5)")" >> "$GITHUB_ENV"
+          RUNTIME_263=$(runtime 26.3)
+          if [ -n "$RUNTIME_263" ]; then
+            echo "SIMULATOR_263=$(xcrun simctl create "Plus iOS 26.3" com.apple.CoreSimulator.SimDeviceType.iPhone-17 "$RUNTIME_263")" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No iOS 26.3 runtime: only 26.5 runs."
+          fi
+
+      - name: Build the App's UI tests
+        timeout-minutes: 30
+        run: |
+          python3 Tools/generate_project.py
+          xcodebuild build-for-testing -project Windmill.xcodeproj -scheme Windmill \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_265" -derivedDataPath "$RUNNER_TEMP/app-build"
+
+      - name: Tap the + three times on iOS 26.3
+        if: ${{ env.SIMULATOR_263 != '' }}
+        timeout-minutes: 25
+        run: |
+          python3 Tools/prepare_simulator.py "$SIMULATOR_263" || xcrun simctl bootstatus "$SIMULATOR_263" -b
+          for attempt in 1 2 3; do
+            xcodebuild test-without-building -xctestrun "$(ls "$RUNNER_TEMP"/app-build/Build/Products/*.xctestrun)" \
+              -destination "platform=iOS Simulator,id=$SIMULATOR_263" -parallel-testing-enabled NO \
+              -testLanguage en -testRegion US -resultBundlePath "$PLUS_OUT/results/ios-26.3-run-$attempt.xcresult" \
+              "$PLUS_TEST" 2>&1 < /dev/null | tee "$PLUS_OUT/logs/ios-26.3-run-$attempt.log" || echo "Run $attempt failed."
+          done
+          xcrun simctl shutdown "$SIMULATOR_263"
+
+      - name: Tap the + once on iOS 26.5
+        if: ${{ !cancelled() }}
+        timeout-minutes: 15
+        run: |
+          python3 Tools/prepare_simulator.py "$SIMULATOR_265" || xcrun simctl bootstatus "$SIMULATOR_265" -b
+          xcodebuild test-without-building -xctestrun "$(ls "$RUNNER_TEMP"/app-build/Build/Products/*.xctestrun)" \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_265" -parallel-testing-enabled NO \
+            -testLanguage en -testRegion US -resultBundlePath "$PLUS_OUT/results/ios-26.5-run-1.xcresult" \
+            "$PLUS_TEST" 2>&1 < /dev/null | tee "$PLUS_OUT/logs/ios-26.5-run-1.log" || echo "The 26.5 run failed."
+
+      - name: Table the runs
+        if: ${{ always() }}
+        run: |
+          python3 ../../../probe/roadmap-design/results.py "$PLUS_OUT"/results/ios-26.3-run-{1,2,3}.xcresult \
+            "$PLUS_OUT/results/ios-26.5-run-1.xcresult"
+
+      - name: Keep the runs' results and logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios263
+          path: ${{ env.PLUS_OUT }}
+          retention-days: 7
+
+      - name: Delete the simulators
+        if: ${{ always() }}
+        timeout-minutes: 2
+        run: |
+          for simulator in "$SIMULATOR_263" "$SIMULATOR_265"; do
+            if [ -n "$simulator" ]; then xcrun simctl delete "$simulator"; fi
+          done
