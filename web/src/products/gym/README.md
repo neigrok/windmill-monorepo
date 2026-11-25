@@ -160,7 +160,9 @@ Coach (`CoachForm`), the room's pills in History. Applied or rejected,
 it is one line, which takes the focus once the decision lands; out of date (`WorkoutProposalState.outOfDate`), it says why
 in one sentence and offers nothing, and so does a change whose decision the log refused, read from the refusal's notice
 while the copy still takes it for current. That notice stands on the card for good, so a change the log refused keeps its
-sentence even once its cause is undone; the room's notice voice says nothing of it. While a workout is open a routine
+sentence even once its cause is undone; the room's notice voice says nothing of it. An Apply the copy's rules refuse for a
+load under a movement's floor draws the log's sentence for that load, which takes the focus, and offers no Try again, which
+could not pass the floor. While a workout is open a routine
 proposal waits for next time: its count says so and its Apply steps back for the workout's, a Secondary Button in the
 workout's Coach and the quiet pill in the room.
 

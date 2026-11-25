@@ -12,7 +12,7 @@ import { Draft } from '../../../../src/platform/domain-kit/drafts.js';
 import { Id } from '../../../../src/platform/domain-kit/entities.js';
 import { Instant } from '../../../../src/platform/domain-kit/time.js';
 import { registry } from '../../../../src/platform/sync/schema.js';
-import { Exercise } from '../../../../src/products/gym/domain/catalogue.js';
+import { EditExercise, Exercise } from '../../../../src/products/gym/domain/catalogue.js';
 import { GymRefusals } from '../../../../src/products/gym/domain/gymRules.js';
 import { Routine, RoutineEntry, RoutineValue, SetTarget } from '../../../../src/products/gym/domain/routines.js';
 import { SeedExercises } from '../../../../src/products/gym/domain/seedExercises.js';
@@ -57,6 +57,7 @@ const gym = () => syncSession.engine.observe('self/gym').getSnapshot();
 window.openWorkout = () => gym().drawn.find((record) => record.t === 'session' && !record.f?.finishedAt?.[0])?.id ?? null;
 window.thread = (title) => gym().drawn.find((record) => record.t === 'thread' && record.f?.title?.[0] === title)?.id ?? null;
 window.unsent = () => Object.values(gym().outbox).reduce((sum, count) => sum + count, 0);
+window.holds = (type, id) => gym().drawn.some((record) => record.t === type && record.id === id);
 window.kick = () => syncSession.engine.kick();
 // This tab's engine writes wait until releaseCommits(), so a test can order two tabs' writes.
 window.holdCommits = () => {
@@ -455,6 +456,42 @@ for (const [refusal, sentence, reason] of [
     });
   });
 }
+
+test('Chromium: an Apply this copy refuses for a load under a movement\'s floor stands out of date with its one sentence, offers no Try again and is told refused (WD7.3)', async (t) => {
+  const phone = await account(t);
+  const { page } = await visit(t, phone);
+  await withBrowserErrors(page, async () => {
+    await loggable(page);
+    await page.getByRole('tab', { name: 'Coach', exact: true }).click();
+    const coach = page.getByRole('tabpanel', { name: 'Coach', exact: true });
+    // Coach assists the pull-ups by 20 kg, which a bodyweight movement allows.
+    await proposes(page, { plan: [entries[0], entries[1], { ...entries[2], sets: entries[2].sets.map((set) => ({ ...set, weightKg: -20 })) }] });
+    await ask(coach);
+    const card = coach.getByRole('region', { name: 'This workout', exact: true });
+    await card.getByRole('button', { name: 'Apply', exact: true }).waitFor();
+    await page.waitForFunction(() => window.unsent() === 0);
+    // The phone makes Pull Up a barbell movement, which carries 0 kg or more, and this copy hears of it before the Apply.
+    await catchUp(phone);
+    const seed = SeedExercises.all.find((exercise) => exercise.id.record === 'pull-up');
+    assert.equal((await phone.runner.run(new EditExercise(seed, seed.name, 'barbell', 1))).kind, 'committed');
+    await phone.leave();
+    await phone.sync();
+    await page.evaluate(() => window.kick());
+    await page.waitForFunction(() => window.holds('exerciseName', 'pull-up'));
+    await card.getByRole('button', { name: 'Apply', exact: true }).click();
+    const sentence = 'This change sets a load below what one of its movements allows. Nothing was applied.';
+    await card.getByText(sentence, { exact: true }).waitFor();
+    await told(page, 'gym_proposal_outcome', 1);
+    assert.deepEqual({
+      header: await card.locator('header').innerText(), buttons: await card.getByRole('button').count(),
+      focused: await page.evaluate(() => document.activeElement?.textContent), unsent: await page.evaluate(() => window.unsent()),
+      told: await steps(page, 'gym_proposal_outcome'), issues: await page.evaluate(() => window.issues ?? []),
+    }, {
+      header: 'This workout\nOut of date', buttons: 0, focused: sentence, unsent: 0,
+      told: [{ screen: 'coach', target: 'workout', action: 'apply', outcome: 'refused' }], issues: [],
+    });
+  });
+});
 
 test('Chromium: a phone\'s workout proposal stands in History with its card in each tab; an Apply in each of two at once tells one decision, from the page whose Apply reached the log', async (t) => {
   const phone = await account(t);

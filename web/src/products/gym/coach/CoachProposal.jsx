@@ -168,7 +168,8 @@ export function CoachProposalCard({ id, movements }) {
 
 // Why a workout proposal can no longer be applied, in one sentence and then that nothing was applied (08.57): the board's
 // for a movement logged since and a newer suggestion, a changed or finished workout; and, for what the log refused that the
-// copy does not show, a suggestion answered elsewhere, a load under a movement's floor, or that it is out of date.
+// copy does not show, a suggestion answered elsewhere, a load under a movement's floor (which this copy's rules refuse an
+// Apply for too), or that it is out of date.
 function staleLine(stale, movements) {
   switch (stale.reason) {
     case 'replaced': return t('gym.coach.workoutProposal.replaced');
@@ -185,12 +186,21 @@ function staleLine(stale, movements) {
 // Coach's change to the open workout under the answer whose call made it, this browser's or a phone's (WD7, 08.56P),
 // read from the copy: pending with Reject and the prominent Apply, which rewrites this workout's plan on the browser's copy
 // and never a logged movement; applied, one line; rejected, one line; out of date, one sentence of why and nothing applied
-// (WD7.3), which is also what a decision the log refused draws, never a failure.
+// (WD7.3), which is also what a decision the log refused draws, never a failure. An Apply this copy's rules refuse for a
+// load under a movement's floor draws the log's `invalid` the same way, its sentence taking the focus: no Try again could
+// take it.
 export function WorkoutProposalCard({ id, movements }) {
   const api = useGymApi();
   const { notices } = useSyncRecords('self/gym');
   const card = useDomainRead((read) => workoutCard(read, id, notices), [id, notices]).data;
-  const { busy, failure, decide, settled } = useDecision((verb) => (verb === 'apply' ? api.applyWorkoutProposal(id) : api.dismissWorkoutProposal(id)));
+  const [floored, setFloored] = useState(null);
+  const { busy, failure, decide, settled } = useDecision(async (verb) => {
+    try { await (verb === 'apply' ? api.applyWorkoutProposal(id) : api.dismissWorkoutProposal(id)); }
+    catch (error) {
+      if (error.code !== 'load-floor') throw error;
+      setFloored(decisionRefusal('invalid'));
+    }
+  });
   if (!card) return null;
   const title = t('gym.coach.workoutProposal.title');
   if (card.state === 'dismissed') {
@@ -201,13 +211,13 @@ export function WorkoutProposalCard({ id, movements }) {
       <p ref={settled} tabIndex={-1} className="gym-coach-proposal-settled"><Check size={18} aria-hidden="true" className="gym-coach-made-check" />{t('gym.coach.workoutProposal.applied')}</p>
     </section>;
   }
-  const { stale } = card;
+  const stale = card.stale ?? floored;
   return <section className={`gym-coach-proposal-card is-workout${stale ? ' is-out-of-date' : ''}`} aria-label={title}>
     <header>
       <ClipboardList size={20} aria-hidden="true" className="gym-coach-made-check" />
       <span><strong>{title}</strong>{stale ? t('gym.coach.workoutProposal.outOfDate') : t('gym.coach.workoutProposal.count', { count: card.count })}</span>
     </header>
-    {stale ? <p className="gym-coach-proposal-why">{staleLine(stale, movements)}</p> : <>
+    {stale ? <p ref={settled} tabIndex={-1} className="gym-coach-proposal-why">{staleLine(stale, movements)}</p> : <>
       <Changes diff={card.diff} movements={movements} name={title} />
       <Decision busy={busy} failure={failure} quiet={false} onDecide={decide} />
     </>}
