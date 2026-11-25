@@ -42,11 +42,11 @@ test('a repository without a tree id refuses to exist — there is no default ro
 });
 
 test('loadTree returns the document plus what the server knows about it', async () => {
-  await withFetch(() => ok({ data: SEEDED, ...ROOT, visibility: 'unlisted', mine: true, createdAt: 1700000000000 }), async (calls) => {
+  await withFetch(() => ok({ data: SEEDED, ...ROOT, visibility: 'public', mine: true, createdAt: 1700000000000 }), async (calls) => {
     const repo = new HttpTreeRepository({ baseUrl: BASE, treeId: 't_1' });
     const tree = await repo.loadTree();
     assert.deepEqual(calls, [{ url: 'http://backend.test/v1/trees/t_1', init: { credentials: 'include', signal: undefined } }]);
-    assert.deepEqual(tree, { ...SEEDED, visibility: 'unlisted', mine: true, createdAt: 1700000000000, place: TreePlace.fromWire(ROOT), openings: Openings.fromWire() });
+    assert.deepEqual(tree, { ...SEEDED, visibility: 'public', mine: true, createdAt: 1700000000000, place: TreePlace.fromWire(ROOT), openings: Openings.fromWire() });
   });
 });
 

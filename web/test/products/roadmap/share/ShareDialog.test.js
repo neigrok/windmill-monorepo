@@ -38,27 +38,25 @@ async function shareRoom(t, { visibility = 'private', mine = true, treeId = 't_e
   };
 }
 
-for (const visibility of ['private', 'unlisted']) {
-  test(`${visibility} owner publishes before copying, with explicit disclosure and duplicate protection`, async (t) => {
-    let resolve;
-    const response = new Promise((done) => { resolve = done; });
-    const view = await shareRoom(t, { visibility, request: () => response });
-    assert.equal(view.button().props.children, 'Publish and copy link');
-    assert.equal(elementsOf(view.room.tree).filter((item) => item.type === 'p').map(textOf)[0],
-      'Publishing makes this roadmap public. Anyone can view and fork it, and it can appear in the public gallery.');
-    const share = view.button().props.onClick;
-    const pending = share();
-    await share();
-    assert.deepEqual(view.calls, [['patch', { visibility: 'public' }]]);
-    assert.equal(view.button().props.disabled, true);
-    assert.deepEqual(view.messages('status'), []);
-    resolve({ ok: true });
-    await pending;
-    assert.deepEqual(view.calls, [['patch', { visibility: 'public' }], ['visibility', 'public'], ['copy', 'https://windmill.works/t/t_example']]);
-    assert.deepEqual(view.messages('status'), ['Link copied.']);
-    assert.equal(view.inputs()[0].props.value, 'https://windmill.works/t/t_example');
-  });
-}
+test('a private roadmap\'s owner publishes before copying, with explicit disclosure and duplicate protection', async (t) => {
+  let resolve;
+  const response = new Promise((done) => { resolve = done; });
+  const view = await shareRoom(t, { visibility: 'private', request: () => response });
+  assert.equal(view.button().props.children, 'Publish and copy link');
+  assert.equal(elementsOf(view.room.tree).filter((item) => item.type === 'p').map(textOf)[0],
+    'Publishing makes this roadmap public. Anyone can view and fork it, and it can appear in the public gallery.');
+  const share = view.button().props.onClick;
+  const pending = share();
+  await share();
+  assert.deepEqual(view.calls, [['patch', { visibility: 'public' }]]);
+  assert.equal(view.button().props.disabled, true);
+  assert.deepEqual(view.messages('status'), []);
+  resolve({ ok: true });
+  await pending;
+  assert.deepEqual(view.calls, [['patch', { visibility: 'public' }], ['visibility', 'public'], ['copy', 'https://windmill.works/t/t_example']]);
+  assert.deepEqual(view.messages('status'), ['Link copied.']);
+  assert.equal(view.inputs()[0].props.value, 'https://windmill.works/t/t_example');
+});
 
 test('a roadmap whose steps own subtrees says who reads them with it, publishing or published, in the words canon gives publishing', async (t) => {
   const said = async (visibility, { mine = true, subtrees = true } = {}) => {
@@ -68,15 +66,13 @@ test('a roadmap whose steps own subtrees says who reads them with it, publishing
 
   assert.deepEqual({
     private: await said('private'),
-    unlisted: await said('unlisted'),
     public: await said('public'),
-    unlistedRead: await said('unlisted', { mine: false }),
+    publicRead: await said('public', { mine: false }),
     none: await said('private', { subtrees: false }),
   }, {
     private: ['Publishing makes My year public: anyone can view and fork it, subtrees included, and it can appear in the public gallery.'],
-    unlisted: ['Publishing makes My year public: anyone can view and fork it, subtrees included, and it can appear in the public gallery.'],
     public: ['My year is public: anyone can view and fork it, subtrees included, and it can appear in the public gallery.'],
-    unlistedRead: ['Anyone with this link can view and fork My year, subtrees included.'],
+    publicRead: ['My year is public: anyone can view and fork it, subtrees included, and it can appear in the public gallery.'],
     none: ['Publishing makes this roadmap public. Anyone can view and fork it, and it can appear in the public gallery.'],
   });
 });

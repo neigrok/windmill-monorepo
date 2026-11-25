@@ -113,10 +113,8 @@ for (const browserName of ['chromium', 'webkit']) {
 
   for (const options of [
     { role: 'owner', visibility: 'public' },
-    { role: 'owner', visibility: 'unlisted' },
     { role: 'owner', visibility: 'private' },
     { role: 'reader', visibility: 'public' },
-    { role: 'reader', visibility: 'unlisted' },
     { role: 'reader', visibility: 'public', demo: true },
   ]) {
     hostTest(`${browserName}: the host keeps ${options.role} ${options.visibility}${options.demo ? ' demo' : ''} step-link recovery inside its existing authority`, async () => {
@@ -136,7 +134,7 @@ for (const browserName of ['chromium', 'webkit']) {
         const step = page.getByRole('article', { name: 'Read the wind', exact: true });
         await step.waitFor();
         await step.getByRole('button', { name: 'More', exact: true }).click();
-        const shareable = options.visibility !== 'private' && !options.demo;
+        const shareable = options.visibility === 'public' && !options.demo;
         assert.deepEqual(await page.getByRole('menuitem').allTextContents(), [
           ...(shareable ? ['Copy link'] : []), 'Open in Graph', ...(options.role === 'owner' ? ['Delete step'] : []),
         ]);

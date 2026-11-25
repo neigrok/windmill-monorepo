@@ -353,8 +353,8 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
     if (stepCovering || boardActive) scene.stop();
     else scene.start();
   }, [scene, stepCovering, boardActive]);
-  // A step's link opens for anyone only where the roadmap itself does: public or unlisted, on the server.
-  const stepShareUrl = !demo && (treeVisibility === 'public' || treeVisibility === 'unlisted') ? treeShareUrl(treeId) : null;
+  // A step's link opens for anyone only where the roadmap itself does: public, on the server.
+  const stepShareUrl = !demo && treeVisibility === 'public' ? treeShareUrl(treeId) : null;
 
   // The identity row and Graph chrome.
   const phoneGraph = phone && canvasView;

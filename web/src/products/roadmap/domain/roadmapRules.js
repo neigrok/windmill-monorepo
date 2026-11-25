@@ -59,7 +59,7 @@ export const RoadmapSpecs = Object.freeze({
   linkLabel: chars('node.links.label', 200),
   hue: new ChoiceSpec('kind.hue', [...HUES]),
   recolourHue: new ChoiceSpec('roadmap.recolourKind.hue', [...HUES]),
-  visibility: new ChoiceSpec('meta.visibility', ['private', 'unlisted', 'public']),
+  visibility: new ChoiceSpec('meta.visibility', ['private', 'public']),
   kindLabel: chars('kind.label', 24),
   kindDescription: chars('kind.description', 80),
   mark: new ChoiceSpec('progress.mark.status', ['complete', 'none']),

@@ -33,7 +33,7 @@ export function useRoomLoad({ treeId, accountId, demo, shared, demotion, replica
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const [treeVisibility, setTreeVisibility] = useState(null); // 'private'|'unlisted'|'public'|null
+  const [treeVisibility, setTreeVisibility] = useState(null); // 'private'|'public'|null
   const [treeMine, setTreeMine] = useState(false);
   const [treePlace, setTreePlace] = useState(null); // where the tree sits among the trees as its reading says; null where it says nothing
   const [syncSession, setSyncSession] = useState(null);
