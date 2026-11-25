@@ -106,6 +106,8 @@ On 2026-11-01 the dogfood tree's open Android, gym and sync nodes were checked a
 | E · Cross-platform parity | [92](92-catch-up-after-a-reopen.md), [93](93-share-page-set-count.md), [94](94-web-planned-rows-offered-load.md), [95](95-one-stated-best.md), [96](96-shared-performed-range.md), [97](97-coach-read-receipt-weeks.md), [98](98-coach-during-a-workout.md) |
 | F · Polish | [99](99-destructive-actions-in-red.md), [100](100-proposal-diff-unit-space.md), [101](101-capture-recipes-name-current-boards.md), [102](102-planless-movement-heading.md), [103](103-proposal-still-arriving.md), [104](104-record-before-the-first-pull.md), [105](105-quiet-set-count-follow-ups.md) |
 
+Task 94 is superseded: Coach during a workout on the web (WD7) removed the panel it changes.
+
 **What each waiting task waits for**
 - **A board or ruling** from the [design brief](design-brief-quality-wave.md):
   - 80 (QW5) and 81 (QW6), and 94 waits for WD7;
@@ -254,7 +256,6 @@ Task 17 supplies the Routines list/navigation contract while preserving the exis
 - [91](91-outbox-costs-linear.md) — A phone back from a long time offline drains its outbox in linear time
 - [92](92-catch-up-after-a-reopen.md) — iOS and web catch up after a live socket reopens
 - [93](93-share-page-set-count.md) — The web share page counts sets 1..N in logged order
-- [94](94-web-planned-rows-offered-load.md) — Coach's workout panel on the web reads the load the plan expects
 - [95](95-one-stated-best.md) — The Best tile follows the stated rule the records follow
 - [96](96-shared-performed-range.md) — Every surface states what was lifted, every set counted
 - [97](97-coach-read-receipt-weeks.md) — What Coach read counts only weeks it can show

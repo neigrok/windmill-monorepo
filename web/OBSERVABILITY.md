@@ -291,6 +291,19 @@ that answered, whatever its body, is never read as a lost connection: the room s
 deleted on another device under a running turn, and a turn ended by a sign-out, are expected and report nothing. No
 question, answer, picture, call input or result, id, pass or call id enters an event or a report.
 
+Coach during a workout (WD7) tells its steps under the iPhone's names through `coachStep` in `gymRuntime.js`, each property
+one of a closed set of labels and never a name or an id of a workout, a routine, a movement or a proposal, nor Coach's words:
+`gym_action` (`screen: coach`, `action: new_chat`, `door: workout`, `outcome: ok`) as Coach opens over the workout, in the
+rail's Coach tab or the phone's sheet, a fresh chat each time; `gym_proposal_shown` (`screen: coach`, `target: workout`,
+`state`: `pending`, `applied`, `rejected` or `out-of-date`, the last with `reason`: `replaced`, `workout-changed`,
+`workout-moved` or `workout-finished`) once a page for each state a workout proposal's card stands in; and
+`gym_proposal_outcome` (`screen: coach`, `target`: `workout` or `routine`, `action`: `apply` or `reject`, `outcome`:
+`decided`, `refused` with `reason`, one of the four above, `settled` when another device decided it first, `load-floor`,
+`not-writable` or `other`, or `failed`) for each decision on a card in Coach. A workout proposal's decision that fails
+unexpectedly reports `gym-workout-proposal-apply` or `gym-workout-proposal-dismiss` with the error's stack frames; an Apply
+the domain refuses as out of date is the card's sentence, a refusal and no Issue, and the log's refusal of a decision is
+the card's to say, so the room voices no notice and tells no `refusal` step for it.
+
 ## Roadmap
 
 The Board is the only path into a roadmap and nothing stands in front of it: every event and Sentry operation below fires

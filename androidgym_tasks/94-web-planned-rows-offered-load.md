@@ -1,7 +1,8 @@
 # Coach's workout panel on the web reads the load the plan expects
 
-**Status:** Waits for Coach during a workout on the web (WD7, the Web page of the Gym file), which draws Coach beside the
-rack.
+**Status:** Superseded by Coach during a workout on the web (WD7). Coach is open beside the rack and over it, so the
+panel this task changes is gone, and with it the last web reading of a planned row as *last × max*; the workout page's
+ledger reads the load the plan expects through `Prefill.expectedLoads`, as the phones do.
 
 **Figma:** WD7 on the Gym file's Web page (`2150:11627`), approved 2026-11-25. The phones' rule is drawn on 03.34
 ([Dark](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1742-40960)).

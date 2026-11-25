@@ -98,8 +98,6 @@ What gym gives the engine, for each seat. Its name is `gym.coach` and its versio
   (`propose_routine_change` or `propose_routine_removal`) and one workout proposal
   (`propose_workout_change`), each refused as `one-proposal`; and one `save_note`, refused as
   `one-note`.
-- The web offers no `propose_workout_change`: its room is closed while a workout is open, and no
-  board draws a workout proposal there.
 
 **The catalog and the provider's strict mode.** The AI service sends a tool to the provider in
 strict mode unless the caller says it is not strict ([AI service §6.2](ai-service.md#62-the-wire));
@@ -271,9 +269,9 @@ The web's Coach becomes the Coach the phones have. This is the largest part of t
 
 - Existing web conversations are not carried into the records, and a draft waiting for
   **Save routine** on the day the web moves is lost with them. (R-6)
-- Coach on the web stays closed while a workout is open, and signed out the gym room stays a sign-in
-  door. Neither is this move's to change; [the web as a device](web-device-parity.md) changes both.
-- A workout proposal a phone made appears in the shared History, where the web has no card for it.
+- Coach on the web is open during a workout and proposes a change to it, which the person applies on
+  its card, and a workout proposal a phone made takes the same card in the shared History; signed out,
+  Coach's tab is a sign-in door. [The web as a device](web-device-parity.md) §3 and §4 rule both.
 - The room, History, a created routine's card, the read receipt, a turn answering elsewhere, the
   ends of a turn, a picture held elsewhere, a phone's workout proposal and the access states of §6
   each need an approved board before they are built.

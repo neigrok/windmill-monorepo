@@ -325,7 +325,7 @@ and Android disagree.
   observation names: `GymTools.cpp` adds every week `get_stats` returns, empty ones included, and
   `ReadReceipt.cpp` each set's week. iOS counts weeks only from the workouts *What Coach read*
   lists and never prints `read.weeks`, so a totals-only answer reads *Read your movement history*
-  with no number; the web prints the server's weeks (`coach.js` `readLine`), and Android the weeks its own
+  with no number; the web prints the weeks its own receipt counts (`coach/CoachRoom.jsx` `receiptWords`), and Android the weeks its own
   receipt counts (`CoachReply.readLine`). The fix belongs to the backend: dogfood node `coach-receipt-weeks-provable`.
 - **10o · The page is the target.** The Gym iOS page holds the current target. 🚀 means the
   drawing matches verified implementation; 🔨 means implementation; ✅ means human-approved design
@@ -1372,13 +1372,17 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   boards for it (`368:645`) are rejected. With the approval, the Gym file's START HERE · Gym web (`804:5811`), which says
   the phone owns live training, is rewritten, and the 🚧 Plan / Routines / Training now boards (`1828:53034`,
   `1828:53151`, `1828:53298`, `1828:53416`), which draw the mirror's card that WD3.4 and WD4.1 replace, are archived.
-  Where the build of WD1–WD6 parts from the boards:
-  - *Coach during a workout (WD7).* The index draws *This workout* alone and the narrow toolbar no Coach button, and the
-    receipt has no *Share with Coach*: Coach on the web takes no handed question yet. Until it does, Coach speaks in
-    interim words no board draws, which claim nothing about a phone: closed while a workout is open, *Coach opens again
-    when this workout is over.*; its workout panel *This workout as logged so far. Nothing here logs a set.*; an empty
-    History *No conversations yet. What you ask Coach is listed here.* (`coach/CoachRoom.jsx`, `coach/History.jsx`). The
-    panel reads a planned set's load as *last* (`coach/coach.js`).
+  Where the build of WD1–WD7 parts from the boards:
+  - *Coach from the receipt.* The receipt has no *Share with Coach*: Coach on the web takes no handed question yet.
+  - *An empty History.* It says words no board draws, which claim nothing about a phone: *No conversations yet. What you
+    ask Coach is listed here.* (`coach/History.jsx`).
+  - *Coach during a workout (WD7).* A proposal's card keeps 08W.25's anatomy, which WD7's notes name, where the boards draw
+    design-system Buttons: a quiet filled Reject and a brand Apply, the routine's Apply quiet while a workout is open, the
+    title in regular weight, and a hairline between blocks. A block lists every line of its movement, as the phones do, an
+    unchanged one quiet, where WD7 draws the changed line alone, and a load of zero reads *0 kg* (the shared `ProposalDiff`),
+    where WD7.1 draws *bodyweight*. The sheet keeps the design system's grabber, which WD7.1 · 390 does not draw. The workout
+    page leaves Coach out signed out, where no board draws it. WD7's card replaces 08W.14's read-only row for a phone's
+    workout proposal (`2126:11058`, `2126:11183`), which waits for its 🗄 Archived mark.
   - *Edit movement (WD3.1).* It opens the movement's record, which renames it; the web has no form for its equipment.
   - *A stale plan edit (WD5.1).* The drawn heading, *{movement} changed in another tab.*, stands also when a phone or
     Coach changed the plan.
@@ -1660,8 +1664,6 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     scrim reads #5e5c5b against the board's #6a6866.
   - *Proposal diff.* The review sheet writes a load change as *30kg → 32.5kg*, with no space before
     the unit (`ui/ReviewSheet.kt:384` over `presentation/Proposal.kt`); every other Android readout spaces it.
-  - *Web planned rows.* Android, iOS and the web's workout page read a planned row at the load the plan expects
-    (*100 kg total × max*); Coach's workout panel on the web still reads *last × max* (`web/src/products/gym/coach/coach.js`).
 - **11w · An answer's proposal still arriving (designer, design brief QW2, task 103).** On the phone that ran a turn its
   proposal commits with its call, so the card stands with the answer. A conversation synced from another phone can land an
   answer before its proposal. Android then says *Reading proposal…* until a read misses, and until the miss settles draws
