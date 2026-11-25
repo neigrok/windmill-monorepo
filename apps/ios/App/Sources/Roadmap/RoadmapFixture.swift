@@ -6,6 +6,7 @@ import RoadmapDomain
 import SyncCore
 import SyncEngine
 import SyncSchema
+import SyncStore
 
 // Simulator boards. An account's roadmaps arriving by sync: roadmap-learn-to-sail (three steps done), roadmap-all-done
 // (all eight), roadmap-no-steps (*Night sailing*, with no step), roadmap-several (*Learn to sail* over two more, the
@@ -21,7 +22,8 @@ import SyncSchema
 // roadmap-full, a roadmap at the steps the registry lets it hold; roadmap-undo-finds-nothing, *Learn to sail*, where
 // the engine keeps no Undo of a band's act by the time it is tapped (`undoFindsNothing(in:)`); and roadmap-empty, which
 // holds none.
-// roadmap-unreadable cannot make its views. A shared roadmap's covers (`prepareCover`): roadmap-cover, signed in to an
+// roadmap-unreadable cannot make its views, and roadmap-unwritable, *Learn to sail* on a phone never signed in, cannot write
+// once it is planted (`faults(_:)`). A shared roadmap's covers (`prepareCover`): roadmap-cover, signed in to an
 // account of the phone's own, and roadmap-cover-signed-out, each opening the link to another account's public *Learn to
 // sail*; roadmap-cover-offline, which opens it and has no connection; roadmap-cover-private and
 // roadmap-cover-private-signed-out, the link to a roadmap of that account's that is private; and
@@ -43,6 +45,21 @@ enum RoadmapFixture {
     if runtime.settings.board == "roadmap-unreadable" { return { _, _ in throw AppFailure(message: "The board's views cannot be made.") } }
     #endif
     return { scope, type in try runtime.engine.records(scope, type, .drawn, visibleOnly: false) }
+  }
+
+  // The store's fault hook. roadmap-unwritable's fails every commit before its transaction commits, as a full disk would,
+  // once its roadmap is planted (`storeFull`), and every read stands.
+  nonisolated static let storeFull = Atomic(false)
+  static func faults(_ settings: AppSettings) -> CrashPoints {
+    #if DEBUG && targetEnvironment(simulator)
+    guard settings.board == "roadmap-unwritable" else { return .none }
+    return CrashPoints { point in
+      guard point == .beforeCommit(.commit), storeFull.load(ordering: .relaxed) else { return }
+      throw CocoaError(.fileWriteOutOfSpace)
+    }
+    #else
+    return .none
+    #endif
   }
 
   // The Graph the room holds. A simulator launch has it append its measures to the file `-graph-measures` names, one
@@ -197,11 +214,12 @@ enum RoadmapFixture {
                      "roadmap-all-done": ["choose", "parts", "rig", "read", "tie", "leave", "tri", "solo"]][board]
     // The guide each board's *Learn to sail* holds.
     let guide = ["roadmap-guide": Guides.sail, "roadmap-guide-above": Guides.sail, "roadmap-guide-long": Guides.long][board]
-    let local = ["roadmap-many", "roadmap-handbook", "roadmap-full", "roadmap-undo-finds-nothing"]
+    let local = ["roadmap-many", "roadmap-handbook", "roadmap-full", "roadmap-undo-finds-nothing", "roadmap-unwritable"]
     guard completed != nil || board == "roadmap-no-steps" || local.contains(board) else { return true }
     do {
-      // roadmap-many, roadmap-handbook, roadmap-full and roadmap-undo-finds-nothing are made on the phone itself, signed
-      // out: the first with *Learn to sail* remembered as the roadmap last open, the others holding their one roadmap alone.
+      // roadmap-many, roadmap-handbook, roadmap-full, roadmap-undo-finds-nothing and roadmap-unwritable are made on the phone
+      // itself, signed out: the first with *Learn to sail* remembered as the roadmap last open, the others holding their one
+      // roadmap alone.
       if local.contains(board) {
         guard let runner = model.runtime?.roadmapRunner else { throw AppFailure(message: "no runtime") }
         if board == "roadmap-handbook" {
@@ -215,6 +233,11 @@ enum RoadmapFixture {
         if board == "roadmap-undo-finds-nothing" {
           try plantLearnToSail(runner)
           Task { @MainActor in await undoFindsNothing(in: model) }
+          return true
+        }
+        if board == "roadmap-unwritable" {
+          try plantLearnToSail(runner)
+          storeFull.store(true, ordering: .relaxed)
           return true
         }
         let sail = try plantLearnToSail(runner).tree

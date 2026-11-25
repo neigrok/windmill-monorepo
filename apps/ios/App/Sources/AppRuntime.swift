@@ -151,7 +151,8 @@ final class AppRuntime {
       !tokens.accounts().isEmpty || !revocations.accounts().isEmpty
     let storage = try ProtectedStorage(directory: storageDirectory, telemetry: telemetry)
     do {
-      store = try Store(path: storage.databasePath, registry: SyncSchema.registry, rewriteDeviceValue: ImportCoachRoutineBatch.rewriteDeviceValue,
+      store = try Store(path: storage.databasePath, registry: SyncSchema.registry, crashPoints: RoadmapFixture.faults(settings),
+                        rewriteDeviceValue: ImportCoachRoutineBatch.rewriteDeviceValue,
                         commandResultWrites: Self.commandResultWrites, pendingDeviceWork: JournalWriting.pendingWork)
     } catch {
       telemetry.failure("storage_open", kind: Store.failureKind(error) ?? "storage")

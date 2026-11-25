@@ -557,7 +557,9 @@ of the layout's shared fixture, read from the repository the build was made in a
 steps' ids are the phone's, with the first 120 of the fixture's 1,800 done steps marked, since signed out each mark's
 commit reads everything the phone has still to send; `-board roadmap-full` is a phone never signed in that holds *Every
 harbour in Europe*, as many steps as the registry lets a roadmap hold, each harbour entered Up next and its berth Locked
-behind it; `-board roadmap-unreadable` opens the room over views it cannot make; and a shared roadmap's covers
+behind it; `-board roadmap-unreadable` opens the room over views it cannot make; `-board roadmap-unwritable` is a phone
+never signed in that holds *Learn to sail*, whose store fails every commit once it is planted, as a full disk would; and a
+shared roadmap's covers
 (`RoadmapFixture.prepareCover`): `-board roadmap-cover` has another account plant *Learn to sail*, complete three steps
 and make it public, signs the phone in to an account of its own and opens the roadmap's link, and
 `-board roadmap-cover-signed-out` opens it signed out; `-board roadmap-cover-offline` opens it with no connection;
