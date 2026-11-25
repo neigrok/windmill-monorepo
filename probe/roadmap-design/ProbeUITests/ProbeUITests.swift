@@ -16,10 +16,10 @@ final class ProbeUITests: XCTestCase {
     private func capture(_ name: String, in app: XCUIApplication) throws {
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
         let environment = ProcessInfo.processInfo.environment
-        let folder = URL(fileURLWithPath: try XCTUnwrap(environment["SHOTS_DIR"]))
-        let appearance = try XCTUnwrap(environment["SHOTS_APPEARANCE"])
-        try XCUIScreen.main.screenshot().pngRepresentation.write(to: folder.appendingPathComponent("\(name)-\(appearance).png"))
-        try app.debugDescription.write(to: folder.appendingPathComponent("\(name)-\(appearance).tree.txt"), atomically: true, encoding: .utf8)
+        let folder = URL(fileURLWithPath: try XCTUnwrap(environment["PROBE_OUT"]))
+        let appearance = try XCTUnwrap(environment["PROBE_APPEARANCE"])
+        try XCUIScreen.main.screenshot().pngRepresentation.write(to: folder.appendingPathComponent("shots/\(name)-\(appearance).png"))
+        try app.debugDescription.write(to: folder.appendingPathComponent("trees/\(name)-\(appearance).tree.txt"), atomically: true, encoding: .utf8)
     }
 
     func testFind() throws {
@@ -202,6 +202,26 @@ final class ProbeUITests: XCTestCase {
         app.buttons["Rename"].tap()
         XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 10))
         try capture("03-rename-field", in: app)
+    }
+
+    func testRenameInThePrincipalSlot() throws {
+        for variant in ["principal", "principal-binding"] {
+            let app = launch("rename", variant: variant)
+            XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 30))
+            try capture("03-rename-\(variant)", in: app)
+            app.navigationBars.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            guard app.buttons["Rename"].waitForExistence(timeout: 5) else {
+                try capture("03-rename-\(variant)-title-tapped-no-menu", in: app)
+                continue
+            }
+            try capture("03-rename-\(variant)-title-menu-open", in: app)
+            app.buttons["Rename"].tap()
+            guard app.textFields.firstMatch.waitForExistence(timeout: 5) else {
+                try capture("03-rename-\(variant)-rename-tapped-no-field", in: app)
+                continue
+            }
+            try capture("03-rename-\(variant)-field", in: app)
+        }
     }
 
     func testSearchScrolled() throws {

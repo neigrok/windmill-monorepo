@@ -20,7 +20,7 @@ struct ProbeScreen: View {
         switch probe {
         case "menu": MenuProbe(subtitleShape: variant)
         case "title": TitleProbe(variant: variant)
-        case "rename": RenameProbe()
+        case "rename": RenameProbe(variant: variant)
         case "dialog": DialogProbe(source: variant)
         case "alert": AlertProbe(variant: variant)
         case "room": RoomProbe(variant: variant)

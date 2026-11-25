@@ -137,7 +137,7 @@ struct UnavailableProbe: View {
                     } description: {
                         Text("Add the first step and the roadmap grows from there.")
                     } actions: {
-                        Button("Add a Step") {}.buttonStyle(.glass)
+                        Button("Add a Step") {}.glassButton()
                         if variant == "buttons" {
                             Button("Add a Step") {}.buttonStyle(.bordered)
                             Button("Add a Step") {}.buttonStyle(.borderedProminent)
@@ -155,10 +155,10 @@ struct UnavailableProbe: View {
 struct GlassButtons: View {
     var body: some View {
         HStack {
-            Button("Glass") {}.buttonStyle(.glass)
-            Button("Prominent") {}.buttonStyle(.glassProminent).tint(.orange)
-            Button("Small") {}.buttonStyle(.glass).controlSize(.small)
-            Button("Off") {}.buttonStyle(.glass).disabled(true)
+            Button("Glass") {}.glassButton()
+            Button("Prominent") {}.glassProminentButton().tint(.orange)
+            Button("Small") {}.glassButton().controlSize(.small)
+            Button("Off") {}.glassButton().disabled(true)
         }
     }
 }
@@ -176,9 +176,9 @@ struct GlassProbe: View {
                 }
                 Section("Prominent, disabled and small") {
                     HStack {
-                        Button("Prominent") {}.buttonStyle(.glassProminent)
-                        Button("Off") {}.buttonStyle(.glassProminent).disabled(true)
-                        Button("Small") {}.buttonStyle(.glassProminent).controlSize(.small)
+                        Button("Prominent") {}.glassProminentButton()
+                        Button("Off") {}.glassProminentButton().disabled(true)
+                        Button("Small") {}.glassProminentButton().controlSize(.small)
                     }
                 }
             }

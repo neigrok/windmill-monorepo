@@ -41,7 +41,7 @@ struct DialogProbe: View {
                     Button(role: .destructive) {} label: {
                         Text("Delete Step").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glassProminent)
+                    .glassProminentButton()
                     .controlSize(.large)
                     .padding(.horizontal)
                     .modifier(DeleteStepDialog(isPresented: $isPresented))
@@ -149,7 +149,7 @@ struct StepSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(role: .close) {}
+                    CloseButton()
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button("Complete", systemImage: "checkmark") {}
@@ -187,14 +187,14 @@ struct CreateStepSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     if usesRoleButtons {
-                        Button(role: .cancel) {}
+                        CancelButton()
                     } else {
                         Button("Cancel") {}
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if usesRoleButtons {
-                        Button(role: .confirm) {}.disabled(isCreateDisabled)
+                        ConfirmButton().disabled(isCreateDisabled)
                     } else {
                         Button("Create") {}.disabled(isCreateDisabled)
                     }

@@ -55,11 +55,12 @@ struct TitleProbe: View {
     let variant: String
 
     var body: some View {
+        let title = variant.contains("long") ? "Coastal navigation handbook" : "Learn to sail"
         NavigationStack {
             List { StepRows(count: 14) }
-                .navigationTitle(variant.contains("long") ? "Coastal navigation handbook" : "Learn to sail")
+                .navigationTitle(title)
                 .navigationBarTitleDisplayMode(variant.contains("large") ? .large : .inline)
-                .navigationSubtitle("3 of 8 done")
+                .subtitle("3 of 8 done", under: title)
                 .toolbarTitleMenu {
                     Button("Rename", systemImage: "pencil") {}
                     Button("Guide", systemImage: "text.book.closed") {}
@@ -78,7 +79,7 @@ struct TitleProbe: View {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button("Add", systemImage: "plus") {}
                         }
-                        ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                        if #available(iOS 26.0, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
                         ToolbarItem(placement: .topBarTrailing) {
                             Button("Account", systemImage: "person.crop.circle") {}
                         }
@@ -94,17 +95,40 @@ struct TitleProbe: View {
 }
 
 struct RenameProbe: View {
+    let variant: String
     @State private var name = "Learn to sail"
 
     var body: some View {
         NavigationStack {
             List { StepRows(count: 14) }
-                .navigationTitle($name)
+                .modifier(RenamableTitle(variant: variant, name: $name))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarTitleMenu {
                     RenameButton()
                     Button("Guide", systemImage: "text.book.closed") {}
                 }
+        }
+    }
+}
+
+// The system's editable title, or the room's title before iOS 26: the name over its progress in the principal slot,
+// with the name plain as the room passes it ("principal") or bound to the field ("principal-binding").
+struct RenamableTitle: ViewModifier {
+    let variant: String
+    @Binding var name: String
+
+    func body(content: Content) -> some View {
+        switch variant {
+        case "principal":
+            content.navigationTitle(name).toolbar {
+                ToolbarItem(placement: .principal) { PrincipalTitle(title: name, subtitle: "3 of 8 done") }
+            }
+        case "principal-binding":
+            content.navigationTitle($name).toolbar {
+                ToolbarItem(placement: .principal) { PrincipalTitle(title: name, subtitle: "3 of 8 done") }
+            }
+        default:
+            content.navigationTitle($name)
         }
     }
 }
@@ -127,7 +151,7 @@ struct SearchProbe: View {
                     placement: .navigationBarDrawer(displayMode: variant.contains("always") ? .always : .automatic),
                     prompt: "Find a step"
                 )
-                .safeAreaBar(edge: .top) {
+                .bar(edge: .top) {
                     HStack {
                         Picker("View", selection: $lens) {
                             Text("Board").tag("Board")
@@ -136,19 +160,19 @@ struct SearchProbe: View {
                         .pickerStyle(.segmented)
                         Button("Filter", systemImage: "line.3.horizontal.decrease") {}
                             .labelStyle(.iconOnly)
-                            .buttonStyle(.glass)
+                            .glassButton()
                     }
                     .padding(.horizontal)
                 }
-                .safeAreaBar(edge: .bottom) {
+                .bar(edge: .bottom) {
                     HStack {
                         Button("Attach", systemImage: "plus") {}
                             .labelStyle(.iconOnly)
-                            .buttonStyle(.glass)
+                            .glassButton()
                         TextField("Ask Coach", text: $draft)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
-                            .glassEffect(.regular, in: .capsule)
+                            .glassCapsule()
                     }
                     .padding(.horizontal)
                 }

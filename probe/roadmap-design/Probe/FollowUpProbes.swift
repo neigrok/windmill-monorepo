@@ -10,11 +10,11 @@ struct Find: ViewModifier {
         if variant.hasPrefix("drawerminimize") {
             content
                 .searchable(text: $query, isPresented: $isSearching, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Find a step")
-                .searchToolbarBehavior(.minimize)
+                .minimizedSearch()
         } else if variant.hasPrefix("minimize") {
             content
                 .searchable(text: $query, isPresented: $isSearching, prompt: "Find a step")
-                .searchToolbarBehavior(.minimize)
+                .minimizedSearch()
         } else if variant.hasPrefix("toolbar") {
             content.searchable(text: $query, isPresented: $isSearching, placement: .toolbar, prompt: "Find a step")
         } else if variant.hasPrefix("drawer") {
@@ -63,7 +63,7 @@ struct RoomProbe: View {
             }
             .navigationTitle("Learn to sail")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationSubtitle("3 of 8 done")
+            .subtitle("3 of 8 done", under: "Learn to sail")
             .toolbarTitleMenu {
                 Button("Rename", systemImage: "pencil") {}
                 Button("Guide", systemImage: "text.book.closed") {}
@@ -79,10 +79,10 @@ struct RoomProbe: View {
                         }
                     }
                 }
-                if variant.contains("searchtop") {
+                if #available(iOS 26.0, *), variant.contains("searchtop") {
                     DefaultToolbarItem(kind: .search, placement: .topBarTrailing)
                 }
-                if variant.contains("searchbottom") {
+                if #available(iOS 26.0, *), variant.contains("searchbottom") {
                     DefaultToolbarItem(kind: .search, placement: .bottomBar)
                 }
                 if !variant.contains("notrailing") {
@@ -91,7 +91,7 @@ struct RoomProbe: View {
                     }
                 }
             }
-            .safeAreaBar(edge: .top) {
+            .bar(edge: .top) {
                 HStack {
                     Picker("View", selection: $lens) {
                         Text("Board").tag("Board")
@@ -103,19 +103,19 @@ struct RoomProbe: View {
                         isSearching = true
                     }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(.glass)
+                    .glassButton()
                 }
                 .padding(.horizontal)
             }
-            .safeAreaBar(edge: .bottom) {
+            .bar(edge: .bottom) {
                 HStack {
                     Button("Attach", systemImage: "plus") {}
                         .labelStyle(.iconOnly)
-                        .buttonStyle(.glass)
+                        .glassButton()
                     TextField("Ask Coach", text: $draft)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
-                        .glassEffect(.regular, in: .capsule)
+                        .glassCapsule()
                 }
                 .padding(.horizontal)
             }
@@ -138,12 +138,13 @@ struct RoomProbe: View {
 }
 
 struct SystemTitleMenu: ViewModifier {
+    let title: String
     let isShown: Bool
 
     func body(content: Content) -> some View {
         if isShown {
             content
-                .navigationSubtitle("3 of 8 done")
+                .subtitle("3 of 8 done", under: title)
                 .toolbarTitleMenu {
                     Button("Rename", systemImage: "pencil") {}
                     Button("Guide", systemImage: "text.book.closed") {}
@@ -169,7 +170,7 @@ struct LongTitleProbe: View {
             List { StepRows(count: 14) }
                 .navigationTitle(title)
                 .navigationBarTitleDisplayMode(.inline)
-                .modifier(SystemTitleMenu(isShown: !variant.contains("principal")))
+                .modifier(SystemTitleMenu(title: title, isShown: !variant.contains("principal")))
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button {} label: {
@@ -207,7 +208,7 @@ struct LongTitleProbe: View {
                         }
                     }
                     if variant.contains("spacer") {
-                        ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                        if #available(iOS 26.0, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Account", systemImage: "person.crop.circle") {}
