@@ -72,8 +72,8 @@ class CorpusTests {
         val run = abilityCases - unseeded.toSet()
         val notOffered = run.count { abilityExpected(it)["refused"]?.str() == AbilityRefusal.notOffered.code }
         val refused = run.count { it.expect["refused"] != null } - notOffered
-        val notApplicable = catalog2.size + turnWire.size + coachWords.size + refusedStart.size
-        println("Gym corpus: ${paths.size + abilities.size + 1}/${files.size} files, $cases cases, ${run.size} ability cases (${run.size - notOffered - refused} results byte-equal, $refused refused alike, $notOffered withheld or shares refused on the phone), ${unseeded.size} minting cases with no seeded id, $notApplicable explicitly not applicable (catalog/2, the turn wire, the words, the refused start), no unclaimed file")
+        val notApplicable = catalog2.size + turnWire.size + coachWords.size + refusedStart.size + restSettings.size
+        println("Gym corpus: ${paths.size + abilities.size + 1}/${files.size} files, $cases cases, ${run.size} ability cases (${run.size - notOffered - refused} results byte-equal, $refused refused alike, $notOffered withheld or shares refused on the phone), ${unseeded.size} minting cases with no seeded id, $notApplicable explicitly not applicable (catalog/2, the turn wire, the words, the refused start, the rest settings), no unclaimed file")
     }
 
     // gym Coach §3.5, INV-1, INV-2: the case's call through the executor's action over its records as its seat at its moment, beside a thread and a running Coach message of this replica's turn. A minting call's id is the server gate's seeded id (G-7): the turn is its seed, and the calls before it the ordinal's admitted predecessors, refused by their rule.
