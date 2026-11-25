@@ -120,7 +120,7 @@ public:
   LinkResult linkAccount(const UserId& caller, const std::string& linkSecret,
                          const SessionContext& ctx = {});
 
-  // Every session is keyed by its token's digest, which a request's token is read as (SentCredentials).
+  // A session is keyed by its token's digest; a request's token is digested as it is read (SentCredentials).
   std::string digestOf(const std::string& sessionSecret);
   // The account of the live session `digest` keys, its window rolled forward and its metadata healed from ctx. A closed
   // account is refused even if a stale session row survives.

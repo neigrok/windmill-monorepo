@@ -151,8 +151,8 @@ refused `branch-unconfirmed` after the write gate. Pointers stay the writer's al
 
 `SentCaller` (`platform/adapters/http/Caller.h`) reads a request's caller by the one credential rule
 (`AUTH.md`, Native surface notes) and `AuthService::revalidate` resolves each session's digest to its
-account and rolls the session. Every surface reuses them, and none trusts a client-supplied user or
-actor id.
+account and rolls the session. The REST routes and both sockets reuse them, and no surface trusts a
+client-supplied user or actor id.
 
 ### REST
 
