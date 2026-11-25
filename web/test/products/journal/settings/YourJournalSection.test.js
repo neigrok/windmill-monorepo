@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 
 import { BrowserSyncEngine } from '../../../../src/platform/sync/engine.js';
 import { syncSession } from '../../../../src/platform/sync/session.js';
-import { savePage } from '../../../../src/products/journal/pages.js';
+import { savePage, SCOPE } from '../../../../src/products/journal/pages.js';
+import { EDITOR_DRAFT_KEY } from '../../../../src/products/journal/domain/page.js';
 import { environment } from '../../../platform/sync/fakes.js';
 import { journalRegistry, journalProduct } from '../../../platform/sync/oracle-adapters/journal.js';
 import { ServerState } from '../../../../../packages/api-contract/sync/reference/server/state.js';
@@ -17,7 +18,8 @@ import { elementsOf, loadScreen, renderHook, settle, textOf } from '../../gym/ha
 const day = '2026-09-27';
 
 // A browser whose engine answers to the engine's reference server, signed in to `account` or signed out, and the section
-// drawn over it as the settings page draws it for that seat; a `lapsed` seat is signed out over the account's replica.
+// drawn over it as the settings page draws it for that seat, its events and Sentry reports told to `told`; a `lapsed` seat
+// is signed out over the account's replica.
 async function section(t, { account = null, lapsed = false } = {}) {
   const env = environment();
   env.timers.time = Date.parse(`${day}T12:00:00Z`);
@@ -45,8 +47,11 @@ async function section(t, { account = null, lapsed = false } = {}) {
   t.mock.method(syncSession, 'getSnapshot', () => ({ engine, ready: true, signedIn: Boolean(seat), account: seat, online: true, error: false }));
   const { YourJournalSection } = await loadScreen('products/journal/settings/YourJournalSection.jsx');
   const write = (body) => savePage(engine, { day, body, mood: 3, energy: null, source: 'typed' });
+  const told = { events: [], reports: [] };
+  const track = (name, props) => told.events.push([name, props]);
+  const report = (...args) => told.reports.push(args);
   const draw = () => {
-    const view = renderHook(t, () => YourJournalSection(), { live: true, context: { account: seat && { id: seat } } });
+    const view = renderHook(t, () => YourJournalSection({ track, report }), { live: true, context: { account: seat && { id: seat } } });
     const content = () => elementsOf(view.tree.props.children);
     const button = () => content().find((element) => element.props.variant === 'secondary') ?? null;
     return {
@@ -56,10 +61,13 @@ async function section(t, { account = null, lapsed = false } = {}) {
       button: () => button() && { label: textOf(button().props.children), disabled: button().props.disabled, busy: button().props.ariaBusy },
       outcome: () => content().filter((element) => element.type === 'p' && element.props.style?.color).map((line) => [textOf(line), line.props.style.color]),
       press: () => button().props.onClick(),
+      // The press a second click makes before the page draws the first one's: the same handler, twice.
+      pressTwice: () => { const { onClick } = button().props; onClick(); onClick(); },
+      redraw: () => view.redraw(),
       unsent: () => content().find((element) => 'account' in element.props)?.props.account,
     };
   };
-  return { engine, write, draw };
+  return { engine, write, draw, told };
 }
 
 function downloads(t) {
@@ -127,13 +135,55 @@ test('signed in, the export stands in today\'s words until the first pull says t
   assert.deepEqual({ button: screen.button(), words: screen.words() }, { button: null, words: ['No pages to export yet.'] });
 });
 
-test('a lapsed seat\'s page is signed out over the account\'s replica, and says its pages are the account\'s, not this browser\'s', async (t) => {
-  const { draw } = await section(t, { account: 'A', lapsed: true });
+test('over an account\'s replica with no account settled, the section says the pages are the account\'s and its export tells signed_in', async (t) => {
+  const { engine, draw, told } = await section(t, { account: 'A', lapsed: true });
+  downloads(t);
   const screen = draw();
   await settle();
   assert.deepEqual({ button: screen.button(), words: screen.words(), unsent: screen.unsent() }, {
     button: { label: 'Export my pages', disabled: false, busy: false },
     words: ['One Markdown file — every page you have written, oldest first.'],
     unsent: null,
+  });
+  screen.press();
+  await engine.pull();
+  await settle();
+  assert.deepEqual(told, { events: [['journal_export', { outcome: 'empty', seat: 'signed_in' }]], reports: [] });
+});
+
+test('a double click on Export my pages exports once', async (t) => {
+  const { write, draw, told } = await section(t);
+  await write('written on this browser');
+  const files = downloads(t);
+  const screen = draw();
+  await settle();
+  screen.pressTwice();
+  await settle();
+  assert.deepEqual({ files: files.length, told }, { files: 1, told: { events: [['journal_export', { outcome: 'ok', seat: 'signed_out' }]], reports: [] } });
+});
+
+test('pages the section cannot count leave the export offered, and the count\'s failure is reported once', async (t) => {
+  const { engine, write, draw, told } = await section(t);
+  await write('written on this browser');
+  await engine.write(null, (device) => {
+    device.activeReplica.device.journal = { ...(device.activeReplica.device.journal ?? {}),
+      [EDITOR_DRAFT_KEY]: { day: 42, document: { body: 'x', mood: null, energy: null, source: 'typed', stamp: '1:0:a' } } };
+  }, [SCOPE]);
+  const screen = draw();
+  await settle();
+  screen.redraw();
+  await settle();
+  assert.deepEqual({ button: screen.button(), words: screen.words() }, {
+    button: { label: 'Export my pages', disabled: false, busy: false },
+    words: ['One Markdown file — every page you have written here, oldest first.'],
+  });
+  assert.deepEqual(told.reports.map(([kind, operation, stack, route, tags]) => [kind, operation, stack.startsWith('Error: editorDraft.day'), route, tags]),
+    [['journal', 'journal-export', true, '/app/settings', { step: 'count' }]]);
+  screen.press();
+  await settle();
+  assert.deepEqual({ outcome: screen.outcome(), events: told.events, steps: told.reports.map((report) => report[4].step) }, {
+    outcome: [["Couldn't build your export just now — try again.", 'var(--color-danger)']],
+    events: [['journal_export', { outcome: 'failed', seat: 'signed_out' }]],
+    steps: ['count', 'pages'],
   });
 });
