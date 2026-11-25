@@ -1,11 +1,12 @@
 // One continuous Markdown file, oldest first, of the written pages this browser holds. Scales are written as fractions
 // ("mood 4/10"), never words, and at full precision — a zero is an answer and prints; unset omits the line.
 
-import { syncSession } from '../../../platform/sync/session.js';
 import { captureError } from '../../../telemetry/sentry.js';
 import { track as trackEvent } from '../../../telemetry/beacon.js';
 import { isWritten, normalizePage, pagesOf, SCOPE } from '../pages.js';
 import { t } from '../i18n/settings/index.js';
+
+const FILE_NAME = 'windmill-journal.md';
 
 export function journalMarkdown(pages) {
   const written = pages.map(normalizePage).filter(isWritten).sort((a, b) => (a.day < b.day ? -1 : 1));
@@ -20,6 +21,9 @@ export function journalMarkdown(pages) {
   });
   return `# ${t('journal.export.title')}\n\n${blocks.join('\n')}`;
 }
+
+// What the export holds of a snapshot of the journal: the room's written pages, as the room shows them.
+export const exportablePages = (engine, snapshot) => pagesOf(engine, snapshot).filter(isWritten);
 
 // The room's written pages, as the room shows them. Signed out they are the browser's own; a bound replica first finishes
 // its first pull of the journal, so the file holds the account's pages, with what this browser holds in their day's place.
@@ -36,7 +40,7 @@ export function exportedPages(engine, waitMs = 30_000) {
       unsubscribe();
       try {
         if (error) reject(error);
-        else resolve(pagesOf(engine, hold.getSnapshot()).filter(isWritten));
+        else resolve(exportablePages(engine, hold.getSnapshot()));
       } catch (thrown) { reject(thrown); }
       finally { hold.release(); }
     };
@@ -50,12 +54,17 @@ export function exportedPages(engine, waitMs = 30_000) {
   });
 }
 
-// Reading the pages, writing them as Markdown and handing the file to the browser: an expected wait or a replica gone is
-// its outcome alone, and anything else in any step is a failure reported with that step and the error's stack.
-export async function buildJournalArchive(engine = syncSession.engine, { track = trackEvent, report = captureError } = {}) {
+// Reading the pages, writing them as Markdown and handing the file to the browser, for the person on `seat` (`signed_in` or
+// `signed_out`): no written page is the outcome `empty` and downloads nothing, an expected wait or a replica gone is its
+// outcome alone, and anything else in any step is a failure reported with that step and the error's stack.
+export async function buildJournalArchive(engine, seat, { track = trackEvent, report = captureError } = {}) {
   let step = 'pages';
   try {
     const pages = await exportedPages(engine);
+    if (pages.length === 0) {
+      track('journal_export', { outcome: 'empty', seat });
+      return { count: 0, file: null };
+    }
     step = 'file';
     const file = new Blob([journalMarkdown(pages)], { type: 'text/markdown' });
     step = 'download';
@@ -63,15 +72,15 @@ export async function buildJournalArchive(engine = syncSession.engine, { track =
     try {
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = 'windmill-journal.md';
+      anchor.download = FILE_NAME;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
     } finally { URL.revokeObjectURL(url); }
-    track('journal_export', { outcome: 'ok' });
-    return { count: pages.length };
+    track('journal_export', { outcome: 'ok', seat });
+    return { count: pages.length, file: FILE_NAME };
   } catch (error) {
-    track('journal_export', { outcome: error?.reason ?? 'failed' });
+    track('journal_export', { outcome: error?.reason ?? 'failed', seat });
     if (!error?.reason) report('journal', 'journal-export', error?.stack ?? '', '/app/settings', { step });
     throw error;
   }

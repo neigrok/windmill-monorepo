@@ -73,8 +73,10 @@ export const journalRoutes = {
       many: t('journal.signedOutWork.many'),
     },
   },
+  // The export reads the replica, the browser's own pages signed out.
   settingsSections: {
     data: [YourJournalSection],
+    signedOut: [YourJournalSection],
   },
   signOutNotice,
   // An account change forgets what Talk held for the last account: a recording never crosses accounts. The old pages no

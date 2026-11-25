@@ -1,4 +1,5 @@
-// The settings home, in the account chrome shared with /connect.
+// The settings home, in the account chrome shared with /connect. Signed in it is the account's; signed out it opens on the
+// browser's own copy, with the product sections that run on it and a way to sign in for the rest.
 
 import React, { Suspense } from 'react';
 import { AccountChrome } from '../account/AccountChrome.jsx';
@@ -14,10 +15,18 @@ import { FeedbackSection } from './FeedbackSection.jsx';
 import { CloseAccountSection } from './CloseAccountSection.jsx';
 import { t } from '../i18n/settings/index.js';
 
-// `main` sits in the product zone after the account identity; `data` renders last, beside the
-// account's own close.
-const PRODUCT_MAIN_SECTIONS = PRODUCTS.flatMap((product) => product.settingsSections?.main ?? []);
-const PRODUCT_DATA_SECTIONS = PRODUCTS.flatMap((product) => product.settingsSections?.data ?? []);
+// `main` sits in the product zone after the account identity; `data` renders last, beside the account's own close.
+// Signed out, the page keeps that order and holds only the sections a product lists as `signedOut`: those that run on the
+// browser's own copy.
+const sectionsIn = (zone) => PRODUCTS.flatMap((product) => product.settingsSections?.[zone] ?? []);
+const PRODUCT_MAIN_SECTIONS = sectionsIn('main');
+const PRODUCT_DATA_SECTIONS = sectionsIn('data');
+const RUN_SIGNED_OUT = new Set(sectionsIn('signedOut'));
+const SIGNED_OUT_SECTIONS = [...PRODUCT_MAIN_SECTIONS, ...PRODUCT_DATA_SECTIONS].filter((Section) => RUN_SIGNED_OUT.has(Section));
+
+function ProductSections({ sections }) {
+  return <Suspense fallback={null}>{sections.map((Section, i) => <Section key={i} />)}</Suspense>;
+}
 
 export function SettingsPage({ inShell = false }) {
   const { user, status } = useAuth();
@@ -25,38 +34,35 @@ export function SettingsPage({ inShell = false }) {
   const openSignInDoor = useSignInDoor();
 
   return (
-    <>
-      <AccountChrome width={540} bare={inShell}>
-        <h1 style={title}>{t('shell.settings.title')}</h1>
+    <AccountChrome width={540} bare={inShell}>
+      {/* An account's settings, or with none known on this browser the seat menu's word for the page. */}
+      <h1 style={title}>{user ? t('shell.settings.title') : t('shell.account.settings')}</h1>
 
-        {status === 'loading' ? null : signedIn ? (
-          <>
-            <ProfileSection />
-            <Suspense fallback={null}>
-              {PRODUCT_MAIN_SECTIONS.map((Section, i) => <Section key={i} />)}
-            </Suspense>
-            <ConnectedToolsSection />
-            <ApiKeysSection />
-            <SessionsSection />
-            <FeedbackSection />
-            <Suspense fallback={null}>
-              {PRODUCT_DATA_SECTIONS.map((Section, i) => <Section key={i} />)}
-            </Suspense>
-            <CloseAccountSection />
-          </>
-        ) : (
-          <div style={{ marginTop: 6 }}>
-            <p style={gate}>{t('shell.settings.signedOut')}</p>
+      {status === 'loading' ? null : signedIn ? (
+        <>
+          <ProfileSection />
+          <ProductSections sections={PRODUCT_MAIN_SECTIONS} />
+          <ConnectedToolsSection />
+          <ApiKeysSection />
+          <SessionsSection />
+          <FeedbackSection />
+          <ProductSections sections={PRODUCT_DATA_SECTIONS} />
+          <CloseAccountSection />
+        </>
+      ) : (
+        <>
+          <div style={{ marginTop: 14 }}>
+            <p style={signInLine}>{t('shell.settings.signedOut')}</p>
             <Button variant="primary" size="sm" onClick={openSignInDoor}>{t('shell.auth.signIn')}</Button>
           </div>
-        )}
-      </AccountChrome>
-
-    </>
+          <ProductSections sections={SIGNED_OUT_SECTIONS} />
+        </>
+      )}
+    </AccountChrome>
   );
 }
 
 export default SettingsPage;
 
 const title = { fontFamily: 'var(--font-display)', fontSize: '19px', fontWeight: 700, lineHeight: 1.25, margin: '4px 0 2px' };
-const gate = { fontSize: 'var(--text-xs)', lineHeight: 1.5, color: 'var(--text-secondary)', margin: '0 0 12px' };
+const signInLine = { fontSize: 'var(--text-xs)', lineHeight: 1.5, color: 'var(--text-secondary)', margin: '0 0 10px' };
