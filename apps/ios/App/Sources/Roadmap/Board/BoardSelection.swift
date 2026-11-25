@@ -28,7 +28,7 @@ final class BoardSelection {
   let tree: DomainKit.ID<RoadmapEntry>
   // The steps chosen, by their ids, as the list's edit mode holds them.
   var steps: Set<String> {
-    didSet { if takesEveryStart && !(room.shown.map { $0.takesEveryStart(oldValue) } ?? false) { refuseDelete() } }
+    didSet { if takesEveryStart && !(room.shown.map { $0.effects(of: oldValue).takesEveryStart } ?? false) { refuseDelete() } }
   }
 
   init(_ steps: Set<String>, of tree: DomainKit.ID<RoadmapEntry>, in room: RoadmapModel) {
@@ -50,7 +50,7 @@ final class BoardSelection {
   }
 
   // Delete is dimmed while the choice holds every step the roadmap starts from.
-  var takesEveryStart: Bool { open?.takesEveryStart(steps) ?? false }
+  var takesEveryStart: Bool { open?.effects(of: steps).takesEveryStart ?? false }
 
   // The steps the Board's query keeps, a folded group's too: what Select All takes, as 02.12 draws it taking a roadmap's
   // starting step from its folded Done.
@@ -100,14 +100,13 @@ final class BoardSelection {
   func askDelete() {
     let rows = rows
     guard let open, !rows.isEmpty, !takesEveryStart else { return }
-    let followers = Set(rows.flatMap { (row: RoadmapModel.Row) -> [String] in open.followers[Array(row.id.utf8)] ?? [] }).subtracting(steps)
-    room.question = .steps(rows, followers: followers.count)
+    room.question = .steps(rows, followers: open.effects(of: steps).follow.count)
   }
 
   // The question answered Delete N Steps: every step chosen goes in one gesture the engine holds, with Undo for the
   // hold, and the selection ends.
   func delete(_ rows: [RoadmapModel.Row]) {
-    guard let open, !rows.isEmpty, !open.takesEveryStart(Set(rows.map(\.id))) else { return }
+    guard let open, !rows.isEmpty, !open.effects(of: rows.map(\.id)).takesEveryStart else { return }
     let acts = rows.map { (row: RoadmapModel.Row) -> AnyActAction<RoadmapRefusal> in
       AnyActAction(DeleteStep(tree: open.id, step: DomainKit.ID(RecordID(row.id))))
     }

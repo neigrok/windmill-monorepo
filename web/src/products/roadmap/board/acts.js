@@ -1,3 +1,4 @@
+import { readEffects } from '../model/effects.js';
 import { progressChanges } from '../model/progress.js';
 import { UnlockRules } from '../model/UnlockRules.js';
 import { DEFAULT_NODE_COLOR } from '../theme.js';
@@ -52,15 +53,9 @@ export function onceLanded(receipt, landed) {
   receipt.landed.then((results) => { if (results) landed(results); });
 }
 
-// A roadmap keeps a root: the one rule every door into a delete asks, on both views and every band, of the tree a hold leaves standing.
-export function takesEveryRoot(tree, ids) {
-  const roots = tree?.roots() ?? [];
-  return roots.length > 0 && roots.every((root) => ids.includes(root.id));
-}
-
+// Whether the steps `ids` may be deleted from the tree a hold leaves standing: the one rule every door into a delete asks.
 export function deletable(tree, ids) {
-  if (!tree || ids.length === 0 || ids.some((id) => !tree.nodesById.has(id))) return false;
-  return !takesEveryRoot(tree, ids);
+  return readEffects(tree, ids)?.deletable ?? false;
 }
 
 export function editGesture(tree, request) {
@@ -101,11 +96,6 @@ export class HeldDelete {
     if (this.ids.length === 1) return deletedToast({ step: this.subject });
     return deletedStepsToast({ count: this.ids.length });
   }
-}
-
-export function deletionCost(tree, ids) {
-  const deleted = new Set(ids);
-  return tree.nodes.filter((step) => !deleted.has(step.id) && step.prerequisites.some((id) => deleted.has(id))).length;
 }
 
 export function completionOutcome(tree, before, after, id) {
