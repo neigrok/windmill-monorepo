@@ -1248,13 +1248,17 @@ extension CommitPlanner {
   }
 
   // An opted segment runs its own scoped-effects command, or else its scope kind's one capture command, which joins
-  // the segment only when it writes a delta. None or several capture commands is a programming error, never a choice by
-  // name. The capture command, or nil.
+  // the segment only when it writes a delta. The capture command, or nil.
   public func capture(for gesture: Gesture, in scope: ScopeRef) throws -> String? {
     if let command = gesture.command {
       guard registry.command(command.name)?.scopedEffects == true else { throw CommitFailure.malformed("an opted command returns scoped effects") }
       return nil
     }
+    return try captureCommand(of: scope)
+  }
+
+  // A scope kind's one capture command. None or several is a programming error, never a choice by name.
+  func captureCommand(of scope: ScopeRef) throws -> String {
     let kind = registry.scopeKind(of: scope)
     let found = registry.commands.filter { $0.engine == .capture && $0.scope == kind }
     guard found.count == 1 else { throw CommitFailure.malformed("\(scope) has no single capture command") }
@@ -1263,7 +1267,9 @@ extension CommitPlanner {
 
   // §7.3 record: the act's journal record, one source entry per named segment that left an entry, in commit order, with
   // the value the act left in each target, which a Redo writes back. A segment that writes nothing leaves none, and an
-  // act left with none records nothing.
+  // act left with none records nothing. Each ordinary entry still queued that a journaled preimage read over takes its
+  // scope kind's capture command, so its ACK carries the receipt a restore's walk steps over; an entry already sent keeps
+  // its intent, and so does one the command would carry past a push alone.
   public func record(act actId: String, plan: UndoPlan?, receipts: [ActSegmentReceipt], in replica: inout LoadedReplica) throws {
     guard let plan else { return }
     var sources: [JournalSource] = []
@@ -1283,5 +1289,18 @@ extension CommitPlanner {
     }
     guard !sources.isEmpty else { return }
     replica.updateJournal { $0.acts.append(ReversibleAct(actId: actId, sourceEntries: sources)) }
+    for target in sources.flatMap(\.preimages).map(\.target) {
+      for entry in replica.entries(touching: target.key, in: target.scope)
+      where entry.isQueued && entry.intent.command == nil && !entry.gestureId.isSameID(as: actId)
+        && entry.scope == target.scope && entry.intent.deltas.contains(where: { $0.key == target.key }) {
+        var captured = entry.intent
+        captured.command = Command(name: try captureCommand(of: target.scope), args: [:])
+        guard PushRequest(widestFor: captured, of: replica.meta.replica, account: replica.meta.account).body.count <= limits.pushMaxBytes else { continue }
+        replica.update(entry: entry.localId) { stored in
+          stored.intent = captured
+          stored.predictions = [Projection(scope: stored.scope)]
+        }
+      }
+    }
   }
 }

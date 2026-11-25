@@ -166,9 +166,7 @@ internal fun Engine.commitGesture(replica: ReplicaState, scope: ScopeRef, gestur
     val stamp = clock.tick(now, actor)
     val gestures = replica.entries().groupBy { it.gestureId }
     val named = gesture.retire.map { it.key }.toSet()
-    // A capture command is the ordinary deltas' own: it does not stop a retire from matching their removal.
-    val commandFree = { entry: Entry -> entry.intent.command?.let { registry.command(it.name)?.engine == "capture" } ?: true }
-    val retiring = gestures.values.filter { entries -> entries.all { entry -> (actOffset == null || entry.gestureId != gesture.gestureId) && entry.state == "held" && entry.scope == scope && commandFree(entry) &&
+    val retiring = gestures.values.filter { entries -> entries.all { entry -> (actOffset == null || entry.gestureId != gesture.gestureId) && entry.state == "held" && entry.scope == scope && registry.ownCommand(entry) == null &&
         entry.intent.deltas.isNotEmpty() && entry.intent.deltas.all { it.removes && it.key in named } } }.flatten()
     if (gesture.supersede.isNotEmpty() && (replica.state != "anon" || gesture.supersede.distinct().size != gesture.supersede.size)) malformed("supersede-anon")
     if (actOffset != null && gesture.gestureId in gesture.supersede) malformed("act-supersedes-itself")

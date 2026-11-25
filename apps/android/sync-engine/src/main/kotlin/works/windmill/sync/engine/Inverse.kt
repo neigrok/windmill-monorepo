@@ -190,7 +190,7 @@ internal fun Engine.requestInverse(replica: ReplicaState, sourceActId: String, r
 // An act every entry of which is still held never reached the server: Undo cancels it in place, its dependents folded silently, and
 // reports whether anything drawn changed. The act leaves the journal, and its cancellation receipt keeps what a Redo needs.
 private fun Engine.cancelHeld(replica: ReplicaState, act: ReversibleAct, entries: List<Entry>): InverseResult {
-    val ordinary = { entry: Entry -> entry.intent.command?.let { registry.command(it.name)?.engine == "capture" } ?: true }
+    val ordinary = { entry: Entry -> registry.ownCommand(entry) == null }
     val scopes = entries.flatMap { entry -> entry.effects.map { it.scope } }.distinct()
     val before = scopes.associateWith { drawn(replica, it) }
     val written = entries.filter(ordinary).flatMap { entry -> entry.intent.deltas.map { Triple(entry, entry.scope, it) } }
@@ -306,11 +306,15 @@ private fun ReplicaState.authoritative(act: ReversibleAct): Boolean = act.source
     entry.state == "acked" && source.accepted(meta["serverEpoch"]?.orNull()?.str()) != null
 }
 
-// A Redo of a cancellation waits while an entry its references name has no result yet.
-private fun ReplicaState.referencesAuthoritative(request: InverseRequest): Boolean = request.slots.filter { it.state == "waiting" }
-    .flatMap { (it.recipe as? SlotRecipe.Restore)?.operations.orEmpty() }
-    .flatMap { op -> when (op) { is PlannedOperation.Field -> op.reference?.waitsOn.orEmpty(); is PlannedOperation.CreateRecord -> op.reference.waitsOn; else -> emptyList() } }
-    .all { entry(it) == null }
+// A Redo of a cancellation waits while the replica holds no epoch, in which a waiting slot's references bind, and while an entry its
+// references name has no result yet.
+private fun ReplicaState.referencesAuthoritative(request: InverseRequest): Boolean {
+    val waiting = request.slots.filter { it.state == "waiting" }
+    if (meta["serverEpoch"]?.orNull() == null && waiting.isNotEmpty()) return false
+    return waiting.flatMap { (it.recipe as? SlotRecipe.Restore)?.operations.orEmpty() }
+        .flatMap { op -> when (op) { is PlannedOperation.Field -> op.reference?.waitsOn.orEmpty(); is PlannedOperation.CreateRecord -> op.reference.waitsOn; else -> emptyList() } }
+        .all { entry(it) == null }
+}
 
 // The receipts an act's sources own in the current epoch, in commit order, beside whether a source's history is lost.
 private class OwnedHistory(val lost: Boolean, val effects: List<EffectReceipt>) {

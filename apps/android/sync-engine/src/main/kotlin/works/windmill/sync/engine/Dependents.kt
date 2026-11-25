@@ -5,6 +5,11 @@ import works.windmill.sync.core.*
 internal data class DependentPart(val removed: List<Delta>, val commandGone: Boolean, val whole: Boolean, val guards: List<Guard> = emptyList()) {
     val any get() = removed.isNotEmpty() || commandGone || guards.isNotEmpty()
 }
+// The command an entry runs of its own, or null: a capture command is the ordinary deltas' own (§7.3 Undo of an act, Capture), so an
+// entry carrying one folds, retires and empties as an ordinary entry does.
+internal fun Registry.ownCommand(entry: Entry): Command? = entry.intent.command?.takeIf { command(it.name)?.engine != "capture" }
+// No delta and no command of its own: a fold that leaves an entry so ends it.
+internal fun Registry.isEmpty(entry: Entry) = entry.intent.deltas.isEmpty() && ownCommand(entry) == null
 // `replaced`: a replacement takes the sources' place and is numbered after their dependents, so a guard on what they created can no longer hold.
 // Dependency is by (scope, record): an opted command depends through every scope it predicts, and makes later work depend through each.
 internal class Dependents(private val registry: Registry, private val replaced: Boolean = false) {
@@ -35,7 +40,7 @@ internal class Dependents(private val registry: Registry, private val replaced: 
         val commandGone = command != null && (entry.scope in governed || names(registry.references.ofCommand(entry.scope, command.json)) ||
             entry.predictions != null && entry.predicted.any { (scope, deltas) -> scope in governed || deltas.any { touches(scope, it) } } ||
             entry.predict.any { writesLife(entry.scope, it) })
-        return DependentPart(removed, commandGone, removed.size == intent.deltas.size && (command == null || commandGone),
+        return DependentPart(removed, commandGone, removed.size == intent.deltas.size && (registry.ownCommand(entry) == null || commandGone),
             if (replaced) intent.guards.filter { (entry.scope to it.key) in created } else emptyList())
     }
     fun absorb(entry: Entry, part: DependentPart) {
@@ -72,6 +77,6 @@ internal fun Engine.silentFold(replica: ReplicaState, sources: List<Entry>, repl
 internal fun Engine.applySilentFold(replica: ReplicaState, folded: List<Pair<Entry, DependentPart>>) {
     for ((entry, part) in folded) {
         removeDependent(entry, part)
-        if (entry.intent.deltas.isEmpty() && entry.intent.command == null) replica.move(entry, "silent-fold", ended)
+        if (registry.isEmpty(entry)) replica.move(entry, "silent-fold", ended)
     }
 }

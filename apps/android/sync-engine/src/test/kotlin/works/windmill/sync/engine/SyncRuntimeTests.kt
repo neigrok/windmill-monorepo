@@ -440,6 +440,31 @@ class SyncRuntimeTests {
         }
     }
 
+    // A Redo of a held put asked on a replica that holds no epoch waits, so the sender rests with nothing numbered; once the first pull
+    // gives the replica an epoch, the sender binds the Redo and sends it.
+    @Test fun aRedoOnAReplicaWithNoEpochRestsTheSenderUntilTheFirstPullGivesItOne() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.transport.controlPulls = true
+            fixture.runtime.enter()
+            val pull = fixture.pull()
+            val day = RecordID("2026-11-24")
+            val score = Json.objectOf("scope" to product.json, "t" to Json.of("day"), "id" to Json.of("2026-11-24"),
+                "slot" to Json.objectOf("kind" to Json.of("field"), "name" to Json.of("score")))
+            val undo = listOf(UndoSegment(0, listOf(UndoRecipe.read(Json.objectOf("kind" to Json.of("fields"), "restoreCommand" to Json.of("probe.restore"),
+                "targets" to Json.array(Json.objectOf("target" to score, "defaultValue" to Json.of(0))))))))
+            val act = fixture.engine.commitAct({ ActRequest(listOf(product), hold = true, undo = undo) to listOf(Gesture(listOf(Change.put("day", day, true, mapOf("score" to Json.of(5)))))) },
+                { values, index, _ -> values[index] }).first as ActCommitOutcome.Committed
+            val cancelled = fixture.engine.requestInverse(act.receipt.gestureId) as InverseResult.Cancelled
+            assertTrue((fixture.engine.requestInverse(cancelled.inverseActId) as InverseResult.Pending).localChanged)
+            assertFalse("the Redo's slot waits for an epoch, so nothing is numbered", fixture.runtime.senderStep())
+            assertTrue(fixture.transport.pushes.tryReceive().isFailure)
+            pull.answer.complete(Reply.Answer(SyncResponse(200, Json.objectOf("serverTime" to Json.of(5_000), "epoch" to Json.of("ep-1"),
+                "as" to Json.of("A"), "pages" to Json.array()))))
+            val push = fixture.push()
+            assertEquals(listOf(Json.of("probe.restore")), push.request.member("intents").arr().map { it.member("cmd").member("name") })
+        }
+    }
+
     @Test fun aLocalEpochChangeDuringHelloRequiresAnotherHelloBeforeNumbering() = runBlocking {
         Fixture().use { fixture ->
             fixture.create()
