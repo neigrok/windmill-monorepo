@@ -90,7 +90,7 @@ struct RoadmapStepForm: View {
             }.fontWeight(.semibold).disabled(!draft.commits).accessibilityIdentifier("roadmap-form-commit")
           }
         }.roomBar(.roadmap)
-        .roadmapFoot(roadmap, away: focused != nil) {}
+        .roadmapFoot(roadmap, away: focused != nil || addingLink || roadmap.kindsDoor == .form, inSheet: true) {}
         .sheet(isPresented: $addingLink) {
           NewLink(title: RoadmapSpecs.linkLabel, address: RoadmapSpecs.linkUrl) { address, title in
             draft.add(link: address, titled: title)

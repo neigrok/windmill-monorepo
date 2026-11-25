@@ -142,6 +142,9 @@
     "%@ has a logged set now. Nothing changed." : {
 
     },
+    "%@ is back · you edited it while it was removed elsewhere" : {
+      "comment" : "The band once a step the person changed is back after another device removed it: the step's name"
+    },
     "%@ is no longer in your program. Not applied." : {
 
     },
@@ -229,11 +232,44 @@
         }
       }
     },
+    "%@ synced · it now follows %@" : {
+      "comment" : "The band once a step the person made or linked lands after a step it required was deleted elsewhere: the step's name, and the steps it follows now",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ synced · it now follows %2$@"
+          }
+        }
+      }
+    },
     "%@ under plan" : {
 
     },
+    "%@ was deleted on another device before it synced, so this step now follows %@." : {
+      "comment" : "A step page's footer: the one step deleted elsewhere that this step was linked from, and the steps it follows now",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ was deleted on another device before it synced, so this step now follows %2$@."
+          }
+        }
+      }
+    },
     "%@ wasn’t changed. Try again." : {
 
+    },
+    "%@ were deleted on another device before it synced, so this step now follows %@." : {
+      "comment" : "A step page's footer: the steps deleted elsewhere that this step was linked from, and the steps it follows now",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ were deleted on another device before it synced, so this step now follows %2$@."
+          }
+        }
+      }
     },
     "%@ · %@" : {
       "comment" : "Where the canvas stands: 29 MAY 2025 · 4 MO",
@@ -260,6 +296,9 @@
     },
     "%@ · No steps" : {
       "comment" : "A Board row's pill: the roadmap a step opens, which has no steps"
+    },
+    "%@ · Offline" : {
+      "comment" : "The bar's subtitle while the phone has no connection: the roadmap's progress"
     },
     "%@ · from above" : {
       "comment" : "A guide of a roadmap above this one: that roadmap's name"
@@ -361,6 +400,9 @@
     },
     "%lld Selected" : {
       "comment" : "The bar while several steps are selected: how many"
+    },
+    "%lld Set Aside" : {
+      "comment" : "The title menu's first row while changes are set aside: how many"
     },
     "%lld WK" : {
       "comment" : "How long before a passage was written, in weeks: 2 WK"
@@ -1922,6 +1964,9 @@
     "Copied" : {
 
     },
+    "Copy" : {
+
+    },
     "Copy Link" : {
 
     },
@@ -2184,6 +2229,29 @@
     "Discard %@?" : {
       "comment" : "Discard 1 routine and 1 journal page?"
     },
+    "Discard %lld changes?" : {
+      "comment" : "The question Discard All asks in Set Aside: how many changes it discards",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Discard %lld change?"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Discard %lld changes?"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Discard %lld sets" : {
       "localizations" : {
         "en" : {
@@ -2205,6 +2273,9 @@
           }
         }
       }
+    },
+    "Discard All" : {
+
     },
     "Discard all of it?" : {
 
@@ -2294,6 +2365,9 @@
 
     },
     "Edit sets" : {
+
+    },
+    "Editing access ended." : {
 
     },
     "Effort" : {
@@ -2499,6 +2573,9 @@
     "Guide" : {
       "comment" : "The title menu's item that opens the roadmap's guide"
     },
+    "Guide edited" : {
+
+    },
     "Guide removed" : {
       "comment" : "The band after a roadmap's guide is saved blank"
     },
@@ -2655,6 +2732,9 @@
     "Kind" : {
 
     },
+    "Kind edited" : {
+
+    },
     "Kinds" : {
 
     },
@@ -2708,6 +2788,9 @@
       "comment" : "An appearance the app can take: the light look"
     },
     "Lines kept as notes" : {
+
+    },
+    "Link edited" : {
 
     },
     "Linked to %@" : {
@@ -2874,6 +2957,17 @@
     "Made a movement" : {
 
     },
+    "Made on this phone on %@. %@" : {
+      "comment" : "A step page's footer: the day this phone made the step, then what was deleted elsewhere and what it follows now",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Made on this phone on %1$@. %2$@"
+          }
+        }
+      }
+    },
     "Map what you're learning" : {
 
     },
@@ -3031,10 +3125,22 @@
     "New here? This also creates your account." : {
 
     },
+    "New kind" : {
+
+    },
+    "New link" : {
+
+    },
     "New movement" : {
 
     },
     "New routine" : {
+
+    },
+    "New step" : {
+
+    },
+    "New subtask" : {
 
     },
     "Newest First" : {
@@ -3175,6 +3281,9 @@
     },
     "Note" : {
       "comment" : "A note: one Coach keeps, or one written on a set"
+    },
+    "Note edited" : {
+
     },
     "Notes" : {
       "comment" : "The notes Coach keeps: a term in Coach's greeting, a settings row and its screen's title"
@@ -3697,6 +3806,9 @@
         }
       }
     },
+    "Roadmap renamed" : {
+
+    },
     "Room" : {
 
     },
@@ -3883,6 +3995,9 @@
         }
       }
     },
+    "Set Aside" : {
+
+    },
     "Set note" : {
 
     },
@@ -3914,6 +4029,9 @@
 
     },
     "Sharing needs your account. Sign in first." : {
+
+    },
+    "Show" : {
 
     },
     "Show less" : {
@@ -4051,6 +4169,9 @@
     "Step" : {
       "comment" : "A movement's load step"
     },
+    "Step edited" : {
+
+    },
     "Steps" : {
 
     },
@@ -4067,6 +4188,9 @@
 
     },
     "Stopped." : {
+
+    },
+    "Subtask edited" : {
 
     },
     "Subtasks" : {
@@ -4159,6 +4283,9 @@
     "The catalog didn’t load. It comes back when you have signal." : {
 
     },
+    "The combined note is too long." : {
+
+    },
     "The copy on this iPhone couldn’t be read." : {
 
     },
@@ -4184,6 +4311,12 @@
 
     },
     "The rack could not be changed. Try again." : {
+
+    },
+    "The roadmap reached its limit." : {
+
+    },
+    "The roadmap was deleted elsewhere." : {
 
     },
     "The routine" : {
@@ -4232,6 +4365,9 @@
 
     },
     "They live only on this phone. Sign in to back them up and open them on the web." : {
+
+    },
+    "They’re removed from this iPhone." : {
 
     },
     "This Apple ID doesn't open a Windmill account yet. If you have one, confirm its email and Apple will open it too." : {

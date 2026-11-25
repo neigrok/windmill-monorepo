@@ -902,6 +902,36 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   band standing as a person goes in or comes back stands on over the screen reached with its Undo; none of these a board
   draws; and a reader's cover shows a step's subtree with no door, where §6 has a reader go into it as on the web: no
   board of section 09 draws it.
+- **Roadmap · iOS · what offline, a change told once and Set Aside leave for the boards.** *Offline* in the subtitle, a
+  step that landed in a changed roadmap or came back told once by the band and its page's footer, and *Set Aside* are
+  built in Debug builds from 10.1 to 10.5c. For the owner to rule, where a board and the spec disagree: 10.4's caption
+  tells a step *removed elsewhere while this phone, offline, edited it*, and [Roadmap on the sync
+  engine](../foundation/roadmap-on-the-engine.md) §6 tells a step brought back only where the phone's change found it
+  absent, a revival the phone never saw, of a step it held as it changed it, told to no one, as the web's end-to-end run
+  asserts; it is built to the spec, so an edit made offline against a delete comes back and says nothing, and 10.4's band
+  stands where the phone's change found the step deleted, which the room's own gestures reach only when an edit is saved
+  over a read the delete has since passed, as the board's fixture writes it; and 10.3's caption has the step's History hold
+  the same line as its first entry, where §3 has History read what the phone's copy keeps, and the line leaves the
+  phone's note once told, so History holds no such entry. To draw or rule: 10.3's date follows the phone's region and
+  the fixture's clock (*26 Sep*, *Sep 26* on a US phone) where the board draws *16 Nov*; no board words a line of a link
+  the person made into a step made before, built as 10.3's footer without *Made on this phone on …*, several steps
+  deleted (*A and B were deleted …*) or followed (*… follows A and B*), or 10.4's page, whose footer is built as the band's
+  own sentence, as the caption has it; lines that land together are told one by one by the band, each once no other band
+  stands, a line waits behind a receipt so its *Undo* stands, and a line waits while no one could see its band, under a
+  sheet or while a field holds the keyboard, which no board says; a step's lines stand under its status row while its
+  roadmap is on the stack, so a roadmap left and opened again keeps no footer, as on the web; Set Aside's second line is drawn
+  for *New step* and *Note edited*, and built for the rest as *Step edited*, *New kind*, *Kind edited*, *New subtask*,
+  *Subtask edited*, *New link*, *Link edited*, *Roadmap renamed* and *Guide edited*, and its footer for the reasons no
+  board draws as *The roadmap reached its limit.*, *Editing access ended.* and *The combined note is too long.*, the
+  web's reasons in 10.5b's form; *Discard All*'s question is built as *Discard 2 changes?* over *They’re removed from this
+  iPhone.*, which no board draws; *Copy* takes a step's name and description, as 10.5c's caption has it, where the web's
+  takes the description alone where there is one, for the web's owner to rule, and says nothing once it has copied; a
+  group's header is the roadmap's name as the room last read it since the app launched or the account changed, since the
+  phone keeps nothing of a roadmap deleted elsewhere, so one deleted before the room read it has no header, and a note goes by its
+  step's name so read, else its first line; a change with no word of the person's, a mark, a pointer or a link between
+  steps, is not listed, as on the web; a person whose last roadmap was deleted elsewhere stands on *No roadmaps yet*,
+  which has no title menu and so no way to Set Aside; 10.5a draws *Share…* and *Export*, which wait for their screens; and
+  every board of the section draws Coach's composer, which is not built.
 - **Roadmap · iOS · what a pinch of a crowd shows while it moves.** On an iPhone 13 mini a pinch with the whole
   5,000-step handbook in view is given five sixths of its frames
   ([Roadmap on iOS](../foundation/roadmap-ios.md) §13). The room holds three ways to keep them (`GraphPinch`), each

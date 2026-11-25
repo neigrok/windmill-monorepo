@@ -32,7 +32,10 @@ import SyncSchema
 // on a phone never signed in (07.12b); roadmap-nested-done, the same with every step of *Learn to sail* done (07.4);
 // roadmap-nested-unattached, the same whose *Learn to sail* opens no roadmap yet (07.8 to 07.10); roadmap-nested-odd, the
 // variation whose Up next steps open a roadmap that loops back, one with no steps and one that cannot be found (07.5a to
-// 07.5d); and roadmap-nested-subtree, the variation whose *Night passage* owns a subtree (07.11, 07.11b). A launch can also
+// 07.5d); and roadmap-nested-subtree, the variation whose *Night passage* owns a subtree (07.11, 07.11b). Section 10's
+// (`prepareSync`): roadmap-sync-offline, a step made with no connection (10.1); roadmap-sync-landed, one that lands
+// following past a step deleted elsewhere (10.2, 10.3); roadmap-sync-came-back, a step an edit brought back (10.4); and
+// roadmap-sync-set-aside, two changes to a roadmap deleted elsewhere (10.5a to 10.5c). A launch can also
 // name where the Graph's measures go and how it keeps a pinch's frames (`graph(telemetry:)`), where the Board's go
 // (`boardFrames()`), how long a band stands (`wait()`), and the file New Roadmap's A File is handed in place of the
 // system's importer (`chosenFile()`).
@@ -186,6 +189,10 @@ enum RoadmapFixture {
     }
     if board.hasPrefix("roadmap-nested") {
       await prepareNested(board, model: model)
+      return true
+    }
+    if board.hasPrefix("roadmap-sync") {
+      await prepareSync(board, model: model)
       return true
     }
     // The steps of *Learn to sail* each board's account completed, the oldest first.
@@ -446,6 +453,150 @@ enum RoadmapFixture {
       try await model.signIn(server.identity(email: "roadmap-fixture@example.com"))
     } catch {
       NSLog("Roadmap nested fixture failed: %@", String(describing: error))
+      model.error = "The roadmap fixture could not be prepared."
+    }
+  }
+
+  // Section 10's boards: another phone of the person's account plants their roadmaps, a second apart as the server
+  // receives them, the phone signs in and the room reads them all; then the phone loses its connection
+  // (`BoardConnectivity`). roadmap-sync-offline: offline, the room's form makes *Reefing basics* after *Read the wind*
+  // and before *Leave the dock* (10.1). roadmap-sync-landed: the same while the other phone deletes *Read the wind*, the
+  // receipt let go, and then the connection comes back, so the step lands following *Name the boat parts* (10.2, 10.3).
+  // roadmap-sync-came-back: *Learn to sail* holds *Reefing basics*, which the other phone deletes; once that delete has
+  // reached the phone, an edit of the step saved there brings it back (10.4). roadmap-sync-set-aside: beside *Learn to
+  // sail*, *Spanish B1* and *Coastal navigation handbook*, the account holds *Winter refit*; offline, the phone adds
+  // *Anchor at night* to it and writes the note of its *Plan the watch rota*, while the other phone deletes the roadmap,
+  // and the connection comes back, so neither can land (10.5a to 10.5c).
+  static func prepareSync(_ board: String, model: AppModel) async {
+    do {
+      guard let server = model.runtime?.auth.fake, let runner = model.runtime?.roadmapRunner, let room = model.roadmap,
+            let connection = model.runtime?.connectivity as? BoardConnectivity else { throw AppFailure(message: "no model server") }
+      let identity = server.identity(email: "roadmap-fixture@example.com")
+      let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+      let clock = SteppingBoardClock()
+      let remote = try AppRuntime(settings: AppSettings(arguments: ["fixture", "-model-server", "-board", board]),
+                                  directory: directory, service: UUID().uuidString, syncTransport: server, wall: clock)
+      // The other phone goes once the board is played out.
+      let retire = {
+        try? remote.tokens.delete(for: identity.account)
+        try? FileManager.default.removeItem(at: directory)
+      }
+      var playing = false
+      defer { if !playing { retire() } }
+      _ = try await remote.engine.signIn(account: identity.account, token: identity.token)
+      var sendings: Int64 = 0
+      let sent = { () async throws -> Void in
+        server.state.withLock { $0.pushesReceivedLaterMs = sendings * 1_000 }
+        clock.step(to: sendings * 1_000)
+        sendings += 1
+        try remote.engine.leave()
+        for _ in 0..<40 where try remote.store.read({ try $0.device().activeReplica.outbox.contains { $0.state != .acked } }) {
+          await remote.engine.flushOnLeave()
+        }
+      }
+      let other = remote.roadmapRunner
+      var refit: CreateRoadmap.Result?
+      if board == "roadmap-sync-set-aside" {
+        let rota = ImportedSteps(steps: [ImportedStep(key: "rota", RoadmapStep.Changes(label: "Plan the watch rota", color: "terracotta"))])
+        guard case .committed(let planted, _) = try other.runAct(CreateRoadmap(title: "Winter refit", steps: rota)) else {
+          throw AppFailure(message: "Winter refit was not planted.")
+        }
+        refit = planted
+        try await sent()
+      }
+      let sail = try plantLearnToSail(other, done: [])
+      try await sent()
+      let step = { (key: String) throws -> ID<RoadmapStep> in
+        guard let step = sail.steps.first(where: { $0.key == key })?.id else { throw AppFailure(message: "Learn to sail holds no \(key).") }
+        return step
+      }
+      // *Reefing basics* (05.7): a Learn step after *Read the wind* that *Leave the dock* waits on too.
+      var reefing: ID<RoadmapStep>?
+      if board == "roadmap-sync-came-back" {
+        let made = CreateStep(tree: sail.tree, step: RoadmapStep.Changes(label: "Reefing basics", color: "olive",
+                                                                         description: "How to reduce sail area safely in stronger wind."),
+                              prerequisites: [try step("read")])
+        guard case .committed(let planted, _) = try other.runAct(made),
+              case .committed = try other.runAct(ChangePrerequisites(tree: sail.tree, step: try step("leave"), add: [planted])) else {
+          throw AppFailure(message: "Reefing basics was not planted.")
+        }
+        reefing = planted
+        try await sent()
+      }
+      if refit != nil {
+        for roadmap in [others[2], others[0]] {
+          try plant(roadmap, opening: sail.tree, by: other)
+          try await sent()
+        }
+      }
+      for step in ["choose", "parts", "rig"] {
+        try complete(step, of: sail, by: other)
+        try await sent()
+      }
+      server.state.withLock { $0.pushesReceivedLaterMs = 0 }
+      model.preferences.set(sail.tree.description, forKey: RoadmapModel.lastOpen)
+      try await model.signIn(identity)
+      // The rest is played once the app shows the room, which reads the phone's copy from then on.
+      playing = true
+      Task { @MainActor in
+        defer { retire() }
+        do {
+          let listed = refit == nil ? 1 : 4
+          let steps = reefing == nil ? 8 : 9
+          for _ in 0..<600 where room.roadmaps.count < listed || room.shown?.board.overall.total != steps {
+            try await Task.sleep(for: .milliseconds(100))
+          }
+
+          switch board {
+          case "roadmap-sync-offline", "roadmap-sync-landed":
+            connection.set(online: false)
+            if board == "roadmap-sync-landed" {
+              guard case .committed = try other.runAct(DeleteStep(tree: sail.tree, step: try step("read"))) else {
+                throw AppFailure(message: "Read the wind was not deleted.")
+              }
+              try await sent()
+            }
+            // *Reefing basics* made in the room's own form, as a person makes it, with its receipt in the band.
+            room.newStep(from: .foot)
+            guard let draft = room.draft, let open = room.shown, let wind = open.step(try step("read").description),
+                  let leave = open.step(try step("leave").description) else { throw AppFailure(message: "The form did not open over Learn to sail.") }
+            draft.name = "Reefing basics"
+            draft.description = "How to reduce sail area safely in stronger wind."
+            draft.kind = "olive"
+            draft.toggle(wind, in: .requires)
+            draft.toggle(leave, in: .opens)
+            draft.save()
+            guard board == "roadmap-sync-landed" else { return }
+            room.endBand()
+            connection.set(online: true)
+          case "roadmap-sync-came-back":
+            guard let reefing else { return }
+            guard case .committed = try other.runAct(DeleteStep(tree: sail.tree, step: reefing)) else { throw AppFailure(message: "Reefing basics was not deleted.") }
+            try await sent()
+            let held = { try? runner.read(sail.tree.tree) { try $0.repository(RoadmapStep.self).find(reefing, in: .drawn) } }
+            for _ in 0..<600 where held() != nil { try await Task.sleep(for: .milliseconds(100)) }
+            let edit = ChangeStep(tree: sail.tree, step: reefing, changes: RoadmapStep.Changes(description: "Reef early, before the wind builds."))
+            guard case .committed = try runner.runAct(edit) else { throw AppFailure(message: "Reefing basics was not edited.") }
+          default:
+            guard let refit, let rota = refit.steps.first?.id else { return }
+            connection.set(online: false)
+            guard case .committed = try other.runAct(DeleteRoadmap(tree: refit.tree)) else { throw AppFailure(message: "Winter refit was not deleted.") }
+            try await sent()
+            let anchor = CreateStep(tree: refit.tree, step: RoadmapStep.Changes(label: "Anchor at night", color: "sky",
+                                                                                description: "Drop the hook in the lee of the island before dark."),
+                                    prerequisites: [rota])
+            guard case .committed = try runner.runAct(anchor) else { throw AppFailure(message: "Anchor at night was not made.") }
+            var note = Draft(new: StepNote(id: ID(rota.record)), in: refit.tree.overlay)
+            note.current.text = "Two on, two off, from dusk to dawn."
+            guard case .saved = runner.save(&note, SaveStepNote.self) else { throw AppFailure(message: "Plan the watch rota's note was not written.") }
+            connection.set(online: true)
+          }
+        } catch {
+          NSLog("Roadmap sync fixture failed: %@", String(describing: error))
+        }
+      }
+    } catch {
+      NSLog("Roadmap sync fixture failed: %@", String(describing: error))
       model.error = "The roadmap fixture could not be prepared."
     }
   }

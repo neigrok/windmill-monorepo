@@ -172,7 +172,7 @@ app and `WindmillTests` without the UI tests. Three UI shards, balanced on measu
 
 | Shard | Classes |
 |---|---|
-| `integration-roadmap` | `GymIntegrationFlowTests`, `RoadmapFlowTests` |
+| `integration-roadmap` | `GymIntegrationFlowTests`, `RoadmapFlowTests`, `RoadmapLandingFlowTests` |
 | `gym-journal` | `GymCoachFlowTests`, `GymAnonymousCoachFlowTests`, `GymWorkoutFlowTests`, `GymRecoveryFlowTests`, `JournalFlowTests`, `JournalIntegrationFlowTests`, `JournalEchoFlowTests`, `RoadmapNestedFlowTests` |
 | `shell-offline-system` | `OfflineFlowTests`, `OnboardingFlowTests`, `ShellFlowTests`, `RoadmapSharingFlowTests`, `WorkoutActivityFlowTests`, `WorkoutOutsideFlowTests` |
 

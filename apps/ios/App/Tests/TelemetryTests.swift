@@ -187,6 +187,38 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     }
   }
 
+  // What the room tells once and Set Aside tell their rule, place, reason and steps, and a notice no rule lists its code:
+  // never a step's name, a change's words, a roadmap or an id.
+  @Test func landingAndSetAsideTellTheirStepsAndNothingOfAChange() {
+    let events = ["roadmap_landing", "roadmap_write_cannot_land", "roadmap_kept", "roadmap_board_step_open"]
+    #expect(events.filter(TelemetryPrivacy.events.contains) == events)
+    for (rule, place) in [("follows", "band"), ("cameBack", "step")] {
+      #expect(TelemetryPrivacy.properties(["rule": rule, "place": place, "step": "Reefing basics", "tree": "private-id"]) ==
+              ["rule": .label(rule), "place": .label(place)])
+    }
+    for reason in ["roadmapDeleted", "capFilled", "accessEnded", "noteTooLong"] {
+      #expect(TelemetryPrivacy.properties(["reason": reason, "title": "Anchor at night"]) == ["reason": .label(reason)])
+    }
+    #expect(TelemetryPrivacy.properties(["step": "copy", "door": "swipe", "reason": "roadmapDeleted", "outcome": "copied", "text": "Two on, two off."]) ==
+            ["step": .label("copy"), "door": .label("swipe"), "reason": .label("roadmapDeleted"), "outcome": .label("copied")])
+    for step in ["open", "discard", "ask", "cancel", "discardAll"] {
+      #expect(TelemetryPrivacy.properties(["step": step, "count": "2-5", "notice": "notice:g1/0"]) == ["step": .label(step), "count": .label("2-5")])
+    }
+    #expect(TelemetryPrivacy.properties(["surface": "document", "door": "band", "column": "upNext"]) ==
+            ["surface": .label("document"), "door": .label("band"), "column": .label("upNext")])
+    #expect(TelemetryPrivacy.properties(["operation": "roadmap_kept", "failure_kind": "unexpected", "code": "scope-dead"]) ==
+            ["operation": .label("roadmap_kept"), "failure_kind": .label("unexpected"), "code": .label("scope-dead")])
+    #expect(TelemetryPrivacy.properties(["operation": "roadmap_write", "write": "dismissNotice"]) ==
+            ["operation": .label("roadmap_write"), "write": .label("dismissNotice")])
+    #expect(TelemetryPrivacy.properties(["operation": "roadmap_write", "write": "clearLanding", "failure_kind": "storage"]) ==
+            ["operation": .label("roadmap_write"), "write": .label("clearLanding"), "failure_kind": .label("storage")])
+    #expect(TelemetryPrivacy.properties(["operation": "roadmap_landing", "failure_kind": "decode"]) ==
+            ["operation": .label("roadmap_landing"), "failure_kind": .label("decode")])
+    for code in ["request-conflict", "target-merged", "step-opens-a-tree", "depth-limit", "not-a-root", "turn-final"] {
+      #expect(TelemetryPrivacy.properties(["code": code]) == ["code": .label(code)])
+    }
+  }
+
   // The Guide tells its sheet opened, how a draft began, a save with its length as a bucket or why it was not written, a
   // draft gone past the limit, a save over a guide written elsewhere and the band's Undo of a save: never the guide's
   // text, a count of characters or an id.

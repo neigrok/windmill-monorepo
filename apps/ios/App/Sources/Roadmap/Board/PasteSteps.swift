@@ -62,15 +62,18 @@ final class PastedSteps: Identifiable {
   }
 }
 
-// Where Paste Steps reads the copied text: whether the clipboard holds text, which asks the person nothing, and the
-// text, which the system may ask them to allow and answers nil where they did not. The system's is read off the main
-// actor, which the system's question would otherwise hold until it is answered.
+// The clipboard the room reads and writes: whether it holds text, which asks the person nothing, and the text, which the
+// system may ask them to allow and answers nil where they did not, both for Paste Steps; and the words Set Aside's Copy
+// puts there. The system's text is read off the main actor, which the system's question would otherwise hold until it is
+// answered.
 struct Clipboard {
   let holdsText: @MainActor () -> Bool
   let text: @Sendable () async -> String?
+  let copy: @MainActor (String) -> Void
 
   static let system = Clipboard(holdsText: { UIPasteboard.general.hasStrings },
-                                text: { await Task.detached { UIPasteboard.general.string }.value })
+                                text: { await Task.detached { UIPasteboard.general.string }.value },
+                                copy: { UIPasteboard.general.string = $0 })
 }
 
 extension RoadmapModel {
