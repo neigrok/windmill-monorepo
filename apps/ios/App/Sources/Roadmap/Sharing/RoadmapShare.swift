@@ -72,9 +72,9 @@ final class ShareSheet: Identifiable {
     }
   }
 
-  // Share Link: what the system's share sheet tells once it is handed the address, from off the main actor.
-  var handed: @Sendable () -> Void {
-    { [telemetry = room.telemetry] in telemetry.event("roadmap_verb", properties: ["verb": "share", "step": "link"]) }
+  // Share Link, pressed: the address handed to the system's share sheet.
+  func shared() {
+    room.telemetry.event("roadmap_verb", properties: ["verb": "share", "step": "link"])
   }
 
   // Copy Link: the share address on the pasteboard.
@@ -99,15 +99,17 @@ extension RoadmapModel {
   }
 }
 
-// The share address as Share Link hands it to the system's share sheet, which tells each time the sheet takes it.
-nonisolated struct SharedAddress: Transferable {
-  let url: URL
-  let handed: @Sendable () -> Void
+// Share Link's press, which tells before the system's share sheet rises: ShareLink takes a button style, so the row stays
+// the stock ShareLink.
+struct ToldPress: PrimitiveButtonStyle {
+  let told: () -> Void
 
-  static var transferRepresentation: some TransferRepresentation {
-    ProxyRepresentation { (shared: SharedAddress) in
-      shared.handed()
-      return shared.url
+  func makeBody(configuration: Configuration) -> some View {
+    Button(role: configuration.role) {
+      told()
+      configuration.trigger()
+    } label: {
+      configuration.label
     }
   }
 }
@@ -133,9 +135,9 @@ struct RoadmapShare: View {
         }
         if let address = share.address {
           Section {
-            ShareLink(item: SharedAddress(url: address, handed: share.handed), preview: SharePreview(share.open?.listed.name ?? address.absoluteString)) {
-              Label("Share Link", systemImage: "square.and.arrow.up")
-            }.listRowBackground(RoadmapPalette.card).accessibilityIdentifier("roadmap-share-link")
+            ShareLink(item: address) { Label("Share Link", systemImage: "square.and.arrow.up") }
+              .buttonStyle(ToldPress(told: share.shared))
+              .listRowBackground(RoadmapPalette.card).accessibilityIdentifier("roadmap-share-link")
             Button("Copy Link", systemImage: "link") { share.copy() }
               .listRowBackground(RoadmapPalette.card).accessibilityIdentifier("roadmap-share-copy")
           }.foregroundStyle(RoadmapPalette.accent)
