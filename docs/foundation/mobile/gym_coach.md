@@ -66,8 +66,8 @@ schema are the file's, and its access level its class's. A `catalog/1` or `catal
 file's; MCP (every tool but the phone Coach's `propose_workout_change`) and a `catalog/3` turn are offered
 `catalog-3.json`'s ([Gym Coach on the AI service](../gym-coach-on-ai-service.md) §3), and
 `CatalogContractTest.cpp` pins what MCP lists to it. An ability the server declares no tool for is marked
-`"declared": false`. The Swift catalog, phrases included, is generated from it (`GymCatalogGen`)
-and pinned to the checked-in file by test (`GymCatalogGenTests`). Android holds no generated copy: a Gradle
+`"declared": false`. The Swift catalog, phrases included, is generated from it (`CatalogGen`)
+and pinned to the checked-in file by test (`CatalogGenTests`). Android holds no generated copy: a Gradle
 task copies the file into `:gym`'s assets, and the kit's `Catalog` parses it at the first send. Appendix C
 lists its abilities.
 

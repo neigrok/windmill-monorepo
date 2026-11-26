@@ -1253,8 +1253,10 @@ product's domain (§2.2).
 - `Catalog(document)` reads a product's `catalog.json` as JSON, because the kit loads no resource: the module that may
   read files passes the parsed document. A document that breaks the catalog's shape throws: a key it does not list, a word
   outside `class`, `agent` or `seats`, a `since` that names no catalog version, two abilities of one name. Swift reads no
-  document: a product's generator refuses a catalog of the wrong shape and writes it as Swift data into the product's
-  domain, gym's as `Catalog.gym` (`GymCatalogGen`).
+  document: one generator refuses a catalog of the wrong shape and writes each product's as Swift data into its domain,
+  gym's as `Catalog.gym` and roadmap's as `Catalog.roadmap` (`CatalogGen`).
+- An ability's `strict` says whether a turn declares its tool strict to the provider; a catalog that does not say holds
+  every tool strict.
 - `offered(seat)` leaves out a withheld ability, one marked `declared: false`, and one that needs an account for `anon`.
 - `JsonSchema(schema).fault(value)` answers the first fault or nil. It reads `type`, `enum`, `const`, `properties`,
   `required`, `additionalProperties: false`, `items`, `minItems`, `maxItems`, `uniqueItems`, `minLength`, `maxLength`,
