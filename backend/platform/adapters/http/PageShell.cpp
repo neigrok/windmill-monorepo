@@ -38,11 +38,15 @@ std::string spliceBetween(const std::string& shell, const std::string& startTag,
   return shell.substr(0, start + startTag.size()) + content + shell.substr(end);
 }
 
-drogon::HttpResponsePtr htmlPage(std::string body) {
+const char* cacheControlFor(Audience audience) {
+  return audience == Audience::everyone ? "public, max-age=300" : "private, no-store";
+}
+
+drogon::HttpResponsePtr htmlPage(std::string body, Audience audience) {
   auto resp = drogon::HttpResponse::newHttpResponse();
   resp->setStatusCode(drogon::k200OK);
   resp->setContentTypeCode(drogon::CT_TEXT_HTML);
-  resp->addHeader("Cache-Control", "public, max-age=300");
+  resp->addHeader("Cache-Control", cacheControlFor(audience));
   resp->setBody(std::move(body));
   return resp;
 }

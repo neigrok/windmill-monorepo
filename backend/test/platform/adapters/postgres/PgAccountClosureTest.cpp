@@ -210,7 +210,7 @@ TEST(pg_account_closure_expiry_and_retention_never_admit_an_old_operation_again)
 TEST(pg_account_closure_rejects_consumed_oauth_code_and_refresh_even_after_restoration) {
   if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset");
   ClosureDatabase h;
-  const auto code = h.oauth->takeCode("closure-code");
+  const auto code = h.oauth->takeCode("closure-code", h.now);
   const auto refresh = h.oauth->rotateRefreshToken("closure-refresh", h.now);
   REQUIRE(code.has_value());
   REQUIRE_EQ(refresh.outcome, RefreshOutcome::rotated);
@@ -231,7 +231,7 @@ TEST(pg_account_closure_rejects_consumed_oauth_code_and_refresh_even_after_resto
   CHECK_FALSE(h.oauth->insertCode("revoked-consent", *code, "closure-session", h.now + 1000));
   h.auth.insertSession("restored-consent", h.account, h.now + 1000000, "", "", h.now + 1000);
   CHECK(h.oauth->insertCode("new-consent", *code, "restored-consent", h.now + 1000));
-  const auto newCode = h.oauth->takeCode("new-consent");
+  const auto newCode = h.oauth->takeCode("new-consent", h.now);
   REQUIRE(newCode.has_value());
   CHECK_EQ(newCode->accountGeneration, code->accountGeneration + 1);
   const StoredToken newExchange{newCode->clientId, newCode->user, newCode->resource, newCode->scope,
@@ -246,7 +246,7 @@ TEST(pg_account_closure_rejects_consumed_oauth_code_and_refresh_even_after_resto
 TEST(pg_account_closure_and_concurrent_oauth_insert_leave_no_usable_late_token) {
   if (!std::getenv("WM_PG_TEST")) SKIP("WM_PG_TEST unset");
   ClosureDatabase h;
-  const auto code = h.oauth->takeCode("closure-code");
+  const auto code = h.oauth->takeCode("closure-code", h.now);
   REQUIRE(code.has_value());
   const StoredToken exchange{code->clientId, code->user, code->resource, code->scope,
                             h.now + 1000000, code->accountGeneration};
@@ -315,11 +315,11 @@ TEST(pg_account_closure_schema_fences_existing_closed_accounts_idempotently) {
   CHECK(h.auth.reviveUser(h.account, h.now + 1000));
   CHECK_FALSE(h.oauth->findAccessToken("closure-token"));
   CHECK_EQ(h.oauth->rotateRefreshToken("closure-refresh", h.now + 1000).outcome, RefreshOutcome::unknown);
-  const auto code = h.oauth->takeCode("closure-code");
-  REQUIRE(code.has_value());
+  // The code's session went with every session of the account, so the code is spent for nothing, and a token at its
+  // generation commits nothing either.
+  CHECK_FALSE(h.oauth->takeCode("closure-code", h.now + 1000));
   CHECK_FALSE(h.oauth->insertToken("pre-migration-exchange", "pre-migration-refresh",
-      {code->clientId, code->user, code->resource, code->scope, h.now + 1000000, code->accountGeneration},
-      h.now + 2000000, h.now + 1000));
+      {"closure-test-client", h.account, "resource", "", h.now + 1000000, 0}, h.now + 2000000, h.now + 1000));
 }
 
 TEST(pg_account_closure_held_at_the_lock_past_the_window_never_commits_after_a_stale_answer) {

@@ -106,6 +106,18 @@ export class RoutineChange {
     });
   }
 
+  // Whether `floored` refuses these changes: a line setting a load under its movement's floor, read without refusing.
+  /** @param {readonly RoutineChange[]} changes @param {Catalogue} catalogue */
+  static underFloor(changes, catalogue) {
+    try {
+      RoutineChange.floored(changes, catalogue, new Path('changes'));
+      return false;
+    } catch (error) {
+      if (error instanceof Violation && error.rule === RoutineRules.loadFloor) return true;
+      throw error;
+    }
+  }
+
   // The movements a pending proposal moves, by change index, each with its place in the base and in the proposal. A
   // movement whose place is the same in both never moved. Of the rest, one that crosses such a movement moved; of those
   // left, the longest run that keeps the base's order stands — of equal runs, the one whose places come first — and every
@@ -401,15 +413,32 @@ export class ProposalState {
   superseded(id, reason) { return GymRefusals.ofRefused(new Refused('proposal-superseded', id.ref, { reason }, 'predicted')); }
 }
 
-/** @typedef {{ state: ProposalState, catalogue: Catalogue }} ProposalApplication */
+// A routine proposal as applying it reads it: its state, and the catalogue its loads meet their floors in. Pending, it is
+// `underFloor` when Apply would refuse it for a load under a movement's floor.
+export class ProposalApplication {
+  /** @param {ProposalState} state @param {Catalogue} catalogue */
+  constructor(state, catalogue) {
+    this.state = state;
+    this.catalogue = catalogue;
+    Object.freeze(this);
+  }
+
+  /** @param {Reader} read @param {Id<ProposalValue>} id */
+  static of(read, id) { return new ProposalApplication(ProposalState.of(read, id), new Catalogue(read, 'stored')); }
+
+  get underFloor() {
+    const proposal = this.state.proposal;
+    return proposal?.state === 'pending' && RoutineChange.underFloor(proposal.changes, this.catalogue);
+  }
+}
 
 /** @param {Id<ProposalValue>} id */
 export function ApplyProposal(id) {
   return Object.freeze({
     scope: Proposal.scope,
     refusals: GymRefusals,
-    /** @param {Reader} read @returns {ProposalApplication} */
-    load(read) { return { state: ProposalState.of(read, id), catalogue: new Catalogue(read, 'stored') }; },
+    /** @param {Reader} read */
+    load(read) { return ProposalApplication.of(read, id); },
     /** @param {ProposalApplication} loaded */
     decide({ state, catalogue }) {
       const refused = state.refusal(id, true);

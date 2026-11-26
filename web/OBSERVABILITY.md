@@ -60,8 +60,7 @@ Failures reach Sentry with kind `sync`, route `/sync` and no stack, under these 
 | `sync-observer` | A listener of the engine, of a scope's observation or of its events threw |
 | `sync-auth` | A sign-in whose hello did not answer as the account signing in, or that threw (a sign-out still open is no failure); a credential deletion the session owner's `clear` could not make |
 
-Storage denial is explicit; no volatile fallback replaces durable work. An engine opened in memory (`inMemory`, engine.md
-§2.5) reports as one on IndexedDB does, and its store never fails to open. A write
+Storage denial is explicit; no volatile fallback replaces durable work. A write
 the device's store cannot commit reports `storage` once and reaches its caller as a `CommitError` of
 kind `store`; an error a caller's read-and-commit function throws passes through unreported. The engine
 asks no one whose credential the browser holds: the shell tells it what each read of `/v1/me` finds (its
@@ -80,14 +79,22 @@ kind `store` reported as `sync-storage` as any write the store did not commit, s
 The shell reports session transition failures as `auth-session`, a refused auth-hint storage write as
 `auth-hint-storage` and a read of `/v1/me` the engine could not take as `auth-credential-held`, each with
 kind `auth`; a cookie cleanup that fails is the engine's `sync-auth`. Opening and warming the offline shell reports `offline-shell` to Sentry.
+The read of `/v1/me` that lapses the seat clears the browser's cookie once a lapse ([CLAUDE.md](CLAUDE.md), Offline rooms
+and browser replicas) and emits `auth_session_cleared` with `outcome`: `cleared` (the logout answered), `kept` (the read
+under the cookie lock found a session another tab signed in meanwhile, and nothing was sent) or `failed` (the read had no
+answer, the lock did not come within 10 s, or the logout failed, which reports `auth-session-clear` with its stack frames);
+a failed clear leaves the seat lapsed and tells nothing more on that page. A lapse already cleared, by another tab or an
+earlier page, emits nothing, and neither does a browser signed out all along.
 The update-required reload emits `sync_upgrade` with `pending`, `ok` or `failed`; a failed
 shell update reports the static `offline-shell-update` operation. A persisted page restore
 reports storage failures and keeps its local records available for a retry.
 Add/Discard and sign-out emit `sync_signin`/`sync_signout` with `outcome: pending`; the engine reports
 completed transitions. A product that words its own question (`sync.signInWords`, `sync.signOutWords`) tells its steps
-through the words' `onStep` (roadmap's `roadmap_signin` and `roadmap_signout` below); the shell adds none of its own. A
-product's hook into a question that throws (`adoptionAnswer`, `adoptionCount`, `signInWords`, `signOutWords`, the words'
-`onStep`, `signOutNotice`, `signOutBegins`, `signOutForgets`) reports `auth-product-words`, and the shell asks as it would of a product that says nothing. A
+through the words' `onStep` (roadmap's `roadmap_signin` and `roadmap_signout` below), and so does one whose count a sign-in
+question in the shell's words carries (`sync.signInWork`, gym's `gym_signin_decision` below); the shell adds none of its
+own. A product's hook into a question that throws (`adoptionAnswer`, `adoptionCount`, `signInWork`, `signInWords`,
+`signOutWords`, the words' `onStep`, `signOutNotice`, `signOutBegins`, `signOutForgets`) reports `auth-product-words`, and
+the shell asks as it would of a product that says nothing. A
 product's hook before the seat changes (`sync.seatWillChange`) that throws or outlasts its five seconds reports
 `auth-seat-will-change`, and the seat changes without it. Escape
 on such a sign-in question cancels the sign-in: one write drops the pending sign-in and records the cookie's cleanup, a
@@ -172,13 +179,22 @@ it at the next run or before the seat changes; once a page load from a run; a cl
 bundle's metadata failed; it is tried again at the next run). Settings' unsent pages emit `journal_unclaimed` with
 `action` (`restore` or `discard`), `outcome` (`ok`; `none` where no page waited any longer; for a restore,
 `replica_changed` where the account changed before or while it wrote and `refused` where the domain refused an act,
-either leaving the pages not yet written where they were; or `failed`) and `pages` through `countBucket`. Only `failed`
-also reports `journal-restore` or `journal-discard` with the error's stack. No day, page body, scale, claim identifier,
-store key or account is reported.
-Settings' export emits `journal_export` with `outcome`: `ok`, `first_pull_timeout` (a bound replica's first pull of
-the journal did not end within 30 seconds), `replica_changed` (the account changed while it waited), `no_replica` (the
-browser holds no open replica) or `failed`, which alone also reports `journal-export` with the error's stack and `step`:
-`pages` (reading the pages), `file` (writing them as Markdown) or `download` (handing the file to the browser).
+either leaving the pages not yet written where they were; or `failed`) and `pages` through `countBucket`. Every finished
+sign-out, Keep or Discard, forgets them (`forgetUnclaimedPages`, the journal's `forgetDevice`) and emits
+`journal_unclaimed` with `action` `forget`: `outcome` `ok` with the pages it deleted, counted as Settings lists them and
+with any the device's metadata still held, or `failed` with `pages` `0` where the browser refused its storage or the
+metadata's write failed, the stores before the refusal gone and the rest
+tried again at the next sign-out; a sign-out that finds none emits nothing. Only `failed` also reports
+`journal-restore`, `journal-discard` or `journal-forget` with the error's stack. No day, page body, scale, claim
+identifier, store key or account is reported.
+Settings' export emits `journal_export` once a press with `seat` (`signed_out` where the replica it reads is the browser's
+own, `signed_in` where it is an account's) and `outcome`: `ok`, `empty` (the replica held no written page, so no file was
+handed over), `first_pull_timeout` (a bound replica's first pull of the journal did not end within 30 seconds),
+`replica_changed` (the account changed while it waited), `no_replica` (the browser holds no open replica) or `failed`, any
+other error, which alone also reports `journal-export` with the error's stack and `step`: `pages` (reading the pages),
+`file` (writing them as Markdown) or `download` (handing the file to the browser). The section's count of those pages
+before any press reports `journal-export` with `step: count` once where it cannot read them, and no event; the export
+stays offered.
 Search by meaning emits `journal_search_meaning` once for each opening of search, as its model comes up or does not,
 however often the pages change while it is open: `outcome` `ready`; `needs_connection` (the engine says the browser is
 offline or the server unreachable, and search by meaning never came up in this browser, so the search says it needs a
@@ -214,7 +230,22 @@ and `outcome`, and for `refused` a `code`: `not-writable` or `domain`. Operation
 note save/reorder, bodyweight save, set/session correction, session import, proposal apply/dismiss,
 delete, Undo, refusal and `workout-adopt`, the hook before the seat changes saving each signed-out workout for adoption in
 an act of its own, told once when it saved something (`saved-local`) and once for each workout refused or failed. Outcomes are `saved-local`, `unchanged` (a clean draft or a rename to the
-name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`. A local save
+name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`.
+Settings' Default rest and Rest sound (WD10) tell `gym_preference_changed` in its place, once per change, through
+`preferenceStep` in `gymRuntime.js`: `setting` (`rest_default` or `rest_sound`) and `outcome`, `saved` once the copy holds it,
+`not_stored` when the copy could not keep it, `refused` when the gym refused the value or the replica moved under the save,
+and `failed` for any other failure, which alone also reports `gym-rest-save` with the error's stack frames; never the value.
+A store failure there is the engine's to report.
+A sign-in question in gym's count (WD9) tells `gym_signin_decision` with `step` (`shown` as it is asked, then `add`,
+`discard` or `cancel`) and `count_bucket` (`0/1/2-5/6-20/21+`), what it counted: the browser's workouts, routines,
+weigh-ins, movements and settings, or its changes where it holds none of them. How a copy In this browser
+holds ended, a signed-out workout the account could not take or a start that lost a race, is one `gym_recovery` with
+`outcome` (`saved` as a lost race's sets are saved from its notice, `kept`, `retried` or `discarded` as the person answered
+it, `refused` or `failed` when the answer did not land) and `reason`, the review's bounded label (`session-open`,
+`session-overlap`, `id-taken`, `bad-instant`, `too-many-sets`, `invalid-set`, `unknown-exercise`, `session-finished`,
+`unsent`, `other`). An answer that fails, a save of a refused start that fails, and a proposal a copy held that the account
+refuses to issue again report `gym-workout-recover` with the error's stack frames; settling the copies the account took
+(`watchBrowserCopies`) reports the same name. A local save
 records durability, not server admission. Unexpected product boundary failures use static
 `gym-<operation>` Sentry names with the error's stack frames, never its message; projection failures use `gym-projection`. A malformed frozen plan
 reports that static operation at read and write boundaries and is omitted from the display; the
@@ -228,6 +259,28 @@ and no Issue; every other refusal, the gym's rules on
 this device or the server's notice of one, carries `code: domain`. The room drawing before the account answers
 adds no event and no failure of its own. No workout or note content, identifiers, field values, refusal details or raw
 exception messages are reported.
+
+A workout on the web tells its steps under the iPhone's event names, through `workoutStep` in `gymRuntime.js`, whose
+properties are each one of a closed set of labels and never a name or an id of a workout, a routine or a movement, nor
+any load, rep or duration: `gym_session_started` (`screen: workout`, `door`: `routine` or `empty`), `gym_set_logged`
+(`screen: workout`; a second tap on an offer another tab already logged tells nothing), `gym_session_finished` (`screen:
+workout`), `gym_workout_plan_changed` (one per kind of edit a save makes, `action`: `retarget`, `add_set`, `remove_set`,
+`swap`, `add_movement`, `remove_movement` or `rest`, and `door: workout`), `gym_workout_adjusted` (`screen: workout`,
+`field`: `weight` or `reps`, for a load or a count typed or stepped) and `gym_workout_movement_chosen` (`screen: workout`, the
+movement in hand changed from the index, the arrows, the dots, a swipe or Next), each with `outcome` `ok`, `refused` with
+`code` (`not-writable` or `domain`) and, for a plan another tab or device changed first, `reason: stale`, or `failed`. The
+page tells `gym_rest_target_reached` (`screen: workout`) once per rest, from the tab the sync engine leads from (a tab on
+screen whenever one is) when it draws the workout, as the rest comes to its target or, for a rest the tab drew short of its
+target, as a new default rest puts the target behind it; the tone and the buzz it plays while Rest sound is on are not
+reported; `gym_hidden_workout` (`action: hide` as the page is left with the
+workout open, `action: open` with `door: bar` from the bar over the tab rail); `gym_workout_popped_out` (`screen: workout`,
+`outcome` `ok` or `failed`) as Pop out opens its window or the browser refuses it; and the receipt's
+`gym_receipt_plan_saved` (`outcome`) when Done saves the plan's changes to the routine. An unexpected failure of a workout's
+write reports to Sentry under a static `gym-workout-start`, `gym-rack-settle` (each failed settle, which the page tries
+again), `gym-rack-turn`, `gym-set-log`, `gym-plan-revise` or `gym-workout-finish` with the error's stack frames, and a
+pop-out window the browser would not open reports `gym-pop-out` with its stack; a refusal and a store failure report none,
+as above. A set's correction and a finished workout's discard keep their `gym_action` (`set-correct`, `delete`). Nothing
+the tab's title, favicon or pop-out window shows is reported.
 
 Proposal decisions run through the gym domain. Removal snapshots persist in the account replica
 until their outcome is visible; acknowledging one emits `gym_action` with `proposal-apply` and
@@ -255,6 +308,26 @@ that answered, whatever its body, is never read as a lost connection: the room s
 deleted on another device under a running turn, and a turn ended by a sign-out, are expected and report nothing. No
 question, answer, picture, call input or result, id, pass or call id enters an event or a report.
 
+Coach during a workout (WD7) tells its steps under the iPhone's names through `coachStep` in `gymRuntime.js`, each property
+one of a closed set of labels and never a name or an id of a workout, a routine, a movement or a proposal, nor Coach's words.
+`gym_action` (`screen: coach`, `action: new_chat`, `door: workout`, `outcome: ok`) comes from the gesture that starts a fresh
+chat over the workout alone: the rail's Coach tab the first time the page shows it, or the phone's Coach button when the sheet
+holds no conversation with a turn running or a change to this workout waiting; a flip of the tabs or a resize tells nothing.
+`gym_proposal_outcome` (`screen: coach`, `target`: `workout` or `routine`, `action`: `apply` or `reject`) is told once for
+each decision on a proposal's card in Coach or in the routines review, by the page that made it and as the log answers it:
+`outcome: decided` once the log took it, or `failed` with `reason` once the log refused it: `replaced`, `workout-changed`,
+`workout-moved` (a movement logged since, also the log's `plan-logged`), `workout-finished` (also the log's `session-finished`
+for a change that reached it after the workout finished, the decision folded into that refusal), `routine-changed`, `settled`
+(decided on another device first), `invalid` (a load under a movement's floor), `gone` (the proposal or its workout deleted)
+or `other`. A decision that finds the proposal standing as asked writes nothing and is `decided` at once, unless another
+page's decision on it waits on the log and tells it. One this copy's rules refuse is told at once: `refused` for a value
+they hold invalid, such as a load under a movement's floor, `failed` with its `reason` otherwise; one that broke is `failed`
+with no reason; and a routine's decision the log has not answered in 15 s is told `stalled` once besides. A reload, a remount or another tab tells nothing of a
+decision, and a page that closes before the log answers tells nothing of it either. A workout proposal's decision that fails
+unexpectedly reports `gym-workout-proposal-apply` or `gym-workout-proposal-dismiss` with the error's stack frames; a refusal,
+the copy's or the log's, is the card's sentence and no Issue. A decision on a workout proposal the log refused is the card's
+to say, so the room voices no notice and tells no `refusal` step for it.
+
 ## Roadmap
 
 The Board is the only path into a roadmap and nothing stands in front of it: every event and Sentry operation below fires
@@ -278,7 +351,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | Step | Event | Allowlisted props |
 |---|---|---|
 | Open a roadmap, first resolved view of the visit. `tree` is a tree gone into through a step and `back` the roadmap come back to, each once: a reload of that entry opens by the other doors. An owner's room adds what it knows of the trees its steps open: `none` opens one, every one was `read`, or one stands `unread` | `roadmap_view_open` | `view: board/graph`, `band: phone/tablet/desktop`, `role: owner/reader/demo`, `door: saved/default/link/empty/born/no_graph/tree/back`, `trees?: none/read/unread` |
-| A build whose room reads the device's copy: the room shows its load error instead of a roadmap, once a visit, and why: `unkept` where the browser's copy could not open, as in a browser that keeps nothing (the web holds no replica in memory yet, so such a reader cannot be shown a roadmap), `unopened` where it did not open within ten seconds, `missing` where the device, having its answer, holds no roadmap the person may read at the address (one that is not there, a private one a stranger opens, a hidden subtree), and `unanswered` where the server went ten seconds without an answer before the device held a whole copy of the roadmap, or cannot be reached and the device holds no whole copy of it. A reading a sign-in or Try again runs in the same visit tells nothing more. The bare `#/app` door tells it too, `unkept` or `unopened`, where the copy cannot open and the door stays, unable to say which roadmap is the person's newest | `roadmap_load` | `outcome: unkept/unopened/missing/unanswered` |
+| A build whose room reads the device's copy: the room shows its load error instead of a roadmap, once a visit, and why: `unkept` where the browser's copy could not open, as in a browser that keeps nothing (which is not supported, so such a reader cannot be shown a roadmap), `unopened` where it did not open within ten seconds, `missing` where the device, having its answer, holds no roadmap the person may read at the address (one that is not there, a private one a stranger opens, a hidden subtree), and `unanswered` where the server went ten seconds without an answer before the device held a whole copy of the roadmap, or cannot be reached and the device holds no whole copy of it. A reading a sign-in or Try again runs in the same visit tells nothing more. The bare `#/app` door tells it too, `unkept` or `unopened`, where the copy cannot open and the door stays, unable to say which roadmap is the person's newest | `roadmap_load` | `outcome: unkept/unopened/missing/unanswered` |
 | Switch Board and Graph | `roadmap_view_switch` | `view: board/graph` |
 | Phone column tab | `roadmap_board_column` | `column: locked/upNext/done` |
 | Tablet rail's Show | `roadmap_board_rail` | `column: locked/done` |
@@ -402,7 +475,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | A kept change's Copy: its text reached the clipboard, or the clipboard refused it or failed | `roadmap_kept` | `step: copy`, `reason: roadmapDeleted/capFilled/accessEnded/noteTooLong`, `outcome: copied/failed` |
 | Select text, after a kept change's copy failed | `roadmap_kept` | `step: select`, `reason: roadmapDeleted/capFilled/accessEnded/noteTooLong` |
 | A kept change discarded: asked once, and the engine dismissed its notice, or the carry-over's ledger let go of its record. One the engine or the ledger no longer holds, discarded in another tab, closes quietly and emits nothing | `roadmap_kept` | `step: discard`, `reason: roadmapDeleted/capFilled/accessEnded/noteTooLong` |
-| A room on the device's copy: what an Undo or a Redo of the room's own stack came to, once the engine knows; one the server still settles is told when it has. `applied` where it changed what the device holds, `skipped` where it changed nothing, a write the device had not seen standing in its way, `unavailable` where there was nothing to take back (the gesture wrote nothing, or its Undo had nothing). No text and no id leave; the person is shown nothing of a skip | `roadmap_undo` | `action: undo/redo`, `outcome: applied/skipped/unavailable` |
+| A room on the device's copy: what an Undo or a Redo of the room's own stack came to, once the engine knows; one the server still settles is told when it has. `applied` where it changed what the device holds, `skipped` where it changed nothing, a write the device had not seen standing in its way, `unavailable` where there was nothing to take back (the gesture wrote nothing, or its Undo had nothing) or the domain refused the Undo before anything was written, a check its act named failing over what stands (a kind brought back onto a hue another kind has come to wear). No text and no id leave; the person is shown nothing of a skip or a refusal | `roadmap_undo` | `action: undo/redo`, `outcome: applied/skipped/unavailable` |
 | A room on the device's copy: a write the domain refused, decided before anything was written (or, rarely, at its commit); a roadmap at its cap and a link that would close a loop are said in the words of the room with the switch off, and any other shows what that room shows for that gesture's failure. No success is shown or emitted for it: a gesture's success toast and `saved` event wait until its write has landed | `roadmap_write_refused` | `write: mark/title/guide/visibility/workspace/note/landing/CreateNode/RenameNode/DescribeNode/SetNodeColor/EditNode/SetNodeOrder/AddEdge/RemoveEdge/ReconnectEdge/DeleteNode/BulkDelete/BulkRecolor/ImportSubgraph/SetNodeTree/AddKind/RenameKind/DescribeKind/RecolorKind/RemoveKind/deleteRoadmap`, `refusal: invalid/gone/taken/tooLarge/full/roadmapGone/unreachable/notARoot/stepOpensARoadmap/depthLimit/other` |
 | Undo of one of Roadmap Coach's direct writes by its receipt (`coach/toolHost.js`), told once the engine has settled it, which waits for the server where the server settles it: `undone` where it took the write back, `skipped` where a later write the person made of the same field, a change of a subtask it added, or a mark they set on the step since, stood in its way, `unavailable` where the room no longer holds the write (⌘Z took it back first). The room tells the same Undo as `roadmap_undo`. Nothing offers the Undo yet, so production emits none of it | `roadmap_coach_write_undone` | `ability: set_progress/update_node/create_node/connect`, `outcome: undone/skipped/unavailable` |
 | Device line shown | `roadmap_device_line` | `step: shown`, `line: anonymous/lapsed`, `place: row/shell` |
@@ -553,9 +626,10 @@ function. A report's `route` is a family (`#/app`, `#/settings`), never an addre
 | `roadmap-sync-discard` | An unexpected discard failure | The refusal stays |
 | `roadmap-sync-refused` | An unexpected refusal, once per bounded code per session, with `code` as a tag | The refusal notice |
 | `auth-session` | An unexpected account refresh failure | The session's existing path |
+| `auth-session-clear` | The logout that clears the cookie of a lapsed session failed: a network error, its 10-second limit, or an answer other than 2xx; stack frames only | The seat lapses as it would have, and nothing marks the lapse cleared: the next page whose read lapses the seat tries again, unless a sign-in replaces the cookie first |
 | `auth-credential-held` | Telling the engine whose credential a read of `/v1/me` found threw, its store having failed or closed underneath it (a store failure the engine reports as `sync-storage` too); once a page, stack frames only | The read goes on: the shell settles the account it read, and the engine hears the next read, 20 seconds on at most |
 | `auth-seat-will-change` | A product's hook before the seat changes (`sync.seatWillChange`, before a sign-in binds the device and before a sign-out finishes) threw (`outcome: failed`, its stack frames) or outlasted its five seconds (`outcome: timeout`), tagged `product`, the route table's id. Never a record, a count or an account | The seat changes without it: the next product's hook runs, then the sign-in or the sign-out; a write the late hook makes afterwards is refused by the binding it was issued under and writes nothing (gym's one act, `not-writable`) |
-| `auth-product-words` | A product's hook into an account-change question threw, tagged `question`: `adoption` (`adoptionAnswer`, the product's own answer to a sign-in question), `signin` (`signInWords` or `adoptionCount`, the sign-in question's words or its count of the product's records), `signout` (`signOutWords`), `step` (the words' `onStep`, a step of the question told to the product), `begin` (`signOutBegins`, what the product does as a sign-out begins, before the engine sends what the device holds), `forget` (`signOutForgets`, the device rows the product's finished sign-out takes) or `notice` (`signOutNotice`, the product's line on what signing out discards from this tab). Stack frames only: never the product's words, a count or an account | The shell asks as it would of a product that says nothing: the person answers the sign-in question, in the shell's words with the engine's count, and the sign-out question in the next product's words or the shell's, without that product's line or its step event, so signing in and out go on |
+| `auth-product-words` | A product's hook into an account-change question threw, tagged `question`: `adoption` (`adoptionAnswer`, the product's own answer to a sign-in question), `signin` (`signInWords`, `signInWork` or `adoptionCount`, the sign-in question's words or its count of the product's records), `signout` (`signOutWords`), `step` (the words' `onStep`, a step of the question told to the product), `begin` (`signOutBegins`, what the product does as a sign-out begins, before the engine sends what the device holds), `forget` (`signOutForgets`, the device rows the product's finished sign-out takes) or `notice` (`signOutNotice`, the product's line on what signing out discards from this tab). Stack frames only: never the product's words, a count or an account | The shell asks as it would of a product that says nothing: the person answers the sign-in question, in the shell's words with the engine's count, and the sign-out question in the next product's words or the shell's, without that product's line or its step event, so signing in and out go on |
 | `billing-subscription` | The subscription read (`GET /v1/subscription`), kind `billing`, under the tag `reason`: `server` for a 5xx, `shape` for a 200 that is not a SubscriptionResponse. A request lost and a 4xx report nothing | The page reads as holding no Windmill One until the next read, at the next focus |
 
 Expected answers are not Issues: a null receipt, a not-ready session on create or delete, a capacity or missing-tree

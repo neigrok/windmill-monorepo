@@ -311,6 +311,7 @@ jobs:
             tests: >-
               -only-testing:WindmillUITests/GymIntegrationFlowTests
               -only-testing:WindmillUITests/RoadmapFlowTests
+              -only-testing:WindmillUITests/RoadmapLandingFlowTests
           - shard: gym-journal
             tests: >-
               -only-testing:WindmillUITests/GymCoachFlowTests
@@ -320,6 +321,7 @@ jobs:
               -only-testing:WindmillUITests/JournalFlowTests
               -only-testing:WindmillUITests/JournalIntegrationFlowTests
               -only-testing:WindmillUITests/JournalEchoFlowTests
+              -only-testing:WindmillUITests/RoadmapNestedFlowTests
           - shard: shell-offline-system
             tests: >-
               -only-testing:WindmillUITests/OfflineFlowTests

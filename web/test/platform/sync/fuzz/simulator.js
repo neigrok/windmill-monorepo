@@ -15,6 +15,7 @@ import { compareRecords, isAlive, isVisible, recordKey } from '../../../../../pa
 import { ProbeProduct } from '../../../../../packages/api-contract/sync/reference/probe/product.js';
 import { commitAct } from '../../../../../packages/api-contract/sync/reference/client/acts.js';
 import { commit } from '../../../../../packages/api-contract/sync/reference/client/commit.js';
+import { ownCommandOf } from '../../../../../packages/api-contract/sync/reference/client/dependents.js';
 import { requestInverse } from '../../../../../packages/api-contract/sync/reference/client/inverse.js';
 import { releaseReversibleAct } from '../../../../../packages/api-contract/sync/reference/client/journal.js';
 import { releaseAll, releaseDue, undo, undoOffered } from '../../../../../packages/api-contract/sync/reference/client/hold.js';
@@ -764,7 +765,8 @@ export class World {
     for (const event of out.live) this.broadcast(event);
   }
 
-  // Each entry's records and command, with ids mapped through the response's joining write maps.
+  // Each entry's records and own command, with ids mapped through the response's joining write maps. A capture
+  // command is its deltas' own, and no notice need carry it.
   contentsOf(device, response) {
     const joined = new Map();
     for (const result of response.body?.results ?? []) for (const w of result.write ?? []) if (w.from) joined.set(recordKey(w.t, w.from), recordKey(w.t, w.id));
@@ -772,7 +774,7 @@ export class World {
     for (const replica of device.store.replicas) {
       for (const entry of replica.outbox) {
         const keys = (entry.intent.d ?? []).map((delta) => recordKey(delta.t, delta.id));
-        contents.set(entry.localId, { keys: keys.map((key) => [key, joined.get(key) ?? key]), cmd: entry.intent.cmd?.name });
+        contents.set(entry.localId, { keys: keys.map((key) => [key, joined.get(key) ?? key]), cmd: ownCommandOf(this.registry, entry)?.name });
       }
     }
     return contents;
@@ -810,7 +812,7 @@ export class World {
     }
   }
 
-  // INV-3 by content: a refused entry's records and command are in the notice that holds it.
+  // INV-3 by content: a refused entry's records and own command are in the notice that holds it.
   checkRefusals(device, before, from) {
     const notices = new Map(device.store.replicas.flatMap((replica) => replica.notices.map((notice) => [notice.id, notice])));
     for (const end of device.ended.slice(from)) {

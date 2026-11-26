@@ -2,7 +2,10 @@
 
 The shared gym vectors follow [the domain kit](../../../../docs/foundation/domain-kit.md) §15.3.
 Swift `GymDomain`, Kotlin `:gym:domain` and the web's gym domain run every case over the shared
-v12/minimum-11 registry composition and reproduce each `expect` by JCS equality; every file runs in all three.
+v15/minimum-15 registry composition and reproduce each `expect` by JCS equality; every file runs in all three but two,
+which the web alone runs: `refused-start-actions.json`, while the phones' recovery of a start that lost a race waits on
+its design ([open problems](../../../../docs/foundation/local-first-open-problems.md) LP-6), and
+`rest-settings-actions.json`, while no phone sets the default rest or the rest sound.
 `workout-plan-actions.json` and `workout-proposals-actions.json` hold the open workout's editable plan and its
 workout proposals. R118 metadata reads remain optional
 for legacy records. The pinned rule book covers ten entities, `WorkoutProposal` the newest; `RoutineCreation`
@@ -39,8 +42,10 @@ are compared with the server's golden. The Coach `thread` and `message` entities
 | `coach-conversation-actions.json` | A phone turn's records: `OpenTurn`, `EndTurn` with the receipt its calls derive, a call's record as the calls bound fills, and a read's week. Kotlin, Swift and the web (`web/src/products/gym/domain/coach/`) claim the cases |
 | `catalogue-actions.json` | Create (a dumbbell movement's count included), rename, seed overrides, aliases, byte-sensitive search, decoding failures |
 | `preferences-actions.json` | Draft preference saves and rest defaults |
+| `rest-settings-actions.json` | Settings' default rest and rest sound: a default, Off as a null register, the sound, both in one change, an untouched change, a rest outside 15–900 s or of no whole second refused at `prefs.restSeconds`, a rule outside the pinned book while the web alone sets it, and a save that leaves the phones' three preferences unwritten and unguarded. The web claims the cases; both phones list the file as not applicable |
 | `training-actions.json` | Start, append, correct/delete set, discard, finish, import, replace completed workout; serial, time, overlap and log reads |
 | `recovery-actions.json` | A saved signed-out workout the account has not taken: its review row and reason, the fix editor's live line, which notices it owns, keep/restart adoption, stranded-set recovery, discard, and the proposal a signed-out phone held minted again once the account holds its workout. Swift `GymDomain`, Kotlin `:gym:domain` and the web claim the cases |
+| `refused-start-actions.json` | A start refused `session-open`, as one that lost a race with another device's is: the sets its notice holds saved as a copy under `rack:adoption` for the review, and what saves nothing. The web claims the cases; both phones list the file as not applicable |
 | `proposals-actions.json` | Propose, apply/dismiss, the proposal state's refusals and out of date, ordered diff, change count, the card's change blocks, provenance and optional R118 metadata reads |
 | `workout-plan-actions.json` | Every `ReviseWorkoutPlan` operation, the logged-movement refusal per operation, stale bases, closed and missing workouts, unknown and duplicate movements, bounds; and the reads over an edited plan: prefill, the workout and review documents, the receipt's plan changes |
 | `workout-proposals-actions.json` | Propose a workout change (diff, swap, reorder, unchanged, refusals), apply/dismiss with every out-of-date reason, and the card's `WorkoutOutOfDate` |
@@ -144,6 +149,7 @@ separately and is outside the v4 rule book because v4 has no such type.
 | Action | Input | Result |
 |---|---|---|
 | `SaveRoutine`, `SavePreferences` | Editor fields; vectors open the drawn entity or a new blank draft | `{values,exists}` from the draft save |
+| `SaveRestSettings` | `{restSeconds?, restSound?}`; `restSeconds` null is Off, and a setting left out keeps the stored one. It opens the drawn record or a new blank draft as it loads | `{values,exists}` from the draft save; it writes the rest settings it changed, nothing when none changed |
 | `SaveRoutinePlan` | `{base,current,isNew,movements:[{base,current}]}`; routine values use `{id,fields}`, movement values use `{id,fields,loadCount?}`, and a new movement has `base:null`. Omitted count means two for dumbbells; other equipment always uses one. | Routine id; one atomic gesture for touched routine fields and staged catalogue identity. Checks captured bases, guards changed fields and target load units, omits removed movements. Device-only former names are excluded from the shared gesture. |
 | `SaveWeighIn` | `{day,kg}`; vectors open the drawn day or a new blank draft | `{id,fields}`; every save writes the whole fact with the save's moment |
 | `DeleteRoutine`, `DeleteSet`, `DeleteWeighIn` | `{id}` or `{day}` | `null`; held, with Undo on a real engine |
@@ -162,6 +168,7 @@ separately and is outside the v4 rule book because v4 has no such type.
 | `AdoptWorkout` | `{id, mode: "keep" \| "restart", revised?}` over the saved copy under `rack:adoption` | `null`; keep imports the copy after the phone's checks (window, past now, movements, crossing); restart queues the start and every set in one plan or refuses the first set the phone would |
 | `RecoverStrandedSets` | `{id, placement: "intoWorkout" \| "separately", revised?}` | `null`; the window's sets append to an open workout or correct into a finished one; the rest become a saved copy of their own with its import queued |
 | `DiscardSignedOutWorkout` | `{id}` | `null`; the copy leaves the device key |
+| `SaveRefusedStart` | `{notice}`, a `gym.start` refused `session-open` in the kit's notice form, its sets folded into its dependents | `null`; the start's workout as it predicted it (`historyRoutineId` its `routineId`), finished where a folded `gym.finish` says, with every set born in the notice as its last write there left it and a set deleted there left out, saved beside the other copies; nothing for another notice, a notice holding no set, a copy already saved or a workout the log holds |
 | `ProposeRoutine` | `{id,routineId,name,entries,summary,removing?}` | Proposal id; guards routine name and entries |
 | `ApplyProposal`, `DismissProposal` | `{id}` | `null` |
 | `ReviseWorkoutPlan` | `{sessionId,base,operations}`; `base` is the plan the editor read, `operations` a non-empty list applied in order (below) | `null`; one guarded write of the whole `plan`, or nothing when the plan stands |

@@ -54,7 +54,7 @@ extension TextSpec {
 public enum RoadmapSpecs {
   public static let title = TextSpec("meta.title", chars: 200)
   public static let guide = TextSpec("meta.guide", chars: 5000)
-  public static let visibility = ChoiceSpec("meta.visibility", values: ["private", "unlisted", "public"])
+  public static let visibility = ChoiceSpec("meta.visibility", values: ["private", "public"])
   public static let label = TextSpec("node.label", chars: 200)
   public static let icon = TextSpec("node.icon", chars: 64)
   public static let color = ChoiceSpec("node.color", values: RoadmapRules.hues)

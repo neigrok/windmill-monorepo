@@ -7,22 +7,23 @@
 
 namespace wm {
 
-// Read authorization is binary: private is owner-only, unlisted and public are both readable by
-// anyone holding the id. `public_` adds listing consent and lets the tree's share page be indexed.
-enum class Visibility { private_, unlisted, public_ };
+// Read authorization is binary: private is owner-only, public is readable by anyone holding the id, and adds listing
+// consent and lets the tree's share page be indexed.
+enum class Visibility { private_, public_ };
 
-// Fail-closed: an unknown or malformed value reads as private.
+// Fail-closed: any text but "public", "unlisted" among them, reads as private.
 inline Visibility parseVisibility(const std::string& text) {
-  if (text == "unlisted") return Visibility::unlisted;
   if (text == "public") return Visibility::public_;
   return Visibility::private_;
 }
 
 inline std::string toString(Visibility visibility) {
-  if (visibility == Visibility::unlisted) return "unlisted";
   if (visibility == Visibility::public_) return "public";
   return "private";
 }
+
+// Whether a roadmap's reach opens it to every reader, as the registry's `opens` says.
+inline bool opensToReaders(Visibility reach) { return reach == Visibility::public_; }
 
 // The account that owns every roadmap that had no owner before roadmap's move onto the sync engine, the public demo among
 // them (roadmap-on-the-engine.md §7). Its address takes no mail, so nobody signs in as it: nobody writes what it owns, and
@@ -33,7 +34,7 @@ inline const std::string kHouseEmail = "house@windmill.invalid";
 // The read-authorization decision every tree read path calls.
 inline bool canRead(const std::optional<UserId>& caller, const std::optional<UserId>& owner,
                     Visibility visibility) {
-  if (visibility != Visibility::private_) return true;
+  if (opensToReaders(visibility)) return true;
   return caller && owner && *caller == *owner;
 }
 

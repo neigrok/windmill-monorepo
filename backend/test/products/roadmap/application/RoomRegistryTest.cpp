@@ -380,9 +380,9 @@ TEST(registry_set_visibility_flips_the_live_room_and_the_row) {
   TreeRoom& room = *registry.open(tid());
   CHECK(room.visibility() == Visibility::private_);
 
-  registry.setVisibility(tid(), Visibility::unlisted);
-  CHECK(room.visibility() == Visibility::unlisted);              // the live room reads shared at once
-  CHECK(repo.byId["t"].visibility == Visibility::unlisted);      // and it is durable
+  registry.setVisibility(tid(), Visibility::public_);
+  CHECK(room.visibility() == Visibility::public_);              // the live room reads shared at once
+  CHECK(repo.byId["t"].visibility == Visibility::public_);      // and it is durable
 }
 
 TEST(registry_evict_persists_and_closes) {
@@ -407,13 +407,13 @@ TEST(registry_access_of_answers_without_materializing_a_room) {
   FakeBus bus;
   repo.byId["t"] = oneNodeTree();
   repo.byId["t"].owner = UserId{"alice"};
-  repo.byId["t"].visibility = Visibility::unlisted;
+  repo.byId["t"].visibility = Visibility::public_;
   RoomRegistry registry(repo, log, bus);
 
   std::optional<TreeAccess> access = registry.accessOf(tid());
   REQUIRE(access.has_value());
   CHECK(access->owner == std::optional<UserId>(UserId{"alice"}));
-  CHECK(access->visibility == Visibility::unlisted);
+  CHECK(access->visibility == Visibility::public_);
   CHECK_FALSE(registry.isOpen(tid()));       // the decisive property: nothing was loaded
   CHECK_EQ(registry.openRooms(), std::size_t{0});
 
@@ -521,7 +521,7 @@ TEST(registry_a_subtree_is_read_by_its_roots_access_which_a_change_to_the_root_r
 
   std::vector<Visibility> duringTheWrite;
   repo.duringVisibilitySet = [&] { duringTheWrite.push_back(visibilityOf("c")); };
-  registry.setVisibility(tid("t"), Visibility::unlisted);
+  registry.setVisibility(tid("t"), Visibility::public_);
   registry.setVisibility(tid("t"), Visibility::private_);
   CHECK(duringTheWrite == (std::vector<Visibility>{Visibility::private_, Visibility::private_}));
   registry.setVisibility(tid("t"), Visibility::public_);
@@ -554,7 +554,7 @@ TEST(registry_a_subtree_is_read_by_its_roots_access_which_a_change_to_the_root_r
 void plantBranch(FakeTreeRepository& repo) {
   repo.byId["t"] = oneNodeTree();
   repo.byId["t"].owner = uid("owner");
-  repo.byId["t"].visibility = Visibility::unlisted;
+  repo.byId["t"].visibility = Visibility::public_;
   repo.byId["c"] = oneNodeTree();
   repo.byId["g"] = oneNodeTree();
   repo.subtrees["c"] = Subtree{tid("c"), tid("t"), OwningStep{tid("t"), nid("seed")}, 1, 0};

@@ -12,9 +12,10 @@ import SyncTesting
 @testable import Windmill
 
 @Suite(.serialized) @MainActor struct RoadmapModelTests {
-  // A phone's engine in step mode on the model server, the runner roadmap's actions take, and what the phone remembers.
-  func phone(account: String? = "acct-1") -> (engine: SteppedEngine, runner: ActionRunner, memory: UserDefaults, suite: String) {
-    let engine = SteppedEngine(registry: SyncSchema.registry, startMs: 1_790_424_000_000, account: account,
+  // A phone's engine in step mode on the model server, the runner roadmap's actions take, and what the phone remembers;
+  // every id it mints follows `seed`.
+  func phone(account: String? = "acct-1", seed: UInt64 = 1) -> (engine: SteppedEngine, runner: ActionRunner, memory: UserDefaults, suite: String) {
+    let engine = SteppedEngine(registry: SyncSchema.registry, startMs: 1_790_424_000_000, seed: seed, account: account,
                                rules: ComposedServerRules.windmill(registry: SyncSchema.registry))
     let suite = "roadmap-model-\(UUID().uuidString)"
     return (engine, ActionRunner(replica: engine.replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0)),
@@ -152,6 +153,28 @@ import SyncTesting
     #expect(reopened.roadmaps.map(\.id) == [newer.description, older.tree.description])
   }
 
+  // Signed out, no server has received any of the phone's roadmaps, so the title menu lists them by the newest stamp the
+  // phone holds of each: the roadmap made last comes first. The phone's seed mints the second a larger id than the first,
+  // so their ids stand the other way round.
+  @Test func aPhoneNeverSignedInListsTheRoadmapMadeLastFirst() async throws {
+    let (engine, runner, memory, suite) = phone(account: nil, seed: 2)
+    defer { memory.removePersistentDomain(forName: suite) }
+    let basics = ImportedSteps(steps: [ImportedStep(key: "first", RoadmapStep.Changes(label: "Basics"))])
+    for (made, title) in ["Learn Rust", "Learn to sail"].enumerated() {
+      if made > 0 { engine.advance(ms: 60_000) }
+      guard case .committed = try runner.runAct(CreateRoadmap(title: title, steps: basics)) else {
+        Issue.record("\(title) was not created")
+        return
+      }
+    }
+
+    let model = room(engine, runner, memory)
+    model.roomOpened()
+    await shows(model, roadmaps: ["Learn to sail", "Learn Rust"], on: engine)
+    #expect(model.roadmaps.map { $0.updatedAt == nil } == [true, true])
+    #expect(model.roadmaps.map(\.id) == model.roadmaps.map(\.id).sorted { $1.utf8.lexicographicallyPrecedes($0.utf8) })
+  }
+
   // The Board is the domain's read of the open roadmap: its groups, what a Locked step needs and what an Up next step
   // unlocks, each row with the kind that names its colour and what the room offers on it.
   @Test func theOpenRoadmapsBoardIsTheDomainsReadOfLearnToSail() async throws {
@@ -184,9 +207,9 @@ import SyncTesting
       "done: Name the boat parts [sky] resets deletes",
       "done: Choose a sailing course [Build] resets",
     ])
-    #expect(open.keptStep == open.tree.nodes.first { $0.label == "Choose a sailing course" }?.id)
+    #expect(open.effects(of: [String]()).kept == open.tree.nodes.first { $0.label == "Choose a sailing course" }?.id)
     let followers = ["Name the boat parts", "Read the wind", "Sail solo"].map { (step: String) -> Int in
-      open.followers(of: open.tree.nodes.first { $0.label == step }?.id ?? "")
+      open.effects(of: [open.tree.nodes.first { $0.label == step }?.id ?? ""]).follow.count
     }
     #expect(followers == [3, 1, 0])
   }
@@ -720,7 +743,7 @@ import SyncTesting
     model.roomOpened()
     await shows(model, board: ["0 of 0"], on: engine)
     guard case .open(let empty) = model.phase else { return }
-    #expect(!empty.everyStepDone && empty.keptStep == nil)
+    #expect(!empty.everyStepDone && empty.effects(of: [String]()).kept == nil)
 
     engine.advance(ms: 60_000)
     _ = try learnToSail(on: engine, runner, done: ["choose", "parts", "rig", "read", "tie", "leave", "tri"])
@@ -751,7 +774,7 @@ import SyncTesting
     await shows(model, "open Learn to sail", on: engine)
 
     model.complete(try row("Read the wind", in: model), by: .swipe)
-    let first = try #require(model.band?.undo?.gesture)
+    let first = try #require(model.band?.undo?.handle)
     model.complete(try row("Tie a bowline", in: model), by: .swipe)
     #expect(model.band?.says == .completed(step: "Tie a bowline", upNext: [], inPlace: false))
     #expect(try runner.undo(first) == .unavailable(requestId: nil, reason: "not-reversible"))

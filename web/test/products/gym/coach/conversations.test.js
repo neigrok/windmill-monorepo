@@ -29,13 +29,13 @@ const records = [
   row('workoutProposal', 'workout001', { sessionId: 'session001', summary: 'Lighter today', changes: [], door: 'ask', connection: '', agent: '', changeCount: 1 }),
 ];
 
-test('a phone\'s conversation reads here whole: its picture held there, the routine it made, and its workout proposal as a row', () => {
+test('a phone\'s conversation reads here whole: its picture held there, the routine it made, and its workout proposal for its card', () => {
   const view = conversationView(reader(records), 'thread0001', null);
   assert.deepEqual(view.messages.map((message) => message.role), ['lifter', 'coach']);
   assert.deepEqual(view.messages[0].pictures, [{ id: 'picture0001', copy: null }]);
   const answer = view.messages[1];
   assert.deepEqual([answer.answering, answer.read, answer.routines, answer.proposals, answer.workoutProposals], [null,
-    { sets: 0, sessions: 1, weeks: 6, totalsOnly: false, thisWorkout: false }, [{ id: 'routine001', name: 'Upper A', movements: 2 }], [], [{ id: 'workout001', changes: 1 }]]);
+    { sets: 0, sessions: 1, weeks: 6, totalsOnly: false, thisWorkout: false }, [{ id: 'routine001', name: 'Upper A', movements: 2 }], [], ['workout001']]);
 });
 
 test('History names what a conversation\'s last turn made, newest first, and a running turn of another device answers elsewhere', () => {
@@ -52,4 +52,26 @@ test('an answer whose one workout read is the workout open at its opening says i
     at: 1_799_999_000_000, replica, text: 'Bench stays as logged.', state: 'completed', truncated: false,
     receipt: { read: { sets: 4, sessions: 1, weeks: 6 }, results: [] }, calls: [{ ...call('get_session'), callId: 'context-get_session' }] }) : each));
   assert.equal(conversationView(reader(opened), 'thread0001', null).messages[1].read.thisWorkout, true);
+});
+
+test('History counts a workout proposal\'s changes as its card does: the lines that change in its workout\'s plan, until the log counts', () => {
+  const sets = (reps, weightKg) => [{ reps, weightKg }, { reps, weightKg }];
+  const plan = { routine: 'Upper A', entries: [{ exerciseId: 'dumbbell-bench-press', sets: sets(8, 16) }, { exerciseId: 'pull-up', sets: sets(8, 10) }] };
+  const changes = [
+    { kind: 'kept', exerciseId: 'dumbbell-bench-press', before: { sets: sets(8, 16) }, after: { sets: sets(8, 16) } },
+    { kind: 'retargeted', exerciseId: 'pull-up', before: { sets: sets(8, 10) }, after: { sets: sets(8, 0) } },
+    { kind: 'added', exerciseId: 'face-pull', after: { sets: sets(15, 15) } },
+  ];
+  const workout = [
+    row('thread', 'thread0002', { title: 'My shoulder feels off on bench today.' }),
+    row('message', 'coach00002', { threadId: 'thread0002', role: 'coach', at: 1_799_999_000_000, replica, text: 'Take the weight off pull-ups.',
+      state: 'completed', truncated: false, calls: [call('propose_workout_change', [{ t: 'workoutProposal', id: 'workout002' }])] }),
+    row('session', 'session002', { startedAt: 1_799_998_000_000, plan }),
+    row('workoutProposal', 'workout002', { sessionId: 'session002', summary: '', changes, door: 'ask', connection: '', agent: '' }),
+  ];
+  const line = (rows) => historyRows(reader(rows)).find((each) => each.id === 'thread0002').line;
+  assert.deepEqual(line(workout), { kind: 'workout', count: 2 });
+  const counted = workout.map((each) => (each.id === 'workout002' ? row('workoutProposal', 'workout002',
+    { sessionId: 'session002', summary: '', changes, door: 'ask', connection: '', agent: '', changeCount: 3 }) : each));
+  assert.deepEqual(line(counted), { kind: 'workout', count: 3 });
 });

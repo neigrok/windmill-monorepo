@@ -65,7 +65,7 @@ TreeRegistryApi::TreeRegistryApi(std::shared_ptr<TreeRegistry> registry, std::sh
     : registry_(std::move(registry)), auth_(std::move(auth)) {}
 
 void TreeRegistryApi::createTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to plant a roadmap"));
     return;
@@ -127,7 +127,7 @@ void TreeRegistryApi::createTree(const drogon::HttpRequestPtr& req, HttpCallback
 }
 
 void TreeRegistryApi::listTrees(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to list your trees"));
     return;
@@ -146,7 +146,7 @@ void TreeRegistryApi::listTrees(const drogon::HttpRequestPtr& req, HttpCallback&
 
 void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback,
                                 const std::string& treeId) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to edit a tree"));
     return;
@@ -167,8 +167,8 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
   // A {visibility} body reshares the tree, a {guide} body sets its guide, a {title} body renames it.
   if (json && json->isMember("visibility")) {
     const std::string requested = (*json)["visibility"].asString();
-    if (requested != "private" && requested != "unlisted" && requested != "public") {
-      callback(error(drogon::k400BadRequest, "visibility must be private, unlisted, or public"));
+    if (requested != "private" && requested != "public") {
+      callback(error(drogon::k400BadRequest, "visibility must be private or public"));
       return;
     }
     const std::variant<TreeRegistry::VisibilityChange, NotARoot> answer =
@@ -248,7 +248,7 @@ void TreeRegistryApi::patchTree(const drogon::HttpRequestPtr& req, HttpCallback&
 
 void TreeRegistryApi::deleteTree(const drogon::HttpRequestPtr& req, HttpCallback&& callback,
                                  const std::string& treeId) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to delete a tree"));
     return;
@@ -294,7 +294,7 @@ void TreeRegistryApi::deleteTree(const drogon::HttpRequestPtr& req, HttpCallback
 
 void TreeRegistryApi::createSubtree(const drogon::HttpRequestPtr& req, HttpCallback&& callback,
                                     const std::string& treeId, const std::string& stepId) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to add a subtree"));
     return;

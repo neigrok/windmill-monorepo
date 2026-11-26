@@ -245,5 +245,146 @@
       "legendEmpty": true,
       "unclaimedHues": []
     }
+  },
+  {
+    "name": "Each loop holding a present step is one cycle of its present steps in id order, a removed step on it unnamed and a step after it not in it",
+    "input": {
+      "operation": "diagnostics",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "b", "present": false, "born": null, "rc": null, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "c", "present": true, "born": null, "rc": null, "ru": null, "label": "c", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "d", "present": true, "born": null, "rc": null, "ru": null, "label": "d", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "q", "present": true, "born": null, "rc": null, "ru": null, "label": "q", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "r", "present": true, "born": null, "rc": null, "ru": null, "label": "r", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [
+          {"from": "r", "to": "q", "present": true},
+          {"from": "q", "to": "r", "present": true},
+          {"from": "a", "to": "b", "present": true},
+          {"from": "b", "to": "c", "present": true},
+          {"from": "c", "to": "a", "present": true},
+          {"from": "c", "to": "d", "present": true}
+        ],
+        "kinds": [{"id": "build", "present": true, "born": null, "hue": "terracotta", "label": "Build", "description": "", "ord": "a0"}],
+        "marks": [],
+        "pointers": []
+      }
+    },
+    "expect": {
+      "cycles": {"entries": [{"count": 2, "named": ["a", "c"]}, {"count": 2, "named": ["q", "r"]}], "omitted": 0},
+      "absentCycles": {"entries": [], "omitted": 0},
+      "missingEdges": {"entries": [], "omitted": 0},
+      "selfEdges": {"entries": [], "omitted": 0},
+      "smells": [],
+      "legendEmpty": false,
+      "unclaimedHues": []
+    }
+  },
+  {
+    "name": "Steps after a removed step are no masked work: the removed step's links are no error, and only a link from an id no record holds is missing",
+    "input": {
+      "operation": "diagnostics",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "a", "present": true, "born": null, "rc": null, "ru": null, "label": "a", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "b", "present": false, "born": null, "rc": null, "ru": null, "label": "b", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "c", "present": true, "born": null, "rc": null, "ru": null, "label": "c", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "d", "present": true, "born": null, "rc": null, "ru": null, "label": "d", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "e", "present": true, "born": null, "rc": null, "ru": null, "label": "e", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [
+          {"from": "a", "to": "b", "present": true},
+          {"from": "b", "to": "c", "present": true},
+          {"from": "b", "to": "d", "present": true},
+          {"from": "gone", "to": "e", "present": true}
+        ],
+        "kinds": [{"id": "build", "present": true, "born": null, "hue": "terracotta", "label": "Build", "description": "", "ord": "a0"}],
+        "marks": [],
+        "pointers": []
+      }
+    },
+    "expect": {
+      "cycles": {"entries": [], "omitted": 0},
+      "absentCycles": {"entries": [], "omitted": 0},
+      "missingEdges": {"entries": [["gone", "e"]], "omitted": 0},
+      "selfEdges": {"entries": [], "omitted": 0},
+      "smells": [],
+      "legendEmpty": false,
+      "unclaimedHues": []
+    }
+  },
+  {
+    "name": "Smells read the present steps beside the present kinds: a label past 256 UTF-8 bytes, an empty icon, more than four prerequisites followed through a removed step, and each unclaimed hue in the palette's order",
+    "input": {
+      "operation": "diagnostics",
+      "tree": {
+        "id": "T",
+        "present": true,
+        "read": "loaded",
+        "parent": null,
+        "meta": {"title": "T", "guide": "", "guideInherited": false, "root": "T", "depth": 0, "visibility": "private", "reach": "private"},
+        "nodes": [
+          {"id": "bare", "present": true, "born": null, "rc": null, "ru": null, "label": "bare", "icon": "", "color": "olive", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "edge", "present": true, "born": null, "rc": null, "ru": null, "label": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "four", "present": true, "born": null, "rc": null, "ru": null, "label": "four", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "hub", "present": true, "born": null, "rc": null, "ru": null, "label": "hub", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "long", "present": true, "born": null, "rc": null, "ru": null, "label": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "p1", "present": true, "born": null, "rc": null, "ru": null, "label": "p1", "icon": "x", "color": "gold", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "p2", "present": true, "born": null, "rc": null, "ru": null, "label": "p2", "icon": "x", "color": "sky", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "p3", "present": true, "born": null, "rc": null, "ru": null, "label": "p3", "icon": "x", "color": "plum", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "p4", "present": true, "born": null, "rc": null, "ru": null, "label": "p4", "icon": "x", "color": "gold", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "p5", "present": true, "born": null, "rc": null, "ru": null, "label": "p5", "icon": "x", "color": "terracotta", "ord": "", "status": "none", "description": "", "links": [], "branch": null},
+          {"id": "via", "present": false, "born": null, "rc": null, "ru": null, "label": "via", "icon": "", "color": "brick", "ord": "", "status": "none", "description": "", "links": [], "branch": null}
+        ],
+        "edges": [
+          {"from": "p1", "to": "four", "present": true},
+          {"from": "p2", "to": "four", "present": true},
+          {"from": "p3", "to": "four", "present": true},
+          {"from": "p4", "to": "four", "present": true},
+          {"from": "p1", "to": "hub", "present": true},
+          {"from": "p2", "to": "hub", "present": true},
+          {"from": "p3", "to": "hub", "present": true},
+          {"from": "p4", "to": "via", "present": true},
+          {"from": "p5", "to": "via", "present": true},
+          {"from": "via", "to": "hub", "present": true}
+        ],
+        "kinds": [
+          {"id": "build", "present": true, "born": null, "hue": "terracotta", "label": "Build", "description": "", "ord": "a0"},
+          {"id": "learn", "present": true, "born": null, "hue": "olive", "label": "Learn", "description": "", "ord": "a1"},
+          {"id": "old", "present": false, "born": null, "hue": "sky", "label": "Old", "description": "", "ord": "a2"}
+        ],
+        "marks": [],
+        "pointers": []
+      }
+    },
+    "expect": {
+      "cycles": {"entries": [], "omitted": 0},
+      "absentCycles": {"entries": [], "omitted": 0},
+      "missingEdges": {"entries": [], "omitted": 0},
+      "selfEdges": {"entries": [], "omitted": 0},
+      "smells": [
+        {"kind": "label-too-long", "nodes": {"count": 1, "named": ["long"]}},
+        {"kind": "empty-icon", "nodes": {"count": 1, "named": ["bare"]}},
+        {"kind": "high-in-degree", "nodes": {"count": 1, "named": ["hub"]}}
+      ],
+      "legendEmpty": false,
+      "unclaimedHues": [
+        {"hue": "gold", "nodes": {"count": 2, "named": ["p1", "p4"]}},
+        {"hue": "sky", "nodes": {"count": 1, "named": ["p2"]}},
+        {"hue": "plum", "nodes": {"count": 1, "named": ["p3"]}}
+      ]
+    }
   }
 ]

@@ -20,7 +20,7 @@ public:
   int unattachedClientsSince(UnixMs sinceMs) override;
   bool insertCode(const std::string& codeDigest, const StoredCode& code,
                   const std::string& sessionDigest, UnixMs now) override;
-  std::optional<StoredCode> takeCode(const std::string& codeDigest) override;
+  std::optional<StoredCode> takeCode(const std::string& codeDigest, UnixMs now) override;
   bool insertToken(const std::string& accessDigest, const std::string& refreshDigest,
                    const StoredToken& token, UnixMs refreshExpiresAt,
                    std::optional<UnixMs> grantAt = std::nullopt) override;

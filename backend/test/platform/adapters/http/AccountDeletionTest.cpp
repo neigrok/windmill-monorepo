@@ -3,6 +3,7 @@
 #include "platform/adapters/sentry/SentryClient.h"
 #include "test/platform/Fakes.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <json/json.h>
 
@@ -43,12 +44,13 @@ struct ClosureHttp {
   }
 
   drogon::HttpResponsePtr call(bool close, const Json::Value& body, const std::string& token = "") {
-    auto request = drogon::HttpRequest::newHttpRequest();
-    request->setMethod(close ? drogon::Delete : drogon::Post);
-    request->setPath(close ? "/v1/me" : "/v1/account-deletion/result");
-    request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-    request->setBody(Json::writeString(Json::StreamWriterBuilder{}, body));
-    if (!token.empty()) request->addHeader("authorization", "Bearer " + token);
+    auto built = drogon::HttpRequest::newHttpRequest();
+    built->setMethod(close ? drogon::Delete : drogon::Post);
+    built->setPath(close ? "/v1/me" : "/v1/account-deletion/result");
+    built->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+    built->setBody(Json::writeString(Json::StreamWriterBuilder{}, body));
+    if (!token.empty()) built->addHeader("authorization", "Bearer " + token);
+    const drogon::HttpRequestPtr request = wm::test::DrogonLoopback::received(built);
     drogon::HttpResponsePtr response;
     auto capture = [&](const drogon::HttpResponsePtr& value) { response = value; };
     beginWriteRequest(request, WriteRoute{request->path(), close ? "platform.DELETE.v1.me" : "auth.account.closure.read",
@@ -117,7 +119,7 @@ TEST(account_deletion_lost_response_recovers_without_session_and_replays_never_r
   CHECK(replay->getHeader("set-cookie").empty());
   CHECK_EQ(*h.call(false, h.input)->getJsonObject(), expected);
   CHECK_FALSE(h.repo.findUserById(h.account)->deletedAt.has_value());
-  CHECK(h.auth->authenticate("s-restored").has_value());
+  CHECK(h.auth->revalidate(h.auth->digestOf("s-restored")).has_value());
   CHECK_EQ(h.repo.closures.size(), std::size_t{1});
 }
 
@@ -168,7 +170,7 @@ TEST(account_deletion_validation_and_clock_refusals_do_not_close_or_revoke) {
   other["account"] = "e1000000-0000-4000-8000-000000000002";
   CHECK_EQ(*h.call(true, other, "s-closure")->getJsonObject(), answer("refused", "account-mismatch"));
   CHECK_FALSE(h.repo.findUserById(h.account)->deletedAt.has_value());
-  CHECK(h.auth->authenticate("s-closure").has_value());
+  CHECK(h.auth->revalidate(h.auth->digestOf("s-closure")).has_value());
   CHECK(h.repo.closures.empty());
   CHECK(h.revoked.digests.empty());
 }

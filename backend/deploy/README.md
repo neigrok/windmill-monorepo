@@ -372,7 +372,7 @@ the grace that container was created with, so a changed value holds from the dep
 
 ## Coordinated client cutoff
 
-The repository registry is schema 13 / minimum 11. Every schema in that interval carries explicit gym
+The repository registry is schema 15 / minimum 15. Every schema in that interval carries explicit gym
 `other`, finite normalized loads without a fixed kg cap, nullable derived metrics and sets without a kind. Production hello advertises
 schema 13 / minimum 11, verified on 2026-11-21 by the start stage of
 [Roadmap cutover 44846026848](https://github.com/neigrok/windmill-monorepo/actions/runs/44846026848).
@@ -387,6 +387,16 @@ The run before it, 41319412052, failed mid-rsync with no space left on the VPS; 
 is not monitored. Queued client delivery and final native
 availability remain unverified. The deployment guard requires exact acknowledgement for any further minimum change.
 
+Schema 15 narrows roadmap's `meta.visibility` and `meta.reach` to private and public, and `reach` opens a roadmap at
+public alone (engine.md §2.4, A.1): Share has two states, and no roadmap holds `unlisted`. A rule clients enforce
+changes, so the minimum rises to 15 with it. A server at 15 answers a client of 14 or older `426 upgrade-required` at
+hello, push, pull and the live upgrade; Web Deploy holds a schema 15 web until the live hello advertises 15; and Deploy
+to VPS takes the raise only with its exact acknowledgement (step 4 below).
+
+Schema 14 adds `values` to a restore that brings a keyed record back alive (engine.md §6.4) and keeps minimum 11, so
+the promotion rule below admits a schema 14 web against a schema 13 server; a client sends the values only once a
+hello served as its account advertises 14, and to an older server the life alone, which it admits.
+
 Schema 13 composes roadmap's registry beside gym's and journal's, and the server binds it
 (`products/roadmap/sync/`). The server reads `ROADMAP_ENGINE_ENABLED` only from the host's `roadmap-engine.env`, which
 holds `ROADMAP_ENGINE_ENABLED=1` ([below](#roadmaps-cutover-onto-the-sync-engine)), so production serves roadmap's
@@ -396,40 +406,40 @@ rooms' routes and `/v1/socket` answer 410 `client-update-required` (`SPEC.md`, H
 stay beside them, served by nothing, until the Roadmap on the engine tree's node `m5-delete-roadmaps-own-sync` deletes
 them with roadmap's own sync.
 
-1. Keep a schema 11 / minimum 11 maintenance image available. Automatic deployment
-   refuses a candidate minimum that differs from the live server.
-2. Prepare schema 11 readers on every surface. Preserve stored equipment/count values, exact zero,
-   absent targets and pending writes. Web Deploy retains the complete pinned `dist`, source/file-hash
-   manifest and composed compatibility artifact before checking the live anonymous hello. It holds
-   promotion before mkdir/rsync unless live schema is at least the client minimum and live minimum
-   accepts the client schema; incompatible or unreadable state leaves the served web files intact.
-   New selectors require their own
-   design approval. Each bound sender keeps writes ready until an owner/token/replica/epoch-matched
-   fresh hello advertises a server schema at least the client's generated registry minimum.
-3. Verify the signed Android update over the public replacement floor, including retained local work
-   and delivery against the schema 11 server. Upload the exact iOS version/build through the manual
-   `ios-release.yml` workflow and check processing, beta readiness and intended tester availability.
-   Verify both native replacements against the schema 11 candidate, publish the Android release,
-   and verify both upgrade destinations. TestFlight status alone proves no tester access.
+A change of the registry's minimum ships in these steps. The old minimum is the live hello's `minSchema` and the new
+one the composed registries' `minVersion`; for schema 15 they are 11 and 15, so schemas 11 to 14 are refused.
+
+1. Keep a maintenance image of the live server's interval available. Automatic deployment refuses a candidate minimum
+   that differs from the live server's.
+2. Prepare readers of the new registry on every surface, keeping stored values and pending writes. Web Deploy retains
+   the complete pinned `dist`, source/file-hash manifest and composed compatibility artifact before checking the live
+   anonymous hello. It holds promotion before mkdir/rsync unless live schema is at least the client minimum and live
+   minimum accepts the client schema; incompatible or unreadable state leaves the served web files intact. Each bound
+   sender keeps writes ready until an owner/token/replica/epoch-matched fresh hello advertises a server schema at least
+   the client's generated registry minimum.
+3. Verify the signed Android update over the public replacement floor, including retained local work and delivery
+   against a server of the new registry. Upload the exact iOS version/build through the manual `ios-release.yml`
+   workflow and check processing, beta readiness and intended tester availability. Verify both native replacements
+   against the candidate, publish the Android release, and verify both upgrade destinations. TestFlight status alone
+   proves no tester access.
 4. Record the full backend commit SHA and immutable Docker image ID (`docker image inspect --format
-   '{{.Id}}' ghcr.io/neigrok/windmill-monorepo:<sha>`). Read the live minimum again, then dispatch
-   **Deploy to VPS** from `main` with that `image_tag`, its exact `expected_old_minimum`,
-   `expected_new_minimum=11` and `expected_image_id`. Both raises and lowers require exact
-   acknowledgement. An interrupted attempt reads live state again. A fresh host uses old minimum 0.
-5. Verify `windmill_resum_sync_digests` completed ("Resum the scope digests" below), then verify schema 11 /
-   minimum 11 at hello and schema 10 or older `426 upgrade-required` refusals at
-   hello, push, pull and WebSocket upgrade. Active Gym HTTP routes require the generated minimum
-   header and return `426 client-update-required` for missing/old carriers before JSON, image or
-   SSE delivery. Verify queued native/web work delivers only after a fresh compatible hello. Cached
-   web and old native clients retain local work and show their existing update-required surface.
-   Retry the held Web Deploy run after the backend is compatible, or dispatch the exact accepted
-   main source. Each attempt retains a separate pinned web artifact; inspect its full source SHA,
-   schema and file hashes. The preflight reads the current compose deployment and promotes no
-   backend state. Verify the new web release and real queued delivery after promotion.
-6. Keep a schema 11 / minimum 11 maintenance image available before accepting the new load range
-   or nullable metrics. Roll back only to a compatible image; do not reopen old parsers or numeric
-   column caps. Automation resumes when candidate and live minimum match. Server and migration use
-   the same pinned image ID.
+   '{{.Id}}' ghcr.io/neigrok/windmill-monorepo:<sha>`). Read the live minimum again, then dispatch **Deploy to VPS**
+   from `main` with that `image_tag`, `expected_old_minimum` the live minimum, `expected_new_minimum` the registries'
+   `minVersion` and `expected_image_id` the recorded ID (`11`, `15` and the ID for schema 15). Both raises and lowers
+   require exact acknowledgement. An interrupted attempt reads live state again. A fresh host uses old minimum 0.
+5. The deploy's verify step requires the new schema and minimum at hello, and `426 upgrade-required` at hello, push,
+   pull and WebSocket upgrade for every schema from the old minimum to the one below the new (11 to 14 for schema 15);
+   it fails the deploy otherwise. Verify `windmill_resum_sync_digests` completed ("Resum the scope digests" below).
+   Active Gym HTTP routes require the generated minimum header and return `426 client-update-required` for
+   missing/old carriers before JSON, image or SSE delivery. Verify queued native/web work delivers only after a fresh
+   compatible hello. Cached web and old native clients retain local work and show their existing update-required
+   surface. Retry the held Web Deploy run after the backend is compatible, or dispatch the exact accepted main source.
+   Each attempt retains a separate pinned web artifact; inspect its full source SHA, schema and file hashes. The
+   preflight reads the current compose deployment and promotes no backend state. Verify the new web release and real
+   queued delivery after promotion.
+6. Keep a maintenance image of the new interval available. Roll back only to an image whose registry reads every value
+   the live database holds. Automation resumes when candidate and live minimum match. Server and migration use the
+   same pinned image ID.
 
 The guard queries anonymous hello with a high schema header to read live metadata even during a
 manually acknowledged downgrade. This is a metadata read, not a client capability claim. It neither
@@ -759,15 +769,18 @@ the tool never writes, and no credential leaves the host. Its one JSON object of
 private: this repository's logs are public, where few accounts hold pointers the counts are one
 person's structure, and the visibility counts are one person's private facts even with no pointers:
 where few people hold roadmaps, they say how someone shares theirs. So the runner seals them to
-`.github/ops/inventory-recipient.pem` as they arrive, and the job log shows the sealed block and the
-tool's completion line, nothing else. The certificate is public; its private key is the owner's and
-is kept out of the repository. On any failure the job prints no block and fails; against an image that
-does not carry the tool, it says so.
+`.github/ops/inventory-recipient.pem` as they arrive, and the job log shows the sealed file's size and
+sha256 and the tool's completion line, nothing else. The certificate is public; its private key is the
+owner's and is kept out of the repository. On any failure the job keeps no file and fails; against an
+image that does not carry the tool, it says so.
 
-To read the counts, save the block, from `-----BEGIN PKCS7-----` to `-----END PKCS7-----`, as
-`counts.pem`, and open it with the private key that belongs to the certificate:
+The artifact `subtree-inventory-<run id>-<attempt>` keeps `counts.pem` for a day, and this repository's
+artifacts are public: download it into a new folder, delete it at once
+(`gh api -X DELETE repos/<owner>/<repo>/actions/artifacts/<artifact id>`), check its sha256 against the log's, and
+open it with the private key that belongs to the certificate:
 
 ```sh
+gh run download <run id> -n subtree-inventory-<run id>-<attempt> -D "$(mktemp -d)"
 openssl smime -decrypt -inform PEM -inkey <key> -in counts.pem
 ```
 

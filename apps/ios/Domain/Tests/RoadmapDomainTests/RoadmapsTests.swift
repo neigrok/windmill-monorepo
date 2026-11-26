@@ -287,12 +287,12 @@ struct RoadmapsTests {
     #expect(try note() == nil)
   }
 
-  // A root and its subtree, unlisted, that the server holds and a tablet of the same account has pulled.
+  // A root and its subtree, public, that the server holds and a tablet of the same account has pulled.
   static func branch() throws -> (phone: Harness, tablet: Harness, tree: ID<RoadmapEntry>, step: ID<RoadmapStep>, subtree: ID<RoadmapEntry>) {
     let phone = Self.phone()
     let (tree, step) = try Self.rooted(on: phone)
     guard case .committed(let made, _) = try phone.runner.runAct(CreateSubtree(tree: tree, step: step)),
-          case .committed = try phone.runner.runAct(SetVisibility(tree: tree, visibility: "unlisted")) else {
+          case .committed = try phone.runner.runAct(SetVisibility(tree: tree, visibility: "public")) else {
       throw ContractError("the subtree or the visibility was not committed")
     }
     phone.sync()
@@ -322,8 +322,8 @@ struct RoadmapsTests {
   // the server revives it, the subtree stands again in the reach of its root, and both draw it so.
   @Test func aStepDeletedOnAnotherPhoneEndsItsSubtreesStandingAndAChangeMadeWithoutKnowingBringsItBackOnBoth() throws {
     let (phone, tablet, tree, step, subtree) = try Self.branch()
-    #expect(try Self.reaches(of: [subtree], on: phone) == [["private", "unlisted"]])
-    #expect(try Self.reaches(of: [subtree], on: tablet) == [["private", "unlisted"]])
+    #expect(try Self.reaches(of: [subtree], on: phone) == [["private", "public"]])
+    #expect(try Self.reaches(of: [subtree], on: tablet) == [["private", "public"]])
     guard case .committed = try tablet.runner.runAct(DeleteStep(tree: tree, step: step)) else {
       Issue.record("the step was not deleted")
       return
@@ -335,18 +335,20 @@ struct RoadmapsTests {
       return
     }
     phone.sync()
-    #expect(try Self.serverReaches(of: [subtree], on: phone) == ["unlisted"])
-    #expect(try Self.reaches(of: [subtree], on: phone) == [["private", "unlisted"]])
-    #expect(try Self.reaches(of: [subtree], on: tablet) == [["private", "unlisted"]])
+    #expect(try Self.serverReaches(of: [subtree], on: phone) == ["public"])
+    #expect(try Self.reaches(of: [subtree], on: phone) == [["private", "public"]])
+    #expect(try Self.reaches(of: [subtree], on: tablet) == [["private", "public"]])
     let owner = try tablet.drawn(RoadmapStep.self, in: tree.tree).map { [$0.id.json, .string($0.label), $0.branch?.json ?? .null] }
     #expect(owner == [[step.json, "The basics", subtree.json]])
   }
 
-  // The phone makes the branch public and, a second later, the tablet makes it private and sends first. The phone's public
-  // is sent after it under an older stamp and loses, on the server and on both devices, so the branch stays private.
+  // The phone makes the public branch private and public again and, a second later, the tablet makes it private and sends
+  // first. The phone's public is sent after it under an older stamp and loses, on the server and on both devices, so the
+  // branch stays private.
   @Test func aStalePublicSentAfterANewerPrivateLosesOnTheServerAndOnBoth() throws {
     let (phone, tablet, tree, _, subtree) = try Self.branch()
-    guard case .committed = try phone.runner.runAct(SetVisibility(tree: tree, visibility: "public")) else {
+    guard case .committed = try phone.runner.runAct(SetVisibility(tree: tree, visibility: "private")),
+          case .committed = try phone.runner.runAct(SetVisibility(tree: tree, visibility: "public")) else {
       Issue.record("the phone's visibility was not written")
       return
     }

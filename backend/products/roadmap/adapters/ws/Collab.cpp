@@ -2,6 +2,7 @@
 #include "platform/application/WriteObservation.h"
 
 #include "platform/adapters/http/Caller.h"
+#include "platform/adapters/http/JsonReply.h"
 
 #include "products/roadmap/adapters/json/SubgraphJson.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
@@ -20,6 +21,8 @@ namespace wm {
 
 namespace {
 std::shared_ptr<Collab> g_collab;
+// Where the gate leaves the caller it admitted, for onOpen.
+constexpr char kAdmittedCaller[] = "wm.tree_socket.caller";
 constexpr double kWsRatePerSec = 50.0;  // sustained frames/sec per connection
 constexpr double kWsBurst = 100.0;      // short-burst allowance
 constexpr std::uint64_t kMaxSkewMs = 5 * 60 * 1000;  // a frame stamped past now+5min is refused whole
@@ -101,30 +104,38 @@ void Collab::reproveReaders() {
   bus_.resweepAll();
 }
 
-void Collab::onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn) {
-  // A server told to stop opens no socket: the tab reaches the next server.
-  if (registry_.stopping()) {
-    conn->setContext(std::make_shared<Principal>(UserId{"u0"}, false, "", "", 0));
-    conn->shutdown(drogon::CloseCode::kEndpointGone);
-    return;
-  }
-  // A WebSocket upgrade gets no CORS preflight: a stated origin must be allow-listed.
+std::optional<drogon::HttpResponsePtr> Collab::admit(const drogon::HttpRequestPtr& req) {
+  WriteObservation upgrade("roadmap.ws.upgrade", "roadmap", "websocket");
   const std::string origin = req->getHeader("origin");
   if (!origin.empty() && !allowedOrigins_.count(origin)) {
-    LOG_WARN << "ws upgrade refused: origin is not allow-listed";
-    // Set a context before closing: drogon may still deliver a queued frame, and handlers read it unchecked.
+    upgrade.finish("untrusted-origin");
+    return error(drogon::k403Forbidden, "untrusted origin", "untrusted-origin");
+  }
+  // Frames carry no cookie: the session is resolved here, at the upgrade.
+  const SentCaller caller = SentCaller::of(req, auth_);
+  if (caller.refused()) {
+    upgrade.finish("unauthenticated");
+    return refusedCredentials();
+  }
+  upgrade.skip();
+  req->attributes()->insert(kAdmittedCaller, std::optional<SentCaller>(caller));
+  return std::nullopt;
+}
+
+void Collab::onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn) {
+  // A server told to stop opens no socket, and one its gate did not admit opens none either. Each gets a context before it
+  // closes: drogon may still deliver a queued frame, and handlers read it unchecked.
+  if (registry_.stopping() || !req->attributes()->find(kAdmittedCaller)) {
     conn->setContext(std::make_shared<Principal>(UserId{"u0"}, false, "", "", 0));
-    conn->forceClose();
+    if (registry_.stopping()) conn->shutdown(drogon::CloseCode::kEndpointGone);  // the tab reaches the next server
+    else conn->forceClose();
     return;
   }
-
-  // Frames carry no cookie: resolve the session at the upgrade; anyone else is a read-only guest.
-  const std::string secret = sessionSecretOf(req);
-  std::optional<User> user = auth_.authenticate(secret);
-  // Keep the digest, never the secret, so a write can re-prove the session.
-  if (user) {
-    conn->setContext(std::make_shared<Principal>(user->id, true, sharableName(*user),
-                                                 auth_.digestOf(secret), clock_.nowMs()));
+  const SentCaller caller = *req->attributes()->get<std::optional<SentCaller>>(kAdmittedCaller);
+  // The session's digest, so a write can re-prove the session.
+  if (caller.user) {
+    conn->setContext(std::make_shared<Principal>(caller.user->id, true, sharableName(*caller.user),
+                                                 *caller.credential.session(), clock_.nowMs()));
   } else {
     conn->setContext(
         std::make_shared<Principal>(UserId{"u" + std::to_string(++actorSeq_)}, false, "", "", 0));
@@ -352,8 +363,8 @@ bool Collab::stillAuthorized(const drogon::WebSocketConnectionPtr& conn) {
 Reach Collab::reachOf(const drogon::WebSocketConnectionPtr& conn, const TreeId& tree) {
   const std::shared_ptr<Principal> principal = conn->getContext<Principal>();
   if (!principal) return Reach::none;
-  // A principal stillAuthorized has narrowed is a guest: public and unlisted, never private, and
-  // never the tree's writer.
+  // A principal stillAuthorized has narrowed is a guest: public, never private, and never the tree's
+  // writer.
   const std::optional<UserId> caller =
       principal->authenticated ? std::optional<UserId>(principal->user) : std::nullopt;
   // The stored access row, not a materialized room: refusing a reader never loads the lattice.

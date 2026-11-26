@@ -97,8 +97,8 @@ extension RoadmapModel {
   }
 
   // Delete in the sheet's edit mode, or a row's swipe: a kind no step wears goes at once, with no question, and the band
-  // at the sheet's foot holds Undo for six seconds (06.5b). It answers whether the kind went; only then does the sheet let
-  // its row go.
+  // at the sheet's foot holds Undo for six seconds (06.5b), which brings the kind back only while no other kind wears its
+  // hue (06.5c). It answers whether the kind went; only then does the sheet let its row go.
   @discardableResult
   func remove(_ subject: RoadmapLegend.Subject) -> Bool {
     guard let shown, let entry = shown.legend.entry(subject), let kind = entry.kind, entry.removable,

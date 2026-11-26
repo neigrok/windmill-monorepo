@@ -23,7 +23,7 @@
     {"name":"kind.label","subject":"kind","kind":"local","spec":{"path":"kind.label","kind":"text","unit":"chars","min":0,"max":24,"trim":false,"nfc":false}},
     {"name":"meta.guide","subject":"meta","kind":"local","spec":{"path":"meta.guide","kind":"text","unit":"chars","min":0,"max":5000,"trim":false,"nfc":false}},
     {"name":"meta.title","subject":"meta","kind":"local","spec":{"path":"meta.title","kind":"text","unit":"chars","min":0,"max":200,"trim":false,"nfc":false}},
-    {"name":"meta.visibility","subject":"meta","kind":"local","spec":{"path":"meta.visibility","kind":"choice","values":["private","unlisted","public"]}},
+    {"name":"meta.visibility","subject":"meta","kind":"local","spec":{"path":"meta.visibility","kind":"choice","values":["private","public"]}},
     {"name":"node.cap","subject":"node","kind":"server","codes":["cap"]},
     {"name":"node.color","subject":"node","kind":"local","spec":{"path":"node.color","kind":"choice","values":["terracotta","olive","gold","brick","sky","plum"]}},
     {"name":"node.description","subject":"node","kind":"local","spec":{"path":"node.description","kind":"text","unit":"chars","min":0,"max":16000,"trim":false,"nfc":false}},

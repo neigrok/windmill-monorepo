@@ -27,7 +27,8 @@ import XCTest
       guard let snapshot = try? item.snapshot() else { return false }
       return snapshot.isEnabled && !snapshot.frame.isEmpty && viewport.contains(snapshot.frame)
     }, object: item)
-    XCTAssertEqual(XCTWaiter.wait(for: [visibleItem], timeout: 5), .completed)
+    // A loaded runner takes up to five seconds for one snapshot of a menu still presenting, so the wait allows two.
+    XCTAssertEqual(XCTWaiter.wait(for: [visibleItem], timeout: 10), .completed)
     item.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1)
     let selected = app.buttons.matching(NSPredicate(format: "identifier == %@ AND label == %@", "room-menu", room)).firstMatch
     XCTAssertTrue(selected.waitForExistence(timeout: 10))
@@ -52,8 +53,8 @@ import XCTest
     let page = editor.value as? String
     switchRoom("Gym", in: app)
     assertGym(app)
-    app.tabBars.buttons["The log"].tap()
-    XCTAssertTrue(app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: 5))
+    let log = app.descendants(matching: .any)["gym-log"]
+    XCTAssertTrue(app.tap({ app.tabBars.buttons["The log"].tap() }, until: { log.waitForExistence(timeout: 5) }))
     app.tabBars.buttons["Coach"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 5))
     app.terminate()
@@ -98,12 +99,13 @@ import XCTest
 
   // Roadmap · iOS 01.1 and 11.22a: the account's roadmap on its Board, Done folded, the switch, Find and the Board's
   // tool live, and New step at the foot.
-  func assertLearnToSailBoard(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+  func assertLearnToSailBoard(_ app: XCUIApplication, subtitle: String = "3 of 8 done", file: StaticString = #filePath,
+                              line: UInt = #line) {
     let locked = app.buttons["roadmap-group-locked"]
     XCTAssertTrue(locked.waitForExistence(timeout: 30), file: file, line: line)
     XCTAssertEqual(app.buttons["room-menu"].label, "Roadmap", file: file, line: line)
     XCTAssertTrue(app.navigationBars["Learn to sail"].exists, file: file, line: line)
-    XCTAssertTrue(app.staticTexts["3 of 8 done"].exists, file: file, line: line)
+    XCTAssertTrue(app.staticTexts[subtitle].waitForExistence(timeout: 5), file: file, line: line)
     let groups = ["upNext", "locked", "done"].map { (group: String) -> String in
       let header = app.buttons["roadmap-group-" + group]
       return "\(header.label) · \(header.value as? String ?? "")"
@@ -139,7 +141,8 @@ import XCTest
     app.terminate()
     app.launchArguments = ["-board", "roadmap-learn-to-sail", "-restore-board", "-server", "https://offline.invalid", "-offline-fixture", "no-network"]
     app.launch()
-    assertLearnToSailBoard(app)
+    // Roadmap · iOS 10.1: with no connection the subtitle joins Offline to the progress.
+    assertLearnToSailBoard(app, subtitle: "3 of 8 done · Offline")
   }
 
   // Roadmap · iOS 02.1 and 02.2: only an Up next row slides right to Complete, a full swipe stops at the button, and the
@@ -334,9 +337,9 @@ import XCTest
     XCTAssertTrue(reset.exists && !complete.exists)
   }
 
-  // Roadmap · iOS 03.7 to 03.9: the … menu holds Open in Graph, View Branch and Delete Step, which asks on the … button
-  // with what the delete costs; answered, the room stands on the Board without the step, and the band's Undo brings it
-  // back. The roadmap's one starting step's menu has no Delete Step.
+  // Roadmap · iOS 03.7 to 03.9: the … menu holds Open in Graph, View Branch, Attach a Roadmap and Delete Step, which asks
+  // on the … button with what the delete costs; answered, the room stands on the Board without the step, and the band's
+  // Undo brings it back. The roadmap's one starting step's menu has no Delete Step.
   func testDeletingAStepFromItsPageAsksThereAndReturnsToTheBoard() {
     let app = launch("roadmap-learn-to-sail", takingUndo: true)
     XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
@@ -346,8 +349,8 @@ import XCTest
     XCTAssertEqual(more.label, "More")
     more.tap()
     XCTAssertTrue(confirm.waitForExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["Open in Graph"].exists && app.buttons["View Branch"].exists)
-    for unbuilt in ["Attach a Roadmap", "Copy Link"] { XCTAssertFalse(app.buttons[unbuilt].exists) }
+    XCTAssertTrue(app.buttons["Open in Graph"].exists && app.buttons["View Branch"].exists && app.buttons["Attach a Roadmap"].exists)
+    XCTAssertFalse(app.buttons["Copy Link"].exists)
     confirm.tap()
     XCTAssertTrue(app.staticTexts["Delete Read the wind?"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Removes this step · 1 branch resplices"].exists)
@@ -501,9 +504,9 @@ import XCTest
     let name = stepForm(app, raisedBy: "roadmap-new-step")
     XCTAssertFalse(commit.isEnabled || refusal.exists)
     XCTAssertTrue(app.staticTexts["Lands in Up next"].exists)
-    // The rows whose screens are not built are left out: the form's Roadmap row would read as Kind's does.
+    // A new step's form has no Delete Step; its Roadmap row is driven in RoadmapNestedFlowTests.
     XCTAssertTrue(app.staticTexts["Links"].exists && app.buttons["roadmap-form-add-link"].exists)
-    for unbuilt in ["Roadmap, None", "Delete Step"] { XCTAssertFalse(app.staticTexts[unbuilt].exists || app.buttons[unbuilt].exists) }
+    XCTAssertFalse(app.staticTexts["Delete Step"].exists || app.buttons["Delete Step"].exists)
     name.tap()
     name.typeText("Reef")
     XCTAssertTrue(commit.wait(for: \.isEnabled, toEqual: true, timeout: 5))
@@ -802,6 +805,7 @@ import XCTest
     XCTAssertEqual(listedRoadmaps(app).sorted(), rows)
     search.tap()
     search.typeText("run ")
+    XCTAssertTrue(search.waitForValue("run "))
     XCTAssertTrue(app.buttons.matching(identifier: "roadmap-listed").firstMatch.waitForLabel("Run a 10k, 1 of 2 done", timeout: 5))
     XCTAssertEqual(listedRoadmaps(app), ["Run a 10k, 1 of 2 done"])
     app.buttons.matching(identifier: "roadmap-listed").firstMatch.tap()
@@ -854,6 +858,19 @@ import XCTest
     app.buttons["roadmap-try-again"].tap()
     XCTAssertTrue(app.staticTexts["Couldn’t load this roadmap"].waitForExistence(timeout: 10))
     XCTAssertTrue(app.buttons["roadmap-try-again"].isEnabled)
+  }
+
+  // A write the phone's store cannot commit changes nothing and says nothing: the Board stands as the copy holds it, with
+  // no band and no Undo.
+  func testAWriteThePhoneCannotCommitLeavesTheBoardAsItWas() {
+    let app = launch("roadmap-unwritable")
+    XCTAssertTrue(app.roadmapStep("Read the wind").waitForExistence(timeout: 30))
+    XCTAssertTrue(app.staticTexts["3 of 8 done"].exists)
+    app.roadmapStep("Read the wind").swipeRight()
+    XCTAssertTrue(app.buttons["Complete"].waitForExistence(timeout: 5))
+    app.buttons["Complete"].tap()
+    XCTAssertFalse(app.buttons["roadmap-undo"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["3 of 8 done"].exists && app.buttons["roadmap-group-upNext"].label == "Up next, 2")
   }
 
   // 27a–27d: the typed email confirms, the account closes, and Done returns to You signed out over Where to start?.

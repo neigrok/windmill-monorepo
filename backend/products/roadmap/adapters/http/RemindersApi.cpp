@@ -63,7 +63,7 @@ RemindersApi::RemindersApi(std::shared_ptr<ReminderSweep> sweep,
       tokens_(std::move(tokens)), clock_(std::move(clock)), adminToken_(std::move(adminToken)) {}
 
 void RemindersApi::getSettings(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to read your reminders"));
     return;
@@ -73,7 +73,7 @@ void RemindersApi::getSettings(const drogon::HttpRequestPtr& req, HttpCallback&&
 }
 
 void RemindersApi::patchSettings(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to change your reminders"));
     return;

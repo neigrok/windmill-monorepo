@@ -276,6 +276,9 @@ async function readRoom(context, { account, replica, address, seed = false, subt
   if (offline) params.set('offline', '1');
   await page.goto(`${origin}/room?${params}${address}`);
   await page.locator('.st-roadmap-progress').waitFor();
+  // The row's fonts land before Board is clicked: they narrow its title, so a switch clicked under the fallback font
+  // slides from under the resting pointer, and the tooltip read with the row becomes the Graph's beside it.
+  await page.evaluate(async () => { await document.fonts.ready; });
   if (await page.getByRole('button', { name: 'Board', exact: true }).getAttribute('aria-pressed') !== 'true') {
     await page.getByRole('button', { name: 'Board', exact: true }).click();
   }

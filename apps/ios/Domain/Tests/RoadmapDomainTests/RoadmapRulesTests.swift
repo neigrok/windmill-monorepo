@@ -30,7 +30,7 @@ struct RoadmapRulesTests {
     let tree = ID<RoadmapEntry>("t_0000000000000001")
     let basics = ID<RoadmapStep>("basics")
     try RegistryCheck.entity(RoadmapEntry.self, sample: RoadmapEntry(id: tree), book: book, registry: registry)
-    try RegistryCheck.entity(RoadmapMeta.self, sample: RoadmapMeta(title: "Learn Rust", guide: "One step a day.", visibility: "unlisted"),
+    try RegistryCheck.entity(RoadmapMeta.self, sample: RoadmapMeta(title: "Learn Rust", guide: "One step a day.", visibility: "public"),
                              book: book, registry: registry)
     let step = RoadmapStep(id: basics, label: "Basics", icon: "book", color: "olive", ord: "a0", description: "Start here.",
                            links: [Step.Link(url: "https://doc.rust-lang.org", label: "Docs")])

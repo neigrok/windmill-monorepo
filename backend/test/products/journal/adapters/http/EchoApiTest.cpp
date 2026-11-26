@@ -5,6 +5,7 @@
 #include "test/platform/Fakes.h"
 #include "test/products/journal/Fakes.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <cstdint>
 #include <future>
@@ -70,7 +71,7 @@ drogon::HttpRequestPtr request(drogon::HttpMethod method, const std::string& pat
     req->setBody(body);
   }
   if (!session.empty()) req->addCookie("wm_session", session);
-  return req;
+  return wm::test::DrogonLoopback::received(req);
 }
 
 Json::Value listOf(Harness& h, const std::string& session) {

@@ -149,10 +149,7 @@ public struct Inverses: Sendable {
       (scope, Array(Set(replica.outbox.flatMap { $0.deltas(in: scope) }.map(\.key))).sorted())
     })
     let before = try views(of: scopes, in: replica)
-    let ordinary = { (entry: OutboxEntry) -> Bool in
-      guard let command = entry.intent.command else { return true }
-      return registry.command(command.name)?.engine == .capture
-    }
+    let ordinary = { (entry: OutboxEntry) -> Bool in registry.ownCommand(of: entry) == nil }
     let written: [(entry: OutboxEntry, scope: ScopeRef, delta: Delta)] = entries.filter(ordinary).flatMap { (entry: OutboxEntry) in
       entry.intent.deltas.map { (entry, entry.scope, $0) }
     }
@@ -433,10 +430,10 @@ public struct Inverses: Sendable {
   }
 
   // The inverse act's own journal: each restore slot a source whose recipes put back what the inverse replaces, from the
-  // values the inverted act wrote (`forward`), never what a later local edit shows. A created record comes back by its life
-  // only where a write can bring it back, with the record as `drawn` held it, and one the inverse creates goes again by its
-  // strict recipe; a product slot has no generic recipe, and its Redo is the product's. A preimage's row sequence is the
-  // row its restore wrote over, which the restore's version check proved held it (`anchor`).
+  // values the inverted act wrote (`forward`), never what a later local edit shows. A life the slot takes away, a created
+  // record's among them, comes back only where a write can bring it back, with the record as `drawn` held it, and a record
+  // the inverse creates goes again by its strict recipe; a product slot has no generic recipe, and its Redo is the product's.
+  // A preimage's row sequence is the row its restore wrote over, which the restore's version check proved held it (`anchor`).
   func inverseJournal(_ inverseActId: String, slots: [InverseSlot], forward: [Target: JSON], drawn: [ScopeRef: ScopeView]) -> ReversibleAct {
     let sources = slots.map { (slot: InverseSlot) -> JournalSource in
       guard case .restore(let command, let operations) = slot.recipe else {
@@ -456,7 +453,8 @@ public struct Inverses: Sendable {
           written.append(WrittenValue(target: target, value: "dead"))
         case .field(let target, let before, _, _):
           guard let value = forward[target] else { continue }
-          preimages.append(Preimage(target: target, value: value))
+          let takenAway = target.slot == .life && value == "alive"
+          preimages.append(Preimage(target: target, value: value, record: takenAway ? drawn[target.scope]?.record(target.key).map(RecordValues.init) : nil))
           written.append(WrittenValue(target: target, value: before ?? .null))
         }
       }
@@ -557,9 +555,12 @@ public struct Inverses: Sendable {
     }
   }
 
-  // A Redo of a cancellation waits while an entry its references name has no result yet.
+  // A Redo of a cancellation waits while the replica holds no epoch, in which a waiting slot's references bind, and while
+  // an entry its references name has no result yet.
   func referencesAuthoritative(_ request: InverseRequest, in replica: LoadedReplica) -> Bool {
-    request.slots.filter { $0.state == .waiting }.flatMap(\.recipe.pendingLocalIds).allSatisfy { replica.named($0) == nil }
+    let waiting = request.slots.filter { $0.state == .waiting }
+    if replica.meta.serverEpoch == nil && !waiting.isEmpty { return false }
+    return waiting.flatMap(\.recipe.pendingLocalIds).allSatisfy { replica.named($0) == nil }
   }
 
   // The accepted receipts the act's sources own in the current epoch, in commit order; a source whose history is
@@ -651,19 +652,31 @@ public struct Inverses: Sendable {
   }
 
   // One planned operation bound to what it must find, a skip, or nil where the act never wrote the target, so there is
-  // nothing to take back. Where a source's history is unavailable, an unowned target may be one it wrote, and skips.
+  // nothing to take back. Where a source's history is unavailable, an unowned target may be one it wrote, and skips. A keyed
+  // record's life brought back alive carries the values its preimage's record read, as the slot's projection draws them, to
+  // a server that declares them.
   func bound(_ operation: PlannedOperation, of act: ReversibleAct, history: [(lost: Bool, effects: [EffectReceipt])], epoch: String,
              in replica: LoadedReplica) -> Bound? {
+    let declared = (replica.meta.serverSchema ?? 0) >= RestoreOperation.revivalValuesSchema
+    let field = { (target: Target, before: JSON?, expected: RestoreOperation.Expected, record: RecordValues?) -> RestoreOperation in
+      let before = before ?? .null
+      let values = record.flatMap { (record: RecordValues) -> JSON.Object? in
+        guard declared, let type = self.registry.type(target.key.type), self.registry.revivesKeyed(type, target.slot, before) else { return nil }
+        let values = self.registry.revivalValues(type, fields: record.fields, texts: record.texts)
+        return values.isEmpty ? nil : values
+      }
+      return .field(target.key, slot: target.slot, expected: expected, before: before, values: values)
+    }
     switch operation {
-    case .field(let target, let before, let reference?, _):
+    case .field(let target, let before, let reference?, let record):
       guard let expected = expected(of: reference, in: replica) else { return .skip("reference-unbound") }
-      return .send(.field(target.key, slot: target.slot, expected: expected, before: before ?? .null))
-    case .field(let target, let before, nil, _):
+      return .send(field(target, before, expected, record))
+    case .field(let target, let before, nil, let record):
       guard let version = Inverses.latestOwned(history, target) else { return history.contains(where: \.lost) ? .skip("history-changed") : nil }
       let preimage = act.sourceEntries.flatMap(\.preimages).first { $0.target == target }
       if !(preimage?.epoch ?? epoch).isSameID(as: epoch) { return .skip("epoch-changed") }
       guard let preimage, Inverses.unbroken(history, target.address, from: preimage.rowSeq, in: replica) else { return .skip("history-changed") }
-      return .send(.field(target.key, slot: target.slot, expected: .version(version), before: before ?? .null))
+      return .send(field(target, before, .version(version), record))
     case .createdRecord(let record):
       switch Inverses.footprint(history, record) {
       case .proven(let rowSeq, let footprint)?: return .send(.createdRecord(record.key, rowSeq: rowSeq, footprint: footprint))

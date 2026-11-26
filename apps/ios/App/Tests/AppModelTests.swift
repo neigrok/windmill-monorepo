@@ -100,7 +100,7 @@ import SyncTesting
     let id = model.runner.mint(Routine.self)
     var draft = Draft(new: Routine(id: id, name: name, entries: [RoutineEntry(exerciseId: ID("back-squat"))]))
     let result = model.runner.save(&draft, SaveRoutine.self)
-    let receipt: CommitReceipt? = if case .saved(let receipt) = result { receipt } else { nil }
+    let receipt: Receipt<CommitReceipt>? = if case .saved(let receipt) = result { receipt } else { nil }
     _ = try #require(receipt)
     model.refresh()
     return id
@@ -265,12 +265,12 @@ import SyncTesting
     let model = try LineageFlowTests().fixture(server)
     var weighIn = Draft(new: WeighIn(day: model.journal.today, kg: 82.4))
     let weighInResult = model.runner.save(&weighIn, SaveWeighIn.self)
-    let weighInReceipt: CommitReceipt? = if case .saved(let receipt) = weighInResult { receipt } else { nil }
+    let weighInReceipt: Receipt<CommitReceipt>? = if case .saved(let receipt) = weighInResult { receipt } else { nil }
     _ = try #require(weighInReceipt)
     var preferences = Draft(new: GymPreferences())
     preferences.current.units = "lb"
     let preferencesResult = model.runner.save(&preferences, SavePreferences.self)
-    let preferencesReceipt: CommitReceipt? = if case .saved(let receipt) = preferencesResult { receipt } else { nil }
+    let preferencesReceipt: Receipt<CommitReceipt>? = if case .saved(let receipt) = preferencesResult { receipt } else { nil }
     _ = try #require(preferencesReceipt)
     _ = try #require(try model.runner.run(RenameExercise(ID("back-squat"), name: "Renamed squat")).receipt)
     try await model.signIn(server.identity(email: "gym-counts@example.com"))
@@ -745,6 +745,26 @@ import SyncTesting
     #expect(try AppModel(runner: model.runner, preferences: model.preferences).appearance == .dark)
     #expect(AppModel.Appearance.allCases.map(\.style) == [.light, .dark, .unspecified])
     #expect(recorder.entries.withLock { $0.filter { $0.name == "appearance_chosen" }.map(\.properties) } == [["appearance": "dark"]])
+  }
+
+  // Signing out, the Roadmap room keeps nothing of the account: neither the ids of the notices it told nor, in memory, a
+  // roadmap's name or a change set aside.
+  @Test func signOutLeavesTheRoadmapRoomNothingOfTheAccount() async throws {
+    let server = JournalModelTransport(), model = try LineageFlowTests().fixture(server)
+    defer { model.gym.stop() }
+    try await model.signIn(server.identity(email: "roadmap-signing-out@example.com"))
+    let room = try #require(model.roadmap)
+    _ = try RoadmapFixture.plantLearnToSail(try #require(model.runtime).roadmapRunner)
+    await model.runtime?.engine.start()
+    room.roomOpened()
+    for _ in 0..<800 where room.roadmaps.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+    model.preferences.set(["notice:g1/0"], forKey: RoadmapModel.toldNotices)
+    room.landed.listOpen = true
+    #expect(!room.landed.remembered.isEmpty)
+    await model.beginSignOut(); await model.finishSignOut(.keep)
+    #expect(model.account == nil)
+    #expect(model.preferences.object(forKey: RoadmapModel.toldNotices) == nil)
+    #expect(room.landed.remembered.isEmpty && !room.landed.listOpen && room.landed.told.isEmpty && room.landed.waiting.isEmpty)
   }
 
   @Test func signOutKeepPreservesBothRoomsForTheirAccountOnly() async throws {

@@ -103,13 +103,13 @@ against the sync contract in `../packages/api-contract/sync`, which CMake finds 
 `.github/workflows/backend.yml`). The domain tests replay its golden corpus over in-memory fakes, one
 case per vector (`test/platform/domain/sync/CorpusTest.cpp`); a corpus file with no runner is a named
 skipped case, and a file nobody claims fails. They also load every product registry the contract ships
-(`RegistryTest.cpp`), and run the gym, journal and roadmap bindings against registry v13/minimum 11 and composition.json.
+(`RegistryTest.cpp`), and run the gym, journal and roadmap bindings against registry v15/minimum 15 and composition.json.
 `windmill_sync_tests` replays the server's files again over Postgres under `WM_PG_TEST` (`RUNNING.md` §7).
 
 `products/gym/sync/` binds gym's thirteen types and nine commands, `products/journal/sync/` binds
 journal's `page` and `journalState` and its two commands, `journal.savePage` and `journal.claimPage`, and
 `products/roadmap/sync/` binds roadmap's fourteen types and five product commands on `roadmap_*` tables of
-their own (its `README.md`). `platform/infra/SyncProducts` seals the three into the v13/minimum-11 catalog.
+their own (its `README.md`). `platform/infra/SyncProducts` seals the three into the v15/minimum-15 catalog.
 `windmill_server` serves it at `/v1/sync/hello`, `push`, `pull` and `/v1/sync/live`, roadmap's scopes only
 where `ROADMAP_ENGINE_ENABLED` is `true` or `1`, and elsewhere withholds them, so they read as absent and admit
 nothing. Production reads it only from the host's `roadmap-engine.env`, which holds `ROADMAP_ENGINE_ENABLED=1`
@@ -181,7 +181,7 @@ That order and that ceiling are both load-bearing: a closed loopback connection 
 
 ## A green local build is not a green CI
 
-macOS/Homebrew and the CI Linux image disagree on two things that compile green on one side and fail
+macOS/Homebrew and the CI Linux image disagree on three things that compile green on one side and fail
 on the other:
 
 - **libpqxx** names a result row `pqxx::row_ref` on macOS and `pqxx::row` on Linux. Read rows through
@@ -190,6 +190,9 @@ on the other:
 - **jsoncpp** writes a non-finite double as a token no parser reads back, and older builds throw
   instead, so the two toolchains can disagree on the same value (`ToolArgs.cpp` names such a value
   rather than rendering it).
+- **The order a call's operands run in** is unspecified: Clang runs `a() + b()` left to right, GCC can
+  run `b()` first. When one side reads what the other side writes (a door's answer, then what the door
+  stored), take the first into a variable before the second.
 
 Watch `gh run list` after every backend push, because **a push to `main` IS a deploy**.
 `.github/workflows/backend.yml` builds, tests and publishes the image, and a green run triggers

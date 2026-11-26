@@ -131,6 +131,11 @@ public struct Followed: Sendable {
 public struct Counts: Sendable {
   public let done: Int
   public let total: Int
+
+  public init(done: Int, total: Int) {
+    self.done = done
+    self.total = total
+  }
 }
 
 // What each present step follows as it is read: its present parents and, through each absent step, what that step followed.
@@ -149,6 +154,8 @@ public struct FollowGraph: Sendable {
   let reach: Closure
   // The followed prerequisites of a step behind an absent parent; any other step follows its parents.
   let rows: [Int: [UInt32]]
+  // The steps the roadmap starts from: its present steps that follow nothing, in authored order.
+  public let starting: [String]
 
   // By the tree's own marks alone: a step that owns a subtree or opens a roadmap is unresolved, and its mark is set aside.
   public init(_ tree: RoadmapTree) {
@@ -224,6 +231,7 @@ public struct FollowGraph: Sendable {
     self.opens = opens
     self.reach = reach
     self.rows = rows
+    starting = index.ids.indices.filter { degree[$0] == 0 }.map { index.ids[$0] }
   }
 
   public var ids: [String] { tree.index.ids }

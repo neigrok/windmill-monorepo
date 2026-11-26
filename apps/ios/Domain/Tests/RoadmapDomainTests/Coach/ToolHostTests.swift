@@ -1,6 +1,6 @@
 import DomainKit
 import DomainKitTesting
-import RoadmapDomain
+@testable import RoadmapDomain
 import SyncAPI
 import SyncCore
 import SyncModelServer
@@ -232,6 +232,29 @@ struct ToolHostTests {
     let drawn = try Self.drawn(tree, on: phone)
     #expect(drawn["The person's title"] != nil)
     #expect(drawn["Leave the dock"]?["done"] == true)
+  }
+
+  // Coach writes no kind, so this receipt is made here over the Undo the room's act runner answered for the room's delete of
+  // one. The host asks it with the check the delete named, so while a kind made since wears the hue it takes nothing back,
+  // as the room's own Undo does: the caller meets no throw, `told` hears it unavailable, and the delete's act is let go of.
+  @Test func anUndoAKindsHueRefusesWhereItIsAskedTakesNothingBackAndIsToldUnavailable() throws {
+    let (engine, replica, runner) = Self.notedPhone()
+    let (tree, _, host, heard) = try Self.planted(on: runner, syncing: engine.sync)
+    let id = ID<RoadmapEntry>(RecordID(tree))
+    let start = replica.journaled
+    guard case .committed(_, let deleted) = try runner.runAct(DeleteKind(tree: id, kind: ID("learn"))) else {
+      throw ContractError("the kind was not deleted")
+    }
+    engine.sync()
+    guard case .committed(_, let made) = try runner.runAct(CreateKind(tree: id, kind: NewKind(hue: "olive", label: "Weather"))) else {
+      throw ContractError("the person's kind was not made")
+    }
+    let receipt = WriteReceipt(ability: "delete_kind", treeId: tree, nodeId: "", undo: deleted.undo)
+
+    #expect(try Self.undo([receipt], by: host, heard, syncing: engine.sync) == ["delete_kind unavailable"])
+    let legend = try runner.read(id.tree) { try $0.repository(RoadmapKind.self).all(in: .drawn) }.map { "\($0.label) \($0.hue)" }.sorted()
+    #expect(legend == ["Build terracotta", "Milestone gold", "Weather olive"], "the deleted kind stays deleted and the new one keeps the hue")
+    #expect(try replica.stillHeld(since: start) == [made.undo.actId], "of the two acts only the person's own stays held")
   }
 
   @Test func aDoorThatWroteNothingIsNoChangeOrNotReadyNeverASuccessAndLeavesNoReceipt() throws {

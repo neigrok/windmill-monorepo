@@ -6,7 +6,7 @@ import works.windmill.sync.core.*
 import works.windmill.sync.engine.*
 
 object NetworkCorpus {
-    val paths = listOf("commit/grouping.json", "commit/retire.json", "commit/throws.json", "hold/release.json", "hold/undo.json",
+    val paths = listOf("commit/deltas.json", "commit/grouping.json", "commit/retire.json", "commit/throws.json", "hold/release.json", "hold/undo.json",
         "lineage/signin.json", "lineage/signout.json", "lineage/start.json", "pull/pages.json", "refusal/base-unknown.json",
         "refusal/fold.json", "refusal/restamp.json", "refusal/transport.json", "write/map.json", "write/scoped-predictions.json", "write/references.json", "undo/journal.json", "undo/restore.json")
 

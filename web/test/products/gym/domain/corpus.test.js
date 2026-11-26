@@ -12,7 +12,7 @@ import { Bodyweight, DeleteWeighIn, SaveWeighIn, WeighIn, WeighInValue } from '.
 import { Catalogue, CreateExercise, EditExercise, Exercise, ExerciseValue, RenameExercise, defaultStepKg, loadingChoice, renamedAliases } from '../../../../src/products/gym/domain/catalogue.js';
 import { GymRefusals, GymRules, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
 import { MoveNote, Note, SaveNoteCall } from '../../../../src/products/gym/domain/notes.js';
-import { Preferences, PreferencesValue, SavePreferences, restSettings } from '../../../../src/products/gym/domain/preferences.js';
+import { Preferences, PreferencesValue, SavePreferences, SaveRestSettings, restSettings } from '../../../../src/products/gym/domain/preferences.js';
 import { ProposalDiff } from '../../../../src/products/gym/domain/proposalDiff.js';
 import { ApplyProposal, DismissProposal, Proposal, ProposalState, ProposeRoutine, RoutineCreation, changesBetween } from '../../../../src/products/gym/domain/proposals.js';
 import { DeleteRoutine, PlanSnapshot, ReorderRoutines, Routine, RoutineEntry, RoutineValue, SaveRoutine, SaveRoutinePlan, SetTarget } from '../../../../src/products/gym/domain/routines.js';
@@ -26,7 +26,7 @@ import { PlanChanges, PlanOperations, ReviseWorkoutPlan } from '../../../../src/
 import { ApplyWorkoutProposal, DismissWorkoutProposal, ProposeWorkout, ReissueWorkoutProposal, WorkoutProposal, WorkoutProposalState } from '../../../../src/products/gym/domain/workoutProposals.js';
 import { AdoptWorkout, SignedOutWorkout } from '../../../../src/products/gym/domain/workoutAdoption.js';
 import { CoachRoutineImport, ImportCoachRoutineBatch } from '../../../../src/products/gym/domain/coachOnboarding.js';
-import { DiscardSignedOutWorkout, RecoverStrandedSets, SetFix, WorkoutFix, WorkoutRecovery } from '../../../../src/products/gym/domain/workoutRecovery.js';
+import { DiscardSignedOutWorkout, RecoverStrandedSets, SaveRefusedStart, SetFix, WorkoutFix, WorkoutRecovery } from '../../../../src/products/gym/domain/workoutRecovery.js';
 import { DomainNotice } from '../../../../src/platform/domain-kit/refusals.js';
 import { AbilityCall, CoachMessage, CoachThread, Picture, ReadServed } from '../../../../src/products/gym/domain/coach/conversation.js';
 import { BeginRound, DeleteConversation, EndTurn, ForgetRunningTurn, OpenTurn, RecoverMark, StreamTurnText, WithdrawTurn } from '../../../../src/products/gym/domain/coach/turn.js';
@@ -454,6 +454,12 @@ const handlers = {
       default: throw new Error(`unclaimed recovery action ${vector.input.action}`);
     }
   },
+  // A start that lost a race, its sets saved from its notice as a copy the review offers.
+  'gym/domain/refused-start-actions.json': (vector) => {
+    assert.equal(vector.input.action, 'SaveRefusedStart', 'unclaimed refused start action');
+    const notice = new DomainNotice(/** @type {any} */ (vector.input.input).notice, book.registry, GymRefusals);
+    return corpus.decision(SaveRefusedStart(notice), vector, () => null, refusalForm);
+  },
   'gym/domain/coach-onboarding-actions.json': (vector) => {
     const input = vector.input.input;
     const f = Fields.object(input);
@@ -565,7 +571,7 @@ const handlers = {
         const proposal = Proposal.decode(Fields.values('proposal', input.proposal.id, input.proposal.fields));
         const routine = input.routine ? Routine.decode(Fields.values('routine', input.routine.id, input.routine.fields)) : null;
         const each = (input.each ?? []).map((/** @type {string} */ id) => new Id(id, Exercise));
-        const diff = new ProposalDiff(proposal, routine, GymUnits.reading(input.units), each);
+        const diff = ProposalDiff.ofRoutine(proposal, routine, GymUnits.reading(input.units), each);
         return { unchanged: diff.unchanged, blocks: diff.blocks.map((block) => ({
           kind: block.kind, exerciseId: block.exerciseId === null ? null : block.exerciseId.record,
           fields: block.fields.map((field) => ({ label: field.label, before: field.before, after: field.after, state: field.state })) })) };
@@ -615,11 +621,18 @@ const handlers = {
         () => Preferences.decode(Fields.values('prefs', value.id, value.fields)), savedForm, refusalForm);
     }
     return corpus.read(vector, Preferences.scope, (read) => {
-      if (vector.input.read === 'RestSettings') return restSettings(read);
+      if (vector.input.read === 'RestSettings') {
+        const rest = restSettings(read);
+        return { seconds: rest.seconds, sound: rest.sound };
+      }
       assert.equal(vector.input.read, 'Preferences', 'unclaimed preference read');
       const value = read.repository(Preferences).find(id, 'drawn') ?? new PreferencesValue(id);
       return { id: value.id.json, fields: value.fields() };
     });
+  },
+  'gym/domain/rest-settings-actions.json': (vector) => {
+    assert.equal(vector.input.action, 'SaveRestSettings', 'unclaimed rest settings action');
+    return corpus.decision(SaveRestSettings(vector.input.input), vector, savedForm, refusalForm);
   },
   'gym/domain/coach-conversation-actions.json': (vector) => {
     const input = vector.input.input;

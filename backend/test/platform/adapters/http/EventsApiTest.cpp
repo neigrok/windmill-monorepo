@@ -4,6 +4,7 @@
 #include "platform/adapters/json/JsonText.h"
 #include "test/platform/Fakes.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <map>
 #include <optional>
@@ -88,7 +89,7 @@ drogon::HttpRequestPtr post(const Json::Value& body) {
 
 drogon::HttpResponsePtr send(EventsApi& api, const drogon::HttpRequestPtr& request) {
   drogon::HttpResponsePtr captured;
-  api.ingest(request, [&](const drogon::HttpResponsePtr& response) { captured = response; });
+  api.ingest(wm::test::DrogonLoopback::received(request), [&](const drogon::HttpResponsePtr& response) { captured = response; });
   return captured;
 }
 

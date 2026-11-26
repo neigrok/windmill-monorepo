@@ -45,13 +45,59 @@ extension Decision: Sendable where Result: Sendable, Refusal: Sendable {}
 
 // D-17 what `run` returns. `committed` means committed on this device, not accepted by the account.
 public enum Outcome<Result, Refusal> {
-  case committed(Result, CommitReceipt)
+  case committed(Result, Receipt<CommitReceipt>)
   case unchanged(Result)
   case refused(Refusal)
 }
 
+// §9.6 an act's Undo as the product's stack keeps it: the act the engine journals and what its Undo must find standing
+// where it is asked, the checks its plans named (`Plan.undoCheckedBy`). A commit's receipt carries it and a Redo answers
+// one; the runner makes no other, so no Undo is asked without its act's checks. Two handles of one act are equal, since
+// that act's plans named their checks.
+public struct UndoHandle: Sendable, Equatable {
+  public let actId: String
+  let checks: [any UndoCheck]
+
+  init(_ actId: String, checking checks: [any UndoCheck]) {
+    self.actId = actId
+    self.checks = checks
+  }
+
+  // The Undo of an act of these plans, with every check they name.
+  init(_ actId: String, of plans: [Plan]) {
+    self.init(actId, checking: plans.flatMap(\.undoChecks))
+  }
+
+  public static func == (a: UndoHandle, b: UndoHandle) -> Bool { a.actId.utf8.elementsEqual(b.actId.utf8) }
+}
+
+// What a commit answers beside its result: the engine's receipt, whose members read through, and the act's Undo.
+@dynamicMemberLookup
+public struct Receipt<Engine: Sendable>: Sendable {
+  public let engine: Engine
+  public let undo: UndoHandle
+
+  init(_ engine: Engine, undo: UndoHandle) {
+    self.engine = engine
+    self.undo = undo
+  }
+
+  public subscript<Member>(dynamicMember member: KeyPath<Engine, Member>) -> Member { engine[keyPath: member] }
+}
+
+extension Receipt: Equatable where Engine: Equatable {}
+
+extension Receipt where Engine == CommitReceipt {
+  // A draft's save as the act of one segment it is, in the draft's scope, for a door that answers acts.
+  public func act(in scope: ScopeRef) -> Receipt<ActReceipt> {
+    let segment = ActSegmentReceipt(scope: scope, stamp: engine.stamp, localIds: engine.localIds, ids: engine.ids)
+    return Receipt<ActReceipt>(ActReceipt(gestureId: engine.gestureId, segments: [segment], retired: engine.retired,
+                                          superseded: engine.superseded, releaseAt: engine.releaseAt), undo: undo)
+  }
+}
+
 extension Outcome {
-  public var receipt: CommitReceipt? {
+  public var receipt: Receipt<CommitReceipt>? {
     guard case .committed(_, let receipt) = self else { return nil }
     return receipt
   }
@@ -118,9 +164,9 @@ public final class ActionRunner: Sendable {
     case .committed(let result, let receipt):
       precondition(receipt.segments.count == 1, "a reversible action commits one segment")
       let segment = receipt.segments[0]
-      return .committed(result, CommitReceipt(
-        gestureId: receipt.gestureId, stamp: segment.stamp ?? .unset, localIds: segment.localIds, ids: segment.ids,
-        releaseAt: receipt.releaseAt, retired: receipt.retired, superseded: receipt.superseded))
+      let committed = CommitReceipt(gestureId: receipt.gestureId, stamp: segment.stamp ?? .unset, localIds: segment.localIds, ids: segment.ids,
+                                    releaseAt: receipt.releaseAt, retired: receipt.retired, superseded: receipt.superseded)
+      return .committed(result, Receipt(committed, undo: receipt.undo))
     case .unchanged(let result): return .unchanged(result)
     case .refused(let refusal): return .refused(refusal)
     }
@@ -136,25 +182,40 @@ public final class ActionRunner: Sendable {
     try replica.cancelHeld(gestureId)
   }
 
-  // §9.6 the inverse of an act opted into Undo: a wholly held act is cancelled in place; otherwise the inverse is reserved
-  // at once and settles as the act's sources do. An act that did not opt in is unavailable.
-  public func undo(_ actId: String) throws -> InverseResult {
-    try replica.requestInverse(actId, slots: nil)
+  // §9.6 the inverse of an act opted into Undo, by the handle its receipt carries. Each check its act named is read first,
+  // and one that refuses what stands writes nothing and answers unavailable (`refused`). A wholly held act is cancelled in
+  // place; otherwise the inverse is reserved at once and settles as the act's sources do. An act that did not opt in is
+  // unavailable.
+  public func undo(_ act: UndoHandle) throws -> InverseResult {
+    for undoCheck in act.checks {
+      do {
+        try read(undoCheck.scope) { (read: Reader) throws in try undoCheck.check(read) }
+      } catch is Violation {
+        return .unavailable(requestId: nil, reason: "refused")
+      }
+    }
+    return try replica.requestInverse(act.actId, slots: nil)
   }
 
-  // The inverse of an Undo: the values the act wrote, only where the Undo applied, or what `productSlots` name instead. A
-  // held act cancelled in place whose act ran a product command is unavailable without `productSlots`.
-  public func redo(_ requestId: String, productSlots: [ProductSlot]? = nil) throws -> InverseResult {
+  // The inverse of the Undo `requestId` of `act`: the values the act wrote, only where the Undo applied, or what
+  // `productSlots` name instead. A held act cancelled in place whose act ran a product command is unavailable without
+  // `productSlots`. It answers the Redo's result and the Undo of the act the Redo wrote, checked as `act`'s was; none where
+  // the Redo is unavailable.
+  public func redo(_ requestId: String, of act: UndoHandle, productSlots: [ProductSlot]? = nil) throws -> (result: InverseResult, undo: UndoHandle?) {
     let undone = try inverseResult(requestId)
     let inverseActId: String
     switch undone {
     case .cancelled(_, let id, _), .pending(_, let id, _), .settled(_, let id, _, _, _): inverseActId = id
-    case .unavailable: return undone
+    case .unavailable: return (undone, nil)
     }
     let slots = productSlots?.map { (slot: ProductSlot) -> ActUndo.Segment in
       ActUndo.Segment(index: slot.index, recipes: slot.plan.undoRecipes(in: slot.scope) ?? [])
     }
-    return try replica.requestInverse(inverseActId, slots: slots)
+    let redone = try replica.requestInverse(inverseActId, slots: slots)
+    switch redone {
+    case .cancelled(_, let id, _), .pending(_, let id, _), .settled(_, let id, _, _, _): return (redone, UndoHandle(id, checking: act.checks))
+    case .unavailable: return (redone, nil)
+    }
   }
 
   public func inverseResult(_ requestId: String) throws -> InverseResult {
@@ -241,7 +302,7 @@ enum Step<Result, Refusal: ProductRefusal> {
       return outcome
     case (.writing(let plan, let result), .committed(let receipt)?):
       let wroteNothing = receipt.localIds.isEmpty && receipt.retired.isEmpty && receipt.superseded.isEmpty && plan.deviceWrites.isEmpty
-      return wroteNothing ? .unchanged(result) : .committed(result, receipt)
+      return wroteNothing ? .unchanged(result) : .committed(result, Receipt(receipt, undo: UndoHandle(receipt.gestureId, of: [plan])))
     case (.writing(let plan, _), .refused(let code, let detail, _)?):
       let subject = plan.subject(ofRefusal: code, detail: detail, registry: registry)
       return .refused(Refusal(Refused(code, subject: subject, detail: detail, path: .predicted)))

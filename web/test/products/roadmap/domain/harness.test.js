@@ -244,20 +244,20 @@ test('a step deleted on another device ends its subtree\'s standing, and a chang
     const basics = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Basics' }))).result;
     const subtree = committed(await a.runner.runAct(new CreateSubtree(tree, basics))).result.subtree;
     for (const scope of [RoadmapScopes.tree(tree), RoadmapScopes.overlay(tree), RoadmapScopes.tree(subtree)]) a.observe(scope);
-    committed(await a.runner.runAct(new SetVisibility(tree, 'unlisted')));
+    committed(await a.runner.runAct(new SetVisibility(tree, 'public')));
     await a.sync();
     const b = await a.device();
     await a.sync();
     const reach = (/** @type {Harness} */ phone) => phone.drawn(RoadmapMeta, RoadmapScopes.tree(subtree)).map((value) => value.reach);
-    assert.deepEqual([reach(a), reach(b)], [['unlisted'], ['unlisted']]);
+    assert.deepEqual([reach(a), reach(b)], [['public'], ['public']]);
     committed(await b.runner.runAct(new DeleteStep(tree, basics)));
     await a.advance(CONSTANTS.HOLD_MS);
     await b.senderStep();
     assert.equal(a.server.row(`tree:${subtree}`, 'meta', 'meta').f.reach[0], 'private');
     committed(await a.runner.runAct(new ChangeStep(tree, basics, { label: 'The basics' })));
     await a.sync();
-    assert.equal(a.server.row(`tree:${subtree}`, 'meta', 'meta').f.reach[0], 'unlisted');
-    assert.deepEqual([reach(a), reach(b)], [['unlisted'], ['unlisted']]);
+    assert.equal(a.server.row(`tree:${subtree}`, 'meta', 'meta').f.reach[0], 'public');
+    assert.deepEqual([reach(a), reach(b)], [['public'], ['public']]);
     assert.deepEqual(b.drawn(RoadmapStep, RoadmapScopes.tree(tree)).map((step) => [step.id.record, step.label, step.branch]), [[basics, 'The basics', subtree]]);
   } finally {
     a.close();
@@ -271,10 +271,11 @@ test('a stale public sent after a newer private loses on the server and on both 
     const basics = committed(await a.runner.runAct(new CreateStep(tree, { label: 'Basics' }))).result;
     const subtree = committed(await a.runner.runAct(new CreateSubtree(tree, basics))).result.subtree;
     for (const scope of [RoadmapScopes.tree(tree), RoadmapScopes.overlay(tree), RoadmapScopes.tree(subtree)]) a.observe(scope);
-    committed(await a.runner.runAct(new SetVisibility(tree, 'unlisted')));
+    committed(await a.runner.runAct(new SetVisibility(tree, 'public')));
     await a.sync();
     const b = await a.device();
     await a.sync();
+    committed(await a.runner.runAct(new SetVisibility(tree, 'private')));
     committed(await a.runner.runAct(new SetVisibility(tree, 'public')));
     await a.advance(1000);
     committed(await b.runner.runAct(new SetVisibility(tree, 'private')));

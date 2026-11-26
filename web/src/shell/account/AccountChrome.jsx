@@ -26,7 +26,7 @@ export function AccountChrome({ width = 460, bare = false, children }) {
   }, []);
 
   const content = (
-    <div style={{ ...card, width }}>
+    <div style={{ ...card, width, ...(bare ? inRoom : null) }}>
       <style>{CSS}</style>
       <div style={head}>
         <a className="wm-account-back" href={previousLocation() ?? '/app'} title={t('shell.account.backTitle')} onClick={(event) => {
@@ -68,5 +68,7 @@ const card = {
   border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-lg)',
   padding: '18px 20px 18px',
 };
+// In the app's room, whose every child fills it, the card fills the screen and grows with a page taller than it.
+const inRoom = { flex: '1 0 auto' };
 const head = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 };
 const mark = { fontSize: '14px', fontWeight: 800, marginLeft: 'auto' };

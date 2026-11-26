@@ -27,8 +27,8 @@ struct RoadmapGraphCanvas: View {
     } else {
       GeometryReader { space in
         let bars = space.safeAreaInsets
-        GraphSurface(picture: picture, camera: camera, captions: captions, selected: selected, pinched: graph.pinched, pinch: graph.pinch,
-                     crowd: graph.crowd) { _ in graph.drew() }
+        GraphSurface(picture: picture, camera: camera, captions: captions, selected: selected, opened: graph.marks, pinched: graph.pinched,
+                     pinch: graph.pinch, crowd: graph.crowd) { _ in graph.drew() }
           .gesture(moves)
           .simultaneousGesture(SpatialTapGesture().onEnded { tap in
             if graph.fitted { roadmap.unfit() } else { roadmap.select(graph.step(at: tap.location)) }
@@ -53,13 +53,18 @@ struct RoadmapGraphCanvas: View {
     }
   }
 
-  // A drag moves the camera by what it adds to its translation, from its first report on; while a pinch is under way
-  // the pinch alone moves the camera, since its fingers drag too.
+  // How far a finger goes before a drag begins: the picture keeps still for that much of its way.
+  static let slop = 10.0
+
+  // A drag moves the camera by its translation past the slop, so a first report that comes late, carrying more of the
+  // finger's way, moves the picture all the same; while a pinch is under way the pinch alone moves the camera, since its
+  // fingers drag too.
   var moves: some Gesture {
-    DragGesture().updating($dragged) { drag, last, _ in
-      let from = last ?? drag.translation
-      last = drag.translation
-      if pinched == nil { roadmap.graph.pan(by: CGSize(width: drag.translation.width - from.width, height: drag.translation.height - from.height)) }
+    DragGesture(minimumDistance: Self.slop).updating($dragged) { drag, last, _ in
+      let way = drag.translation, reach = max(hypot(way.width, way.height), Self.slop)
+      let from = last ?? CGSize(width: way.width * Self.slop / reach, height: way.height * Self.slop / reach)
+      last = way
+      if pinched == nil { roadmap.graph.pan(by: CGSize(width: way.width - from.width, height: way.height - from.height)) }
     }.simultaneously(with: MagnifyGesture().updating($pinched) { pinch, last, _ in
       roadmap.graph.zoom(by: pinch.magnification / (last ?? 1), about: pinch.startLocation)
       last = pinch.magnification
@@ -70,10 +75,11 @@ struct RoadmapGraphCanvas: View {
 // The Graph's band slot holding the selected step (Roadmap · iOS 04.2; the kit's Step bar, Selected): the step's state
 // symbol in its kind's colour, its name, and the way to its page.
 struct GraphStepBar: View {
+  let roadmap: RoadmapModel
   let row: RoadmapModel.Row
 
   var body: some View {
-    NavigationLink(value: RoadmapModel.Visit.step(row.id, by: .graph)) {
+    NavigationLink(value: roadmap.stacked(.step(row.id, by: .graph))) {
       HStack(spacing: 10) {
         Image(systemName: row.card.column.symbol).imageScale(.large).foregroundStyle(RoadmapPalette.kind(row.step.color))
           .accessibilityLabel(row.colour ?? "").accessibilityHidden(row.colour == nil)

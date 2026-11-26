@@ -238,11 +238,12 @@ function visibilities() {
   const restore = (stamp) => command(`tree/${R}`, 'roadmap.restoreTree', { expectedEpoch: 'ep-1', operations: [
     { kind: 'field', t: 'meta', id: 'meta', slot: { kind: 'field', name: 'visibility' }, expected: { kind: 'stamp', stamp }, before: 'private' }] });
   return [
-    admitted('the owner\'s visibility of a root writes its reach and the reach of every standing subtree of its branch', base, visibility(R, 'unlisted', a(5000))),
+    admitted('the owner\'s visibility of a root writes its reach and the reach of every standing subtree of its branch', hidden, visibility(R, 'public', a(5000))),
     admitted('a visibility older than the root\'s changes nothing: a stale public never overrides a newer private', hidden, visibility(R, 'public', a(2000))),
     admitted('a visibility restamped with the value the root holds writes no reach', base, visibility(R, 'public', a(5000))),
     admitted('a root with no subtree takes its visibility as its reach', base, visibility(Y, 'public', a(5000))),
     admitted('a visibility written on a subtree is refused not-a-root', base, visibility(S, 'private', a(5000))),
+    admitted('a visibility outside private and public, unlisted among them, is refused invalid', base, visibility(R, 'unlisted', a(5000))),
     admitted('a reader\'s visibility is refused forbidden', base, visibility(R, 'private', b(5000)), READER),
     admitted('the server\'s door writes a root\'s visibility as the owner does', base, visibility(R, 'private', null), DOOR),
     admitted('an Undo restoring the earlier visibility writes the branch\'s reach back', base, restore(a(1100))),

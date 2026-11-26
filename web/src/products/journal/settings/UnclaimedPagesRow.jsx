@@ -1,5 +1,7 @@
-// Unsent pages this browser kept before the engine that it could not attribute, waiting in its storage (carry.js) for a
-// signed-in person to restore or discard. This surface may say the day and the length, never the words.
+// Unsent pages this browser kept before the engine that it could not attribute, waiting in its storage (carry.js) until a
+// sign-out forgets them. The row stands on both seats: restoring them into a journal takes an account, so signed out it
+// says to sign in for that, and Discard deletes them from the browser on either. This surface may say the day and the
+// length, never the words.
 
 import React, { useState } from 'react';
 import { Button } from '../../../design-system';

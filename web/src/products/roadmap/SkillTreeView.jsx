@@ -25,7 +25,8 @@ import { SkillTree } from './model/SkillTree.js';
 import { makeRenderable } from './model/renderableGraph.js';
 import { StepDetail } from './step/StepDetail.jsx';
 import { RefusedSync } from './sync/SyncNotices.jsx';
-import { deletable, takesEveryRoot } from './board/acts.js';
+import { deletable } from './board/acts.js';
+import { readEffects } from './model/effects.js';
 import { ASK_AI_PLACEHOLDER, GRAPH_LOAD, GRAPH_UNAVAILABLE, LOAD_ERROR, forkedToast, landingNote } from './copy.js';
 import { t } from './i18n/index.js';
 import { hashWithStep, useStepAddress } from './step/stepAddress.js';
@@ -352,8 +353,8 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
     if (stepCovering || boardActive) scene.stop();
     else scene.start();
   }, [scene, stepCovering, boardActive]);
-  // A step's link opens for anyone only where the roadmap itself does: public or unlisted, on the server.
-  const stepShareUrl = !demo && (treeVisibility === 'public' || treeVisibility === 'unlisted') ? treeShareUrl(treeId) : null;
+  // A step's link opens for anyone only where the roadmap itself does: public, on the server.
+  const stepShareUrl = !demo && treeVisibility === 'public' ? treeShareUrl(treeId) : null;
 
   // The identity row and Graph chrome.
   const phoneGraph = phone && canvasView;
@@ -749,7 +750,7 @@ export function SkillTreeView({ treeId, demo = false, replica = false }) {
           onMarkDone={() => progressActs.markDone(selectedIdsRef.current)}
           onPreviewDelete={() => sceneRef.current?.previewDeleteCostSet([...selectedIdsRef.current])}
           onClearDelete={() => sceneRef.current?.clearDeleteCost()}
-          onDelete={takesEveryRoot(boardTree, [...selectedIds]) ? null : bulkDelete}
+          onDelete={readEffects(boardTree, [...selectedIds])?.takesEveryStart ? null : bulkDelete}
         />
       )}
 

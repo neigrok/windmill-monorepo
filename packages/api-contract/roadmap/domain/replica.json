@@ -280,6 +280,7 @@
       "read": "loaded",
       "own": true,
       "updatedAt": 2000,
+      "stampedAt": 112,
       "parent": null,
       "meta": {
         "title": "Learn to sail",
@@ -455,7 +456,7 @@
               "200:0:srv"
             ],
             "reach": [
-              "unlisted",
+              "public",
               "202:0:srv"
             ]
           },
@@ -487,6 +488,7 @@
       "read": "loaded",
       "own": false,
       "updatedAt": 3100,
+      "stampedAt": 203,
       "parent": {
         "tree": "t_00000000000000a1",
         "step": "wind"
@@ -498,7 +500,7 @@
         "root": "t_00000000000000a1",
         "depth": 1,
         "visibility": "private",
-        "reach": "unlisted",
+        "reach": "public",
         "forkedFrom": null
       },
       "nodes": [
@@ -600,6 +602,7 @@
       "read": "loaded",
       "own": true,
       "updatedAt": 5000,
+      "stampedAt": 300,
       "parent": null,
       "meta": {
         "title": "Learn to sail",
@@ -673,6 +676,7 @@
       "read": "loaded",
       "own": true,
       "updatedAt": 4100,
+      "stampedAt": 300,
       "parent": {
         "tree": "t_00000000000000a1",
         "step": "kite"
@@ -701,6 +705,7 @@
       "read": "unread",
       "own": false,
       "updatedAt": null,
+      "stampedAt": null,
       "parent": null,
       "meta": null,
       "nodes": [],
@@ -726,6 +731,7 @@
       "read": "loaded",
       "own": false,
       "updatedAt": null,
+      "stampedAt": null,
       "parent": null,
       "meta": null,
       "nodes": [],
@@ -802,6 +808,7 @@
       "read": "unread",
       "own": true,
       "updatedAt": 1100,
+      "stampedAt": 101,
       "parent": null,
       "meta": {
         "title": "Learn to sail",
@@ -913,6 +920,7 @@
       "read": "loaded",
       "own": true,
       "updatedAt": null,
+      "stampedAt": 102,
       "parent": null,
       "meta": {
         "title": "Learn to sail",
@@ -1635,7 +1643,7 @@
     ]
   },
   {
-    "name": "The person’s list: their own roots that stand, newest first by the server’s last receipt, ties by id, never received last; no subtree, deleted or someone else’s roadmap, nor a root whose meta has not arrived",
+    "name": "The person’s list: their own roots that stand, newest first by the server’s last receipt, ties by id, one neither received nor stamped last; no subtree, deleted or someone else’s roadmap, nor a root whose meta has not arrived",
     "input": {
       "operation": "list",
       "trees": [
@@ -1898,6 +1906,343 @@
     ]
   },
   {
+    "name": "On a phone never signed in no server has received any roadmap: two made one after the other stand newest first by the newest stamp the phone holds of each, the second first",
+    "input": {
+      "operation": "list",
+      "trees": [
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "stampedAt": 1000,
+          "parent": null,
+          "meta": {
+            "title": "Made first",
+            "root": "A",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "B",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "stampedAt": 2000,
+          "parent": null,
+          "meta": {
+            "title": "Made second",
+            "root": "B",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "expect": [
+      {
+        "id": "B",
+        "title": "Made second",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": null
+      },
+      {
+        "id": "A",
+        "title": "Made first",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": null
+      }
+    ]
+  },
+  {
+    "name": "A roadmap no server has received, stamped after another was last received, comes before it: a received roadmap stands by its receipt, though the phone holds a newer stamp of it",
+    "input": {
+      "operation": "list",
+      "trees": [
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": 5000,
+          "stampedAt": 8000,
+          "parent": null,
+          "meta": {
+            "title": "Received earlier",
+            "root": "A",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "B",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "stampedAt": 7000,
+          "parent": null,
+          "meta": {
+            "title": "Never received",
+            "root": "B",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "expect": [
+      {
+        "id": "B",
+        "title": "Never received",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": null
+      },
+      {
+        "id": "A",
+        "title": "Received earlier",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": 5000
+      }
+    ]
+  },
+  {
+    "name": "A roadmap received after another no server has received was last stamped comes before it",
+    "input": {
+      "operation": "list",
+      "trees": [
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "stampedAt": 7000,
+          "parent": null,
+          "meta": {
+            "title": "Never received",
+            "root": "A",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "B",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": 9000,
+          "stampedAt": 9000,
+          "parent": null,
+          "meta": {
+            "title": "Received later",
+            "root": "B",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "expect": [
+      {
+        "id": "B",
+        "title": "Received later",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": 9000
+      },
+      {
+        "id": "A",
+        "title": "Never received",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": null
+      }
+    ]
+  },
+  {
+    "name": "Roadmaps at one time, received at it or stamped at it with none received, stand in id byte order",
+    "input": {
+      "operation": "list",
+      "trees": [
+        {
+          "id": "C",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "stampedAt": 7000,
+          "parent": null,
+          "meta": {
+            "title": "Stamped then",
+            "root": "C",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "B",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": 7000,
+          "stampedAt": 7000,
+          "parent": null,
+          "meta": {
+            "title": "Received then",
+            "root": "B",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "stampedAt": 7000,
+          "parent": null,
+          "meta": {
+            "title": "Stamped then too",
+            "root": "A",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "expect": [
+      {
+        "id": "A",
+        "title": "Stamped then too",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": null
+      },
+      {
+        "id": "B",
+        "title": "Received then",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": 7000
+      },
+      {
+        "id": "C",
+        "title": "Stamped then",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": null
+      }
+    ]
+  },
+  {
     "name": "A roadmap as a list shows it, whoever owns it: someone else's root that stands, by its title, counts and last receipt",
     "input": {
       "operation": "listing",
@@ -1982,6 +2327,637 @@
           "pointers": []
         }
       ]
+    },
+    "expect": null
+  },
+  {
+    "name": "One tree’s openings with what a read elsewhere tells of the subtrees the device holds no copy of: each counts as it is told, complete once it has steps and every one is done, one with no steps not complete; a subtree the device has read counts from its copy whatever it is told, and one it is told nothing of stays unknown",
+    "input": {
+      "operation": "openings",
+      "trees": [
+        {
+          "id": "R",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {
+            "title": "R",
+            "guide": "",
+            "guideInherited": false,
+            "root": "R",
+            "depth": 0,
+            "visibility": "public",
+            "reach": "public"
+          },
+          "nodes": [
+            {
+              "id": "copy",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "copy",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S4"
+            },
+            {
+              "id": "done",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "done",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S1"
+            },
+            {
+              "id": "empty",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "empty",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S3"
+            },
+            {
+              "id": "half",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "half",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S2"
+            },
+            {
+              "id": "quiet",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "quiet",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S5"
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [
+            {
+              "node": "done",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 10,
+              "deviceAt": 9
+            },
+            {
+              "node": "half",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 10,
+              "deviceAt": 9
+            }
+          ],
+          "pointers": []
+        },
+        {
+          "id": "S2",
+          "present": true,
+          "read": "unread",
+          "parent": {
+            "tree": "R",
+            "step": "half"
+          },
+          "meta": null,
+          "nodes": [],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "S4",
+          "present": true,
+          "read": "loaded",
+          "parent": {
+            "tree": "R",
+            "step": "copy"
+          },
+          "meta": {
+            "title": "Ignored title",
+            "guide": "",
+            "guideInherited": false,
+            "root": "R",
+            "depth": 1,
+            "visibility": "public",
+            "reach": "public"
+          },
+          "nodes": [
+            {
+              "id": "s4",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "s4",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ],
+      "told": [
+        {
+          "tree": "S1",
+          "done": 5,
+          "total": 5
+        },
+        {
+          "tree": "S2",
+          "done": 1,
+          "total": 5
+        },
+        {
+          "tree": "S3",
+          "done": 0,
+          "total": 0
+        },
+        {
+          "tree": "S4",
+          "done": 4,
+          "total": 4
+        }
+      ],
+      "tree": "R"
+    },
+    "expect": [
+      {
+        "node": "copy",
+        "kind": "subtree",
+        "tree": "S4",
+        "status": "loaded",
+        "complete": false,
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "loop": false
+      },
+      {
+        "node": "done",
+        "kind": "subtree",
+        "tree": "S1",
+        "status": "unknown",
+        "complete": true,
+        "counts": {
+          "done": 5,
+          "total": 5
+        },
+        "loop": false
+      },
+      {
+        "node": "empty",
+        "kind": "subtree",
+        "tree": "S3",
+        "status": "unknown",
+        "complete": false,
+        "counts": {
+          "done": 0,
+          "total": 0
+        },
+        "loop": false
+      },
+      {
+        "node": "half",
+        "kind": "subtree",
+        "tree": "S2",
+        "status": "unread",
+        "complete": false,
+        "counts": {
+          "done": 1,
+          "total": 5
+        },
+        "loop": false
+      },
+      {
+        "node": "quiet",
+        "kind": "subtree",
+        "tree": "S5",
+        "status": "unknown",
+        "complete": false,
+        "counts": null,
+        "loop": false
+      }
+    ]
+  },
+  {
+    "name": "A roadmap's progress with what a read elsewhere tells of its subtrees: a step whose subtree is told complete is complete, dated by its own complete mark as that read dated it, stamped or not, else by its subtree's stamp; one told unfinished, or told nothing, sets its mark aside",
+    "input": {
+      "operation": "progress",
+      "trees": [
+        {
+          "id": "R",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {
+            "title": "R",
+            "guide": "",
+            "guideInherited": false,
+            "root": "R",
+            "depth": 0,
+            "visibility": "public",
+            "reach": "public"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "a",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S1"
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "b",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S2"
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "c",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S3"
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "d",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "e",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "e",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S4",
+              "branchStamp": "30:0:a"
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 50,
+              "deviceAt": 0,
+              "stamp": "0:0:"
+            },
+            {
+              "node": "b",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 45,
+              "deviceAt": 40,
+              "stamp": "40:0:a"
+            },
+            {
+              "node": "c",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 65,
+              "deviceAt": 60,
+              "stamp": "60:0:a"
+            },
+            {
+              "node": "d",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 75,
+              "deviceAt": 70,
+              "stamp": "70:0:a"
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "told": [
+        {
+          "tree": "S1",
+          "done": 2,
+          "total": 2
+        },
+        {
+          "tree": "S2",
+          "done": 1,
+          "total": 3
+        },
+        {
+          "tree": "S4",
+          "done": 3,
+          "total": 3
+        }
+      ],
+      "tree": "R"
+    },
+    "expect": {
+      "completed": [
+        "a",
+        "d",
+        "e"
+      ],
+      "dates": [
+        {
+          "node": "a",
+          "at": 50
+        },
+        {
+          "node": "d",
+          "at": 70
+        },
+        {
+          "node": "e",
+          "at": 30
+        }
+      ]
+    }
+  },
+  {
+    "name": "A roadmap told of but not read has no progress: a subtree the device holds unread, whatever it is told, reads none",
+    "input": {
+      "operation": "progress",
+      "trees": [
+        {
+          "id": "R",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {
+            "title": "R",
+            "guide": "",
+            "guideInherited": false,
+            "root": "R",
+            "depth": 0,
+            "visibility": "public",
+            "reach": "public"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "a",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S"
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 9,
+              "deviceAt": 9
+            }
+          ],
+          "pointers": []
+        },
+        {
+          "id": "S",
+          "present": true,
+          "read": "unread",
+          "parent": {
+            "tree": "R",
+            "step": "a"
+          },
+          "meta": null,
+          "nodes": [],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ],
+      "told": [
+        {
+          "tree": "S",
+          "done": 2,
+          "total": 2
+        }
+      ],
+      "tree": "S"
+    },
+    "expect": null
+  },
+  {
+    "name": "A roadmap read under one the device holds unread has no progress, as it does not stand, whatever it is told",
+    "input": {
+      "operation": "progress",
+      "trees": [
+        {
+          "id": "R",
+          "present": true,
+          "read": "loaded",
+          "parent": null,
+          "meta": {
+            "title": "R",
+            "guide": "",
+            "guideInherited": false,
+            "root": "R",
+            "depth": 0,
+            "visibility": "public",
+            "reach": "public"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "a",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": "S"
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 9,
+              "deviceAt": 9
+            }
+          ],
+          "pointers": []
+        },
+        {
+          "id": "S",
+          "present": true,
+          "read": "unread",
+          "parent": {
+            "tree": "R",
+            "step": "a"
+          },
+          "meta": null,
+          "nodes": [],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "T",
+          "present": true,
+          "read": "loaded",
+          "parent": {
+            "tree": "S",
+            "step": "x"
+          },
+          "meta": {
+            "title": "T",
+            "guide": "",
+            "guideInherited": false,
+            "root": "R",
+            "depth": 2,
+            "visibility": "public",
+            "reach": "public"
+          },
+          "nodes": [
+            {
+              "id": "t1",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "t1",
+              "icon": "x",
+              "color": "terracotta",
+              "ord": "",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [
+            {
+              "node": "t1",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 5,
+              "deviceAt": 5
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "told": [
+        {
+          "tree": "T",
+          "done": 1,
+          "total": 1
+        }
+      ],
+      "tree": "T"
     },
     "expect": null
   }

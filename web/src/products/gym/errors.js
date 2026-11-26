@@ -35,6 +35,8 @@ export function isStoreFailure(error) {
 // A Coach answer that stopped before it finished, whether the server said so or the stream broke off.
 export const RESPONSE_INTERRUPTED = t('gym.errors.responseInterrupted');
 
+// Only a REST door goes to the network, so only its failure, the server's answer or no answer at all (fetch's TypeError),
+// names the network; any other failure is a write this device's copy did not keep.
 export function failureReason(error) {
   if (error instanceof GymRefusal) {
     return error.code === 'not-writable' ? t('gym.errors.reasonNotWritable') : t('gym.errors.reasonNotTaken');
@@ -43,5 +45,6 @@ export function failureReason(error) {
   if (error instanceof CommitError || error?.status === 400 || error?.status === 409) return t('gym.errors.reasonNotTaken');
   if (error?.status === 401) return t('gym.errors.reasonSignedOut');
   if (error?.status === 404) return t('gym.errors.reasonGone');
-  return t('gym.errors.reasonNoAnswer');
+  if (error instanceof GymError || error instanceof TypeError) return t('gym.errors.reasonNoAnswer');
+  return t('gym.errors.reasonNotStored');
 }

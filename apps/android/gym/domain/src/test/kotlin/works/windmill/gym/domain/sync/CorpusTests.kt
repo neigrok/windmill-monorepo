@@ -40,7 +40,11 @@ class CorpusTests {
         val catalog2 = files.filter { it == "gym/catalog.json" || it.startsWith("gym/abilities/") }
         // The words Coach's model reads are no vectors: :gym's CoachWordsAssetsTests reads them from its assets.
         val coachWords = files.filter { it.startsWith("gym/coach/") }
-        assertEquals((paths + abilities + readByCatalogTests + turnWire + catalog2 + coachWords).sorted(), files)
+        // The web's recovery of a start that lost a race, whose design on the phones is open (local-first open problems LP-6).
+        val refusedStart = files.filter { it == "gym/domain/refused-start-actions.json" }
+        // The web's Settings rows for the default rest and the rest sound, which no phone sets.
+        val restSettings = files.filter { it == "gym/domain/rest-settings-actions.json" }
+        assertEquals((paths + abilities + readByCatalogTests + turnWire + catalog2 + coachWords + refusedStart + restSettings).sorted(), files)
         val failures = mutableListOf<String>()
         try { RuleBookParity.check(book, paths[0]) } catch (error: Exception) {
             failures += "${paths[0]} · ${error.message}"
@@ -68,8 +72,8 @@ class CorpusTests {
         val run = abilityCases - unseeded.toSet()
         val notOffered = run.count { abilityExpected(it)["refused"]?.str() == AbilityRefusal.notOffered.code }
         val refused = run.count { it.expect["refused"] != null } - notOffered
-        val notApplicable = catalog2.size + turnWire.size + coachWords.size
-        println("Gym corpus: ${paths.size + abilities.size + 1}/${files.size} files, $cases cases, ${run.size} ability cases (${run.size - notOffered - refused} results byte-equal, $refused refused alike, $notOffered withheld or shares refused on the phone), ${unseeded.size} minting cases with no seeded id, $notApplicable explicitly not applicable (catalog/2, the turn wire, the words), no unclaimed file")
+        val notApplicable = catalog2.size + turnWire.size + coachWords.size + refusedStart.size + restSettings.size
+        println("Gym corpus: ${paths.size + abilities.size + 1}/${files.size} files, $cases cases, ${run.size} ability cases (${run.size - notOffered - refused} results byte-equal, $refused refused alike, $notOffered withheld or shares refused on the phone), ${unseeded.size} minting cases with no seeded id, $notApplicable explicitly not applicable (catalog/2, the turn wire, the words, the refused start, the rest settings), no unclaimed file")
     }
 
     // gym Coach §3.5, INV-1, INV-2: the case's call through the executor's action over its records as its seat at its moment, beside a thread and a running Coach message of this replica's turn. A minting call's id is the server gate's seeded id (G-7): the turn is its seed, and the calls before it the ordinal's admitted predecessors, refused by their rule.

@@ -27,7 +27,7 @@ public enum ActDecision<Result, Refusal> {
 }
 
 public enum ActOutcome<Result, Refusal> {
-  case committed(Result, ActReceipt)
+  case committed(Result, Receipt<ActReceipt>)
   case unchanged(Result)
   case refused(Refusal)
 }
@@ -95,7 +95,7 @@ public struct AnyActAction<Refusal: ProductRefusal>: Sendable {
 
 // §9.7 a composed act's outcome: each part's result, in order, or the refusal of the part that met it.
 public enum ComposedOutcome<Refusal> {
-  case committed(results: [any Sendable], receipt: ActReceipt)
+  case committed(results: [any Sendable], receipt: Receipt<ActReceipt>)
   case unchanged(results: [any Sendable])
   case refused(part: Int, refusal: Refusal)
 }
@@ -121,7 +121,7 @@ extension ActionRunner {
         case .done(let outcome): return outcome
         case .writing(let act, let result):
           switch committed.outcome {
-          case .committed(let receipt): return .committed(result, receipt)
+          case .committed(let receipt): return .committed(result, Receipt(receipt, undo: UndoHandle(receipt.gestureId, of: act.segments.map(\.plan))))
           case .refused(let index, let code, let detail): return .refused(A.Refusal(refused(act.segments[index].plan, code: code, detail: detail)))
           case nil: return .unchanged(result)
           }
@@ -177,7 +177,8 @@ extension ActionRunner {
         case .done(let outcome): return outcome
         case .writing(let segments, let results):
           switch committed.outcome {
-          case .committed(let receipt): return .committed(results: results, receipt: receipt)
+          case .committed(let receipt):
+            return .committed(results: results, receipt: Receipt(receipt, undo: UndoHandle(receipt.gestureId, of: segments.map(\.scoped.plan))))
           case .refused(let index, let code, let detail):
             return .refused(part: segments[index].part, refusal: Refusal(refused(segments[index].scoped.plan, code: code, detail: detail)))
           case nil: return .unchanged(results: results)

@@ -4,9 +4,9 @@
 // Postgres. This script wipes every sync_* row of $WM_E2E_DB, roadmap's engine rows with them, and the activity of the
 // two roadmaps it makes.
 // - A person makes a roadmap of two steps, a subtree under the first with two steps of its own, completes both of
-//   those and the second step, makes the roadmap unlisted and renames the first step, all through the engine.
+//   those and the second step, makes the roadmap public and renames the first step, all through the engine.
 // - The activity feed tells the roadmap's two gestures that left a deed, one line each, by who made them, and a stranger
-//   reads it while the roadmap is unlisted.
+//   reads it while the roadmap is public.
 // - The owner's progress shown to a stranger: the first step complete because its subtree is, dated when the server
 //   received the subtree's last mark, the second as marked, and the subtree's two steps of two.
 // - The share page names the roadmap and the subtree by the owning step's label, with their step counts.
@@ -142,7 +142,7 @@ try {
   ], { atomic: true });
   await settle();
   const lastMarkAt = Number(psql(`select max(ru) from roadmap_progress where scope_key = 'acct:${owner.account}/overlay/${subtree}'`));
-  await engine.commit(tree, [{ op: 'write', t: 'meta', id: 'meta', f: { visibility: 'unlisted' } }]);
+  await engine.commit(tree, [{ op: 'write', t: 'meta', id: 'meta', f: { visibility: 'public' } }]);
   await engine.commit(tree, [{ op: 'update', t: 'node', id: 'basics', f: { label: renamed } }]);
   await settle();
   check(replica().outbox.length === 0 && replica().notices.length === 0, 'every gesture lands', `${replica().outbox.length} entries, ${replica().notices.length} notices`);
@@ -157,7 +157,7 @@ try {
   check(same(events.map((event) => String(event.seq)), seqs.split(',')) && actors === '2', 'each line sits at the roadmap\'s seq and was made by its owner',
     'the rows differ');
   const strangers = await read(`/v1/trees/${root}/activity`, stranger);
-  check(strangers.status === 200 && same(strangers.json().events, events), 'a stranger reads the same activity while the roadmap is unlisted',
+  check(strangers.status === 200 && same(strangers.json().events, events), 'a stranger reads the same activity while the roadmap is public',
     `status ${strangers.status}`);
 
   const progress = await read(`/v1/trees/${root}/progress`);

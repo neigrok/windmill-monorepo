@@ -159,6 +159,9 @@ for (const browserName of ['chromium', 'webkit']) {
       assert.equal(await trigger.evaluate((element) => document.activeElement === element), true);
       assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
       await trigger.click();
+      // A reopened panel shows its last answer while it reads the list again, so the reads are counted once the page has
+      // told that read's answer.
+      await page.waitForFunction(() => window.events.filter(({ name, props }) => name === 'roadmap_recovery' && props.step === 'list').length === 2);
       await page.getByText('No roadmaps in this account.', { exact: true }).waitFor();
       const reads = requests.filter((path) => path === '/v1/trees').length;
       const tryAgain = page.getByRole('button', { name: 'Try again', exact: true });

@@ -192,7 +192,7 @@ AskApi::AskApi(std::shared_ptr<AskService> ask, std::shared_ptr<AuthService> aut
     : ask_(std::move(ask)), auth_(std::move(auth)) {}
 
 void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
-  std::optional<User> caller = callerUserOf(req, *auth_);
+  std::optional<User> caller = SentCaller::of(req, *auth_).user;
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;

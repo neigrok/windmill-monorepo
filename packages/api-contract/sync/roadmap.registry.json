@@ -1,8 +1,8 @@
 {
   "$schema": "./registry.schema.json",
   "registry": "roadmap",
-  "version": 13,
-  "minVersion": 11,
+  "version": 15,
+  "minVersion": 15,
   "products": {
     "roadmap": {
       "surfaces": ["web", "ios"],
@@ -92,14 +92,14 @@
         "visibility": {
           "kind": "lww",
           "writer": "client",
-          "domain": { "type": "string", "enum": ["private", "unlisted", "public"] },
+          "domain": { "type": "string", "enum": ["private", "public"] },
           "default": "private"
         },
         "reach": {
           "kind": "lww",
           "writer": "server",
-          "domain": { "type": "string", "enum": ["private", "unlisted", "public"] },
-          "opens": ["unlisted", "public"],
+          "domain": { "type": "string", "enum": ["private", "public"] },
+          "opens": ["public"],
           "default": "private"
         },
         "root": { "kind": "const", "writer": "server", "ref": "tree" },

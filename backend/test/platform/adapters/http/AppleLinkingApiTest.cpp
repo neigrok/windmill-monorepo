@@ -32,7 +32,7 @@ struct HttpFixture : AppleLinkingFixture {
       else request->addCookie("wm_session", session);
     }
     drogon::HttpResponsePtr response;
-    (api.*method)(request, [&](auto r) { response = std::move(r); });
+    (api.*method)(wm::test::DrogonLoopback::received(request), [&](auto r) { response = std::move(r); });
     return response;
   }
   // GET /v1/me as Drogon parses it from the wire, which is where /v1/me reads its caller from.
@@ -102,7 +102,7 @@ TEST(apple_both_http_doors_return_only_a_ticket_until_creation_for_every_new_add
     CHECK_EQ(body["privateEmail"].asBool(), relay);
     CHECK_EQ(body["user"]["name"].asString(), std::string("Sam Gold"));
     CHECK(created->getHeader("set-cookie").starts_with("wm_session=" + body["session"].asString() + ";"));
-    CHECK(f.auth->authenticate(body["session"].asString()));
+    CHECK(f.auth->revalidate(f.auth->digestOf(body["session"].asString())));
     refusal(f.create("s1"), drogon::k410Gone, "apple-ticket-expired", "Continue with Apple again",
             "Apple's sign-in lasts 15 minutes, and this one ran out. Nothing was created.");
   }
@@ -241,7 +241,7 @@ TEST(apple_me_lists_link_metadata_and_remove_only_unbinds_callers_apple_door) {
   const auto removed = f.call(&AuthApi::removeApple, "{}", "s-mine");
   CHECK_EQ(removed->getStatusCode(), drogon::k204NoContent);
   noCookie(removed);
-  CHECK(f.auth->authenticate("s-mine"));
+  CHECK(f.auth->revalidate(f.auth->digestOf("s-mine")));
   CHECK(f.repo.findUserById(mine.id));
   CHECK(f.repo.findIdentity(Provider::apple, "other-subject"));
   CHECK_EQ(f.call(&AuthApi::removeApple, "{}", "s-mine")->getStatusCode(), drogon::k404NotFound);

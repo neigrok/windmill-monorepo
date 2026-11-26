@@ -20,12 +20,12 @@ test('the routine editor is keyed on the routine it edits, so a hash move remoun
   assert.equal(app.includes('<RoutineEditor key={routineIdOf(hash)} id={routineIdOf(hash)} log={log} />'), true);
 });
 
-test('the routine row’s overflow is Log past above Delete, and no surface offers a copy of a routine', () => {
+test('the routine row’s overflow is Log past above Delete, Delete alone signed out, and no surface offers a copy of a routine', () => {
   const source = spoken(read('Routines.jsx'));
   assert.equal(source.includes(`items={[
-                  { label: t('gym.routines.logPast'), run: () => { window.location.hash = backfillHref(routine.id, FROM_ROUTINE_MENU); } },
-                  { label: t('gym.routines.delete'), run: () => remove(routine) },
-                ]}`), true);
+                      ...(anonymous ? [] : [{ label: t('gym.routines.logPast'), run: () => { window.location.hash = backfillHref(routine.id, FROM_ROUTINE_MENU); } }]),
+                      { label: t('gym.routines.delete'), run: () => remove(routine) },
+                    ]}`), true);
   assert.equal(source.includes('Log past\nDelete'), true, 'the catalog says Log past, then Delete');
   assert.equal(/duplicat/i.test(source), false, 'the room has no duplicate act');
   assert.equal(/duplicat/i.test(spoken(read('routines.js'))), false);
@@ -71,17 +71,14 @@ test('the three tabs preserve their order and every pushed destination maps to a
   assert.equal(read('log.js').includes("export const ROUTINES_HREF = '#/gym';"), true);
 });
 
-test('the live mirror heads the routines home and keeps its charter: no Finish, no countdown, the words when idle', () => {
+test('a workout starts from Routines and runs on its own page, the bar standing for it on every other gym page', () => {
   const routines = read('Routines.jsx');
-  assert.equal(routines.includes('<LiveMirror log={log} />'), true);
-  assert.ok(routines.indexOf('<LiveMirror') < routines.indexOf('<ul className="gym-routines">'));
-  assert.equal(routines.includes("import { LiveMirror } from './Mirror.jsx';"), true);
-  const mirror = speech('Mirror.jsx');
-  assert.equal(mirror.includes('Not training now.'), true);
-  assert.equal(mirror.includes('Workouts start on your phone.'), true);
-  assert.equal(/[Ff]inish/.test(mirror), false, 'the mirror never offers a Finish');
-  assert.equal(mirror.includes('workoutClocks(session, sets, Date.now())'), true, 'the clock counts up from the start');
-  assert.equal(mirror.includes('const [, setBeat] = useState(0);'), true, 'the beat is the mirror’s own state');
+  assert.equal(routines.includes('const startable = complete && !log.session;'), true, 'no start before the first pull or beside an open workout');
+  assert.equal(routines.includes('await api.startWorkout({ routineId });'), true);
+  assert.equal(routines.includes('Mirror'), false, 'the mirror is gone; the bar stands for a workout open anywhere');
+  const app = read('GymApp.jsx');
+  assert.equal(app.includes("{screen === 'workout' && <WorkoutPage hash={hash} log={log} signedIn={signedIn} />}"), true);
+  assert.equal(app.includes("<WorkoutBar onPage={screen === 'workout'} />"), true);
   for (const file of gymFiles()) {
     if (!/\.(jsx?|css)$/.test(file)) continue;
     assert.equal(/\bresting\b/i.test(spoken(fs.readFileSync(file, 'utf8'))), false, file);
@@ -90,10 +87,9 @@ test('the live mirror heads the routines home and keeps its charter: no Finish, 
 
 test('every exercise name a lifter can see is a link to that movement’s record — except on a screen holding an unsaved draft, where the movements door on the home reaches it instead', () => {
   // A name inside a workout opens the record FROM that workout, so the record's back link returns
-  // to it; the live mirror and a proposal sit on the Routines home and open it from there.
+  // to it; a proposal sits on the Routines home and opens it from there.
   assert.equal(read('Log.jsx').includes('href={recordHref(exerciseId, fromSession(id,'), true);
   assert.equal(read('Finish.jsx').includes('<a className="gym-against-movement gym-movement-door" href={recordHref(row.exerciseId, fromSession(id))}>'), true);
-  assert.equal(read('Mirror.jsx').includes('<a className="gym-movement-door" href={recordHref(newest.exerciseId)}>'), true);
   assert.equal(read('Proposals.jsx').includes('<a className="gym-diff-name gym-movement-door" href={recordHref(row.exerciseId)}>'), true);
   assert.equal(read('gym.css').includes('.gym-movement-door {'), true);
 
@@ -157,7 +153,8 @@ test('Coach is a tab root: a column in the rail, no back link, History its rail 
   assert.equal((head.match(/label: t\('gym\.coach\.notes'\)/g) ?? []).length, 1);
   assert.equal(catalog['gym.coach.notes'], 'Notes');
   assert.equal(room.includes('<HistoryList rows={rows} current={threadId}'), true);
-  assert.equal(speech('coach/CoachRoom.jsx').includes('Your workout is on your phone. This room is here when it is over.'), true);
+  const said = (file) => [...read(file).matchAll(/\bt\('([\w.]+)'/g)].map(([, key]) => catalog[key]).join('\n');
+  assert.equal(/phone/i.test(`${said('coach/CoachRoom.jsx')}\n${said('coach/History.jsx')}`), false, 'Coach on the web claims nothing about a phone');
   assert.equal(read('Proposals.jsx').includes('gym-coach-aside'), false, 'proposal review remains inline');
 });
 
@@ -264,14 +261,14 @@ test('workout rows read actual facts and collapse only an honest common scheme',
 test('the shared workout is answered above the replica’s door, and wears none of the app’s chrome', () => {
   const app = read('GymApp.jsx');
   const shared = app.indexOf('if (sharedToken || sharedLogToken) {');
-  const authSwitch = app.indexOf("const door = replica?.state === 'bound'");
+  const authSwitch = app.indexOf('<TrainingRoom key={replica.binding}');
   assert.ok(shared > 0, 'GymApp has no shared branch');
   assert.ok(shared < authSwitch, 'the shared branch resolves before the replica’s door');
   assert.ok(app.indexOf('const sharedToken = sharedTokenOf(hash);') < shared);
   assert.ok(app.indexOf('useSignInDoorHost()') < shared);
 
   const branch = app.slice(shared, authSwitch);
-  for (const chrome of ['<Chrome', '<TabBar', 'SignInPitch', 'AccountSeat', 'ProductSwitcher']) {
+  for (const chrome of ['<Chrome', '<TabBar', 'CoachDoor', 'AccountSeat', 'ProductSwitcher']) {
     assert.equal(branch.includes(chrome), false, chrome);
   }
   assert.equal(branch.includes('<SharedSession token={sharedToken} />'), true);
@@ -286,7 +283,7 @@ test('the account seat and the switcher are drawn in one place, and only outside
   assert.ok(app.indexOf('if (inShell) return null;') < app.indexOf('<AccountSeat'));
 
   const mounts = app.split('<Chrome').slice(1);
-  assert.equal(mounts.length, 2);
+  assert.equal(mounts.length, 1);
   for (const mount of mounts) assert.equal(mount.slice(0, 40).includes('inShell={inShell}'), true, mount.slice(0, 40));
 
   assert.equal((app.match(/data-chrome=\{inShell \? 'shell' : 'own'\}/g) ?? []).length, 2);
@@ -333,7 +330,7 @@ test('the transient is the room’s, and the window’s own carries the Undo, no
 
 test('the history reader changes session identity without replacing the history index', () => {
   assert.equal(read('GymApp.jsx').includes("(screen === 'log' || screen === 'session') && <LogList"), true);
-  assert.equal(read('Log.jsx').includes('<SessionDetail key={selected} id={selected} log={log} signedIn={signedIn} embedded from={from} />'), true);
+  assert.equal(read('Log.jsx').includes('<SessionDetail key={selected} id={selected} log={log} signedIn={signedIn} anonymous={anonymous} embedded from={from} />'), true);
 });
 
 test('web correction uses plain numeric fields and validates their raw values', () => {
@@ -377,7 +374,8 @@ test('leaving the room retires its UI clocks without sending a REST delete', () 
   assert.equal(teardown[1].includes('withheld.current = [];'), true, 'what the room held on its own clock is abandoned');
   // An unload handler cannot make it safe either: a request sent during teardown has no promise of
   // arriving, so a "committed" delete might or might not have happened — worse than either answer.
-  for (const file of gymFiles()) {
+  // Pop out's own window tells it closed with its pagehide, and sends nothing.
+  for (const file of gymFiles().filter((each) => path.basename(each) !== 'PopOut.jsx')) {
     const source = fs.readFileSync(file, 'utf8');
     for (const exit of ['beforeunload', 'pagehide', 'sendBeacon']) {
       assert.equal(source.includes(exit), false, `${path.basename(file)} flushes the window on ${exit}`);
@@ -652,8 +650,8 @@ test('discarding a session is withheld and undoable, so it is not confirmed and 
   assert.equal(finish.includes("log.holdDelete({\n      kind: 'session',\n      id,"), true);
   assert.equal((finish.match(/log\.holdDelete\(/g) ?? []).length, 1);
   assert.equal(finish.includes('<button type="button" className="gym-short-discard" onClick={discard}>'), true);
-  assert.equal(read('review.js').includes("export const SESSION_DELETED = t('gym.review.sessionDeleted');"), true);
-  assert.equal(catalog['gym.review.sessionDeleted'], 'Session deleted.');
+  assert.equal(read('withheld.js').includes("return { session: countLine(1),"), true, 'a discard is counted, as WD3.5 draws it');
+  assert.equal(catalog['gym.held.count'], '{count, plural, one {# deleted.} other {# deleted.}}');
   // The sentence became false the day the delete gained a way back, so it is nowhere in the room.
   for (const file of gymFiles()) {
     if (!/\.(jsx?|css)$/.test(file)) continue;
@@ -671,7 +669,7 @@ test('the settings section carries the Notes door under the line the Notes scree
 
 test('the Notes screen is its own room off #/gym/notes, titled as a room with the honesty line under it, seeded with placeholders and nothing stored', () => {
   const app = read('GymApp.jsx');
-  assert.equal(app.includes("{screen === 'notes' && <Notes log={log} />}"), true);
+  assert.equal(app.includes("{signedIn && screen === 'notes' && <Notes log={log} />}"), true);
   const notes = read('notes/Notes.jsx');
   assert.equal(notes.includes('<Back href={COACH_HREF}>{COACH_TITLE}</Back>'), true);
   assert.equal(notes.includes(`<header className="gym-notes-heading">
@@ -798,7 +796,6 @@ test('Daylight carries no glow token and no black shadow tuned for the night', (
   const light = tokens.slice(tokens.indexOf('.gym-skin[data-theme="light"],'), tokens.indexOf('/* ── The bridge'));
   assert.ok(light.length > 0, 'the daylight block is gone from gymTokens.css');
   assert.equal(light.includes('--set-done-glow'), false);
-  assert.equal(css.includes('.gym-root[data-theme="light"] .gym-live-dot {\n  box-shadow: none;\n}'), true);
   const painted = css.slice(css.indexOf('/* Everything below paints'));
   assert.equal(/rgba\(0, 0, 0/.test(painted), false);
   const toast = fs.readFileSync(path.join(GYM, '../../design-system/feedback/Toast.jsx'), 'utf8');
@@ -967,16 +964,15 @@ test('bodyweight: the log actions open one sheet, the reading stays in options, 
   }
 });
 
-test('the finished session’s detail has the discard door, through the same window as every other delete; the live mirror has none', () => {
+test('the finished session’s detail has the discard door, through the same window as every other delete', () => {
   const log = read('Log.jsx');
   assert.equal(log.includes('{isFinished(session) && <div className="gym-detail-discard">'), true);
   assert.equal(log.includes("<button type=\"button\" className=\"gym-short-discard\" onClick={discard}>{t('gym.log.discardSession')}</button>"), true);
   assert.equal(catalog['gym.log.discardSession'], 'Discard session');
   assert.equal(log.includes("holdDelete({\n      kind: 'session',\n      id,"), true);
-  assert.equal(read('withheld.js').includes('session: SESSION_DELETED'), true, 'the room names every discard with the review’s sentence');
+  assert.equal(read('withheld.js').includes('session: countLine(1)'), true, 'the room counts every discard alike');
   assert.equal(log.includes("window.location.hash = '#/gym/log';"), true);
   assert.equal(/gym-confirm|confirming/.test(log), false, 'no confirmation in front of an undoable act');
-  assert.equal(/[Dd]iscard/.test(speech('Mirror.jsx')), false, 'the phone owns the open session');
   assert.equal(read('Finish.jsx').includes('function ShortSession'), true, 'the review keeps its own');
 });
 

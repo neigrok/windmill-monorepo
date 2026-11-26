@@ -177,7 +177,7 @@ void SubscriptionApi::get(const drogon::HttpRequestPtr& request, Reply&& reply) 
     reply(response);
   };
   try {
-    const std::optional<User> caller = callerUserOf(request, *auth_);
+    const std::optional<User> caller = SentCaller::of(request, *auth_).user;
     if (!caller) {
       answer(error(drogon::k401Unauthorized, "sign in first"));
       return;
@@ -195,7 +195,7 @@ void SubscriptionApi::claimAppStore(const drogon::HttpRequestPtr& request, Reply
     response->addHeader("Cache-Control", "no-store");
     reply(response);
   };
-  const std::optional<User> caller = callerUserOf(request, *auth_);
+  const std::optional<User> caller = SentCaller::of(request, *auth_).user;
   if (!caller) {
     answer(error(drogon::k401Unauthorized, "sign in first"));
     return;

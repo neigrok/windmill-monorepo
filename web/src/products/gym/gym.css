@@ -85,20 +85,6 @@
   color: var(--alarm-ink);
 }
 
-.gym-door {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding-top: 18vh;
-  text-align: center;
-}
-.gym-door-line {
-  margin: 0;
-  font-size: 15px;
-  color: var(--gym-ink-dim);
-}
-
 /* The log — one row per session, recognisable without opening, under a divider per week. */
 .gym-log-count {
   margin: 3px 0 0;
@@ -361,7 +347,7 @@ button.gym-set:hover {
 .gym-set-fix {
   font-size: 11px;
   font-weight: 700;
-  color: var(--color-brand);
+  color: var(--text-link);
   opacity: 0;
 }
 button.gym-set:hover .gym-set-fix,
@@ -463,19 +449,6 @@ button.gym-set:focus-visible .gym-set-fix {
   line-height: 1.4;
   font-weight: 500;
   color: var(--gym-ink-dim);
-}
-
-/* The mark of a session running somewhere else, never beside a control that could drive it. */
-.gym-live-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-full);
-  background: var(--set-done);
-  box-shadow: 0 0 10px var(--set-done-glow);
-}
-/* Emitted light does not exist on pietra, so the glow token has no light value and this draws none. */
-.gym-root[data-theme="light"] .gym-live-dot {
-  box-shadow: none;
 }
 
 /* Sheets cover the room independently of its content scroll. */
@@ -606,7 +579,7 @@ button.gym-set:focus-visible .gym-set-fix {
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-brand);
+  color: var(--text-link);
 }
 /* Mono and tabular, so a column of loads lines up under a column of names. */
 /* Why this row matched, when the query hit an alias rather than the name. */
@@ -683,97 +656,13 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-detail-review {
   display: inline-block;
   margin: 10px 0 0;
-  color: var(--color-brand);
+  color: var(--text-link);
   font-size: 13.5px;
   font-weight: 700;
   text-decoration: none;
 }
 .gym-detail-review:hover {
   text-decoration: underline;
-}
-
-/* ── The mirror, at the head of the routines home ─────────── */
-
-/* Read-only: nothing on it can drive the workout it shows, and it counts up. The digits are mono so
-   the clocks tick without the line breathing. */
-.gym-mirror {
-  padding: 14px 16px 15px;
-  border: 1px solid var(--color-brand);
-  border-radius: var(--radius-lg);
-  background: var(--color-brand-soft);
-}
-.gym-mirror-head {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 13.5px;
-  font-weight: 700;
-  color: var(--gym-ink);
-  font-variant-numeric: tabular-nums;
-  white-space: pre;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.gym-mirror-line {
-  margin: 9px 0 0;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  color: var(--gym-ink-dim);
-  font-variant-numeric: tabular-nums;
-  white-space: pre;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* The plan line in the readout formula, then the slots as rows: what landed in full ink, what is
-   still to come dim. Read-only, like everything on the mirror. */
-.gym-workout-clocks { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 10px 0; color: var(--gym-ink-dim); }
-.gym-workout-clock {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.gym-mirror-plan {
-  margin: 5px 0 0;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--gym-ink-faint);
-  font-variant-numeric: tabular-nums;
-  white-space: pre;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.gym-mirror-slots {
-  list-style: none;
-  margin: 6px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-}
-.gym-mirror-slot {
-  color: var(--gym-ink-faint);
-}
-.gym-mirror-slot.is-lifted {
-  color: var(--gym-ink);
-}
-/* Nothing running: the words, never a greyed control. */
-.gym-mirror-idle {
-  margin-bottom: 12px;
-}
-.gym-mirror-idle-line {
-  margin: 0 2px 2px 0;
-  font-size: 15px;
-  line-height: 1.5;
-  color: var(--gym-ink-dim);
 }
 
 /* ── Routines, and one of them under the hand ──────────────── */
@@ -957,7 +846,7 @@ button.gym-set:focus-visible .gym-set-fix {
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-brand);
+  color: var(--text-link);
 }
 /* A span inside the row's one button, so it centres its own line: a flex item has no button's
    built-in centring to borrow. */
@@ -978,7 +867,7 @@ button.gym-set:focus-visible .gym-set-fix {
 }
 .gym-entry-body:hover .gym-entry-target {
   border-color: var(--color-brand);
-  color: var(--color-brand);
+  color: var(--text-link);
 }
 .gym-entry-drop {
   flex: none;
@@ -1048,7 +937,7 @@ button.gym-set:focus-visible .gym-set-fix {
   cursor: pointer;
 }
 .gym-fill-open:hover {
-  color: var(--color-brand);
+  color: var(--text-link);
 }
 .wm-menu-item:disabled {
   color: var(--gym-ink-faint);
@@ -1117,7 +1006,7 @@ button.gym-set:focus-visible .gym-set-fix {
 }
 .gym-ladder-add:hover {
   border-color: var(--color-brand);
-  color: var(--color-brand);
+  color: var(--text-link);
 }
 .gym-ladder-refusal {
   padding-left: 2px;
@@ -1166,7 +1055,7 @@ button.gym-set:focus-visible .gym-set-fix {
   cursor: pointer;
 }
 .gym-target-sign:hover {
-  color: var(--color-brand);
+  color: var(--text-link);
 }
 .gym-target-reads {
   margin: 6px 2px 0;
@@ -1514,7 +1403,7 @@ button.gym-set:focus-visible .gym-set-fix {
   margin-top: 4px;
   padding: 12px;
   border-top: 1px solid var(--gym-line);
-  color: var(--color-brand);
+  color: var(--text-link);
   font-size: 14px;
   font-weight: 700;
   text-decoration: none;
@@ -1577,7 +1466,7 @@ button.gym-set:focus-visible .gym-set-fix {
   padding: 0 4px;
   border: none;
   background: transparent;
-  color: var(--color-brand);
+  color: var(--text-link);
   font: inherit;
   font-size: 14px;
   font-weight: 700;
@@ -1789,11 +1678,11 @@ button.gym-set:focus-visible .gym-set-fix {
 }
 @keyframes gym-ink-lift-0 {
   0%, 100% { color: var(--gym-ink); }
-  40% { color: var(--color-brand); }
+  40% { color: var(--text-link); }
 }
 @keyframes gym-ink-lift-1 {
   0%, 100% { color: var(--gym-ink); }
-  40% { color: var(--color-brand); }
+  40% { color: var(--text-link); }
 }
 
 .gym-past-add {
@@ -2004,7 +1893,7 @@ button.gym-set:focus-visible .gym-set-fix {
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--color-brand);
+  color: var(--text-link);
   font: inherit;
   font-size: 13px;
   font-weight: 700;
@@ -2228,7 +2117,7 @@ button.gym-set:focus-visible .gym-set-fix {
   color: var(--gym-ink);
 }
 .gym-follows-tick {
-  color: var(--color-brand);
+  color: var(--text-link);
   font-size: 13px;
 }
 .gym-follows-rows {
@@ -2260,7 +2149,7 @@ button.gym-set:focus-visible .gym-set-fix {
   text-decoration: none;
 }
 .gym-movement-door:hover {
-  color: var(--color-brand);
+  color: var(--text-link);
 }
 
 /* ── The workout share ──────────────────────────────────────── */
@@ -2299,7 +2188,7 @@ button.gym-set:focus-visible .gym-set-fix {
 }
 .gym-share-make:hover {
   border-color: var(--color-brand);
-  color: var(--color-brand);
+  color: var(--text-link);
 }
 /* A real field, selectable: a clipboard the browser refuses is a normal outcome. */
 .gym-share-link {
@@ -2687,7 +2576,7 @@ button.gym-set:focus-visible .gym-set-fix {
   font-weight: 800;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--color-brand);
+  color: var(--text-link);
 }
 /* The routine's own name, up to 60 code points a lifter typed: it truncates so the eyebrow stays
    one line and the stamp beside it keeps its room. */
@@ -2839,7 +2728,7 @@ button.gym-set:focus-visible .gym-set-fix {
 }
 .gym-proposal-chip.is-pending {
   background: var(--color-brand-soft);
-  color: var(--color-brand);
+  color: var(--text-link);
 }
 .gym-proposal-chip.is-applied {
   background: var(--set-done-soft);
@@ -2884,7 +2773,7 @@ button.gym-set:focus-visible .gym-set-fix {
   font-size: 10.5px;
   font-weight: 800;
   letter-spacing: 0.09em;
-  color: var(--color-brand);
+  color: var(--text-link);
 }
 .gym-proposal-wrote-text {
   margin: 0;
@@ -3311,7 +3200,7 @@ button.gym-set:focus-visible .gym-set-fix {
   font: 700 14px/20px var(--font-body);
   text-decoration: none;
 }
-.gym-tabs a[aria-current='page'] { color: var(--color-brand); }
+.gym-tabs a[aria-current='page'] { color: var(--text-link); }
 .gym-tabs a:hover { color: var(--gym-ink); }
 .gym-tabs a:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 4px; }
 .gym-log-screen { display: flex; flex-direction: column; gap: 16px; }
@@ -3419,7 +3308,7 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-workout-movement h2 { margin-bottom: 8px; font: 600 15px/22px var(--font-body); }
 .gym-workout-remove { margin-left: auto; min-width: 36px; min-height: 36px; padding: 0; border: 0; background: transparent; color: var(--gym-ink-faint); font: 400 20px var(--font-mono); cursor: pointer; }
 .gym-workout-set-note { color: var(--gym-ink-faint); margin: 0 0 8px 22px; font-size: 13px; }
-.gym-workout-add { min-height: 44px; padding: 0 12px; border: 0; background: transparent; color: var(--color-brand); text-align: left; font: 700 14px/20px var(--font-body); cursor: pointer; }
+.gym-workout-add { min-height: 44px; padding: 0 12px; border: 0; background: transparent; color: var(--text-link); text-align: left; font: 700 14px/20px var(--font-body); cursor: pointer; }
 .gym-workout-picker { display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
 .gym-workout-picker select { padding: 12px; border: 1px solid var(--gym-line); border-radius: var(--radius-md); background: var(--gym-surface); color: var(--gym-ink); font: inherit; }
 .gym-workout-totals { box-sizing: border-box; display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding: 20px; box-shadow: inset 0 0 0 1px var(--gym-line); border-radius: var(--radius-md); background: var(--gym-surface); }
@@ -3449,7 +3338,7 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-date-choices { display: flex; flex-wrap: wrap; gap: 8px; }
 .gym-date-choices button { padding: 8px 16px; min-height: 36px; border: 1px solid transparent; border-radius: var(--radius-lg); background: var(--gym-surface); color: var(--gym-ink-dim); font: 700 14px/20px var(--font-body); cursor: pointer; }
 .gym-date-choices button[aria-pressed='true'] { border-color: var(--color-brand); color: var(--gym-ink); }
-.gym-clear-filters { border: 0; background: transparent; color: var(--color-brand); font: 700 14px/20px var(--font-body); cursor: pointer; }
+.gym-clear-filters { border: 0; background: transparent; color: var(--text-link); font: 700 14px/20px var(--font-body); cursor: pointer; }
 .gym-reader-nav { display: flex; align-items: center; gap: 8px; min-height: 44px; }
 .gym-reader-nav button, .gym-reader-nav a { background: transparent; border: 0; color: var(--gym-ink-dim); font: 700 16px/24px var(--font-body); text-decoration: none; cursor: pointer; padding: 10px 20px; }
 .gym-reader-nav button:disabled { opacity: .35; cursor: default; }
@@ -3574,7 +3463,7 @@ button.gym-set:focus-visible .gym-set-fix {
 .gym-fix-ratings { display: flex; flex-wrap: wrap; gap: 4px; }
 .gym-fix-ratings button { min-height: 24px; padding: 3px 8px; border: 0; border-radius: var(--radius-full); background: var(--gym-raised); color: var(--gym-ink-dim); font: 400 13px/18px var(--font-mono); cursor: pointer; }
 .gym-fix-ratings button:first-child { padding-inline: 12px; font: 600 12px/16px var(--font-body); }
-.gym-fix-ratings button[aria-pressed='true'] { box-shadow: inset 0 0 0 1.5px var(--color-brand); color: var(--color-brand); }
+.gym-fix-ratings button[aria-pressed='true'] { box-shadow: inset 0 0 0 1.5px var(--color-brand); color: var(--text-link); }
 .gym-fix-note > span { display: flex; justify-content: space-between; gap: 8px; }
 .gym-fix-note textarea { box-sizing: border-box; width: 100%; height: 36px; min-height: 36px; resize: vertical; margin: 0; padding: 0 0 8px; border: 0; border-bottom: 1px solid var(--gym-line-strong); border-radius: 0; background: transparent; color: var(--gym-ink); font: 400 16px/24px var(--font-body); }
 .gym-fix-note textarea::placeholder { color: var(--gym-ink-faint); }

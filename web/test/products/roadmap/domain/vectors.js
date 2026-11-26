@@ -23,7 +23,7 @@ import { Contract, savedForm, viewRecords } from '../../../platform/domain-kit/v
 import { RoadmapTree } from '../../../../src/products/roadmap/domain/records.js';
 import { FollowGraph } from '../../../../src/products/roadmap/domain/graph.js';
 import { RoadmapAccount } from '../../../../src/products/roadmap/domain/account.js';
-import { ActivityRead, BoardRead, LegendRead, selectNodes, landingFacts } from '../../../../src/products/roadmap/domain/reads.js';
+import { ActivityRead, BoardRead, EffectsRead, LegendRead, selectNodes, landingFacts } from '../../../../src/products/roadmap/domain/reads.js';
 import { diagnose, pointerDiagnostics } from '../../../../src/products/roadmap/domain/diagnostics.js';
 
 /** @typedef {import('../../../../src/platform/domain-kit/values.js').Json} Json */
@@ -134,14 +134,15 @@ export function runAction(vector) {
 }
 
 // K-3 scenes (`undo.json`): acts and a note's draft saves on the kit's harness over the reference server with roadmap's
-// binding, then their Undo and Redo. A step names a role's result by `$role` or `$role.path`, also inside a scope; what a scene reads back
-// names each id by the first role that holds it, and any other minted id `<new>`.
+// binding, then their Undo and Redo, each by the Undo handle its receipt or the Redo before it carries. A step names a
+// role's result by `$role` or `$role.path`, also inside a scope; what a scene reads back names each minted id by the first
+// role that holds it, and any other minted id `<new>`.
 /** @param {Vector} vector */
 export async function runScene(vector) {
   const a = await Harness.open({ registry: roadmapRegistry, product: new RoadmapProduct(), scope: RoadmapScopes.account });
   /** @type {Record<string, Harness>} */
   const phones = { a };
-  /** @type {Record<string, { input: any, result: any, actId: string | null, requestId: string | null }>} */
+  /** @type {Record<string, { input: any, result: any, undo: import('../../../../src/platform/domain-kit/runner.js').UndoHandle | null, requestId: string | null }>} */
   const roles = {};
   /** @param {string} path */
   const lookup = (path) => {
@@ -157,19 +158,20 @@ export async function runScene(vector) {
     if (whole) return lookup(whole[1] ?? '');
     return value.replace(/\$([\w.]+)/g, (_, path) => String(lookup(path)));
   };
+  const minted = /^(t_[0-9a-f]{16}|[0-9a-z]{16})$/;
   /** @param {any} value @returns {any} */
   const named = (value) => {
     /** @type {Map<string, string>} */
     const known = new Map();
     /** @param {any} found @param {string} path */
     const walk = (found, path) => {
-      if (typeof found === 'string') { if (!known.has(found)) known.set(found, path); }
+      if (typeof found === 'string') { if (minted.test(found) && !known.has(found)) known.set(found, path); }
       else if (found !== null && typeof found === 'object') for (const [key, item] of Object.entries(found)) walk(item, `${path}.${key}`);
     };
     for (const [role, { result }] of Object.entries(roles)) walk(result, `$${role}`);
     /** @param {any} item @returns {any} */
     const rename = (item) => {
-      if (typeof item === 'string') return known.get(item) ?? (/^(t_[0-9a-f]{16}|[0-9a-z]{16})$/.test(item) ? '<new>' : item);
+      if (typeof item === 'string') return known.get(item) ?? (minted.test(item) ? '<new>' : item);
       if (Array.isArray(item)) return item.map(rename);
       if (item !== null && typeof item === 'object') return Object.fromEntries(Object.entries(item).map(([key, inner]) => [key, rename(inner)]));
       return item;
@@ -203,7 +205,7 @@ export async function runScene(vector) {
         const outcome = await phone.runner.runAct(/** @type {any} */ (actOf({ action: step.run, input })));
         if (step.as) {
           roles[step.as] = { input, result: outcome.kind === 'refused' ? null : outcome.result,
-            actId: outcome.kind === 'committed' ? outcome.receipt.gestureId : null, requestId: null };
+            undo: outcome.kind === 'committed' ? outcome.receipt.undo : null, requestId: null };
         }
         outcomes.push(outcome.kind === 'refused' ? { refused: refusalForm(outcome.refusal) } : outcome.kind);
       } else if (step.save) {
@@ -212,7 +214,7 @@ export async function runScene(vector) {
         const id = new Id(owner, StepNote);
         const draft = phone.runner.openOrNew(StepNote, id, new StepNoteValue(id), scope).edit((note) => new StepNoteValue(note.id, text));
         const { result } = await phone.runner.save(draft, RoadmapRefusals, scope);
-        if (step.as) roles[step.as] = { input: { tree, step: owner, text }, result: null, actId: result.kind === 'saved' ? result.receipt?.gestureId ?? null : null, requestId: null };
+        if (step.as) roles[step.as] = { input: { tree, step: owner, text }, result: null, undo: result.kind === 'saved' ? result.receipt?.undo ?? null : null, requestId: null };
         outcomes.push(result.kind);
       } else if (step.sync) {
         observeAll();
@@ -225,13 +227,21 @@ export async function runScene(vector) {
         const fresh = step.redo && step.subtree ? String(phone.runner.mint(Roadmap).record) : null;
         const slots = fresh === null ? undefined : redoCreateSubtree({ ...role.input, ...role.result }, fresh);
         if (fresh !== null) for (const scope of [RoadmapScopes.tree(fresh), RoadmapScopes.overlay(fresh)]) a.observe(scope);
-        const result = step.undo ? await phone.runner.undo(String(role.actId)) : await phone.runner.redo(String(role.requestId), slots);
-        if (result.kind !== 'unavailable') role.requestId = result.requestId;
-        outcomes.push(inverse(result));
+        if (role.undo === null) throw new Error(`${step.undo ?? step.redo} committed no act`);
+        if (step.undo) {
+          const result = await phone.runner.undo(role.undo);
+          if (result.kind !== 'unavailable') role.requestId = result.requestId;
+          outcomes.push(inverse(result));
+        } else {
+          const { result, undo } = await phone.runner.redo(String(role.requestId), role.undo, slots);
+          if (result.kind !== 'unavailable') role.requestId = result.requestId;
+          if (undo !== null) role.undo = undo;
+          outcomes.push(inverse(result));
+        }
       } else if (step.read) {
         outcomes.push(inverse(phone.runner.inverseResult(String(roles[step.read]?.requestId))));
       } else if (step.cancelHeld) {
-        outcomes.push({ cancelHeld: await phone.runner.cancelHeld(String(roles[step.cancelHeld]?.actId)) });
+        outcomes.push({ cancelHeld: await phone.runner.cancelHeld(String(roles[step.cancelHeld]?.undo?.actId)) });
       } else if (step.inspect) {
         const { scope, t, fields } = step.inspect;
         const rows = phone.runner.read(bind(scope), (read) => read.views.visible('drawn', t)).map((record) => Object.fromEntries(fields.map((/** @type {string} */ name) =>
@@ -255,12 +265,16 @@ export function runRead(input) {
     return readRoadmap(input.id, { listed: input.listed, tree: reader(RoadmapScopes.tree(input.id), input.tree), read: input.read,
       overlay: input.overlay && reader(RoadmapScopes.overlay(input.id), input.overlay.drawn), queued: input.overlay?.queued ?? [] }).json;
   }
-  if (['account', 'activity', 'guides', 'pointers', 'progress', 'openings', 'list', 'listing'].includes(input.operation)) {
-    const account = new RoadmapAccount(input.trees.map((/** @type {any} */ tree) => new RoadmapTree(tree)));
+  if (input.trees !== undefined) {
+    const account = new RoadmapAccount(input.trees.map((/** @type {any} */ tree) => new RoadmapTree(tree)), { told: input.told ?? [] });
     if (input.operation === 'account') return account.result();
     if (input.operation === 'activity') {
       const graph = account.graph(input.tree);
       return graph === null ? null : new ActivityRead(graph, input.step ?? null).result();
+    }
+    if (input.operation === 'effects') {
+      const graph = account.graph(input.tree);
+      return graph === null ? null : new EffectsRead(graph, input.ids).result();
     }
     if (input.operation === 'progress') return account.progress(input.tree);
     if (input.operation === 'openings') return account.openingsOf(input.tree);
@@ -275,6 +289,7 @@ export function runRead(input) {
   if (input.operation === 'graph') return graph.result(input.subjects);
   if (input.operation === 'board') return new BoardRead(graph, input.query).result();
   if (input.operation === 'diagnostics') return diagnose(graph);
+  if (input.operation === 'effects') return new EffectsRead(graph, input.ids).result();
   if (input.operation === 'landing') return landingFacts(graph, input.edges);
   throw new Error(`Unclaimed roadmap read operation: ${input.operation}`);
 }

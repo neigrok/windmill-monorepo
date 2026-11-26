@@ -50,7 +50,8 @@ import SyncSchema
   }
 
   // The account's change ends the Roadmap room's band before the engine lets go of its holds: once the account is deleted
-  // no Undo is left that names the replica the delete discarded.
+  // no Undo is left that names the replica the delete discarded, and the room keeps nothing of the account: neither the
+  // ids of the notices it told nor, in memory, a roadmap's name.
   @Test func deletingTheAccountLeavesNoRoadmapUndoBehind() async throws {
     let server = JournalModelTransport()
     let identity = server.identity(email: "roadmap-leaving@example.com")
@@ -63,12 +64,15 @@ import SyncSchema
     room.roomOpened()
     for _ in 0..<800 where room.roadmaps.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
     let listed = try #require(room.roadmaps.first)
+    model.preferences.set(["notice:g1/0"], forKey: RoadmapModel.toldNotices)
+    #expect(!room.landed.remembered.isEmpty)
     room.delete(listed, from: .menu, taking: nil)
     #expect(room.band?.undo?.held == true)
     model.openAccountDeletion()
     await model.deleteAccount()
     guard case .deleted = model.deletion else { Issue.record("not deleted: \(String(describing: model.deletion))"); return }
     #expect(room.band == nil && model.account == nil)
+    #expect(model.preferences.object(forKey: RoadmapModel.toldNotices) == nil && room.landed.remembered.isEmpty)
   }
 
   @Test func aFailedDeleteKeepsTheAccountAndAsksToTryAgain() async throws {

@@ -4,6 +4,7 @@
 #include "test/platform/Fakes.h"
 #include "test/products/roadmap/Fakes.h"
 #include "test/testing.h"
+#include "test/DrogonLoopback.h"
 
 #include <map>
 #include <memory>
@@ -65,14 +66,14 @@ drogon::HttpRequestPtr putReq(const std::string& session, const std::string& bod
   if (!session.empty()) req->addCookie("wm_session", session);
   req->setContentTypeCode(drogon::CT_IMAGE_PNG);
   req->setBody(body);
-  return req;
+  return wm::test::DrogonLoopback::received(req);
 }
 
 drogon::HttpRequestPtr getReq(const std::string& session) {
   auto req = drogon::HttpRequest::newHttpRequest();
   req->setMethod(drogon::Get);
   if (!session.empty()) req->addCookie("wm_session", session);
-  return req;
+  return wm::test::DrogonLoopback::received(req);
 }
 
 drogon::HttpResponsePtr sendPut(OgImageApi& api, const std::string& session, const std::string& id,
@@ -95,7 +96,7 @@ drogon::HttpResponsePtr sendGet(OgImageApi& api, const std::string& session, con
 TEST(put_stores_the_card_for_the_owner_and_answers_204) {
   Harness h;
   UserId me = h.signIn("s-me");
-  h.seed("t_mine", me, Visibility::unlisted);
+  h.seed("t_mine", me, Visibility::public_);
   OgImageApi api = h.make();
 
   drogon::HttpResponsePtr resp = sendPut(api, "s-me", "t_mine", PNG);
@@ -107,7 +108,7 @@ TEST(put_stores_the_card_for_the_owner_and_answers_204) {
 
 TEST(put_by_an_anonymous_caller_is_401_and_stores_nothing) {
   Harness h;
-  h.seed("t_mine", UserId{"owner"}, Visibility::unlisted);
+  h.seed("t_mine", UserId{"owner"}, Visibility::public_);
   OgImageApi api = h.make();
 
   drogon::HttpResponsePtr resp = sendPut(api, "", "t_mine", PNG);
@@ -119,7 +120,7 @@ TEST(put_by_an_anonymous_caller_is_401_and_stores_nothing) {
 TEST(put_by_a_signed_in_non_owner_is_403_and_stores_nothing) {
   Harness h;
   h.signIn("s-other", "other@example.com");
-  h.seed("t_mine", UserId{"owner"}, Visibility::unlisted);
+  h.seed("t_mine", UserId{"owner"}, Visibility::public_);
   OgImageApi api = h.make();
 
   drogon::HttpResponsePtr resp = sendPut(api, "s-other", "t_mine", PNG);
@@ -159,7 +160,7 @@ TEST(put_to_an_absent_tree_is_404) {
 TEST(put_over_the_3mb_cap_is_413_even_with_a_valid_signature) {
   Harness h;
   UserId me = h.signIn("s-me");
-  h.seed("t_mine", me, Visibility::unlisted);
+  h.seed("t_mine", me, Visibility::public_);
   OgImageApi api = h.make();
   std::string tooBig = std::string("\x89PNG\r\n\x1a\n", 8) + std::string(3 * 1024 * 1024, 'x');
 
@@ -172,7 +173,7 @@ TEST(put_over_the_3mb_cap_is_413_even_with_a_valid_signature) {
 TEST(put_of_a_non_png_body_is_400) {
   Harness h;
   UserId me = h.signIn("s-me");
-  h.seed("t_mine", me, Visibility::unlisted);
+  h.seed("t_mine", me, Visibility::public_);
   OgImageApi api = h.make();
 
   drogon::HttpResponsePtr shortBody = sendPut(api, "s-me", "t_mine", "abc");

@@ -92,6 +92,13 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
     what the phone holds (12n). iOS asks in these words (`AdoptionQuestion.swift`); Android words it
     differently (`app/MainActivity.kt:287-304`). The first-run READ ME line `2:1029` still says
     signed-out work *moves to the account on sign-in* with no question.
+  - The web's gym question (WD9) asks whenever the account holds gym records of its own, and names every kind of gym work
+    the browser holds, so its Add and Discard cover only what it named. Beside the drawn workouts, routines and weigh-ins
+    it names, in words no board draws, the movements the browser made or renamed (*2 movements* over their names) and its
+    settings (*your settings*), which 12n leaves unnamed on the phones; where the browser's gym work draws none of these
+    any longer, a workout made and deleted, it counts its changes (*2 changes*), as iOS does for a room holding only
+    unnamed kinds. Its confirmation reads *Discard 2 movements and your settings?* (`gymRuntime.js` `signInWork`).
+    Designer to draw the extra rows, or rule that the phones name them too.
 - **7g · Notes account-only.** Signed out, Notes is a sign-in door, and the signed-out Coach greeting
   (boards 01.1–01.2) offers saving notes only after sign-in. `../foundation/mobile/gym_coach.md`
   Appendix C gives `save_note` `seats: bound` to match, so a signed-out Coach turn is not offered it.
@@ -106,8 +113,7 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
   it.*; `web/src/products/gym/errors.js` `failureReason`) and keeps *the log didn’t answer. Try again
   when you have signal* for its REST doors. The journal says *not saved — no room on this device*
   (`Canvas.jsx`) for every failed save, which claims a full store when the store may be closed or
-  failing instead. Confirm one storage sentence for both products. The Shell file's proposal (`368:645`,
-  boards 07 and 08) words a full store and any other store failure apart, for both products.
+  failing instead. Confirm one storage sentence for both products.
 - **7k · A guard read beside a write.** `../foundation/domain-kit.md` §8.3 rule 2 refuses a plan in
   which two operations name one record. Android's kit counts a `guardRead` among them (`Plans.kt`);
   iOS's counts only writing operations (`Translation.swift`); no iOS plan guards and writes one
@@ -319,7 +325,7 @@ and Android disagree.
   observation names: `GymTools.cpp` adds every week `get_stats` returns, empty ones included, and
   `ReadReceipt.cpp` each set's week. iOS counts weeks only from the workouts *What Coach read*
   lists and never prints `read.weeks`, so a totals-only answer reads *Read your movement history*
-  with no number; the web prints the server's weeks (`coach.js` `readLine`), and Android the weeks its own
+  with no number; the web prints the weeks its own receipt counts (`coach/CoachRoom.jsx` `receiptWords`), and Android the weeks its own
   receipt counts (`CoachReply.readLine`). The fix belongs to the backend: dogfood node `coach-receipt-weeks-provable`.
 - **10o · The page is the target.** The Gym iOS page holds the current target. 🚀 means the
   drawing matches verified implementation; 🔨 means implementation; ✅ means human-approved design
@@ -656,8 +662,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   built as *Read the wind done*, the Board's sentence, and *Read the wind reset*; every board of the page draws
   the Coach circle or composer, and the page is built without it until its screen is, so a Locked or a Done step's
   foot holds the band alone and the … menu holds *Open in Graph*, *View
-  Branch* and *Delete Step*, without *Attach a Roadmap*; the roadmap's one starting step keeps no *Delete Step*, so
-  its menu holds the first two alone, and no board draws that step's menu; a link row shows the address's host as it is written, so *www.* stays where the
+  Branch*, *Attach a Roadmap* on a step that opens none, and *Delete Step*; the roadmap's one starting step keeps no
+  *Delete Step*, so its menu holds the others alone, and no board draws that step's menu; a link row shows the address's host as it is written, so *www.* stays where the
   address has it; an Undo of Reset marks the step done at the Undo's time, as the web's does, so the step then leads
   Done, and no board says so; the name is drawn as the first card's header, about 10 pt lower than 03.1 has it,
   with the list's own spacing between the cards (55 pt from card to card where the boards draw 43); and a Board row
@@ -684,9 +690,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   `ContentUnavailableView.search`; a delete made on a row of All Roadmaps leaves the list on screen with the band at
   its foot, and its *Undo* brings the row back without opening it, where 01.11 draws the Board alone; *No roadmaps yet*
   stands over the band while the last roadmap's delete is held, and 01.5 draws no band; a blank roadmap is opened once
-  the phone's copy holds it, with no band, as no board draws one for it; 01.3 and 01.4 group a count's digits (*3,200 of 5,000*) and the app writes every count as
-  Swift does, *3200 of 5000*; and the domain orders a person's roadmaps by when a server last received each, so on a
-  phone never signed in the title menu's three and All Roadmaps stand in the order of their ids, which no board says.
+  the phone's copy holds it, with no band, as no board draws one for it; and 01.3 and 01.4 group a count's digits
+  (*3,200 of 5,000*) and the app writes every count as Swift does, *3200 of 5000*.
 - **Roadmap · iOS · what plans leave for the boards.** New Roadmap's *A Copied Plan* and *A File*, the plan read back,
   *Roadmap planted*, a file that can't be read, and Paste Steps with its read-back, its *Undo* and its two bands are
   built in Debug builds from 01.6, 01.8 to 01.8c, 02.16 to 02.18, 02.16b and 02.16c. To draw or rule: 01.8 and 01.8b
@@ -713,8 +718,7 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   question is SpringBoard's alert, which the room waits on with its main actor free.
 - **Roadmap · iOS · what the step form leaves for the boards.** New Step, from the foot's + and from an empty roadmap,
   and *Edit* from a step's page are built in Debug builds from 05.1 to 05.8, 05.10 and 02.15. To draw or rule: every
-  board of the form draws the *Roadmap* row and Coach's composer, and the form is built without them until their
-  screens are; 05.2 draws the hues no kind names as Sky, Brick, Plum, where its NOTE keeps the web's list, whose order
+  board of the form draws Coach's composer, and the form is built without it until its screen is; 05.2 draws the hues no kind names as Sky, Brick, Plum, where its NOTE keeps the web's list, whose order
   and the rule book's is Brick, Sky, Plum, and it is built so; 05.3's caption makes a step that would close a loop
   `.disabled`, and 05.6b has a tap on one name it in the footer: a disabled row takes no tap, so those rows are drawn
   dimmed and stay buttons, each with its group's reason as its hint; no board words the band after *Save*, and it is
@@ -866,9 +870,67 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   with no step says *No steps yet* with no button, and no board draws it; a cover whose copy the phone cannot read says
   the room's *Couldn’t load this roadmap* with *Try Again* (01.5c), which no board of section 09 draws; a subtree's
   cover has no Fork, as the section's NOTE and the web have it, and no board draws that cover; a fork the server refuses
-  or that fails says *Couldn’t fork this roadmap. Try again.* in the band slot, which no board words; and a step that owns a subtree stands
-  on a cover as the domain reads it with that subtree unread, so it is never Done there, where the web's reader takes
-  what the server's `subtrees` says ([Roadmap on iOS](../foundation/roadmap-ios.md) §13).
+  or that fails says *Couldn’t fork this roadmap. Try again.* in the band slot, which no board words.
+- **Roadmap · iOS · what nested roadmaps leave for the boards.** A step that opens a roadmap or owns a subtree is built in
+  Debug builds from 04.6, 05.1's *Roadmap* row and 07.1 to 07.12b. To draw or rule: a roadmap the phone holds no copy of,
+  or one that is not the person's, reads as 07.5c's *Not found*, as no board draws either, where the web shows its *Tree*
+  heading with no row; one the phone is still bringing shows its row with a spinner for its name and no count, and a
+  subtree nothing is known of yet its step's name alone, which no board draws; a Locked step's subtree footer says *Needs
+  …, then every step in this subtree.* and a done subtree's *Done because every step in this subtree is done.*, after 07.11's
+  *this subtree*, and an empty subtree takes 07.5a's roadmap sentence, none of which a board draws; *Open* is offered in
+  the leading swipe of every row whose roadmap can be gone into, a Locked or a Done one too, where 07.1b draws an Up next
+  row; the Graph's mark and line stand beside and under the caption the layout seats, which keeps no room for them, so a
+  line can meet a caption below it; the Roadmap row's … menu stands over the system's link rather than inside it, so a
+  tap on it opens the menu and never goes in; the pasted row of someone else's roadmap says *Someone else’s · you can read
+  it*, the web's words, since the phone's copy names no author, where 07.7 draws *By Maya · you can read it*; a pasted
+  link to one of the person's own roadmaps chooses it as a tap on its row does, and one the phone has no copy of and no
+  connection to read says *Needs a connection* under the row, neither of which a board draws; a pasted link to a subtree
+  of the person's chooses it too, where the web's picker offers it no row, and one to the roadmap the step stands in is
+  refused with the dimmed row's *This roadmap*; a choice the room refuses says why under the list, *This roadmap is at its
+  limit.* or *Your choice couldn’t be saved. Try again.*, where the web says *Couldn’t change the tree. Try again.*; *None*
+  has no footer for a roadmap that cannot be found, whose name the form's Roadmap row gives as *Not found*; Fork
+  Roadmap's band after a tap with no connection stands until the next tap, and a fork waits up to fifteen seconds for its
+  copy to head the list, saying *Forking…*, which no board draws; that band says *Forking needs a connection.*, the
+  cover's sentence, where 07.12a draws it without its full stop; 07.5d draws *Night passage* before *Log 100 miles*, and
+  the Board's Roadmap Order keeps the roadmap's authored order between steps equally far, so *Log 100 miles* stands
+  first; 07.2b draws the steps under *Opens* *Locked · 1 to go* while both *Day skipper theory* and the step stand open
+  behind them, which the room counts *2 to go*; a roadmap gone into has no *Export* in its … menu until Export is built;
+  one the phone has yet to read waits with a spinner, and with no connection says *Needs a connection* over *This
+  roadmap isn’t on this iPhone.*, the cover's 09.11 words; a roadmap the stack already stands in is gone into no deeper,
+  its row going nowhere and its foot holding no control, so a loop is gone round once; the band is the stack's one, so a
+  band standing as a person goes in or comes back stands on over the screen reached with its Undo; none of these a board
+  draws; and a reader's cover shows a step's subtree with no door, where §6 has a reader go into it as on the web: no
+  board of section 09 draws it.
+- **Roadmap · iOS · what offline, a change told once and Set Aside leave for the boards.** *Offline* in the subtitle, a
+  step that landed in a changed roadmap or came back told once by the band and its page's footer, and *Set Aside* are
+  built in Debug builds from 10.1 to 10.5c. For the owner to rule, where a board and the spec disagree: 10.4's caption
+  tells a step *removed elsewhere while this phone, offline, edited it*, and [Roadmap on the sync
+  engine](../foundation/roadmap-on-the-engine.md) §6 tells a step brought back only where the phone's change found it
+  absent, a revival the phone never saw, of a step it held as it changed it, told to no one, as the web's end-to-end run
+  asserts; it is built to the spec, so an edit made offline against a delete comes back and says nothing, and 10.4's band
+  stands where the phone's change found the step deleted, which the room's own gestures reach only when an edit is saved
+  over a read the delete has since passed, as the board's fixture writes it; and 10.3's caption has the step's History hold
+  the same line as its first entry, where §3 has History read what the phone's copy keeps, and the line leaves the
+  phone's note once told, so History holds no such entry. To draw or rule: 10.3's date follows the phone's region and
+  the fixture's clock (*26 Sep*, *Sep 26* on a US phone) where the board draws *16 Nov*; no board words a line of a link
+  the person made into a step made before, built as 10.3's footer without *Made on this phone on …*, several steps
+  deleted (*A and B were deleted …*) or followed (*… follows A and B*), or 10.4's page, whose footer is built as the band's
+  own sentence, as the caption has it; lines that land together are told one by one by the band, each once no other band
+  stands, a line waits behind a receipt so its *Undo* stands, and a line waits while no one could see its band, under a
+  sheet or while a field holds the keyboard, which no board says; a step's lines stand under its status row while its
+  roadmap is on the stack, so a roadmap left and opened again keeps no footer, as on the web; Set Aside's second line is drawn
+  for *New step* and *Note edited*, and built for the rest as *Step edited*, *New kind*, *Kind edited*, *New subtask*,
+  *Subtask edited*, *New link*, *Link edited*, *Roadmap renamed* and *Guide edited*, and its footer for the reasons no
+  board draws as *The roadmap reached its limit.*, *Editing access ended.* and *The combined note is too long.*, the
+  web's reasons in 10.5b's form; *Discard All*'s question is built as *Discard 2 changes?* over *They’re removed from this
+  iPhone.*, which no board draws; *Copy* takes a step's name and description, as 10.5c's caption has it, where the web's
+  takes the description alone where there is one, for the web's owner to rule, and says nothing once it has copied; a
+  group's header is the roadmap's name as the room last read it since the app launched or the account changed, since the
+  phone keeps nothing of a roadmap deleted elsewhere, so one deleted before the room read it has no header, and a note goes by its
+  step's name so read, else its first line; a change with no word of the person's, a mark, a pointer or a link between
+  steps, is not listed, as on the web; a person whose last roadmap was deleted elsewhere stands on *No roadmaps yet*,
+  which has no title menu and so no way to Set Aside; 10.5a draws *Share…* and *Export*, which wait for their screens; and
+  every board of the section draws Coach's composer, which is not built.
 - **Roadmap · iOS · what a pinch of a crowd shows while it moves.** On an iPhone 13 mini a pinch with the whole
   5,000-step handbook in view is given five sixths of its frames
   ([Roadmap on iOS](../foundation/roadmap-ios.md) §13). The room holds three ways to keep them (`GraphPinch`), each
@@ -886,13 +948,15 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   differ by one step in one channel from the web's `locked/brick-glyph` (`#CC9987`), `locked/plum-fill` (`#E1D0D4`)
   and `locked/plum-ring` (`#4B2F41`), which the kit's Graph node binds and [Roadmap · iOS](ios/roadmap.md) names as
   their values. The app holds the web's. To fix in the file: the three variables.
-- **Roadmap · iOS · the Design System owes the room its door.** *Where to start?* with a third door, Roadmap, is
-  ✅ Ready for dev in the Shell file
-  ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)). The Design System has no
-  `iOS / Product card` · Roadmap variant and no `map` symbol, so the door is a detached copy; both belong in the
-  library (the build tree's step `m0-add-the-roadmap-door-to-the-library`). The sign-in and sign-out questions
-  that name roadmaps and conversations are ✅ Ready for dev on Roadmap · iOS (10.7, 10.8). To check: that the
-  Shell's own boards of those two questions say the same.
+- **Shell · iOS · the first-run doors draw two copies of the product card.** On *Where to start?*
+  ([`326:7899`](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=326-7899)) the Roadmap door is an instance
+  of the Design System's published `iOS / Product card` · Roadmap; the Journal and Gym doors are instances of the
+  set's older copy, which Shell has not updated. The published Journal variant draws a `book.closed` symbol where
+  Shell's Journal door draws a plain bar, so accepting the library update changes that door's look. To decide: which
+  the Journal door draws, against the app, then accept the update or correct the variant.
+- **Roadmap · iOS · the sign-in questions in two files.** The sign-in and sign-out questions that name roadmaps and
+  conversations are ✅ Ready for dev on Roadmap · iOS (10.7, 10.8). To check: that the Shell's own boards of those two
+  questions say the same.
 - **iOS · system parts in the Design System predate the simulator probe.** A SwiftUI probe on the iOS 26.5
   simulator (2026-11-18) found that the system draws several parts otherwise than the library and the Gym and
   Journal iOS boards do: a menu's symbols and checkmark are on the leading side (`iOS / Menu item` puts the symbol
@@ -1052,10 +1116,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 - **Section 29 · the share line (29.14).** The dialog keeps its title *Share roadmap* where 29.14 and 29b.03 have
   *Share My year*. For a roadmap whose steps own subtrees each sentence says who reads it in 29b.03's words, which follow
   canon's publishing disclosure: publishing, *Publishing makes My year public: anyone can view and fork it, subtrees
-  included, and it can appear in the public gallery.*; published, *My year is public: …*; unlisted, to a reader, *Anyone
-  with this link can view and fork My year, subtrees included.* The owner of an unlisted roadmap is offered Publish, under
-  the publishing sentence. 29.14's *readable* and *Anyone with the shared link can open them* leave out the fork and the
-  gallery.
+  included, and it can appear in the public gallery.*; published, to its owner and to a reader alike, *My year is public:
+  …* 29.14's *readable* and *Anyone with the shared link can open them* leave out the fork and the gallery.
 - **Section 29 · built and not drawn.** An owning step's Board card is section 28's card for a step that opens a tree:
   the pill with done of total and its bar, or *No steps*, with no title beside it since the subtree is named by the
   step; a press on it goes in. Inside a subtree the room offers no switcher, roadmap sheet, Share, Fork or milestone
@@ -1333,14 +1395,60 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
 ## Gym
 
 - **The web as a device (owner, 2026-11-17).** [The web as a device](../foundation/web-device-parity.md) rules
-  full workout entry on the web and a gym room that opens signed out. Both are drawn as 🧪 proposals awaiting the
-  owner: the workout, another device, a stale plan edit, the room before its first pull, Coach during a workout and
-  the signed-out room with its sign-in in the Gym file's Web page (WD1–WD9, components `2150:11606`, READ ME
-  `2168:16052`); and, for every room, a browser that keeps nothing, is blocked, fails a write or was cleared in the
-  Shell file (`368:645`, READ ME `380:2404`). Each READ ME lists the questions the owner rules on approval. On
-  approval: the Gym file's START HERE · Gym web (`804:5811`) still says the phone owns live training, against R-2;
-  the 🚧 Plan / Routines / Training now boards (`1828:53034`, `1828:53151`, `1828:53298`, `1828:53416`) draw the
-  mirror's card that WD3.4 and WD4.1 replace and are archived.
+  full workout entry on the web and a gym room that opens signed out. The owner approved their boards as drawn on
+  2026-11-25 (R-10): the Gym file's Web page, WD1–WD9 (components `2150:11606`, READ ME `2168:16052`), the drawing
+  answering the READ ME's questions. A browser that cannot keep a copy is not supported (R-7), so the Shell file's
+  boards for it (`368:645`) are rejected. With the approval, the Gym file's START HERE · Gym web (`804:5811`), which says
+  the phone owns live training, is rewritten, and the 🚧 Plan / Routines / Training now boards (`1828:53034`,
+  `1828:53151`, `1828:53298`, `1828:53416`), which draw the mirror's card that WD3.4 and WD4.1 replace, are archived.
+  Where the build of WD1–WD7 parts from the boards:
+  - *Coach from the receipt.* The receipt has no *Share with Coach*: Coach on the web takes no handed question yet.
+  - *An empty History.* It says words no board draws, which claim nothing about a phone: *No conversations yet. What you
+    ask Coach is listed here.* (`coach/History.jsx`).
+  - *Coach during a workout (WD7).* A proposal's card keeps 08W.25's hairline between blocks, radius 12 and secondary
+    subtitle, which WD7 draws otherwise; its title and movement names are weight 600 on both cards. In the workout's Coach
+    its decisions are design-system Buttons, as WD7 draws them: Reject Secondary, the workout's Apply Primary and a routine's
+    Apply Secondary while a workout is open, an Apply saying *Applying…* while it waits and *Try again* after a failure;
+    Coach's room and History keep 08W.25's pills. A block lists only the lines that change, as WD7 draws, but an added movement keeps
+    its three lines (Sets, Reps, Load) from the shared `ProposalDiff`, as WD7 now draws it. A load of zero reads *0 kg* on the card, as the shared vectors pin `ProposalDiff` and WD7.1 draws,
+    where the workout's index says *bodyweight* for the same load (`gym.logbook.schemeBodyweight`); the owner kept *0 kg*
+    (2026-11-26) and left one word for both to the dogfood node `gym-how-a-zero-load-reads`. The sheet keeps the design system's grabber, as WD7's sheets draw it. Out of date, the card says
+    why in one sentence, of which WD7.3 draws only *You logged {movement} since this suggestion. Nothing was applied.*; the
+    rest no board draws: the iPhone's *A newer suggestion replaced this one.*, *This workout changed after this
+    suggestion.*, *This workout has finished.* and *You logged a movement since this suggestion.* (a refusal that names no
+    movement), and the web's own *This suggestion was already answered.*, *This change sets a load below what one of its
+    movements allows.* and *This suggestion is out of date.*, each closing *Nothing was applied.* The load sentence stands
+    both for the log's refusal and for a change the browser's copy would refuse for a load under a movement's floor, which
+    the card draws out of date as soon as the copy's rules would refuse it, in every tab and after a reload, with no Apply.
+    A routine's card (08W-P) says the same sentence for its own floor, under 08W.28's head *{routine} · Out of date* and in
+    place of the drawn *{routine} changed after this suggestion.*; no board draws it. The routines review says it too, in
+    place of its Apply and Turn this down, as it says *The routine changed after this was written. Nothing was applied.* for
+    a routine that moved; its component, *Gym / Coach / Inline proposal* (`575:5655`), draws no out-of-date state. The phone's Coach button
+    reopens the sheet on the conversation the page holds while it has a turn running or a change to this workout waiting,
+    and on a fresh chat otherwise, which no board draws. The workout page leaves Coach out signed out,
+    where no board draws it. WD7's card replaces 08W.14's read-only row for a phone's workout proposal (`2126:11058`,
+    `2126:11183`, 🗄 Archived).
+  - *Edit movement (WD3.1).* It opens the movement's record, which renames it; the web has no form for its equipment.
+  - *A stale plan edit (WD5.1).* The drawn heading, *{movement} changed in another tab.*, stands also when a phone or
+    Coach changed the plan.
+  - *The default rest (WD10, approved 2026-11-26).* Settings · Your training log sets Default rest and Rest sound on both
+    seats; a movement's rest in this workout stays Edit sets' *Rest*. While a workout is open, the Default rest line names
+    it only when one of its movements is on Default, where WD10.6 names any open workout. At 390 the open listbox runs
+    below the fold under the signed-in page's Profile, which is taller than WD10.2 draws; the page scrolls it into reach.
+  - *Where WD10 meets the phones.* Neither phone draws the rows or writes `restSeconds` or `restSound`; whether they get
+    WD10's rows is the owner's (WD10 READ ME, question 2). The web writes both through `SaveRestSettings`, whose vectors
+    (`rest-settings-actions.json`) both phones list as not applicable and whose bound (`prefs.restSeconds` 15–900) sits in
+    the web's rule book alone. No shared vector covers `RestTarget.of`, which every surface reads the default through
+    while it draws, so a changed default reaches an open workout's movements on Default. The iPhone gates the
+    rest-reached haptic on `confirmHaptic` where the web gates its tone and buzz on `restSound`. The web's Settings keeps
+    Units, which the phones dropped (9r).
+  - *Settings signed out (Shell `390:2417`, approved 2026-11-26).* The page keeps the shell's header and the account card
+    signed-in Settings has, where SO2–SO6 draw a bare column, so the column is about 498 px where the boards draw 540 and
+    the export lines wrap at 1440. *Preparing…* is the design system's disabled Button, where SO3 draws the button at
+    55 % opacity. The result line enters with `wm-fade-in-up`, a fade and an 8 px rise, where SO4 draws a fade; no
+    product-neutral fade keyframe exists. A lapsed seat, a session gone while the browser holds the account's copy, keeps
+    the sign-in door alone, which no board draws (LP-1); its one line is the signed-out page's, *Sign in for your
+    profile, sessions and connected tools.*, which there reads as if the rest of Settings worked without signing in.
 ### Sets · product direction
 
 Sets have no type on any surface. Targets are references: actual weight/reps remain independent for every set, including extra or
@@ -1617,9 +1725,6 @@ under `apps/android/gym/src/main/kotlin/works/windmill/gym/` unless they start w
     scrim reads #5e5c5b against the board's #6a6866.
   - *Proposal diff.* The review sheet writes a load change as *30kg → 32.5kg*, with no space before
     the unit (`ui/ReviewSheet.kt:384` over `presentation/Proposal.kt`); every other Android readout spaces it.
-  - *Web planned rows.* Android and iOS planned rows read the load the plan expects
-    (*100 kg total × max*); the web live mirror, which has no rack, still reads *last × max*
-    (`web/src/products/gym/log.js`).
 - **11w · An answer's proposal still arriving (designer, design brief QW2, task 103).** On the phone that ran a turn its
   proposal commits with its call, so the card stands with the answer. A conversation synced from another phone can land an
   answer before its proposal. Android then says *Reading proposal…* until a read misses, and until the miss settles draws
@@ -2021,6 +2126,17 @@ Android. It and the product differ in these places.
 
 ### Native and web differences
 
+- **One sign-in question for every room due.** 12n and WD9's note ask one question naming every room due (*… 1 workout,
+  2 routines, 3 weigh-ins and 4 journal pages …*); the web asks each due product in turn, gym's and the journal's in the
+  shell's words and roadmap's in flow 50's.
+- **The confirmation of a sign-in a product words.** 7d's second confirmation is drawn for gym (WD9.2) and the journal
+  in the shell's words; flow 50 draws none for roadmap's *Add your roadmaps?*, whose Discard on the web now asks *Discard
+  all of it?* / *They are deleted from this browser. You can’t undo this.* Designer to draw roadmap's.
+- **In this browser has no editor.** WD9.3 draws a copy waiting on the account's open workout (*Keep as finished*) and
+  one the retry answers (*Add to your log*). The web has no Fix workout, so a copy refused for its times, its sets, its
+  movements or a spent id says why in one undrawn sentence (`gym.recovery.reason.*`) and offers Discard alone, held
+  with Undo as the room's deletes are. Designer to rule those sentences and whether the web gets the phones' editor.
+
 - **A retargeted line that moved, on the web.** A proposal's count is every line not kept and every kept line that moved, and the
   phones draw a move as *Order* on its row. The web never sees the base, so it marks the order only when the count holds more than
   its marked rows: one *order* row however many kept lines moved, and none when the only line that moved was also retargeted.
@@ -2115,16 +2231,36 @@ Android. It and the product differ in these places.
 
 ### Figma reconciliation
 
+- **Enter on the web's rack.** The Gym file's component Gym / Workout / Rack (`2151:11710`) says Enter logs from either
+  field. The build follows the iPhone (`docs/design/ios/workout-in-flight.md`, 03.23D.4): Enter, a phone keyboard's done
+  key included, lands the value and drops the field, and only Log set logs, so a lifter who taps done after typing a load
+  does not log the set before lifting it. The component's description is corrected, or the owner rules otherwise.
 - **The web's desktop head.** The Gym file's 08W boards and the Shell file's board 20 draw the desktop head with the
-  brand mark and centred rooms; `chrome.css` hides the mark from 744 px and left-aligns the rooms. The storage
-  proposal (`368:645`) follows the code.
+  brand mark and centred rooms; `chrome.css` hides the mark from 744 px and left-aligns the rooms.
 - **The published Gym library lags its file** (last published 2026-09-25): its Web shell / Desktop lacks the mark and
   bottom panel, and its Gym Tab, Set row, Set line, Editable number and Action band bind the retired Gym · Colour
   collection. It needs the owner's Publish.
 - **Dialog and Toast in the Design System.** The Dialog pins Theme=Light on itself, so a Night board shows it light
   until its mode is set; the Toast has no Neutral tone, which the web's `Toast tone="neutral"` has.
-- **The sign-in question's weight.** 7d asks for Add and Discard of equal weight; the web's `SyncDecisions.jsx`
-  draws Discard as ghost and Add as primary. The Gym proposal WD9 draws them equal; the owner rules on approval.
+- **The sign-in question's dialog.** WD9 draws the shell's question 480 px wide with a 17 px Nunito title and medium
+  answers, and its answers start at the left; the web builds flow 50's `AccountDecision` for every product (540 px, the
+  28 px display title, large answers at the right, Cancel sign-in at the left). One of the two drawings follows the other.
+- **A list in the sign-in question.** WD9 writes *1 workout, 2 routines and 3 weigh-ins*; the web joins the kinds with
+  the locale's list rule, as roadmap's landing lines do, and English's rule writes *1 workout, 2 routines, and 3
+  weigh-ins*.
+- **Board status chips.** The Gym file's Board status set (`802:11855`) has Built, Ready, Archived, In progress and
+  Proposal: a 🔨 In dev board wears Ready and a 🚀 In production board wears Built. The WD parts section
+  (`2150:11608`) says its parts join Components · Gym web when the build lands; WD1–WD9 are built and the parts stay
+  local. The Shell file's ✅ section *Where to start? · the Roadmap door* (`326:7899`) holds boards named 🔨 In dev
+  (`326:7900`, `326:7971`).
+- **The Design System's Select** (`294:129`) draws rows about 100 px tall and no compact variant, where `forms/Select.jsx`
+  is a combobox with compact rows and a `compact` variant (a mono value, the listbox under the trigger's right edge) that
+  WD3.2 and WD10 draw as a local part.
+- **The home door's gym accent.** The Design System's `Brand:light/shell/home/gym/accent` is `#137A6C` in the file, as gym's
+  day is verdigris (owner, 2026-11-26); its subscribers see iris until the owner publishes the library.
+- **The Shell file's Settings boards.** Board 21 (`2:203`) lags the code (no Back, another Profile section, no Notes
+  door), and boards 21 and 30 (`2:464`) show a real account's name and email where boards use example data. The Gym
+  file's signed-in WD frames draw the signed-out seat in the head.
 
 - **Coach setup chrome.** The Design System's `iOS / Tab bar · Gym` (`118:93`) now draws Routines as
   `list.bullet.rectangle`, like the app; the Gym boards show it once the owner publishes the Design
@@ -2177,5 +2313,9 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   interpolation; remove or reconcile it before use. The signup asset is not selected by the sender.
 - **F25 · Changelog.** The public changelog contains only July entries. Keep its material-change
   record consistent with the commitment in Terms.
+- **The /gym landing boards against the build.** The Marketing file's /gym approval card says *end a coach link* where
+  the build says *end a share link*; its *shell /gym* board labels the no-JS button `#FFFFFF` where
+  `build-landing-shells.mjs` writes `#F9F5EB`; and its `Core / Button` is 50 px tall where the live hero buttons are 54 px
+  with 18 px labels.
 - **F27 · Nudge template.** `ResendNudgeSender.cpp` references `journal-nudge`, but no template
   is checked into `web/emails/`. Recover and version its source before editing its copy.

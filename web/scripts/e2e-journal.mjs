@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { mkdtempSync, createWriteStream, rmSync } from 'node:fs';
+import { mkdtempSync, createWriteStream, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { chromium } from 'playwright';
@@ -174,6 +174,36 @@ try {
       await context.setOffline(false); await converged(page, 'offline page');
     } finally { await context.close(); }
   });
+  await check('signed out, Settings opens from the ghost seat on the browser\'s copy: none to export, then a written page exported', async () => {
+    const context = await browser.newContext({ acceptDownloads: true });
+    const exported = () => Number(sql("select count(*) from events where name = 'journal_export' and props->>'outcome' = 'ok' and props->>'seat' = 'signed_out'")
+      .toString().match(/\n\s*(\d+)\s*\n/)?.[1] ?? 0);
+    const before = exported();
+    try {
+      const page = await context.newPage();
+      const settingsFromSeat = async () => {
+        await page.getByRole('button', { name: 'Account', exact: true }).click();
+        await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+        await page.getByRole('heading', { name: 'Settings', exact: true, level: 1 }).waitFor();
+      };
+      const journal = page.locator('section', { has: page.getByRole('heading', { name: 'Your journal', exact: true }) });
+      await page.goto(`${origin}/app/journal`); await ready(page);
+      await settingsFromSeat();
+      await journal.getByText('No pages to export yet.', { exact: true }).waitFor();
+      assert.equal(await journal.getByRole('button').count(), 0, 'a browser with no written page is offered no export');
+      await page.goto(`${origin}/app/journal`); await ready(page);
+      await page.getByRole('textbox', { name: 'Write today' }).fill('written signed out'); await saved(page, 'written signed out');
+      await settingsFromSeat();
+      const [download] = await Promise.all([page.waitForEvent('download'),
+        journal.getByRole('button', { name: 'Export my pages', exact: true }).click()]);
+      assert.equal(download.suggestedFilename(), 'windmill-journal.md');
+      assert.equal(readFileSync(await download.path(), 'utf8'), `# Windmill journal\n\n## ${today}\n\nwritten signed out\n`);
+      await journal.getByText('Exported 1 page to windmill-journal.md.', { exact: true }).waitFor();
+      const end = Date.now() + 30000;
+      while (exported() === before && Date.now() < end) await new Promise((resolve) => setTimeout(resolve, 250));
+      assert.ok(exported() > before, 'the signed-out export\'s event reached the local intake');
+    } finally { await context.close(); }
+  });
   await check('unwritten days disappear locally and erasure reaches another browser and REST', async () => {
     const first = await browser.newContext(), second = await browser.newContext();
     const id = randomUUID(), secret = randomBytes(24).toString('hex');
@@ -229,8 +259,8 @@ try {
       await page.getByRole('textbox', { name: 'Write today' }).fill(`anonymous ${choice}`); await saved(page, `anonymous ${choice}`);
       await cookie(context); await page.reload(); await ready(page);
       await page.getByText('Add to your account?', { exact: true }).waitFor();
-      assert.equal(await page.getByRole('dialog').getByText('1 page and 1 unsaved change from before you signed in', { exact: false }).count(), 1);
-      await page.keyboard.press('Escape'); assert.equal(await page.getByRole('dialog').count(), 1);
+      assert.equal(await page.getByRole('dialog').getByText('This browser has 1 page and 1 unsaved change from before you signed in', { exact: false }).count(), 1);
+      assert.deepEqual(await page.getByRole('dialog').getByRole('button').allInnerTexts(), ['Cancel sign-in', 'Discard', 'Add']);
       await page.getByRole('dialog').getByRole('button', { name: choice, exact: true }).click();
       if (choice === 'Discard') {
         await page.getByText('Discard 1 page and 1 unsaved change?', { exact: true }).waitFor();
@@ -418,8 +448,8 @@ try {
   });
   assert.ok(Number(sql("select count(*) from events where name in ('sync_commit','sync_signin','sync_signout','sync_writer')").toString().match(/\n\s*(\d+)\s*\n/)?.[1] ?? 0) > 0, 'sync beacons reached the local intake');
   assert.ok(signOuts() >= 3, 'all three completed sign-outs reached the local beacon intake');
-  assert.equal(passed, 10, 'every journal local-stack scenario must finish');
-  console.log(`Journal local-stack e2e: ${passed}/10 passed, 0 skipped; local beacon intake verified`);
+  assert.equal(passed, 11, 'every journal local-stack scenario must finish');
+  console.log(`Journal local-stack e2e: ${passed}/11 passed, 0 skipped; local beacon intake verified`);
 } catch (error) {
   console.error(error);
   console.error(`Stack diagnostics: ${logPath}`);

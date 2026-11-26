@@ -1,10 +1,11 @@
 import SwiftUI
 import RoadmapDomain
 
-// A step's row wherever the room lists steps (Roadmap · iOS 01.1, 03.1): a link to the step's page, with its state's
+// A step's row wherever the room lists steps (Roadmap · iOS 01.1, 03.1, 07.1): a link to the step's page, with its state's
 // symbol on its first line, in its kind's colour and said by the kind's name, or by the hue's where no kind names it;
-// the step's name; the line its list says under it; and on the Board its excerpt.
+// the step's name; the line its list says under it; and on the Board the pill of the roadmap it opens and its excerpt.
 struct RoadmapStepRow: View {
+  let roadmap: RoadmapModel
   let row: RoadmapModel.Row
   let door: RoadmapModel.Visit.Door
   // On the Board, why the step stands in its group; on a step's page, the step's state.
@@ -14,13 +15,14 @@ struct RoadmapStepRow: View {
   @ScaledMetric(relativeTo: .body) var symbolColumn = 24.0
 
   var body: some View {
-    NavigationLink(value: RoadmapModel.Visit.step(row.id, by: door)) {
+    NavigationLink(value: roadmap.stacked(.step(row.id, by: door))) {
       HStack(alignment: .firstTextBaseline, spacing: 12) {
         Image(systemName: row.card.column.symbol).imageScale(.large).foregroundStyle(RoadmapPalette.kind(row.step.color))
           .frame(width: symbolColumn).accessibilityLabel(row.colour ?? "").accessibilityHidden(row.colour == nil)
         VStack(alignment: .leading, spacing: 2) {
           Text(row.name).foregroundStyle(row.card.column == .locked ? RoadmapPalette.inkDim : RoadmapPalette.ink)
           if let line { Text(line).font(.footnote.weight(.semibold)).foregroundStyle(RoadmapPalette.inkDim) }
+          if excerpt, let opening = row.opening { OpeningPill(opening: opening) }
           if excerpt && !row.step.description.isEmpty {
             Text(row.step.description).font(.subheadline).foregroundStyle(RoadmapPalette.inkDim).lineLimit(2)
           }

@@ -34,7 +34,7 @@ struct RoadmapKinds: View {
         .navigationDestination(for: RoadmapLegend.Subject.self) { subject in
           RoadmapKindPage(roadmap: roadmap, subject: subject, focusesName: subject == naming)
         }
-        .roadmapFoot(roadmap) {}
+        .roadmapFoot(roadmap, inSheet: true) {}
         .onChange(of: added.flatMap { roadmap.shown?.legend.entry($0) } != nil) { _, held in
           guard held, let added else { return }
           (naming, self.added) = (added, nil)

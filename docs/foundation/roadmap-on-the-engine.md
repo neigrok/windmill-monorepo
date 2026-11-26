@@ -79,8 +79,6 @@ document, its four implementations and its corpus, made before the registry is b
   account's overlay of it, so a reader's own marks stay in view once the server has them.
 - **E-4 The server's door in a tree.** A server-origin intent MAY be built in a tree scope and an
   overlay scope, reading the scope under its lock, as it can in a product scope today.
-- **E-5 A replica held in memory.** A device MAY run a replica it does not keep, for a reader whose
-  browser keeps nothing ([the web as a device](web-device-parity.md) §7).
 - **E-6 The composition.** The server's build, both schema generators, the three model servers and
   the deploy's version check take a third registry, and Android's client leaves roadmap's scopes
   alone.
@@ -114,7 +112,7 @@ units (D-9).
 | Type | Scope | Identity | Life | Fields | Cap |
 |---|---|---|---|---|---|
 | `tree` | self/roadmap | minted global `^t_[0-9a-f]{16}$`, governs `tree:<id>` | terminal, keep | `parent` const server `{tree, step}`, null for a root; `tree` names a tree of self/roadmap and `step` a node of `tree/<tree>` (E-8) | — |
-| `meta` | tree/T | singleton | — | `title` lww ≤200 chars; `guide` lww ≤5,000 chars; `guideInherited` server; `visibility` lww ∈ {private, unlisted, public}, a root's only; `reach` lww server ∈ {private, unlisted, public}, which `opens` at {unlisted, public}; `root` const server `ref<tree>`; `parent` const server `{tree, step}` as `tree.parent`, null for a root; `depth` const server 0–`MAX_DEPTH`; `forkedFrom` const server | — |
+| `meta` | tree/T | singleton | — | `title` lww ≤200 chars; `guide` lww ≤5,000 chars; `guideInherited` server; `visibility` lww ∈ {private, public}, a root's only; `reach` lww server ∈ {private, public}, which `opens` at {public}; `root` const server `ref<tree>`; `parent` const server `{tree, step}` as `tree.parent`, null for a root; `depth` const server 0–`MAX_DEPTH`; `forkedFrom` const server | — |
 | `node` | tree/T | derived, ids by domain (E-2) ≤128 chars, fallback `step` | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color`, `ord`, `status` nullable ∈ {none, complete}, `description` ≤16,000 chars, `links` (at most 32 of {url ≤2,048 chars, label ≤200 chars}); `branch` lww server nullable `ref<tree>` | 10,000 |
 | `edge` | tree/T | keyed `[from, to]` (`ref<node>` each) | yes, keep | — | 20,000 |
 | `kind` | tree/T | derived, ids by domain ≤128 chars, fallback `kind`; genesis `build`, `learn`, `milestone` | revivable, keep | lww: `hue`, `label` ≤24 chars, `description` ≤80 chars, `ord` | 6 |
@@ -229,6 +227,9 @@ Every gesture is an action on the domain kit, the same in each language.
   server writes the branch's reach back. Undo creating a roadmap deletes it while nothing has
   changed in it since. A product inverse draws nothing on the device until the server answers it:
   with no connection, such an Undo waits, and the roadmap or subtree stays as it is until then.
+  Undo of a kind's delete, or of a present kind's recolour, brings the kind back onto a hue, so it is checked where it is
+  asked as a kind made or changed is: while another present kind wears that hue it is refused before anything is
+  written, as is the Undo of its Redo. The server refuses no such Undo.
 - **Undo creating a subtree** conditionally clears its step's `branch` and deletes the created
   subtree together, only while both the connection and subtree contents remain unchanged since
   creation, the owner's marks and workspace in it included. Otherwise it changes neither. Redo
@@ -238,8 +239,8 @@ Every gesture is an action on the domain kit, the same in each language.
   in no list, no count and no address.
 - **A reader** subscribes a readable roadmap when a person opens its link, signed in or not, and a
   subtree as the person goes in, and drops both on leaving. A signed-in reader's marks are their
-  own overlay (E-3). A reader whose browser keeps nothing reads into a replica held in memory
-  (E-5).
+  own overlay (E-3). A browser that keeps nothing is not supported ([the web as a device](web-device-parity.md)
+  §7).
 - **Dates.** The date a completion shows is the time the server received the mark. A mark the
   server has not received shows the device's time.
 - **Signed out**, a roadmap a person makes lives in the device's `anon` replica. At sign-in the
@@ -383,7 +384,8 @@ tables, stopping where they differ from those it planned from.
 - A step's `status` keeps `none` and `complete`; `active` and `inProgress` become `none`, as today,
   and so does a mark's. The audit counts every other value, and the move stops on any.
 - Every value is stored as the old server reads it: a colour or hue it does not know as terracotta,
-  a link as its lenient reading of it. Each such value is counted.
+  a link as its lenient reading of it. Each such value is counted. The adoption reads an old root's
+  visibility `unlisted` as private, as the old server does; production holds no `unlisted` roadmap.
 - A pointer moves from its step to a `pointer` record in its owner's overlay; a cleared one becomes
   none. A subtree's place becomes `tree.parent`, `meta.root`, `meta.parent`, `meta.depth` and
   `node.branch`, and every `reach` is computed.
@@ -523,10 +525,10 @@ What changes is built only from boards marked ✅ Ready for dev:
 - **Vectors.** `packages/api-contract/roadmap/domain/` holds the rules, the actions of §5, what a
   device tells by §6, and the reads: what a step follows through absent steps, its state, what it
   owes and unlocks, what an opened roadmap comes to, standing, the guides above a roadmap, the
-  Board's groups and order, the legend and a hue two kinds wear, search, sort and filter, and
-  diagnostics. JavaScript and Swift run every file, the server runs the reads it shares, and a rule lands as a
+  Board's groups and order, what a delete or a Reset would do, the legend and a hue two kinds wear,
+  search, sort and filter, and diagnostics. JavaScript and Swift run every file, the server runs the reads it shares, and a rule lands as a
   vector first.
-- **The engine's corpus** gains E-1 to E-5 on its test product, and roadmap's commands and
+- **The engine's corpus** gains E-1 to E-4 on its test product, and roadmap's commands and
   consequences. All four implementations run it.
 - **Size.** Before the registry is fixed, the engine is measured on the server and on each client:
   one roadmap of 10,000 steps and 20,000 links; an account of several hundred roadmaps and

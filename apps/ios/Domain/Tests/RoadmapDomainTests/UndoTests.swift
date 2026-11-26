@@ -17,12 +17,13 @@ struct UndoTests {
 }
 
 // A scene's phones, `a` first, and the roles its steps name, in the order they were first named: what each act or save was
-// given and answered, the act its Undo names, and the request of its latest Undo or Redo, which a Redo and a read name.
+// given and answered, the Undo its receipt carries, or the Redo since, and the request of its latest Undo or Redo, which a
+// Redo and a read name.
 struct UndoScene {
   struct Role {
     let input: JSON
     let result: JSON
-    let actId: String?
+    var undo: UndoHandle?
     var requestId: String?
   }
 
@@ -45,12 +46,12 @@ struct UndoScene {
   mutating func play(_ step: JSON, on phone: Harness) throws -> JSON? {
     if let action = step["run"] {
       let input = try bound(step.member("input"))
-      let (outcome, result, actId): (JSON, JSON, String?) = switch try RoadmapAct(try action.asString(), input).run(phone.runner) {
-      case .committed(let result, let receipt): ("committed", result, receipt.gestureId)
+      let (outcome, result, undo): (JSON, JSON, UndoHandle?) = switch try RoadmapAct(try action.asString(), input).run(phone.runner) {
+      case .committed(let result, let receipt): ("committed", result, receipt.undo)
       case .unchanged(let result): ("unchanged", result, nil)
       case .refused(let refusal): (["refused": refusal.form], .null, nil)
       }
-      try remember(step, Role(input: input, result: result, actId: actId))
+      try remember(step, Role(input: input, result: result, undo: undo))
       return outcome
     }
     if let saved = step["save"] {
@@ -59,12 +60,12 @@ struct UndoScene {
       let (tree, note): (ID<RoadmapEntry>, ID<StepNote>) = (try input.id("tree"), try input.id("step"))
       var draft = try phone.runner.open(note, in: tree.overlay, orNew: StepNote(id: note))
       draft.current.text = try input.member("text").asString()
-      let (outcome, actId): (JSON, String?) = switch phone.runner.save(&draft, in: tree.overlay, SaveStepNote.self) {
-      case .saved(let receipt): ("saved", receipt?.gestureId)
+      let (outcome, undo): (JSON, UndoHandle?) = switch phone.runner.save(&draft, in: tree.overlay, SaveStepNote.self) {
+      case .saved(let receipt): ("saved", receipt?.undo)
       case .refused: ("refused", nil)
       case .failed: ("failed", nil)
       }
-      try remember(step, Role(input: input, result: .null, actId: actId))
+      try remember(step, Role(input: input, result: .null, undo: undo))
       return outcome
     }
     if step["sync"] == true {
@@ -77,26 +78,27 @@ struct UndoScene {
     }
     if let name = step["undo"] {
       let (index, role) = try self.role(name)
-      guard let actId = role.actId else { throw ContractError("\(name) committed no act") }
-      let undone = try phone.runner.undo(actId)
+      guard let act = role.undo else { throw ContractError("\(name) committed no act") }
+      let undone = try phone.runner.undo(act)
       roles[index].role.requestId = undone.requestId ?? role.requestId
       return undone.form
     }
     if let name = step["redo"] {
       let (index, role) = try self.role(name)
-      guard let requestId = role.requestId else { throw ContractError("\(name) was not undone") }
+      guard let requestId = role.requestId, let act = role.undo else { throw ContractError("\(name) was not undone") }
       let slots = step["subtree"] == true ? try Self.subtreeRedo(of: role, under: phone.runner.mint(RoadmapEntry.self)) : nil
-      let redone = try phone.runner.redo(requestId, productSlots: slots)
-      roles[index].role.requestId = redone.requestId ?? role.requestId
-      return redone.form
+      let redone = try phone.runner.redo(requestId, of: act, productSlots: slots)
+      roles[index].role.requestId = redone.result.requestId ?? role.requestId
+      if let undo = redone.undo { roles[index].role.undo = undo }
+      return redone.result.form
     }
     if let name = step["read"] {
       guard let requestId = try self.role(name).role.requestId else { throw ContractError("\(name) was not undone") }
       return try phone.runner.inverseResult(requestId).form
     }
     if let name = step["cancelHeld"] {
-      guard let actId = try self.role(name).role.actId else { throw ContractError("\(name) committed no act") }
-      return ["cancelHeld": .bool(try phone.runner.cancelHeld(actId))]
+      guard let act = try self.role(name).role.undo else { throw ContractError("\(name) committed no act") }
+      return ["cancelHeld": .bool(try phone.runner.cancelHeld(act.actId))]
     }
     if let inspect = step["inspect"] {
       let type = try inspect.member("t").asString()
@@ -163,12 +165,14 @@ struct UndoScene {
     return found
   }
 
-  // What a scene reads back, each id named by the first role holding it, any other minted id `<new>`.
+  // What a scene reads back, each minted id named by the first role holding it, any other minted id `<new>`.
   func named(_ value: JSON) -> JSON {
+    let minted = /t_[0-9a-f]{16}|[0-9a-z]{16}/
     var known: [(id: String, path: String)] = []
     func walk(_ found: JSON, _ path: String) {
       switch found {
-      case .string(let text) where !known.contains(where: { $0.id.utf8.elementsEqual(text.utf8) }): known.append((text, path))
+      case .string(let text) where text.wholeMatch(of: minted) != nil && !known.contains(where: { $0.id.utf8.elementsEqual(text.utf8) }):
+        known.append((text, path))
       case .array(let items): for (index, item) in items.enumerated() { walk(item, "\(path).\(index)") }
       case .object(let object): for member in object.members { walk(member.value, "\(path).\(member.key)") }
       default: break
@@ -179,7 +183,7 @@ struct UndoScene {
       switch item {
       case .string(let text):
         if let path = known.first(where: { $0.id.utf8.elementsEqual(text.utf8) })?.path { return .string(path) }
-        return text.wholeMatch(of: /t_[0-9a-f]{16}|[0-9a-z]{16}/) == nil ? item : "<new>"
+        return text.wholeMatch(of: minted) == nil ? item : "<new>"
       case .array(let items): return .array(items.map(rename))
       case .object(let object): return .object(JSON.Object(uniqueKeysWithValues: object.members.map { ($0.key, rename($0.value)) }))
       default: return item

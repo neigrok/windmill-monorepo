@@ -143,3 +143,197 @@ a:hover {
 .wm-menu-item:hover {
   background: var(--surface-card);
 }
+/* A menu whose opener is its own heading: the trigger's words and glyph, centred under it. */
+.wm-menu-open.is-labelled {
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+  color: var(--text-primary);
+}
+.wm-menu-open.is-labelled + .wm-menu-list {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  min-width: 180px;
+}
+.wm-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+.wm-menu-open:focus-visible,
+.wm-menu-item:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* The select (design-system/forms/Select.jsx): its button and the listbox it opens below. `is-compact` is a settings
+   row's: the value in mono, the listbox under the button's right edge, a check by the current option. */
+.wm-select {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--font-body);
+}
+.wm-select.is-compact {
+  display: inline-flex;
+  flex: none;
+}
+.wm-select-label {
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+.wm-select-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-base);
+  text-align: left;
+  cursor: pointer;
+}
+.wm-select-open[aria-expanded='true'] {
+  border-color: var(--accent-terracotta-400);
+  box-shadow: var(--focus-ring);
+}
+.wm-select-open:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.wm-select-chevron {
+  flex: none;
+  opacity: 0.5;
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+.wm-select-open[aria-expanded='true'] .wm-select-chevron {
+  transform: rotate(180deg);
+}
+.wm-select-value.is-new {
+  animation: wm-select-value-in var(--duration-fast) var(--ease-standard);
+}
+@keyframes wm-select-value-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.wm-select-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  margin-top: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-lg);
+  animation: wm-fade-in-up var(--duration-fast) var(--ease-soft);
+}
+.wm-select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  cursor: pointer;
+}
+.wm-select-option.is-active {
+  background: var(--surface-hover);
+}
+.wm-select-option.is-current {
+  background: var(--color-brand-soft);
+  color: var(--color-brand-hover);
+}
+.wm-select-option-label {
+  flex: 1;
+  min-width: 0;
+}
+.wm-select.is-compact .wm-select-open {
+  padding: 9px 12px 9px 14px;
+}
+.wm-select.is-compact .wm-select-open[aria-expanded='true'] {
+  border-color: var(--color-brand);
+}
+.wm-select.is-compact .wm-select-value,
+.wm-select.is-compact .wm-select-option {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 20px;
+}
+.wm-select.is-compact .wm-select-chevron {
+  opacity: 1;
+  color: var(--text-tertiary);
+}
+.wm-select.is-compact .wm-select-list {
+  left: auto;
+  min-width: 148px;
+  padding: 4px 0;
+}
+.wm-select.is-compact .wm-select-option {
+  padding: 8px 12px 8px 14px;
+}
+
+/* The bottom sheet (design-system/feedback/Sheet.jsx): a modal dialog in the top layer, pinned to the foot of the
+   viewport, its body the sheet's column under the grabber and its scrim the backdrop. */
+.wm-sheet {
+  box-sizing: border-box;
+  width: min(560px, 100%);
+  max-width: 100%;
+  max-height: 88dvh;
+  margin: auto auto 0;
+  padding: 0;
+  border: 0;
+  border-radius: 20px 20px 0 0;
+  background: var(--surface-card);
+  color: var(--text-primary);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.wm-sheet.is-large {
+  height: calc(100dvh - 60px);
+  max-height: calc(100dvh - 60px);
+}
+.wm-sheet.is-large > .wm-sheet-body {
+  min-height: 100%;
+}
+.wm-sheet::backdrop {
+  background: var(--surface-overlay);
+}
+.wm-sheet:focus-visible {
+  outline: none;
+}
+.wm-sheet-body {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+}
+.wm-sheet-grabber {
+  flex: none;
+  align-self: center;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-default);
+}
+.wm-menu-item > svg {
+  flex: none;
+  color: var(--text-secondary);
+}
+.wm-menu-item.is-danger,
+.wm-menu-item.is-danger > svg {
+  color: var(--color-danger);
+}

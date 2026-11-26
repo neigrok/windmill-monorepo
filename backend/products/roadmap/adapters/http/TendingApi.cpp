@@ -62,7 +62,7 @@ TendingApi::TendingApi(std::shared_ptr<TendingService> tending, std::shared_ptr<
 void TendingApi::tend(const drogon::HttpRequestPtr& req, HttpCallback&& callback,
                       const std::string& treeId) {
   // The full user: the allowance's plan lookup reads the email as its second binding.
-  std::optional<User> caller = callerUserOf(req, *auth_);
+  std::optional<User> caller = SentCaller::of(req, *auth_).user;
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to tend a tree"));
     return;
@@ -85,7 +85,7 @@ void TendingApi::tend(const drogon::HttpRequestPtr& req, HttpCallback&& callback
 
 void TendingApi::getRun(const drogon::HttpRequestPtr& req, HttpCallback&& callback,
                         const std::string& runId) {
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  std::optional<UserId> caller = SentCaller::of(req, *auth_).account();
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to read a tend run"));
     return;
@@ -100,7 +100,7 @@ void TendingApi::getRun(const drogon::HttpRequestPtr& req, HttpCallback&& callba
 }
 
 void TendingApi::summary(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  std::optional<User> caller = callerUserOf(req, *auth_);
+  std::optional<User> caller = SentCaller::of(req, *auth_).user;
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to read your tending"));
     return;

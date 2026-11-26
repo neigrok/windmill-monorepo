@@ -1,7 +1,7 @@
 # Flow index
 
 Where each user flow is drawn. Each section reads left to right; every board's caption names the code
-that ships it. Status lives in the Figma layer names. Roadmap on web, Journal on iOS and Gym on iOS and
+that ships it. Status lives in the Figma layer names. Roadmap on web, Journal on iOS and Gym on the web, iOS and
 Android are indexed here, with the proposal for the public pages.
 
 ## Roadmap · Web
@@ -120,8 +120,18 @@ Figma: Gym file, page [Web](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?
 
 | Flow | Section | Entry → exit |
 |---|---|---|
-| 08W · Coach — the web room | [`2123:9861`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2123-9861) | ✅ Ready for dev (2026-11-23): one History with the phones → a turn answered here or on another device → its ends and access states; signed out, the sign-in door ([consistency.md](design/consistency.md) 12u) |
-| 08W-P · Coach — proposal card and greeting | [`2128:11609`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2128-11609) | ✅ Ready for dev (2026-11-23): no conversation yet → the greeting (onboarding); a routine proposal → Apply or Reject → applied, rejected or out of date |
+| 08W · Coach — the web room | [`2123:9861`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2123-9861) | 🚀 In production: one History with the phones → a turn answered here or on another device → its ends and access states; signed out, the sign-in door ([consistency.md](design/consistency.md) 12u); 🗄 08W.14, a phone's workout proposal, replaced by WD7 |
+| 08W-P · Coach — proposal card and greeting | [`2128:11609`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2128-11609) | 🚀 In production: no conversation yet → the greeting (onboarding); a routine proposal → Apply or Reject → applied, rejected or out of date |
+| WD1 · Start a workout | [`2150:11609`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2150-11609) | 🚀 In production (2026-11-25): Routines → Start on a routine, or an empty workout → the first movement → the rack |
+| WD2 · Logging a workout | [`2150:11612`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2150-11612) | 🚀 In production (2026-11-25): the rack → Log set → rest → a set corrected in place; the tab title, favicon and pop-out stand in for a Live Activity |
+| WD3 · Edit the plan, finish, hide, discard | [`2150:11615`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2150-11615) | 🚀 In production (2026-11-25): movement menu → Edit sets → Finish → the receipt → hide, or discard with Undo |
+| WD4 · A workout open on another device | [`2150:11618`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2150-11618) | 🚀 In production (2026-11-25): every page draws it → continue here; a start that lost the race keeps its sets |
+| WD5 · A plan edit a second tab made stale | [`2150:11621`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2150-11621) | 🚀 In production (2026-11-25): refused → Use latest or Save mine |
+| WD6 · The room before its first pull | [`2150:11624`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2150-11624) | 🚀 In production (2026-11-25): Routines and The log with no Start and no records until the first pull |
+| WD7 · Coach during a workout | [`2150:11627`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2150-11627) | 🚀 In production (2026-11-25): Coach beside the rack (1440) or over it as a sheet (390) → a workout proposal → Apply or Reject → applied, or out of date |
+| WD8 · The gym room signed out | [`2150:11630`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2150-11630) | 🚀 In production (2026-11-25): the room on the browser's copy, The log without shares, Coach as the sign-in door, the first visit |
+| WD9 · Sign-in with signed-out work | [`2150:11633`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2150-11633) | 🚀 In production (2026-11-25): the one question → Add, or Discard and its confirmation → a workout the account could not take waits in The log |
+| WD10 · The default rest | [`2181:16061`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2181-16061) | 🚀 In production (2026-11-26): Settings · Your training log, signed in or signed out → Default rest and Rest sound → saved, or not saved → an open workout follows |
 
 ## Gym · iOS
 

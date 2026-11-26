@@ -28,7 +28,7 @@ rejected for structure. Validity is a read model, not a gate.
   must be valid (Legacy pointers), judged on one read for the whole call
   (`TreeRepository::pointerTargets`), or the call is refused with nothing written (Legacy pointers).
   That read is made under the strand of the tree being written, not the target's, so an edit racing the
-  target's removal can still set a pointer at it, which then points nowhere. A node may open the tree it is in. A tree id is the read capability of an unlisted tree, so only a caller who
+  target's removal can still set a pointer at it, which then points nowhere. A node may open the tree it is in. The tree a node opens may be private, so only a caller who
   can write the tree receives the pointer: `readerView` (`domain/Subgraph.h`) is what every other
   reader gets from `GET /v1/trees/{id}` (`data` and `state`), the subscribe delta and a live frame —
   a document node without `opens`, a
@@ -820,16 +820,16 @@ Rules:
 
 ## Authorization
 
-Read: `canRead(caller, owner, visibility)` — `private` is owner-only; `unlisted` and `public` are
-readable by anyone holding the id. `parseVisibility` fails closed to private. New trees are
-private.
+Read: `canRead(caller, owner, visibility)` — `private` is owner-only; `public` is readable by anyone
+holding the id. `parseVisibility` fails closed: any text but `public`, `unlisted` among them, reads as
+private. New trees are private.
 
 Write: `canWrite(caller, owner)` — a tree is its owner's to change and nobody else's. An unowned
 tree is readable by the world and writable by no one. `WriteRefusal ∈ {notYours, nobodysTree}`;
 clients branch on the code, humans read the sentence.
 
-`unlisted` vs `public` is consent, not permission: `public` admits the tree to the gallery and
-lets its share page be indexed.
+`public` is consent as well as permission: it admits the tree to the gallery and lets its share page
+be indexed.
 
 A subtree's access is its root's (Model, Subtrees), read at every access: the root's owner and
 visibility, none at all while its root is deleted, and none while an owning step on its path is
@@ -1244,8 +1244,8 @@ alive with no `opens`. It reads `DATABASE_URL`, prints one JSON object of counts
 else, and never writes. A failure prints one fixed sentence on stderr and exits 2 without
 `DATABASE_URL`, 1 otherwise. Its completion is `roadmap.subtree.inventory` (`OBSERVABILITY.md`). On
 production it runs inside the live server container through the **Ops · subtree inventory** workflow,
-which seals the counts to the owner's certificate before the public job log sees them
-(`deploy/README.md`).
+which seals the counts to the owner's certificate and keeps them as the run's artifact, out of the
+public job log (`deploy/README.md`).
 
 The read is `PgTreeRepository::eachAccountsTrees`: one statement over `trees` and the present pointers
 in `tree_nodes`, read through `tree_nodes_pointers_idx`, in a `READ ONLY` transaction. A cursor fetches
@@ -1310,12 +1310,12 @@ large table is counted, not cut off, and a read past a minute fails like any oth
   root by the `visibility` its meta holds, and `subtrees` counts a roadmap whose `tree` record holds a
   `parent` by its `reach`, since only a root holds a visibility
   (`docs/foundation/roadmap-on-the-engine.md` §4). Each splits into:
-  - `private`, `unlisted` and `public`. A subtree's `private` includes the subtrees whose owning step
-    is deleted, since that step's death writes their reach private.
+  - `private` and `public`. A subtree's `private` includes the subtrees whose owning step is deleted,
+    since that step's death writes their reach private.
   - `unset`, no meta or a meta that holds none, which reads as private. Among roots it holds one whose
     creation or fork is under way, which has no meta yet, stands nowhere and is hidden, and a fork's
     copy whose visibility nobody has set since, as a fork writes none.
-  - `other`, any other value, which admission refuses.
+  - `other`, any other value, `unlisted` among them, which admission refuses.
 - `pointersWithoutOpens` — the `pointer` rows alive with no `opens` in an overlay that is alive, by the
   door their life stamp's actor names: `restore` for the server's `srv`, as an Undo's restore that
   wrote the life alone leaves it, and `clientPut` for any other actor, a client's put that revived the

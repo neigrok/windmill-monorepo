@@ -527,7 +527,8 @@ struct FakeOAuthRepository : OAuthRepository {
     codes[digest] = code;
     return true;
   }
-  std::optional<StoredCode> takeCode(const std::string& digest) override {
+  // Every session reads as live: whether a code's session is, the Postgres store decides (PgOAuthRepositoryTest).
+  std::optional<StoredCode> takeCode(const std::string& digest, UnixMs) override {
     auto it = codes.find(digest);
     if (it == codes.end()) return std::nullopt;
     StoredCode code = it->second;

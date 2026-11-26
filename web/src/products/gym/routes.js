@@ -4,7 +4,7 @@
 import { lazy } from 'react';
 import { gymLandingHead } from './marketing/landingHead.js';
 import { sharedLogTokenOf, sharedTokenOf } from './log.js';
-import { createGymApi, gymLiveHint, gymCommandResult } from './gymRuntime.js';
+import { adoptGymDeviceRows, createGymApi, gymCommandResult, gymDeviceWork, gymLiveHint, signInWork, watchBrowserCopies } from './gymRuntime.js';
 import { t } from './i18n/entry/index.js';
 import { forgetRetiredCoach } from './coach/retiredCoach.js';
 
@@ -63,8 +63,15 @@ export const gymRoutes = {
   preloadApp: importGymApp,
   // How the gym rides the browser engine; the shell composes every product's hooks into it.
   // As a sign-out begins, Coach ends its running turn and forgets what it kept in the browser (gym Coach on the AI
-  // service §5). Before the seat changes, each signed-out workout is saved for adoption (web-device-parity §3).
+  // service §5). Before the seat changes, each signed-out workout is saved for adoption; the sign-in question, asked
+  // whenever the account holds gym records of its own, counts every kind of gym work the browser holds, the saved
+  // workouts and form drafts join the account entry by entry, and from the engine's opening the copies the account took
+  // are let go (web-device-parity §3).
   sync: { liveHint: gymLiveHint, onPushResult: gymCommandResult,
+    prepare: (engine) => watchBrowserCopies(engine),
+    pendingDeviceWork: gymDeviceWork,
+    adoptDeviceRows: adoptGymDeviceRows,
+    signInWork,
     seatWillChange: (engine) => (holdsSignedOutTraining(engine) ? createGymApi(engine).saveSignedOutWorkouts() : null),
     signOutBegins: (engine) => {
       forgetRetiredCoach();
@@ -74,9 +81,10 @@ export const gymRoutes = {
     signOutForgets: (engine) => coachKeeps(engine, (key) => key === 'runningTurn' || key === 'runningRound' || key.startsWith('picture:'))
       ? import('./coach/coachTurns.js').then((coach) => coach.coachRowsToForget(engine)) : null },
   // `main`: the product zone, with gym's own dials and its Notes door — not `data`, which sits
-  // beside the account's close.
+  // beside the account's close. They run on the browser's own copy, so signed out shows them too.
   settingsSections: {
     main: [GymSettingsSection],
+    signedOut: [GymSettingsSection],
   },
   landing: {
     head: gymLandingHead,

@@ -22,8 +22,6 @@ using roadmap::TreeRows;
 using roadmap::Written;
 namespace read = roadmap::read;
 
-bool opensToReaders(Visibility reach) { return reach == Visibility::unlisted || reach == Visibility::public_; }
-
 Json::Value valueOf(const sync::Row& row, const char* field) {
   const auto found = row.lattice.f.find(field);
   return found == row.lattice.f.end() ? Json::Value() : found->second.value;

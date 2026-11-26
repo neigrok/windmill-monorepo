@@ -10,6 +10,7 @@
 #include "products/roadmap/ports/OpLog.h"
 
 #include <drogon/HttpRequest.h>
+#include <drogon/HttpResponse.h>
 #include <drogon/WebSocketConnection.h>
 
 #include <atomic>
@@ -18,6 +19,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -38,6 +40,12 @@ public:
   ~Collab() { stop(); }
   void stop() { reprove_.stop(); }
 
+  // The upgrade's gate (TreeUpgradeGate), before the connection upgrades: a stated origin off the allow-list answers 403,
+  // since a WebSocket upgrade gets no CORS preflight, and credentials the rule refuses answer 401 (SentCaller), each with one
+  // WARN line under `roadmap.ws.upgrade`. Otherwise it leaves the caller on `req` for onOpen and the access line.
+  std::optional<drogon::HttpResponsePtr> admit(const drogon::HttpRequestPtr& req);
+  // Opens a socket the gate admitted, as its caller or, for none or one lapsed credential, as a read-only guest; any other
+  // connection is closed.
   void onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn);
   void onMessage(const drogon::WebSocketConnectionPtr& conn, const std::string& text);
   void onClose(const drogon::WebSocketConnectionPtr& conn);

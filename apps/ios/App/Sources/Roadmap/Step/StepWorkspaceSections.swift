@@ -46,7 +46,7 @@ struct StepWorkspaceSections: View {
     }.listRowBackground(RoadmapPalette.card)
     Section {
       if let note = workspace.note {
-        NavigationLink(value: RoadmapModel.Visit.note(of: step)) {
+        NavigationLink(value: roadmap.stacked(.note(of: step))) {
           Text(NoteText.read(note.text)).foregroundStyle(RoadmapPalette.ink)
         }.accessibilityIdentifier("roadmap-note")
       } else {

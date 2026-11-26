@@ -135,10 +135,10 @@ contents. Native acceptance and a same-key update check precede publication. See
   [The Coach engine](docs/foundation/coach-engine.md) supplies product-neutral device turn libraries
   and AI clients, with shared stories under `packages/api-contract/agent`.
   [Roadmap Coach](docs/foundation/roadmap-coach.md), which replaces tending with a Coach whose
-  abilities run on the browser's copy of a roadmap, is specified, and of it the contract and the web's
-  read abilities are built.
+  abilities run on the browser's copy of a roadmap, is specified, and of it the contract, the web's
+  read abilities and the context Coach is told at the start of a turn are built.
   [Gym Coach on the AI service](docs/foundation/gym-coach-on-ai-service.md), which moves gym Coach onto
-  that engine on every surface, is specified and not built.
+  that engine on every surface, is built on the web and on Android; the iPhone's turn still runs on the server.
   [Roadmap on the sync engine](docs/foundation/roadmap-on-the-engine.md), which moves roadmap's records and rules
   onto the engine and the domain kit, is built, and production's roadmaps sync through the engine; the deletion of
   roadmap's own sync remains. Of [Roadmap on iOS](docs/foundation/roadmap-ios.md), the iPhone's Roadmap room on
@@ -147,10 +147,11 @@ contents. Native acceptance and a same-key update check precede publication. See
   built and nothing else. [Journal Talk](docs/foundation/journal-talk.md), live speech to text through the AI
   service, is specified and not built. Of [the web as a device](docs/foundation/web-device-parity.md), which makes
   gym and journal on the web work as they do on a phone, the shared domain's part, the gym room drawn from the
-  browser's copy and the journal's reads of its own copy are built; a workout and the signed-out gym are not. [Echoes on the AI service](docs/foundation/echoes-on-ai-service.md), which
-  moves the journal's two background model calls there, is approved and not built.
+  browser's copy, a workout logged on the web, the signed-out gym with its join at sign-in, the journal's reads of its
+  own copy and Coach during a workout are built; the web's writing of the rest settings is not. [Echoes on the AI service](docs/foundation/echoes-on-ai-service.md), which
+  moves the journal's two background model calls there, is built.
 - [The running Coach conversation contract](docs/gym-coach-contract.md) covers the server-hosted
-  model loop the web uses. [The iOS app](apps/ios/App/README.md) also documents
+  model loop, which no client calls. [The iOS app](apps/ios/App/README.md) also documents
   signed-in routine onboarding.
 - [Web rules](web/CLAUDE.md), [iOS](apps/ios/README.md) and [Android](apps/android/README.md).
 - [Product direction](docs/PRODUCT_LOG.md) and [design consistency gaps](docs/design/consistency.md).

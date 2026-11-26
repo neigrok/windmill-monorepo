@@ -49,7 +49,7 @@ the Android app behaves as these tasks require.
 
 ## Coordinated equipment compatibility
 
-[Task 20](../../androidgym_tasks/20-edit-exercise.md) uses explicit Other under source registry 12 / minimum 11,
+[Task 20](../../androidgym_tasks/20-edit-exercise.md) uses explicit Other under source registry 15 / minimum 15,
 preserving all legacy records and the additive Coach records. The human-approved Android control is
 [Barbell / Dumbbells / Other](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=1548-7642),
 with plain labels and no Name/Equipment hints. The canonical combined 18/19 forms use that control.

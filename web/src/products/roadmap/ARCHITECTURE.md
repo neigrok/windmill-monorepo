@@ -14,7 +14,7 @@ point for the component showcase.
 | `i18n/`, `copy.js`, `resume.js`, `reportFailure.js` | The catalogs every visible string reads from; the words and count sentences several surfaces read; the newest roadmap as the home card and the landing offer it back, and the person's roadmaps it is read from; the static-name Sentry report |
 | `OpeningMarks.jsx` | The marks of a step that opens a tree, its subtree or the tree its pointer names: one glyph and one bar for the Board, the step, the Graph's chrome and a node's centre |
 | `room/` | What the room holds: the load and its two readings of a roadmap (roadmap's own sync with the switch off, and the device's copy with it on, with a roadmap's birth there) and where the tree sits, the view, progress, the scene, the open step, the tree a step opens and the way back, the row's verbs, the band, who holds the roadmap and the lines that tell its owner a change of theirs landed |
-| `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to and where a tree sits among the trees, the rule the device judges its own trees by, and what attaching one sets aside, legend, workspace and spatial queries. Independent of React and WebGL |
+| `model/` | Graph validation, trunk selection, unlock rules, what a step's tree has come to and where a tree sits among the trees, the rule the device judges its own trees by, and what attaching one sets aside, legend, workspace and spatial queries, and the domain's read of what a delete or a Reset would do (`effects.js`). Independent of React and WebGL |
 | `identity/` | The row above both views: title, roadmap sheet and switcher, view switch |
 | `guide/` | The tree's guide: its draft and bound, who sees it and where a save goes, the guides of the holder's trees above it, its entry on the tree (in the identity row from 744px, in the owner’s Roadmap sheet on phones, below the head for phone readers) and the note it opens |
 | `board/` | Query and columns, regroup, held actions, the shared toast, card gestures and selection |
@@ -291,9 +291,9 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   a visit: the readings a sign-in or Try again runs share the room's note that it told. The copy could not open
   (`unkept`), did not open within `FIRST_COPY_MS` (`unopened`), holds no roadmap the person may read here (`missing`), or
   no answer came before the device held a whole copy (`unanswered`). A room that leaves while the engine takes a subscription drops it as it leaves, and the
-  engine keeps the roadmap closed when it answers. A browser that keeps nothing (no IndexedDB) has no copy to open: until
-  the web holds a replica in memory (E-5, [the web as a device](../../../../docs/foundation/web-device-parity.md) §7), a
-  reader there is shown the load error, in the words the approved room boards give a roadmap that cannot be loaded.
+  engine keeps the roadmap closed when it answers. A browser that keeps nothing (no IndexedDB) has no copy to open and is
+  not supported ([the web as a device](../../../../docs/foundation/web-device-parity.md) §7): a reader there is shown the
+  load error, in the words the approved room boards give a roadmap that cannot be loaded.
 - **Births.** A roadmap is born through the domain on the replica the engine holds active (`room/ReplicaBirth.js`): the
   blank birth and a pasted plan (`paste/NewTreeBirth.jsx`) and a quest (`quests/QuestShelf.jsx`) are `CreateRoadmap`, with
   a plan's legend of its own in place of the genesis kinds and the steps it brings done then marked, signed out in the
@@ -346,8 +346,11 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
     roadmap while it reads it, as a reader's room does, where the picker with the switch off asks `GET /v1/trees/{id}` (§7 retires it);
     reads of one address while its reading is out share that reading (`heldTrees.read` in `room/useRoomLoad.js`).
     The copy names no author, so a roadmap the person can only read is said as readable, without whose.
-  - *Undo:* a receipt holds a gesture's one act, and its Undo (`revert`) is that act's Undo, every part of it; ⌘Z and
-    ⇧⌘Z walk the session's stack of receipts over `runner.undo` and `runner.redo`, bumping `receiptVersion` as roadmap's own session does. A
+  - *Undo:* a receipt, on the stack or kept out of it, holds a gesture's one act and that act's Undo handle, and its Undo
+    (`revert`) is that act's Undo, every part of it; ⌘Z and ⇧⌘Z walk the session's stack of receipts over `runner.undo`
+    and `runner.redo`, each by the Undo handle its receipt or its Redo carries, so every Undo is asked with the checks its
+    act named (a kind brought back onto a hue another kind wears is refused), bumping `receiptVersion` as roadmap's own
+    session does. A
     step's held delete stays the room's own hold until it is released, and an act the engine still holds is cancelled in
     place. Each act leaves the engine's journal (`runner.release`) as its receipt leaves the stacks. A toast's Undo
     (`revert`) answers what it came to once the engine has settled it, and keeps the Undo's own act until then, since
@@ -985,7 +988,7 @@ The menu retains Copy link, Open in Graph, Select and Delete where available; ow
 View branch. Tablet owners can leave the document for the existing Add step or Connect tool. Newly created blank
 Graph nodes keep their naming handoff; bulk, aim, edge removal, paste and Activity retain their own surfaces.
 
-Copy link is available for public or unlisted, non-demo step addresses. A failed clipboard write opens the
+Copy link is available for public, non-demo step addresses. A failed clipboard write opens the
 nonmodal recovery from approved [37](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1116-74911):
 retry the current address, reveal its full read-only value, or select it for manual copying. A pending native
 write disables Copy until it settles; changing the step or its address invalidates that attempt's UI result.
@@ -1006,11 +1009,11 @@ six-second Undo.
 
 ### Held delete
 
-Delete first confirms in an anchored desktop popover or a phone sheet, with a cost line counting the step's
-children through `acts.deletionCost`. Confirm closes the detail and creates a `HeldDelete`, with no structural
-write yet. For its nine-second Undo window every Board surface reads the held projection: cards, counts,
-identity, topbar, detail and composer. A delete from the Graph's step page uses the same hold and projects it
-into the Graph. `SkillTree.without` and the eventual `BulkDelete` share `respliceEdges`.
+Delete first confirms in an anchored desktop popover or a phone sheet, with a cost line counting the steps that follow
+it, the domain's `EffectsRead.follow` (`readEffects`, `model/effects.js`). Confirm closes the detail and creates a
+`HeldDelete`, with no structural write yet. For its nine-second Undo window every Board surface reads the held
+projection: cards, counts, identity, topbar, detail and composer. A delete from the Graph's step page uses the same hold
+and projects it into the Graph. `SkillTree.without` and the eventual `BulkDelete` share `respliceEdges`.
 
 `useBoardActs` injects session, progress, query, clock, toast and boundary collaborators. It owns one held
 delete, which releases once on toast expiry or replacement, view exit, roadmap change, owner loss, unmount or
@@ -1081,10 +1084,11 @@ phone camera controls sit beneath the measured row. The blank-step naming dock a
 measured identity and any refusal banner. Ordinary node activation opens the shared step document. The tablet Graph
 keeps aim, link removal and multi-select surfaces; the document's menu provides Add step and Connect.
 
-A roadmap keeps a root, by one rule for every door: `takesEveryRoot` in `board/acts.js`, which `deletable` builds on, asked of
-the tree a held delete leaves standing. A sole root, the last root under a hold and a select-all on a many-rooted roadmap all
-read the same. The desktop dock, the tablet panel, the selection bars and the phone Board's bulk bar stop offering Delete while
-they hold such a selection, the Graph's writes refuse it, and a Delete key on it does nothing.
+A roadmap keeps a root, by one rule for every door: the domain's `EffectsRead` (`takesEveryStart`, and `deletable` in
+`board/acts.js`, which reads it), asked through `readEffects` of the tree a held delete leaves standing. A sole
+root, the last root under a hold and a select-all on a many-rooted roadmap all read the same. The desktop dock, the
+tablet panel, the selection bars and the phone Board's bulk bar stop offering Delete while they hold such a selection,
+the Graph's writes refuse it, and a Delete key on it does nothing.
 
 The owner's Next chip reads the unfiltered `Board.upNext` in Roadmap order, including a one-step roadmap, and
 hides at zero. Picking a row selects and reveals that canvas step.
@@ -1444,6 +1448,6 @@ selectable; owners can make a tree private again.
   Design gaps belong in the [consistency ledger](../../../../docs/design/consistency.md).
 - Where the room reads the device's copy, the person's list (the domain's `list`, `ReplicaRoadmap.list`) carries no
   `dominantKind`, the most-worn hue `GET /v1/trees` sends with the switch off, so the home card's and the landing's dot, the switcher's
-  ring and the sheet's hue draw every roadmap in the default hue. Signed out, the list orders the roadmaps the server
-  has received nothing of by id, so the home card and the landing offer back the one with the smallest id, not the
-  newest.
+  ring and the sheet's hue draw every roadmap in the default hue. A roadmap the server has received nothing of, as every
+  one is signed out, is ordered by the newest stamp the browser holds of it (`stampedAt`), so the home card and the
+  landing offer back the newest.

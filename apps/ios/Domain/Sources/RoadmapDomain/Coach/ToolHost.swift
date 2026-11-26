@@ -8,20 +8,20 @@ import SyncCore
 // commits. So no change the room shows comes between the check and the write, and the write is saved, sent, merged and
 // refused as the person's own. The door then says what it wrote: an act it refused is `roadmap-not-ready`, one that
 // changed nothing `no-change`, never a success, and such a write leaves nothing to undo. A write that landed answers with
-// its receipt (D-4), which carries its Undo. The iPhone's room keeps no stack of Undos, so a structure act, a mark and a
-// new subtask alike keep theirs here, off the room's band, which offers a receipt's Undo where the conversation shows it.
+// its receipt (D-4), which carries its act's Undo as the runner handed it out. The iPhone's room keeps no stack of Undos, so
+// a structure act, a mark and a new subtask alike keep theirs here, off the room's band, which offers a receipt's Undo
+// where the conversation shows it.
 //
 // A call tells no product event and reports nothing: the turn's engine tells each call it runs and reports, once, anything
 // that throws out of one, the standing roadmap's read, the ability or the door, a write the phone could not store among
-// them (§13). An Undo runs outside a turn, so the
-// host tells what each came to, and what an Undo throws reaches its caller, whose wiring reports it under the room's own
-// write-failure operation (§13).
+// them (§13). An Undo runs outside a turn, so the host tells what each came to, and what an Undo throws reaches its caller,
+// whose wiring reports it under the room's own write-failure operation (§13).
 
-// D-4: one direct write, for the conversation's receipt: the ability, the roadmap and the step it wrote, and the act its
-// Undo takes back, held in this process's memory.
+// D-4: one direct write, for the conversation's receipt: the ability, the roadmap and the step it wrote, and the Undo of
+// its act, the handle the room's act runner answered with the checks its plans named, held in this process's memory.
 public struct WriteReceipt: Equatable, Sendable {
   // What an Undo came to once the engine settled it: the write taken back, `skipped` where a later write stood in its way,
-  // or `unavailable` where the engine no longer holds the write.
+  // or `unavailable` where the engine no longer holds the write or a check its act named refuses what stands.
   public enum Undo: String, Sendable {
     case undone, skipped, unavailable
   }
@@ -29,7 +29,7 @@ public struct WriteReceipt: Equatable, Sendable {
   public let ability: String
   public let treeId: String
   public let nodeId: String
-  let act: String
+  let undo: UndoHandle
 }
 
 public final class RoadmapToolHost {
@@ -72,10 +72,10 @@ public final class RoadmapToolHost {
     case .writes(let acts, let result):
       let named = try input.text(ifAny: "nodeId")
       switch try runner.runComposed(acts.map(\.part)) {
-      case .committed(_, let act):
-        hold(act.gestureId)
+      case .committed(_, let committed):
+        hold(committed.undo.actId)
         let receipt = WriteReceipt(ability: name, treeId: try input.text("treeId"), nodeId: try result.text(ifAny: "nodeId") ?? named ?? "",
-                                   act: act.gestureId)
+                                   undo: committed.undo)
         return (.success(result), receipt)
       case .unchanged: return (.failure(CoachRefusal(.noChange, named)), nil)
       case .refused: return (.failure(CoachRefusal(.roadmapNotReady, named)), nil)
@@ -83,14 +83,16 @@ public final class RoadmapToolHost {
     }
   }
 
-  // Takes back one direct write by the kit's Undo of its act, which spares anything written since: a later write of the
-  // same field, the person's change of an item it added, or a mark the person set since; a completion's first date is not
-  // restored. What it came to is told once the engine has settled it: at once, or as the copy changes (`follow`). An Undo
-  // asked again while the engine settles the first asks nothing.
+  // Takes back one direct write by the kit's Undo of its act, asked with the receipt's handle and so with every check the
+  // act's plans named, which spares anything written since: a later write of the same field, the person's change of an item
+  // it added, or a mark the person set since; a completion's first date is not restored. One a check refuses where it is
+  // asked takes nothing back and is unavailable, as the room's own Undo is. What it came to is told once the engine has
+  // settled it: at once, or as the copy changes (`follow`). An Undo asked again while the engine settles the first asks
+  // nothing.
   public func undo(_ receipt: WriteReceipt) throws {
     guard !settling.contains(where: { $0.receipt == receipt }) else { return }
-    try settle(receipt, try runner.undo(receipt.act))
-    try letGo(receipt.act)
+    try settle(receipt, try runner.undo(receipt.undo))
+    try letGo(receipt.undo.actId)
   }
 
   // The copy changed: each Undo the engine has settled since it was asked is told. One the host could not finish stays to
@@ -106,7 +108,7 @@ public final class RoadmapToolHost {
 
   // A receipt whose Undo is offered no longer: the engine keeps nothing more of its act.
   public func forget(_ receipt: WriteReceipt) throws {
-    try letGo(receipt.act)
+    try letGo(receipt.undo.actId)
   }
 
   // The conversation is over: the engine keeps nothing more of any act the host holds, and an Undo it still settles is

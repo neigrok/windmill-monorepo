@@ -15,8 +15,8 @@ namespace wm {
 
 using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 
-// The REST surface for personal MCP API keys (settings). Browser-session auth via the shared
-// callerOf trust boundary; an anonymous caller gets a 401. The minted secret is returned exactly
+// The REST surface for personal MCP API keys (settings). Session auth via the shared SentCaller
+// trust boundary; an anonymous caller gets a 401. The minted secret is returned exactly
 // once, on create — list and every read after carry only the key's metadata, never the token.
 class McpKeyApi {
 public:

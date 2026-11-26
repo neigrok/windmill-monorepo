@@ -10,14 +10,15 @@ import Testing
 struct AbilitiesCorpusTests {
   static var claimed: [String] { RoadmapAbilities.names.map { "roadmap/abilities/\($0).json" } }
 
-  @Test func everyAbilityThatRunsOnTheCopyRunsEveryReadAnswersWithinItsCapAndEveryFileButTheProposalsIsClaimed() throws {
+  @Test func everyAbilityThatRunsOnTheCopyRunsEveryReadAnswersWithinItsCapAndEveryFileButTheContextsAndTheProposalsIsClaimed() throws {
     let runs = Catalog.roadmap.abilities.filter { $0.agent == .runs }
     #expect(runs.map(\.name) == RoadmapAbilities.names)
     let reads = Catalog.roadmap.abilities.filter { $0.kind == .read }
     #expect(reads.map { $0.result["maxBytes"] } == reads.map { _ in 16384 })
     let files = try Contract.files(under: "roadmap/abilities")
     #expect(files.filter { Self.claimed.contains($0) } == Self.claimed.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) })
-    #expect(files.filter { !Self.claimed.contains($0) } == ["roadmap/abilities/propose_roadmap_change.json"], "only the proposal goes unclaimed")
+    #expect(files.filter { !Self.claimed.contains($0) } == ["roadmap/abilities/context.json", "roadmap/abilities/propose_roadmap_change.json"],
+            "only the context and the proposal go unclaimed")
   }
 
   @Test(arguments: try claimed.flatMap { try AbilityCase.all(in: $0) })

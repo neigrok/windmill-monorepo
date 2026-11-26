@@ -76,7 +76,7 @@ their day and words: a page another writer changed since has other words and sta
 that fails, ends the run with its pages and those after it still in their stores. An entry that does not read (no
 calendar day, a stamp that does not read, words no digest can name, such as a lone surrogate) stays in its store,
 reported once a load, while the pages beside it carry, and a browser that refuses its storage opens the journal all the
-same. A device held in memory carries nothing. Before the seat changes (a sign-in, a sign-out's Keep or Discard, the
+same. Before the seat changes (a sign-in, a sign-out's Keep or Discard, the
 account's closure), the route's `seatWillChange` (`settleSeat`) takes from the active seat's stores every page its
 replica's ledger records, so a Discard takes the old pages it counted, as the claims and drafts they were carried into,
 and no other: the pages not yet carried, and the entries that do not read, wait for that seat's next replica. An account's
@@ -84,24 +84,29 @@ closure then deletes every store of its seat, carried or not, the entries that d
 `forgetDevice`, which the shell tells `closed`): the account no longer exists.
 
 The pages that bundle could not attribute (`.unclaimed`, the owed pages of its first version's unscoped store, and the
-pages returned from the engine's metadata below) stay in the browser's storage, which is their only record, and the
-signed-in person decides in Settings: Restore claims them into the account's replica through the runner, joined onto
+pages returned from the engine's metadata below) stay in the browser's storage, which is their only record, and Settings
+offers them on both seats: Restore, which takes an account, claims them into the account's replica through the runner, joined onto
 that day's page as a claim is, each other page of a day as a draft to recover, each act's pages leaving their stores as
 it commits; Discard deletes the pages Settings listed, and no page that arrived since, and writes nothing to the engine.
 The first version's unscoped store also cached an account's pages beside the writes it owed: those copies are neither
-listed nor restored, and go with their store. A sign-out leaves the unattributed pages for whoever is at the browser
-next, who sees the day and length of each, never the words. A browser that ran the journal's first bundle on the engine
+listed nor restored, and go with their store. Settings shows the day and length of each page, never the words. No
+account can be shown to own them, so every sign-out that finishes, Keep or Discard, forgets them (the route's
+`forgetDevice`, `forgetUnclaimedPages`): every store of them is deleted whole, the entries that do not read and the cached
+copies among them, so the next person to sign in on this browser is not offered them; a Restore made before the sign-out
+is in the account's replica by then, and a sign-in forgets nothing. A browser that ran the journal's first bundle on the engine
 kept those pages and its migration's records in the engine's device metadata; the carry returns the pages to the
 browser's storage once, a store a page, drops from the old stores the entries those records show carried, and deletes
-the three keys in the engine's one door to its metadata, the journal's only write of the device rather than of a
-replica.
+the three keys in the engine's one door to its metadata. A sign-out forgets the pages the metadata still holds, their
+return not yet done, before the stores. These are the journal's only writes of the device rather than of a replica.
 
 Settings' export (`settings/journalExport.js`) is one Markdown file of the room's written pages as
 the room shows them, read from the replica: signed out the browser's own, and on a bound replica, once
 the engine's first pull of `self/journal` ends, the account's pages with this browser's unsent saves,
 refusal-held words and editor draft in their day's place. It fails after 30 seconds without that pull,
 and fails rather than export another account's pages when the account changes while it waits. It asks
-the backend for nothing.
+the backend for nothing. Settings shows it on both seats and counts those pages before anything is pressed, at once signed
+out and on a bound replica once that first pull ends; where there are none it offers no export, and an export that finds
+none hands the browser no file.
 
 Search (`search/`) indexes the corpus on the device: words first, then meaning, bge-small-en-v1.5 q8
 in a worker on wasm, never WebGPU, which miscomputes the quantized model. The worker takes its
@@ -132,11 +137,11 @@ The domain runner claims all four shared journal files: 203 comparisons, with ev
 scene also run in reverse record order. Engine and Chromium tests exercise transaction aborts,
 restart, offline writing, receipt arrival order and multiple tabs.
 
-`npm run test:journal:server -- /absolute/backend/build` runs eight journal Playwright acceptance
+`npm run test:journal:server -- /absolute/backend/build` runs eleven journal Playwright acceptance
 cases on ports 8094/5181 with its own database and `schema.sql`. Build `windmill_server` using
 `backend/RUNNING.md` first. It requires Postgres client tools (`/tmp` on macOS), stops its listeners
 by port and drops its database. `WM_E2E_PORT`, `WM_E2E_WEB_PORT` and `WM_E2E_DB_PREFIX` select isolated
-backend/web ports and a database prefix. Cases cover offline convergence, claim choices, the carry of an owed page
-from before the engine, current-session Keep/Discard, account closure, and two-tab account identity protection. Account
+backend/web ports and a database prefix. Cases cover offline convergence, Settings' export signed out, claim choices, the carry of
+an owed page from before the engine, current-session Keep/Discard, account closure, and two-tab account identity protection. Account
 flows wait for completed sign-out before navigating. The same script works in CI with a backend
 binary and Postgres tools; the web workflow runs the complete tests/build without a backend-stack step.

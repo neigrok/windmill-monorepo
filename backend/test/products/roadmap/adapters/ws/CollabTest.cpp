@@ -18,6 +18,8 @@
 #include "test/testing.h"
 
 #include "platform/application/WriteObservation.h"
+#include "test/DrogonLoopback.h"
+#include "platform/adapters/http/Caller.h"
 
 #include <trantor/net/EventLoopThread.h>
 #include <trantor/net/InetAddress.h>
@@ -118,10 +120,13 @@ struct Harness {
     trees.byId[id] = StoredTree{graph.exportState(), LegendState{}, {"Tree", {}}, 0, owner, visibility};
   }
 
+  // An upgrade as its gate leaves it: admitted with its caller, or refused, carrying none, so onOpen closes it.
   drogon::HttpRequestPtr upgrade(const std::string& session, const std::string& origin = "") {
-    auto req = drogon::HttpRequest::newHttpRequest();
-    if (!session.empty()) req->addCookie("wm_session", session);
-    if (!origin.empty()) req->addHeader("Origin", origin);
+    auto built = drogon::HttpRequest::newHttpRequest();
+    if (!session.empty()) built->addCookie("wm_session", session);
+    if (!origin.empty()) built->addHeader("Origin", origin);
+    const drogon::HttpRequestPtr req = wm::test::DrogonLoopback::received(built);
+    collab.admit(req);
     return req;
   }
 };
@@ -360,9 +365,48 @@ TEST(ws_non_owner_on_a_private_tree_is_rejected_and_never_joins_the_bus) {
   CHECK_EQ(conn->sent.size(), 1u);
 }
 
-TEST(ws_anon_on_an_unlisted_tree_receives_the_delta_and_joins_the_bus) {
+// The upgrade reads its caller as every door does (platform/adapters/http/Caller.h), at its gate, before the connection
+// upgrades: credentials that resolve open the owner's private tree and name the caller on the upgrade's access line, none
+// or one lapsed credential join as a guest the tree refuses, and credentials the rule refuses answer 401, write one WARN
+// line under `roadmap.ws.upgrade`, and open nothing.
+TEST(ws_an_upgrade_reads_its_caller_as_every_door_does_at_its_gate) {
+  std::vector<WriteCompletion> lines;
+  installWriteSink([&lines](const WriteCompletion& completion) { lines.push_back(completion); });
+  const auto opened = [&lines](const std::vector<std::string>& fields) {
+    lines.clear();
+    Harness h;
+    const UserId owner = h.signIn("s-owner", "owner@example.com");
+    h.signIn("s-other", "other@example.com");
+    h.seed("t_priv", owner, Visibility::private_);
+    const drogon::HttpRequestPtr req = wm::test::DrogonLoopback::received("GET", "/v1/socket", fields);
+    std::string refused;
+    if (const std::optional<drogon::HttpResponsePtr> refusal = h.collab.admit(req)) {
+      for (const WriteCompletion& line : lines)
+        if (line.operation == "roadmap.ws.upgrade") refused += " " + line.door + " " + line.outcome + (line.severity == WriteSeverity::warn ? " WARN" : "");
+      return std::to_string(static_cast<int>((*refusal)->statusCode())) + refused;
+    }
+    auto conn = std::make_shared<FakeSocket>();
+    h.collab.onOpen(req, conn);
+    h.collab.onMessage(conn, subscribeFrame("t_priv"));
+    const std::string caller = req->attributes()->find(kCallerAttribute) ? req->attributes()->get<std::string>(kCallerAttribute) : "anon";
+    return frameType(conn->sent.at(0)) + " as " + (caller == owner.str() ? "owner" : caller);
+  };
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-owner"}), std::string("subgraph as owner"));
+  CHECK_EQ(opened({"Host: collab", "Authorization: bearer s-owner"}), std::string("subgraph as owner"));
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-owner", "Authorization: Bearer s-owner"}), std::string("subgraph as owner"));
+  CHECK_EQ(opened({"Host: collab"}), std::string("reject as anon"));
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-gone"}), std::string("reject as lapsed"));
+  const std::string refused = "401 websocket unauthenticated WARN";
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-owner", "Authorization: Bearer s-other"}), refused);
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session=s-owner; wm_session=s-other"}), refused);
+  CHECK_EQ(opened({"Host: collab", "Cookie: wm_session"}), refused);
+  CHECK_EQ(opened({"Host: collab", "Authorization: Basic s-owner"}), refused);
+  installWriteSink({});
+}
+
+TEST(ws_anon_on_a_public_tree_receives_the_delta_and_joins_the_bus) {
   Harness h;
-  h.seed("t_shared", UserId{"owner"}, Visibility::unlisted);
+  h.seed("t_shared", UserId{"owner"}, Visibility::public_);
 
   auto conn = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade(""), conn);
@@ -376,45 +420,43 @@ TEST(ws_anon_on_an_unlisted_tree_receives_the_delta_and_joins_the_bus) {
 }
 
 TEST(ws_the_subscribe_answer_says_writer_to_the_owner_and_reader_to_anyone_else_and_says_it_again_on_a_resubscribe) {
-  for (const Visibility visibility : {Visibility::public_, Visibility::unlisted}) {
-    Harness h;
-    UserId owner = h.signIn("s-owner", "owner@example.com");
-    h.signIn("s-stranger", "stranger@example.com");
-    h.seed("t_door", owner, visibility);
-    auto laptop = std::make_shared<FakeSocket>();
-    auto stranger = std::make_shared<FakeSocket>();
-    auto signedOut = std::make_shared<FakeSocket>();
-    h.collab.onOpen(h.upgrade("s-owner"), laptop);
-    h.collab.onOpen(h.upgrade("s-stranger"), stranger);
-    h.collab.onOpen(h.upgrade(""), signedOut);
-    h.collab.onMessage(laptop, registerFrame("t_door", "f-create",
-                                             R"({"id":"door","createdAt":"1000:0:r_a","opens":"t_00000000000000f2","opensAt":"1000:0:r_a"})"));
-    NodeStateEntry withheld;
-    withheld.id = NodeId{"door"};
-    withheld.createdAt = Hlc{1000, 0, "r_a"};
-    NodeStateEntry whole = withheld;
-    whole.opens = TreeId{"t_00000000000000f2"};
-    whole.opensAt = Hlc{1000, 0, "r_a"};
-    const auto answer = [](const NodeStateEntry& door, const char* reach) {
-      Json::Value frame = parse(R"({"t":"subgraph","v":1,"treeId":"t_door","frameId":"delta-1","actor":"srv","intent":"delta",
-                                    "edges":[],"kinds":[],"gestures":[],"title":null,"guide":null,
-                                    "coverage":{"r_a":"1000:0:r_a"},"seq":1})");
-      frame["nodes"] = toJson(GraphState{{door}, {}})["nodes"];
-      frame["reach"] = reach;
-      return frame;
-    };
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.signIn("s-stranger", "stranger@example.com");
+  h.seed("t_door", owner, Visibility::public_);
+  auto laptop = std::make_shared<FakeSocket>();
+  auto stranger = std::make_shared<FakeSocket>();
+  auto signedOut = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), laptop);
+  h.collab.onOpen(h.upgrade("s-stranger"), stranger);
+  h.collab.onOpen(h.upgrade(""), signedOut);
+  h.collab.onMessage(laptop, registerFrame("t_door", "f-create",
+                                           R"({"id":"door","createdAt":"1000:0:r_a","opens":"t_00000000000000f2","opensAt":"1000:0:r_a"})"));
+  NodeStateEntry withheld;
+  withheld.id = NodeId{"door"};
+  withheld.createdAt = Hlc{1000, 0, "r_a"};
+  NodeStateEntry whole = withheld;
+  whole.opens = TreeId{"t_00000000000000f2"};
+  whole.opensAt = Hlc{1000, 0, "r_a"};
+  const auto answer = [](const NodeStateEntry& door, const char* reach) {
+    Json::Value frame = parse(R"({"t":"subgraph","v":1,"treeId":"t_door","frameId":"delta-1","actor":"srv","intent":"delta",
+                                  "edges":[],"kinds":[],"gestures":[],"title":null,"guide":null,
+                                  "coverage":{"r_a":"1000:0:r_a"},"seq":1})");
+    frame["nodes"] = toJson(GraphState{{door}, {}})["nodes"];
+    frame["reach"] = reach;
+    return frame;
+  };
 
-    for (const auto& conn : {laptop, stranger, signedOut}) h.collab.onMessage(conn, subscribeFrame("t_door"));
-    CHECK_EQ(lastFrameOfType(*laptop, "subgraph"), answer(whole, "writer"));
-    CHECK_EQ(lastFrameOfType(*stranger, "subgraph"), answer(withheld, "reader"));
-    CHECK_EQ(lastFrameOfType(*signedOut, "subgraph"), answer(withheld, "reader"));
+  for (const auto& conn : {laptop, stranger, signedOut}) h.collab.onMessage(conn, subscribeFrame("t_door"));
+  CHECK_EQ(lastFrameOfType(*laptop, "subgraph"), answer(whole, "writer"));
+  CHECK_EQ(lastFrameOfType(*stranger, "subgraph"), answer(withheld, "reader"));
+  CHECK_EQ(lastFrameOfType(*signedOut, "subgraph"), answer(withheld, "reader"));
 
-    for (const auto& conn : {laptop, stranger, signedOut}) h.collab.onMessage(conn, subscribeFrame("t_door"));
-    for (const auto& conn : {laptop, stranger, signedOut}) REQUIRE_EQ(countOfType(*conn, "subgraph"), 2u);
-    CHECK_EQ(lastFrameOfType(*laptop, "subgraph"), answer(whole, "writer"));
-    CHECK_EQ(lastFrameOfType(*stranger, "subgraph"), answer(withheld, "reader"));
-    CHECK_EQ(lastFrameOfType(*signedOut, "subgraph"), answer(withheld, "reader"));
-  }
+  for (const auto& conn : {laptop, stranger, signedOut}) h.collab.onMessage(conn, subscribeFrame("t_door"));
+  for (const auto& conn : {laptop, stranger, signedOut}) REQUIRE_EQ(countOfType(*conn, "subgraph"), 2u);
+  CHECK_EQ(lastFrameOfType(*laptop, "subgraph"), answer(whole, "writer"));
+  CHECK_EQ(lastFrameOfType(*stranger, "subgraph"), answer(withheld, "reader"));
+  CHECK_EQ(lastFrameOfType(*signedOut, "subgraph"), answer(withheld, "reader"));
 }
 
 // A tree where replica `r_a` wrote `n` at 100 and `m` at 300, a tab subscribed then and went away, and `r_a`'s write of
@@ -580,7 +622,7 @@ TEST(a_subscriber_at_the_head_is_sent_nothing_it_has) {
 // The reader's view is cut after the seq rule as it is after the vector's: an entry sent whole because it landed late
 // goes to a reader without the pointer a writer alone is shown.
 TEST(a_reader_is_not_sent_what_a_writer_alone_may_see_because_it_landed_late) {
-  LateWrite late(Visibility::unlisted);
+  LateWrite late(Visibility::public_);
   NodeStateEntry withheld = late.landedLate;
   withheld.opens = TreeId{};
   withheld.opensAt = Hlc{};
@@ -698,10 +740,10 @@ TEST(ws_write_to_a_private_tree_you_dont_own_reads_as_absent) {
   CHECK_EQ(rejectCode(onAbsent->sent[0]), std::string("no-such-tree"));
 }
 
-TEST(ws_write_to_an_unlisted_tree_you_dont_own_says_it_belongs_to_another) {
+TEST(ws_write_to_a_public_tree_you_dont_own_says_it_belongs_to_another) {
   Harness h;
   h.signIn("s-other", "other@example.com");
-  h.seed("t_shared", UserId{"owner"}, Visibility::unlisted);
+  h.seed("t_shared", UserId{"owner"}, Visibility::public_);
 
   auto conn = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade("s-other"), conn);
@@ -775,7 +817,7 @@ TEST(ws_guest_write_is_turned_away_at_auth_before_the_tree_is_looked_up) {
 
 TEST(ws_guest_progress_is_rejected_with_the_sign_in_code_and_the_frame_named) {
   Harness h;
-  h.seed("t_open", UserId{"owner"}, Visibility::unlisted);
+  h.seed("t_open", UserId{"owner"}, Visibility::public_);
   auto conn = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade(""), conn);
 
@@ -1607,6 +1649,17 @@ TEST(ws_an_upgrade_from_an_unlisted_origin_is_refused) {
   UserId owner = h.signIn("s-owner", "owner@example.com");
   h.seed("t_priv", owner, Visibility::private_);
 
+  std::vector<WriteCompletion> lines;
+  installWriteSink([&lines](const WriteCompletion& completion) { lines.push_back(completion); });
+  const std::optional<drogon::HttpResponsePtr> refusal = h.collab.admit(wm::test::DrogonLoopback::received(
+      "GET", "/v1/socket", {"Host: collab", "Origin: http://evil.example.com", "Cookie: wm_session=s-owner"}));
+  installWriteSink({});
+  REQUIRE(refusal);
+  CHECK_EQ((*refusal)->statusCode(), drogon::k403Forbidden);
+  REQUIRE_EQ(lines.size(), std::size_t{1});
+  CHECK_EQ(lines[0].operation + " " + lines[0].outcome, std::string("roadmap.ws.upgrade untrusted-origin"));
+  CHECK(lines[0].severity == WriteSeverity::warn);
+
   auto evil = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade("s-owner", "http://evil.example.com"), evil);
   CHECK_FALSE(evil->connected());
@@ -1915,7 +1968,7 @@ TEST(ws_a_guide_frame_from_a_non_owner_is_refused_and_one_stamped_past_the_skew_
   Harness h;
   UserId owner = h.signIn("s-owner", "owner@example.com");
   h.signIn("s-other", "other@example.com");
-  h.seed("t_shared", owner, Visibility::unlisted);
+  h.seed("t_shared", owner, Visibility::public_);
   auto stranger = std::make_shared<FakeSocket>();
   auto mine = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade("s-other"), stranger);
@@ -2683,8 +2736,8 @@ TEST(ws_a_progress_frame_that_recorded_no_mark_and_was_refused_one_completes_as_
 TEST(ws_every_subscriber_of_the_parent_receives_one_subtree_frame_at_the_seq_it_took) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
-  h.seedSteps("t_p", owner, Visibility::unlisted, "");
-  h.seed("t_other", owner, Visibility::unlisted);
+  h.seedSteps("t_p", owner, Visibility::public_, "");
+  h.seed("t_other", owner, Visibility::public_);
   const auto subscribed = [&h](const std::string& session, const std::string& tree) {
     auto conn = std::make_shared<FakeSocket>();
     h.collab.onOpen(h.upgrade(session), conn);
@@ -2868,7 +2921,7 @@ TEST(ws_a_subscribers_progress_graft_is_sent_before_the_echo_of_a_mark_made_afte
 TEST(ws_the_subscribe_answer_lists_the_subtrees_steps_own_and_names_a_subtree_by_its_owning_step) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
-  h.seedSteps("t_p", owner, Visibility::unlisted, "");
+  h.seedSteps("t_p", owner, Visibility::public_, "");
   const auto subscribed = [&h](const std::string& session, const std::string& tree) {
     auto conn = std::make_shared<FakeSocket>();
     h.collab.onOpen(h.upgrade(session), conn);
@@ -3287,7 +3340,7 @@ TEST(a_wave_of_dropped_connections_is_one_report_a_window_with_the_count_per_rul
 TEST(ws_a_frame_deleting_an_owning_step_names_its_subtree_and_the_delete_hides_the_branch_until_the_step_is_revived) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
-  h.seedSteps("t_p", owner, Visibility::unlisted, "");
+  h.seedSteps("t_p", owner, Visibility::public_, "");
   const TreeId child{"t_00000000000000c1"};
   REQUIRE(std::holds_alternative<SubtreeCreation>(
       h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {child, std::nullopt})));
@@ -3341,7 +3394,7 @@ TEST(ws_a_frame_deleting_an_owning_step_names_its_subtree_and_the_delete_hides_t
 TEST(ws_a_subtree_whose_revive_is_held_unsaved_is_subscribed_to_under_its_name) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
-  h.seedSteps("t_p", owner, Visibility::unlisted, "");
+  h.seedSteps("t_p", owner, Visibility::public_, "");
   const TreeId child{"t_00000000000000c1"};
   REQUIRE(std::holds_alternative<SubtreeCreation>(
       h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {child, std::nullopt})));
@@ -3367,7 +3420,7 @@ TEST(ws_a_subtree_whose_revive_is_held_unsaved_is_subscribed_to_under_its_name) 
 TEST(ws_a_subscribe_racing_the_delete_of_its_owning_step_is_refused_once_joined) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
-  h.seedSteps("t_p", owner, Visibility::unlisted, "");
+  h.seedSteps("t_p", owner, Visibility::public_, "");
   const TreeId child{"t_00000000000000c1"};
   REQUIRE(std::holds_alternative<SubtreeCreation>(
       h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {child, std::nullopt})));
@@ -3486,7 +3539,7 @@ TEST(ws_a_readers_mark_on_a_step_that_owns_a_subtree_is_refused_as_its_owners_is
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
   const UserId reader = h.signIn("s-reader", "reader@example.com");
-  h.seedSteps("t_p", owner, Visibility::unlisted, "");
+  h.seedSteps("t_p", owner, Visibility::public_, "");
   REQUIRE(std::holds_alternative<SubtreeCreation>(
       h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {TreeId{"t_00000000000000c1"}, std::nullopt})));
   auto conn = std::make_shared<FakeSocket>();

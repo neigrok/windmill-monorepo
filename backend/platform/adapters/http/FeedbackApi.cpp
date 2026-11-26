@@ -75,10 +75,14 @@ void FeedbackApi::submit(const drogon::HttpRequestPtr& req, HttpCallback&& callb
   std::string sessionKey =
       (sessionKeyValue.isString() && isSessionKey(sessionKeyValue.asString())) ? sessionKeyValue.asString() : "";
 
-  std::optional<UserId> caller = callerOf(req, *auth_);
+  const SentCaller caller = SentCaller::of(req, *auth_);
+  if (caller.refused()) {
+    callback(refusedCredentials());
+    return;
+  }
 
   try {
-    feedback_->insert(sessionKey, caller, trimmed, email, context);
+    feedback_->insert(sessionKey, caller.account(), trimmed, email, context);
   } catch (const std::exception& e) {
     reportCurrentWriteFailure(e);
     LOG_ERROR << "feedback dropped at storage: " << "unexpected storage exception";

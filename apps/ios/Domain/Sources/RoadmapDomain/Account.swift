@@ -116,6 +116,17 @@ public struct RoadmapAccount: Sendable {
     let node: String
   }
 
+  // What a read elsewhere says one roadmap has come to, as a reader's progress answer names a subtree its steps own.
+  public struct Told: Sendable {
+    public let tree: String
+    public let counts: Counts
+
+    public init(tree: String, counts: Counts) {
+      self.tree = tree
+      self.counts = counts
+    }
+  }
+
   // Every roadmap, in id byte order.
   public let trees: [RoadmapTree]
   // The groups of standing roadmaps that open one another round, each in id byte order.
@@ -131,8 +142,12 @@ public struct RoadmapAccount: Sendable {
   let complete: Set<[UInt8]>
   let latestMarks: ByText<LatestMark>
   let loopOf: ByText<Int>
+  // The roadmaps counted as a read elsewhere tells them: each the device holds no read copy of, and that is not hidden.
+  let told: ByText<Counts>
 
-  public init(_ trees: [RoadmapTree]) {
+  // `told` counts a roadmap the device holds no read copy of as it is told, complete once it has steps and every one is
+  // done; one the device has read counts from its copy whatever it is told.
+  public init(_ trees: [RoadmapTree], told: [Told] = []) {
     let ordered = trees.sorted { $0.id.utf8.lexicographicallyPrecedes($1.id.utf8) }
     let byId = ByText<RoadmapTree>(ordered.map { (Array($0.id.utf8), $0) }) { _, last in last }
     precondition(byId.count == trees.count, "Duplicate normalized tree identity")
@@ -181,6 +196,12 @@ public struct RoadmapAccount: Sendable {
       }
     }
 
+    var counted = ByText<Counts>()
+    for each in told where locations[each.tree]?.standing != .hidden {
+      let read = byId[each.tree]?.read == .loaded && locations[each.tree]?.standing == .standing
+      if !read { counted[each.tree] = each.counts }
+    }
+
     var openings = ByText<[Opening]>()
     var staleBranches = ByText<[StaleBranch]>()
     var openers = ByText<[Opener]>()
@@ -213,7 +234,9 @@ public struct RoadmapAccount: Sendable {
             }
           }
           opened.append(Opening(node: node.id, kind: kind, tree: target, status: status))
-          if status == .loaded || status == .unread { openers[target, default: []].append(Opener(tree: tree.id, node: node.id)) }
+          if status == .loaded || status == .unread || (status == .unknown && counted[target] != nil) {
+            openers[target, default: []].append(Opener(tree: tree.id, node: node.id))
+          }
           if status != .dangling { continue }
         }
         guard let mark = tree.mark(on: node.id), mark.isComplete else { continue }
@@ -227,6 +250,7 @@ public struct RoadmapAccount: Sendable {
       if !tree.index.nodes.isEmpty && waiting == 0 { ready.append(tree.id) }
     }
 
+    for (id, counts) in counted where counts.total > 0 && counts.done == counts.total { ready.append(String(decoding: id, as: UTF8.self)) }
     // Completion is the least fixed point: a roadmap completes once every step it waits on has, and never by a loop alone.
     var complete = Set<[UInt8]>()
     while let id = ready.popLast() {
@@ -261,6 +285,7 @@ public struct RoadmapAccount: Sendable {
     self.complete = complete
     self.latestMarks = latestMarks
     self.loopOf = loopOf
+    self.told = counted
   }
 
   public func location(of id: String) -> Location { locations[id] ?? .unknown }
@@ -272,12 +297,15 @@ public struct RoadmapAccount: Sendable {
     return tree
   }
 
+  // A roadmap the device holds no read copy of counts as it was told, where it was.
   public func counts(_ id: String) -> Counts? {
-    guard let total = standingTree(id)?.index.nodes.count else { return nil }
+    guard let total = standingTree(id)?.index.nodes.count else { return told[id] }
     return Counts(done: total - (pending[id] ?? total), total: total)
   }
 
   // An opening that does not dangle sets the step's mark aside: the step is complete as the roadmap it opens is, and dated by it.
+  // A roadmap complete only by what a read elsewhere tells of it holds no marks to date the step by, so the step's own
+  // complete mark dates it as that read dated it, stamped or not.
   public func progress(_ id: String) -> Progress? {
     guard let tree = standingTree(id) else { return nil }
     let opened = ByText<Opening>((openings[id] ?? []).map { (Array($0.node.utf8), $0) }) { _, last in last }
@@ -287,7 +315,9 @@ public struct RoadmapAccount: Sendable {
         return mark?.isComplete == true ? Progress.Dated(node: node.id, at: mark?.at) : nil
       }
       guard isComplete(opening.tree) else { return nil }
-      if let mark, mark.isComplete, let stamp = mark.stamp, stamp != .unset { return Progress.Dated(node: node.id, at: mark.at) }
+      if let mark, mark.isComplete, told[opening.tree] != nil || (mark.stamp.map { $0 != .unset } ?? false) {
+        return Progress.Dated(node: node.id, at: mark.at)
+      }
       let setAt = opening.kind == .subtree ? node.branchStamp : tree.pointer(on: node.id)?.setAt
       let set = setAt.flatMap { $0 == .unset ? nil : LatestMark(stamp: $0, at: Instant(ms: $0.ms)) }
       return Progress.Dated(node: node.id, at: LatestMark.later(latestMarks[opening.tree], set)?.at)
@@ -348,22 +378,25 @@ public struct RoadmapAccount: Sendable {
     }
   }
 
-  // What each step of one roadmap opens comes to, read without reading every roadmap.
+  // What each step of one roadmap opens comes to, read without reading every roadmap: one the device holds no read copy of
+  // as a read elsewhere told it.
   public func openings(of id: String) -> [OpeningRead] {
     (openings[id] ?? []).map { opening in
       let known = opening.status == .loaded || opening.status == .unread
-      return OpeningRead(opening: opening, complete: opening.status == .loaded && isComplete(opening.tree),
-                         counts: opening.status == .loaded ? counts(opening.tree) : nil,
+      return OpeningRead(opening: opening, complete: opening.status != .dangling && isComplete(opening.tree),
+                         counts: opening.status == .dangling ? nil : counts(opening.tree),
                          loop: known && loopOf[id] != nil && loopOf[id] == loopOf[opening.tree])
     }
   }
 
-  // The person's own roots that stand, newest first by when the server last received a record of each, never received last, equals in id byte order.
+  // The person's own roots that stand, newest first by when the server last received a record of each, or, of one no server
+  // has received, by its newest stamp the phone holds; one with neither last, equals in id byte order.
   public func list() -> [ListedRoadmap] {
     let roots = trees.filter { $0.own && locations[$0.id]?.standing == .standing && $0.parent == nil }
     let newestFirst = roots.sorted { a, b in
-      if (a.updatedAt == nil) != (b.updatedAt == nil) { return a.updatedAt != nil }
-      if let left = a.updatedAt, let right = b.updatedAt, left != right { return left > right }
+      let (left, right) = (a.updatedAt ?? a.stampedAt, b.updatedAt ?? b.stampedAt)
+      if (left == nil) != (right == nil) { return left != nil }
+      if let left, let right, left != right { return left > right }
       return a.id.utf8.lexicographicallyPrecedes(b.id.utf8)
     }
     return newestFirst.compactMap { listing($0.id) }

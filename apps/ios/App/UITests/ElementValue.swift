@@ -42,6 +42,26 @@ extension XCUIApplication {
                                                      "roadmap-step", name + ", ", ", " + name + ", ", ", " + name)).firstMatch
   }
 
+  // The Roadmap room's title menu, open once it leads with *2 Set Aside*, which it answers. Nothing else in the room says a
+  // change is set aside, so until the phone has heard the server refuse them the menu closes through All Roadmaps and
+  // back, and opens again.
+  func titleMenuLeadingWithSetAside(_ roadmap: String = "Learn to sail", file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+    let title = navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", roadmap)).firstMatch
+    let row = buttons["2 Set Aside"]
+    for _ in 0..<10 {
+      XCTAssertTrue(title.waitForHittable(timeout: 10), file: file, line: line)
+      title.tap()
+      XCTAssertTrue(buttons["All Roadmaps…"].waitForExistence(timeout: 5), file: file, line: line)
+      if row.waitForExistence(timeout: 3) { return row }
+      buttons["All Roadmaps…"].tap()
+      XCTAssertTrue(navigationBars["All Roadmaps"].waitForExistence(timeout: 10), file: file, line: line)
+      navigationBars["All Roadmaps"].buttons.element(boundBy: 0).tap()
+      XCTAssertTrue(navigationBars["All Roadmaps"].waitForNonExistence(timeout: 10), file: file, line: line)
+    }
+    XCTFail("the title menu never led with Set Aside", file: file, line: line)
+    return row
+  }
+
   // A step in the step form's Requires or Opens list, by its name.
   func roadmapChoice(_ name: String) -> XCUIElement {
     buttons.matching(NSPredicate(format: "identifier == %@ AND label == %@", "roadmap-choice", name)).firstMatch
@@ -61,10 +81,12 @@ extension XCUIApplication {
   }
 
   // A step's page in the Roadmap room, on screen once its name is the one page name there: a page going away keeps its
-  // own for a moment.
+  // own for a moment. The names are counted, which asks the app for no element that may just have gone; this page's
+  // first, since once it has come only another page's name can leave.
   func roadmapStepPage(_ name: String, timeout: TimeInterval = 10) -> Bool {
     let names = staticTexts.matching(identifier: "roadmap-step-name")
-    let alone = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in names.count == 1 && names.firstMatch.label == name }, object: nil)
+    let named = names.matching(NSPredicate(format: "label == %@", name))
+    let alone = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in named.count == 1 && names.count == 1 }, object: nil)
     return XCTWaiter.wait(for: [alone], timeout: timeout) == .completed
   }
 

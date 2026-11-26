@@ -53,11 +53,11 @@ std::optional<OAuthClient> OAuthService::describeClient(const std::string& clien
 
 std::string OAuthService::issueCode(const std::string& clientId, const std::string& redirectUri,
                                     const std::string& codeChallenge, const std::string& resource,
-                                    const std::string& scope, const UserId& user, const std::string& sessionSecret) {
+                                    const std::string& scope, const UserId& user, const std::string& sessionDigest) {
   const MintedToken code = tokens_.mint();
   const UnixMs now = clock_.nowMs();
   if (!repo_.insertCode(code.digest, StoredCode{clientId, user, redirectUri, codeChallenge,
-                         canonicalResource(resource), scope, codeExpiry(now)}, tokens_.digestOf(sessionSecret), now)) return "";
+                         canonicalResource(resource), scope, codeExpiry(now)}, sessionDigest, now)) return "";
   return code.secret;
 }
 
@@ -66,7 +66,7 @@ OAuthService::TokenResult OAuthService::exchangeCode(const std::string& code, co
                                                      const std::string& codeVerifier,
                                                      const std::string& resource) {
   const UnixMs now = clock_.nowMs();
-  const std::optional<StoredCode> stored = repo_.takeCode(tokens_.digestOf(code));
+  const std::optional<StoredCode> stored = repo_.takeCode(tokens_.digestOf(code), now);
   if (!stored || stored->expiresAt <= now) return {GrantError::invalidGrant, std::nullopt};
   if (stored->clientId != clientId) return {GrantError::invalidClient, std::nullopt};
   if (stored->redirectUri != redirectUri) return {GrantError::badRedirect, std::nullopt};

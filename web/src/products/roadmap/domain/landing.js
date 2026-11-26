@@ -78,15 +78,16 @@ export class ClearLanding {
   }
 }
 
-// §6 The one list of what cannot land, from the engine's notices: each with its reason and what the person
-// wrote, to copy or discard. Every other notice is no refusal a person is shown; `unexpected` names it for the
+// §6 The one list of what cannot land, from the engine's notices: each with its reason, whether it made its subject or
+// changed one that stood (`made`: the refused content creates it, its life made alive at its own birth), and what the
+// person wrote, to copy or discard. Every other notice is no refusal a person is shown; `unexpected` names it for the
 // failure report.
 /**
  * @param {Notice[]} notices
  * @param {Registry} registry
  */
 export function cannotLand(notices, registry) {
-  /** @type {{ id: string, gestureId: string, reason: CannotLandReason, subject: import('../../../platform/domain-kit/entities.js').RecordRef | null, values: Record<string, Json> }[]} */
+  /** @type {{ id: string, gestureId: string, reason: CannotLandReason, made: boolean, subject: import('../../../platform/domain-kit/entities.js').RecordRef | null, values: Record<string, Json> }[]} */
   const listed = [];
   /** @type {{ id: string, code: string }[]} */
   const unexpected = [];
@@ -102,7 +103,22 @@ export function cannotLand(notices, registry) {
       unexpected.push({ id: notice.id, code: notice.code });
       continue;
     }
-    listed.push({ id: notice.id, gestureId: read.gestureId, reason, subject: read.subject, values: read.subject === null ? {} : read.values(read.subject) });
+    const { subject } = read;
+    listed.push({
+      id: notice.id, gestureId: read.gestureId, reason, made: subject !== null && creates(notice.content, jcs([subject.t, subject.id])),
+      subject, values: subject === null ? {} : read.values(subject),
+    });
   }
   return { listed, unexpected };
+}
+
+// Whether the content, or a dependent folded into it, creates the record `key` names (`jcs([t, id])`).
+/**
+ * @param {import('../../../platform/domain-kit/refusals.js').NoticeContent} content
+ * @param {string} key
+ * @returns {boolean}
+ */
+function creates(content, key) {
+  return (content.d ?? []).some((delta) => jcs([delta.t, delta.id]) === key && delta.life?.[0] === 'alive' && delta.life[1] === delta.born)
+    || (content.dependents ?? []).some((dependent) => creates(dependent, key));
 }

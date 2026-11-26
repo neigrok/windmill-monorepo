@@ -27,6 +27,7 @@ const ready = (async () => {
         import React from 'react';
         import { createRoot } from 'react-dom/client';
         import AuthProvider, { useAuth } from '/src/shell/auth/AuthProvider.jsx';
+        import { verifyToken } from '/src/shell/auth/AuthClient.js';
         import { CloseAccountSection } from '/src/shell/settings/CloseAccountSection.jsx';
         import { SessionsSection } from '/src/shell/settings/SessionsSection.jsx';
         import { syncSession } from '/src/platform/sync/session.js';
@@ -40,6 +41,7 @@ const ready = (async () => {
         import { useRoomSyncNotices } from '/src/products/roadmap/sync/useRoomSyncNotices.js';
         import '/src/styles/global.css';
         const nothing = () => {};
+        window.verifyToken = verifyToken;
         function LiveRoom() {
           const { status, lapsed } = useAuth();
           const [session, setSession] = React.useState(null);
@@ -233,6 +235,255 @@ test('Chromium: revoking this session waits for Keep/Discard; Cancel and storage
       }, replica), choice === 'Keep' ? { state: 'dormant', entries: 1 } : null);
     } finally { await context.close(); }
   }
+});
+
+// Two tabs of one browser signed in on session s1, which another device revokes. The context's routes play the server and
+// the browser's one cookie jar the tabs share: a request carries the cookie the jar holds as it arrives, a verify sets s2,
+// a logout ends the session its cookie names and empties the jar. Tab A's read of the account is held where `moment` says,
+// its answer taken as it arrived, while tab B completes a magic-link sign-in.
+for (const moment of ['before the clear reads again', 'while the clear holds the cookie']) {
+  test(`Chromium: a tab clears the cookie of a revoked session once, and a sign-in another tab completes ${moment} stays signed in`, async () => {
+    await ready;
+    const context = await browser.newContext();
+    try {
+      const server = { cookie: 's1', sessions: new Set(['s1']), reads: [], logouts: [], hold: null };
+      const pages = new Map();
+      await context.route('**/v1/me', async (route) => {
+        const { cookie } = server;
+        const user = server.sessions.has(cookie) ? { id: 'A', name: 'Ada', email: 'ada@example.test' } : null;
+        const tab = pages.get(route.request().frame().page());
+        server.reads.push({ tab, cookie });
+        if (server.hold?.tab === tab && server.reads.filter((read) => read.tab === tab).length === server.hold.read) {
+          server.hold.reached();
+          await server.hold.released;
+        }
+        return route.fulfill({ status: user ? 200 : 401, contentType: 'application/json', body: JSON.stringify(user ? { user } : {}) });
+      });
+      await context.route('**/v1/auth/verify', (route) => {
+        server.cookie = 's2'; server.sessions.add('s2'); server.verified?.();
+        return route.fulfill({ status: 200, contentType: 'application/json',
+          body: JSON.stringify({ user: { id: 'A', name: 'Ada', email: 'ada@example.test' } }) });
+      });
+      await context.route('**/v1/sessions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"sessions":[]}' }));
+      await context.route('**/v1/auth/logout', (route) => {
+        server.logouts.push({ tab: pages.get(route.request().frame().page()), cookie: server.cookie });
+        server.sessions.delete(server.cookie); server.cookie = null;
+        return route.fulfill({ status: 204 });
+      });
+      const errors = [];
+      const open = async (tab) => {
+        const page = await context.newPage();
+        pages.set(page, tab);
+        page.on('pageerror', (error) => errors.push(`${tab}: ${error.message}`));
+        await page.goto(`${origin}/auth-test`);
+        await page.waitForFunction(() => typeof mountAuth === 'function');
+        await page.evaluate(() => mountAuth('auth-lapsed-cookie', false));
+        await page.waitForFunction(() => document.getElementById('auth-state')?.textContent === 'signed-in');
+        return page;
+      };
+      const a = await open('A');
+      const b = await open('B');
+      server.sessions.delete('s1');
+      const reached = new Promise((resolve) => {
+        server.hold = { tab: 'A', read: server.reads.filter((read) => read.tab === 'A').length + (moment.startsWith('before') ? 1 : 2), reached: resolve };
+      });
+      let release;
+      server.hold.released = new Promise((resolve) => { release = resolve; });
+      await a.evaluate(() => { window.refreshing = auth.refresh(); });
+      await reached;
+      const signIn = () => b.evaluate(() => { window.signingIn = verifyToken('link').then(({ user }) => auth.signIn(user)); });
+      if (moment.startsWith('before')) {
+        await signIn();
+        await b.evaluate(() => window.signingIn);
+      } else {
+        // B's verify either waits for the cookie, or reaches the server first and sets s2 before A's held read answers.
+        const verified = new Promise((resolve) => { server.verified = resolve; });
+        await signIn();
+        const waiting = b.waitForFunction(() => {
+          navigator.locks.query().then(({ pending }) => { window.waitsForCookie = pending.some((lock) => lock.name === 'windmill:auth-cookie'); });
+          return window.waitsForCookie === true;
+        });
+        waiting.catch(() => {});
+        await Promise.race([verified, waiting]);
+      }
+      release();
+      await a.evaluate(() => window.refreshing);
+      await b.evaluate(() => window.signingIn);
+      await a.evaluate(async () => { await auth.refresh(); await new Promise(requestAnimationFrame); });
+      assert.deepEqual({
+        cookie: server.cookie, live: [...server.sessions], logouts: server.logouts, errors,
+        a: await a.locator('#auth-state').textContent(), b: await b.locator('#auth-state').textContent(),
+        told: { a: await a.evaluate(() => (window.events ?? []).filter((event) => event.name === 'auth_session_cleared')),
+          b: await b.evaluate(() => (window.events ?? []).filter((event) => event.name === 'auth_session_cleared')) },
+      }, {
+        cookie: 's2', live: ['s2'], errors: [], a: 'signed-in', b: 'signed-in',
+        logouts: moment.startsWith('before') ? [] : [{ tab: 'A', cookie: 's1' }],
+        told: { a: [{ name: 'auth_session_cleared', props: { outcome: moment.startsWith('before') ? 'kept' : 'cleared' } }], b: [] },
+      });
+    } finally { await context.close(); }
+  });
+}
+
+// The same played server and shared cookie jar: a lapse is cleared once, whichever tab or page reads it next, until a
+// sign-in brings a cookie back.
+test('Chromium: a lapsed session\'s cookie is cleared once a lapse: one logout and one event across a reload and a second tab, and one again after a sign-in lapses', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    const server = { cookie: 's1', sessions: new Set(['s1']), logouts: [] };
+    const pages = new Map();
+    await context.route('**/v1/me', (route) => {
+      const user = server.sessions.has(server.cookie) ? { id: 'A', name: 'Ada', email: 'ada@example.test' } : null;
+      return route.fulfill({ status: user ? 200 : 401, contentType: 'application/json', body: JSON.stringify(user ? { user } : {}) });
+    });
+    await context.route('**/v1/auth/verify', (route) => {
+      server.cookie = 's2'; server.sessions.add('s2');
+      return route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ user: { id: 'A', name: 'Ada', email: 'ada@example.test' } }) });
+    });
+    await context.route('**/v1/sessions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"sessions":[]}' }));
+    await context.route('**/v1/auth/logout', (route) => {
+      server.logouts.push({ tab: pages.get(route.request().frame().page()), cookie: server.cookie });
+      server.sessions.delete(server.cookie); server.cookie = null;
+      return route.fulfill({ status: 204 });
+    });
+    const errors = [];
+    const mount = async (page, state) => {
+      await page.waitForFunction(() => typeof mountAuth === 'function');
+      await page.evaluate(() => mountAuth('auth-lapse-once', false));
+      await page.waitForFunction((wanted) => document.getElementById('auth-state')?.textContent === wanted, state);
+      await page.evaluate(() => auth.refresh());
+    };
+    const open = async (tab, state) => {
+      const page = await context.newPage();
+      pages.set(page, tab);
+      page.on('pageerror', (error) => errors.push(`${tab}: ${error.message}`));
+      await page.goto(`${origin}/auth-test`);
+      await mount(page, state);
+      return page;
+    };
+    const told = (page) => page.evaluate(() => (window.events ?? []).filter((event) => event.name === 'auth_session_cleared')
+      .map((event) => event.props.outcome));
+    const a = await open('A', 'signed-in');
+    server.sessions.delete('s1');
+    await a.evaluate(() => auth.refresh());
+    const lapse = await told(a);
+    await a.reload();
+    await mount(a, 'ghost');
+    const reloaded = await told(a);
+    const b = await open('B', 'ghost');
+    const opened = await told(b);
+    const cleared = [...server.logouts];
+    await b.evaluate(async () => { const { user } = await verifyToken('link'); await auth.signIn(user); });
+    await a.waitForFunction(() => document.getElementById('auth-state')?.textContent === 'signed-in');
+    server.sessions.delete('s2');
+    await b.evaluate(() => auth.refresh());
+    await a.evaluate(() => auth.refresh());
+    assert.deepEqual({ cleared, told: { lapse, reloaded, opened, again: await told(b), aAgain: await told(a) },
+      logouts: server.logouts, cookie: server.cookie, errors }, {
+      cleared: [{ tab: 'A', cookie: 's1' }],
+      told: { lapse: ['cleared'], reloaded: [], opened: [], again: ['cleared'], aAgain: [] },
+      logouts: [{ tab: 'A', cookie: 's1' }, { tab: 'B', cookie: 's2' }], cookie: null, errors: [],
+    });
+  } finally { await context.close(); }
+});
+
+// Another page of the origin holds the cookie lock and never lets it go, as a sign-in whose request hangs would.
+test('Chromium: a lapse read while the cookie lock stays held lapses the seat anyway, tells failed once, marks nothing and waits no more at later reads', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    const server = { cookie: 's1', sessions: new Set(['s1']), logouts: 0 };
+    await context.route('**/v1/me', (route) => {
+      const user = server.sessions.has(server.cookie) ? { id: 'A', name: 'Ada', email: 'ada@example.test' } : null;
+      return route.fulfill({ status: user ? 200 : 401, contentType: 'application/json', body: JSON.stringify(user ? { user } : {}) });
+    });
+    await context.route('**/v1/sessions', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"sessions":[]}' }));
+    await context.route('**/v1/auth/logout', (route) => { server.logouts += 1; return route.fulfill({ status: 204 }); });
+    const page = await context.newPage();
+    await page.goto(`${origin}/auth-test`);
+    await page.waitForFunction(() => typeof mountAuth === 'function');
+    await page.evaluate(() => mountAuth('auth-lock-held', false));
+    await page.waitForFunction(() => document.getElementById('auth-state')?.textContent === 'signed-in');
+    const holder = await context.newPage();
+    await holder.goto(`${origin}/auth-test`);
+    await holder.evaluate(() => { navigator.locks.request('windmill:auth-cookie', () => new Promise(() => {})); });
+    await holder.waitForFunction(() => {
+      navigator.locks.query().then(({ held }) => { window.holding = held.some((lock) => lock.name === 'windmill:auth-cookie'); });
+      return window.holding === true;
+    });
+    server.sessions.delete('s1');
+    const seat = () => page.evaluate(async () => {
+      await new Promise(requestAnimationFrame);
+      return { state: document.getElementById('auth-state').textContent, lapsed: auth.lapsed, hint: JSON.parse(localStorage.getItem('windmill:auth-hint')),
+        told: (window.events ?? []).filter((event) => event.name === 'auth_session_cleared').map((event) => event.props.outcome) };
+    });
+    await page.evaluate(() => auth.refresh());
+    const lapsed = await seat();
+    const started = Date.now();
+    await page.evaluate(() => auth.refresh());
+    await page.evaluate(() => auth.refresh());
+    const waited = Date.now() - started;
+    assert.deepEqual({ lapsed, later: await seat(), quick: waited < 5000, logouts: server.logouts }, {
+      lapsed: { state: 'ghost', lapsed: true, hint: { status: 'ghost' }, told: ['failed'] },
+      later: { state: 'ghost', lapsed: true, hint: { status: 'ghost' }, told: ['failed'] },
+      quick: true, logouts: 0,
+    });
+  } finally { await context.close(); }
+});
+
+test('Chromium: a magic-link verify the server never answers gives up after its 10 seconds as unreachable and lets go of the cookie lock', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    await context.route('**/v1/auth/verify', () => {});
+    const page = await context.newPage();
+    await page.goto(`${origin}/auth-test`);
+    await page.waitForFunction(() => typeof verifyToken === 'function');
+    const outcome = await page.evaluate(() => Promise.race([verifyToken('link').then(() => 'verified', (error) => error.code),
+      new Promise((resolve) => { setTimeout(() => resolve('still waiting'), 15000); })]));
+    const held = await page.evaluate(async () => (await navigator.locks.query()).held.filter((lock) => lock.name === 'windmill:auth-cookie').length);
+    assert.deepEqual({ outcome, held }, { outcome: 'unreachable', held: 0 });
+  } finally { await context.close(); }
+});
+
+test('Chromium: a browser without Web Locks verifies a magic link, so the person is signed in, and clears a lapsed cookie without the lock', async () => {
+  await ready;
+  const context = await browser.newContext();
+  try {
+    await context.addInitScript(() => { Object.defineProperty(Navigator.prototype, 'locks', { get: () => undefined, configurable: true }); });
+    const server = { cookie: null, sessions: new Set(), logouts: [] };
+    await context.route('**/v1/me', (route) => {
+      const user = server.sessions.has(server.cookie) ? { id: 'A', name: 'Ada', email: 'ada@example.test' } : null;
+      return route.fulfill({ status: user ? 200 : 401, contentType: 'application/json', body: JSON.stringify(user ? { user } : {}) });
+    });
+    await context.route('**/v1/auth/verify', (route) => {
+      server.cookie = 's2'; server.sessions.add('s2');
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ user: { id: 'A', name: 'Ada', email: 'ada@example.test' } }) });
+    });
+    await context.route('**/v1/auth/logout', (route) => {
+      server.logouts.push(server.cookie); server.sessions.delete(server.cookie); server.cookie = null;
+      return route.fulfill({ status: 204 });
+    });
+    const page = await context.newPage();
+    await page.goto(`${origin}/auth-test`);
+    await page.waitForFunction(() => typeof verifyToken === 'function');
+    const signedIn = await page.evaluate(async () => {
+      const { fetchMe } = await import('/src/shell/auth/AuthClient.js');
+      const { user } = await verifyToken('link');
+      return { locks: typeof navigator.locks, verified: user.id, me: (await fetchMe()).user?.id ?? null };
+    });
+    server.sessions.delete('s2');
+    const cleared = await page.evaluate(async () => {
+      const { clearLapsedCookie, fetchMe } = await import('/src/shell/auth/AuthClient.js');
+      let marked = false;
+      const outcome = await clearLapsedCookie(() => fetchMe(), { cleared: () => false, record: () => { marked = true; } });
+      return { outcome: outcome.outcome, marked };
+    });
+    assert.deepEqual({ signedIn, cleared, logouts: server.logouts }, {
+      signedIn: { locks: 'undefined', verified: 'A', me: 'A' }, cleared: { outcome: 'cleared', marked: true }, logouts: ['s2'],
+    });
+  } finally { await context.close(); }
 });
 
 test('Chromium: account closure discards without asking; failed server and local cleanup remain retryable', async () => {

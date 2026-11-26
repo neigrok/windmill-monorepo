@@ -29,18 +29,16 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, title = '
   const mounted = useRef(false);
   const urlRef = useRef(null);
   const shareUrl = treeShareUrl(treeId);
-  const reachable = visibility === 'public' || visibility === 'unlisted';
-  const publish = mine && visibility !== 'public';
+  const reachable = visibility === 'public';
+  const publish = mine && !reachable;
   // Who reads the roadmap, as publishing it or its standing says: a roadmap whose steps own subtrees takes them with it.
   const roadmap = title.trim() || t('roadmap.common.untitled');
   const readers = subtrees ? {
     publishing: t('roadmap.share.publishingWithSubtrees', { roadmap }),
     public: t('roadmap.share.publicWithSubtrees', { roadmap }),
-    unlisted: t('roadmap.share.unlistedWithSubtrees', { roadmap }),
   } : {
     publishing: t('roadmap.share.publishing'),
     public: t('roadmap.share.public'),
-    unlisted: t('roadmap.share.unlisted'),
   };
 
   useEffect(() => {
@@ -119,11 +117,7 @@ export function ShareDialog({ open, onClose, treeId, visibility, mine, title = '
       {!shareUrl ? <p>{t('roadmap.share.noLink')}</p> : (
         <div>
           <p>
-            {publish
-              ? readers.publishing
-              : visibility === 'public'
-                ? readers.public
-                : reachable ? readers.unlisted : t('roadmap.share.private')}
+            {publish ? readers.publishing : reachable ? readers.public : t('roadmap.share.private')}
           </p>
           {reachable && (
             <input

@@ -253,29 +253,6 @@ test('a store failure while sending or pulling reports storage once and never as
   engine.close();
 });
 
-test('an engine holding its device in memory leads and syncs alone, and a second such tab is a device of its own', async () => {
-  const env = environment();
-  const opened = async () => {
-    const engine = await BrowserSyncEngine.open({ ...env.options, inMemory: true });
-    engine.observe('self/probe');
-    await engine.start();
-    await until(() => engine.leader);
-    return engine;
-  };
-  const first = await opened(), second = await opened();
-  assert.notEqual(first.store.coordination, second.store.coordination);
-  env.transport.account = 'A';
-  await first.signIn('A'); await until(() => first.leader);
-  await first.commit('self/probe', card());
-  await first.send(); await until(() => !first.sending);
-  assert.deepEqual(second.observe('self/probe').getSnapshot().drawn, []);
-  await second.signIn('A'); await until(() => second.leader);
-  second.kickPull(); await second.pull();
-  assert.deepEqual(second.observe('self/probe').getSnapshot().drawn.map(({ id }) => id), ['card0001']);
-  assert.deepEqual(env.failures, []);
-  first.close(); second.close();
-});
-
 test('a burst of writes in one minute never starves the transport failure that follows it', async () => {
   const env = environment(), engine = await open(env);
   env.transport.account = 'A'; await engine.signIn('A'); await until(() => engine.leader);
@@ -1393,12 +1370,6 @@ const noClear = {
     env.transport.account = 'A'; await engine.signIn('A');
     return { engine, account: 'A', syncReplica: null };
   },
-  'a store held in memory, a new device in every tab under one cookie': async (env) => {
-    const engine = await BrowserSyncEngine.open({ ...env.options, inMemory: true });
-    await engine.start();
-    env.transport.account = 'A'; await engine.signIn('A');
-    return { engine, account: 'A', syncReplica: unknownReplica };
-  },
   'an answer for another account than the one the replica is bound to': async (env) => {
     const engine = await open(env);
     env.transport.account = 'A'; await engine.signIn('A');
@@ -2206,4 +2177,91 @@ test('a tag deleted on another device keeps its dead row\'s seq in IndexedDB, so
   assert.deepEqual(reopened.device.activeReplica.confirmedRows(tree), []);
   assert.deepEqual(env.failures, []);
   reopened.close();
+});
+
+test('a Redo asked signed out on a fresh browser draws the day and waits for an epoch, and goes up once the first pull gives the replica one', async () => {
+  const env = environment(), engine = await open(env);
+  const day = { scope: 'self/probe', t: 'day', id: '2026-11-24' };
+  const score = { ...day, slot: { kind: 'field', name: 'score' } };
+  const { outcome: act } = await engine.commitAct([{ scope: 'self/probe', changes: [{ op: 'put', t: 'day', id: day.id, f: { score: 5 } }], opts: { hold: true } }],
+    { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore', targets: [{ target: score, defaultValue: 0 }] }] }] } });
+  const cancelled = await engine.requestInverse(act.gestureId);
+  const redo = await engine.requestInverse(cancelled.inverseActId);
+  assert.deepEqual([cancelled.kind, redo.kind, redo.localChanged], ['cancelled', 'pending', true]);
+  env.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, true);
+  await until(() => engine.leader);
+  await engine.send();
+  assert.deepEqual([engine.device.activeReplica.meta.serverEpoch, env.requests.filter(({ endpoint }) => endpoint === 'push').length], [null, 0]);
+  assert.equal(engine.observe('self/probe').getSnapshot().drawn.find((record) => record.t === 'day').f.score[0], 5);
+  engine.kickPull();
+  await engine.pull();
+  assert.equal(engine.device.activeReplica.meta.serverEpoch, 'ep-1');
+  env.timers.advance(0);
+  await until(() => engine.readInverseResult(redo.requestId).kind === 'settled');
+  assert.deepEqual(engine.readInverseResult(redo.requestId), { kind: 'settled', requestId: redo.requestId,
+    inverseActId: redo.inverseActId, changed: true, appliedCount: 1, skippedCount: 0 });
+  const stored = env.state.rows['acct:A/probe'][JSON.stringify(['day', day.id])];
+  assert.deepEqual([stored.life[0], stored.f.score[0]], ['alive', 5]);
+  engine.close();
+});
+
+// engine.md §7.4: a sender round with nothing to push asks the server nothing and waits for a kick. Every pull hangs
+// until released, as the first pull after sign-in may, while the fake clock runs 20 s in rounds of 100 ms.
+const senderRounds = {
+  'a Redo waiting for an epoch asks nothing, and goes up once the first pull gives the replica one': {
+    signedOut: async (engine) => {
+      const day = { scope: 'self/probe', t: 'day', id: '2026-11-24' };
+      const { outcome: act } = await engine.commitAct([{ scope: 'self/probe', changes: [{ op: 'put', t: 'day', id: day.id, f: { score: 5 } }], opts: { hold: true } }],
+        { undo: { version: 1, segments: [{ index: 0, recipes: [{ kind: 'fields', restoreCommand: 'probe.restore',
+          targets: [{ target: { ...day, slot: { kind: 'field', name: 'score' } }, defaultValue: 0 }] }] }] } });
+      return engine.requestInverse((await engine.requestInverse(act.gestureId)).inverseActId);
+    },
+    whilePulling: { hellos: 0, pushes: 0, epoch: null },
+    afterPull: { hellos: 1, pushes: 1, epoch: 'ep-1' },
+  },
+  'an entry held back behind a held put asks nothing during the hold, and both go up once it ends': {
+    signedIn: async (engine) => {
+      await engine.commit('self/probe', [{ op: 'put', t: 'day', id: '2026-11-24', f: { score: 5 } }], { hold: true });
+      await engine.commit('self/probe', [{ op: 'put', t: 'day', id: '2026-11-24', f: { score: 6 } }]);
+    },
+    whilePulling: { hellos: 1, pushes: 1, epoch: 'ep-1' },
+    afterPull: { hellos: 1, pushes: 1, epoch: 'ep-1' },
+  },
+  'a plain commit goes up once': {
+    signedOut: async (engine) => { await engine.commit('self/probe', [{ op: 'put', t: 'day', id: '2026-11-24', f: { score: 5 } }]); },
+    whilePulling: { hellos: 1, pushes: 1, epoch: 'ep-1' },
+    afterPull: { hellos: 1, pushes: 1, epoch: 'ep-1' },
+  },
+};
+for (const [name, { signedOut, signedIn, whilePulling, afterPull }] of Object.entries(senderRounds)) test(`the sender: ${name}`, async () => {
+  const env = environment(), engine = await open(env);
+  const redo = await signedOut?.(engine);
+  const pulls = [];
+  let pullsFlow = false;
+  const request = env.transport.request.bind(env.transport);
+  env.transport.request = (endpoint, body, options) => (endpoint === 'pull' && !pullsFlow
+    ? new Promise((resolve) => pulls.push(() => resolve(request(endpoint, body, options)))) : request(endpoint, body, options));
+  env.transport.account = 'A';
+  assert.equal((await engine.signIn('A')).complete, true);
+  await until(() => engine.leader);
+  await signedIn?.(engine);
+  const run = async (ms) => {
+    for (let at = 0; at < ms; at += 100) {
+      env.timers.advance(100);
+      for (let k = 0; k < 40; k++) await tick();
+    }
+  };
+  const sent = () => ({ hellos: env.requests.filter(({ endpoint }) => endpoint === 'hello').length - hellosAtSignIn,
+    pushes: env.requests.filter(({ endpoint }) => endpoint === 'push').length, epoch: engine.device.activeReplica.meta.serverEpoch });
+  const hellosAtSignIn = env.requests.filter(({ endpoint }) => endpoint === 'hello').length;
+  await run(20_000);
+  assert.deepEqual(sent(), whilePulling);
+  pullsFlow = true;
+  for (const answer of pulls) answer();
+  await run(5_000);
+  assert.deepEqual(sent(), afterPull);
+  if (redo) assert.deepEqual(engine.readInverseResult(redo.requestId), { kind: 'settled', requestId: redo.requestId,
+    inverseActId: redo.inverseActId, changed: true, appliedCount: 1, skippedCount: 0 });
+  engine.close();
 });

@@ -70,8 +70,8 @@ alter table trees add column if not exists guide_hlc text not null default '';
 alter table trees add column if not exists guide_ms bigint not null default 0;
 alter table trees add column if not exists guide_counter bigint not null default 0;
 alter table trees add column if not exists guide_inherited boolean not null default false;
--- visibility gates every read: 'private' is owner-only, 'unlisted'/'public' are readable by anyone
--- holding the id.
+-- visibility gates every read: 'public' is readable by anyone holding the id, and any other value
+-- reads as 'private', owner-only.
 alter table trees add column if not exists visibility text not null default 'private';
 alter table trees alter column visibility set default 'private';
 
@@ -423,6 +423,8 @@ create table if not exists oauth_codes (
 );
 
 alter table oauth_codes add column if not exists account_generation bigint not null default 0;
+-- The digest of the session the code's consent was given through: the code exchanges only while that session is live.
+alter table oauth_codes add column if not exists session_hash text;
 
 create table if not exists oauth_tokens (
   token_hash         text primary key,  -- digest of the access token

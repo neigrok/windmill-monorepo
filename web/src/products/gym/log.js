@@ -49,6 +49,18 @@ export function routineHref(id) {
 // `#/gym` IS the routines home; `#/gym/routines` is an alias that still resolves to it.
 export const ROUTINES_HREF = '#/gym';
 
+// The open workout's page, and the receipt of one this page just finished.
+export const WORKOUT_HREF = '#/gym/workout';
+
+export function receiptHref(id) {
+  return `${WORKOUT_HREF}/receipt/${id}`;
+}
+
+export function receiptIdOf(hash) {
+  const match = /^#\/gym\/workout\/receipt\/([A-Za-z0-9_-]+)/.exec(hash || '');
+  return match ? match[1] : null;
+}
+
 // The blank editor's id — a mint can never produce it, every real one being `rt_` and sixteen hex.
 export const NEW_ROUTINE_ID = 'new';
 
@@ -180,6 +192,7 @@ export function screenOf(hash) {
   if (/^#\/gym\/(movement|stats)(\/|$|\?)/.test(hash || '')) return 'record';
   if (/^#\/gym\/log(\/|$|\?)/.test(hash || '')) return 'log';
   if (/^#\/gym\/bodyweight(\/|$|\?)/.test(hash || '')) return 'bodyweight';
+  if (/^#\/gym\/workout(\/|$|\?)/.test(hash || '')) return 'workout';
   return 'routines';
 }
 
@@ -257,27 +270,6 @@ export function clockOf(ms) {
   const seconds = total % 60;
   const head = hours ? `${hours}:${String(minutes).padStart(2, '0')}` : String(minutes);
   return `${head}:${String(seconds).padStart(2, '0')}`;
-}
-
-export function workoutClocks(session, sets, now) {
-  const end = session.finishedAt ?? now;
-  const latest = sets.length ? Math.max(...sets.map((set) => set.completedAt)) : session.startedAt;
-  return [
-    { label: t('gym.mirror.workoutTime'), anchor: session.startedAt },
-    { label: sets.length ? t('gym.mirror.sinceLastSet') : t('gym.mirror.sinceStart'), anchor: latest },
-  ].map(({ label, anchor }) => {
-    const elapsed = Math.max(0, end - anchor);
-    const total = Math.floor(elapsed / 1000);
-    const hours = Math.floor(total / 3600);
-    const minutes = Math.floor(total % 3600 / 60);
-    const seconds = total % 60;
-    const spoken = [
-      hours > 0 ? t('gym.mirror.hours', { count: hours }) : null,
-      minutes > 0 ? t('gym.mirror.minutes', { count: minutes }) : null,
-      seconds > 0 ? t('gym.mirror.seconds', { count: seconds }) : null,
-    ].filter(Boolean).join(' ') || t('gym.mirror.seconds', { count: 0 });
-    return { label, elapsed, spoken };
-  });
 }
 
 export function durLabel(ms) {
@@ -522,37 +514,6 @@ export function planOf(session) {
 export function planFrozenLabel(session) {
   if (!planOf(session)) return null;
   return t('gym.log.planFrozen', { time: timeLabel(session.startedAt) });
-}
-
-export const NOT_IN_PLAN = t('gym.log.notInPlan');
-
-// Read off the frozen snapshot, never off today's routine; a snapshot entry is the routine entry's
-// own shape, `sets` per set, so the reading is the entry itself.
-// A plan may name one movement twice and a `PlanEntry` carries no id, so nothing can tell which a
-// logged set was performed against; that case answers `ambiguous`.
-export function planReadingOf(session, exerciseId) {
-  // The snapshot is frozen jsonb echoed back verbatim, so a list of entries is only a convention.
-  // An unreadable plan draws no comparison; an empty list means every movement was added today.
-  const plan = planOf(session);
-  if (!plan || !Array.isArray(plan.entries)) return { kind: 'unplanned', line: null, entry: null };
-  const entries = plan.entries.filter((entry) => entry?.exerciseId === exerciseId);
-  if (entries.length === 0) return { kind: 'added', line: NOT_IN_PLAN, entry: null };
-  if (entries.length > 1) return { kind: 'ambiguous', line: null, entry: null };
-  const entry = entries[0];
-  return { kind: 'planned', line: t('gym.log.planReading', { scheme: entryLabel(entry) }), entry };
-}
-
-// The slot strip as rows, for one movement: what was lifted, in order, then the slots still to
-// come. A set logged past the plan appends as lifted. A planned row is spoken as `set 4, target 100 × 1`.
-export function slotRows(sets, entry) {
-  const lifted = sets.map((set) => ({
-    key: set.id, kind: 'lifted', label: `${fmt(set.weightKg)} × ${set.reps}`,
-  }));
-  const coming = (entry?.sets ?? []).slice(lifted.length).map((slot, index) => {
-    const n = lifted.length + index + 1;
-    return { key: `slot-${n}`, kind: 'target', label: setReading(slot), spoken: t('gym.log.slotSpoken', { position: n, reading: setReading(slot) }) };
-  });
-  return [...lifted, ...coming];
 }
 
 // What an entered load counts for its movement: each of a pair of dumbbells, weight added to the body (assistance

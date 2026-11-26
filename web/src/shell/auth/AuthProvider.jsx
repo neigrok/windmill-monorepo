@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { flushSync } from 'react-dom';
 import { API_BASE } from '../apiBase.js';
-import { fetchMe, logout } from './AuthClient.js';
+import { clearLapsedCookie, fetchMe, logout } from './AuthClient.js';
 import { closeAccount as requestAccountClosure, listSessions } from './AccountClient.js';
 import { DeviceSeat, DocumentDataScope, ProductQuestions } from './accountChange.js';
 import { requestNavigation } from '../navigation.js';
@@ -20,14 +20,19 @@ export function useAuth() {
   if (!value) throw new Error('useAuth must be used within an AuthProvider');
   return value;
 }
-function hint() {
-  try { return JSON.parse(localStorage.getItem(HINT_KEY) || 'null')?.user ?? null; } catch { return null; }
+// The browser's last settled account, which the static pages read and write too: `{ status: 'signed-in', user }`, or
+// `{ status: 'ghost' }` naming in `cleared` the account whose lapsed session's cookie the browser already cleared. Only a
+// signed-in hint drops that mark, since the cookie comes back only through a sign-in.
+function hinted() {
+  try { return JSON.parse(localStorage.getItem(HINT_KEY) || 'null') ?? {}; } catch { return {}; }
 }
-function remember(user) {
-  try { localStorage.setItem(HINT_KEY, JSON.stringify(user ? { status: 'signed-in', user } : { status: 'ghost' })); }
+function hint() {
+  return hinted().user ?? null;
+}
+function remember(user, cleared = hinted().cleared) {
+  try { localStorage.setItem(HINT_KEY, JSON.stringify(user ? { status: 'signed-in', user } : { status: 'ghost', ...(cleared ? { cleared } : {}) })); }
   catch { captureError('auth', 'auth-hint-storage', '', '/auth'); }
 }
-const syncOf = (id) => PRODUCTS.find((product) => product.id === id)?.sync;
 // Every read of the account tells the engine whether the server answered, so a page whose engine sends nothing of its own,
 // as a signed-out one's, learns when the server is out of reach (the engine's `connection`). It answers `fetchMe`'s read.
 function readAccount(engine) {
@@ -234,9 +239,7 @@ export default function AuthProvider({ children }) {
     pending.current = { user: me, ...answers, revision };
     if (!result.complete) {
       const due = unanswered(result, answers)[0];
-      const count = due ? await productQuestions.adoptionCount(engine, due) : undefined;
-      const words = due ? await productQuestions.signInWords(engine, due) ?? null : null;
-      setQuestion(due ? { ...due, ...(count === undefined ? {} : { count: { ...due.count, [syncOf(due.product).signedOutWork.type]: count } }), words } : null);
+      setQuestion(due ? { ...due, words: await productQuestions.signInWords(engine, due) } : null);
       setError(!result.upgradeRequired && !result.due?.length);
       return;
     }
@@ -265,7 +268,20 @@ export default function AuthProvider({ children }) {
     await engine.cleanupCredentials();
     if (engine.device.meta.clearCredential) { settle(null, { signedOut: true }); return null; }
     const revision = roomOwnership.current.revision;
-    const read = await readAccount(engine);
+    let read = await readAccount(engine);
+    // The read that lapses the seat finds a cookie no live session holds: it goes, once a lapse, so no door refuses this
+    // browser for it (AUTH.md). The read made under the cookie lock, a sign-in another tab made meanwhile included, is the
+    // one this takes; a clear that made none keeps this 401, so the seat lapses and the next page tries again.
+    if (seat.lapses(read?.user, engine, { signedOut })) {
+      const account = seat.previousAccount;
+      const cleared = await clearLapsedCookie(() => readAccount(engine),
+        { cleared: () => hinted().cleared === account, record: () => remember(null, account) });
+      if (cleared) {
+        if (cleared.error) captureError('auth', 'auth-session-clear', cleared.error.stack ?? '', '/auth');
+        track('auth_session_cleared', { outcome: cleared.outcome });
+        read = cleared.read ?? read;
+      }
+    }
     const me = read?.user;
     if (revision !== roomOwnership.current.revision) return undefined;
     const confirmedRevision = confirmRoom(me);
@@ -480,7 +496,6 @@ export default function AuthProvider({ children }) {
     </div>}
     {error && !question && !upgradeRequired && <div role="alert">{t('shell.auth.accountChangeFailed')}</div>}
     <SyncDecisions key={`${question?.product ?? 'signout'}:${question?.counted?.join('|') ?? ''}`} question={upgradeRequired ? null : question}
-      work={PRODUCTS.find((product) => product.id === question?.product)?.sync?.signedOutWork}
       notices={question ? productQuestions.signOutNotices() : []} busy={busy} error={error} onDecision={decide}
       onCancel={async () => {
         setBusy(true); setError(false);

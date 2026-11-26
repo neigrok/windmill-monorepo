@@ -23,7 +23,7 @@
 .gym-root .gym-notes-caption, .gym-root .gym-notes-full { margin: 0; font: 400 13px/18px var(--font-body); }
 .gym-root .gym-notes-caption { color: var(--gym-ink-faint); }
 .gym-root .gym-notes-full { color: var(--gym-ink-dim); }
-.gym-root .gym-notes-add { display: flex; align-items: center; justify-content: flex-start; width: auto; min-height: 44px; margin: 0; padding: 0; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-brand); font: 700 14px var(--font-body); cursor: pointer; }
+.gym-root .gym-notes-add { display: flex; align-items: center; justify-content: flex-start; width: auto; min-height: 44px; margin: 0; padding: 0; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-link); font: 700 14px var(--font-body); cursor: pointer; }
 .gym-root .gym-notes-add::before { content: '+ '; white-space: pre; }
 .gym-root .gym-notes-add:hover { background: var(--gym-raised); color: var(--gym-ink); }
 .gym-root .gym-note-fields { display: flex; flex-direction: column; gap: 24px; }

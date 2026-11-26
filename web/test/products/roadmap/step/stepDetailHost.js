@@ -17,6 +17,7 @@ import { useInlineStepEditor } from '/src/products/roadmap/step/InlineStepEditor
 import { DocumentDataScope } from '/src/shell/auth/accountChange.js';
 import { useStepAddress, stepIsStale } from '/src/products/roadmap/step/stepAddress.js';
 import { SkillTree } from '/src/products/roadmap/model/SkillTree.js';
+import { deletable } from '/src/products/roadmap/board/acts.js';
 import { Openings } from '/src/products/roadmap/model/Opening.js';
 import { TreeDoor } from '/src/products/roadmap/room/useTreeVisit.js';
 import { BoardQuery } from '/src/products/roadmap/board/Board.js';
@@ -88,7 +89,7 @@ window.openRoom = ({ nodes, completed, editable = true, workspaces = {}, kinds =
           onSwitchView: noop, query, onQuery: setQuery, quiet })),
       open && React.createElement(StepDetail, {
         tree, completed: progress.completed, completedAt: progress.completedAt, address, breakpoint, roadmapTitle: 'Learn to sail',
-        editable, deletable: tree.roots().length !== 1 || tree.roots()[0].id !== address.id, stepLink: linkPrefix ? linkPrefix + address.id : null, refusal,
+        editable, deletable: deletable(tree, [address.id]), stepLink: linkPrefix ? linkPrefix + address.id : null, refusal,
         workspace: spaces[address.id] ?? { subtasks: [], note: '', links: [] },
         workspaceActions: { onToggleSubtask: (nodeId, subtaskId) => setSpaces((current) => ({ ...current, [nodeId]: toggleSubtask(current[nodeId], subtaskId) })),
           onAddSubtask: noop, onEditSubtask: noop, onDeleteSubtask: noop, onSetNote: (nodeId) => call('note ' + nodeId), onAddLink: noop, onDeleteLink: noop },

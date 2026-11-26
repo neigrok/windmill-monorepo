@@ -787,6 +787,19 @@ function transports() {
       device: base(),
       steps: [{ op: 'hello', deviceNow: 5030, tSend: 5010, tRecv: 5030, response: { status: 200, body: { ...at(9020), as: null, schema: 2, minSchema: 2 } } }],
     }),
+    ...(() => {
+      const recorded = stepsVector('a hello served as the account records the schema it advertises', {
+        device: base(),
+        steps: [{ op: 'hello', deviceNow: 5030, response: { status: 200, body: { ...at(5030), schema: 14, minSchema: 2 } } }],
+      });
+      const forgotten = stepsVector('a hello handled as a 401 forgets the schema an earlier hello recorded', {
+        device: recorded.expect.device,
+        steps: [{ op: 'hello', deviceNow: 5040, response: { status: 401, body: { ...at(5040), as: null, error: 'unauthenticated' } } }],
+      });
+      assert.equal(recorded.expect.device.replicas[0].meta.serverSchema, 14);
+      assert.deepEqual([forgotten.expect.device.replicas[0].meta.serverSchema, forgotten.expect.device.replicas[0].meta.authPaused], [undefined, true]);
+      return [recorded, forgotten];
+    })(),
     stepsVector('a 409 re-identifies after taking an offset sample, and the instance takes a new actor', {
       device: base(),
       ids: ['rp_00000000000000000000000000000002'],
