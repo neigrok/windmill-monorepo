@@ -25,9 +25,8 @@ equipment values and load counts remain stored without migration. `other` counts
 and signed set values remain unchanged. Gym also retains the additive `thread` and `message`
 records and `runningTurn` and `picture:<id>` device rows. `composition.json` composes gym, journal and
 roadmap, whose versions rise together (§2.4); journal's field shape is unchanged. A keyed record's revival
-carries its values only to a server that advertises version 14 (§2.4, §6.4). Production's hello advertised
-schema 13 / minimum 11 when last verified; the [coordinated release runbook](../../backend/deploy/README.md#coordinated-client-cutoff)
-holds the receipts. Every other product starts from empty stores.
+carries its values only to a server that advertises version 14 (§2.4, §6.4). The [coordinated release runbook](../../backend/deploy/README.md#coordinated-client-cutoff)
+records what production's hello advertises, with its receipts. Every other product starts from empty stores.
 
 **Retired REST writes:** gym's former REST write paths answer `410`
 `{"error":"This version of the app can no longer save; update it.","code":"client-update-required"}`
