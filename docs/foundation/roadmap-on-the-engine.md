@@ -381,8 +381,8 @@ tables, stopping where they differ from those it planned from.
 - A step's `status` keeps `none` and `complete`; `active` and `inProgress` become `none`, as today,
   and so does a mark's. The audit counts every other value, and the move stops on any.
 - Every value is stored as the old server reads it: a colour or hue it does not know as terracotta,
-  a link as its lenient reading of it. Each such value is counted. A root's visibility `unlisted` is
-  stored as private, as the old server reads it.
+  a link as its lenient reading of it. Each such value is counted. The adoption reads an old root's
+  visibility `unlisted` as private, as the old server does; production holds no `unlisted` roadmap.
 - A pointer moves from its step to a `pointer` record in its owner's overlay; a cleared one becomes
   none. A subtree's place becomes `tree.parent`, `meta.root`, `meta.parent`, `meta.depth` and
   `node.branch`, and every `reach` is computed.

@@ -406,40 +406,40 @@ rooms' routes and `/v1/socket` answer 410 `client-update-required` (`SPEC.md`, H
 stay beside them, served by nothing, until the Roadmap on the engine tree's node `m5-delete-roadmaps-own-sync` deletes
 them with roadmap's own sync.
 
-1. Keep a schema 11 / minimum 11 maintenance image available. Automatic deployment
-   refuses a candidate minimum that differs from the live server.
-2. Prepare schema 11 readers on every surface. Preserve stored equipment/count values, exact zero,
-   absent targets and pending writes. Web Deploy retains the complete pinned `dist`, source/file-hash
-   manifest and composed compatibility artifact before checking the live anonymous hello. It holds
-   promotion before mkdir/rsync unless live schema is at least the client minimum and live minimum
-   accepts the client schema; incompatible or unreadable state leaves the served web files intact.
-   New selectors require their own
-   design approval. Each bound sender keeps writes ready until an owner/token/replica/epoch-matched
-   fresh hello advertises a server schema at least the client's generated registry minimum.
-3. Verify the signed Android update over the public replacement floor, including retained local work
-   and delivery against the schema 11 server. Upload the exact iOS version/build through the manual
-   `ios-release.yml` workflow and check processing, beta readiness and intended tester availability.
-   Verify both native replacements against the schema 11 candidate, publish the Android release,
-   and verify both upgrade destinations. TestFlight status alone proves no tester access.
+A change of the registry's minimum ships in these steps. The old minimum is the live hello's `minSchema` and the new
+one the composed registries' `minVersion`; for schema 15 they are 11 and 15, so schemas 11 to 14 are refused.
+
+1. Keep a maintenance image of the live server's interval available. Automatic deployment refuses a candidate minimum
+   that differs from the live server's.
+2. Prepare readers of the new registry on every surface, keeping stored values and pending writes. Web Deploy retains
+   the complete pinned `dist`, source/file-hash manifest and composed compatibility artifact before checking the live
+   anonymous hello. It holds promotion before mkdir/rsync unless live schema is at least the client minimum and live
+   minimum accepts the client schema; incompatible or unreadable state leaves the served web files intact. Each bound
+   sender keeps writes ready until an owner/token/replica/epoch-matched fresh hello advertises a server schema at least
+   the client's generated registry minimum.
+3. Verify the signed Android update over the public replacement floor, including retained local work and delivery
+   against a server of the new registry. Upload the exact iOS version/build through the manual `ios-release.yml`
+   workflow and check processing, beta readiness and intended tester availability. Verify both native replacements
+   against the candidate, publish the Android release, and verify both upgrade destinations. TestFlight status alone
+   proves no tester access.
 4. Record the full backend commit SHA and immutable Docker image ID (`docker image inspect --format
-   '{{.Id}}' ghcr.io/neigrok/windmill-monorepo:<sha>`). Read the live minimum again, then dispatch
-   **Deploy to VPS** from `main` with that `image_tag`, its exact `expected_old_minimum`,
-   `expected_new_minimum=11` and `expected_image_id`. Both raises and lowers require exact
-   acknowledgement. An interrupted attempt reads live state again. A fresh host uses old minimum 0.
-5. Verify `windmill_resum_sync_digests` completed ("Resum the scope digests" below), then verify schema 11 /
-   minimum 11 at hello and schema 10 or older `426 upgrade-required` refusals at
-   hello, push, pull and WebSocket upgrade. Active Gym HTTP routes require the generated minimum
-   header and return `426 client-update-required` for missing/old carriers before JSON, image or
-   SSE delivery. Verify queued native/web work delivers only after a fresh compatible hello. Cached
-   web and old native clients retain local work and show their existing update-required surface.
-   Retry the held Web Deploy run after the backend is compatible, or dispatch the exact accepted
-   main source. Each attempt retains a separate pinned web artifact; inspect its full source SHA,
-   schema and file hashes. The preflight reads the current compose deployment and promotes no
-   backend state. Verify the new web release and real queued delivery after promotion.
-6. Keep a schema 11 / minimum 11 maintenance image available before accepting the new load range
-   or nullable metrics. Roll back only to a compatible image; do not reopen old parsers or numeric
-   column caps. Automation resumes when candidate and live minimum match. Server and migration use
-   the same pinned image ID.
+   '{{.Id}}' ghcr.io/neigrok/windmill-monorepo:<sha>`). Read the live minimum again, then dispatch **Deploy to VPS**
+   from `main` with that `image_tag`, `expected_old_minimum` the live minimum, `expected_new_minimum` the registries'
+   `minVersion` and `expected_image_id` the recorded ID (`11`, `15` and the ID for schema 15). Both raises and lowers
+   require exact acknowledgement. An interrupted attempt reads live state again. A fresh host uses old minimum 0.
+5. The deploy's verify step requires the new schema and minimum at hello, and `426 upgrade-required` at hello, push,
+   pull and WebSocket upgrade for every schema from the old minimum to the one below the new (11 to 14 for schema 15);
+   it fails the deploy otherwise. Verify `windmill_resum_sync_digests` completed ("Resum the scope digests" below).
+   Active Gym HTTP routes require the generated minimum header and return `426 client-update-required` for
+   missing/old carriers before JSON, image or SSE delivery. Verify queued native/web work delivers only after a fresh
+   compatible hello. Cached web and old native clients retain local work and show their existing update-required
+   surface. Retry the held Web Deploy run after the backend is compatible, or dispatch the exact accepted main source.
+   Each attempt retains a separate pinned web artifact; inspect its full source SHA, schema and file hashes. The
+   preflight reads the current compose deployment and promotes no backend state. Verify the new web release and real
+   queued delivery after promotion.
+6. Keep a maintenance image of the new interval available. Roll back only to an image whose registry reads every value
+   the live database holds. Automation resumes when candidate and live minimum match. Server and migration use the
+   same pinned image ID.
 
 The guard queries anonymous hello with a high schema header to read live metadata even during a
 manually acknowledged downgrade. This is a metadata read, not a client capability claim. It neither
