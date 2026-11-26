@@ -336,7 +336,7 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
     taken, and the room says a gesture's success (its toast, its `saved` event, its activity line) only then (`onceLanded` in
     `board/acts.js`, at once on roadmap's own session). A paste's steps are pulsed and told under the ids the domain
     gave them, from the import's result. A new step is `CreateStep` under the id the room minted for it, so the room
-    selects and reveals it as with the switch off; a change of its words or kind `ChangeStep`, a reorder `MoveStep` below the sibling
+    selects and reveals it as with the switch off; a change of its words, kind or web links `ChangeStep`, a reorder `MoveStep` below the sibling
     the drop names, a delete `DeleteStep`, links `ChangePrerequisites` on the step they lead to, a paste `ImportSteps`
     under the step it lands beneath and its new kinds `CreateKind` after; an edit of a step's words and prerequisites, a
     link moved to another step and a gesture on several steps are each act in turn, parts of the one act. The legend's kinds are
@@ -349,15 +349,31 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   - *Undo:* a receipt holds a gesture's one act, and its Undo (`revert`) is that act's Undo, every part of it; ⌘Z and
     ⇧⌘Z walk the session's stack of receipts over `runner.undo` and `runner.redo`, bumping `receiptVersion` as roadmap's own session does. A
     step's held delete stays the room's own hold until it is released, and an act the engine still holds is cancelled in
-    place. Each act leaves the engine's journal (`runner.release`) as its receipt leaves the stacks. What each Undo and
-    Redo came to (`applied`, `skipped`, `unavailable`) is emitted as `roadmap_undo` once the engine knows: the reading's
-    every change asks the session to follow the ones the server still settles (`followInverses`).
+    place. Each act leaves the engine's journal (`runner.release`) as its receipt leaves the stacks. A toast's Undo
+    (`revert`) answers what it came to once the engine has settled it, and keeps the Undo's own act until then, since
+    the engine forgets an Undo whose act it let go of. What each Undo and Redo came to (`inverseOutcome`: `applied`,
+    `skipped`, `unavailable`) is emitted as `roadmap_undo` once the engine knows: from the moment it is asked, the
+    reading's every change asks the session to follow the ones the server still settles (`followInverses`).
   - *Refusals and failures:* a write the domain refuses is said in the words of the room with the switch off where there are some (a roadmap at its
     cap, a link that would close a loop) and emits `roadmap_write_refused`; a mark it refuses marks nothing. One the
     store does not take reports `roadmap-replica-write`, its one report: the doors above it (the switcher's rename and
     delete, the share dialog's visibility) hear a `BoundaryFailure` and say their own failure without reporting it. One a
     sign-in or a sign-out overtook, as one the back/forward cache held while another tab moved the seat, lands nothing
     (the engine's `ReplicaChanged`) and `reportRoadmapFailure` reports it at no door.
+  - *Roadmap Coach:* its tool host (`coach/toolHost.js`, Roadmap Coach §6) writes through these doors and no other: a
+    direct write's structure act as the room's gesture (`CreateNode`, `EditNode`, which carries a step's web links and
+    the labels of items it adds to the end of the step's checklist, `AddSubtask` parts of the same act, or `AddEdge`),
+    its receipt on the session's stack. A write of the person's own overlay alone keeps its receipt out of the stack, as
+    the room's own marks and workspace edits are, so ⌘Z never reaches it, until it is reverted or the room closes: a
+    mark through `markUndoably`, which decides and writes it as the owner's marks, and items added to a checklist with no
+    change of the step through `keepUndoably`, which writes the gesture as `dispatch` does.
+    A new step's id is drawn by `mintStepId`. A write the door refused, or wrote nothing of, is no success: the host
+    answers `roadmap-not-ready` or `no-change` and lets its receipt go (`forget`), so the person's next ⌘Z reaches their own
+    act. The Undo of either kind is `revert` of its receipt, which spares a later write of the same field, and a mark the
+    person set since. A write that landed tells the room's Activity, which the host takes as a collaborator, the row the
+    Board tells of the same change, silently: a new name alone, as the room tells none of a step's words, a new step, a
+    link or a subtask, and a mark's rows come as the room adopts the copy's marks. It emits none of the room's gesture
+    events. No turn runs the host yet.
   - Such a room draws no presence and hands its session neither to a reconnect nor to a claim of the device's trees: the
     engine reconnects, and its lineage rule takes what the device holds at sign-in.
 - **Export.** The row's Export writes the room's picture (below), here `ReplicaRoadmap.seed` and the owner's marks.

@@ -134,8 +134,9 @@ The web logs a workout (R-2). It is no longer only a mirror.
   active, as the domain's actions pinned to the engine's active binding, with a ledger in the
   replica's device row `carry:<seat>`; a page leaves the browser's storage only once the ledger records
   it, so it is carried once, whichever replica comes next. The pages that bundle could not attribute
-  stay in the browser's storage until a signed-in person restores them, through the runner, or
-  discards those listed, which writes nothing to the engine; every sign-out forgets them (R-9).
+  stay in the browser's storage until Settings restores them, through the runner, which takes an
+  account, or discards those listed, signed in or out, which writes nothing to the engine; every
+  sign-out forgets them (R-9).
 - Echoes, nudges and Talk are the server's by nature on every surface (§6).
 
 ## §6 What stays a backend call

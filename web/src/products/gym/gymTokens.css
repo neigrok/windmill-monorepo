@@ -45,7 +45,7 @@
 /* ── Daylight ─────────────────────────────────────────────── */
 .gym-skin[data-theme="light"],
 [data-theme="light"][data-brand="gym"] .gym-skin:not([data-theme]) {
-  --gym-on-accent: #FFFFFF;                      /* white on iris-600 — 8.9:1 */
+  --gym-on-accent: #FFFFFF;                      /* white on verdigris-600 — 5.21:1 */
   --gym-scrim: var(--surface-overlay);
   --alarm-fill: var(--accent-brick-500);
   --gym-on-alarm: #FFFFFF;
@@ -107,7 +107,7 @@
 [data-theme="light"][data-brand="gym"] .gym-skin:not([data-theme]) {
   --text-on-accent: var(--gym-on-accent);
   --color-danger: var(--alarm-ink);
-  --focus-ring: 0 0 0 4px rgba(76, 67, 116, 0.4);
+  --focus-ring: 0 0 0 4px rgba(19, 122, 108, 0.4);
   --field-focus-edge: var(--color-brand);
   --chip-selected-edge: var(--color-brand);
 }

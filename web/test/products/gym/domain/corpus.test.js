@@ -12,7 +12,7 @@ import { Bodyweight, DeleteWeighIn, SaveWeighIn, WeighIn, WeighInValue } from '.
 import { Catalogue, CreateExercise, EditExercise, Exercise, ExerciseValue, RenameExercise, defaultStepKg, loadingChoice, renamedAliases } from '../../../../src/products/gym/domain/catalogue.js';
 import { GymRefusals, GymRules, refusalForm } from '../../../../src/products/gym/domain/gymRules.js';
 import { MoveNote, Note, SaveNoteCall } from '../../../../src/products/gym/domain/notes.js';
-import { Preferences, PreferencesValue, SavePreferences, restSettings } from '../../../../src/products/gym/domain/preferences.js';
+import { Preferences, PreferencesValue, SavePreferences, SaveRestSettings, restSettings } from '../../../../src/products/gym/domain/preferences.js';
 import { ProposalDiff } from '../../../../src/products/gym/domain/proposalDiff.js';
 import { ApplyProposal, DismissProposal, Proposal, ProposalState, ProposeRoutine, RoutineCreation, changesBetween } from '../../../../src/products/gym/domain/proposals.js';
 import { DeleteRoutine, PlanSnapshot, ReorderRoutines, Routine, RoutineEntry, RoutineValue, SaveRoutine, SaveRoutinePlan, SetTarget } from '../../../../src/products/gym/domain/routines.js';
@@ -621,11 +621,18 @@ const handlers = {
         () => Preferences.decode(Fields.values('prefs', value.id, value.fields)), savedForm, refusalForm);
     }
     return corpus.read(vector, Preferences.scope, (read) => {
-      if (vector.input.read === 'RestSettings') return restSettings(read);
+      if (vector.input.read === 'RestSettings') {
+        const rest = restSettings(read);
+        return { seconds: rest.seconds, sound: rest.sound };
+      }
       assert.equal(vector.input.read, 'Preferences', 'unclaimed preference read');
       const value = read.repository(Preferences).find(id, 'drawn') ?? new PreferencesValue(id);
       return { id: value.id.json, fields: value.fields() };
     });
+  },
+  'gym/domain/rest-settings-actions.json': (vector) => {
+    assert.equal(vector.input.action, 'SaveRestSettings', 'unclaimed rest settings action');
+    return corpus.decision(SaveRestSettings(vector.input.input), vector, savedForm, refusalForm);
   },
   'gym/domain/coach-conversation-actions.json': (vector) => {
     const input = vector.input.input;

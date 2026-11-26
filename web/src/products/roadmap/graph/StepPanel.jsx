@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Card, Button, IconButton, Icon } from '../../../design-system';
-import { NodeWorkspace, LinkRow, SAFE_URL } from './tree/NodeWorkspace.jsx';
+import { NodeWorkspace, LinkRow } from './tree/NodeWorkspace.jsx';
+import { SAFE_URL } from '../domain/roadmapRules.js';
 import { EventRow } from '../activity/EventRow.jsx';
 import { KIND_CSS, DEFAULT_NODE_COLOR } from '../theme.js';
 import { KindChoice } from '../board/BoardControls.jsx';

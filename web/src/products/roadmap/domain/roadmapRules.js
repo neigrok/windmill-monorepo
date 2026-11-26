@@ -69,6 +69,10 @@ export const RoadmapSpecs = Object.freeze({
   note: chars('stepNote.text', 16000),
 });
 
+// The web links a person is shown and the server takes (packages/api-contract/roadmap-link-urls.json): an address that
+// starts with http:, https: or mailto:, in any case, so no link or note can carry a javascript: URL.
+export const SAFE_URL = /^(https?:|mailto:)/i;
+
 export const RoadmapChecks = Object.freeze({
   cycle: 'edge.cycle',
   wornHue: 'kind.hue.worn',

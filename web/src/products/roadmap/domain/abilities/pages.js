@@ -15,7 +15,7 @@ import { AbilityCodes } from './answers.js';
 // The catalog's `result.maxBytes` of every read.
 export const MAX_BYTES = 16384;
 // The fields whose text or list can pass a page, filled in key order (rule 3).
-const LONG = Object.freeze(['description', 'frontier', 'guide', 'links', 'prerequisites']);
+const LONG = Object.freeze(['description', 'frontier', 'guide', 'links', 'prerequisites', 'subtasks']);
 const CURSOR = /^(0|[1-9][0-9]{0,8})\.([1-9][0-9]{0,8})\.([0-9a-f]{16})$/;
 // The cuts an object's parts may take for the number they name to hold: past them the pager is at fault, not the object.
 const RECUTS = 8;

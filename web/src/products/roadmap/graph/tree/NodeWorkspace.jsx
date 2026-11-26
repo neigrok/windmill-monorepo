@@ -3,11 +3,8 @@ import { Icon } from '../../../../design-system/Icon.jsx';
 import { track } from '../../../../telemetry/beacon.js';
 import { Checklist } from './Checklist.jsx';
 import { WORKSPACE } from '../../copy.js';
+import { SAFE_URL } from '../../domain/roadmapRules.js';
 import { t } from '../../i18n/index.js';
-
-// Note dialect: **bold**, *italic*, [text](url), "- " lists. Link hrefs are kept to safe schemes
-// so a note can't smuggle in a javascript: URL.
-export const SAFE_URL = /^(https?:|mailto:)/i;
 
 export function LinkRow({ url, title, domain, onDelete }) {
   const host = domain || url.replace(/^\w+:\/\//, '').replace(/[/?#].*$/, '');
@@ -90,6 +87,7 @@ function renderInline(text, key, sourceStart = null) {
   return nodes;
 }
 
+// Note dialect: **bold**, *italic*, [text](url), "- " lists. A link's href is kept to the addresses SAFE_URL allows.
 export function renderMarkdown(md, { sourceMap = false } = {}) {
   const blocks = [];
   let list = null;

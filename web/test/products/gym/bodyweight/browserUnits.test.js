@@ -50,13 +50,21 @@ window.incomingUnits = (units) => engine.write(null, (device) => {
 }, ['self/gym']);
 window.entryReady = true;
 `;
+// The shell's account, A signed in, which the settings section asks for the page's seat.
+const auth = `export const useAuth = () => ({ status: 'signed-in', user: { id: 'A' }, account: { id: 'A' } });`;
 
 let server, browser, origin;
 const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-bodyweight-units-test`,
-    plugins: [{ name: 'bodyweight-units-test',
-      resolveId(id) { if (id === '/bodyweight-units-entry.js') return '\0bodyweight-units-entry'; },
-      load(id) { if (id === '\0bodyweight-units-entry') return entry; },
+    plugins: [{ name: 'bodyweight-units-test', enforce: 'pre',
+      resolveId(id) {
+        if (id === '/bodyweight-units-entry.js') return '\0bodyweight-units-entry';
+        if (id.endsWith('/auth/AuthProvider.jsx')) return '\0bodyweight-units-auth';
+      },
+      load(id) {
+        if (id === '\0bodyweight-units-entry') return entry;
+        if (id === '\0bodyweight-units-auth') return auth;
+      },
       configureServer(server) {
         server.middlewares.use('/bodyweight-units-test', (_request, response) => {
           response.setHeader('Content-Type', 'text/html');

@@ -8,6 +8,10 @@
 
    Each scene is a figure: one hidden stage, and the honesty caption outside it, which is the one
    thing a screen reader is told about a session nobody lifted. */
+
+/* By day gym's brand is a fill step that falls under 4.5:1 as small text on its pietra band; the band's
+   eyebrow reads the brand's text step instead (palettes.css). */
+[data-theme='light'][data-brand='gym'] .rootEyebrow { color: var(--text-link); }
 .gyRoot-scene {
   margin: 0;
   width: 100%;

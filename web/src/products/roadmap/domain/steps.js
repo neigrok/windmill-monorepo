@@ -193,13 +193,13 @@ function siblingOrds(tree, parent) {
 }
 
 // The first new link on a loop among what steps follow: a loop that holds a present step. A loop of absent
-// steps alone is read without harm.
+// steps alone is read without harm. The room's links and Coach's `connect` refuse such a link alike.
 /**
  * @param {RoadmapTree} tree
  * @param {string[][]} links
  * @param {Set<string>} made
  */
-function firstLoop(tree, links, made) {
+export function firstLoop(tree, links, made) {
   const all = [...tree.edges.filter((edge) => edge.present).map((edge) => [edge.from, edge.to]), ...links];
   const ids = [...new Set([...tree.nodes.map((node) => node.id), ...all.flat()])];
   const slot = new Map(ids.map((id, index) => [id, index]));
