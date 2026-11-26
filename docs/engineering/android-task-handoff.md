@@ -57,7 +57,7 @@ The [iOS Other read states](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?
 are approved and Ready on page `11:2`: no Other glyph, kg, signed existing load/Fix wheels and removal
 of Name/Equipment footers. Existing iOS picker choices and target controls remain unchanged.
 
-The deployment guard and Android delivery-readiness gate are on main. Production's hello advertised
-schema 12 / minimum 11 when last verified, on 2026-11-01. Android's
+The deployment guard and Android delivery-readiness gate are on main. The
+[coordinated cutoff](../../backend/deploy/README.md#coordinated-client-cutoff) records what production's hello advertises. Android's
 new writes stay ready until a fresh hello meets its registry minimum. No implicit migration or
 physical-equipment alias is part of the release.

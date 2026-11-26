@@ -967,10 +967,20 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   keyboard rises; a bar folds its buttons into an overflow before it truncates a title; `.glass` on a white card
   is white on white. Roadmap's kit is matched to the probe. To check against it: the library's iOS parts and the
   Gym and Journal iOS boards.
-- **Roadmap · iOS · the iOS 18 boards are not probed.** Section 12's iOS 18 boards are drawn from knowledge of
-  iOS 18, with no simulator run. Before they are built: one probe of the bar, the sheets, Find and the action
-  sheet on an iOS 18 runtime. With the title in the principal slot the system's in-bar rename is unavailable there,
-  so renaming on iOS 18 needs a ruling.
+- **Roadmap · iOS · the iOS 18 boards await review.** Section 12's boards 12.6 to 12.10 were checked against an iOS 18.6
+  simulator run of the room and the design probe (2026-11-26). Each differed from what iOS 18 draws, and each is
+  corrected as a 🧪 Proposal for the owner's review:
+  - the bar's tint is the ink;
+  - the bar's buttons are bordered circles;
+  - there is no hairline under the bar or on the foot;
+  - a dialog dims less;
+  - the medium sheet sits higher.
+
+  NOTE 12 says renaming is the in-bar field iOS 26 has, once the title is a binding. The app passes a string there, so
+  its title menu has no Rename on iOS 18 (plan step `m6-the-room-on-ios-18-renames-and-its-captures-pass`).
+- **Roadmap · iOS · a sheet's close word on iOS 18.** The built Kinds, Guide and Set Aside sheets close with *Done* on
+  iOS 18; board 12.10 and NOTE 12 say *Close*. To check against the iOS 26 boards and the Journal and Gym sheets, and
+  settle on one word.
 - **Roadmap file · a prototype variable collection nothing on the iPhone pages binds.** *🧪 iOS 07 · Local picker
   state* held the state of boards that are deleted. No node on the Roadmap · iOS or Roadmap Coach page binds it;
   the file's other pages were not checked. Delete it once they are.

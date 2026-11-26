@@ -373,19 +373,30 @@ the grace that container was created with, so a changed value holds from the dep
 ## Coordinated client cutoff
 
 The repository registry is schema 15 / minimum 15. Every schema in that interval carries explicit gym
-`other`, finite normalized loads without a fixed kg cap, nullable derived metrics and sets without a kind. Production hello advertises
-schema 13 / minimum 11, verified on 2026-11-21 by the start stage of
-[Roadmap cutover 44846026848](https://github.com/neigrok/windmill-monorepo/actions/runs/44846026848).
-The latest published Android release is [0.14.0 / code 277](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.14.0),
-tag `android-v0.14.0` at `3b136a3d`. iOS 0.2.0 (23) is uploaded and VALID,
-with internal READY_FOR_BETA_TESTING and external READY_FOR_BETA_SUBMISSION; intended tester access
-is unverified. [Digest resum 41101251226](https://github.com/neigrok/windmill-monorepo/actions/runs/41101251226)
-completed across three scopes and corrected two digests. Web Deploy promotes each web push to `main`
-once the live hello admits it. The last complete promotion is
-[run 41325909004](https://github.com/neigrok/windmill-monorepo/actions/runs/41325909004), source `6aabcde2`.
-The run before it, 41319412052, failed mid-rsync with no space left on the VPS; the host's free disk
-is not monitored. Queued client delivery and final native
-availability remain unverified. The deployment guard requires exact acknowledgement for any further minimum change.
+`other`, finite normalized loads without a fixed kg cap, nullable derived metrics and sets without a kind.
+
+- **Production.** Its hello advertises schema 15 / minimum 15 and answers schemas 11 to 14 `426 upgrade-required`.
+  - [Deploy to VPS 45836480908](https://github.com/neigrok/windmill-monorepo/actions/runs/45836480908) moved it from
+    14 / 11 on 2026-11-26, with the image of `a92962882` (image ID `sha256:c207d343…`).
+  - An anonymous hello, pull and Gym request after it confirmed this.
+- **Android.** The latest published release is
+  [0.19.0 / code 527](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.19.0), tag
+  `android-v0.19.0` at `4b3e33ba`.
+- **iOS.** 0.2.0 (42) is uploaded and VALID, with internal READY_FOR_BETA_TESTING and external
+  READY_FOR_BETA_SUBMISSION. Intended tester access is unverified.
+- **Digests.** [Digest resum 41101251226](https://github.com/neigrok/windmill-monorepo/actions/runs/41101251226)
+  completed across three scopes and corrected two digests. Schema 15 drops and renames no field, so it needs no resum.
+
+Web Deploy promotes each web push to `main` once the live hello admits it.
+
+- **The last complete promotion.**
+  [Run 45823176030](https://github.com/neigrok/windmill-monorepo/actions/runs/45823176030), attempt 3, source
+  `a9296288`, schema 15 / minimum 15. It was held at 14 / 11 until the deploy above. The live `index.html` and every
+  `assets/index-*` file match its release manifest's SHA-256.
+- **Not monitored:** the host's free disk.
+- **Unverified:** queued client delivery and final native availability.
+
+The deployment guard requires exact acknowledgement for any further minimum change.
 
 Schema 15 narrows roadmap's `meta.visibility` and `meta.reach` to private and public, and `reach` opens a roadmap at
 public alone (engine.md §2.4, A.1): Share has two states, and no roadmap holds `unlisted`. A rule clients enforce
@@ -422,8 +433,13 @@ one the composed registries' `minVersion`; for schema 15 they are 11 and 15, so 
    workflow and check processing, beta readiness and intended tester availability. Verify both native replacements
    against the candidate, publish the Android release, and verify both upgrade destinations. TestFlight status alone
    proves no tester access.
-4. Record the full backend commit SHA and immutable Docker image ID (`docker image inspect --format
-   '{{.Id}}' ghcr.io/neigrok/windmill-monorepo:<sha>`). Read the live minimum again, then dispatch **Deploy to VPS**
+4. Record the full backend commit SHA and the immutable image ID: what the host's `docker image inspect --format
+   '{{.Id}}' ghcr.io/neigrok/windmill-monorepo:<sha>` gives.
+   - The host stores images by their manifest-list digest, which Backend CI/CD's `build-and-push` job prints under
+     *ImageID*. The registry is private.
+   - A merge to `main` cancels a Backend CI/CD run in progress, so take the latest `main` commit that has an image.
+
+   Read the live minimum again, then dispatch **Deploy to VPS**
    from `main` with that `image_tag`, `expected_old_minimum` the live minimum, `expected_new_minimum` the registries'
    `minVersion` and `expected_image_id` the recorded ID (`11`, `15` and the ID for schema 15). Both raises and lowers
    require exact acknowledgement. An interrupted attempt reads live state again. A fresh host uses old minimum 0.
