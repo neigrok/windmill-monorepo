@@ -145,7 +145,7 @@ export function renameTree(treeId, title) {
   return patchTree(treeId, { title }, { refused: 'Sign in to rename a roadmap', failed: 'Could not rename the roadmap' });
 }
 
-// Set a roadmap's visibility. 'private' ⇒ owner-only reads; 'unlisted'/'public' ⇒ anyone with the link.
+// Set a roadmap's visibility. 'private' ⇒ owner-only reads; 'public' ⇒ anyone with the link.
 export function setVisibility(treeId, visibility) {
   return patchTree(treeId, { visibility }, { refused: 'Sign in to change visibility', failed: 'Could not change visibility' });
 }

@@ -420,8 +420,8 @@ server state's `product`: a command's replay is read from the records.
 roadmap with a place; *the subtrees under* a roadmap are those whose places lead up to it. A step is *present*
 while its `node` is alive.
 
-**A root's visibility** is the owner's client `lww` field `meta.visibility`, so the newest gesture's choice
-stands. Its change writes reach (check 4 below). Discovery declares `self/roadmap` and every alive subtree under
+**A root's visibility** is the owner's client `lww` field `meta.visibility`, `private` or `public`, so the newest
+gesture's choice stands; any other value, `unlisted` among them, is refused `invalid` (engine.md §6.1 step 2). Its change writes reach (check 4 below). Discovery declares `self/roadmap` and every alive subtree under
 `T` for an intent of `tree/<T>` whose delta writes `meta.visibility`, or whose `roadmap.restoreTree` restores it.
 
 **Commands:**

@@ -205,7 +205,7 @@ public enum Gym {
         "serverInternal": true,
       ],
     ],
-    "minVersion": 11,
+    "minVersion": 15,
     "products": [
       "gym": [
         "codes": [
@@ -938,6 +938,6 @@ public enum Gym {
         "type": "message",
       ],
     ],
-    "version": 14,
+    "version": 15,
   ]
 }

@@ -81,7 +81,7 @@ EXPECTED = {
     "accounts": {"withPointers": 2, "needingChoice": 2},
     "engine": {
         "visibility": {
-            account: {place: {"private": 0, "unlisted": 0, "public": 0, "unset": 0, "other": 0}
+            account: {place: {"private": 0, "public": 0, "unset": 0, "other": 0}
                       for place in ("roots", "subtrees")}
             for account in ("house", "people")},
         "pointersWithoutOpens": {"restore": 0, "clientPut": 0}},
@@ -211,7 +211,8 @@ class InventoryTest(ToolTest):
 
 
 # The engine's roadmap tables alone: each filled bucket holds a number no other bucket of its object holds, and the
-# house's differ from people's bucket by bucket, so none can be read for another. Rows the tool leaves out stand beside.
+# house's differ from people's bucket by bucket, so none can be read for another. An unlisted visibility or reach counts
+# as other, as every value admission refuses does. Rows the tool leaves out stand beside.
 @unittest.skipUnless(os.environ.get("WM_PG_TEST"), "SKIP: set WM_PG_TEST and DATABASE_URL for Postgres cases")
 class EngineCountsTest(ToolTest):
     @classmethod
@@ -229,7 +230,7 @@ class EngineCountsTest(ToolTest):
             (4, MINE, True, False, ("public", "public")),
             (1, MINE, True, False, None),
             (4, MINE, True, False, (None, None)),
-            (1, MINE, True, False, ("secret", "secret")),
+            (5, MINE, True, False, ("secret", "secret")),
             (2, MINE, True, True, (None, "private")),
             (3, MINE, True, True, (None, "unlisted")),
             (1, THEIRS, True, True, (None, "public")),
@@ -327,11 +328,11 @@ class EngineCountsTest(ToolTest):
                     "engine": {
                         "visibility": {
                             "house": {
-                                "roots": {"private": 2, "unlisted": 1, "public": 3, "unset": 4, "other": 5},
-                                "subtrees": {"private": 1, "unlisted": 2, "public": 3, "unset": 0, "other": 0}},
+                                "roots": {"private": 2, "public": 3, "unset": 4, "other": 6},
+                                "subtrees": {"private": 1, "public": 3, "unset": 0, "other": 2}},
                             "people": {
-                                "roots": {"private": 3, "unlisted": 2, "public": 4, "unset": 5, "other": 1},
-                                "subtrees": {"private": 2, "unlisted": 3, "public": 1, "unset": 0, "other": 0}}},
+                                "roots": {"private": 3, "public": 4, "unset": 5, "other": 7},
+                                "subtrees": {"private": 2, "public": 1, "unset": 0, "other": 3}}},
                         "pointersWithoutOpens": {"restore": 2, "clientPut": 3}},
                 })
                 self.completion(result, "ok")
@@ -373,7 +374,7 @@ class LongChainTest(ToolTest):
             "accounts": {"withPointers": 1, "needingChoice": 1},
             "engine": {
                 "visibility": {
-                    account: {place: {"private": 0, "unlisted": 0, "public": 0, "unset": 0, "other": 0}
+                    account: {place: {"private": 0, "public": 0, "unset": 0, "other": 0}
                               for place in ("roots", "subtrees")}
                     for account in ("house", "people")},
                 "pointersWithoutOpens": {"restore": 0, "clientPut": 0}},

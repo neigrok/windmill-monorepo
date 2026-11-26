@@ -12,9 +12,6 @@
 namespace wm {
 void installToolObservability(bool protocolStdout = false);
 void stopToolObservability();
-// The reporter installToolObservability installed, for a collaborator that files its own failures, as an engine
-// admission does.
-FailureReporter& toolFailureReporter();
 
 class ObservabilityLifetime {
 public:

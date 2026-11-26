@@ -985,7 +985,7 @@ The menu retains Copy link, Open in Graph, Select and Delete where available; ow
 View branch. Tablet owners can leave the document for the existing Add step or Connect tool. Newly created blank
 Graph nodes keep their naming handoff; bulk, aim, edge removal, paste and Activity retain their own surfaces.
 
-Copy link is available for public or unlisted, non-demo step addresses. A failed clipboard write opens the
+Copy link is available for public, non-demo step addresses. A failed clipboard write opens the
 nonmodal recovery from approved [37](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=1116-74911):
 retry the current address, reveal its full read-only value, or select it for manual copying. A pending native
 write disables Copy until it settles; changing the step or its address invalidates that attempt's UI result.

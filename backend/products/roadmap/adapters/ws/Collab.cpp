@@ -363,8 +363,8 @@ bool Collab::stillAuthorized(const drogon::WebSocketConnectionPtr& conn) {
 Reach Collab::reachOf(const drogon::WebSocketConnectionPtr& conn, const TreeId& tree) {
   const std::shared_ptr<Principal> principal = conn->getContext<Principal>();
   if (!principal) return Reach::none;
-  // A principal stillAuthorized has narrowed is a guest: public and unlisted, never private, and
-  // never the tree's writer.
+  // A principal stillAuthorized has narrowed is a guest: public, never private, and never the tree's
+  // writer.
   const std::optional<UserId> caller =
       principal->authenticated ? std::optional<UserId>(principal->user) : std::nullopt;
   // The stored access row, not a materialized room: refusing a reader never loads the lattice.

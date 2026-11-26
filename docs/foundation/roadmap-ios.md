@@ -421,7 +421,6 @@ makes it false.
   attached to a step, changed and detached on its page, each with *Undo*, or set in the step form's one save. Every other
   action of the domain has no door in the room: `MoveKind`, `MoveStep`, a subtask's or a link's change of words and its move
   among them.
-- The registry's `visibility` and `reach` still admit `unlisted`, which no roadmap holds (R-9).
 
 ## §14 Rulings
 

@@ -283,7 +283,7 @@ TEST(a_deleted_roadmap_and_every_subtree_under_it_are_adopted_as_spent_ids_with_
 
 TEST(a_subtree_is_read_by_whoever_may_read_its_root_while_every_owning_step_on_its_way_down_is_present) {
   OldRoadmap cello = root("t_0000000000000001", "owner");
-  cello.visibility = "unlisted";
+  cello.visibility = "public";
   cello.steps.push_back(step("strings", "5:0:a"));
   cello.steps.push_back(step("dropped", "5:1:a", "", "6:0:a"));
   OldRoadmap standing = root("t_0000000000000002", "owner");
@@ -298,7 +298,7 @@ TEST(a_subtree_is_read_by_whoever_may_read_its_root_while_every_owning_step_on_i
   hidden.visibility = "private";
   const Survey survey(OldDatabase{.roadmaps = {cello, standing, hidden}, .accounts = {"owner"}}, Expectation{{}, kNow});
   CHECK(survey.roadmaps().at("t_0000000000000002").stands);
-  CHECK_EQ(survey.roadmaps().at("t_0000000000000002").reach, std::string("unlisted"));
+  CHECK_EQ(survey.roadmaps().at("t_0000000000000002").reach, std::string("public"));
   CHECK_FALSE(survey.roadmaps().at("t_0000000000000003").stands);
   CHECK_EQ(survey.roadmaps().at("t_0000000000000003").reach, std::string("private"));
   const Plan planned = plan(survey);
@@ -313,6 +313,22 @@ TEST(a_subtree_is_read_by_whoever_may_read_its_root_while_every_owning_step_on_i
   const sync::Row* strings = rowOf(planOf(planned, "t_0000000000000001")->tree, "node", "strings");
   REQUIRE(strings != nullptr);
   CHECK(strings->lattice.f.at("branch").value == Json::Value("t_0000000000000002"));
+}
+
+TEST(an_unlisted_roadmap_of_the_old_tables_is_adopted_private_and_opens_to_nobody) {
+  OldRoadmap linked = root("t_0000000000000001", "owner");
+  linked.visibility = "unlisted";
+  const Survey survey(OldDatabase{.roadmaps = {linked}, .accounts = {"owner"}}, Expectation{{}, kNow});
+  CHECK_EQ(survey.roadmaps().at("t_0000000000000001").visibility, std::string("private"));
+  CHECK_EQ(survey.roadmaps().at("t_0000000000000001").reach, std::string("private"));
+  const Plan planned = plan(survey);
+  const RoadmapPlan* adopted = planOf(planned, "t_0000000000000001");
+  REQUIRE(adopted != nullptr);
+  CHECK_FALSE(adopted->tree.open);
+  const sync::Row* meta = rowOf(adopted->tree, "meta", "meta");
+  REQUIRE(meta != nullptr);
+  CHECK(meta->lattice.f.at("visibility").value == Json::Value("private"));
+  CHECK(meta->lattice.f.at("reach").value == Json::Value("private"));
 }
 
 TEST(marks_move_to_their_owners_overlays_and_a_pointer_to_the_owners_while_a_mark_of_no_account_stays_behind) {

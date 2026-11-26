@@ -88,14 +88,14 @@ test('readTreeCard — a server failure and a dead network throw their status, w
 
 test('setVisibility — PATCHes {visibility} credentialed and resolves on 204', async () => {
   const calls = stubFetch(() => ({ ok: true, status: 204 }));
-  const result = await setVisibility('t_abc', 'unlisted');
+  const result = await setVisibility('t_abc', 'public');
   assert.equal(result, undefined);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, `${BASE}/v1/trees/t_abc`);
   assert.equal(calls[0].init.method, 'PATCH');
   assert.equal(calls[0].init.credentials, 'include');
   assert.equal(calls[0].init.headers['Content-Type'], 'application/json');
-  assert.deepEqual(JSON.parse(calls[0].init.body), { visibility: 'unlisted' });
+  assert.deepEqual(JSON.parse(calls[0].init.body), { visibility: 'public' });
 });
 
 test('setVisibility — a 401 becomes an unauthenticated AuthError', async () => {
@@ -133,7 +133,7 @@ test('setVisibility — a rejecting body surfaces its own error and code', async
 
 test('setVisibility — a 403 falls to the default message when the body is empty', async () => {
   stubFetch(() => ({ ok: false, status: 403, json: async () => ({}) }));
-  await assert.rejects(setVisibility('t_abc', 'unlisted'), (err) => {
+  await assert.rejects(setVisibility('t_abc', 'public'), (err) => {
     assert.ok(err instanceof AuthError);
     assert.equal(err.status, 403);
     assert.equal(err.code, undefined);
@@ -148,7 +148,7 @@ test('setVisibility — a 402 carries the code AND the detail through to the dia
     status: 402,
     json: async () => ({
       error: 'Private trees are part of Windmill One',
-      detail: 'Unlisted keeps this tree reachable only by its link, and stays free.',
+      detail: 'Public keeps this tree readable by its link, and stays free.',
       code: 'pro_required',
     }),
   }));
@@ -157,7 +157,7 @@ test('setVisibility — a 402 carries the code AND the detail through to the dia
     assert.equal(err.code, 'pro_required');
     assert.equal(err.status, 402);
     assert.equal(err.said, 'Private trees are part of Windmill One');
-    assert.equal(err.detail, 'Unlisted keeps this tree reachable only by its link, and stays free.');
+    assert.equal(err.detail, 'Public keeps this tree readable by its link, and stays free.');
     return true;
   });
 });

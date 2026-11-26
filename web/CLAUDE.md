@@ -259,7 +259,7 @@ bodies fail the build.
 
 Caddy serves real 404s, redirects extensionless static paths to their canonicals, serves the
 association file as JSON at its own address and forwards `/gallery` and `/t/:id` to the backend.
-Shared-tree pages receive tree-specific metadata; unlisted trees are `noindex`. The API host is
+Shared-tree pages receive tree-specific metadata; a page of any tree but a public one is `noindex`. The API host is
 excluded from indexing. Cloudflare may add managed rules to `public/robots.txt`; inspect the live
 response when checking crawler access.
 

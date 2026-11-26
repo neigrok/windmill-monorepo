@@ -48,7 +48,7 @@ test('a refusal leaves the state as it was', () => {
 test('a root\'s visibility is the owner\'s field, ordered by its stamp, and its change reaches the standing branch', () => {
   const { expect } = named('the owner\'s visibility of a root writes its reach and the reach of every standing subtree of its branch');
   assert.deepEqual([rowOf(expect.state, `tree:${R}`, 'meta', 'meta').f.visibility, ...[R, S, S2, H].map((tree) => reachOf(expect.state, tree))],
-    [['unlisted', '5000:0:r_aaaaaaaaaaaa'], 'unlisted', 'unlisted', 'unlisted', 'private']);
+    [['public', '5000:0:r_aaaaaaaaaaaa'], 'public', 'public', 'public', 'private']);
   const stale = named('a visibility older than the root\'s changes nothing: a stale public never overrides a newer private');
   assert.equal(jcs(stale.expect.state.rows), jcs(stale.input.state.rows));
   const restamped = named('a visibility restamped with the value the root holds writes no reach');
@@ -56,6 +56,7 @@ test('a root\'s visibility is the owner\'s field, ordered by its stamp, and its 
   const undone = named('an Undo restoring the earlier visibility writes the branch\'s reach back').expect.state;
   assert.deepEqual([valueAt(undone, `tree:${R}`, 'meta', 'meta', 'visibility'), ...[R, S, S2].map((tree) => reachOf(undone, tree))], ['private', 'private', 'private', 'private']);
   assert.deepEqual(named('a visibility written on a subtree is refused not-a-root').expect.result, { s: 'refused', code: 'not-a-root' });
+  assert.deepEqual(named('a visibility outside private and public, unlisted among them, is refused invalid').expect.result, { s: 'refused', code: 'invalid' });
 });
 
 test('createSubtree plants the record, the meta, the genesis kinds and the branch, and a retry answers what the step owns', () => {

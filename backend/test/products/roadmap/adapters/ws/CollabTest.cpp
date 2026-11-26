@@ -404,9 +404,9 @@ TEST(ws_an_upgrade_reads_its_caller_as_every_door_does_at_its_gate) {
   installWriteSink({});
 }
 
-TEST(ws_anon_on_an_unlisted_tree_receives_the_delta_and_joins_the_bus) {
+TEST(ws_anon_on_a_public_tree_receives_the_delta_and_joins_the_bus) {
   Harness h;
-  h.seed("t_shared", UserId{"owner"}, Visibility::unlisted);
+  h.seed("t_shared", UserId{"owner"}, Visibility::public_);
 
   auto conn = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade(""), conn);
@@ -420,45 +420,43 @@ TEST(ws_anon_on_an_unlisted_tree_receives_the_delta_and_joins_the_bus) {
 }
 
 TEST(ws_the_subscribe_answer_says_writer_to_the_owner_and_reader_to_anyone_else_and_says_it_again_on_a_resubscribe) {
-  for (const Visibility visibility : {Visibility::public_, Visibility::unlisted}) {
-    Harness h;
-    UserId owner = h.signIn("s-owner", "owner@example.com");
-    h.signIn("s-stranger", "stranger@example.com");
-    h.seed("t_door", owner, visibility);
-    auto laptop = std::make_shared<FakeSocket>();
-    auto stranger = std::make_shared<FakeSocket>();
-    auto signedOut = std::make_shared<FakeSocket>();
-    h.collab.onOpen(h.upgrade("s-owner"), laptop);
-    h.collab.onOpen(h.upgrade("s-stranger"), stranger);
-    h.collab.onOpen(h.upgrade(""), signedOut);
-    h.collab.onMessage(laptop, registerFrame("t_door", "f-create",
-                                             R"({"id":"door","createdAt":"1000:0:r_a","opens":"t_00000000000000f2","opensAt":"1000:0:r_a"})"));
-    NodeStateEntry withheld;
-    withheld.id = NodeId{"door"};
-    withheld.createdAt = Hlc{1000, 0, "r_a"};
-    NodeStateEntry whole = withheld;
-    whole.opens = TreeId{"t_00000000000000f2"};
-    whole.opensAt = Hlc{1000, 0, "r_a"};
-    const auto answer = [](const NodeStateEntry& door, const char* reach) {
-      Json::Value frame = parse(R"({"t":"subgraph","v":1,"treeId":"t_door","frameId":"delta-1","actor":"srv","intent":"delta",
-                                    "edges":[],"kinds":[],"gestures":[],"title":null,"guide":null,
-                                    "coverage":{"r_a":"1000:0:r_a"},"seq":1})");
-      frame["nodes"] = toJson(GraphState{{door}, {}})["nodes"];
-      frame["reach"] = reach;
-      return frame;
-    };
+  Harness h;
+  UserId owner = h.signIn("s-owner", "owner@example.com");
+  h.signIn("s-stranger", "stranger@example.com");
+  h.seed("t_door", owner, Visibility::public_);
+  auto laptop = std::make_shared<FakeSocket>();
+  auto stranger = std::make_shared<FakeSocket>();
+  auto signedOut = std::make_shared<FakeSocket>();
+  h.collab.onOpen(h.upgrade("s-owner"), laptop);
+  h.collab.onOpen(h.upgrade("s-stranger"), stranger);
+  h.collab.onOpen(h.upgrade(""), signedOut);
+  h.collab.onMessage(laptop, registerFrame("t_door", "f-create",
+                                           R"({"id":"door","createdAt":"1000:0:r_a","opens":"t_00000000000000f2","opensAt":"1000:0:r_a"})"));
+  NodeStateEntry withheld;
+  withheld.id = NodeId{"door"};
+  withheld.createdAt = Hlc{1000, 0, "r_a"};
+  NodeStateEntry whole = withheld;
+  whole.opens = TreeId{"t_00000000000000f2"};
+  whole.opensAt = Hlc{1000, 0, "r_a"};
+  const auto answer = [](const NodeStateEntry& door, const char* reach) {
+    Json::Value frame = parse(R"({"t":"subgraph","v":1,"treeId":"t_door","frameId":"delta-1","actor":"srv","intent":"delta",
+                                  "edges":[],"kinds":[],"gestures":[],"title":null,"guide":null,
+                                  "coverage":{"r_a":"1000:0:r_a"},"seq":1})");
+    frame["nodes"] = toJson(GraphState{{door}, {}})["nodes"];
+    frame["reach"] = reach;
+    return frame;
+  };
 
-    for (const auto& conn : {laptop, stranger, signedOut}) h.collab.onMessage(conn, subscribeFrame("t_door"));
-    CHECK_EQ(lastFrameOfType(*laptop, "subgraph"), answer(whole, "writer"));
-    CHECK_EQ(lastFrameOfType(*stranger, "subgraph"), answer(withheld, "reader"));
-    CHECK_EQ(lastFrameOfType(*signedOut, "subgraph"), answer(withheld, "reader"));
+  for (const auto& conn : {laptop, stranger, signedOut}) h.collab.onMessage(conn, subscribeFrame("t_door"));
+  CHECK_EQ(lastFrameOfType(*laptop, "subgraph"), answer(whole, "writer"));
+  CHECK_EQ(lastFrameOfType(*stranger, "subgraph"), answer(withheld, "reader"));
+  CHECK_EQ(lastFrameOfType(*signedOut, "subgraph"), answer(withheld, "reader"));
 
-    for (const auto& conn : {laptop, stranger, signedOut}) h.collab.onMessage(conn, subscribeFrame("t_door"));
-    for (const auto& conn : {laptop, stranger, signedOut}) REQUIRE_EQ(countOfType(*conn, "subgraph"), 2u);
-    CHECK_EQ(lastFrameOfType(*laptop, "subgraph"), answer(whole, "writer"));
-    CHECK_EQ(lastFrameOfType(*stranger, "subgraph"), answer(withheld, "reader"));
-    CHECK_EQ(lastFrameOfType(*signedOut, "subgraph"), answer(withheld, "reader"));
-  }
+  for (const auto& conn : {laptop, stranger, signedOut}) h.collab.onMessage(conn, subscribeFrame("t_door"));
+  for (const auto& conn : {laptop, stranger, signedOut}) REQUIRE_EQ(countOfType(*conn, "subgraph"), 2u);
+  CHECK_EQ(lastFrameOfType(*laptop, "subgraph"), answer(whole, "writer"));
+  CHECK_EQ(lastFrameOfType(*stranger, "subgraph"), answer(withheld, "reader"));
+  CHECK_EQ(lastFrameOfType(*signedOut, "subgraph"), answer(withheld, "reader"));
 }
 
 // A tree where replica `r_a` wrote `n` at 100 and `m` at 300, a tab subscribed then and went away, and `r_a`'s write of
@@ -624,7 +622,7 @@ TEST(a_subscriber_at_the_head_is_sent_nothing_it_has) {
 // The reader's view is cut after the seq rule as it is after the vector's: an entry sent whole because it landed late
 // goes to a reader without the pointer a writer alone is shown.
 TEST(a_reader_is_not_sent_what_a_writer_alone_may_see_because_it_landed_late) {
-  LateWrite late(Visibility::unlisted);
+  LateWrite late(Visibility::public_);
   NodeStateEntry withheld = late.landedLate;
   withheld.opens = TreeId{};
   withheld.opensAt = Hlc{};
@@ -742,10 +740,10 @@ TEST(ws_write_to_a_private_tree_you_dont_own_reads_as_absent) {
   CHECK_EQ(rejectCode(onAbsent->sent[0]), std::string("no-such-tree"));
 }
 
-TEST(ws_write_to_an_unlisted_tree_you_dont_own_says_it_belongs_to_another) {
+TEST(ws_write_to_a_public_tree_you_dont_own_says_it_belongs_to_another) {
   Harness h;
   h.signIn("s-other", "other@example.com");
-  h.seed("t_shared", UserId{"owner"}, Visibility::unlisted);
+  h.seed("t_shared", UserId{"owner"}, Visibility::public_);
 
   auto conn = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade("s-other"), conn);
@@ -819,7 +817,7 @@ TEST(ws_guest_write_is_turned_away_at_auth_before_the_tree_is_looked_up) {
 
 TEST(ws_guest_progress_is_rejected_with_the_sign_in_code_and_the_frame_named) {
   Harness h;
-  h.seed("t_open", UserId{"owner"}, Visibility::unlisted);
+  h.seed("t_open", UserId{"owner"}, Visibility::public_);
   auto conn = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade(""), conn);
 
@@ -1970,7 +1968,7 @@ TEST(ws_a_guide_frame_from_a_non_owner_is_refused_and_one_stamped_past_the_skew_
   Harness h;
   UserId owner = h.signIn("s-owner", "owner@example.com");
   h.signIn("s-other", "other@example.com");
-  h.seed("t_shared", owner, Visibility::unlisted);
+  h.seed("t_shared", owner, Visibility::public_);
   auto stranger = std::make_shared<FakeSocket>();
   auto mine = std::make_shared<FakeSocket>();
   h.collab.onOpen(h.upgrade("s-other"), stranger);
@@ -2738,8 +2736,8 @@ TEST(ws_a_progress_frame_that_recorded_no_mark_and_was_refused_one_completes_as_
 TEST(ws_every_subscriber_of_the_parent_receives_one_subtree_frame_at_the_seq_it_took) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
-  h.seedSteps("t_p", owner, Visibility::unlisted, "");
-  h.seed("t_other", owner, Visibility::unlisted);
+  h.seedSteps("t_p", owner, Visibility::public_, "");
+  h.seed("t_other", owner, Visibility::public_);
   const auto subscribed = [&h](const std::string& session, const std::string& tree) {
     auto conn = std::make_shared<FakeSocket>();
     h.collab.onOpen(h.upgrade(session), conn);
@@ -2923,7 +2921,7 @@ TEST(ws_a_subscribers_progress_graft_is_sent_before_the_echo_of_a_mark_made_afte
 TEST(ws_the_subscribe_answer_lists_the_subtrees_steps_own_and_names_a_subtree_by_its_owning_step) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
-  h.seedSteps("t_p", owner, Visibility::unlisted, "");
+  h.seedSteps("t_p", owner, Visibility::public_, "");
   const auto subscribed = [&h](const std::string& session, const std::string& tree) {
     auto conn = std::make_shared<FakeSocket>();
     h.collab.onOpen(h.upgrade(session), conn);
@@ -3342,7 +3340,7 @@ TEST(a_wave_of_dropped_connections_is_one_report_a_window_with_the_count_per_rul
 TEST(ws_a_frame_deleting_an_owning_step_names_its_subtree_and_the_delete_hides_the_branch_until_the_step_is_revived) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
-  h.seedSteps("t_p", owner, Visibility::unlisted, "");
+  h.seedSteps("t_p", owner, Visibility::public_, "");
   const TreeId child{"t_00000000000000c1"};
   REQUIRE(std::holds_alternative<SubtreeCreation>(
       h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {child, std::nullopt})));
@@ -3396,7 +3394,7 @@ TEST(ws_a_frame_deleting_an_owning_step_names_its_subtree_and_the_delete_hides_t
 TEST(ws_a_subtree_whose_revive_is_held_unsaved_is_subscribed_to_under_its_name) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
-  h.seedSteps("t_p", owner, Visibility::unlisted, "");
+  h.seedSteps("t_p", owner, Visibility::public_, "");
   const TreeId child{"t_00000000000000c1"};
   REQUIRE(std::holds_alternative<SubtreeCreation>(
       h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {child, std::nullopt})));
@@ -3422,7 +3420,7 @@ TEST(ws_a_subtree_whose_revive_is_held_unsaved_is_subscribed_to_under_its_name) 
 TEST(ws_a_subscribe_racing_the_delete_of_its_owning_step_is_refused_once_joined) {
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
-  h.seedSteps("t_p", owner, Visibility::unlisted, "");
+  h.seedSteps("t_p", owner, Visibility::public_, "");
   const TreeId child{"t_00000000000000c1"};
   REQUIRE(std::holds_alternative<SubtreeCreation>(
       h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {child, std::nullopt})));
@@ -3541,7 +3539,7 @@ TEST(ws_a_readers_mark_on_a_step_that_owns_a_subtree_is_refused_as_its_owners_is
   Harness h;
   const UserId owner = h.signIn("s-owner", "owner@example.com");
   const UserId reader = h.signIn("s-reader", "reader@example.com");
-  h.seedSteps("t_p", owner, Visibility::unlisted, "");
+  h.seedSteps("t_p", owner, Visibility::public_, "");
   REQUIRE(std::holds_alternative<SubtreeCreation>(
       h.trees_registry.createSubtree(TreeId{"t_p"}, NodeId{"plain"}, owner, {TreeId{"t_00000000000000c1"}, std::nullopt})));
   auto conn = std::make_shared<FakeSocket>();

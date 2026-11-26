@@ -69,8 +69,8 @@ object Gym {
         listOf(
             "{",
             "  \"registry\": \"gym\",",
-            "  \"version\": 14,",
-            "  \"minVersion\": 11,",
+            "  \"version\": 15,",
+            "  \"minVersion\": 15,",
             "  \"products\": {",
             "    \"gym\": {",
             "      \"surfaces\": [",

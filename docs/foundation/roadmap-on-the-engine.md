@@ -112,7 +112,7 @@ units (D-9).
 | Type | Scope | Identity | Life | Fields | Cap |
 |---|---|---|---|---|---|
 | `tree` | self/roadmap | minted global `^t_[0-9a-f]{16}$`, governs `tree:<id>` | terminal, keep | `parent` const server `{tree, step}`, null for a root; `tree` names a tree of self/roadmap and `step` a node of `tree/<tree>` (E-8) | — |
-| `meta` | tree/T | singleton | — | `title` lww ≤200 chars; `guide` lww ≤5,000 chars; `guideInherited` server; `visibility` lww ∈ {private, unlisted, public}, a root's only; `reach` lww server ∈ {private, unlisted, public}, which `opens` at {unlisted, public}; `root` const server `ref<tree>`; `parent` const server `{tree, step}` as `tree.parent`, null for a root; `depth` const server 0–`MAX_DEPTH`; `forkedFrom` const server | — |
+| `meta` | tree/T | singleton | — | `title` lww ≤200 chars; `guide` lww ≤5,000 chars; `guideInherited` server; `visibility` lww ∈ {private, public}, a root's only; `reach` lww server ∈ {private, public}, which `opens` at {public}; `root` const server `ref<tree>`; `parent` const server `{tree, step}` as `tree.parent`, null for a root; `depth` const server 0–`MAX_DEPTH`; `forkedFrom` const server | — |
 | `node` | tree/T | derived, ids by domain (E-2) ≤128 chars, fallback `step` | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color`, `ord`, `status` nullable ∈ {none, complete}, `description` ≤16,000 chars, `links` (at most 32 of {url ≤2,048 chars, label ≤200 chars}); `branch` lww server nullable `ref<tree>` | 10,000 |
 | `edge` | tree/T | keyed `[from, to]` (`ref<node>` each) | yes, keep | — | 20,000 |
 | `kind` | tree/T | derived, ids by domain ≤128 chars, fallback `kind`; genesis `build`, `learn`, `milestone` | revivable, keep | lww: `hue`, `label` ≤24 chars, `description` ≤80 chars, `ord` | 6 |
@@ -302,9 +302,8 @@ What a device tells a person when a change of theirs met one made elsewhere.
   consequences to roadmap's tables, with the bounds and caps of §4.
 - **The door.** Every server write for a person goes through one door that admits server-origin
   intents (E-4): MCP's write tools, tending until [Roadmap Coach](roadmap-coach.md) retires it, the
-  fork of a roadmap, the fork at sign-up, and the by-hand tool that moves unlisted roadmaps to private
-  ([backend SPEC](../../backend/SPEC.md#unlisted-roadmaps-to-private)). Each MCP write tool takes an
-  optional `requestId`, so a retried call writes once.
+  fork of a roadmap, and the fork at sign-up. Each MCP write tool takes an optional `requestId`, so
+  a retried call writes once.
 - **MCP keeps its meanings.** `delete_node` deletes a step, with `prune`, the `branches` it must
   confirm and the caller's own marks cleared, as today. `import_subgraph` and `change_edges` land a
   loop and name it in their answer, as today. `expectedSeq` is the tree scope's sequence number,
@@ -382,7 +381,8 @@ tables, stopping where they differ from those it planned from.
 - A step's `status` keeps `none` and `complete`; `active` and `inProgress` become `none`, as today,
   and so does a mark's. The audit counts every other value, and the move stops on any.
 - Every value is stored as the old server reads it: a colour or hue it does not know as terracotta,
-  a link as its lenient reading of it. Each such value is counted.
+  a link as its lenient reading of it. Each such value is counted. The adoption reads an old root's
+  visibility `unlisted` as private, as the old server does; production holds no `unlisted` roadmap.
 - A pointer moves from its step to a `pointer` record in its owner's overlay; a cleared one becomes
   none. A subtree's place becomes `tree.parent`, `meta.root`, `meta.parent`, `meta.depth` and
   `node.branch`, and every `reach` is computed.

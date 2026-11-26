@@ -40,6 +40,10 @@ CUTOVER_STEPS = [
     ("Forget what the run kept on the host", None), ("Forget the deploy key", None)]
 PROBE = "windmill-roadmap-probe-" + RUN
 TOOL = "windmill-roadmap-adopt-" + RUN
+sys.path.insert(0, str(REPOSITORY / "backend/deploy"))
+from sync_compatibility import metadata
+# The composed registries' interval: what the built web declares, and what the modeled host's server answers at hello.
+SHIPPED = metadata(REPOSITORY / "packages/api-contract/sync")
 
 
 # The subset of YAML the workflow is written in: mappings, lists of mappings, plain and quoted scalars, `|` blocks.
@@ -194,9 +198,7 @@ class Stage:
         (self.root / "artifact/dist/index.html").write_text(
             "<!doctype html><html><head><title>Windmill</title></head><body>replica room</body></html>\n")
         (self.root / "artifact/dist/assets.js").write_text("export const room = 'replica';\n")
-        sys.path.insert(0, str(REPOSITORY / "backend/deploy"))
-        from sync_compatibility import metadata
-        (self.root / "artifact/web-sync-compatibility.json").write_text(json.dumps(metadata(REPOSITORY / "packages/api-contract/sync")))
+        (self.root / "artifact/web-sync-compatibility.json").write_text(json.dumps(SHIPPED))
         shim(self.root / "host/bin/docker", host_shim)
         for name in ("ssh", "rsync", "curl", "gh"):
             shim(self.root / "runner/bin" / name, "--" + name + "-shim")
@@ -324,8 +326,7 @@ class WorkflowShapeTest(unittest.TestCase):
         guard = workflow()["jobs"]["guard"]["steps"][1]["run"]
         workflows = sorted(path.name for path in (REPOSITORY / ".github/workflows").glob("*.yml") if "deploy-vps" in path.read_text())
         self.assertEqual(workflows, ["deploy.yml", "gym-backup.yml", "ops-roadmap-copy.yml", "ops-roadmap-restore.yml",
-                                     "ops-roadmaps-to-private.yml", "ops-subtree-inventory.yml", "roadmap-cutover.yml",
-                                     "sync-digest-resum.yml", "web.yml"])
+                                     "ops-subtree-inventory.yml", "roadmap-cutover.yml", "sync-digest-resum.yml", "web.yml"])
         statuses = ["queued", "in_progress", "waiting", "requested", "pending"]
         for busy, status, outcome in ((None, None, (0, "")), ("roadmap-cutover.yml", "queued",
                                       (1, "Not now: roadmap-cutover.yml has a run queued. Dispatch the cutover again once it has finished.\n"))):
@@ -366,7 +367,7 @@ def model_curl(running, answers, command):
     method = command[command.index("-X") + 1] if "-X" in command else "GET"
     route = command[-1].split("127.0.0.1:8080", 1)[1]
     if route == "/v1/sync/hello":
-        return 0, json.dumps({"schema": 13, "minSchema": 11, "epoch": "e", "serverTime": 1}) + "\n200", ""
+        return 0, json.dumps({**SHIPPED, "epoch": "e", "serverTime": 1}) + "\n200", ""
     status, body = answers.get(f"{method} {route}", [200, {}])
     return 0, json.dumps(body) + "\n" + str(status), ""
 
@@ -560,7 +561,8 @@ class CutoverAgainstAModeledHostTest(unittest.TestCase):
                          "".join(json.dumps(json.loads(line), sort_keys=True, separators=(",", ":")) + "\n" for line in PASSED.splitlines()) +
                          "PASS adopt: every stage passed\n")
         self.assertEqual(printed(log, "Start the server on the sync engine"),
-                         "PASS start: the server runs its pinned image with ROADMAP_ENGINE_ENABLED=1; hello says schema 13, minimum 11\n")
+                         "PASS start: the server runs its pinned image with ROADMAP_ENGINE_ENABLED=1; "
+                         f"hello says schema {SHIPPED['schema']}, minimum {SHIPPED['minSchema']}\n")
         self.assertEqual(printed(log, "Promote the web whose room reads the replica"),
                          "PASS web deployment: live backend accepts the candidate sync client, roadmap's room on\n"
                          f"PASS web: 2 files promoted, built from {'d' * 40} with roadmap's room on\n")
