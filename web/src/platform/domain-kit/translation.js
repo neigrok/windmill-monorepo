@@ -261,6 +261,7 @@ export function translate(plan, scope, registry) {
   const keys = operations.filter((operation) => operation.writes)
     .map((operation) => recordKey(operation.entity.type, recordIdOf(operation, registry)));
   if (new Set(keys).size !== keys.length) throw new PlanError(2, 'two operations name one record');
+  if (plan.undoChecks.length && plan.undo === null) throw new PlanError(11, 'a plan checks an Undo it does not opt into');
   const onlyHeldRemovals = operations.every((operation) => operation.kind.op === 'remove' && operation.entity.heldRemoval === true);
   if (plan.isHeld && (!onlyHeldRemovals || plan.command !== null || plan.predictions.length)) {
     throw new PlanError(3, 'a held plan contains more than held removals and device writes');

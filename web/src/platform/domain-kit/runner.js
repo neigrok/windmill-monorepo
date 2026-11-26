@@ -18,6 +18,35 @@ import { Fault, Violation, precondition } from './values.js';
 
 let insideRun = false;
 
+// The token only this file holds, so only the runner makes an Undo handle.
+const MINTED = Symbol('an Undo handle the runner made');
+
+// K-3: an act's Undo as the product's stack keeps it: the act the engine journals and what its Undo must find standing
+// where it is asked, the checks its plans named (`Plan.undoCheckedBy`). A commit's receipt carries it and a Redo answers
+// one; the runner makes no other, so no Undo is asked without its act's checks.
+export class UndoHandle {
+  /**
+   * @param {symbol} token
+   * @param {string} actId
+   * @param {readonly import('./plans.js').UndoCheck[]} checks
+   */
+  constructor(token, actId, checks) {
+    precondition(token === MINTED, 'only the runner makes an Undo handle');
+    this.actId = actId;
+    this.checks = Object.freeze([...checks]);
+    Object.freeze(this);
+  }
+}
+
+// The Undo of an act of these segments, with every check their plans name.
+/**
+ * @param {string} actId
+ * @param {readonly { plan: import('./plans.js').Plan }[]} segments
+ */
+function undoOf(actId, segments) {
+  return new UndoHandle(MINTED, actId, segments.flatMap(({ plan }) => plan.undoChecks));
+}
+
 /** @typedef {import('./values.js').Json} Json */
 /** @typedef {import('./entities.js').RecordID} RecordID */
 /** @typedef {import('./entities.js').ViewRecord} ViewRecord */
@@ -28,10 +57,10 @@ let insideRun = false;
  * all read from the same replica; a commit adds its `now`.
  * @typedef {{ drawn: Map<string, ViewRecord>, stored: Map<string, ViewRecord>, confirmed?: import('./reading.js').ConfirmedRows } & import('./reading.js').ViewMetadata} ReadViews
  * @typedef {ReadViews & { now: number }} CommitViews
- * @typedef {{ receipt: CommitReceipt } | { refused: { code: string, detail: Json | null, notice: string | null } }} CommitOutcome
+ * @typedef {{ receipt: Omit<CommitReceipt, 'undo'> } | { refused: { code: string, detail: Json | null, notice: string | null } }} CommitOutcome
  */
 /**
- * @typedef {{ receipt: import('./acts.js').ActReceipt } | { refused: { segment: number, code: string, detail: Json | null } }} ActCommitOutcome
+ * @typedef {{ receipt: Omit<import('./acts.js').ActReceipt, 'undo'> } | { refused: { segment: number, code: string, detail: Json | null } }} ActCommitOutcome
  */
 /**
  * The binding an act was planned under, read from the engine's `activeBinding()` before the awaits that came between:
@@ -103,9 +132,9 @@ export class ActionRunner {
     if (action.reversible !== true) return this.perform(action);
     const outcome = await this.runAct(scopedAct(action));
     if (outcome.kind !== 'committed') return outcome;
-    const { gestureId, segments: [segment], retired, superseded, releaseAt } = outcome.receipt;
+    const { gestureId, segments: [segment], retired, superseded, releaseAt, undo } = outcome.receipt;
     precondition(segment !== undefined, 'a reversible action commits one segment');
-    return Outcome.committed(outcome.result, { gestureId, localIds: segment.localIds, retired, ...(superseded.length ? { superseded } : {}), releaseAt });
+    return Outcome.committed(outcome.result, { gestureId, localIds: segment.localIds, retired, ...(superseded.length ? { superseded } : {}), releaseAt, undo });
   }
 
   // `guard.binding`, when given, commits the act only while the binding it was planned under stands; otherwise the
@@ -137,7 +166,10 @@ export class ActionRunner {
       const { outcome, value } = committed;
       if ('done' in value) return value.done;
       if (outcome === null) return { kind: 'unchanged', result: value.writing.result };
-      if ('receipt' in outcome) return { kind: 'committed', result: value.writing.result, receipt: outcome.receipt };
+      if ('receipt' in outcome) {
+        const receipt = { ...outcome.receipt, undo: undoOf(outcome.receipt.gestureId, value.writing.plan.segments) };
+        return { kind: 'committed', result: value.writing.result, receipt };
+      }
       const { segment, code, detail } = outcome.refused;
       const scoped = value.writing.plan.segments[segment];
       precondition(scoped !== undefined, 'the refused segment index is in its plan');
@@ -211,7 +243,10 @@ export class ActionRunner {
       const { outcome, value } = committed;
       if ('done' in value) return value.done;
       if (outcome === null) return { kind: 'unchanged', results: value.writing.results };
-      if ('receipt' in outcome) return { kind: 'committed', results: value.writing.results, receipt: outcome.receipt };
+      if ('receipt' in outcome) {
+        const receipt = { ...outcome.receipt, undo: undoOf(outcome.receipt.gestureId, value.writing.segments) };
+        return { kind: 'committed', results: value.writing.results, receipt };
+      }
       const { segment, code, detail } = outcome.refused;
       const refusedSegment = value.writing.segments[segment];
       precondition(refusedSegment !== undefined, 'the refused segment index is in its plan');
@@ -345,7 +380,7 @@ export class ActionRunner {
     const { receipt } = outcome;
     const wroteNothing = receipt.localIds.length === 0 && receipt.retired.length === 0
       && (receipt.superseded?.length ?? 0) === 0 && plan.deviceWrites.length === 0;
-    return wroteNothing ? Outcome.unchanged(result) : Outcome.committed(result, receipt);
+    return wroteNothing ? Outcome.unchanged(result) : Outcome.committed(result, { ...receipt, undo: undoOf(receipt.gestureId, []) });
   }
 
   /**
@@ -385,28 +420,42 @@ export class ActionRunner {
     return this.port('dismissNotices')(scope, ids, when);
   }
 
-  // K-3 (engine §7.3 Undo of an act): the inverse of an act opted into Undo. A wholly held act is cancelled in
-  // place; otherwise the inverse is reserved at once and settles as its sources do.
+  // K-3 (engine §7.3 Undo of an act): the inverse of an act opted into Undo, by the handle its receipt carries. Each check
+  // its act named is read first, and one that refuses what stands writes nothing and answers unavailable (`refused`). A
+  // wholly held act is cancelled in place; otherwise the inverse is reserved at once and settles as its sources do.
   /**
-   * @param {string} actId
+   * @param {UndoHandle} act
    * @returns {Promise<InverseResult>}
    */
-  async undo(actId) {
-    return this.port('requestInverse')(actId);
+  async undo(act) {
+    precondition(act instanceof UndoHandle, 'an Undo takes the handle its act\'s receipt carries');
+    for (const undoCheck of act.checks) {
+      try {
+        this.read(undoCheck.scope, (read) => undoCheck.check(read));
+      } catch (error) {
+        if (error instanceof Violation) return { kind: 'unavailable', requestId: null, reason: 'refused' };
+        throw error;
+      }
+    }
+    return this.port('requestInverse')(act.actId);
   }
 
-  // The inverse of an Undo, restoring only what it applied, or what `productSlots` (by source ordinal, with the
-  // scope each source wrote) name instead, as a product's Redo of a terminal creation does.
+  // The inverse of the Undo `requestId` of `act`, restoring only what it applied, or what `productSlots` (by source
+  // ordinal, with the scope each source wrote) name instead, as a product's Redo of a terminal creation does. It answers
+  // the Redo's result and the Undo of the act the Redo wrote, checked as `act`'s was; none where the Redo is unavailable.
   /**
    * @param {string} requestId
+   * @param {UndoHandle} act
    * @param {{ index: number, scope: string, plan: import('./plans.js').Plan }[]} [productSlots]
-   * @returns {Promise<InverseResult>}
+   * @returns {Promise<{ result: InverseResult, undo: UndoHandle | null }>}
    */
-  async redo(requestId, productSlots) {
+  async redo(requestId, act, productSlots) {
+    precondition(act instanceof UndoHandle, 'a Redo takes the handle of the act its Undo took back');
     const undone = this.inverseResult(requestId);
-    if (undone.kind === 'unavailable') return undone;
+    if (undone.kind === 'unavailable') return { result: undone, undo: null };
     const slots = productSlots?.map(({ index, scope, plan }) => ({ index, recipes: translateUndo(plan, scope) ?? [] }));
-    return this.port('requestInverse')(undone.inverseActId, slots);
+    const result = await this.port('requestInverse')(undone.inverseActId, slots);
+    return { result, undo: result.kind === 'unavailable' ? null : new UndoHandle(MINTED, result.inverseActId, act.checks) };
   }
 
   /**

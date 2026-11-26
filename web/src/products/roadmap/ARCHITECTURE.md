@@ -346,8 +346,11 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
     roadmap while it reads it, as a reader's room does, where the picker with the switch off asks `GET /v1/trees/{id}` (§7 retires it);
     reads of one address while its reading is out share that reading (`heldTrees.read` in `room/useRoomLoad.js`).
     The copy names no author, so a roadmap the person can only read is said as readable, without whose.
-  - *Undo:* a receipt holds a gesture's one act, and its Undo (`revert`) is that act's Undo, every part of it; ⌘Z and
-    ⇧⌘Z walk the session's stack of receipts over `runner.undo` and `runner.redo`, bumping `receiptVersion` as roadmap's own session does. A
+  - *Undo:* a receipt, on the stack or kept out of it, holds a gesture's one act and that act's Undo handle, and its Undo
+    (`revert`) is that act's Undo, every part of it; ⌘Z and ⇧⌘Z walk the session's stack of receipts over `runner.undo`
+    and `runner.redo`, each by the Undo handle its receipt or its Redo carries, so every Undo is asked with the checks its
+    act named (a kind brought back onto a hue another kind wears is refused), bumping `receiptVersion` as roadmap's own
+    session does. A
     step's held delete stays the room's own hold until it is released, and an act the engine still holds is cancelled in
     place. Each act leaves the engine's journal (`runner.release`) as its receipt leaves the stacks. A toast's Undo
     (`revert`) answers what it came to once the engine has settled it, and keeps the Undo's own act until then, since
@@ -1445,6 +1448,6 @@ selectable; owners can make a tree private again.
   Design gaps belong in the [consistency ledger](../../../../docs/design/consistency.md).
 - Where the room reads the device's copy, the person's list (the domain's `list`, `ReplicaRoadmap.list`) carries no
   `dominantKind`, the most-worn hue `GET /v1/trees` sends with the switch off, so the home card's and the landing's dot, the switcher's
-  ring and the sheet's hue draw every roadmap in the default hue. Signed out, the list orders the roadmaps the server
-  has received nothing of by id, so the home card and the landing offer back the one with the smallest id, not the
-  newest.
+  ring and the sheet's hue draw every roadmap in the default hue. A roadmap the server has received nothing of, as every
+  one is signed out, is ordered by the newest stamp the browser holds of it (`stampedAt`), so the home card and the
+  landing offer back the newest.

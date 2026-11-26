@@ -134,7 +134,8 @@ extension RoadmapPlan.Graft {
       imported.steps.filter { !followed.contains(PlanText.key($0.key)) }.map { RoadmapTree.Edge(from: under, to: $0.key, present: true) }
     } ?? []
     let tree = RoadmapTree(id: roadmap.id, present: roadmap.present, read: roadmap.read, own: roadmap.own, updatedAt: roadmap.updatedAt,
-                           parent: roadmap.parent, meta: roadmap.meta, nodes: roadmap.nodes + imported.steps.map(\.planted),
+                           stampedAt: roadmap.stampedAt, parent: roadmap.parent, meta: roadmap.meta,
+                           nodes: roadmap.nodes + imported.steps.map(\.planted),
                            edges: roadmap.edges + rooted + imported.links.map { RoadmapTree.Edge(from: $0.from, to: $0.to, present: true) },
                            kinds: roadmap.kinds, marks: roadmap.marks + done.map(RoadmapTree.Mark.init(completing:)), pointers: roadmap.pointers)
     return RoadmapPlan.Landing.of(imported.steps, in: tree)

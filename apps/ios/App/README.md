@@ -160,17 +160,19 @@ so the band's Undo brings the step back after the hold has ended too, where a ro
 workspace keep none past it. When the band leaves, the engine keeps no Undo of the act (`ActionRunner.release`). An
 Undo of Reset marks the step done anew, so it leads Done, and an Undo of a roadmap's delete opens the roadmap again where
 the room had it open. An Undo that brings nothing back, a roadmap's delete or a workspace removal past its hold, an act
-the engine keeps no Undo of, or one whose every restore a write made elsewhere stood in the way of, such as another
-phone's delete of the same step, puts in the receipt's place what could not come back (`Band.Says.unrestored`, boards
-02.10d and 06.5c): *Couldn’t bring back* a step, a roadmap, a kind, a subtask or a link by its name, or several steps by
-their count, and *Couldn’t undo* any other act. It has no Undo, stands six seconds, and the room plays a warning haptic
-and VoiceOver announces it; its event keeps outcome unavailable. The band says a refusal only where it is a limit the
-boards word, and any other refusal shows nothing. Facts the model reads or settles itself, as the web's room does. From
-the domain's `EffectsRead` (`OpenRoadmap.effects(of:)`, which the web's room reads through `readEffects`), what a
-delete or a Reset would do: the one starting step a roadmap keeps, which offers no Delete; that steps holding every step
-the roadmap starts from cannot be deleted; the steps outside them that follow one of them, which a step's page lists under
-*Opens* and the delete question counts; and what Reset would return to Locked (`OpenStep.relocks`), the steps a Done step
-opened that stand Up next. From the domain's read of
+the engine keeps no Undo of, one whose every restore a write made elsewhere stood in the way of, such as another phone's
+delete of the same step, or a kind's removal whose hue another kind has come to wear, which the domain refuses before
+anything is written (the check `DeleteKind`'s plan names, read by `ActionRunner.undo(_:)` from the act's `UndoHandle`,
+which the band keeps), puts in the receipt's place what could not come back (`Band.Says.unrestored`, boards 02.10d and
+06.5c): *Couldn’t bring back* a step, a roadmap, a kind, a subtask or a link by its name, or several steps by their
+count, and *Couldn’t undo* any other act. It has no Undo, stands six seconds, and the room plays a warning haptic and
+VoiceOver announces it; its event keeps outcome unavailable. The band says a refusal only where it is a limit the boards
+word, and any other refusal shows nothing. Facts the model reads or settles itself, as the web's room does. From the
+domain's `EffectsRead` (`OpenRoadmap.effects(of:)`, which the web's room reads through `readEffects`), what a delete or
+a Reset would do: the one starting step a roadmap keeps, which offers no Delete; that steps holding every step the
+roadmap starts from cannot be deleted; the steps outside them that follow one of them, which a step's page lists under
+*Opens* and the delete question counts; and what Reset would return to Locked (`OpenStep.relocks`), the steps a Done
+step opened that stand Up next. From the domain's read of
 every roadmap: what else a roadmap's delete takes (`openers(of:)`, the web's `OpenedTrees.openersOf` and `deleteCost`),
 the steps of the person's other roadmaps whose pointer opens it, which the server deletes with it. And of a name: it is
 written without the blanks around it (`name(typed:)`, the web's `NewTreeBirth.plant` and `ReplicaSession.renameTree`), and a
@@ -208,8 +210,9 @@ no menu. Before iOS 26 the name and the progress stand in the bar's
 principal slot (`roomTitle`) with the same menu attached; no iOS 18 runtime has drawn that menu or tried its rename.
 
 `Roadmaps/RoadmapsList.swift` is All Roadmaps, pushed on the stack: every roadmap in the domain's order, the open one
-checked. That order is by when a server last received each, the most recent first, so on a phone never signed in it is
-the order of their ids. A row opens its roadmap on its Board and slides left for *Delete*, which asks on the row, never
+checked. That order is by when a server last received each, or, for a roadmap no server has received, by the newest
+stamp the phone holds of it, the most recent first, so on a phone never signed in the roadmap made last comes first. A row
+opens its roadmap on its Board and slides left for *Delete*, which asks on the row, never
 commits by a full swipe, and leaves the list on screen under the band; past eight roadmaps the bar's drawer finds them
 by name; and + names a new one. Its last row on the board, the gallery, is left out. `Roadmaps/NewRoadmap.swift` is the
 sheet the title menu, All Roadmaps and *No roadmaps yet* all open, over its draft (`Roadmaps/NewRoadmapDraft.swift`): a
@@ -530,7 +533,8 @@ and makes a kind at once, unnamed, on the first hue no entry has (`CreateKind`);
 leaves them (`ChangeKind`), and a hue no kind names that is given one becomes a kind wearing it (`CreateKind`); a free hue
 chosen recolors the kind and every step that wears it (`RecolourKind`, the server's command, predicted on the phone), or
 moves the steps of a hue no kind names in one gesture (`ChangeStep`), with no band; and a kind no step wears is removed at
-once (`DeleteKind`), the band holding *Undo* for six seconds, since the engine does not hold a kind's removal. Add, a name,
+once (`DeleteKind`), the band holding *Undo* for six seconds, since the engine does not hold a kind's removal; that Undo
+brings the kind back only while no other kind wears its hue, as the delete's plan checks. Add, a name,
 a description and a colour keep no *Undo*, as the web's legend keeps none. `Kinds/RoadmapKinds.swift` is the sheet, a large
 one with its own stack, which the room raises from the title menu's *Kinds* and the form from *Edit Kinds*: the legend
 under the roadmap's name, each entry with its disc, name, description and how many steps wear it, pushing its page; *Add
@@ -581,7 +585,8 @@ that guide and *Become a day skipper*'s; `-board roadmap-sign-in` leaves the pho
 roadmap, beside the account `roadmap-fixture@example.com`, which holds *Learn to sail*; `-board roadmap-unconfirmed` is
 *Learn to sail* after the server stops answering, its last five steps completed on the phone, so the account has not
 confirmed them; `-board roadmap-many` is a phone never signed in that holds the nine roadmaps All Roadmaps draws,
-*Learn to sail* the one last open, listed in the order of their ids since no server has received them; `-board
+*Learn to sail* the one last open, listed in the order of their ids: no server has received them, and the board's clock
+stands still, so the newest stamp the phone holds of each is of one millisecond; `-board
 roadmap-handbook` is a phone never signed in that holds *Coastal navigation handbook*, the 5,000 steps, links and colours
 of the layout's shared fixture, read from the repository the build was made in and planted through the domain, so its
 steps' ids are the phone's, with the first 120 of the fixture's 1,800 done steps marked, since signed out each mark's

@@ -280,6 +280,7 @@
       "read": "loaded",
       "own": true,
       "updatedAt": 2000,
+      "stampedAt": 112,
       "parent": null,
       "meta": {
         "title": "Learn to sail",
@@ -487,6 +488,7 @@
       "read": "loaded",
       "own": false,
       "updatedAt": 3100,
+      "stampedAt": 203,
       "parent": {
         "tree": "t_00000000000000a1",
         "step": "wind"
@@ -600,6 +602,7 @@
       "read": "loaded",
       "own": true,
       "updatedAt": 5000,
+      "stampedAt": 300,
       "parent": null,
       "meta": {
         "title": "Learn to sail",
@@ -673,6 +676,7 @@
       "read": "loaded",
       "own": true,
       "updatedAt": 4100,
+      "stampedAt": 300,
       "parent": {
         "tree": "t_00000000000000a1",
         "step": "kite"
@@ -701,6 +705,7 @@
       "read": "unread",
       "own": false,
       "updatedAt": null,
+      "stampedAt": null,
       "parent": null,
       "meta": null,
       "nodes": [],
@@ -726,6 +731,7 @@
       "read": "loaded",
       "own": false,
       "updatedAt": null,
+      "stampedAt": null,
       "parent": null,
       "meta": null,
       "nodes": [],
@@ -802,6 +808,7 @@
       "read": "unread",
       "own": true,
       "updatedAt": 1100,
+      "stampedAt": 101,
       "parent": null,
       "meta": {
         "title": "Learn to sail",
@@ -913,6 +920,7 @@
       "read": "loaded",
       "own": true,
       "updatedAt": null,
+      "stampedAt": 102,
       "parent": null,
       "meta": {
         "title": "Learn to sail",
@@ -1635,7 +1643,7 @@
     ]
   },
   {
-    "name": "The person’s list: their own roots that stand, newest first by the server’s last receipt, ties by id, never received last; no subtree, deleted or someone else’s roadmap, nor a root whose meta has not arrived",
+    "name": "The person’s list: their own roots that stand, newest first by the server’s last receipt, ties by id, one neither received nor stamped last; no subtree, deleted or someone else’s roadmap, nor a root whose meta has not arrived",
     "input": {
       "operation": "list",
       "trees": [
@@ -1889,6 +1897,343 @@
       {
         "id": "U",
         "title": "Never received",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": null
+      }
+    ]
+  },
+  {
+    "name": "On a phone never signed in no server has received any roadmap: two made one after the other stand newest first by the newest stamp the phone holds of each, the second first",
+    "input": {
+      "operation": "list",
+      "trees": [
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "stampedAt": 1000,
+          "parent": null,
+          "meta": {
+            "title": "Made first",
+            "root": "A",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "B",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "stampedAt": 2000,
+          "parent": null,
+          "meta": {
+            "title": "Made second",
+            "root": "B",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "expect": [
+      {
+        "id": "B",
+        "title": "Made second",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": null
+      },
+      {
+        "id": "A",
+        "title": "Made first",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": null
+      }
+    ]
+  },
+  {
+    "name": "A roadmap no server has received, stamped after another was last received, comes before it: a received roadmap stands by its receipt, though the phone holds a newer stamp of it",
+    "input": {
+      "operation": "list",
+      "trees": [
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": 5000,
+          "stampedAt": 8000,
+          "parent": null,
+          "meta": {
+            "title": "Received earlier",
+            "root": "A",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "B",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "stampedAt": 7000,
+          "parent": null,
+          "meta": {
+            "title": "Never received",
+            "root": "B",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "expect": [
+      {
+        "id": "B",
+        "title": "Never received",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": null
+      },
+      {
+        "id": "A",
+        "title": "Received earlier",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": 5000
+      }
+    ]
+  },
+  {
+    "name": "A roadmap received after another no server has received was last stamped comes before it",
+    "input": {
+      "operation": "list",
+      "trees": [
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "stampedAt": 7000,
+          "parent": null,
+          "meta": {
+            "title": "Never received",
+            "root": "A",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "B",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": 9000,
+          "stampedAt": 9000,
+          "parent": null,
+          "meta": {
+            "title": "Received later",
+            "root": "B",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "expect": [
+      {
+        "id": "B",
+        "title": "Received later",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": 9000
+      },
+      {
+        "id": "A",
+        "title": "Never received",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": null
+      }
+    ]
+  },
+  {
+    "name": "Roadmaps at one time, received at it or stamped at it with none received, stand in id byte order",
+    "input": {
+      "operation": "list",
+      "trees": [
+        {
+          "id": "C",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "stampedAt": 7000,
+          "parent": null,
+          "meta": {
+            "title": "Stamped then",
+            "root": "C",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "B",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": 7000,
+          "stampedAt": 7000,
+          "parent": null,
+          "meta": {
+            "title": "Received then",
+            "root": "B",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        },
+        {
+          "id": "A",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "stampedAt": 7000,
+          "parent": null,
+          "meta": {
+            "title": "Stamped then too",
+            "root": "A",
+            "depth": 0
+          },
+          "nodes": [
+            {
+              "id": "n",
+              "present": true
+            }
+          ],
+          "edges": [],
+          "kinds": [],
+          "marks": [],
+          "pointers": []
+        }
+      ]
+    },
+    "expect": [
+      {
+        "id": "A",
+        "title": "Stamped then too",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": null
+      },
+      {
+        "id": "B",
+        "title": "Received then",
+        "counts": {
+          "done": 0,
+          "total": 1
+        },
+        "updatedAt": 7000
+      },
+      {
+        "id": "C",
+        "title": "Stamped then",
         "counts": {
           "done": 0,
           "total": 1
