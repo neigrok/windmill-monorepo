@@ -1,4 +1,6 @@
+import DomainKitTesting
 import RoadmapDomain
+import SyncCore
 import Testing
 
 // Roadmaps the domain accepts, drawn from text that looks like every line the grammar reads, as the web's grammar test
@@ -71,6 +73,40 @@ struct PlanFileTests {
       #expect(read.kinds.map { [$0.hue, $0.label].map { Array($0.unicodeScalars) } }
               == worn.filter { !named($0).isEmpty }.map { [$0, named($0)].map { Array($0.unicodeScalars) } }, "\(file.text)")
     }
+  }
+
+  // §7.3 A roadmap of the device's copy, written as the room shows it, is the text of the shared case that names it: its
+  // title, guide and the kinds owning their hues; *Night passage*, which owns a subtree, and *Become a skipper*, whose
+  // pointer opens a roadmap that is complete, are steps; *Leave the dock*, deleted, is left out, and *Sail solo*, which
+  // followed it, follows what it followed; *Night passage*'s own mark is set aside while its subtree is not done.
+  @Test func aRoadmapOfTheDevicesCopyIsWrittenAsTheRoomShowsIt() throws {
+    let born = "1000:0:r_aaaaaaaaaaaa"
+    let trees: [JSON] = [
+      ["id": "t_0000000000000001", "own": true, "meta": ["title": "Learn to sail", "guide": "Sundays with Maya.\nBring the tide table."],
+       "kinds": [["id": "sea", "hue": "sky", "label": "Sea", "description": "Open water.", "ord": "a0", "born": .string(born)],
+                 ["id": "goal", "hue": "gold", "label": "Milestone", "description": "Moments that matter", "ord": "a1", "born": .string(born)]],
+       "nodes": [["id": "course", "label": "Choose a course", "color": "sky", "ord": "a0", "description": "Start nearby.",
+                  "links": [["url": "https://example.com/course", "label": "The school"]]],
+                 ["id": "night", "label": "Night passage", "color": "sky", "ord": "a1", "branch": "t_0000000000000002"],
+                 ["id": "gone", "label": "Leave the dock", "color": "sky", "ord": "a2", "present": false],
+                 ["id": "solo", "label": "Sail solo", "color": "gold", "ord": "a3"],
+                 ["id": "skipper", "label": "Become a skipper", "color": "terracotta", "ord": "a4"]],
+       "edges": [["from": "course", "to": "night", "present": true], ["from": "course", "to": "gone", "present": true],
+                 ["from": "gone", "to": "solo", "present": true], ["from": "night", "to": "skipper", "present": true]],
+       "marks": [["node": "course", "status": "complete", "outOfOrder": false], ["node": "night", "status": "complete", "outOfOrder": false]],
+       "pointers": [["node": "skipper", "present": true, "opens": "t_0000000000000003"]]],
+      ["id": "t_0000000000000002", "own": true, "parent": ["tree": "t_0000000000000001", "step": "night"],
+       "meta": ["title": "Night passage", "root": "t_0000000000000001", "depth": 1],
+       "nodes": [["id": "lights", "label": "Fit the navigation lights", "ord": "a0"]]],
+      ["id": "t_0000000000000003", "own": true, "meta": ["title": "Day skipper"], "nodes": [["id": "theory", "label": "Pass the theory", "ord": "a0"]],
+       "marks": [["node": "theory", "status": "complete", "outOfOrder": false]]],
+    ]
+    let account = RoadmapAccount(try trees.map(RoadmapTree.init(form:)))
+    let named = "A roadmap the room writes: a step that owns a subtree or opens a roadmap is a step, a step deleted is left out and the step after it follows what it followed, and a step is done as the room shows it"
+    let shared = try #require(try Contract.vectors("roadmap/plan/write.json").first { $0.name == named })
+    let file = try #require(PlanFile("t_0000000000000001", in: account))
+    #expect(JSON.string(file.text) == shared.expect["text"])
+    #expect(PlanFile("t_00000000000000ff", in: account) == nil)
   }
 
   struct Shown: Equatable {

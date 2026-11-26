@@ -1131,5 +1131,79 @@
         "imperfections": {"notes": 0, "clamps": 0, "renames": 0, "clips": 0}
       }
     }
+  },
+  {
+    "name": "A roadmap the room writes: a step that owns a subtree or opens a roadmap is a step, a step deleted is left out and the step after it follows what it followed, and a step is done as the room shows it",
+    "input": {
+      "title": "Learn to sail",
+      "guide": "Sundays with Maya.\nBring the tide table.",
+      "kinds": [
+        {"id": "sea", "hue": "sky", "label": "Sea", "description": "Open water."},
+        {"id": "goal", "hue": "gold", "label": "Milestone", "description": "Moments that matter"}
+      ],
+      "nodes": [
+        {
+          "id": "course",
+          "label": "Choose a course",
+          "color": "sky",
+          "prerequisites": [],
+          "description": "Start nearby.",
+          "links": [{"url": "https://example.com/course", "label": "The school"}]
+        },
+        {"id": "night", "label": "Night passage", "color": "sky", "prerequisites": ["course"]},
+        {"id": "solo", "label": "Sail solo", "color": "gold", "prerequisites": ["course"]},
+        {"id": "skipper", "label": "Become a skipper", "color": "terracotta", "prerequisites": ["night"]}
+      ],
+      "done": ["course", "skipper"],
+      "readOver": []
+    },
+    "expect": {
+      "text": "# Learn to sail\n<!-- windmill:roadmap 2 -->\n<!-- windmill:guide -->\n> Sundays with Maya.\n> Bring the tide table.\n<!-- /windmill:guide -->\n- [x] Choose a course <!-- windmill:kind sky Sea -->\n  > Start nearby.\n  <https://example.com/course>\n  - Night passage\n    - [x] Become a skipper <!-- windmill:kind terracotta -->\n  - Sail solo <!-- windmill:kind gold Milestone -->",
+      "readBack": {
+        "title": "Learn to sail",
+        "missingRoot": false,
+        "nodes": [
+          {
+            "id": "choose-a-course",
+            "label": "Choose a course",
+            "color": "sky",
+            "prerequisites": [],
+            "icon": "sparkles",
+            "status": "complete",
+            "description": "Start nearby.",
+            "links": ["https://example.com/course"]
+          },
+          {"id": "night-passage", "label": "Night passage", "color": "sky", "prerequisites": ["choose-a-course"]},
+          {
+            "id": "become-a-skipper",
+            "label": "Become a skipper",
+            "color": "terracotta",
+            "prerequisites": ["night-passage"],
+            "status": "complete"
+          },
+          {"id": "sail-solo", "label": "Sail solo", "color": "gold", "prerequisites": ["choose-a-course"]}
+        ],
+        "kinds": [
+          {"id": "sea", "hue": "sky", "label": "Sea", "description": "", "source": "added"},
+          {"id": "milestone", "hue": "gold", "label": "Milestone", "description": "", "source": "added"}
+        ],
+        "gutter": [
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": null, "nodeId": null, "liberties": []},
+          {"mark": "done", "nodeId": "choose-a-course", "liberties": []},
+          {"mark": "note", "nodeId": "choose-a-course", "liberties": [{"type": "note"}]},
+          {"mark": "note", "nodeId": "choose-a-course", "liberties": []},
+          {"mark": "step", "nodeId": "night-passage", "liberties": []},
+          {"mark": "done", "nodeId": "become-a-skipper", "liberties": []},
+          {"mark": "step", "nodeId": "sail-solo", "liberties": []}
+        ],
+        "readout": {"steps": 4, "branches": 0, "done": 2},
+        "imperfections": {"notes": 1, "clamps": 0, "renames": 0, "clips": 0}
+      }
+    }
   }
 ]
