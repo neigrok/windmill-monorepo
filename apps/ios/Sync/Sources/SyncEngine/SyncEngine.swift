@@ -24,6 +24,12 @@ public typealias WriterObserver = @Sendable (WriterTiming) -> Void
 public final class SyncEngine: Replica {
   @TaskLocal package static var taskExecutor: (any TaskExecutor)?
 
+  // iOS 18's Swift runtime crashes on a task created with a nil executor preference, so only a set one is passed.
+  package static func task<Success: Sendable>(_ operation: sending @escaping () async -> Success) -> Task<Success, Never> {
+    guard let taskExecutor else { return Task(operation: operation) }
+    return Task(executorPreference: taskExecutor, operation: operation)
+  }
+
   struct Loops {
     var tasks: [Task<Void, Never>] = []
     var started = false
@@ -573,11 +579,11 @@ final class EngineCore: Sendable {
     let start = clock.wall.reading().mono
     return await TransportDiagnostics.$invocation.withValue(invocation) {
       let race = RequestRace<Body>()
-      let request = Task(executorPreference: SyncEngine.taskExecutor) {
+      let request = SyncEngine.task {
         guard !Task.isCancelled else { return race.settle(.stopped) }
         race.settle(.answered(await call()))
       }
-      let deadline = Task(executorPreference: SyncEngine.taskExecutor) { [sleeper = clock.sleeper] in
+      let deadline = SyncEngine.task { [sleeper = clock.sleeper] in
         do {
           try await sleeper.sleep(for: .milliseconds(Constants.requestTimeoutMs))
           race.settle(.timedOut)
