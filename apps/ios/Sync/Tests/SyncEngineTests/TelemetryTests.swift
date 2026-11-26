@@ -429,7 +429,7 @@ struct TelemetryTests {
     let recorder = Recorder(), gate = Gate(), finished = DispatchSemaphore(value: 0)
     let rig = try Rig(telemetry: recorder)
     CallerThread.run {
-      let exchanging = Task(executorPreference: SyncEngine.taskExecutor) {
+      let exchanging = SyncEngine.task {
         let exchange = await rig.engine.core.answered(operation: "sync_push") {
           await gate.pass()
           if !Task.isCancelled {
