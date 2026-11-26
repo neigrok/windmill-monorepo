@@ -29,8 +29,8 @@ object Journal {
         listOf(
             "{",
             "  \"registry\": \"journal\",",
-            "  \"version\": 14,",
-            "  \"minVersion\": 11,",
+            "  \"version\": 15,",
+            "  \"minVersion\": 15,",
             "  \"products\": {",
             "    \"journal\": {",
             "      \"surfaces\": [",
