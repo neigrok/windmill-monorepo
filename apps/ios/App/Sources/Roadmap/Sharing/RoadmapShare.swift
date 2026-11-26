@@ -72,9 +72,9 @@ final class ShareSheet: Identifiable {
     }
   }
 
-  // Share Link, handed to the system's share sheet.
-  func shared() {
-    room.telemetry.event("roadmap_verb", properties: ["verb": "share", "step": "link"])
+  // Share Link: what the system's share sheet tells once it is handed the address, from off the main actor.
+  var handed: @Sendable () -> Void {
+    { [telemetry = room.telemetry] in telemetry.event("roadmap_verb", properties: ["verb": "share", "step": "link"]) }
   }
 
   // Copy Link: the share address on the pasteboard.
@@ -99,6 +99,19 @@ extension RoadmapModel {
   }
 }
 
+// The share address as Share Link hands it to the system's share sheet, which tells each time the sheet takes it.
+nonisolated struct SharedAddress: Transferable {
+  let url: URL
+  let handed: @Sendable () -> Void
+
+  static var transferRepresentation: some TransferRepresentation {
+    ProxyRepresentation { (shared: SharedAddress) in
+      shared.handed()
+      return shared.url
+    }
+  }
+}
+
 // The Share sheet (09.1a to 09.2b): a medium sheet with its close button, the switch over the sentence true now, and while
 // the roadmap is public Share Link, the system's share sheet, and Copy Link. Signed out the switch is dimmed and Sign In
 // stands at the sheet's foot, opening the shell's sign-in over the sheet.
@@ -110,20 +123,22 @@ struct RoadmapShare: View {
     NavigationStack {
       Form {
         Section {
+          // A switch that waits is dimmed with its words (09.2a, 09.2b).
+          let turns = share.signedIn && share.online
           Toggle("Public link", isOn: Binding(get: { share.isPublic }, set: { share.turn(public: $0) }))
-            .foregroundStyle(RoadmapPalette.ink).tint(RoadmapPalette.accent).disabled(!share.signedIn || !share.online)
+            .foregroundStyle(turns ? RoadmapPalette.ink : RoadmapPalette.inkFaint).tint(RoadmapPalette.accent).disabled(!turns)
             .listRowBackground(RoadmapPalette.card).accessibilityIdentifier("roadmap-share-public")
         } footer: {
           Text(share.footer).foregroundStyle(RoadmapPalette.inkDim).accessibilityIdentifier("roadmap-share-footer")
         }
         if let address = share.address {
           Section {
-            ShareLink(item: address) { Label("Share Link", systemImage: "square.and.arrow.up") }
-              .simultaneousGesture(TapGesture().onEnded { share.shared() })
-              .listRowBackground(RoadmapPalette.card).accessibilityIdentifier("roadmap-share-link")
+            ShareLink(item: SharedAddress(url: address, handed: share.handed), preview: SharePreview(share.open?.listed.name ?? address.absoluteString)) {
+              Label("Share Link", systemImage: "square.and.arrow.up")
+            }.listRowBackground(RoadmapPalette.card).accessibilityIdentifier("roadmap-share-link")
             Button("Copy Link", systemImage: "link") { share.copy() }
               .listRowBackground(RoadmapPalette.card).accessibilityIdentifier("roadmap-share-copy")
-          }
+          }.foregroundStyle(RoadmapPalette.accent)
         }
       }.scrollContentBackground(.hidden).contentMargins(.top, RoomSpace.related, for: .scrollContent)
         .background { RoadmapPalette.canvas.ignoresSafeArea() }

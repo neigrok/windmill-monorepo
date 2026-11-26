@@ -2,8 +2,9 @@ import XCTest
 
 // The Roadmap room's flows that go past the person's own roadmap, on the simulator's boards: the Guide, read with the
 // guide above and saved with Undo, added after a draft is discarded, and held past its limit (Roadmap · iOS 08.1 to 08.5);
-// a roadmap made signed out joining the account at sign-in (10.7); and a shared roadmap's link on its cover with Fork
-// (09.4 to 09.10a). They stand apart from RoadmapFlowTests so CI's shards share the room's flows.
+// a roadmap made signed out joining the account at sign-in (10.7); a shared roadmap's link on its cover with Fork (09.4 to
+// 09.10a); Share, Export and the public gallery (09.1a to 09.3, 09.12a). They stand apart from RoadmapFlowTests so CI's
+// shards share the room's flows.
 @MainActor final class RoadmapSharingFlowTests: XCTestCase {
   override func setUp() { continueAfterFailure = false }
 
@@ -188,6 +189,101 @@ import XCTest
     XCTAssertFalse(close.exists)
     XCTAssertTrue(app.staticTexts["0 of 8 done"].exists)
     XCTAssertTrue(app.roadmapStep("Choose a sailing course").exists)
+  }
+
+  // 09.1a, 09.1b, through the model server: Share… raises the sheet on a private roadmap; its switch makes it public, and
+  // the sheet hands its address to the system's share sheet and the pasteboard; turned off, it is private again and the
+  // address is no longer offered.
+  func testShareMakesTheRoadmapPublicHandsOutItsLinkAndMakesItPrivateAgain() {
+    let app = launch("roadmap-learn-to-sail")
+    let toggle = app.switches["roadmap-share-public"], footer = app.staticTexts["roadmap-share-footer"], copy = app.buttons["roadmap-share-copy"]
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    titleMenu("Learn to sail", item: "Share…", in: app)
+    XCTAssertTrue(toggle.waitForExistence(timeout: 10) && toggle.isEnabled)
+    XCTAssertEqual(footer.label, "Only you can view this roadmap.")
+    XCTAssertFalse(copy.exists || app.buttons["roadmap-share-link"].exists)
+
+    toggle.switches.firstMatch.tap()
+    XCTAssertTrue(footer.waitForLabel("Anyone with this link can view and fork this roadmap, and it can appear in the public gallery.", timeout: 10))
+    XCTAssertTrue(copy.waitForExistence(timeout: 5))
+    // The pasteboard is asked whether it holds an address, which raises no question; reading one would.
+    UIPasteboard.general.items = []
+    copy.tap()
+    XCTAssertTrue(UIPasteboard.general.hasURLs)
+    // The system's share sheet takes the address: its Copy hands it on, and the sheet goes.
+    UIPasteboard.general.items = []
+    app.buttons["roadmap-share-link"].tap()
+    let shareSheetCopy = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Copy'")).firstMatch
+    XCTAssertTrue(shareSheetCopy.waitForExistence(timeout: 30))
+    shareSheetCopy.tap()
+    XCTAssertTrue(shareSheetCopy.waitForNonExistence(timeout: 10))
+    XCTAssertTrue(UIPasteboard.general.hasURLs)
+
+    toggle.switches.firstMatch.tap()
+    XCTAssertTrue(footer.waitForLabel("Only you can view this roadmap.", timeout: 10))
+    XCTAssertTrue(copy.waitForNonExistence(timeout: 5))
+    app.buttons["roadmap-share-close"].tap()
+    XCTAssertTrue(toggle.waitForNonExistence(timeout: 10))
+  }
+
+  // 09.2a, on a phone never signed in: the switch waits for an account, the sentence says so, and Sign In opens the shell's
+  // sign-in over the sheet.
+  func testShareSignedOutWaitsForAnAccountAndOpensSignIn() {
+    let app = launch("roadmap-many")
+    let toggle = app.switches["roadmap-share-public"]
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    titleMenu("Learn to sail", item: "Share…", in: app)
+    XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+    XCTAssertFalse(toggle.isEnabled)
+    XCTAssertEqual(app.staticTexts["roadmap-share-footer"].label, "Sign in to share a roadmap.")
+    app.buttons["roadmap-share-sign-in"].tap()
+    XCTAssertTrue(app.staticTexts["Sign in to share this roadmap."].waitForExistence(timeout: 10))
+  }
+
+  // 09.3 and 01.8, signed in: Export writes the open roadmap, here where the launch names it in place of the system's
+  // exporter, and New Roadmap's A File, handed that same file, reads it back to the same steps and plants it.
+  func testAnExportedRoadmapIsReadBackByNewRoadmap() {
+    let app = launch("roadmap-learn-to-sail", asking: ["-roadmap-export", "Learn to sail.md", "-roadmap-file", "Learn to sail.md"])
+    XCTAssertTrue(app.buttons["roadmap-group-locked"].waitForExistence(timeout: 30))
+    titleMenu("Learn to sail", item: "Export", in: app)
+    titleMenu("Learn to sail", item: "New Roadmap", in: app)
+    XCTAssertTrue(app.buttons["roadmap-new-file"].waitForExistence(timeout: 10))
+    app.buttons["roadmap-new-file"].tap()
+    XCTAssertTrue(app.staticTexts["Pasted plan"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.textFields["roadmap-new-name"].waitForValue("Learn to sail"))
+    let counts = ["roadmap-plan-steps", "roadmap-plan-branches", "roadmap-plan-done", "roadmap-plan-notes"].compactMap { (identifier: String) -> String? in
+      let row = app.descendants(matching: .any)[identifier]
+      return row.exists ? row.label : nil
+    }
+    // Each line of a description, and each step's other prerequisites, comes back as a note of its step.
+    XCTAssertEqual(counts, ["Steps, 8", "Already done, 3", "Lines kept as notes, 10"])
+    app.buttons["roadmap-new-create"].tap()
+    XCTAssertTrue(app.staticTexts["Roadmap planted · 8 steps · 3 already done"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["3 of 8 done"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.roadmapStep("Read the wind").exists)
+  }
+
+  // 01.4, 09.12a, through the model server with the board's gallery: Planted in Public, under All Roadmaps, reads the
+  // gallery in pages, the person's own roadmap listed by them; a row's Fork copies its roadmap and offers the copy, which
+  // opens on its Board once it has arrived by sync.
+  func testTheGalleryIsReadARowIsForkedAndTheCopyOpens() {
+    let app = launch("roadmap-gallery")
+    XCTAssertTrue(app.staticTexts["2 of 7 done"].waitForExistence(timeout: 60))
+    titleMenu("Spanish B1", item: "All Roadmaps…", in: app)
+    XCTAssertTrue(app.buttons["roadmap-gallery-open"].waitForExistence(timeout: 10))
+    app.buttons["roadmap-gallery-open"].tap()
+    let makeover = app.cells.containing(.staticText, identifier: "Room makeover").firstMatch
+    XCTAssertTrue(makeover.waitForExistence(timeout: 30))
+    XCTAssertTrue(app.staticTexts["ML foundations"].waitForExistence(timeout: 30), "the second page is read as the list's last row shows")
+    XCTAssertTrue(app.cells.containing(.staticText, identifier: "Spanish B1").firstMatch.staticTexts["Listed by you"].exists)
+    XCTAssertTrue(makeover.staticTexts["11 steps"].exists)
+
+    makeover.buttons["roadmap-gallery-fork"].tap()
+    let copy = makeover.buttons["roadmap-gallery-copy"]
+    XCTAssertTrue(copy.waitForExistence(timeout: 60))
+    copy.tap()
+    XCTAssertTrue(app.staticTexts["0 of 11 done"].waitForExistence(timeout: 60))
+    XCTAssertTrue(app.navigationBars.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Room makeover")).firstMatch.exists)
   }
 
   // 09.10a: with a connection, a link to a roadmap the phone may not read says so on its cover, and closes to the room.

@@ -79,7 +79,7 @@ import SyncTesting
     #expect(model.band == nil)
     engine.sync()
     #expect(try engine.drawn(sail.tree.tree, RoadmapMeta.type).first.map { (try RoadmapMeta(Fields($0))).reach } == "public")
-    share.shared()
+    share.handed()
     share.copy()
     #expect(UIPasteboard.general.url?.absoluteString == address)
     // Turned to where it stands, nothing is written.
