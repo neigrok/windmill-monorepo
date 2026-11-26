@@ -374,8 +374,11 @@ makes it false.
   field sets bold and italic alone, from the system's Format menu on iOS 26. A reader's cover shows what a step's
   subtree has come to and does not go into it. The title menu's *Activity* and a step's
   *History* are the domain's read of the phone's copy (§3), and its *Guide* reads the roadmap's guide with the guides of
-  the roadmaps above it, and writes the guide from one draft; the title menu has no *Share…* or *Export*, and All
-  Roadmaps has no gallery. The foot's + held offers Paste Steps (§7.2). The shell's sign-in question names the roadmaps
+  the roadmaps above it, and writes the guide from one draft; its *Share…* raises the Share sheet's one switch over a
+  root, which hands out the share address while the roadmap is public (§7.4), and its *Export*, and that of a roadmap
+  gone into, hands the system's exporter the roadmap as the plan grammar writes the phone's copy (`PlanFile(_:in:)`,
+  §7.3); All Roadmaps pushes *Planted in Public*, the public gallery read a page at a time, whose rows open as their
+  links do and offer *Listed by you*, the person's copy or Fork (§3). The foot's + held offers Paste Steps (§7.2). The shell's sign-in question names the roadmaps
   made signed out and its sign-out question counts roadmap's unconfirmed changes; neither names Coach's conversations.
   An Undo that brings
   nothing back says so in the band. The bar's subtitle joins *Offline* to the progress while the phone has no connection;
@@ -408,7 +411,7 @@ makes it false.
   under all four and so cannot choose, and no phone has run the three. No older phone has measured the Graph, and a
   canvas that misses the budget on a phone reports it (§11).
 - Roadmap's runner holds a removal for the engine's nine seconds (`AppRuntime.roadmapRunner`), and the room runs
-  nineteen acts through it: `MarkStep` (Complete and Reset), `DeleteStep` and `DeleteRoadmap`, each with *Undo*, and
+  twenty acts through it: `MarkStep` (Complete and Reset), `DeleteStep` and `DeleteRoadmap`, each with *Undo*, and
   `DeleteStep` composed for several steps chosen on the Board, with one *Undo*; `CreateStep`, `ChangeStep` and
   `ChangePrerequisites`, composed into the step form's one save with one *Undo*, and `ChangeStep` composed for several
   steps recolored on the Board, with one *Undo*; `CreateRoadmap` for a blank roadmap or a plan, then `MarkStep` for the
@@ -418,7 +421,8 @@ makes it false.
   none, and `DeleteKind`, which the engine does not hold, with *Undo* for six seconds; and of a step's workspace
   `ChangeSubtask`, with *Undo* of a subtask checked, `DeleteSubtask` and `DeleteStepLink`, each held with *Undo*, and
   `AddSubtask`, `AddStepLink` and the note's draft save, `SaveStepNote`, of which it keeps none; and `PointStep`, a roadmap
-  attached to a step, changed and detached on its page, each with *Undo*, or set in the step form's one save. Every other
+  attached to a step, changed and detached on its page, each with *Undo*, or set in the step form's one save; and
+  `SetVisibility`, Share's switch, of which it keeps none. Every other
   action of the domain has no door in the room: `MoveKind`, `MoveStep`, a subtask's or a link's change of words and its move
   among them.
 

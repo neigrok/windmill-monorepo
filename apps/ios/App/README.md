@@ -200,13 +200,12 @@ couldn’t be read.* with *Try Again*, which asks the engine for every view anew
 *Offline* while the engine's status says the phone has no connection (10.1). The title's menu (`RoadmapTitle`,
 `.toolbarTitleMenu`) leads with *N Set Aside* while a change is set aside (10.5a), then lists the three most recent
 roadmaps, each name over its progress and the open one checked, then
-*All Roadmaps…*, *New Roadmap*, *Guide*, *Kinds*, *Activity*, *Rename* and *Delete Roadmap*. *Rename* is the system's (`RenameButton` over a title that is a binding): the bar
+*All Roadmaps…*, *New Roadmap*, *Guide*, *Kinds*, *Activity*, *Share…*, *Export*, *Rename* and *Delete Roadmap*. *Rename* is the system's (`RenameButton` over a title that is a binding): the bar
 becomes one field, and its return key commits. A name the domain refuses leaves the old one; the field itself commits no
 empty name, so the old one stays there too; and a name of blanks alone is written empty, so the roadmap reads *Untitled
 roadmap*. *Delete Roadmap* asks once under the title, naming the steps of other roadmaps that open this one, and then
-the band holds *Undo* for the hold's nine seconds. The menu's other verbs wait for their screens and are left out:
-*Share…* and *Export*. While several steps are selected the title counts them, with no progress and
-no menu. Before iOS 26 the name and the progress stand in the bar's
+the band holds *Undo* for the hold's nine seconds. *Share…* and *Export* are `Sharing/`'s. While several steps are
+selected the title counts them, with no progress and no menu. Before iOS 26 the name and the progress stand in the bar's
 principal slot (`roomTitle`) with the same menu attached; no iOS 18 runtime has drawn that menu or tried its rename.
 
 `Roadmaps/RoadmapsList.swift` is All Roadmaps, pushed on the stack: every roadmap in the domain's order, the open one
@@ -214,7 +213,8 @@ checked. That order is by when a server last received each, or, for a roadmap no
 stamp the phone holds of it, the most recent first, so on a phone never signed in the roadmap made last comes first. A row
 opens its roadmap on its Board and slides left for *Delete*, which asks on the row, never
 commits by a full swipe, and leaves the list on screen under the band; past eight roadmaps the bar's drawer finds them
-by name; and + names a new one. Its last row on the board, the gallery, is left out. `Roadmaps/NewRoadmap.swift` is the
+by name; and + names a new one. Under the roadmaps, away while a search is typed, *Planted in Public* pushes the public
+gallery (`Sharing/PublicGallery.swift`). `Roadmaps/NewRoadmap.swift` is the
 sheet the title menu, All Roadmaps and *No roadmaps yet* all open, over its draft (`Roadmaps/NewRoadmapDraft.swift`): a
 name, held to the length the domain takes, *Cancel* and *Create*, and *Start from* (01.6) with *A Copied Plan*, the
 system's `PasteButton`, and *A File*, the system's `.fileImporter` for Markdown, by the identifier the Info.plist imports
@@ -304,7 +304,7 @@ the stack's one, kept by the root's room, so going in or back leaves its Undo st
 stack, raised by the room on top (`deepest`). `NestedScreens.swift` is the pill (`OpeningPill`), the page's section
 (`OpenedSection`), with the owner's … menu of *Change Roadmap* and *Detach Roadmap* over the row, the foot's control
 (`OpenedPrimary`), and a roadmap gone into (`RoadmapInside`): Back, its name over its progress and a … menu of *Guide*,
-*Kinds* and *Activity*; one the phone has yet to read waits with a spinner, or with no connection says *Needs a
+*Kinds*, *Activity* and *Export*; one the phone has yet to read waits with a spinner, or with no connection says *Needs a
 connection*. `AttachRoadmap.swift` is the list a roadmap is attached from, pushed from the page as `Visit.attach` and
 from the step form's Roadmap row: the person's roadmaps found by name, the one the step stands in dimmed, the one it opens
 checked under *None*; a choice on the page runs `PointStep` at once (`attach(_:to:)`, `detach(_:)`), each with *Undo* for
@@ -447,8 +447,8 @@ that a tap brings the bars back. A step that opens a roadmap wears the stack mar
 roadmap's line under it (`RoadmapGraph.marks`). Left out until their screens are built: Find on the Graph and a
 proposal's changes.
 
-`Sharing/` is a roadmap's link and a shared roadmap's cover ([Roadmap on iOS](../../../docs/foundation/roadmap-ios.md) §3
-and §4, boards 09.4 to 09.11). The app claims the site's roadmap addresses in Debug builds alone: `project.yml` selects
+`Sharing/` is a roadmap's link and a shared roadmap's cover, Share, Export and the public gallery ([Roadmap on
+iOS](../../../docs/foundation/roadmap-ios.md) §3, §4, §7.3 and §7.4, boards 09.1a to 09.12b). The app claims the site's roadmap addresses in Debug builds alone: `project.yml` selects
 `Tools/Windmill-Debug-NO.entitlements` or `-YES` for Debug, each its Release twin with `applinks:windmill.works` added,
 and Release's carry no associated domain. A `RoadmapModel` is made in a role (`RoadmapModel.Role`): the owner's, with
 the links the room follows (`RoadmapLinks`), or a reader's, with the read of one roadmap someone else shared
@@ -483,9 +483,37 @@ person's own roadmap opens in the room, and on someone else's the fork runs. For
 (`RoadmapSharing.fork`, one request id a cover, so a fork asked again answers the same copy) and shows *Forking…*,
 taking no second tap. The room opens the copy once its list holds it, on its Board with the band *Forked · N steps
 planted* and no Undo, and the cover closes then, or after fifteen seconds, leaving the room to open the copy when it
-lands. A fork that comes to nothing says *Couldn’t fork this roadmap. Try again.* in the band slot. `SharingRequests`
-makes the two requests over HTTP with the account's token; a 503 is the server busy, and a request given up is no
-failure.
+lands. A fork that comes to nothing says *Couldn’t fork this roadmap. Try again.* in the band slot. A fork is one
+`RoadmapFork` for the roadmap it copies, which the cover, the attach list and each gallery row hold: what it needs, its
+request and what it tells, its holder deciding what the copy does. `SharingRequests` makes the three requests over HTTP
+with the account's token; a 503 is the server busy, and a request given up is no failure.
+
+Share (`RoadmapShare.swift`, 09.1a to 09.2b) is a medium sheet the title menu's *Share…* raises over a root
+(`ShareSheet`, which the room holds as `share` and lets go once another roadmap is open); a roadmap gone into has none.
+Its one switch, *Public link*, reads the roadmap's `visibility` from the phone's copy and writes it by the domain's
+`SetVisibility` through the room's write door, `public` on and `private` off, with no Undo and nothing to confirm; the
+server then writes the reach of the roadmap and of every subtree under it. The switch needs an account and a connection:
+signed out it is dimmed, the footer says *Sign in to share a roadmap.* and *Sign In* at the sheet's foot opens the shell's
+sign-in over the sheet (`AppModel.RoomSignIn.share`); offline it is dimmed and the footer says *Sharing needs a
+connection.* Otherwise the footer is the one sentence true now, naming subtrees where a step owns one. While the roadmap
+is public, with a connection or without, *Share Link* hands its share address (`/t/<id>` on the site,
+`RoadmapCover.Sources.address(of:)`) to the system's share sheet and *Copy Link* puts it on the pasteboard. Export
+(`RoadmapExport.swift`, 09.3, 07.11b), in the title menu and in a roadmap gone into's … menu, writes the open roadmap by
+the domain's `PlanFile(_:in:)`, the plan grammar's file of the phone's copy as the room shows it, and hands it to the
+system's `.fileExporter` as `RoadmapMarkdown`, named as the roadmap and typed `net.daringfireball.markdown`, the
+identifier the Info.plist imports; New Roadmap's *A File* reads it back to the same steps. It asks nothing of a server. A
+simulator launch that names `-roadmap-export` has Export write the file there in place of the system's exporter
+(`RoadmapFixture.exportFile()`), which `-roadmap-file` of the same name then hands *A File*. Planted in Public
+(`PublicGallery.swift`, 09.12a, 09.12b) is pushed from All Roadmaps as `Visit.gallery`, its `PublicGallery` held by its
+screen alone, so nothing of it outlives the screen: the backend's gallery (`RoadmapSharing.gallery`, `GET /v1/gallery`,
+an account's token where there is one, read again with none where the server no longer takes it), 24 rows a page in the
+server's order, the next page read as the last row comes on screen. A row shows its roadmap's title over its step count
+alone and opens its roadmap as its link does, the person's own in the room and anyone else's on a cover; at its trailing
+edge it says *Listed by you* where the page says `mine`, offers *Open Your Copy* where the person's list holds a roadmap
+forked from it (the first in the list's order, by its `meta.forkedFrom`) or a fork from the row has answered one, which
+opens the copy on its Board, at once or once it has arrived, and otherwise *Fork*, the cover's fork in the gallery's
+mode, whose band says when it forked nothing. A first page that came to nothing says *Can’t reach the gallery just now.*
+with *Try Again*, a later one says it under the rows, and an empty gallery says *Nothing on the wall yet*.
 
 `Step/StepDraft.swift` is the step form's draft, which `newStep(from:)` and `edit(_:)` make and the model holds while the
 form is open: what a person sets of a step (its name, description and kind, the steps it requires, the steps it opens,
@@ -613,7 +641,10 @@ miles* one no phone holds; and `-board roadmap-nested-subtree` the variation who
 steps, one done. On the cover's and the nested boards the board's own requests stand in for the backend's
 (`RoadmapFixture.BoardSharing`): the owner's progress is read from the owner's phone, each subtree counted as the owner's
 account reads it, and a fork is made by another phone of the reader's account, so the copy arrives by sync;
-`-fork-held` leaves a fork unanswered. Section 10's boards (`RoadmapFixture.prepareSync`) have another phone of the
+`-fork-held` leaves a fork unanswered. The gallery's boards (`RoadmapFixture.prepareGallery`): `-board roadmap-gallery`
+has another account make *Run a 10k* and *Room makeover* public and another phone of the person's account plant
+*Spanish B1*, signs the phone in, and has the board's gallery answer the rows 09.12a draws five to a page, *Spanish B1*
+the person's own; `-board roadmap-gallery-unreachable` answers no page, as with no connection. Section 10's boards (`RoadmapFixture.prepareSync`) have another phone of the
 person's account plant their roadmaps, sign the phone in, and once the room has read them, take the model server's
 connection from the phone (`BoardConnectivity`, the connection every model-server launch has, online until a board cuts
 it): `-board roadmap-sync-offline` makes *Reefing basics* in the room's own form with no connection (10.1);
@@ -1229,7 +1260,8 @@ and Daylight. `DesignCapture.swift` holds the shared base: launch, capture, the 
 the opt-in skip. XCTest skips every capture unless the test runner sees `WM_DESIGN_CAPTURE=1`; Xcode forwards
 `TEST_RUNNER_`-prefixed variables to the runner without the prefix. Each area keeps its captures in its own file and
 class, a subclass of `DesignCapture`: `ShellCaptures`, `JournalCaptures`, `ChromeCaptures`, `CoachCaptures`,
-`NotesCaptures`, `RoutinesCaptures`, `WorkoutCaptures`, `LogCaptures`, `RecoveryCaptures`, `RoadmapCaptures` and `RoadmapNestedCaptures`. The CI shards leave
+`NotesCaptures`, `RoutinesCaptures`, `WorkoutCaptures`, `LogCaptures`, `RecoveryCaptures`, `RoadmapCaptures`, `RoadmapNestedCaptures`
+and `RoadmapSharingCaptures`. The CI shards leave
 the suite out and check that its guard remains.
 
 A capture's name is its screen, then `-375` on a 375 pt phone, `-ax3` at the largest text, and its appearance:

@@ -871,6 +871,19 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   the room's *Couldn’t load this roadmap* with *Try Again* (01.5c), which no board of section 09 draws; a subtree's
   cover has no Fork, as the section's NOTE and the web have it, and no board draws that cover; a fork the server refuses
   or that fails says *Couldn’t fork this roadmap. Try again.* in the band slot, which no board words.
+- **Roadmap · iOS · what Share, Export and the public gallery leave for the boards.** Share, Export and *Planted in
+  Public* are built in Debug builds from 09.1a to 09.3, 09.12a and 09.12b, with *Share…* and *Export* in 01.3's title
+  menu, *Export* in 07.11b's … menu and *Planted in Public* as 01.4's last row. To draw or rule: *Sign In* on 09.2a opens
+  the shell's own sign-in saying *Sign in to share this roadmap.*, which no board words; the share sheet's header names
+  the roadmap, where 09.1b draws no system sheet; a gallery's later page that comes to nothing says *Can’t reach the
+  gallery just now.* with *Try Again* under the rows read, and a later page being read shows a spinner there, which no
+  board draws; a row's *Fork* while it runs shows the spinner and *Forking…*, and a fork with no connection or that
+  comes to nothing says *Forking needs a connection.* or *Couldn’t fork this roadmap. Try again.* in the room's band, as
+  the cover's words, which 09.12a does not draw; a row's bordered *Fork* and *Open Your Copy* wear the system's tinted
+  fill, where 09.12a draws a dark one; 09.12b's sentence stands on one line where the board breaks it in two; with
+  *Share…* and *Export* the title menu runs past the screen of 01.3's phone, so *Rename* and *Delete Roadmap* are
+  scrolled to, where 01.3 draws every item at once; and a person with no roadmap reaches no *Planted in Public*, since
+  All Roadmaps opens from the title menu alone and 01.5 offers New Roadmap only.
 - **Roadmap · iOS · what nested roadmaps leave for the boards.** A step that opens a roadmap or owns a subtree is built in
   Debug builds from 04.6, 05.1's *Roadmap* row and 07.1 to 07.12b. To draw or rule: a roadmap the phone holds no copy of,
   or one that is not the person's, reads as 07.5c's *Not found*, as no board draws either, where the web shows its *Tree*
