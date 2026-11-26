@@ -397,7 +397,7 @@ public:
     adoptLinks(planned.tree.rows);
     adoptKinds(planned.tree.rows);
     number(planned.tree, roadmap_.head);
-    planned.tree.open = surveyed_.reach != "private";
+    planned.tree.open = surveyed_.reach == "public";
     if (roadmap_.head > 0) tally_.add("seq.continuedAboveAHead");
     countCaps(planned.tree);
     adoptOverlays(planned.overlays);
