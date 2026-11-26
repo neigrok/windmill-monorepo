@@ -25,6 +25,7 @@
                 "summary",
                 "description",
                 "links",
+                "subtasks",
                 "opens"
               ]
             },
@@ -162,6 +163,25 @@
                     "additionalProperties": false
                   }
                 },
+                "subtasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string"
+                      },
+                      "done": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "done"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
                 "opens": {
                   "type": [
                     "string",
@@ -228,6 +248,7 @@
                 "summary",
                 "description",
                 "links",
+                "subtasks",
                 "opens"
               ]
             },
@@ -309,6 +330,25 @@
                     "additionalProperties": false
                   }
                 },
+                "subtasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string"
+                      },
+                      "done": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "done"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
                 "opens": {
                   "type": [
                     "string",
@@ -384,6 +424,7 @@
                 "summary",
                 "description",
                 "links",
+                "subtasks",
                 "opens"
               ]
             },
@@ -460,6 +501,25 @@
                     "required": [
                       "url",
                       "label"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "subtasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string"
+                      },
+                      "done": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "done"
                     ],
                     "additionalProperties": false
                   }
@@ -933,8 +993,8 @@
       "ui": "step, Complete and Reset"
     },
     {
-      "name": "rename_node",
-      "description": "Change one step's title.",
+      "name": "update_node",
+      "description": "Change one step: its title, its description, its web links, or its checklist, naming at least one. A description or web links sent replace the step's whole value, so to add one web link send every link the step is to carry; what is left out stays. `subtasks` are new items added to the end of the step's checklist, the person's own; an item there is never edited, checked or removed.",
       "input": {
         "type": "object",
         "properties": {
@@ -946,40 +1006,6 @@
             "type": "string"
           },
           "label": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "treeId",
-          "nodeId",
-          "label"
-        ],
-        "additionalProperties": false
-      },
-      "result": {
-        "type": "object",
-        "properties": {},
-        "required": [],
-        "additionalProperties": false
-      },
-      "class": "change",
-      "agent": "runs",
-      "seats": "any",
-      "strict": false,
-      "phrase": "renamed a step",
-      "ui": "Rename step"
-    },
-    {
-      "name": "annotate_node",
-      "description": "Change one step's description, its web links, or both; send at least one. What is sent replaces the step's whole value, so to add one web link send every link the step is to carry; what is left out stays.",
-      "input": {
-        "type": "object",
-        "properties": {
-          "treeId": {
-            "type": "string",
-            "pattern": "^t_[0-9a-f]{16}$"
-          },
-          "nodeId": {
             "type": "string"
           },
           "description": {
@@ -1003,6 +1029,13 @@
               "additionalProperties": false
             },
             "description": "Every web link the step is to carry, in order; a label left out is empty."
+          },
+          "subtasks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "New items for the end of the step's checklist, in order, each its label."
           }
         },
         "required": [
@@ -1021,8 +1054,8 @@
       "agent": "runs",
       "seats": "any",
       "strict": false,
-      "phrase": "changed a step's description or links",
-      "ui": "step, Description and Links"
+      "phrase": "changed a step",
+      "ui": "step, Rename, Description, Links and Subtasks"
     },
     {
       "name": "create_node",

@@ -27,7 +27,8 @@ export const ContextBounds = Object.freeze({
   prerequisites: limits.context.prerequisites.max,
 });
 
-// §5 A step-started conversation's step in full: every field §5.1 answers, the whole description in place of its summary.
+// §5 A step-started conversation's step in full: every field §5.1 answers, the whole description in place of its summary,
+// but its checklist, which Coach reads with get_nodes.
 const STEP_IN_FULL = Object.freeze(['id', 'label', 'kind', 'state', 'prerequisites', 'unlockCount', 'description', 'links', 'opens']);
 // §5 The kind every step of which a roadmap past the bounds is given, and how many links from its frontier it reaches.
 const MILESTONE = 'milestone';

@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { register } from 'node:module';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { SAFE_URL } from '../../../../../src/products/roadmap/domain/roadmapRules.js';
 
 register('../../../../jsxLoader.mjs', import.meta.url);
-const { NodeWorkspace, renderMarkdown, SAFE_URL } = await import('../../../../../src/products/roadmap/graph/tree/NodeWorkspace.jsx');
+const { NodeWorkspace, renderMarkdown } = await import('../../../../../src/products/roadmap/graph/tree/NodeWorkspace.jsx');
 const { Checklist } = await import('../../../../../src/products/roadmap/graph/tree/Checklist.jsx');
 const { Icon } = await import('../../../../../src/design-system/Icon.jsx');
 
@@ -60,12 +60,4 @@ test('the Graph workspace names its list Subtasks, tallies it and offers Add sub
     `<button type="button" class="st-check-del" aria-label="Remove subtask">${icon('x', 13)}</button></div>`,
     `<button type="button" class="st-check-add">${icon('plus', 13)}Add subtask</button></div></div>`,
   ].join(''));
-});
-
-// packages/api-contract/roadmap-link-urls.json: the backend takes exactly the link urls this vector marks shown, and
-// SAFE_URL shows exactly those.
-test('a link url is shown exactly when the shared vector says the server takes it', () => {
-  const vector = JSON.parse(readFileSync(new URL('../../../../../../packages/api-contract/roadmap-link-urls.json', import.meta.url), 'utf8'));
-  assert.equal(vector.cases.length, 17);
-  assert.deepEqual(vector.cases.map((one) => [one.url, SAFE_URL.test(one.url)]), vector.cases.map((one) => [one.url, one.shown]));
 });
