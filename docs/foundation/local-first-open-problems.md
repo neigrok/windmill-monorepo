@@ -13,7 +13,9 @@ copy in place.
 
 - **Web:** the bound replica pauses and its rooms keep drawing it, with sign-in at the account seat
   (web-device-parity §2). Whoever holds the browser sees that account's journal, training, weigh-ins and notes, and
-  a change they make is kept in the browser and sent if that account signs in again there.
+  a change they make is kept in the browser and sent if that account signs in again there. Settings alone stays a
+  sign-in door there: signed out it opens on the browser's own copy with its exports, and drawing those sections over a
+  lapsed account's copy would hand its journal and roadmaps over as files.
 - **iPhone, Android:** not surveyed.
 - **Ruled 2026-11-25:** revoking a session does not clear the device's copy. Telling a revoked session from an expired
   one needs the server to remember revoked sessions, which it does not.
@@ -33,6 +35,8 @@ unattributed pages from before the engine (web-device-parity §5): every sign-ou
     account holds something, the question asks, naming that work;
   - signed-out gym workouts saved for adoption that no sign-in took;
   - Coach's leftovers beside a replica.
+- **Web:** signed-out Settings shows the journal's unattributed pages by day and word count, and whoever holds the
+  browser can discard them there; restoring them needs an account.
 
 ## LP-3 A store the device cannot keep
 
@@ -95,6 +99,20 @@ A record keyed by what it is rather than by a fresh id — a weigh-in by its dat
 (Add, or the silent join into an account that holds none), the engine's merge takes the later write.
 
 - **Web:** a signed-out weigh-in on a day the account already weighed in replaces the account's value at Add, though the
-  question says "Add them"; a movement renamed signed out renames the account's.
+  question says "Add them"; a movement renamed signed out renames the account's; a default rest or rest sound set signed
+  out replaces the account's field by field, the later write winning, with nothing shown. Settings are no primary type,
+  so an account whose only gym record is its settings holds none, and a sign-in there asks nothing before replacing them.
 - **iPhone, Android:** not surveyed; the merge is the engine's, the same on every surface.
 - **Open:** whether such a join keeps both, keeps the account's, or asks about each one.
+
+## LP-10 A rule only one surface's copy holds
+
+A copy refuses what its own rule book refuses; a rule one surface holds and the others do not is enforced on that surface
+alone, and the server's registry bounds are all that stop the rest.
+
+- **Web:** the web writes the default rest and the rest sound (WD10) and holds `prefs.restSeconds` (15–900, whole
+  seconds) in its rule book; the phones' books lack it because the shared book is the phones' too. The web announces at
+  once a rest whose target a new default moved behind the time already rested; the iPhone gates its rest-reached haptic
+  on `confirmHaptic`, the web its tone and buzz on `restSound`.
+- **iPhone, Android:** read both settings and set neither; whether they announce a moved target at once is not surveyed.
+- **Open:** whether a rule moves into the shared book before every surface writes what it guards.

@@ -2,13 +2,17 @@ import SwiftUI
 import UIKit
 import RoadmapDomain
 
-// The room's foot (Roadmap · iOS 01.8b, 01.11, 02.2, 02.16b, 02.16c, 02.18, 03.4, 03.6b, 03.9, 05.7, 05.10, 09.4): the one
-// band, a receipt with its Undo, a limit that refused a gesture, or what the room tells once, over the control the screen
-// keeps there. Every screen of the room stands on the same band, the step form too, whose foot is away while one of its
-// fields has the keyboard. Every screen of a reader's cover stands on Fork.
+// The room's foot (Roadmap · iOS 01.8b, 01.11, 02.2, 02.16b, 02.16c, 02.18, 03.4, 03.6b, 03.9, 05.7, 05.10, 09.4, 10.2,
+// 10.4): the one band, a receipt with its Undo, a limit that refused a gesture, or what the room tells once, a change that
+// met one made elsewhere with Show, over the control the screen keeps there. Every screen of the room stands on the same
+// band, the step form too, whose foot is away while one of its fields has the keyboard. The band is drawn only where the
+// person can see it (`RoadmapModel.drawsBand`), and a landing line is told as its band is drawn. Every screen of a reader's
+// cover stands on Fork.
 struct RoadmapFoot<Control: View>: ViewModifier {
   let roadmap: RoadmapModel
   let away: Bool
+  // The foot stands in a sheet the room raised, in front of the room's own screens.
+  let inSheet: Bool
   let control: Control
   @Environment(\.openURL) private var openURL
   // The cover the screen stands on, for a reader; none in the person's own room.
@@ -17,8 +21,9 @@ struct RoadmapFoot<Control: View>: ViewModifier {
   func body(content: Content) -> some View {
     content.reachBand {
       VStack(spacing: 0) {
-        if !away, let band = roadmap.band {
-          if band.says == .pasteRefused {
+        if roadmap.drawsBand(away: away, inSheet: inSheet), let band = roadmap.band {
+          switch band.says {
+          case .pasteRefused:
             // 02.16c: a paste not allowed leads to Windmill's page in Settings, where that choice lives.
             RoomTransient(message: band.says.words, room: .roadmap, actionTitle: String(localized: "Settings"), actionIdentifier: "roadmap-settings",
                           action: {
@@ -26,7 +31,13 @@ struct RoadmapFoot<Control: View>: ViewModifier {
                             if let settings = URL(string: UIApplication.openSettingsURLString) { openURL(settings) }
                           }, dismiss: { roadmap.endBand() }, type: .subheadline, actionWeight: .semibold)
               .accessibilityIdentifier("roadmap-band")
-          } else {
+          case .landed(let line):
+            // 10.2, 10.4: a line is told as its band is drawn, announced once, and opens its step's page.
+            RoomTransient(message: band.says.words, room: .roadmap, actionTitle: String(localized: "Show"), actionIdentifier: "roadmap-show",
+                          action: { roadmap.showLanded(line) }, dismiss: { roadmap.endBand() }, type: .subheadline, actionWeight: .semibold)
+              .accessibilityIdentifier("roadmap-band")
+              .onAppear { if roadmap.seen(line) { UIAccessibility.post(notification: .announcement, argument: band.says.words) } }
+          default:
             RoomTransient(message: band.says.words, room: .roadmap, actionTitle: String(localized: "Undo"), actionIdentifier: "roadmap-undo",
                           action: band.undo == nil ? nil : { roadmap.undo() }, dismiss: { roadmap.endBand() },
                           type: .subheadline, actionWeight: .semibold)
@@ -103,6 +114,7 @@ extension RoadmapModel.Band.Says {
       return markBack ? String(localized: "Roadmap detached · your mark is back") : String(localized: "Roadmap detached")
     case .refused(.keepsStartingStep): return String(localized: "A roadmap keeps one starting step")
     case .refused(.full): return String(localized: "This roadmap is at its limit.")
+    case .landed(let line): return line.band
     // An Undo that brought nothing back (02.10d, 06.5c): a delete names what could not come back, one thing by its name
     // and several steps by their count, and any other act could not be undone.
     case .unrestored(.deletedSteps(let count)):
@@ -241,7 +253,7 @@ struct DeleteRoadmapQuestion: ViewModifier {
 }
 
 extension View {
-  func roadmapFoot(_ roadmap: RoadmapModel, away: Bool = false, @ViewBuilder _ control: () -> some View) -> some View {
-    modifier(RoadmapFoot(roadmap: roadmap, away: away, control: control()))
+  func roadmapFoot(_ roadmap: RoadmapModel, away: Bool = false, inSheet: Bool = false, @ViewBuilder _ control: () -> some View) -> some View {
+    modifier(RoadmapFoot(roadmap: roadmap, away: away, inSheet: inSheet, control: control()))
   }
 }

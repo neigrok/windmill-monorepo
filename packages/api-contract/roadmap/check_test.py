@@ -23,7 +23,7 @@ class Rows(unittest.TestCase):
 class ContractTest(unittest.TestCase):
     def test_the_contract_as_it_stands_holds(self):
         contract = check.Contract.read()
-        self.assertEqual(contract.check(), sum(len(cases) for cases in contract.files.values()))
+        self.assertEqual(contract.check(), sum(len(cases) for cases in contract.files.values()) + len(contract.context))
 
 
 class CatalogTest(Rows):
@@ -43,28 +43,29 @@ class CatalogTest(Rows):
 
     def test_an_ability_other_than_section_4_lists_is_refused(self):
         self.refused([
-            (lambda c: c.ability('rename_node').update(agent='withheld'), 'rename_node: `change` and `withheld`, where §4 has `change` and `runs`'),
+            (lambda c: c.ability('update_node').update(agent='withheld'), 'update_node: `change` and `withheld`, where §4 has `change` and `runs`'),
             (lambda c: c.ability('create_node').update({'class': 'change'}), 'create_node: `change` and `runs`, where §4 has `add` and `runs`'),
             (lambda c: c.ability('set_progress').update(seats='bound'), 'set_progress: seats other than `any` or a strict tool, where §4 offers every ability signed out and none strict'),
             (lambda c: c.ability('get_tree').update(strict=True), 'get_tree: seats other than `any` or a strict tool, where §4 offers every ability signed out and none strict'),
-            (lambda c: c.catalog['abilities'].remove(c.ability('annotate_node')), "the catalog: abilities ['annotate_node'] in one of the catalog and §4 alone"),
+            (lambda c: c.catalog['abilities'].remove(c.ability('update_node')), "the catalog: abilities ['update_node'] in one of the catalog and §4 alone"),
             (lambda c: c.catalog['abilities'].append({**json.loads(json.dumps(c.ability('set_progress'))), 'name': 'delete_tree'}), "the catalog: abilities ['delete_tree'] in one of the catalog and §4 alone"),
         ], 'check_catalog')
 
     def test_a_schema_outside_the_vocabulary_is_refused(self):
         def tree_id(c): return c.ability('get_tree')['input']['properties']['treeId']
-        def links(c): return c.ability('annotate_node')['input']['properties']['links']
+        def links(c): return c.ability('update_node')['input']['properties']['links']
         self.refused([
             (lambda c: c.ability('get_tree').update(input={'type': 'string'}), 'get_tree: an input schema that is not `type: object`'),
-            (lambda c: c.ability('rename_node')['input']['properties']['label'].update(maxLength=200), 'rename_node.label: `maxLength` is not in the shared vocabulary'),
+            (lambda c: c.ability('update_node')['input']['properties']['label'].update(maxLength=200), 'update_node.label: `maxLength` is not in the shared vocabulary'),
+            (lambda c: c.ability('update_node')['input']['properties']['subtasks'].pop('items'), 'update_node.subtasks: an array without `items`'),
             (lambda c: c.ability('get_tree')['input']['properties'].update(cursor={'anyOf': [{'type': 'string'}, {'type': 'null'}]}), 'get_tree.cursor: `anyOf` is not in the shared vocabulary'),
             (lambda c: c.ability('get_tree')['input']['properties'].update(cursor='a string'), 'get_tree.cursor: no schema'),
-            (lambda c: links(c)['items'].pop('additionalProperties'), 'annotate_node.links[]: an object without `additionalProperties: false`'),
-            (lambda c: links(c)['items'].pop('required'), 'annotate_node.links[]: an object without `required`'),
-            (lambda c: links(c)['items']['required'].append('title'), 'annotate_node.links[]: `title` required but not a property'),
-            (lambda c: links(c).pop('items'), 'annotate_node.links: an array without `items`'),
-            (lambda c: links(c)['items'].pop('type'), 'annotate_node.links[]: a schema without a known `type`'),
-            (lambda c: links(c).update(minItems=2), 'annotate_node.links: `minItems` other than the integer 0 or 1'),
+            (lambda c: links(c)['items'].pop('additionalProperties'), 'update_node.links[]: an object without `additionalProperties: false`'),
+            (lambda c: links(c)['items'].pop('required'), 'update_node.links[]: an object without `required`'),
+            (lambda c: links(c)['items']['required'].append('title'), 'update_node.links[]: `title` required but not a property'),
+            (lambda c: links(c).pop('items'), 'update_node.links: an array without `items`'),
+            (lambda c: links(c)['items'].pop('type'), 'update_node.links[]: a schema without a known `type`'),
+            (lambda c: links(c).update(minItems=2), 'update_node.links: `minItems` other than the integer 0 or 1'),
             (lambda c: tree_id(c).update(properties={}), 'get_tree.treeId: an object\'s keywords on a schema that is not `type: object`'),
             (lambda c: tree_id(c).update(enum=[{'a': 1}]), 'get_tree.treeId: `enum` that is not a list of scalars'),
             (lambda c: tree_id(c).update(const=['t']), 'get_tree.treeId: `const` that is not a scalar'),
@@ -95,15 +96,15 @@ class CatalogTest(Rows):
         self.refused([
             (lambda c: c.ability('get_tree').update(result={}), 'get_tree: a read whose result is not held to 16384 bytes (§5)'),
             (lambda c: c.ability('propose_roadmap_change')['result'].update(maxBytes=99), 'propose_roadmap_change: a `maxBytes` on an answer that is no read\'s'),
-            (lambda c: c.ability('rename_node').update(result=[]), 'rename_node: a result schema that is not an object'),
-            (lambda c: c.ability('rename_node').update(result={}), 'rename_node: an answer with no schema, where §4 states every ability\'s'),
+            (lambda c: c.ability('update_node').update(result=[]), 'update_node: a result schema that is not an object'),
+            (lambda c: c.ability('update_node').update(result={}), 'update_node: an answer with no schema, where §4 states every ability\'s'),
             (lambda c: c.ability('connect').update(result={'type': 'object', 'properties': {'nodeId': {'type': 'string'}}, 'required': [], 'additionalProperties': False}), "connect: an answer of ['nodeId'], where §6 answers []"),
         ], 'check_catalog')
 
     def test_a_read_other_than_section_5_states_is_refused(self):
         self.refused([
             (lambda c: c.ability('find_nodes')['input']['properties']['cursor'].update(pattern='^[0-9]{1,9}$'), f'find_nodes: a `cursor` whose pattern is not §5.2\'s, `{check.CURSOR.pattern}`'),
-            (lambda c: c.ability('get_nodes')['input']['properties']['fields']['items']['enum'].remove('opens'), "get_nodes: `fields` other than §5.1's, ['id', 'label', 'kind', 'state', 'prerequisites', 'unlockCount', 'summary', 'description', 'links', 'opens']"),
+            (lambda c: c.ability('get_nodes')['input']['properties']['fields']['items']['enum'].remove('opens'), "get_nodes: `fields` other than §5.1's, ['id', 'label', 'kind', 'state', 'prerequisites', 'unlockCount', 'summary', 'description', 'links', 'subtasks', 'opens']"),
             (lambda c: c.ability('find_nodes')['result']['properties']['steps']['items']['properties'].pop('opens'), 'find_nodes: an answered step whose fields are not §5.1\'s'),
             (lambda c: c.ability('get_tree')['result']['properties']['steps']['items']['properties']['state']['enum'].remove('unknown'), "get_tree: states other than §5.1's, ['locked', 'available', 'complete', 'unknown']"),
         ], 'check_catalog')
@@ -121,7 +122,7 @@ class CatalogTest(Rows):
             (lambda c: description(c, 'rename: required', 'rename_step: required nodeId, label; optional none.\nrename: required'), 'propose_roadmap_change: a line for `rename_step`, which is no op of §7'),
             (lambda c: change(c)['properties']['hue']['enum'].remove('plum'), "propose_roadmap_change.changes[].hue: hues ['terracotta', 'olive', 'gold', 'brick', 'sky'], where the registry has ['terracotta', 'olive', 'gold', 'brick', 'sky', 'plum']"),
             (lambda c: next(entry for entry in c.registry['types'] if entry['type'] == 'node')['fields']['color']['domain']['enum'].remove('plum'), "packages/api-contract/sync/roadmap.registry.json: step colours ['terracotta', 'olive', 'gold', 'brick', 'sky'], where its kinds' hues are ['terracotta', 'olive', 'gold', 'brick', 'sky', 'plum']"),
-            (lambda c: c.spec.actions.pop('connect'), "the catalog: direct writes ['annotate_node', 'connect', 'create_node', 'rename_node', 'set_progress'], where §6 names the actions of ['annotate_node', 'create_node', 'rename_node', 'set_progress']"),
+            (lambda c: c.spec.actions.pop('connect'), "the catalog: direct writes ['connect', 'create_node', 'set_progress', 'update_node'], where §6 names the actions of ['create_node', 'set_progress', 'update_node']"),
         ], 'check_catalog')
 
 
@@ -146,7 +147,7 @@ class VectorsTest(Rows):
             (lambda c: c.files.update(set_mark=c.files['set_progress']), 'abilities/set_mark.json: names no ability of the catalog'),
             (lambda c: c.files.update(set_progress=[]), 'abilities/set_progress.json: not a list of cases'),
             (lambda c: c.files['set_progress'][0].update(case=''), 'abilities/set_progress.json · : a case that is not named'),
-            self.vector('set_progress', 0, lambda case, c: case['call'].update(name='rename_node'), ': calls `rename_node` in the file of `set_progress`'),
+            self.vector('set_progress', 0, lambda case, c: case['call'].update(name='update_node'), ': calls `update_node` in the file of `set_progress`'),
             self.vector('set_progress', 0, lambda case, c: case.update(expect=[]), ': an expectation that is not an object'),
             self.vector('set_progress', 0, lambda case, c: case.update(expect={'refused': {'code': 'roadmap-not-ready'}, 'writes': []}), ': a refusal beside `writes`'),
             self.vector('set_progress', 0, lambda case, c: case.update(expect={'result': {}}), ': a write that expects `result` where it expects `result writes`'),
@@ -165,6 +166,8 @@ class VectorsTest(Rows):
             self.vector('set_progress', 2, lambda case, c: case['given']['trees'][0]['nodes'][2].update(present=True), ': a held step `c` that its roadmap does not hold as removed'),
             self.vector('set_progress', 2, lambda case, c: case['given'].update(held=['c']), ' · held: not an object'),
             self.vector('create_node', 0, lambda case, c: case['given'].update(ids=['x', 'x']), ': `ids` that are not distinct ids'),
+            self.vector('update_node', 9, lambda case, c: case['given']['subtasks'][0].update(step='zz'), ': a subtask of `zz`, a step its roadmap does not hold'),
+            self.vector('update_node', 9, lambda case, c: case['given']['subtasks'][0].pop('done'), ' · subtasks: no `done`'),
         ], 'check_vectors')
 
     def test_an_input_or_answer_out_of_its_schema_is_refused(self):
@@ -198,6 +201,7 @@ class VectorsTest(Rows):
             self.vector('get_tree', 3, lambda case, c: case['expect']['result']['steps'][0].update(description='x'), ': `b`\'s description in part 2, which is not that part of the step\'s'),
             self.vector('get_tree', 0, lambda case, c: case['expect']['result']['tree'].update(stepCount=99), ': a `stepCount` of 99, where the roadmap holds 6 steps'),
             self.vector('get_tree', 0, lambda case, c: case['expect']['result']['tree'].update(title='Learn to swim'), ': a header whose title is not the roadmap\'s'),
+            self.vector('get_nodes', 6, lambda case, c: case['expect']['result']['steps'][0]['subtasks'].reverse(), ': `b`\'s subtasks, which is not the step\'s'),
         ], 'check_vectors')
 
     def test_a_write_other_than_section_6_gives_is_refused(self):
@@ -207,7 +211,35 @@ class VectorsTest(Rows):
             self.vector('set_progress', 0, lambda case, c: case['expect']['writes'][0].update(action='DeleteStep'), ": writes `DeleteStep`, where §6 gives set_progress ['Complete', 'Reset']"),
             self.vector('set_progress', 0, lambda case, c: case['expect']['writes'][0].update(input={'tree': 't_0000000000000001', 'node': 'b'}), ': a `Complete` whose input is not of the shape the domain\'s cases give it'),
             self.vector('create_node', 0, lambda case, c: case['expect'].update(result={'nodeId': 'zzzzzzzzzzzzzzzz'}), ': a new step whose id is not the one id minted'),
-            self.vector('rename_node', 1, lambda case, c: case.update(expect={'writes': [{'action': 'ChangeStep', 'input': {}}], 'result': {}}), ': an input past a cap of limits.json that is not refused as `over-limit`'),
+            self.vector('update_node', 1, lambda case, c: case.update(expect={'writes': [{'action': 'ChangeStep', 'input': {}}], 'result': {}}), ': an input past a cap of limits.json that is not refused as `over-limit`, nor by a rule §6 checks before the caps'),
+            self.vector('update_node', 1, lambda case, c: case['expect']['refused'].update(code='unknown-step'), ': an input past a cap of limits.json that is not refused as `over-limit`, nor by a rule §6 checks before the caps'),
+            self.vector('update_node', 9, lambda case, c: case['call']['input']['subtasks'].append('é' * 201), ': an input past a cap of limits.json that is not refused as `over-limit`, nor by a rule §6 checks before the caps'),
+            self.vector('update_node', 0, lambda case, c: case['call']['input'].update(label='Tie a\x00bowline'), ': a text the domain cannot store that is not refused as `invalid-input`'),
+            self.vector('update_node', 4, lambda case, c: case['call']['input']['links'][0].update(label='Knots \udc00'), ': a text the domain cannot store that is not refused as `invalid-input`'),
+            self.vector('update_node', 9, lambda case, c: case['call']['input']['subtasks'].append('Coil\x00the line'), ': a text the domain cannot store that is not refused as `invalid-input`'),
+            self.vector('update_node', 9, lambda case, c: case['expect']['writes'][0].update(action='SetMark'), ': writes `SetMark`, which is no action of the domain'),
+        ], 'check_vectors')
+
+    # A roadmap whose count of steps or links is full, too large to hold as a vector of its own.
+    @staticmethod
+    def full(case, steps=0, links=0):
+        tree = case['given']['trees'][0]
+        tree['nodes'] += [{**tree['nodes'][0], 'id': f's{index}'} for index in range(steps)]
+        tree['edges'] += [{'from': 's0', 'to': f's{index}', 'present': True} for index in range(links)]
+
+    def test_a_full_count_of_steps_links_or_subtasks_is_over_limit_naming_the_roadmap(self):
+        contract = check.Contract.read()
+        create, link, update = contract.files['create_node'][0], contract.files['connect'][0], contract.files['update_node'][9]
+        self.full(create, steps=10_000 - 3)
+        self.full(link, steps=1, links=20_000 - 2)
+        update['given']['subtasks'] += [{**update['given']['subtasks'][0], 'done': False} for _ in range(20_000 - 3)]
+        for case in (create, link, update): case['expect'] = {'refused': {'code': 'over-limit', 'id': 't_0000000000000001'}}
+        self.assertEqual(contract.check_vectors(), sum(len(cases) for cases in contract.files.values()))
+        self.refused([
+            (lambda c: (self.full(c.files['create_node'][0], steps=10_000 - 3), c.files['create_node'][0].update(expect={'refused': {'code': 'over-limit'}})),
+             f'abilities/create_node.json · {create["case"]}: an `over-limit` that names none, where §6.1 names `t_0000000000000001`'),
+            (lambda c: c.files['create_node'][0].update(expect={'refused': {'code': 'over-limit', 'id': 't_0000000000000001'}}),
+             f'abilities/create_node.json · {create["case"]}: `over-limit` for a call that passes no cap of limits.json'),
         ], 'check_vectors')
 
     def test_a_proposal_other_than_section_7_mints_is_refused(self):
@@ -236,6 +268,7 @@ class VectorsTest(Rows):
             self.vector('set_progress', 0, lambda case, c: case.update(expect={'refused': {'code': 'out-of-scope'}}), ': `out-of-scope` for a write to the conversation\'s roadmap'),
             self.vector('set_progress', 0, lambda case, c: case.update(expect={'refused': {'code': 'roadmap-not-ready', 'id': 'b'}}), ': `roadmap-not-ready` that names no held step'),
             self.vector('set_progress', 0, lambda case, c: case.update(expect={'refused': {'code': 'over-limit'}}), ': `over-limit` for a call that passes no cap of limits.json'),
+            self.vector('update_node', 1, lambda case, c: case['expect']['refused'].update(id='t_0000000000000001'), ': an `over-limit` that names `t_0000000000000001`, where §6.1 names `b`'),
             self.vector('set_progress', 2, lambda case, c: case['expect']['refused'].update(at=0), ': an `at` on a refusal of no proposal'),
         ], 'check_vectors')
 
@@ -256,7 +289,174 @@ class VectorsTest(Rows):
         ], 'check_vectors')
 
 
+class ContextTest(Rows):
+    CASES = check.Contract.read().context
+
+    def vector(self, case, change, tail):
+        index = next(index for index, each in enumerate(self.CASES) if each['case'].startswith(case))
+        return (lambda c: change(c.context[index]['expect'].get('result'), c.context[index], c), f'abilities/context.json · {self.CASES[index]["case"]}{tail}')
+
+    def test_a_case_out_of_shape_is_refused(self):
+        self.refused([
+            (lambda c: setattr(c, 'context', []), 'abilities/context.json: not a list of cases'),
+            (lambda c: c.context[0].update(case=''), 'abilities/context.json · : a case that is not named'),
+            self.vector('a small roadmap', lambda result, case, c: case.pop('step'), ': no `step`'),
+            self.vector('a conversation about all roadmaps', lambda result, case, c: case.update(step='a'), ': a conversation about all roadmaps started from a step'),
+            self.vector('a small roadmap', lambda result, case, c: case.update(step='zz'), ': a conversation started from `zz`, a step its roadmap does not hold'),
+            self.vector('a small roadmap', lambda result, case, c: case['expect'].update(refused={'code': 'roadmap-unavailable'}), ': an expectation that is neither a result nor a refusal'),
+            self.vector('a small roadmap', lambda result, case, c: case['given']['trees'][0].pop('kinds'), ' · a given tree: no `kinds`'),
+        ], 'check_context')
+
+    def test_a_refusal_other_than_the_context_gives_is_refused(self):
+        self.refused([
+            self.vector('a conversation about a roadmap the device', lambda result, case, c: case['expect']['refused'].update(code='unknown-step'), ': `unknown-step`, which the context does not refuse with'),
+            self.vector('a conversation about a roadmap the device', lambda result, case, c: (case.update(about='t_0000000000000001'), case['expect']['refused'].update(id='t_0000000000000001')),
+                        ': `roadmap-unavailable` for a roadmap the device holds whole'),
+            self.vector('a conversation about a roadmap the device', lambda result, case, c: case['expect']['refused'].update(id='t_0000000000000001'), ': a refusal that names a roadmap other than the conversation\'s'),
+            self.vector('a conversation about a roadmap the device', lambda result, case, c: case['expect']['refused'].update(at=0), ' · refused: `at` is not one of its keys'),
+        ], 'check_context')
+
+    def test_all_roadmaps_other_than_list_trees_answers_is_refused(self):
+        self.refused([
+            self.vector('a conversation about all roadmaps', lambda result, case, c: result['trees'][0].update(counts={}), ': result.trees[0].counts.total: required'),
+            self.vector('a conversation about all roadmaps', lambda result, case, c: result['trees'][0].pop('frontier'), ' · trees: no `frontier`'),
+            self.vector('a conversation about all roadmaps', lambda result, case, c: result['trees'][0].update(part=1, parts=2), ' · trees: `part` is not one of its keys'),
+            self.vector('a conversation about all roadmaps', lambda result, case, c: result.update(nextCursor='1.1.0000000000000000'), ': `nextCursor` is not one of its keys'),
+        ], 'check_context')
+
+    def test_all_roadmaps_past_the_bound_is_refused(self):
+        def one_more(result):
+            result['trees'].append({**result['trees'][0], 'id': 't_0000000000000100', 'title': 'Shelf 1'})
+            result['omitted'] -= 1
+        self.refused([
+            self.vector('a conversation about all roadmaps', lambda result, case, c: result.pop('omitted'), ': no `omitted`'),
+            self.vector('a conversation about 40 roadmaps', lambda result, case, c: result.update(omitted=4), ': 37 rows and 4 left off, of 40 roadmaps the person owns'),
+            self.vector('a conversation about 40 roadmaps', lambda result, case, c: result.update(omitted=-1), ': 37 rows and -1 left off, of 40 roadmaps the person owns'),
+            self.vector('a conversation about 40 roadmaps', lambda result, case, c: one_more(result), ': a context of 65658 bytes about all roadmaps, past CONTEXT_BYTES, 65536'),
+        ], 'check_context')
+
+    def test_a_row_frontier_past_ten_titles_is_refused(self):
+        def titles(result, more): result['trees'][0]['frontier'].extend(more)
+        self.refused([
+            self.vector('a roadmap whose frontier alone', lambda result, case, c: result['trees'][0].pop('frontierOmitted'), ': `t_0000000000000300`\'s frontier and the titles left off, which are not its 400 available steps'),
+            self.vector('a roadmap whose frontier alone', lambda result, case, c: titles(result, ['Read the Odyssey again']), ': `t_0000000000000300`\'s frontier, which is not its first 10 titles and a count of the rest from one'),
+            self.vector('a roadmap whose frontier alone', lambda result, case, c: result['trees'][0].update(frontierOmitted=0), ': `t_0000000000000300`\'s frontier, which is not its first 10 titles and a count of the rest from one'),
+            self.vector('a conversation about all roadmaps', lambda result, case, c: result['trees'][1].update(frontierOmitted=1), ': `t_0000000000000001`\'s frontier, which is not its first 10 titles and a count of the rest from one'),
+        ], 'check_context')
+
+    def test_a_roadmap_other_than_the_case_gives_is_refused(self):
+        def line(id): return {'id': id, 'label': 'Swim', 'kind': None, 'state': 'locked', 'prerequisites': [], 'unlockCount': 0, 'summary': ''}
+        self.refused([
+            self.vector('a small roadmap', lambda result, case, c: result.pop('recent'), ': no `recent`'),
+            self.vector('a small roadmap', lambda result, case, c: result.update(counts={}, omitted=0), ': `completed` is not one of its keys'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree'].update(title='Learn to swim'), ': a header that is not the roadmap\'s'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree'].update(guide=''), ' · tree: `guide` is not one of its keys'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree']['kinds'][0].pop('hue'), ': result.tree.kinds[0].hue: required'),
+            self.vector('a small roadmap', lambda result, case, c: result['steps'][0].update(state='done'), ': result.steps[].state: not one of the enum'),
+            self.vector('a small roadmap', lambda result, case, c: result['steps'][0].update(description=''), ': `a`\'s line, whose fields are not §5.1\'s default'),
+            self.vector('a small roadmap', lambda result, case, c: result['steps'].append(line('zz')), ': a step `zz` the roadmap does not hold'),
+            self.vector('a small roadmap', lambda result, case, c: result['steps'][1].update(summary='Practise'), ': `b`\'s summary, which is not its description cut after 160 characters'),
+            self.vector('a small roadmap', lambda result, case, c: result['completed'][0].update(at='today'), ': result.completed[0].at: not [\'integer\', \'null\']'),
+            self.vector('a small roadmap', lambda result, case, c: result['diagnostics'].pop('treeLoops'), ' · diagnostics: no `treeLoops`'),
+        ], 'check_context')
+
+    def test_a_roadmap_given_whole_past_the_bounds_is_refused(self):
+        def grown(result, case):
+            check.spelled(case['given'], 'a case')
+            tree = case['given']['trees'][0]
+            tree['nodes'].append({**tree['nodes'][-1], 'id': 'zz', 'ord': '~'})
+            result['steps'].append({**next(item for item in result['steps'] if item['id'] == tree['nodes'][-2]['id']), 'id': 'zz', 'prerequisites': [], 'state': 'available'})
+        def lengthened(result, case):
+            check.spelled(case['given'], 'a case')
+            item = next(item for item in result['steps'] if item['state'] == 'locked')
+            node = next(node for node in case['given']['trees'][0]['nodes'] if node['id'] == item['id'])
+            node['label'] += '!'
+            item['label'] += '!'
+        self.refused([
+            self.vector('a small roadmap', lambda result, case, c: result['steps'].pop(), ': 14 lines of a roadmap given whole, where it holds 15 steps'),
+            self.vector('a roadmap of 300 steps whose context, given whole, comes to', lambda result, case, c: grown(result, case), ': a roadmap of 301 steps given whole, past 300'),
+            self.vector('a roadmap of 300 steps whose context, given whole, comes to', lambda result, case, c: lengthened(result, case), ': a context of 65537 bytes given whole, past CONTEXT_BYTES, 65536'),
+        ], 'check_context')
+
+    def test_a_table_of_records_out_of_shape_is_refused(self):
+        self.refused([
+            self.vector('a pasted checklist', lambda result, case, c: case['given']['trees'][0]['nodes']['rows'][0].pop(), ': a row of t_00000000000010aa.nodes that does not hold a value for each column'),
+            self.vector('a pasted checklist', lambda result, case, c: case['given']['trees'][0]['nodes'].pop('columns'), ' · t_00000000000010aa.nodes: no `columns`'),
+            self.vector('a pasted checklist', lambda result, case, c: case['given']['trees'][0]['nodes']['columns'].remove('icon'), ': a row of t_00000000000010aa.nodes that does not hold a value for each column'),
+        ], 'check_context')
+
+    def test_guides_other_than_the_roadmaps_are_refused(self):
+        self.refused([
+            self.vector('a small roadmap', lambda result, case, c: result['tree'].pop('guides'), ' · tree: no `guides`'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree']['guides'][0].update(text='Two steps a weekend.'), ': guides whose last is not the roadmap\'s own'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree']['guides'][0].update(text=''), ': a guide of `t_0000000000000001` that is not its words'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree']['guides'][0].pop('yours'), ' · tree.guides: no `yours`'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree']['guides'].extend(result['tree']['guides'] * 8), ': guides that are not a list of at most eight, those left off counted in'),
+            self.vector('a small roadmap', lambda result, case, c: result['tree'].update(guidesOmitted=1), ' · tree: `guidesOmitted` is not one of its keys'),
+            self.vector('a roadmap under seven', lambda result, case, c: result['tree'].update(guidesOmitted=0), ': `guidesOmitted` that is not a count from one'),
+            self.vector('a roadmap under seven', lambda result, case, c: result['tree'].update(guidesOmitted=2), ': guides that are not a list of at most eight, those left off counted in'),
+            self.vector('a roadmap under seven', lambda result, case, c: result['tree']['guides'].pop(), ': guides whose last is not the roadmap\'s own'),
+            self.vector('a roadmap the person only reads', lambda result, case, c: result['tree']['guides'][0].update(yours=True), ': guides of a roadmap the person only reads other than its own alone, not theirs'),
+        ], 'check_context')
+
+    def test_a_roadmap_given_around_its_frontier_past_the_bound_is_refused(self):
+        def one_more(result):
+            result['steps'].append({'id': 'c00527', 'label': 'Pack item 528', 'kind': 'learn', 'state': 'available', 'prerequisites': [], 'unlockCount': 0, 'summary': ''})
+            result['omitted'] -= 1
+        self.refused([
+            self.vector('a pasted checklist', lambda result, case, c: result.pop('omitted'), ': no `omitted`'),
+            self.vector('a pasted checklist', lambda result, case, c: result.update(omitted=10000), ': 527 lines and 10000 left off, of a roadmap of 10000 steps'),
+            self.vector('a pasted checklist', lambda result, case, c: result.update(omitted=-1), ': 527 lines and -1 left off, of a roadmap of 10000 steps'),
+            self.vector('a pasted checklist', lambda result, case, c: one_more(result), ': a context of 65659 bytes given around where the person stands, past CONTEXT_BYTES, 65536'),
+        ], 'check_context')
+
+    def test_counts_other_than_the_roadmaps_are_refused(self):
+        self.refused([
+            self.vector('a roadmap of 500 steps', lambda result, case, c: result['counts'].update(total=499), ': counts of 499 steps, where the roadmap holds 500'),
+            self.vector('a roadmap of 500 steps', lambda result, case, c: result['counts'].pop('byKind'), ' · counts: no `byKind`'),
+            self.vector('a roadmap of 500 steps', lambda result, case, c: result['counts']['byKind'].reverse(), ': counts by kind other than one row for each kind in the room\'s order, then the steps no kind owns'),
+            self.vector('a roadmap of 500 steps', lambda result, case, c: result['counts']['byKind'][0].update(done=0), ': counts by kind that do not add up to the roadmap\'s'),
+        ], 'check_context')
+
+    def test_newest_completions_other_than_the_roadmaps_are_refused(self):
+        self.refused([
+            self.vector('a small roadmap', lambda result, case, c: result['recent'].append(result['recent'][0]), ': 11 newest completions, past 10'),
+            self.vector('a small roadmap', lambda result, case, c: result['recent'][0].update(label='Read a map'), ': a newest completion `l` that is not a dated step of the roadmap'),
+            self.vector('a step done before', lambda result, case, c: result['recent'].append({'id': 'a', 'label': 'Find a pool', 'at': None}), ': a newest completion `a` that is not a dated step of the roadmap'),
+            self.vector('a small roadmap', lambda result, case, c: result['recent'].reverse(), ': newest completions that are not newest first, and in id byte order at one date'),
+        ], 'check_context')
+
+    def test_a_step_in_full_other_than_the_conversation_started_from_is_refused(self):
+        self.refused([
+            self.vector('a conversation started from a step adds', lambda result, case, c: result.pop('step'), ': no step in full, where the conversation started from a step the roadmap shows'),
+            self.vector('a conversation started from a step the roadmap', lambda result, case, c: result.update(step={'id': 'o'}), ': a step in full where the conversation started from no step the roadmap shows'),
+            self.vector('a conversation started from a step adds', lambda result, case, c: result['step'].update(summary=''), ': a step in full that is not the step started from with every field of §5.1 but its summary and its subtasks'),
+            self.vector('a conversation started from a step adds', lambda result, case, c: result['step'].update(subtasks=[]), ': a step in full that is not the step started from with every field of §5.1 but its summary and its subtasks'),
+            self.vector('a conversation started from a step adds', lambda result, case, c: result['step'].update(description='Plan it.'), ': `m`\'s description, which is not the step\'s'),
+        ], 'check_context')
+
+
+    def test_a_started_step_past_its_bounds_is_refused(self):
+        def one_more(result):
+            result['steps'].append({'id': 'c00426', 'label': 'Pack item 427', 'kind': 'learn', 'state': 'available', 'prerequisites': [], 'unlockCount': 0, 'summary': ''})
+            result['omitted'] -= 1
+        self.refused([
+            self.vector('a step started from that follows sixty', lambda result, case, c: result['step']['prerequisites'].append('r59'), ': a step in full whose prerequisites are not their first 50 ids and a count of the rest from one'),
+            self.vector('a step started from that follows sixty', lambda result, case, c: result['step'].update(prerequisitesOmitted=0), ': a step in full whose prerequisites are not their first 50 ids and a count of the rest from one'),
+            self.vector('a conversation started from a step adds', lambda result, case, c: result['step'].update(prerequisitesOmitted=1), ': a step in full whose prerequisites are not their first 50 ids and a count of the rest from one'),
+            self.vector('a step-started checklist', lambda result, case, c: one_more(result), ': a context of 65555 bytes given around where the person stands, past CONTEXT_BYTES, 65536'),
+        ], 'check_context')
+
+
 class LimitsTest(Rows):
+    def test_the_context_bounds_other_than_section_5_states_are_refused(self):
+        stated = check.Contract.read().spec.bounds
+        changed = {**stated, 'recent': {'max': 11, 'unit': 'items'}}
+        self.refused([
+            (lambda c: c.limits.pop('context'), 'limits.json: no `context`'),
+            (lambda c: c.limits['context']['recent'].update(max=11), f'limits.json: context bounds {changed}, where §5 has {stated}'),
+        ], 'check_limits')
+
     def test_a_cap_other_than_section_6_states_is_refused(self):
         self.refused([
             (lambda c: c.limits['limits'].pop('kinds'), "limits.json: caps ['kinds'] in one of limits.json and §6 alone"),

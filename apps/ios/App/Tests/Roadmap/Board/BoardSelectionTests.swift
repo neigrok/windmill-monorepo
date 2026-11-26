@@ -194,7 +194,7 @@ import SyncTesting
     let telemetry = TelemetryRecorder()
     let model = room(engine, runner, memory, telemetry: telemetry)
     try await learnToSail(model, on: engine, runner)
-    let start = try #require(model.shown?.keptStep)
+    let start = try #require(model.shown?.effects(of: [String]()).kept)
 
     model.startSelecting(start, from: .menu)
     #expect(model.selection?.takesEveryStart == true && model.band?.says == .refused(.keepsStartingStep) && model.band?.undo == nil)

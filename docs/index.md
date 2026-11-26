@@ -131,7 +131,7 @@ Figma: Gym file, page [Web](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?
 | WD7 · Coach during a workout | [`2150:11627`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2150-11627) | 🚀 In production (2026-11-25): Coach beside the rack (1440) or over it as a sheet (390) → a workout proposal → Apply or Reject → applied, or out of date |
 | WD8 · The gym room signed out | [`2150:11630`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2150-11630) | 🚀 In production (2026-11-25): the room on the browser's copy, The log without shares, Coach as the sign-in door, the first visit |
 | WD9 · Sign-in with signed-out work | [`2150:11633`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2150-11633) | 🚀 In production (2026-11-25): the one question → Add, or Discard and its confirmation → a workout the account could not take waits in The log |
-| WD10 · The default rest | [`2181:16061`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2181-16061) | 🚧 In progress, awaiting the owner: Settings · Your training log → Default rest and Rest sound → saved, or not saved |
+| WD10 · The default rest | [`2181:16061`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=2181-16061) | 🚀 In production (2026-11-26): Settings · Your training log, signed in or signed out → Default rest and Rest sound → saved, or not saved → an open workout follows |
 
 ## Gym · iOS
 

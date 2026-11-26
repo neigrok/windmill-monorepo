@@ -160,3 +160,54 @@ export function landingFacts(graph, edges) {
     return [{ node, incoming, followed }];
   });
 }
+
+// What deleting `ids` or resetting one would do (the corpus README's `effects`); `follow` walks the graph when asked.
+export class EffectsRead {
+  /** @type {FollowGraph} */
+  #graph;
+  /** @type {number[]} */
+  #chosen;
+  /** @type {boolean} */
+  #marked;
+
+  /** @param {FollowGraph} graph @param {string[]} ids */
+  constructor(graph, ids) {
+    const slots = ids.flatMap((id) => {
+      const slot = graph.slot.get(id);
+      return slot === undefined ? [] : [slot];
+    });
+    const chosen = new Set(slots);
+    const present = slots.length === ids.length;
+    this.#graph = graph;
+    this.#chosen = [...chosen];
+    this.kept = graph.starting.length === 1 ? graph.starting[0] ?? null : null;
+    this.takesEveryStart = graph.starting.length > 0 && graph.starting.every((id) => chosen.has(graph.slot.get(id) ?? -1));
+    this.deletable = ids.length > 0 && present && !this.takesEveryStart;
+    const [only = -1] = this.#chosen;
+    this.#marked = present && chosen.size === 1 && graph.done[only] === 1 && graph.tree.index.markedDone[only] === 1;
+  }
+
+  get follow() {
+    const graph = this.#graph;
+    // A present step stops the walk: what follows it follows it, not the selection.
+    const passed = new Set(this.#chosen);
+    const pending = [...this.#chosen];
+    /** @type {number[]} */
+    const followers = [];
+    for (let vertex = pending.pop(); vertex !== undefined; vertex = pending.pop()) {
+      for (const next of graph.children[vertex] ?? []) {
+        if (passed.has(next)) continue;
+        passed.add(next);
+        if (next < graph.ids.length) followers.push(next);
+        else pending.push(next);
+      }
+    }
+    return followers.sort((a, b) => a - b).map((slot) => graph.ids[slot] ?? '');
+  }
+
+  get relocks() { return this.#marked ? this.follow.filter((id) => this.#graph.states.get(id) === 'available') : []; }
+
+  result() {
+    return { kept: this.kept, takesEveryStart: this.takesEveryStart, deletable: this.deletable, follow: this.follow, relocks: this.relocks };
+  }
+}

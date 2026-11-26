@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { Opening } from '../../../../src/products/roadmap/model/Opening.js';
 import { SkillTree } from '../../../../src/products/roadmap/model/SkillTree.js';
 import { advanceProgress } from '../../../../src/products/roadmap/model/progress.js';
-import { StepFacts, completionOpens, resetRelocks, offersCompletion, titleOf } from '../../../../src/products/roadmap/step/StepFacts.js';
+import { StepFacts, completionOpens, offersCompletion, titleOf } from '../../../../src/products/roadmap/step/StepFacts.js';
 import { STEP_DETAIL } from '../../../../src/products/roadmap/copy.js';
 
 test('step surfaces share the trimmed title and the unnamed fallback', () => {
@@ -89,14 +89,14 @@ test('StepFacts — a prerequisite listed twice is one row', () => {
   assert.deepEqual([facts.prerequisites.map((entry) => entry.id), facts.toGo], [['a'], 1]);
 });
 
-test('completionOpens and resetRelocks — completing Read the wind opens Leave the dock; resetting it again relocks it', () => {
+test('completionOpens and relocks — completing Read the wind opens Leave the dock; resetting it again relocks it', () => {
   const tree = learnToSail();
   const completed = advanceProgress(initialProgress(), ['wind'], 'complete', 400);
   assert.deepEqual([
     completionOpens(tree, initialProgress(), 'wind').map((step) => step.id),
     completionOpens(tree, completed, 'wind'),
-    resetRelocks(tree, completed, 'wind'),
-    resetRelocks(tree, initialProgress(), 'wind'),
+    new StepFacts(tree, completed, 'wind').relocks,
+    new StepFacts(tree, initialProgress(), 'wind').relocks,
   ], [['dock'], [], 1, 0]);
 });
 

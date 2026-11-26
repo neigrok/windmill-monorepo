@@ -302,8 +302,9 @@ What a device tells a person when a change of theirs met one made elsewhere.
   consequences to roadmap's tables, with the bounds and caps of §4.
 - **The door.** Every server write for a person goes through one door that admits server-origin
   intents (E-4): MCP's write tools, tending until [Roadmap Coach](roadmap-coach.md) retires it, the
-  fork of a roadmap, and the fork at sign-up. Each MCP write tool takes an optional `requestId`, so
-  a retried call writes once.
+  fork of a roadmap, the fork at sign-up, and the by-hand tool that moves unlisted roadmaps to private
+  ([backend SPEC](../../backend/SPEC.md#unlisted-roadmaps-to-private)). Each MCP write tool takes an
+  optional `requestId`, so a retried call writes once.
 - **MCP keeps its meanings.** `delete_node` deletes a step, with `prune`, the `branches` it must
   confirm and the caller's own marks cleared, as today. `import_subgraph` and `change_edges` land a
   loop and name it in their answer, as today. `expectedSeq` is the tree scope's sequence number,
@@ -521,8 +522,8 @@ What changes is built only from boards marked ✅ Ready for dev:
 - **Vectors.** `packages/api-contract/roadmap/domain/` holds the rules, the actions of §5, what a
   device tells by §6, and the reads: what a step follows through absent steps, its state, what it
   owes and unlocks, what an opened roadmap comes to, standing, the guides above a roadmap, the
-  Board's groups and order, the legend and a hue two kinds wear, search, sort and filter, and
-  diagnostics. JavaScript and Swift run every file, the server runs the reads it shares, and a rule lands as a
+  Board's groups and order, what a delete or a Reset would do, the legend and a hue two kinds wear,
+  search, sort and filter, and diagnostics. JavaScript and Swift run every file, the server runs the reads it shares, and a rule lands as a
   vector first.
 - **The engine's corpus** gains E-1 to E-4 on its test product, and roadmap's commands and
   consequences. All four implementations run it.

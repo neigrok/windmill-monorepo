@@ -73,6 +73,21 @@
       ],
       "web": "linkUrl"
     },
+    "subtaskLabel": {
+      "max": 200,
+      "unit": "characters",
+      "registry": [
+        "subtask.label"
+      ],
+      "web": "subtask"
+    },
+    "subtasks": {
+      "max": 20000,
+      "unit": "items",
+      "registry": [
+        "subtask"
+      ]
+    },
     "kinds": {
       "max": 6,
       "unit": "items",
@@ -119,6 +134,28 @@
       "registry": [
         "coachProposal.base"
       ]
+    }
+  },
+  "context": {
+    "bytes": {
+      "max": 65536,
+      "unit": "bytes"
+    },
+    "steps": {
+      "max": 300,
+      "unit": "items"
+    },
+    "recent": {
+      "max": 10,
+      "unit": "items"
+    },
+    "frontier": {
+      "max": 10,
+      "unit": "items"
+    },
+    "prerequisites": {
+      "max": 50,
+      "unit": "items"
     }
   }
 }

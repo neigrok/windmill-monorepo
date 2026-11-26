@@ -5,7 +5,7 @@ corpus (`web/test/products/roadmap/domain/corpus.test.js`) claims every file by 
 complete outputs. The server's read domain (`backend/products/roadmap/domain/read/`) claims the reads
 the table marks as the server's, by JCS, in `backend/test/products/roadmap/domain/read/ReadVectorsTest.cpp`,
 which fails on a file it neither claims nor names as a device's. Swift's domain (`apps/ios/Domain/Sources/RoadmapDomain/`)
-claims, by JCS, in `apps/ios/Domain/Tests/RoadmapDomainTests/`, the reads' files (`account`, `activity`, `board`, `diagnostics`, `graph`,
+claims, by JCS, in `apps/ios/Domain/Tests/RoadmapDomainTests/`, the reads' files (`account`, `activity`, `board`, `diagnostics`, `effects`, `graph`,
 `guides`, `landing`, `legend`, `pointers`, `progress`, `replica` and `search`), `rules.json`, `values.json`, and every
 `*-actions.json` (`roadmaps`, `steps`, `kinds`, `progress`, `workspace` and `landing`), each action case with its records
 reversed too, and the scenes of `undo.json` (`UndoTests.swift`). Its `CorpusTests.swift` fails on a file it does not claim.
@@ -44,6 +44,7 @@ ID byte order.
 | `pointers` | Shortest pointer-loop paths and known dangling targets, with omission counts | yes |
 | `landing` | The device's own links (`edges`) whose current followed prerequisites bridge absence | no |
 | `activity` | A roadmap's Activity, or one step's History: each present step's creation and completion the copy holds a time for, newest first; null for an unread/hidden tree | no |
+| `effects` | What deleting `ids` or resetting one would do: the roadmap's one starting step (`kept`, null unless it has exactly one), a starting step being a present step that follows nothing; whether `ids` take every starting step of a roadmap that has any (`takesEveryStart`; false where every step is in a loop); whether `ids` may be deleted (`deletable`), not when empty, naming a step that is not present, or taking every starting step; the present steps outside `ids` that follow one of them, in authored order, a step never its own follower (`follow`); and, for one step the graph counts complete by a mark its tree counts (none on a step that owns a subtree or opens a roadmap), those of them Up next, which a Reset returns to Locked (`relocks`) | no |
 | `roadmap` (`replica.json`) | One roadmap's records as a replica holds them, as the normalized tree | no |
 | `openings` (`replica.json`) | One tree's openings as `account` reads them, without reading every tree, with what a read elsewhere tells (`told`) | no |
 | `progress` (`replica.json`) | `progress` with what a read elsewhere tells (`told`) | no |
@@ -142,7 +143,8 @@ The harness inputs are `{operation, tree, subjects}` for `graph`, `{operation, t
 `{operation, trees, tree: id, step?}` for `activity`,
 `{operation, id, listed, tree, overlay: {drawn, queued} | null, read}` for `roadmap`, its records engine view records and
 `queued` the overlay's records (`{t, id}`) a queued entry still changes, `{operation, tree, query}` for `board` and
-`search`, `{operation, tree}` for `legend` and `diagnostics`, and
+`search`, `{operation, tree}` for `legend` and `diagnostics`, `{operation, tree, ids}` for `effects`, or
+`{operation, trees, tree: id, ids}` over the account's graph of that roadmap, and
 `{operation, tree, own: {nodes: [id], edges: [[from,to]]}}` for `landing`. `subjects` selects detailed graph reads only;
 it never narrows states. `query` is Board's `{sort,kinds,search,branch,doneExpanded}` or MCP's `{query,color,kind}`.
 Optional query fields have the defaults in `reads.js`.
@@ -151,7 +153,7 @@ The read modules are `records.js` (normalized values, authored ordering, the dev
 tree's `TreeIndex`: its raw adjacency by slot and its own marks, derived once per tree), `graph.js` (iterative
 strongly connected components and compact prerequisite/debt closure over a tree's index), `account.js`
 (standing, least-fixed-point completion, effective dates, guides, one tree's openings and the person's list),
-`reads.js` (Board, legend, search, landing facts and Activity), `diagnostics.js` (bounded findings), and `readRoadmap` in
+`reads.js` (Board, legend, search, landing facts, Activity and effects), `diagnostics.js` (bounded findings), and `readRoadmap` in
 `roadmaps.js` (a replica's records as the normalized tree). Detailed followed provenance is enumerated on demand.
 A step's state, unmet count and first, followed count and owed count are kept by slot. A step whose parents
 are all present follows them directly; only an absent step, and a step behind one, takes a bitset row, so no
@@ -230,7 +232,7 @@ Before the tree scope's first pull completes nothing has landed.
 | `SaveStepNote` | `{tree, step, text}` | the draft save's `{values, exists}`, decided as `{write: {gesture, result}}`; the note opened from `drawn` or new |
 | `ClearLanding` | `{tree, told: {nodes?, edges?, revived?}}` | `null`; written in `self/roadmap`: the note less what was told and less what has landed and says nothing, or no row; no row at all where the roadmap is gone from the person's list (its `tree` record dead or absent in `drawn` once `self/roadmap`'s first pull completes) |
 | read `landing` | `{tree}` | `{follows, cameBack, note}`: `landing` facts over the links whose lines the note says, each with `removed` (`[{id, name}]`, the absent steps it is linked from) and each `followed` entry with its `name`; a step the device holds is named by its label, one deleted elsewhere by the note's name, and by `null` where the note holds none; and its revived steps now present |
-| read `cannotLand` | `{notices}` | `{listed: [{id, gestureId, reason, subject, values}], unexpected: [{id, code}]}`; `reason` ∈ `roadmapDeleted` (`scope-dead`), `capFilled` (`cap`), `accessEnded` (`forbidden`, `not-found`), `noteTooLong` (`too-large` on a note) |
+| read `cannotLand` | `{notices}` | `{listed: [{id, gestureId, reason, made, subject, values}], unexpected: [{id, code}]}`; `reason` ∈ `roadmapDeleted` (`scope-dead`), `capFilled` (`cap`), `accessEnded` (`forbidden`, `not-found`), `noteTooLong` (`too-large` on a note); `made` where the refused content, or a dependent folded into it, creates its subject (its life made alive at its own `born`) |
 
 Limits refuse before anything is written, in this order where a case meets several: the bounds of
 the values written, a prerequisite or step the roadmap never held (`gone`), a loop among what steps

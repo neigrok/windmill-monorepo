@@ -36,7 +36,9 @@ connection, the copy arriving on its Board, and the links the phone cannot open;
 with the guides from above and the menu's count of them, *No guide yet* with *Add Guide*, the editor with its counter
 from 4,500 and its excess past 5,000 with *Save* dimmed, *Discard draft?*, and a save's *Undo* in the band; and the
 Shell's sign-in question naming roadmaps made signed out and its sign-out question counting roadmap's unconfirmed
-changes, without Coach's conversations.
+changes, without Coach's conversations; and section 10's *Offline* joined to the subtitle, a step that landed in a changed
+roadmap or came back told once by the band with *Show* and by its page's footer, and *Set Aside* from the title menu with
+*Copy*, *Discard* and *Discard All*.
 [Roadmap on iOS](../../foundation/roadmap-ios.md) §13 lists what is not built. The boards are on the Roadmap file's
 [Roadmap · iOS](https://www.figma.com/design/HM4d8YWzJZg5clVRJKNuDr?node-id=648-2) page. Each board's
 caption names the SwiftUI element of every part, and each section ends with a NOTE of its stock parts, its

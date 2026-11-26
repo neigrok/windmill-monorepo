@@ -45,5 +45,5 @@ names (`platform/application/WriteObservation`). Neither names an id or a text.
 
 Where `ROADMAP_ENGINE_ENABLED` serves roadmap's scopes, every server write for a person goes through roadmap's door
 (`application/RoadmapDoor`) into this binding as server-origin intents: MCP's write tools (`adapters/mcp/RoadmapDoorTools`),
-tending through them, the fork and the fork at sign-up (`application/DoorForks`). Elsewhere they write through roadmap's
-own sync.
+tending through them, the fork and the fork at sign-up (`application/DoorForks`), and the tool that moves unlisted roadmaps
+to private (`platform/infra/roadmaps_to_private.cpp`). Elsewhere they write through roadmap's own sync.

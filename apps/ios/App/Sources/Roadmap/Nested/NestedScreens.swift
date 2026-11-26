@@ -173,9 +173,9 @@ struct InsideTitle: ViewModifier {
     if let selection = roadmap.selection {
       RoadmapTitle.SelectedTitle(selection: selection)
     } else if #available(iOS 26.0, *) {
-      Color.clear.navigationTitle(open.listed.name).navigationSubtitle(open.board.overall.progress)
+      Color.clear.navigationTitle(open.listed.name).navigationSubtitle(roadmap.subtitle(of: open))
     } else {
-      Color.clear.roomTitle(open.listed.name, subtitle: open.board.overall.progress)
+      Color.clear.roomTitle(open.listed.name, subtitle: roadmap.subtitle(of: open))
     }
   }
 }

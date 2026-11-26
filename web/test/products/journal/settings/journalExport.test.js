@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { BrowserSyncEngine } from '../../../../src/platform/sync/engine.js';
 import { buildJournalArchive, exportedPages, journalMarkdown } from '../../../../src/products/journal/settings/journalExport.js';
 import { savePage, SCOPE } from '../../../../src/products/journal/pages.js';
+import { EDITOR_DRAFT_KEY } from '../../../../src/products/journal/domain/page.js';
 import { environment, tick, until } from '../../../platform/sync/fakes.js';
 import { journalRegistry, journalProduct } from '../../../platform/sync/oracle-adapters/journal.js';
 import { ServerState } from '../../../../../packages/api-contract/sync/reference/server/state.js';
@@ -90,9 +91,18 @@ test('signed out, the export is the browser\'s own pages, at once and with no re
   await savePage(engine, page('  written on this browser\n'));
   const files = downloads(t);
   const { told, ...seams } = telemetry();
-  assert.deepEqual(await buildJournalArchive(engine, seams), { count: 1 });
+  assert.deepEqual(await buildJournalArchive(engine, 'signed_out', seams), { count: 1, file: 'windmill-journal.md' });
   assert.equal(await files[0].text(), '# Windmill journal\n\n## 2026-09-27\n\n_mood 3/10_\n\nwritten on this browser\n');
-  assert.deepEqual(told, { events: [['journal_export', { outcome: 'ok' }]], reports: [] });
+  assert.deepEqual(told, { events: [['journal_export', { outcome: 'ok', seat: 'signed_out' }]], reports: [] });
+});
+
+test('a journal with no written page exports no file, and tells the export ended empty', async (t) => {
+  const { engine } = await browser(t);
+  await savePage(engine, page(' \n'));
+  const files = downloads(t);
+  const { told, ...seams } = telemetry();
+  assert.deepEqual(await buildJournalArchive(engine, 'signed_out', seams), { count: 0, file: null });
+  assert.deepEqual({ files, told }, { files: [], told: { events: [['journal_export', { outcome: 'empty', seat: 'signed_out' }]], reports: [] } });
 });
 
 test('a download the browser refuses fails the export, reported with its step and the error\'s stack', async (t) => {
@@ -102,18 +112,46 @@ test('a download the browser refuses fails the export, reported with its step an
   const refused = new DOMException('blocked', 'SecurityError');
   t.mock.method(URL, 'createObjectURL', () => { throw refused; });
   const { told, ...seams } = telemetry();
-  await assert.rejects(buildJournalArchive(engine, seams), refused);
-  assert.deepEqual(told, { events: [['journal_export', { outcome: 'failed' }]],
+  await assert.rejects(buildJournalArchive(engine, 'signed_out', seams), refused);
+  assert.deepEqual(told, { events: [['journal_export', { outcome: 'failed', seat: 'signed_out' }]],
     reports: [['journal', 'journal-export', refused.stack, '/app/settings', { step: 'download' }]] });
+});
+
+test('a download whose click throws leaves no anchor in the page', async (t) => {
+  const { engine } = await browser(t);
+  await savePage(engine, page('written on this browser'));
+  downloads(t);
+  const inPage = new Set();
+  const refused = new DOMException('blocked', 'NotAllowedError');
+  globalThis.document = { createElement: () => ({ click() { throw refused; }, remove() { inPage.delete(this); } }),
+    body: { appendChild: (anchor) => inPage.add(anchor) } };
+  const { told, ...seams } = telemetry();
+  await assert.rejects(buildJournalArchive(engine, 'signed_out', seams), refused);
+  assert.deepEqual({ anchors: inPage.size, told }, { anchors: 0, told: { events: [['journal_export', { outcome: 'failed', seat: 'signed_out' }]],
+    reports: [['journal', 'journal-export', refused.stack, '/app/settings', { step: 'download' }]] } });
+});
+
+test('a row the domain kit cannot decode fails the export and is reported, though its error carries a reason', async (t) => {
+  const { engine } = await browser(t);
+  await savePage(engine, page('a real page'));
+  await engine.write(null, (device) => {
+    device.activeReplica.device.journal = { ...(device.activeReplica.device.journal ?? {}),
+      [EDITOR_DRAFT_KEY]: { day: 42, document: { body: 'x', mood: null, energy: null, source: 'typed', stamp: '1:0:a' } } };
+  }, [SCOPE]);
+  const { told, ...seams } = telemetry();
+  const thrown = await buildJournalArchive(engine, 'signed_out', seams).catch((error) => error);
+  assert.deepEqual([thrown.constructor.name, thrown.reason], ['DecodeError', 'not a string']);
+  assert.deepEqual(told, { events: [['journal_export', { outcome: 'failed', seat: 'signed_out' }]],
+    reports: [['journal', 'journal-export', thrown.stack, '/app/settings', { step: 'pages' }]] });
 });
 
 test('pages the replica cannot hand fail the export at its first step, and an expected wait reports nothing', async (t) => {
   const broken = new TypeError('unreadable');
   const engine = { closed: false, observe: () => ({ getSnapshot: () => { throw broken; }, subscribe: () => () => {}, release() {} }) };
   const { told, ...seams } = telemetry();
-  await assert.rejects(buildJournalArchive(engine, seams), broken);
-  await assert.rejects(buildJournalArchive(null, seams), { reason: 'no_replica' });
-  assert.deepEqual(told, { events: [['journal_export', { outcome: 'failed' }], ['journal_export', { outcome: 'no_replica' }]],
+  await assert.rejects(buildJournalArchive(engine, 'signed_in', seams), broken);
+  await assert.rejects(buildJournalArchive(null, 'signed_out', seams), { reason: 'no_replica' });
+  assert.deepEqual(told, { events: [['journal_export', { outcome: 'failed', seat: 'signed_in' }], ['journal_export', { outcome: 'no_replica', seat: 'signed_out' }]],
     reports: [['journal', 'journal-export', broken.stack, '/app/settings', { step: 'pages' }]] });
 });
 
@@ -172,11 +210,13 @@ test('a bound replica exports the account\'s pages once its first pull of the jo
   assert.equal(engine.observe(SCOPE).getSnapshot().firstPullComplete, false);
   const files = downloads(t);
   let settled = false;
-  const archive = buildJournalArchive(engine).finally(() => { settled = true; });
+  const { told, ...seams } = telemetry();
+  const archive = buildJournalArchive(engine, 'signed_in', seams).finally(() => { settled = true; });
   for (let i = 0; i < 20; i++) await tick();
   assert.equal(settled, false, 'the export waits for the first pull');
   await engine.pull();
-  assert.deepEqual(await archive, { count: 1 });
+  assert.deepEqual(await archive, { count: 1, file: 'windmill-journal.md' });
+  assert.deepEqual(told, { events: [['journal_export', { outcome: 'ok', seat: 'signed_in' }]], reports: [] });
   assert.equal(await files[0].text(), '# Windmill journal\n\n## 2026-09-27\n\n_mood 3/10_\n\nkept by the account\n');
 });
 

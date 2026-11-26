@@ -271,7 +271,7 @@ final class SharedRead {
       room.account = RoadmapAccount(trees, told: owners?.subtrees ?? [])
       let standing = room.account.listing(address.tree)
       if let listed = standing, owners != nil, let open = RoadmapModel.OpenRoadmap(listed, in: room.account, owned: false) {
-        room.present(open, landing: .graph)
+        room.present(open, in: .graph)
         settle(.open)
         guard !stepOpened, let step = address.step, open.step(step) != nil else { return }
         stepOpened = true
