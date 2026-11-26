@@ -27,7 +27,8 @@ import XCTest
       guard let snapshot = try? item.snapshot() else { return false }
       return snapshot.isEnabled && !snapshot.frame.isEmpty && viewport.contains(snapshot.frame)
     }, object: item)
-    XCTAssertEqual(XCTWaiter.wait(for: [visibleItem], timeout: 5), .completed)
+    // A loaded runner takes up to five seconds for one snapshot of a menu still presenting, so the wait allows two.
+    XCTAssertEqual(XCTWaiter.wait(for: [visibleItem], timeout: 10), .completed)
     item.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1)
     let selected = app.buttons.matching(NSPredicate(format: "identifier == %@ AND label == %@", "room-menu", room)).firstMatch
     XCTAssertTrue(selected.waitForExistence(timeout: 10))
@@ -52,8 +53,8 @@ import XCTest
     let page = editor.value as? String
     switchRoom("Gym", in: app)
     assertGym(app)
-    app.tabBars.buttons["The log"].tap()
-    XCTAssertTrue(app.descendants(matching: .any)["gym-log"].waitForExistence(timeout: 5))
+    let log = app.descendants(matching: .any)["gym-log"]
+    XCTAssertTrue(app.tap({ app.tabBars.buttons["The log"].tap() }, until: { log.waitForExistence(timeout: 5) }))
     app.tabBars.buttons["Coach"].tap()
     XCTAssertTrue(app.descendants(matching: .any)["gym-coach"].waitForExistence(timeout: 5))
     app.terminate()
@@ -804,6 +805,7 @@ import XCTest
     XCTAssertEqual(listedRoadmaps(app).sorted(), rows)
     search.tap()
     search.typeText("run ")
+    XCTAssertTrue(search.waitForValue("run "))
     XCTAssertTrue(app.buttons.matching(identifier: "roadmap-listed").firstMatch.waitForLabel("Run a 10k, 1 of 2 done", timeout: 5))
     XCTAssertEqual(listedRoadmaps(app), ["Run a 10k, 1 of 2 done"])
     app.buttons.matching(identifier: "roadmap-listed").firstMatch.tap()
