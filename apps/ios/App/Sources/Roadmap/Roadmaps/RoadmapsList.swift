@@ -4,7 +4,8 @@ import RoadmapDomain
 // All Roadmaps (Roadmap · iOS 01.4), pushed on the room's stack: every roadmap of the person in the domain's order, the
 // most recent first, each name over its progress and the open one checked. A row opens its roadmap on its Board, and
 // slides left for Delete, which asks on the row and leaves the list under the room's band. Past eight roadmaps the bar's
-// drawer finds them by name, and + names a new one.
+// drawer finds them by name, and + names a new one. Under them, *Planted in Public* pushes the public gallery (09.12a),
+// away while a search is typed.
 struct RoadmapsList: View {
   let roadmap: RoadmapModel
   @State private var query = ""
@@ -16,7 +17,10 @@ struct RoadmapsList: View {
     let searching = roadmap.roadmaps.count > 8
     let sought = searching ? query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() : ""
     let found = roadmap.roadmaps.filter { sought.isEmpty || ($0.title ?? "").lowercased().contains(sought) }
-    return drawer(shown: searching, over: List(found, id: \.id) { listed in row(listed) }
+    return drawer(shown: searching, over: List {
+      Section { ForEach(found, id: \.id) { listed in row(listed) } }
+      if sought.isEmpty && roadmap.links != nil { gallery }
+    }
       .listStyle(.insetGrouped).scrollContentBackground(.hidden).contentMargins(.top, RoomSpace.related, for: .scrollContent)
       .overlay { if !sought.isEmpty && found.isEmpty { ContentUnavailableView.search(text: query) } })
       .background { RoadmapPalette.canvas.ignoresSafeArea() }
@@ -38,6 +42,21 @@ struct RoadmapsList: View {
   @ViewBuilder func drawer(shown: Bool, over list: some View) -> some View {
     if shown { list.searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Find a roadmap") }
     else { list }
+  }
+
+  var gallery: some View {
+    Section {
+      Button { roadmap.path.append(.gallery) } label: {
+        HStack(spacing: 12) {
+          Label { Text("Planted in Public").foregroundStyle(RoadmapPalette.ink) } icon: { Image(systemName: "globe").foregroundStyle(RoadmapPalette.accent) }
+          Spacer()
+          Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(RoadmapPalette.inkFaint)
+        }.contentShape(Rectangle())
+      }.buttonStyle(.plain)
+        .listRowInsets(EdgeInsets(top: 11, leading: RoomSpace.inset, bottom: 11, trailing: RoomSpace.inset))
+        .listRowBackground(RoadmapPalette.card)
+        .accessibilityIdentifier("roadmap-gallery-open")
+    }
   }
 
   func row(_ listed: ListedRoadmap) -> some View {

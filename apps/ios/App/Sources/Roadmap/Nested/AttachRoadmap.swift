@@ -178,10 +178,6 @@ final class PastedRoadmap {
     case reading, readable(String?), unreadable, needsConnection
   }
 
-  enum Forking: Equatable {
-    case idle, running, failed, offline
-  }
-
   // How long a copy a fork made is waited for before the list lets the fork go.
   static let arrivalWait = Duration.seconds(15)
 
@@ -189,13 +185,13 @@ final class PastedRoadmap {
   let room: RoadmapModel
   let sources: RoadmapCover.Sources?
   private(set) var state = State.reading
-  private(set) var forking = Forking.idle
+  // Fork Roadmap, where the link names a roadmap and the room can ask the server.
+  let forking: RoadmapFork?
   // The copy a fork made, waited for until the person's list holds it.
   private(set) var copy: String?
   // A sign-in the fork asked for, which the list raises.
   var signingIn = false
   @ObservationIgnored var askedWith: SessionToken?
-  @ObservationIgnored let request = UUID().uuidString.lowercased()
   @ObservationIgnored var view: RecordsView?
   @ObservationIgnored var followed = false
   @ObservationIgnored var told = false
@@ -204,6 +200,7 @@ final class PastedRoadmap {
     self.tree = tree
     self.room = room
     sources = room.links?.sources
+    forking = tree.flatMap { tree in room.links.map { RoadmapFork(tree, mode: .instant, sources: $0.sources, telemetry: room.telemetry) } }
     guard let tree, let sources else {
       settle(.unreadable)
       return
@@ -263,47 +260,29 @@ final class PastedRoadmap {
 
   // The band over Fork Roadmap once it was tapped with no connection, or the fork came to nothing.
   var forkLine: String? {
-    switch forking {
+    switch forking?.state {
     case .offline: String(localized: "Forking needs a connection.")
     case .failed: String(localized: "Couldn’t fork this roadmap. Try again.")
-    case .idle, .running: nil
+    case .idle, .running, nil: nil
     }
   }
 
-  // Fork Roadmap, or Sign In to Fork signed out (07.7, 07.12a, 07.12b).
+  // Fork Roadmap, or Sign In to Fork signed out (07.7, 07.12a, 07.12b): the list waits for the copy until the person's list
+  // holds it, or for as long as a copy is waited for.
   func fork() {
-    guard let tree, let sources, forking != .running, copy == nil else { return }
+    guard let forking, forking.state != .running, copy == nil else { return }
     room.telemetry.event("roadmap_tree_attach", properties: ["step": "fork"])
-    room.telemetry.event("fork_attempt", properties: ["mode": "instant"])
-    guard sources.online() else {
-      forking = .offline
-      room.telemetry.event("fork_attempt", properties: ["mode": "instant", "outcome": "offline"])
-      return
-    }
-    guard let credential = sources.credential() else {
-      room.telemetry.event("fork_attempt", properties: ["mode": "instant", "outcome": "signed_out"])
-      return ask(under: nil)
-    }
-    forking = .running
-    Task { [requests = sources.requests, request, wait = room.wait] in
-      do throws(SharingFailure) {
-        let made = try await requests.fork(tree, request: request)
-        room.telemetry.event("fork_claim", properties: ["mode": "instant"])
+    forking.run { [self] answer in
+      switch answer {
+      case .copy(let made):
         copy = made
         listed(room.roadmaps.map(\.id))
-        guard (try? await wait(Self.arrivalWait)) != nil, forking == .running else { return }
-        forking = .idle
-      } catch {
-        forking = error == .signedOut ? .idle : .failed
-        let outcome = switch error {
-        case .offline: "offline"
-        case .signedOut: "unauthenticated"
-        case .refused: "refused"
-        case .busy: "busy"
-        case .failed, .cancelled: "failed"
+        Task { [wait = room.wait] in
+          guard (try? await wait(Self.arrivalWait)) != nil else { return }
+          forking.settle()
         }
-        room.telemetry.event("fork_attempt", properties: ["mode": "instant", "outcome": outcome])
-        if error == .signedOut { ask(under: credential) }
+      case .signIn(let credential): ask(under: credential)
+      case .nothing: break
       }
     }
   }
@@ -322,8 +301,8 @@ final class PastedRoadmap {
 
   // The person's list as it now stands: the copy a fork made has arrived once it holds it.
   func listed(_ ids: [String]) {
-    guard let copy, forking == .running, ids.contains(copy) else { return }
-    forking = .idle
+    guard let copy, let forking, forking.state == .running, ids.contains(copy) else { return }
+    forking.settle()
   }
 
   // The list went: what it followed is let go, so nothing of the roadmap is kept on the phone.
@@ -343,14 +322,14 @@ struct ForkFirst: ViewModifier {
 
   func body(content: Content) -> some View {
     content.reachBand {
-      if let pasted, case .readable = pasted.state, pasted.copy == nil || pasted.forking == .running {
+      if let pasted, case .readable = pasted.state, pasted.copy == nil || pasted.forking?.state == .running {
         VStack(spacing: 0) {
           if let line = pasted.forkLine {
             RoomTransient(message: line, room: .roadmap, type: .subheadline).accessibilityIdentifier("roadmap-attach-fork-band")
           }
           glass(Button { pasted.fork() } label: {
             Group {
-              if pasted.forking == .running { Label { Text("Forking…") } icon: { ProgressView() } }
+              if pasted.forking?.state == .running { Label { Text("Forking…") } icon: { ProgressView() } }
               else if pasted.sources?.signedIn() == false { Text("Sign In to Fork") }
               else { Text("Fork Roadmap") }
             }.font(.body.weight(.semibold)).frame(maxWidth: .infinity)

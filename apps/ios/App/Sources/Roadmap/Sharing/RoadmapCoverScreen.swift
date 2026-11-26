@@ -34,7 +34,7 @@ struct RoadmapCoverScreen: View {
           switch stacked.visit {
           case .step(let step, _): RoadmapStepPage(roadmap: cover.room, step: step)
           case .history(let step): StepHistory(roadmap: cover.room, step: step)
-          case .roadmaps, .activity, .note, .attach, .roadmap: EmptyView()
+          case .roadmaps, .activity, .note, .attach, .roadmap, .gallery: EmptyView()
           }
         }
     }.environment(cover)
@@ -137,14 +137,14 @@ struct ForkFoot: View {
       }
       glass(Button { cover.fork() } label: {
         Group {
-          if cover.forking == .running {
+          if cover.forking.state == .running {
             Label { Text("Forking…") } icon: { ProgressView() }
           } else {
             Text("Fork Roadmap")
           }
         }.font(.body.weight(.semibold)).frame(maxWidth: .infinity)
       }).buttonBorderShape(.capsule).controlSize(.large).tint(RoadmapPalette.accent)
-        .disabled(!cover.online || cover.forking == .running)
+        .disabled(!cover.online || cover.forking.state == .running)
         .padding(.horizontal, RoomSpace.inset).padding(.vertical, 6)
         .accessibilityIdentifier("roadmap-fork")
     }
@@ -152,7 +152,7 @@ struct ForkFoot: View {
 
   var line: String? {
     if !cover.online { return String(localized: "Forking needs a connection.") }
-    if cover.forking == .failed { return String(localized: "Couldn’t fork this roadmap. Try again.") }
+    if cover.forking.state == .failed { return String(localized: "Couldn’t fork this roadmap. Try again.") }
     return nil
   }
 

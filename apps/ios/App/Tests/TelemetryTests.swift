@@ -248,6 +248,42 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(TelemetryPrivacy.properties(["act": "guide", "outcome": "ok"]) == ["act": .label("guide"), "outcome": .label("ok")])
   }
 
+  // Share, Export and the public gallery (Roadmap on iOS §11): each step by its kind, a fork by its mode, and nothing of a
+  // roadmap, its address, its file or a page of the gallery.
+  @Test func shareExportAndTheGalleryTellTheirStepsAndNothingOfARoadmap() {
+    let events = ["roadmap_verb", "roadmap_export", "roadmap_gallery", "fork_attempt", "fork_claim"]
+    #expect(events.filter(TelemetryPrivacy.events.contains) == events)
+    for step in ["open", "link", "copy", "sign_in"] {
+      #expect(TelemetryPrivacy.properties(["verb": "share", "step": step, "url": "https://windmill.works/t/t_0000000000000001"]) ==
+              ["verb": .label("share"), "step": .label(step)])
+    }
+    for (step, outcome) in [("publish", "ok"), ("private", "ok"), ("publish", "failed")] {
+      #expect(TelemetryPrivacy.properties(["verb": "share", "step": step, "outcome": outcome, "title": "Learn to sail"]) ==
+              ["verb": .label("share"), "step": .label(step), "outcome": .label(outcome)])
+    }
+    for door in ["menu", "more"] {
+      #expect(TelemetryPrivacy.properties(["step": "open", "door": door, "file": "Learn to sail.md"]) == ["step": .label("open"), "door": .label(door)])
+      for outcome in ["saved", "cancelled", "failed"] {
+        #expect(TelemetryPrivacy.properties(["outcome": outcome, "door": door]) == ["outcome": .label(outcome), "door": .label(door)])
+      }
+    }
+    for (step, outcome) in [("load", "available"), ("load", "empty"), ("page", "failed")] {
+      #expect(TelemetryPrivacy.properties(["step": step, "outcome": outcome, "cursor": "t_0000000000000005", "rows": "24"]) ==
+              ["step": .label(step), "outcome": .label(outcome)])
+    }
+    for mine in ["true", "false"] {
+      #expect(TelemetryPrivacy.properties(["step": "row", "mine": mine, "tree": "t_0000000000000001"]) == ["step": .label("row"), "mine": .label(mine)])
+    }
+    for step in ["open", "retry", "copy"] { #expect(TelemetryPrivacy.properties(["step": step]) == ["step": .label(step)]) }
+    #expect(TelemetryPrivacy.properties(["mode": "browse", "outcome": "signed_out"]) == ["mode": .label("browse"), "outcome": .label("signed_out")])
+    #expect(TelemetryPrivacy.properties(["write": "visibility", "refusal": "notARoot"]) == ["write": .label("visibility"), "refusal": .label("notARoot")])
+    #expect(TelemetryPrivacy.properties(["step": "switch", "door": "gallery"]) == ["step": .label("switch"), "door": .label("gallery")])
+    for operation in ["roadmap_gallery", "roadmap_export"] {
+      #expect(TelemetryPrivacy.properties(["operation": operation, "failure_kind": "decode", "route": "/v1/gallery"]) ==
+              ["operation": .label(operation), "failure_kind": .label("decode"), "route": .label("/v1/gallery")])
+    }
+  }
+
   @Test func theGraphTellsItsSwitchItsSelectionAndItsReportsAndNothingOfAStep() {
     let events = ["roadmap_view_switch", "roadmap_graph_select", "roadmap_board_step_open", "roadmap_board_create", "roadmap_whats_next",
                   "roadmap_graph_fit"]

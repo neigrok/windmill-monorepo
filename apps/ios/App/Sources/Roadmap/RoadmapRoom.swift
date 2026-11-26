@@ -4,10 +4,10 @@ import RoadmapDomain
 
 // The Roadmap room (Roadmap · iOS S.1, S.2, 01.3, 01.5, 01.5b, 01.5c, 02.10, 02.16, 04.5, 04.7, 07.3, 10.5b, 11.22a): one stack,
 // the open roadmap under its name with the switch row, its Board or its Graph, and at the foot the one band over New step,
-// whose long press also offers Paste Steps. All Roadmaps, Activity, a step's page, its note and its History, the list a
-// roadmap is attached from, and each roadmap gone into with its own screens are pushed on the stack; New Roadmap, Set
-// Aside, Paste Steps, the step form, Kinds and the Guide are its sheets, and a reader's cover of a roadmap someone else
-// shared stands over it full screen. What the band says is announced and felt once, whichever screen stands over it, and
+// whose long press also offers Paste Steps. All Roadmaps, the public gallery, Activity, a step's page, its note and its
+// History, the list a roadmap is attached from, and each roadmap gone into with its own screens are pushed on the stack;
+// New Roadmap, Share, Set Aside, Paste Steps, the step form, Kinds, the Guide and the system's exporter are its sheets,
+// and a reader's cover of a roadmap someone else shared stands over it full screen. What the band says is announced and felt once, whichever screen stands over it, and
 // the room offers the band a change of theirs that met one made elsewhere only while it stands before them, on screen
 // in the foreground with no sheet of the shell's over it. While the Graph's Fit stands, the bar, the switch row and the foot are away; while several steps are
 // selected the bar and the bottom toolbar are the selection's.
@@ -41,6 +41,7 @@ struct RoadmapRoom: View {
       .onChange(of: onScreen && scenePhase == .active && app.sheet == nil, initial: true) { _, faces in roadmap.faces = faces }
       .environment(app)
       .sheet(item: Binding(get: { roadmap.newRoadmap }, set: { if $0 == nil { roadmap.newRoadmap?.cancel() } })) { NewRoadmap(draft: $0) }
+      .sheet(item: Binding(get: { roadmap.share }, set: { roadmap.share = $0 })) { RoadmapShare(share: $0, app: app) }
       .sheet(isPresented: Binding(get: { roadmap.landed.listOpen }, set: { roadmap.landed.listOpen = $0 })) { SetAsideSheet(roadmap: roadmap) }
       .modifier(RoomSheets(roadmap: roadmap.deepest, app: app))
       .fullScreenCover(item: Binding(get: { roadmap.links?.cover }, set: { if $0 == nil { roadmap.links?.cover?.close(.closed) } })) { cover in
@@ -140,6 +141,7 @@ struct RoadmapScreen: View {
     case .history(let step): StepHistory(roadmap: roadmap, step: step)
     case .attach(let step): AttachRoadmap(roadmap: roadmap, step: step)
     case .roadmap: RoadmapInside(roadmap: roadmap, app: app)
+    case .gallery: PublicGalleryScreen(roadmap: roadmap, app: app)
     }
   }
 }
@@ -186,7 +188,7 @@ struct RoadmapViews: View {
 }
 
 // The sheets the room on top of the stack raises over its screens, the root's or the deepest roadmap's gone into: Paste
-// Steps, the step form, Kinds and the Guide. They stand on the stack, not on a screen, so a screen pushed over a roadmap gone into raises
+// Steps, the step form, Kinds, the Guide and the system's exporter. They stand on the stack, not on a screen, so a screen pushed over a roadmap gone into raises
 // them too. What the stack's one band says is announced and felt once, whichever screen stands over it.
 struct RoomSheets: ViewModifier {
   let roadmap: RoadmapModel
@@ -216,6 +218,7 @@ struct RoomSheets: ViewModifier {
         if case .landed = band.says { return }
         UIAccessibility.post(notification: .announcement, argument: band.says.words)
       }
+      .modifier(RoadmapExporter(roadmap: roadmap))
   }
 }
 
@@ -272,7 +275,8 @@ struct GlassCircle: ViewModifier {
 // The bar's title over the Board (Roadmap · iOS 01.3, 01.9, 01.10, 10.1, 10.5a): the open roadmap's name over its progress,
 // with Offline joined to it while the phone has no connection. Its menu leads with Set Aside while a change is set aside,
 // then lists the three most recent roadmaps, each over its progress and the open one checked, then All Roadmaps…, New
-// Roadmap, Guide, which counts the guides from above (08.5), Kinds, Activity, Rename and Delete Roadmap. Rename is the system's:
+// Roadmap, Guide, which counts the guides from above (08.5), Kinds, Activity, Share… (09.1a), Export (09.3), Rename and
+// Delete Roadmap. Rename is the system's:
 // it turns the bar into one field, whose return key commits a name and leaves the old one where the field was emptied.
 // Delete Roadmap asks under the title, on a view that stays on screen once the menu has closed. While several steps are
 // selected the title counts them, with no progress, no menu and no rename (02.10). The title stands on a view of its own behind the screen, which changes with it, so the screen
@@ -306,6 +310,8 @@ struct RoadmapTitle: ViewModifier {
     Button(GuideSheet.menuTitle(above: open.guidesAbove.count), systemImage: "book.closed") { roadmap.openGuide() }.tint(RoadmapPalette.ink)
     Button("Kinds", systemImage: "paintpalette") { roadmap.openKinds(from: .menu) }.tint(RoadmapPalette.ink)
     Button("Activity", systemImage: "clock.arrow.circlepath") { roadmap.showActivity() }.tint(RoadmapPalette.ink)
+    Button("Share…", systemImage: "square.and.arrow.up") { roadmap.openShare() }.tint(RoadmapPalette.ink)
+    Button("Export", systemImage: "doc.text") { roadmap.export(from: .menu) }.tint(RoadmapPalette.ink)
     RenameButton()
     Divider()
     Button("Delete Roadmap", systemImage: "trash", role: .destructive) { roadmap.askDelete(open.listed, from: .menu) }
