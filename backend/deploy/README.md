@@ -387,12 +387,16 @@ The repository registry is schema 15 / minimum 15. Every schema in that interval
 - **Digests.** [Digest resum 41101251226](https://github.com/neigrok/windmill-monorepo/actions/runs/41101251226)
   completed across three scopes and corrected two digests. Schema 15 drops and renames no field, so it needs no resum.
 
-Web Deploy promotes each web push to `main`
-once the live hello admits it. The last complete promotion is
-[run 41325909004](https://github.com/neigrok/windmill-monorepo/actions/runs/41325909004), source `6aabcde2`.
-The run before it, 41319412052, failed mid-rsync with no space left on the VPS; the host's free disk
-is not monitored. Queued client delivery and final native
-availability remain unverified. The deployment guard requires exact acknowledgement for any further minimum change.
+Web Deploy promotes each web push to `main` once the live hello admits it.
+
+- **The last complete promotion.**
+  [Run 45823176030](https://github.com/neigrok/windmill-monorepo/actions/runs/45823176030), attempt 3, source
+  `a9296288`, schema 15 / minimum 15. It was held at 14 / 11 until the deploy above. The live `index.html` and every
+  `assets/index-*` file match its release manifest's SHA-256.
+- **Not monitored:** the host's free disk.
+- **Unverified:** queued client delivery and final native availability.
+
+The deployment guard requires exact acknowledgement for any further minimum change.
 
 Schema 15 narrows roadmap's `meta.visibility` and `meta.reach` to private and public, and `reach` opens a roadmap at
 public alone (engine.md §2.4, A.1): Share has two states, and no roadmap holds `unlisted`. A rule clients enforce
