@@ -474,6 +474,22 @@ launches post their events to the same server, so `select name, props from event
 shows the journey's `first_run_choice` write and done_writing, `journal_line_saved` and the sync outcomes. Echoes stay
 dark on a local server, so the echo sheet is driven by the in-process `journal-echoes` boards instead.
 
+### The iOS Roadmap room's sharing against the backend
+
+`apps/ios/App/UITests/RoadmapIntegrationFlowTests.swift` reads the server origin from `WM_ROADMAP_E2E_SERVER`, two
+signed-in sessions from the JSON files at `WM_ROADMAP_E2E_OWNER` and `WM_ROADMAP_E2E_READER` (minted like the gym's
+`signed` identity above) and the title of a roadmap the owner holds from `WM_ROADMAP_E2E_ROADMAP`; pass each prefixed
+`TEST_RUNNER_`, or the test skips. The server runs with `ROADMAP_ENGINE_ENABLED=1`, and the owner's roadmap is planted
+through MCP (`roadmap_create_tree`, then `roadmap_import_subgraph` with steps, links and `progress`). Signed in as the
+owner, the test makes the roadmap public in Share, copies its link, exports it (the launch's `-roadmap-export
+roadmap-e2e.md` writes the file to the app's temporary folder, `xcrun simctl get_app_container <simulator>
+works.windmill.app data` then `tmp/`) and waits for *Backed up*; signed in as the reader, it makes a roadmap, opens
+*Planted in Public* from All Roadmaps, forks the owner's row and opens the copy once it has arrived by sync. Then
+`curl http://127.0.0.1:<port>/t/<id>` with no credential answers the roadmap's share page, the exported file goes
+through the web's importer in Node (`parsePlan`, `plantedRoadmap` and `ReplicaBirth.creation`), and
+`select name, props from events where props->>'platform'='ios'` holds `roadmap_verb`, `roadmap_export`,
+`roadmap_gallery`, `fork_attempt` and `fork_claim` with mode browse.
+
 ## What the server saw
 
 Every write logs one `write {…}` line with its `operation`, `product`, `door` (`mcp`, `sync`,
