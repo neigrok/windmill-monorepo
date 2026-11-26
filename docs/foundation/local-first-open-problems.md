@@ -100,7 +100,8 @@ A record keyed by what it is rather than by a fresh id — a weigh-in by its dat
 
 - **Web:** a signed-out weigh-in on a day the account already weighed in replaces the account's value at Add, though the
   question says "Add them"; a movement renamed signed out renames the account's; a default rest or rest sound set signed
-  out replaces the account's field by field, the later write winning, with nothing shown.
+  out replaces the account's field by field, the later write winning, with nothing shown. Settings are no primary type,
+  so an account whose only gym record is its settings holds none, and a sign-in there asks nothing before replacing them.
 - **iPhone, Android:** not surveyed; the merge is the engine's, the same on every surface.
 - **Open:** whether such a join keeps both, keeps the account's, or asks about each one.
 
