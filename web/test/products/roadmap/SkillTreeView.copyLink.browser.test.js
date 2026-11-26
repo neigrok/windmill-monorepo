@@ -111,10 +111,13 @@ for (const browserName of ['chromium', 'webkit']) {
     });
   }
 
+  // Only a public roadmap offers a step's link: any other visibility, unlisted among them, reads as private.
   for (const options of [
     { role: 'owner', visibility: 'public' },
     { role: 'owner', visibility: 'private' },
+    { role: 'owner', visibility: 'unlisted' },
     { role: 'reader', visibility: 'public' },
+    { role: 'reader', visibility: 'unlisted' },
     { role: 'reader', visibility: 'public', demo: true },
   ]) {
     hostTest(`${browserName}: the host keeps ${options.role} ${options.visibility}${options.demo ? ' demo' : ''} step-link recovery inside its existing authority`, async () => {

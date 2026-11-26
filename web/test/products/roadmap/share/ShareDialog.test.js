@@ -133,6 +133,25 @@ test('private visitors cannot publish or copy', async (t) => {
   assert.deepEqual(view.inputs(), []);
 });
 
+// A visibility that is neither private nor public, unlisted among them, fails closed: the dialog reads it as private.
+for (const visibility of ['unlisted', 'sideways']) {
+  test(`an owner's roadmap whose visibility reads ${visibility} is offered Publish, as a private one is`, async (t) => {
+    const view = await shareRoom(t, { visibility });
+    assert.deepEqual([
+      elementsOf(view.room.tree).filter((item) => item.type?.name === 'Button').map((item) => item.props.children),
+      elementsOf(view.room.tree).filter((item) => item.type === 'p').map(textOf), view.inputs(),
+    ], [['Publish and copy link'], ['Publishing makes this roadmap public. Anyone can view and fork it, and it can appear in the public gallery.'], []]);
+  });
+
+  test(`a visitor of a roadmap whose visibility reads ${visibility} cannot copy its link, as of a private one`, async (t) => {
+    const view = await shareRoom(t, { visibility, mine: false });
+    assert.deepEqual([view.button().props.disabled, elementsOf(view.room.tree).filter((item) => item.type === 'p').map(textOf), view.inputs()],
+      [true, ['This roadmap is private. Only its owner can publish it.'], []]);
+    await view.button().props.onClick();
+    assert.deepEqual(view.calls, []);
+  });
+}
+
 test('making private waits for confirmation and reports a retryable refusal', async (t) => {
   let fail = true;
   const view = await shareRoom(t, { visibility: 'public', request: () => fail
