@@ -38669,6 +38669,1567 @@
     }
   },
   {
+    "name": "a visibility outside private and public, unlisted among them, is refused invalid",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 3000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/t_0000000000000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "28bf5cc793a4f419e0c336324802cb9592f1fb7a8ff4f91797faa035d21fd4c6",
+            "governedBy": "tree:t_0000000000000001"
+          },
+          "acct:A/overlay/t_0000000000000004": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "c19732d4fa8dc6c0ccc5913bc291c45f778ec147b74d8afd9d58fbd6dce4e6fc",
+            "governedBy": "tree:t_0000000000000004"
+          },
+          "acct:A/roadmap": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 6,
+            "counters": {},
+            "digest": "074ba1b0fcef8ead463d5ffdf8b3288b98848c9b5aa4f954aa81232bf066a8a4"
+          },
+          "acct:B/overlay/t_0000000000000001": {
+            "kind": "overlay",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "93eccb3ea7a84271d75e60ff96a54809c84bc68086e6b3738cd2690600212c88",
+            "governedBy": "tree:t_0000000000000001"
+          },
+          "tree:t_0000000000000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {
+              "edge": 1,
+              "kind": 3,
+              "node": 2
+            },
+            "digest": "a24310ac1e7b6cf05ddc646a0f5df2483b868876d66d61e7e48b18080bb960e3",
+            "governedBy": "acct:A/roadmap#tree#t_0000000000000001"
+          },
+          "tree:t_0000000000000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {
+              "node": 2
+            },
+            "digest": "ad9d1f530bd0cc7828539cfa13a9619998f1dd49d57b7e010d52c1b7b2a36c90",
+            "governedBy": "acct:A/roadmap#tree#t_0000000000000002"
+          },
+          "tree:t_0000000000000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {
+              "node": 1
+            },
+            "digest": "14d7fedf793b0b8b523e5989c26f4198fe1db7fb43ee143ad5ac411230241123",
+            "governedBy": "acct:A/roadmap#tree#t_0000000000000003"
+          },
+          "tree:t_0000000000000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "node": 3
+            },
+            "digest": "5a77ae446f747152dc60a988d76f417fac14865b5ecfc14f59664f81c0a8124b",
+            "governedBy": "acct:A/roadmap#tree#t_0000000000000004"
+          },
+          "tree:t_0000000000000005": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "6a109b79772555a705eaf0d9bdd161f9c23e1d56459363b9c3b182674d1854f1",
+            "governedBy": "acct:A/roadmap#tree#t_0000000000000005"
+          },
+          "tree:t_0000000000000006": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 1,
+            "counters": {
+              "node": 1
+            },
+            "digest": "ceda7a74bece2eadfd2002f06f8664a716b94b702f47c6cb958f01a5c7b9df51",
+            "governedBy": "acct:A/roadmap#tree#t_0000000000000006",
+            "deadAt": 1700
+          }
+        },
+        "rows": {
+          "acct:A/overlay/t_0000000000000001": [
+            {
+              "t": "progress",
+              "id": "basics",
+              "f": {
+                "mark": [
+                  {
+                    "status": "complete",
+                    "outOfOrder": false
+                  },
+                  "1200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            }
+          ],
+          "acct:A/overlay/t_0000000000000004": [
+            {
+              "t": "pointer",
+              "id": "gone",
+              "life": [
+                "dead",
+                "1800:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "opens": [
+                  "t_0000000000000001",
+                  "1500:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 200,
+              "ru": 200
+            },
+            {
+              "t": "pointer",
+              "id": "rust",
+              "life": [
+                "alive",
+                "1500:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "opens": [
+                  "t_0000000000000001",
+                  "1500:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            }
+          ],
+          "acct:A/roadmap": [
+            {
+              "t": "tree",
+              "id": "t_0000000000000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000002",
+              "life": [
+                "alive",
+                "2000:0:srv"
+              ],
+              "born": "2000:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "tree": "t_0000000000000001",
+                    "step": "ownership"
+                  },
+                  "2000:0:srv"
+                ]
+              },
+              "seq": 2,
+              "rc": 200,
+              "ru": 200
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000003",
+              "life": [
+                "alive",
+                "3000:0:srv"
+              ],
+              "born": "3000:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "tree": "t_0000000000000002",
+                    "step": "lifetimes"
+                  },
+                  "3000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 300,
+              "ru": 300
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000004",
+              "life": [
+                "alive",
+                "1500:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1500:0:r_aaaaaaaaaaaa",
+              "seq": 4,
+              "rc": 400,
+              "ru": 400
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000005",
+              "life": [
+                "alive",
+                "2500:0:srv"
+              ],
+              "born": "2500:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "tree": "t_0000000000000001",
+                    "step": "macros"
+                  },
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 5,
+              "rc": 500,
+              "ru": 500
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000006",
+              "life": [
+                "dead",
+                "1700:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1600:0:r_aaaaaaaaaaaa",
+              "seq": 6,
+              "rc": 600,
+              "ru": 600
+            }
+          ],
+          "acct:B/overlay/t_0000000000000001": [
+            {
+              "t": "progress",
+              "id": "basics",
+              "f": {
+                "mark": [
+                  {
+                    "status": "complete",
+                    "outOfOrder": false
+                  },
+                  "1300:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            }
+          ],
+          "tree:t_0000000000000001": [
+            {
+              "t": "edge",
+              "id": [
+                "basics",
+                "ownership"
+              ],
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "kind",
+              "id": "build",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "description": [
+                  "",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "hue": [
+                  "terracotta",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "build",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "kind",
+              "id": "learn",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "description": [
+                  "",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "hue": [
+                  "olive",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "learn",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "kind",
+              "id": "milestone",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "description": [
+                  "",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "hue": [
+                  "gold",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "milestone",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a2",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "reach": [
+                  "public",
+                  "1100:0:srv"
+                ],
+                "title": [
+                  "Learn Rust",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "visibility": [
+                  "public",
+                  "1100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 300,
+              "ru": 300
+            },
+            {
+              "t": "node",
+              "id": "basics",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "basics",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "node",
+              "id": "macros",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "branch": [
+                  "t_0000000000000005",
+                  "2500:0:srv"
+                ],
+                "color": [
+                  "olive",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "macros",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a2",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 400,
+              "ru": 400
+            },
+            {
+              "t": "node",
+              "id": "ownership",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "branch": [
+                  "t_0000000000000002",
+                  "2000:0:srv"
+                ],
+                "color": [
+                  "olive",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "ownership",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 200,
+              "ru": 200
+            }
+          ],
+          "tree:t_0000000000000002": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "depth": [
+                  1,
+                  "2000:0:srv"
+                ],
+                "parent": [
+                  {
+                    "tree": "t_0000000000000001",
+                    "step": "ownership"
+                  },
+                  "2000:0:srv"
+                ],
+                "reach": [
+                  "public",
+                  "2000:0:srv"
+                ],
+                "root": [
+                  "t_0000000000000001",
+                  "2000:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "node",
+              "id": "borrowing",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "borrowing",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 200,
+              "ru": 200
+            },
+            {
+              "t": "node",
+              "id": "lifetimes",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "branch": [
+                  "t_0000000000000003",
+                  "3000:0:srv"
+                ],
+                "label": [
+                  "lifetimes",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 200,
+              "ru": 200
+            }
+          ],
+          "tree:t_0000000000000003": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "depth": [
+                  2,
+                  "3000:0:srv"
+                ],
+                "parent": [
+                  {
+                    "tree": "t_0000000000000002",
+                    "step": "lifetimes"
+                  },
+                  "3000:0:srv"
+                ],
+                "reach": [
+                  "public",
+                  "3000:0:srv"
+                ],
+                "root": [
+                  "t_0000000000000001",
+                  "3000:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "node",
+              "id": "deep",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "deep",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 200,
+              "ru": 200
+            }
+          ],
+          "tree:t_0000000000000004": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Reading",
+                  "1500:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "node",
+              "id": "gone",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "gone",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a1",
+                  "1500:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "node",
+              "id": "other",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "other",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a2",
+                  "1500:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "node",
+              "id": "rust",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "rust",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a0",
+                  "1500:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            }
+          ],
+          "tree:t_0000000000000005": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "depth": [
+                  1,
+                  "2500:0:srv"
+                ],
+                "parent": [
+                  {
+                    "tree": "t_0000000000000001",
+                    "step": "macros"
+                  },
+                  "2500:0:srv"
+                ],
+                "reach": [
+                  "private",
+                  "2500:0:srv"
+                ],
+                "root": [
+                  "t_0000000000000001",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            }
+          ],
+          "tree:t_0000000000000006": [
+            {
+              "t": "node",
+              "id": "x",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "x",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "tree/t_0000000000000001",
+        "d": [
+          {
+            "t": "meta",
+            "id": "meta",
+            "f": {
+              "visibility": [
+                "unlisted",
+                "5000:0:r_aaaaaaaaaaaa"
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 10000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "invalid"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 3000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/t_0000000000000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "28bf5cc793a4f419e0c336324802cb9592f1fb7a8ff4f91797faa035d21fd4c6",
+            "governedBy": "tree:t_0000000000000001"
+          },
+          "acct:A/overlay/t_0000000000000004": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "c19732d4fa8dc6c0ccc5913bc291c45f778ec147b74d8afd9d58fbd6dce4e6fc",
+            "governedBy": "tree:t_0000000000000004"
+          },
+          "acct:A/roadmap": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 6,
+            "counters": {},
+            "digest": "074ba1b0fcef8ead463d5ffdf8b3288b98848c9b5aa4f954aa81232bf066a8a4"
+          },
+          "acct:B/overlay/t_0000000000000001": {
+            "kind": "overlay",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "93eccb3ea7a84271d75e60ff96a54809c84bc68086e6b3738cd2690600212c88",
+            "governedBy": "tree:t_0000000000000001"
+          },
+          "tree:t_0000000000000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {
+              "edge": 1,
+              "kind": 3,
+              "node": 2
+            },
+            "digest": "a24310ac1e7b6cf05ddc646a0f5df2483b868876d66d61e7e48b18080bb960e3",
+            "governedBy": "acct:A/roadmap#tree#t_0000000000000001"
+          },
+          "tree:t_0000000000000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {
+              "node": 2
+            },
+            "digest": "ad9d1f530bd0cc7828539cfa13a9619998f1dd49d57b7e010d52c1b7b2a36c90",
+            "governedBy": "acct:A/roadmap#tree#t_0000000000000002"
+          },
+          "tree:t_0000000000000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {
+              "node": 1
+            },
+            "digest": "14d7fedf793b0b8b523e5989c26f4198fe1db7fb43ee143ad5ac411230241123",
+            "governedBy": "acct:A/roadmap#tree#t_0000000000000003"
+          },
+          "tree:t_0000000000000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "node": 3
+            },
+            "digest": "5a77ae446f747152dc60a988d76f417fac14865b5ecfc14f59664f81c0a8124b",
+            "governedBy": "acct:A/roadmap#tree#t_0000000000000004"
+          },
+          "tree:t_0000000000000005": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "6a109b79772555a705eaf0d9bdd161f9c23e1d56459363b9c3b182674d1854f1",
+            "governedBy": "acct:A/roadmap#tree#t_0000000000000005"
+          },
+          "tree:t_0000000000000006": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 1,
+            "counters": {
+              "node": 1
+            },
+            "digest": "ceda7a74bece2eadfd2002f06f8664a716b94b702f47c6cb958f01a5c7b9df51",
+            "governedBy": "acct:A/roadmap#tree#t_0000000000000006",
+            "deadAt": 1700
+          }
+        },
+        "rows": {
+          "acct:A/overlay/t_0000000000000001": [
+            {
+              "t": "progress",
+              "id": "basics",
+              "f": {
+                "mark": [
+                  {
+                    "status": "complete",
+                    "outOfOrder": false
+                  },
+                  "1200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            }
+          ],
+          "acct:A/overlay/t_0000000000000004": [
+            {
+              "t": "pointer",
+              "id": "gone",
+              "life": [
+                "dead",
+                "1800:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "opens": [
+                  "t_0000000000000001",
+                  "1500:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 200,
+              "ru": 200
+            },
+            {
+              "t": "pointer",
+              "id": "rust",
+              "life": [
+                "alive",
+                "1500:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "opens": [
+                  "t_0000000000000001",
+                  "1500:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            }
+          ],
+          "acct:A/roadmap": [
+            {
+              "t": "tree",
+              "id": "t_0000000000000001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000002",
+              "life": [
+                "alive",
+                "2000:0:srv"
+              ],
+              "born": "2000:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "tree": "t_0000000000000001",
+                    "step": "ownership"
+                  },
+                  "2000:0:srv"
+                ]
+              },
+              "seq": 2,
+              "rc": 200,
+              "ru": 200
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000003",
+              "life": [
+                "alive",
+                "3000:0:srv"
+              ],
+              "born": "3000:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "tree": "t_0000000000000002",
+                    "step": "lifetimes"
+                  },
+                  "3000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 300,
+              "ru": 300
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000004",
+              "life": [
+                "alive",
+                "1500:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1500:0:r_aaaaaaaaaaaa",
+              "seq": 4,
+              "rc": 400,
+              "ru": 400
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000005",
+              "life": [
+                "alive",
+                "2500:0:srv"
+              ],
+              "born": "2500:0:srv",
+              "f": {
+                "parent": [
+                  {
+                    "tree": "t_0000000000000001",
+                    "step": "macros"
+                  },
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 5,
+              "rc": 500,
+              "ru": 500
+            },
+            {
+              "t": "tree",
+              "id": "t_0000000000000006",
+              "life": [
+                "dead",
+                "1700:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1600:0:r_aaaaaaaaaaaa",
+              "seq": 6,
+              "rc": 600,
+              "ru": 600
+            }
+          ],
+          "acct:B/overlay/t_0000000000000001": [
+            {
+              "t": "progress",
+              "id": "basics",
+              "f": {
+                "mark": [
+                  {
+                    "status": "complete",
+                    "outOfOrder": false
+                  },
+                  "1300:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            }
+          ],
+          "tree:t_0000000000000001": [
+            {
+              "t": "edge",
+              "id": [
+                "basics",
+                "ownership"
+              ],
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "kind",
+              "id": "build",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "description": [
+                  "",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "hue": [
+                  "terracotta",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "build",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "kind",
+              "id": "learn",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "description": [
+                  "",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "hue": [
+                  "olive",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "learn",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "kind",
+              "id": "milestone",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "description": [
+                  "",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "hue": [
+                  "gold",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "milestone",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a2",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "reach": [
+                  "public",
+                  "1100:0:srv"
+                ],
+                "title": [
+                  "Learn Rust",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "visibility": [
+                  "public",
+                  "1100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 300,
+              "ru": 300
+            },
+            {
+              "t": "node",
+              "id": "basics",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "basics",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "node",
+              "id": "macros",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "branch": [
+                  "t_0000000000000005",
+                  "2500:0:srv"
+                ],
+                "color": [
+                  "olive",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "macros",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a2",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 400,
+              "ru": 400
+            },
+            {
+              "t": "node",
+              "id": "ownership",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "branch": [
+                  "t_0000000000000002",
+                  "2000:0:srv"
+                ],
+                "color": [
+                  "olive",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "label": [
+                  "ownership",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 200,
+              "ru": 200
+            }
+          ],
+          "tree:t_0000000000000002": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "depth": [
+                  1,
+                  "2000:0:srv"
+                ],
+                "parent": [
+                  {
+                    "tree": "t_0000000000000001",
+                    "step": "ownership"
+                  },
+                  "2000:0:srv"
+                ],
+                "reach": [
+                  "public",
+                  "2000:0:srv"
+                ],
+                "root": [
+                  "t_0000000000000001",
+                  "2000:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "node",
+              "id": "borrowing",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "borrowing",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 200,
+              "ru": 200
+            },
+            {
+              "t": "node",
+              "id": "lifetimes",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "branch": [
+                  "t_0000000000000003",
+                  "3000:0:srv"
+                ],
+                "label": [
+                  "lifetimes",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 200,
+              "ru": 200
+            }
+          ],
+          "tree:t_0000000000000003": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "depth": [
+                  2,
+                  "3000:0:srv"
+                ],
+                "parent": [
+                  {
+                    "tree": "t_0000000000000002",
+                    "step": "lifetimes"
+                  },
+                  "3000:0:srv"
+                ],
+                "reach": [
+                  "public",
+                  "3000:0:srv"
+                ],
+                "root": [
+                  "t_0000000000000001",
+                  "3000:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "node",
+              "id": "deep",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "deep",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 200,
+              "ru": 200
+            }
+          ],
+          "tree:t_0000000000000004": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Reading",
+                  "1500:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "node",
+              "id": "gone",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "gone",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a1",
+                  "1500:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "node",
+              "id": "other",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "other",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a2",
+                  "1500:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            },
+            {
+              "t": "node",
+              "id": "rust",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "rust",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "ord": [
+                  "a0",
+                  "1500:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            }
+          ],
+          "tree:t_0000000000000005": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "depth": [
+                  1,
+                  "2500:0:srv"
+                ],
+                "parent": [
+                  {
+                    "tree": "t_0000000000000001",
+                    "step": "macros"
+                  },
+                  "2500:0:srv"
+                ],
+                "reach": [
+                  "private",
+                  "2500:0:srv"
+                ],
+                "root": [
+                  "t_0000000000000001",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            }
+          ],
+          "tree:t_0000000000000006": [
+            {
+              "t": "node",
+              "id": "x",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "x",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 100,
+              "ru": 100
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
     "name": "a reader's visibility is refused forbidden",
     "input": {
       "state": {

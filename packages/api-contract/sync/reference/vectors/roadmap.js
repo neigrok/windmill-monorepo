@@ -243,6 +243,7 @@ function visibilities() {
     admitted('a visibility restamped with the value the root holds writes no reach', base, visibility(R, 'public', a(5000))),
     admitted('a root with no subtree takes its visibility as its reach', base, visibility(Y, 'public', a(5000))),
     admitted('a visibility written on a subtree is refused not-a-root', base, visibility(S, 'private', a(5000))),
+    admitted('a visibility outside private and public, unlisted among them, is refused invalid', base, visibility(R, 'unlisted', a(5000))),
     admitted('a reader\'s visibility is refused forbidden', base, visibility(R, 'private', b(5000)), READER),
     admitted('the server\'s door writes a root\'s visibility as the owner does', base, visibility(R, 'private', null), DOOR),
     admitted('an Undo restoring the earlier visibility writes the branch\'s reach back', base, restore(a(1100))),
