@@ -1450,7 +1450,8 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
     the export lines wrap at 1440. *Preparing…* is the design system's disabled Button, where SO3 draws the button at
     55 % opacity. The result line enters with `wm-fade-in-up`, a fade and an 8 px rise, where SO4 draws a fade; no
     product-neutral fade keyframe exists. A lapsed seat, a session gone while the browser holds the account's copy, keeps
-    the sign-in door alone, which no board draws (LP-1).
+    the sign-in door alone, which no board draws (LP-1); its one line is the signed-out page's, *Sign in for your
+    profile, sessions and connected tools.*, which there reads as if the rest of Settings worked without signing in.
 ### Sets · product direction
 
 Sets have no type on any surface. Targets are references: actual weight/reps remain independent for every set, including extra or

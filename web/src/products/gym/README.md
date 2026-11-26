@@ -293,14 +293,17 @@ workout the account cannot take kept as finished from In this browser (WD9.1, WD
 a workout deleted signed out, counted by its changes, whose start the account refuses after Add with nothing saved or
 said; and a start that lost the race to the phone's, its toast clear of the rack at 1440 and 390 and its sets kept
 (WD4.3). `WM_GYM_SHOTS` names a folder for their screenshots.
-`workout.browser.test.js` runs a workout in Chromium the same way: started from a routine and empty, a set logged and
-corrected, a plan edit, Finish and the discard; Log set tapped in two tabs on one offer logs one set and the second tap is
-quiet; a plan edit another tab made stale is refused with its draft kept, and Save mine writes it; a set logged with no
-connection is kept through a reload, taken by the reference server once it answers and drawn after; the tab's title and
-favicon follow the rest clock; Enter lands a field and logs nothing; a step of the ladder and of the reps in each of two tabs
-both count; the rest is told once across two tabs; a settle that fails is reported, said and tried again; Edit sets closes
-when a set lands on its movement; and Pop out's open is told and its refusal reported. Its page loads the app's fonts, and
-`WM_WORKOUT_SHOTS` names a folder for the logging page at 1440 and 390. Coach during a workout has a file of
+`workout.browser.test.js` runs a workout in Chromium the same way, over `workoutFixture.mjs`: started from a routine and
+empty, a set logged and corrected, a plan edit, Finish and the discard; Log set tapped in two tabs on one offer logs one set
+and the second tap is quiet; a plan edit another tab made stale is refused with its draft kept, and Save mine writes it; a
+set logged with no connection is kept through a reload, taken by the reference server once it answers and drawn after;
+Enter lands a field and logs nothing; a step of the ladder and of the reps in each of two tabs both count; a settle that
+fails is reported, said and tried again; Edit sets closes when a set lands on its movement; and Pop out's open is told and
+its refusal reported. `workoutRest.browser.test.js`, over the same fixture, holds the rest: the tab's title and favicon
+follow its clock; the rest is told once across two tabs; a new default rest the rest has passed is told at once, sounded by
+a Rest sound turned on after Log set and quiet with it off (WD10.7); and turning the rack to a movement whose rest has
+passed tells nothing. The fixture's page loads the app's fonts, and `WM_WORKOUT_SHOTS` names a folder for the logging page
+at 1440 and 390. Coach during a workout has a file of
 its own, `coach/coachDuringWorkout.browser.test.js`, over the engine's reference server with a phone of the account, its AI
 service played round by round: Coach in the rail beside the rack, its change applied and the conversation kept through a flip
 of the tabs (WD7.1, WD7.2); a resize from a desk to a phone and back, which keeps it; the sheet at a phone's width, its change
