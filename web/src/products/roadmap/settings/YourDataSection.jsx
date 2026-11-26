@@ -42,11 +42,11 @@ export function YourDataSection() {
 
   return (
     <Section title={t('roadmap.export.title')}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <div style={styles.actionRow}>
         <Button variant="secondary" size="sm" disabled={exportPhase === 'working'} onClick={runExport}>
           {exportPhase === 'working' ? t('roadmap.export.preparing') : t('roadmap.export.action')}
         </Button>
-        <span style={styles.calmLine}>{t('roadmap.export.detail')}</span>
+        <span style={styles.actionLine}>{t('roadmap.export.detail')}</span>
       </div>
       {exportNote && (
         <p style={{ ...styles.metaText, color: exportPhase === 'error' ? 'var(--color-danger)' : 'var(--accent-olive-600)', marginTop: 6 }}>

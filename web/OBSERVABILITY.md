@@ -187,10 +187,14 @@ metadata's write failed, the stores before the refusal gone and the rest
 tried again at the next sign-out; a sign-out that finds none emits nothing. Only `failed` also reports
 `journal-restore`, `journal-discard` or `journal-forget` with the error's stack. No day, page body, scale, claim
 identifier, store key or account is reported.
-Settings' export emits `journal_export` with `outcome`: `ok`, `first_pull_timeout` (a bound replica's first pull of
-the journal did not end within 30 seconds), `replica_changed` (the account changed while it waited), `no_replica` (the
-browser holds no open replica) or `failed`, which alone also reports `journal-export` with the error's stack and `step`:
-`pages` (reading the pages), `file` (writing them as Markdown) or `download` (handing the file to the browser).
+Settings' export emits `journal_export` once a press with `seat` (`signed_out` where the replica it reads is the browser's
+own, `signed_in` where it is an account's) and `outcome`: `ok`, `empty` (the replica held no written page, so no file was
+handed over), `first_pull_timeout` (a bound replica's first pull of the journal did not end within 30 seconds),
+`replica_changed` (the account changed while it waited), `no_replica` (the browser holds no open replica) or `failed`, any
+other error, which alone also reports `journal-export` with the error's stack and `step`: `pages` (reading the pages),
+`file` (writing them as Markdown) or `download` (handing the file to the browser). The section's count of those pages
+before any press reports `journal-export` with `step: count` once where it cannot read them, and no event; the export
+stays offered.
 Search by meaning emits `journal_search_meaning` once for each opening of search, as its model comes up or does not,
 however often the pages change while it is open: `outcome` `ready`; `needs_connection` (the engine says the browser is
 offline or the server unreachable, and search by meaning never came up in this browser, so the search says it needs a
@@ -227,6 +231,11 @@ note save/reorder, bodyweight save, set/session correction, session import, prop
 delete, Undo, refusal and `workout-adopt`, the hook before the seat changes saving each signed-out workout for adoption in
 an act of its own, told once when it saved something (`saved-local`) and once for each workout refused or failed. Outcomes are `saved-local`, `unchanged` (a clean draft or a rename to the
 name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`.
+Settings' Default rest and Rest sound (WD10) tell `gym_preference_changed` in its place, once per change, through
+`preferenceStep` in `gymRuntime.js`: `setting` (`rest_default` or `rest_sound`) and `outcome`, `saved` once the copy holds it,
+`not_stored` when the copy could not keep it, `refused` when the gym refused the value or the replica moved under the save,
+and `failed` for any other failure, which alone also reports `gym-rest-save` with the error's stack frames; never the value.
+A store failure there is the engine's to report.
 A sign-in question in gym's count (WD9) tells `gym_signin_decision` with `step` (`shown` as it is asked, then `add`,
 `discard` or `cancel`) and `count_bucket` (`0/1/2-5/6-20/21+`), what it counted: the browser's workouts, routines,
 weigh-ins, movements and settings, or its changes where it holds none of them. How a copy In this browser
@@ -261,7 +270,9 @@ workout`), `gym_workout_plan_changed` (one per kind of edit a save makes, `actio
 movement in hand changed from the index, the arrows, the dots, a swipe or Next), each with `outcome` `ok`, `refused` with
 `code` (`not-writable` or `domain`) and, for a plan another tab or device changed first, `reason: stale`, or `failed`. The
 page tells `gym_rest_target_reached` (`screen: workout`) once per rest, from the tab the sync engine leads from (a tab on
-screen whenever one is) when it draws the workout, as the rest comes to its target; `gym_hidden_workout` (`action: hide` as the page is left with the
+screen whenever one is) when it draws the workout, as the rest comes to its target or, for a rest the tab drew short of its
+target, as a new default rest puts the target behind it; the tone and the buzz it plays while Rest sound is on are not
+reported; `gym_hidden_workout` (`action: hide` as the page is left with the
 workout open, `action: open` with `door: bar` from the bar over the tab rail); `gym_workout_popped_out` (`screen: workout`,
 `outcome` `ok` or `failed`) as Pop out opens its window or the browser refuses it; and the receipt's
 `gym_receipt_plan_saved` (`outcome`) when Done saves the plan's changes to the routine. An unexpected failure of a workout's

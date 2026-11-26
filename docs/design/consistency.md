@@ -1434,17 +1434,24 @@ exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `Onbo
   - *Edit movement (WD3.1).* It opens the movement's record, which renames it; the web has no form for its equipment.
   - *A stale plan edit (WD5.1).* The drawn heading, *{movement} changed in another tab.*, stands also when a phone or
     Coach changed the plan.
-  - *The rest preference.* The web reads the lifter's own rest target and rest sound and writes neither; a movement's rest
-    in this workout is Edit sets' *Rest*. WD10 (`2181:16061`, 🚧 awaiting the owner) draws both in Settings · Your
-    training log, and the Shell file's Settings signed out (`390:2417`, 🚧) draws the same rows signed out.
-  - *Where WD10 meets the phones.* Neither phone sets `restSeconds` or `restSound`: the shared vector "phone creates only
-    its three preferences" and engine.md (*Phones edit units, confirmHaptic, confirmSound*) pin that. No shared vector
-    covers `RestTarget.of`, which every surface reads the default through while it draws, so a changed default reaches
-    an open workout's movements on Default. The iPhone gates the rest-reached haptic on `confirmHaptic` where WD2.4 gates
-    the web's tone on `restSound`. The web's Settings keeps Units, which the phones dropped (9r).
-  - *The web's settings words.* `gym.settings.notSaved` is written lower-case at the section's foot where the gym's other
-    sentences are capitalised; the journal's export downloads a file holding only its title when there are no pages, and
-    then says *No pages to export yet.*, where Settings signed out (SO5) draws no button at all.
+  - *The default rest (WD10, approved 2026-11-26).* Settings · Your training log sets Default rest and Rest sound on both
+    seats; a movement's rest in this workout stays Edit sets' *Rest*. While a workout is open, the Default rest line names
+    it only when one of its movements is on Default, where WD10.6 names any open workout. At 390 the open listbox runs
+    below the fold under the signed-in page's Profile, which is taller than WD10.2 draws; the page scrolls it into reach.
+  - *Where WD10 meets the phones.* Neither phone draws the rows or writes `restSeconds` or `restSound`; whether they get
+    WD10's rows is the owner's (WD10 READ ME, question 2). The web writes both through `SaveRestSettings`, whose vectors
+    (`rest-settings-actions.json`) both phones list as not applicable and whose bound (`prefs.restSeconds` 15–900) sits in
+    the web's rule book alone. No shared vector covers `RestTarget.of`, which every surface reads the default through
+    while it draws, so a changed default reaches an open workout's movements on Default. The iPhone gates the
+    rest-reached haptic on `confirmHaptic` where the web gates its tone and buzz on `restSound`. The web's Settings keeps
+    Units, which the phones dropped (9r).
+  - *Settings signed out (Shell `390:2417`, approved 2026-11-26).* The page keeps the shell's header and the account card
+    signed-in Settings has, where SO2–SO6 draw a bare column, so the column is about 498 px where the boards draw 540 and
+    the export lines wrap at 1440. *Preparing…* is the design system's disabled Button, where SO3 draws the button at
+    55 % opacity. The result line enters with `wm-fade-in-up`, a fade and an 8 px rise, where SO4 draws a fade; no
+    product-neutral fade keyframe exists. A lapsed seat, a session gone while the browser holds the account's copy, keeps
+    the sign-in door alone, which no board draws (LP-1); its one line is the signed-out page's, *Sign in for your
+    profile, sessions and connected tools.*, which there reads as if the rest of Settings worked without signing in.
 ### Sets · product direction
 
 Sets have no type on any surface. Targets are references: actual weight/reps remain independent for every set, including extra or
@@ -2249,8 +2256,11 @@ Android. It and the product differ in these places.
   (`2150:11608`) says its parts join Components · Gym web when the build lands; WD1–WD9 are built and the parts stay
   local. The Shell file's ✅ section *Where to start? · the Roadmap door* (`326:7899`) holds boards named 🔨 In dev
   (`326:7900`, `326:7971`).
-- **The Design System's Select** (`294:129`) draws rows about 100 px tall, where `forms/Select.jsx` draws compact ones;
-  WD3.2 and WD10 draw a compact local part.
+- **The Design System's Select** (`294:129`) draws rows about 100 px tall and no compact variant, where `forms/Select.jsx`
+  is a combobox with compact rows and a `compact` variant (a mono value, the listbox under the trigger's right edge) that
+  WD3.2 and WD10 draw as a local part.
+- **The home door's gym accent.** The Design System's `Brand:light/shell/home/gym/accent` is `#137A6C` in the file, as gym's
+  day is verdigris (owner, 2026-11-26); its subscribers see iris until the owner publishes the library.
 - **The Shell file's Settings boards.** Board 21 (`2:203`) lags the code (no Back, another Profile section, no Notes
   door), and boards 21 and 30 (`2:464`) show a real account's name and email where boards use example data. The Gym
   file's signed-in WD frames draw the signed-out seat in the head.
@@ -2306,5 +2316,9 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
   interpolation; remove or reconcile it before use. The signup asset is not selected by the sender.
 - **F25 · Changelog.** The public changelog contains only July entries. Keep its material-change
   record consistent with the commitment in Terms.
+- **The /gym landing boards against the build.** The Marketing file's /gym approval card says *end a coach link* where
+  the build says *end a share link*; its *shell /gym* board labels the no-JS button `#FFFFFF` where
+  `build-landing-shells.mjs` writes `#F9F5EB`; and its `Core / Button` is 50 px tall where the live hero buttons are 54 px
+  with 18 px labels.
 - **F27 · Nudge template.** `ResendNudgeSender.cpp` references `journal-nudge`, but no template
   is checked into `web/emails/`. Recover and version its source before editing its copy.
