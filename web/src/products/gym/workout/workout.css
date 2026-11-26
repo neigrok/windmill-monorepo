@@ -42,7 +42,7 @@
 .gym-live-rail i.is-landed { background: var(--color-brand); }
 .gym-live-rail i.is-in-hand { background: transparent; border-left: 1px solid var(--color-brand); }
 .gym-live-add { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; padding: 12px; border: 0; background: transparent;
-  color: var(--color-brand); font: 700 14px/20px var(--font-body); cursor: pointer; }
+  color: var(--text-link); font: 700 14px/20px var(--font-body); cursor: pointer; }
 .gym-live-add:disabled { opacity: 0.45; cursor: default; }
 
 /* ── The task pane: the movement in hand, or the panel that steps the rack aside ── */
@@ -55,7 +55,7 @@
 .gym-live-step:disabled { color: var(--gym-ink-faint); opacity: 0.4; cursor: default; }
 .gym-live-movement-head .wm-menu { min-width: 0; justify-content: center; }
 .gym-live-movement-head .wm-menu-open.is-labelled { min-width: 0; max-width: 100%; color: var(--gym-ink); }
-.gym-live-movement-head .wm-menu-open.is-labelled > svg:first-child { color: var(--color-brand); flex: none; }
+.gym-live-movement-head .wm-menu-open.is-labelled > svg:first-child { color: var(--text-link); flex: none; }
 .gym-live-movement-title { font: 700 17px/24px var(--font-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The dots sit 8px under the head and take their 6px in the column; each button's 14px reaches past them. */
 .gym-live-dots { display: flex; justify-content: center; align-items: center; gap: 0; height: 6px; margin-top: -8px; }
@@ -71,7 +71,7 @@
 .gym-live-since { color: var(--gym-ink); margin-left: auto; }
 .gym-live-target { color: var(--gym-ink-faint); }
 .gym-live-clocks.is-reached .gym-live-since > svg,
-.gym-live-clocks.is-reached .gym-live-since-value { color: var(--color-brand); }
+.gym-live-clocks.is-reached .gym-live-since-value { color: var(--text-link); }
 
 /* The ledger (Gym / Workout / Ledger row): 44px rows, a hairline beneath each but the last. */
 .gym-live-ledger { list-style: none; margin: 0; padding: 4px 0; border-radius: var(--gym-card-radius); background: var(--gym-surface); touch-action: pan-y; }
@@ -84,7 +84,7 @@
 .gym-live-reading { flex: 1; min-width: 0; font: 400 16px/20px var(--font-mono); font-variant-numeric: tabular-nums; }
 .gym-live-row.is-logged .gym-live-reading { color: var(--gym-ink); }
 .gym-live-row.is-logged svg { color: var(--gym-ink-faint); }
-.gym-live-row.is-current .gym-live-ordinal { color: var(--color-brand); }
+.gym-live-row.is-current .gym-live-ordinal { color: var(--text-link); }
 .gym-live-row.is-current .gym-live-reading { color: var(--gym-ink-dim); }
 .gym-live-in-hand { flex: none; width: 8px; height: 8px; border-radius: var(--radius-full); background: var(--color-brand); }
 .gym-live-row.is-arrived { animation: gym-live-arrived 1200ms var(--ease-soft); }
@@ -100,7 +100,7 @@
 .gym-live-fix-delete:hover { color: var(--alarm-ink); }
 .gym-live-refusal { flex-basis: 100%; margin: 0; padding: 0 0 8px 28px; font: 400 13px/18px var(--font-body); color: var(--alarm-ink); }
 .gym-live-next { position: relative; align-self: center; display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 0;
-  color: var(--color-brand); font: 700 14px/20px var(--font-body); cursor: pointer; }
+  color: var(--text-link); font: 700 14px/20px var(--font-body); cursor: pointer; }
 .gym-live-next::before { content: ''; position: absolute; inset: -12px -8px; }
 .gym-live-next:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 4px; border-radius: 4px; }
 
@@ -137,7 +137,7 @@
 .gym-live-sheet-form { display: flex; flex-direction: column; gap: 16px; }
 .gym-live-sheet-head, .gym-live-edit-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .gym-live-sheet-head > button, .gym-live-edit-head > button { border: 0; background: transparent; color: var(--gym-ink-dim); font: 400 15px/22px var(--font-body); cursor: pointer; padding: 8px 0; }
-.gym-live-sheet-head > button.is-save, .gym-live-edit-head > .gym-live-edit-save { color: var(--color-brand); font-weight: 700; }
+.gym-live-sheet-head > button.is-save, .gym-live-edit-head > .gym-live-edit-save { color: var(--text-link); font-weight: 700; }
 .gym-live-sheet-head > span, .gym-live-edit-title { display: flex; flex-direction: column; align-items: center; text-align: center; }
 .gym-live-sheet-head strong, .gym-live-edit-title strong { font: 700 15px/22px var(--font-body); color: var(--gym-ink); }
 .gym-live-sheet-head small, .gym-live-edit-title small { font: 400 12px/16px var(--font-body); color: var(--gym-ink-faint); }
@@ -172,7 +172,7 @@
 .gym-live-stale-line span:first-child { font: 400 14px/20px var(--font-body); color: var(--gym-ink); }
 .gym-live-stale-line span:last-child { font: 400 14px/20px var(--font-mono); color: var(--gym-ink-dim); }
 .gym-live-stale-line small { font: 400 12px/16px var(--font-body); color: var(--gym-ink-faint); }
-.gym-live-stale-line strong { font-weight: 400; color: var(--color-brand); }
+.gym-live-stale-line strong { font-weight: 400; color: var(--text-link); }
 
 /* ── The receipt (WD3.3) ── */
 .gym-live-receipt { box-sizing: border-box; width: 100%; max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
@@ -193,7 +193,7 @@
 .gym-live-change-what { min-width: 0; font: 600 15px/22px var(--font-body); color: var(--gym-ink); overflow-wrap: anywhere; }
 .gym-live-change-values { flex: none; display: inline-flex; align-items: center; gap: 8px; font: 400 13px/18px var(--font-mono); color: var(--gym-ink-faint); white-space: nowrap; }
 .gym-live-change-values s { text-decoration-thickness: 1px; }
-.gym-live-change-values .is-now { color: var(--color-brand); }
+.gym-live-change-values .is-now { color: var(--text-link); }
 .gym-live-change-values .is-word { font-family: var(--font-body); }
 .gym-live-changes-save { padding-top: 12px; border-top: 1px solid var(--gym-line); }
 /* The design system's Switch draws its knob before its words; here the words lead and the switch takes the trailing edge. */
@@ -207,7 +207,7 @@
   margin: 0 auto 16px; padding: 0 16px; border: 1px solid var(--gym-line); border-radius: var(--radius-full); background: var(--gym-surface);
   color: var(--gym-ink); text-decoration: none; }
 .gym-live-bar:hover { color: var(--gym-ink); }
-.gym-live-bar > svg { flex: none; color: var(--color-brand); }
+.gym-live-bar > svg { flex: none; color: var(--text-link); }
 .gym-live-bar-name { min-width: 0; font: 600 15px/22px var(--font-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 800px) {
   .gym-live-bar { width: calc(100% - 32px); margin-bottom: 8px; }
@@ -216,7 +216,7 @@
 .gym-live-bar-clock { flex: none; font: 400 16px/20px var(--font-mono); color: var(--gym-ink-dim); font-variant-numeric: tabular-nums; }
 
 /* ── Routines: Start, Empty workout, In progress, and the room before its first pull (WD1.1, WD3.4, WD6, WD8.4) ── */
-.gym-root .gym-plan-home .gym-routine-in-progress { display: inline-flex; align-items: center; gap: 6px; font: 400 13px/18px var(--font-body); color: var(--color-brand); white-space: nowrap; }
+.gym-root .gym-plan-home .gym-routine-in-progress { display: inline-flex; align-items: center; gap: 6px; font: 400 13px/18px var(--font-body); color: var(--text-link); white-space: nowrap; }
 .gym-root .gym-plan-home .gym-routine-in-progress::before { content: ''; width: 6px; height: 6px; border-radius: var(--radius-full); background: var(--color-brand); }
 .gym-root .gym-plan-home .gym-new-routine-wide:has(button) { display: inline-flex; align-items: center; gap: 12px; }
 @media (max-width: 799px) {

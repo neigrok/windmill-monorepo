@@ -10,7 +10,7 @@ import { DeleteStep, RoadmapStep } from '../../../../src/products/roadmap/domain
 import { InadmissibleGuide } from '../../../../src/products/roadmap/guide/GuideDraft.js';
 import { RoadmapScopes } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { ReplicaReading } from '../../../../src/products/roadmap/room/ReplicaReading.js';
-import { ReplicaSession } from '../../../../src/products/roadmap/room/ReplicaSession.js';
+import { ReplicaSession, inverseOutcome } from '../../../../src/products/roadmap/room/ReplicaSession.js';
 import { BoundaryFailure } from '../../../../src/products/roadmap/reportFailure.js';
 
 const committed = (outcome) => {
@@ -135,10 +135,10 @@ test('a gesture is the domain’s acts under one receipt: a step made under the 
     const edited = session.dispatch({ kind: 'EditNode', id: steps.solo, label: 'Sail alone', addPrerequisites: [steps.dock] });
     assert.equal(typeof await edited.act, 'string');
     assert.deepEqual(shown(), { 'Tie a bowline': ['Read the wind'], 'Read the wind': [], 'Leave the dock': ['Read the wind'], 'Sail alone': ['Leave the dock'] });
-    assert.equal(session.revert(made), true);
+    assert.ok(session.revert(made) instanceof Promise, 'its Undo, once the engine settles it');
     assert.equal(session.revert(made), false);
     await until(() => !('Tie a bowline' in shown()), 1000);
-    assert.equal(session.revert(edited), true);
+    assert.ok(session.revert(edited) instanceof Promise);
     await until(() => 'Sail solo' in shown() && shown()['Sail solo'].length === 0, 1000);
     assert.deepEqual({ shown: shown(), told, nothing: session.dispatch({ kind: 'BulkRecolor', nodeIds: [], color: 'sky' }) },
       { shown: { 'Read the wind': [], 'Leave the dock': ['Read the wind'], 'Sail solo': [] }, told: { said: [], events: [], statuses: 0 }, nothing: null });
@@ -380,6 +380,48 @@ test('the Undo of a Redo is checked as the gesture’s own: a kind removed, brou
     assert.deepEqual({ legend: legend(), undone: told.events.filter(([, props]) => props.action === 'undo').map(([, props]) => props.outcome) }, {
       legend: ['Build terracotta', 'Learn plum', 'Milestone gold', 'Weather sky', 'Wind olive'],
       undone: ['unavailable', 'unavailable'],
+    });
+  } finally {
+    reading.close();
+    a.close();
+  }
+});
+
+test('a receipt’s own Undo, the door Roadmap Coach’s Undo takes (`revert`), is checked as ⌘Z’s is, its receipt on the stack or kept out of it: a removed kind comes back not while a kind made since wears its hue, and answers refused; with the hue free it comes back', async () => {
+  const { a, tree, reading, session, told, reports } = await gestures();
+  try {
+    const { CreateKind } = await import('../../../../src/products/roadmap/domain/kinds.js');
+    const kinds = () => reading.roadmap().account.trees.get(tree).kinds.filter((kind) => kind.present);
+    const legend = () => kinds().map(({ hue, label }) => `${label} ${hue}`);
+    const reverted = async (receipt) => {
+      const asked = session.revert(receipt);
+      let settled = false;
+      asked.then(() => { settled = true; });
+      for (let round = 0; round < 5 && !settled; round += 1) {
+        await a.sync();
+        session.followInverses();
+      }
+      assert.ok(settled, 'the Undo settled');
+      return asked;
+    };
+    const stacked = session.dispatch({ kind: 'RemoveKind', id: 'learn' });
+    const kept = session.keepUndoably({ kind: 'RemoveKind', id: 'milestone' });
+    await Promise.all([stacked.act, kept.act]);
+    committed(await a.runner.runAct(new CreateKind(tree, { hue: 'olive', label: 'Wind' })));
+    committed(await a.runner.runAct(new CreateKind(tree, { hue: 'gold', label: 'Sun' })));
+    const onTakenHues = { answers: [await reverted(stacked), await reverted(kept)], legend: legend() };
+
+    const build = session.dispatch({ kind: 'RemoveKind', id: 'build' });
+    const sun = session.keepUndoably({ kind: 'RemoveKind', id: kinds().find((kind) => kind.label === 'Sun').id });
+    await Promise.all([build.act, sun.act]);
+    const onFreeHues = { outcomes: [inverseOutcome(await reverted(build)), inverseOutcome(await reverted(sun))], legend: legend() };
+    assert.deepEqual({ onTakenHues, onFreeHues, held: { stacked: session.undoStack, kept: session.kept }, events: told.events, reports }, {
+      onTakenHues: { answers: [{ kind: 'unavailable', requestId: null, reason: 'refused' }, { kind: 'unavailable', requestId: null, reason: 'refused' }],
+        legend: ['Build terracotta', 'Wind olive', 'Sun gold'] },
+      onFreeHues: { outcomes: ['applied', 'applied'], legend: ['Build terracotta', 'Wind olive', 'Sun gold'] },
+      held: { stacked: [], kept: [] },
+      events: ['unavailable', 'unavailable', 'applied', 'applied'].map((outcome) => ['roadmap_undo', { action: 'undo', outcome }]),
+      reports: [],
     });
   } finally {
     reading.close();

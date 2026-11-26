@@ -213,5 +213,6 @@
   "gym.signedOutWork.changes": "{count, plural, one {# change} other {# changes}}",
   "gym.signedOutWork.oneWorkout": "{name} · {day}",
   "gym.signedOutWork.since": "since {day}",
-  "gym.signedOutWork.held": "training"
+  "gym.signedOutWork.held": "training",
+  "gym.workout.untitled": "Workout"
 }

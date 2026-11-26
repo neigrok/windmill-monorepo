@@ -1,5 +1,5 @@
 import { Id } from '../../../platform/domain-kit/entities.js';
-import { Preferences, PreferencesValue, restSettings } from '../domain/preferences.js';
+import { restSettings } from '../domain/preferences.js';
 import { Routine } from '../domain/routines.js';
 import { Session } from '../domain/training.js';
 import { sessionDocument, setDocument } from '../domain/trainingHistory.js';
@@ -11,14 +11,15 @@ import { clockOf, fmt } from '../log.js';
 
 // The account's open workout as its pages draw it, read from the browser's copy and settled the way its rows will be
 // written: the movements in their order with each one's plan entry and set rail, the one in hand with its ledger and the
-// rack, the set on offer once the rows hold it, and what its clocks count from. Null while no workout is open.
+// rack, the set on offer once the rows hold it, what its clocks count from, and whether its rest sounds when it comes to
+// its target (Rest sound). Null while no workout is open.
 export function workoutView(read) {
   const log = new TrainingLog(read);
   const open = log.open;
   if (open === null) return null;
   const rack = WorkoutRack.of(read, open.id);
   const rows = rack.settled();
-  const preferences = read.repository(Preferences).find(new Id('prefs', Preferences), 'drawn') ?? new PreferencesValue();
+  const rest = restSettings(read);
   const movement = rows.movement;
   const latest = rack.sets.at(-1) ?? null;
   const movements = rows.order.map((exerciseId) => {
@@ -47,12 +48,11 @@ export function workoutView(read) {
     next: current !== null && current.targets > 0 && current.logged >= current.targets ? movements[place + 1] ?? null : null,
     rack: rows.rack === null ? null : { weightKg: rows.rack.weightKg, reps: rows.rack.reps },
     ledger: movement === null ? [] : ledgerRows(rack, movement, rows.rack),
-    restSeconds: movement === null ? null : RestTarget.of(rack.entry(movement), restSettings(read))?.seconds ?? null,
+    restSeconds: movement === null ? null : RestTarget.of(rack.entry(movement), rest)?.seconds ?? null,
     lastSetAt: latest?.completedAt.ms ?? null,
     latestSetId: latest === null ? null : String(latest.id.record),
     setCount: rack.sets.length,
-    sound: preferences.confirmSound,
-    haptic: preferences.confirmHaptic,
+    restSound: rest.sound,
   };
 }
 

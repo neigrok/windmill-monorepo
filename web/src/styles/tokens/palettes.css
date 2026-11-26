@@ -34,10 +34,11 @@
    time inside its own root, byte-identical to the night below.
    ============================================================ */
 
-/* ---- Ramp extensions the rooms are lit with. iris is authored to the recipe (~265°, clear of sky
-        at 200° and plum at 315°, so it can never read as "info") and lights gym's DAY; verdigris
-        (~165°, between olive's 75° and sky's 200°) lights its NIGHT. The 300 steps are the hover steps;
-        each clears 4.5:1 against --text-on-accent (#1B1408) at the figure beside it. ---- */
+/* ---- Ramp extensions the rooms are lit with. verdigris (~165°, between olive's 75° and sky's 200°)
+        lights gym at both hours: its 300–500 steps by night, its 600–800 by day. iris is authored to
+        the recipe (~265°, clear of sky at 200° and plum at 315°, so it can never read as "info") and
+        lights the iris exemplar. The 300 steps are the night's hover steps; each clears 4.5:1 against
+        --text-on-accent (#1B1408) at the figure beside it. ---- */
 :root {
   --accent-plum-300: #C08FB8;   /* on #1B1408 = 6.84:1 */
   --accent-iris-300: #9A90BE;   /* on #1B1408 = 6.18:1 */
@@ -48,6 +49,9 @@
   --accent-verdigris-300: #8FE0CD;   /* on #1B1408 = 11.92:1 */
   --accent-verdigris-400: #5FCDB4;   /* on #1B1408 = 9.46:1 */
   --accent-verdigris-500: #3DAE95;   /* on #1B1408 = 6.68:1 */
+  --accent-verdigris-600: #137A6C;   /* white on it = 5.21:1 */
+  --accent-verdigris-700: #106B5F;   /* white on it = 6.38:1 */
+  --accent-verdigris-800: #0D594F;   /* white on it = 8.21:1 */
 
   --accent-iris-50:  #EDEBF3;
   --accent-iris-100: #DBD7E7;
@@ -199,17 +203,18 @@
 /* ============================================================
    gym · pietra by day, the instrument by night
    ------------------------------------------------------------
-   Pale stone in the sun, lit by IRIS (65° from sky, so it can never be read as info). At night a
-   verdigris-grey stone instrument panel, lit by VERDIGRIS — the one vibrant hue in the room, and the
-   one that is neither a semantic hue nor another product's.
+   Pale stone in the sun and a verdigris-grey stone instrument panel at night, both lit by VERDIGRIS
+   — the one vibrant hue in the room, and the one that is neither a semantic hue nor another
+   product's. By day the light is the ramp's deep 600; brand as TEXT is the 700, which keeps small
+   text above 4.5:1 on every pietra surface the 600 falls under it on.
    ============================================================ */
 [data-brand="gym"] {
-  --color-brand: var(--accent-iris-600);       /* white on it = 8.9:1 */
-  --color-brand-hover: var(--accent-iris-700);
-  --color-brand-active: #2F2A46;
-  --color-brand-soft: var(--accent-iris-50);
-  --text-link: var(--accent-iris-600);
-  --text-link-hover: var(--accent-iris-700);
+  --color-brand: var(--accent-verdigris-600);
+  --color-brand-hover: var(--accent-verdigris-700);
+  --color-brand-active: var(--accent-verdigris-800);
+  --color-brand-soft: rgba(19, 122, 108, 0.12);
+  --text-link: var(--accent-verdigris-700);   /* 5.19 / 5.92 / 4.60 on canvas, card and hover */
+  --text-link-hover: var(--accent-verdigris-800);
 }
 
 [data-theme="light"][data-brand="gym"] {

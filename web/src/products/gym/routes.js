@@ -81,9 +81,10 @@ export const gymRoutes = {
     signOutForgets: (engine) => coachKeeps(engine, (key) => key === 'runningTurn' || key === 'runningRound' || key.startsWith('picture:'))
       ? import('./coach/coachTurns.js').then((coach) => coach.coachRowsToForget(engine)) : null },
   // `main`: the product zone, with gym's own dials and its Notes door — not `data`, which sits
-  // beside the account's close.
+  // beside the account's close. They run on the browser's own copy, so signed out shows them too.
   settingsSections: {
     main: [GymSettingsSection],
+    signedOut: [GymSettingsSection],
   },
   landing: {
     head: gymLandingHead,

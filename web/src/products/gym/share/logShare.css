@@ -45,7 +45,7 @@
 .gym-share-view { width: 180px; border: 1px solid var(--gym-line-strong); text-decoration: none; }
 .gym-share-link-card .gym-share-revoke { width: 140px; margin: 0; border: 0; background: var(--gym-canvas); }
 .gym-reader-neighbors { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
-.gym-reader-neighbors button { border: 0; background: none; padding: 8px 0; font: inherit; color: var(--color-brand); cursor: pointer; }
+.gym-reader-neighbors button { border: 0; background: none; padding: 8px 0; font: inherit; color: var(--text-link); cursor: pointer; }
 .gym-reader-neighbors button:disabled { color: var(--gym-ink-faint); cursor: default; }
 .gym-shared-back { display: none; }
 .gym-share-movement { margin-top: 32px; padding: 0; }

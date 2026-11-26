@@ -2,13 +2,14 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { Id } from '../../../../src/platform/domain-kit/entities.js';
 import { Roadmap, RoadmapMeta, RoadmapMetaValue, RoadmapValue } from '../../../../src/products/roadmap/domain/roadmaps.js';
 import { RoadmapLink, RoadmapLinkValue, RoadmapStep, RoadmapStepValue } from '../../../../src/products/roadmap/domain/steps.js';
 import { RoadmapKind, RoadmapKindValue } from '../../../../src/products/roadmap/domain/kinds.js';
 import { StepMark, StepMarkValue, StepPointer, StepPointerValue } from '../../../../src/products/roadmap/domain/progress.js';
 import { StepLink, StepLinkValue, StepNote, StepNoteValue, Subtask, SubtaskValue } from '../../../../src/products/roadmap/domain/workspace.js';
-import { GENESIS_KINDS, RoadmapRefusals } from '../../../../src/products/roadmap/domain/roadmapRules.js';
+import { GENESIS_KINDS, RoadmapRefusals, SAFE_URL } from '../../../../src/products/roadmap/domain/roadmapRules.js';
 import { DEFAULT_KINDS } from '../../../../../packages/api-contract/genesis.js';
 import { RegistryCheck, RuleBookCheck, RuleBookParity } from '../../../platform/domain-kit/checks.js';
 import { roadmapBook } from './vectors.js';
@@ -44,4 +45,12 @@ test('every rule has its vector and every code maps to a roadmap refusal on both
 
 test("a new roadmap's genesis kinds are the server's", () => {
   assert.deepEqual(GENESIS_KINDS, DEFAULT_KINDS);
+});
+
+// packages/api-contract/roadmap-link-urls.json: the backend takes exactly the link urls this vector marks shown, and
+// SAFE_URL shows exactly those.
+test('a link url is shown exactly when the shared vector says the server takes it', () => {
+  const vector = /** @type {{ cases: { url: string, shown: boolean }[] }} */ (JSON.parse(readFileSync(new URL('../../../../../packages/api-contract/roadmap-link-urls.json', import.meta.url), 'utf8')));
+  assert.equal(vector.cases.length, 17);
+  assert.deepEqual(vector.cases.map((one) => [one.url, SAFE_URL.test(one.url)]), vector.cases.map((one) => [one.url, one.shown]));
 });

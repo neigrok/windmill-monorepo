@@ -187,10 +187,14 @@ metadata's write failed, the stores before the refusal gone and the rest
 tried again at the next sign-out; a sign-out that finds none emits nothing. Only `failed` also reports
 `journal-restore`, `journal-discard` or `journal-forget` with the error's stack. No day, page body, scale, claim
 identifier, store key or account is reported.
-Settings' export emits `journal_export` with `outcome`: `ok`, `first_pull_timeout` (a bound replica's first pull of
-the journal did not end within 30 seconds), `replica_changed` (the account changed while it waited), `no_replica` (the
-browser holds no open replica) or `failed`, which alone also reports `journal-export` with the error's stack and `step`:
-`pages` (reading the pages), `file` (writing them as Markdown) or `download` (handing the file to the browser).
+Settings' export emits `journal_export` once a press with `seat` (`signed_out` where the replica it reads is the browser's
+own, `signed_in` where it is an account's) and `outcome`: `ok`, `empty` (the replica held no written page, so no file was
+handed over), `first_pull_timeout` (a bound replica's first pull of the journal did not end within 30 seconds),
+`replica_changed` (the account changed while it waited), `no_replica` (the browser holds no open replica) or `failed`, any
+other error, which alone also reports `journal-export` with the error's stack and `step`: `pages` (reading the pages),
+`file` (writing them as Markdown) or `download` (handing the file to the browser). The section's count of those pages
+before any press reports `journal-export` with `step: count` once where it cannot read them, and no event; the export
+stays offered.
 Search by meaning emits `journal_search_meaning` once for each opening of search, as its model comes up or does not,
 however often the pages change while it is open: `outcome` `ready`; `needs_connection` (the engine says the browser is
 offline or the server unreachable, and search by meaning never came up in this browser, so the search says it needs a
@@ -227,6 +231,11 @@ note save/reorder, bodyweight save, set/session correction, session import, prop
 delete, Undo, refusal and `workout-adopt`, the hook before the seat changes saving each signed-out workout for adoption in
 an act of its own, told once when it saved something (`saved-local`) and once for each workout refused or failed. Outcomes are `saved-local`, `unchanged` (a clean draft or a rename to the
 name the store holds writes nothing), `failed`, `held`, `undone`, `closed` and `refused`.
+Settings' Default rest and Rest sound (WD10) tell `gym_preference_changed` in its place, once per change, through
+`preferenceStep` in `gymRuntime.js`: `setting` (`rest_default` or `rest_sound`) and `outcome`, `saved` once the copy holds it,
+`not_stored` when the copy could not keep it, `refused` when the gym refused the value or the replica moved under the save,
+and `failed` for any other failure, which alone also reports `gym-rest-save` with the error's stack frames; never the value.
+A store failure there is the engine's to report.
 A sign-in question in gym's count (WD9) tells `gym_signin_decision` with `step` (`shown` as it is asked, then `add`,
 `discard` or `cancel`) and `count_bucket` (`0/1/2-5/6-20/21+`), what it counted: the browser's workouts, routines,
 weigh-ins, movements and settings, or its changes where it holds none of them. How a copy In this browser
@@ -261,7 +270,9 @@ workout`), `gym_workout_plan_changed` (one per kind of edit a save makes, `actio
 movement in hand changed from the index, the arrows, the dots, a swipe or Next), each with `outcome` `ok`, `refused` with
 `code` (`not-writable` or `domain`) and, for a plan another tab or device changed first, `reason: stale`, or `failed`. The
 page tells `gym_rest_target_reached` (`screen: workout`) once per rest, from the tab the sync engine leads from (a tab on
-screen whenever one is) when it draws the workout, as the rest comes to its target; `gym_hidden_workout` (`action: hide` as the page is left with the
+screen whenever one is) when it draws the workout, as the rest comes to its target or, for a rest the tab drew short of its
+target, as a new default rest puts the target behind it; the tone and the buzz it plays while Rest sound is on are not
+reported; `gym_hidden_workout` (`action: hide` as the page is left with the
 workout open, `action: open` with `door: bar` from the bar over the tab rail); `gym_workout_popped_out` (`screen: workout`,
 `outcome` `ok` or `failed`) as Pop out opens its window or the browser refuses it; and the receipt's
 `gym_receipt_plan_saved` (`outcome`) when Done saves the plan's changes to the routine. An unexpected failure of a workout's
@@ -466,6 +477,7 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | A kept change discarded: asked once, and the engine dismissed its notice, or the carry-over's ledger let go of its record. One the engine or the ledger no longer holds, discarded in another tab, closes quietly and emits nothing | `roadmap_kept` | `step: discard`, `reason: roadmapDeleted/capFilled/accessEnded/noteTooLong` |
 | A room on the device's copy: what an Undo or a Redo of the room's own stack came to, once the engine knows; one the server still settles is told when it has. `applied` where it changed what the device holds, `skipped` where it changed nothing, a write the device had not seen standing in its way, `unavailable` where there was nothing to take back (the gesture wrote nothing, or its Undo had nothing) or the domain refused the Undo before anything was written, a check its act named failing over what stands (a kind brought back onto a hue another kind has come to wear). No text and no id leave; the person is shown nothing of a skip or a refusal | `roadmap_undo` | `action: undo/redo`, `outcome: applied/skipped/unavailable` |
 | A room on the device's copy: a write the domain refused, decided before anything was written (or, rarely, at its commit); a roadmap at its cap and a link that would close a loop are said in the words of the room with the switch off, and any other shows what that room shows for that gesture's failure. No success is shown or emitted for it: a gesture's success toast and `saved` event wait until its write has landed | `roadmap_write_refused` | `write: mark/title/guide/visibility/workspace/note/landing/CreateNode/RenameNode/DescribeNode/SetNodeColor/EditNode/SetNodeOrder/AddEdge/RemoveEdge/ReconnectEdge/DeleteNode/BulkDelete/BulkRecolor/ImportSubgraph/SetNodeTree/AddKind/RenameKind/DescribeKind/RecolorKind/RemoveKind/deleteRoadmap`, `refusal: invalid/gone/taken/tooLarge/full/roadmapGone/unreachable/notARoot/stepOpensARoadmap/depthLimit/other` |
+| Undo of one of Roadmap Coach's direct writes by its receipt (`coach/toolHost.js`), told once the engine has settled it, which waits for the server where the server settles it: `undone` where it took the write back, `skipped` where a later write the person made of the same field, a change of a subtask it added, or a mark they set on the step since, stood in its way, `unavailable` where the room no longer holds the write (⌘Z took it back first). The room tells the same Undo as `roadmap_undo`. Nothing offers the Undo yet, so production emits none of it | `roadmap_coach_write_undone` | `ability: set_progress/update_node/create_node/connect`, `outcome: undone/skipped/unavailable` |
 | Device line shown | `roadmap_device_line` | `step: shown`, `line: anonymous/lapsed`, `place: row/shell` |
 | Device line's phone row tapped | `roadmap_device_line` | `step: sign_in`, `line: anonymous/lapsed`, `place: row` |
 | The demo's roadmap opened | `demo_open` | `treeId: t_9e407a96b5330ebe` |
@@ -482,6 +494,14 @@ goes through `countBucket`: `0/1/2-5/6-20/21+`.
 | A build whose room reads the device's copy: the sign-in question for the browser's signed-out roadmaps where the account already holds roadmaps (flow 50.01, 50.03), shown, then answered Add or Discard, or cancelled by Escape, which signs the account out and leaves the roadmaps on the browser unsent. `roadmaps` counts the browser's own roadmaps it names; it also names, by their changes, the roadmaps of others the work changes, which its Discard takes too. An account that holds none takes them without a question, and so does one whose signed-out work changes no roadmap of the browser's own: nothing is emitted here, and the engine's `sync-signin` says the sign-in completed | `roadmap_signin` | `step: shown/add/discard/cancel`, `roadmaps: 0/1/2-5/6-20/21+` |
 | A build whose room reads the device's copy: the sign-out question where every unsent change is roadmap's (flow 50.02, 50.04), shown, then answered Keep or Discard, or cancelled by Escape, which stays signed in. `changes` counts the unsent changes, one an act of the person's (a gesture), however many entries it commits, and the changes of the account's roadmaps waiting in the old stores (§8.2), which it names and its Discard takes; it is asked where only those wait. A sign-out with nothing unsent and nothing waiting, or with another product's work or notice, asks in the shell's words and emits nothing here | `roadmap_signout` | `step: shown/keep/discard/cancel`, `changes: 0/1/2-5/6-20/21+` |
 | Roadmap landing opened | `land` | `signedIn: true/false` |
+
+Roadmap Coach's tool host tells nothing of a call and reports nothing of one: the platform's turn engine tells each call it
+runs, through its telemetry port, as `roadmap_coach_ability` (the ability and its outcome or refusal code), and reports
+whatever throws out of a call (the ability, the standing roadmap it reads, or the room's door) once, as `agent-host`,
+ending the turn `failed` with `host-fault`, as it does for gym's Coach. That event is a direct write's one product event:
+the room's gesture events (`roadmap_board_*`, `roadmap_graph_*`) count the person's own gestures, and a Coach write adds
+to none of them, so `roadmap_board_complete`'s `door: coach` stays the demo's coach. No roadmap turn runs on the engine
+yet, so production emits and reports neither.
 
 A guide's `saved` and `cleared` mean the session or this device's store took the write: durability on this device, not the
 server's admission, as a gym save's `saved-local` is. What the server then does with it is the structure lane's to say, through

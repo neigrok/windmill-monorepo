@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 
 // A real checkbox under the paint: the input carries focus, the space key and the state a screen
-// reader announces, and the wrapping label makes the whole control one hit target.
-export function Switch({ checked, onChange, label }) {
+// reader announces, and the wrapping label makes the whole control one hit target. A row that carries the switch's words
+// draws no `label` and names it with `labelledBy`, the id of its own.
+export function Switch({ checked, onChange, label, labelledBy }) {
   const [ring, setRing] = useState(false); // keyboard focus only — a pointer press draws no ring
 
   return (
@@ -11,6 +12,7 @@ export function Switch({ checked, onChange, label }) {
         type="checkbox"
         role="switch"
         checked={!!checked}
+        aria-labelledby={labelledBy}
         onChange={(event) => onChange?.(event.target.checked)}
         onFocus={(event) => setRing(event.target.matches(':focus-visible'))}
         onBlur={() => setRing(false)}

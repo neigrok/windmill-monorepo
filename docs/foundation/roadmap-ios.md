@@ -124,8 +124,7 @@ Activity and the web demo.
 
 - **What the room does not show.** Activity and History show no row for a step unlocking
   (R-7). The gallery answers no author, so a row shows its roadmap's title and step count alone
-  (R-8). Share has two states, public and private (R-9): the roadmaps that hold `unlisted` are
-  moved to private before Share is built.
+  (R-8). Share has two states, public and private (R-9), and no roadmap holds `unlisted`.
 
 ## §4 Links
 
@@ -422,7 +421,7 @@ makes it false.
   attached to a step, changed and detached on its page, each with *Undo*, or set in the step form's one save. Every other
   action of the domain has no door in the room: `MoveKind`, `MoveStep`, a subtask's or a link's change of words and its move
   among them.
-- Roadmaps that hold `unlisted` are not moved to private (R-9).
+- The registry's `visibility` and `reach` still admit `unlisted`, which no roadmap holds (R-9).
 
 ## §14 Rulings
 

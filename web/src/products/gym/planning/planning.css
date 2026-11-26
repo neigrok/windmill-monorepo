@@ -4,7 +4,7 @@
 .gym-root .gym-routine-rails i { width: 2px; height: 10px; background: var(--gym-line-strong); }
 .gym-root .gym-plan-home { width: 100%; max-width: var(--gym-measure-read); margin-inline: auto; }
 .gym-root .gym-plan-editor { width: 100%; max-width: 812px; margin-inline: auto; }
-.gym-plan-draft > span { border: 0 !important; padding: 4px 12px !important; color: var(--color-brand) !important; font-size: 12px !important; line-height: 16px; border-radius: var(--radius-md) !important; }
+.gym-plan-draft > span { border: 0 !important; padding: 4px 12px !important; color: var(--text-link) !important; font-size: 12px !important; line-height: 16px; border-radius: var(--radius-md) !important; }
 .gym-root .gym-plan-editor > .gym-editor-head { margin: 24px 0 32px; justify-content: flex-start; gap: 12px; }
 .gym-root .gym-plan-editor .gym-editor-name-field { flex: none; display: inline-grid; position: relative; max-width: calc(100% - 64px); }
 .gym-root .gym-plan-name-measure { grid-area: 1 / 1; visibility: hidden; white-space: pre; font: 700 32px/40px var(--font-display); }
@@ -55,7 +55,7 @@
 .gym-root .gym-plan-number label { font: 400 12px/16px var(--font-body); color: var(--gym-ink-faint); }
 .gym-root .gym-plan-number-field { box-sizing: border-box; display: flex; align-items: center; height: 36px; border-bottom: 1px solid var(--gym-line-strong); }
 .gym-root .gym-plan-number input { background: transparent; width: 100%; min-width: 0; border: 0; border-radius: 0; outline: none; padding: 8px; color: var(--gym-ink); font: 400 16px/20px var(--font-mono); }
-.gym-root .gym-plan-number.is-changed input { color: var(--color-brand); }
+.gym-root .gym-plan-number.is-changed input { color: var(--text-link); }
 .gym-root .gym-plan-number input:focus { box-shadow: 0 1px var(--color-brand); }
 .gym-root .gym-plan-number input[aria-invalid] { color: var(--alarm-ink); }
 .gym-root .gym-plan-number p { margin: 0; font-size: 12px; color: var(--alarm-ink); }
@@ -86,7 +86,7 @@
 .gym-root .gym-plan-editor .gym-entry-target { height: 18px; padding: 0; min-height: 0; border: 0; border-radius: 0; background: transparent; font-size: 13px; line-height: 18px; }
 .gym-plan-scheme { color: var(--gym-ink); }
 .gym-plan-scheme .is-separator { color: var(--gym-ink-faint); }
-.gym-plan-scheme .is-changed { color: var(--color-brand); }
+.gym-plan-scheme .is-changed { color: var(--text-link); }
 .gym-root .gym-target-pane .gym-target-movement { font: 700 17px/24px var(--font-body); }
 .gym-root .gym-target-pane .gym-sheet-section-title { font: 600 12px/16px var(--font-body); text-transform: none; letter-spacing: 0; }
 .gym-root .gym-target-pane .gym-target-fields { display: flex; flex-direction: row; flex-wrap: nowrap; justify-content: flex-start; align-items: flex-end; gap: 24px; margin: 0; }
@@ -97,7 +97,7 @@
 .gym-root .gym-target-pane .gym-ladder-add { font: 700 14px/20px var(--font-body); }
 .gym-root .gym-target-pane .gym-ladder-add::before { content: '+  '; white-space: pre; font-weight: 400; }
 .gym-root .gym-target-pane .gym-ladder-row:hover .gym-ladder-drop, .gym-root .gym-target-pane .gym-ladder-row:focus-within .gym-ladder-drop { opacity: 1; }
-.gym-root .gym-target-pane .gym-fill-open { position: relative; min-height: 18px; color: var(--color-brand); font: 700 13px/18px var(--font-body); }
+.gym-root .gym-target-pane .gym-fill-open { position: relative; min-height: 18px; color: var(--text-link); font: 700 13px/18px var(--font-body); }
 .gym-root .gym-target-pane .gym-fill-open::before { content: ''; position: absolute; inset: -12px 0; }
 .gym-root .gym-plan-empty { height: 560px; box-sizing: border-box; padding-top: 180px; border-radius: var(--radius-lg); box-shadow: inset 0 0 0 1px var(--gym-line); background: var(--gym-surface); display: flex; align-items: center; flex-direction: column; }
 .gym-root .gym-plan-empty p { margin: 0 0 24px; color: var(--gym-ink-dim); font: 700 17px/24px var(--font-body); }
@@ -118,7 +118,7 @@
 .gym-root .gym-picker.is-pane .gym-picker-row { box-sizing: border-box; min-height: 56px; padding: 16px 0; border: 0; font: 600 15px/22px var(--font-body); flex-direction: row; justify-content: space-between; align-items: center; }
 .gym-root .gym-picker.is-pane .gym-picker-group { font: 600 12px/16px var(--font-body); letter-spacing: 0; text-transform: none; margin: 24px 0 0; }
 .gym-picker-plus { color: var(--gym-ink-faint); }
-.gym-picker-new { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; height: 56px; padding: 0; margin-top: 17px; border: 0; background: transparent; color: var(--color-brand); font: 600 15px/22px var(--font-body); text-align: left; cursor: pointer; }
+.gym-picker-new { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; height: 56px; padding: 0; margin-top: 17px; border: 0; background: transparent; color: var(--text-link); font: 600 15px/22px var(--font-body); text-align: left; cursor: pointer; }
 .gym-picker-new::before { content: '+'; font: 400 16px/24px var(--font-body); }
 .gym-picker-new::after { content: ''; position: absolute; top: -9px; left: 0; right: 0; height: 1px; background: var(--gym-line); }
 .gym-root .gym-plan-home .wm-menu-list { top: 32px; right: -20px; width: 180px; min-width: 180px; box-sizing: border-box; padding: 8px; }
@@ -127,7 +127,7 @@
 .gym-root .gym-plan-home .gym-routine-review { margin-top: 12px; padding-top: 8px; }
 .gym-root .gym-routine-review > header { display: flex; align-items: center; justify-content: space-between; min-height: 44px; margin-bottom: 4px; }
 .gym-root .gym-routine-review .gym-proposal-name { font: 700 17px/24px var(--font-body); }
-.gym-root .gym-routine-review .gym-proposal-review { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; margin: 0; padding: 0 12px; border: 0; border-radius: 0; background: transparent; color: var(--color-brand); font: 600 15px/22px var(--font-body); }
+.gym-root .gym-routine-review .gym-proposal-review { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; margin: 0; padding: 0 12px; border: 0; border-radius: 0; background: transparent; color: var(--text-link); font: 600 15px/22px var(--font-body); }
 .gym-root .gym-routine-review .gym-diff-row { min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; gap: 8px; align-items: center; }
 .gym-root .gym-routine-review .gym-diff-name { margin: 0; color: var(--gym-ink-dim); font: 400 14px/21px var(--font-body); }
 .gym-root .gym-routine-review .gym-diff-moves { flex-basis: auto; font: 400 13px/18px var(--font-mono); }
@@ -154,7 +154,7 @@
 .gym-plan-differences h2 { margin: 0 0 12px; color: var(--gym-ink-faint); font: 400 12px/16px var(--font-body); }
 .gym-plan-differences > div { display: flex; align-items: center; gap: 12px; min-height: 56px; box-sizing: border-box; margin-top: 8px; padding: 16px; border-radius: 12px; background: var(--gym-surface); font: 600 15px/22px var(--font-body); }
 .gym-plan-change-values { color: var(--gym-ink-faint); font-family: var(--font-mono); }
-.gym-plan-change-values strong { color: var(--color-brand); font-weight: 400; }
+.gym-plan-change-values strong { color: var(--text-link); font-weight: 400; }
 .gym-plan-differences small { margin-left: auto; color: var(--gym-ink-faint); font-size: 12px; }
 .gym-plan-version-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 32px; }
 .gym-plan-version-columns h2 { margin: 0 0 8px; padding-bottom: 8px; border-bottom: 1px solid var(--gym-line); font: 600 15px/22px var(--font-body); }

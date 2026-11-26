@@ -24,7 +24,7 @@ QUANTIFIER_RANGE = 64
 REF = re.compile(r'^new:[a-z0-9][a-z0-9-]{0,31}$')
 CURSOR = re.compile(r'^(0|[1-9][0-9]{0,8})\.[1-9][0-9]{0,8}\.[0-9a-f]{16}$')
 # The fields a later part of a paged object carries beside its `id` (§5.2).
-LONG = {'description', 'links', 'prerequisites', 'guide', 'frontier'}
+LONG = {'description', 'links', 'prerequisites', 'subtasks', 'guide', 'frontier'}
 # A cap's unit in limits.json, and the unit the registry and the web state it in.
 UNITS = {'characters': 'chars', 'bytes': 'bytes', 'items': None}
 CONSTANT = re.compile(r'constexpr\s+std::size_t\s+(k\w+)\s*=\s*([^;]+);')
@@ -39,6 +39,14 @@ MARK = ({'node', 'status', 'outOfOrder', 'recordedAt', 'deviceAt'}, {'stamp'})
 POINTER = ({'node', 'present', 'opens'}, {'setAt'})
 # The codes that refuse a whole call, before any change of a proposal folds (§7).
 CALL_CODES = {'not-owner', 'roadmap-unavailable', 'unknown-roadmap'}
+# The codes §6 refuses a write with before its caps: the roadmap and whether the write may reach it (rules 1 to 3), and
+# the rules of its input.
+BEFORE_CAPS = CALL_CODES | {'invalid-input', 'roadmap-not-ready', 'out-of-scope'}
+# A text the domain cannot store: one that holds U+0000 or a lone surrogate (§6.1, `invalid-input`).
+UNSTORABLE = re.compile('[\x00\ud800-\udfff]')
+# The white space the domain trims from either end of an address before it measures it, ECMAScript's `trim`, which
+# Python's `strip` reads otherwise.
+TRIM = '\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'
 # The context (§5): its cases' file, the fields of a step's line and of a step in full, and the codes it refuses with.
 # Its bounds are limits.json's `context`, held to §5's table.
 CONTEXT = 'abilities/context.json'
@@ -203,7 +211,6 @@ def within(piece, whole, part, parts):
     if part == parts: return len(piece) <= len(whole) and whole[len(whole) - len(piece):] == piece
     return any(whole[start:start + len(piece)] == piece for start in range(len(whole) - len(piece) + 1))
 
-# What a read answers of a step, held to the step the case gives, where a field is the step's own value (§5.1).
 # A context case's roadmap may give its steps, links and marks as a table, `{columns, rows}`, each row one record's values
 # in the columns' order (abilities/README.md, The context): spelled here as the records the rest of the check reads.
 def spelled(given, where):
@@ -215,11 +222,16 @@ def spelled(given, where):
             if any(not isinstance(row, list) or len(row) != len(table['columns']) for row in table['rows']): refuse(where, f'a row of {tree.get("id")}.{key} that does not hold a value for each column')
             tree[key] = [dict(zip(table['columns'], row)) for row in table['rows']]
 
-def check_projection(item, node, where):
-    for field in ['description', 'links']:
+# A step's checklist as the case gives it: the subtasks of `step` in roadmap `tree`, `{label, done}`, in order.
+def checklist_of(given, tree, step):
+    return [{'label': each['label'], 'done': each['done']} for each in given.get('subtasks', []) if each['tree'] == tree and each['step'] == step]
+
+# What a read answers of a step, held to the step the case gives, where a field is the step's own value (§5.1).
+def check_projection(item, node, checklist, where):
+    for field, held in [('description', node['description']), ('links', node['links']), ('subtasks', checklist)]:
         if field not in item: continue
-        if 'part' not in item and item[field] != node[field]: refuse(where, f'`{item["id"]}`\'s {field}, which is not the step\'s')
-        if 'part' in item and not within(item[field], node[field], item['part'], item['parts']): refuse(where, f'`{item["id"]}`\'s {field} in part {item["part"]}, which is not that part of the step\'s')
+        if 'part' not in item and item[field] != held: refuse(where, f'`{item["id"]}`\'s {field}, which is not the step\'s')
+        if 'part' in item and not within(item[field], held, item['part'], item['parts']): refuse(where, f'`{item["id"]}`\'s {field} in part {item["part"]}, which is not that part of the step\'s')
     if 'label' in item and item['label'] != node['label']: refuse(where, f'`{item["id"]}`\'s label, which is not the step\'s')
     if 'summary' in item and item['summary'] != (node['description'][:160] + '…' if len(node['description']) > 160 else node['description']): refuse(where, f'`{item["id"]}`\'s summary, which is not its description cut after 160 characters')
 
@@ -410,7 +422,8 @@ class Contract:
         code = expect['refused'].get('code') if isinstance(expect.get('refused'), dict) else None
         found = fault(case['call']['input'], ability['input'], 'input')
         if found and code != 'invalid-input': refuse(where, found)
-        if self.over_cap(ability, case['call']['input']) and code not in ('over-limit', 'invalid-input'): refuse(where, 'an input past a cap of limits.json that is not refused as `over-limit`')
+        if self.over_cap(ability, case['call']['input']) and code not in BEFORE_CAPS | {'over-limit'}: refuse(where, 'an input past a cap of limits.json that is not refused as `over-limit`, nor by a rule §6 checks before the caps')
+        if self.unstorable(ability, case['call']['input']) and code not in BEFORE_CAPS: refuse(where, 'a text the domain cannot store that is not refused as `invalid-input`')
         if 'refused' in expect: return self.check_refusal(ability, case, where, found)
         kind = 'proposal' if ability['agent'] == 'proposes' else 'read' if ability['class'] == 'read' else 'write'
         wanted = {'read': [['result']], 'proposal': [['proposal', 'result'], ['folded', 'proposal', 'result']], 'write': [['result', 'writes']]}[kind]
@@ -429,13 +442,13 @@ class Contract:
         if sequence is not None and 'nextCursor' in expect['result'] and int(expect['result']['nextCursor'].split('.')[0]) >= sequence: refuse(where, f'a `nextCursor` past the {sequence} objects of the read\'s sequence')
         for item in expect['result'].get('steps', []):
             if item['id'] not in nodes or not nodes[item['id']]['present']: refuse(where, f'a step `{item["id"]}` the roadmap does not hold')
-            check_projection(item, nodes[item['id']], where)
+            check_projection(item, nodes[item['id']], checklist_of(case['given'], tree['id'], item['id']), where)
         header = expect['result'].get('tree')
         if header and 'stepCount' in header and header['stepCount'] != sum(node['present'] for node in tree['nodes']): refuse(where, f'a `stepCount` of {header["stepCount"]}, where the roadmap holds {sum(node["present"] for node in tree["nodes"])} steps')
         if header and 'title' in header and header['title'] != tree['meta']['title']: refuse(where, 'a header whose title is not the roadmap\'s')
 
     def check_given(self, case, where):
-        members(case['given'], {'trees'}, f'{where} · given', {'held', 'ids'})
+        members(case['given'], {'trees'}, f'{where} · given', {'held', 'ids', 'subtasks'})
         trees = case['given']['trees']
         if not isinstance(trees, list): refuse(where, '`trees` that are not a list')
         for tree in trees:
@@ -450,6 +463,10 @@ class Contract:
             if held['tree'] not in ids: refuse(where, f'a held step of `{held["tree"]}`, a roadmap not given')
             node = next((node for node in trees[ids.index(held['tree'])]['nodes'] if node['id'] == held['step']), None)
             if node is None or node['present']: refuse(where, f'a held step `{held["step"]}` that its roadmap does not hold as removed')
+        for item in case['given'].get('subtasks', []):
+            members(item, {'tree', 'step', 'label', 'done'}, f'{where} · subtasks')
+            if item['tree'] not in ids: refuse(where, f'a subtask of `{item["tree"]}`, a roadmap not given')
+            if not any(node['id'] == item['step'] for node in trees[ids.index(item['tree'])]['nodes']): refuse(where, f'a subtask of `{item["step"]}`, a step its roadmap does not hold')
         minted = case['given'].get('ids', [])
         if not isinstance(minted, list) or not all(isinstance(id, str) and id for id in minted) or len(set(minted)) != len(minted): refuse(where, '`ids` that are not distinct ids')
 
@@ -460,13 +477,41 @@ class Contract:
         caps = self.limits['limits']
         return self.change_over(changes) is not None or len(changes) > caps['proposalChanges']['max'] or len(canonical(changes, ability['name'])) > caps['proposalChangesBytes']['max']
 
+    # A value is measured as the domain stores it: an address after its trim, every text in Unicode code points.
     def step_over(self, fields, kind=False):
         caps = {name: limit['max'] for name, limit in self.limits['limits'].items()}
         def text(value, cap): return isinstance(value, str) and len(value) > caps[cap]
         if kind: return text(fields.get('label'), 'kindLabel') or text(fields.get('description'), 'kindDescription')
         links = fields.get('links') if isinstance(fields.get('links'), list) else []
+        subtasks = fields.get('subtasks') if isinstance(fields.get('subtasks'), list) else []
+        def trimmed(value): return value.strip(TRIM) if isinstance(value, str) else None
         return (text(fields.get('label'), 'label') or text(fields.get('description'), 'description') or len(links) > caps['webLinks']
-                or any(isinstance(link, dict) and (text(link.get('url'), 'webLinkAddress') or text(link.get('label'), 'webLinkLabel')) for link in links))
+                or any(isinstance(link, dict) and (text(trimmed(link.get('url')), 'webLinkAddress') or text(link.get('label'), 'webLinkLabel')) for link in links)
+                or any(text(trimmed(item), 'subtaskLabel') for item in subtasks))
+
+    # Whether a direct write sends a text the domain cannot store.
+    def unstorable(self, ability, fields):
+        if ability['agent'] != 'runs' or ability['class'] == 'read': return False
+        links = fields.get('links') if isinstance(fields.get('links'), list) else []
+        subtasks = fields.get('subtasks') if isinstance(fields.get('subtasks'), list) else []
+        texts = [fields.get('label'), fields.get('description'), *subtasks] + [value for link in links if isinstance(link, dict) for value in (link.get('url'), link.get('label'))]
+        return any(isinstance(text, str) and UNSTORABLE.search(text) for text in texts)
+
+    # Whether a direct write would pass its roadmap's caps of steps, links or subtasks (§6 rule 4), counted alive as the
+    # engine counts them: each step present or under a delete the person can still undo, each live link, and each subtask
+    # of the roadmap's checklists.
+    def count_over(self, ability, case):
+        input = case['call']['input']
+        tree = next((tree for tree in case['given']['trees'] if tree['id'] == input.get('treeId')), None)
+        adding = {'create_node': (1, len(set(input.get('prerequisites', []))), 0), 'connect': (0, 1, 0),
+                  'update_node': (0, 0, len(input.get('subtasks', [])))}.get(ability['name'])
+        if tree is None or adding is None: return False
+        held = {each['step'] for each in case['given'].get('held', []) if each['tree'] == tree['id']}
+        steps = sum(1 for node in tree['nodes'] if node['present'] or node['id'] in held)
+        links = sum(1 for edge in tree['edges'] if edge['present'])
+        subtasks = sum(1 for each in case['given'].get('subtasks', []) if each['tree'] == tree['id'])
+        caps = self.limits['limits']
+        return steps + adding[0] > caps['steps']['max'] or links + adding[1] > caps['links']['max'] or subtasks + adding[2] > caps['subtasks']['max']
 
     # The index of the first change that sends a value past a cap, or None.
     def change_over(self, changes):
@@ -491,9 +536,14 @@ class Contract:
         if code == 'not-owner' and (tree is None or tree['own']): refuse(where, '`not-owner` for a roadmap the person owns')
         if code == 'out-of-scope' and case['about'] in (None, input.get('treeId')): refuse(where, '`out-of-scope` for a write to the conversation\'s roadmap')
         if code == 'roadmap-not-ready' and refusal.get('id') not in {held['step'] for held in given.get('held', [])}: refuse(where, '`roadmap-not-ready` that names no held step')
-        if code == 'over-limit' and not self.over_cap(ability, input): refuse(where, '`over-limit` for a call that passes no cap of limits.json')
+        if code == 'over-limit' and not (self.over_cap(ability, input) or self.count_over(ability, case)): refuse(where, '`over-limit` for a call that passes no cap of limits.json')
         if ability['agent'] != 'proposes':
             if 'at' in refusal: refuse(where, 'an `at` on a refusal of no proposal')
+            if code == 'over-limit':
+                named = None if ability['name'] == 'create_node' else input.get('nodeId')
+                wanted = named if self.step_over(input) else input.get('treeId')
+                def said(id): return f'`{id}`' if id is not None else 'none'
+                if refusal.get('id') != wanted: refuse(where, f'an `over-limit` that names {said(refusal.get("id"))}, where §6.1 names {said(wanted)}')
             return
         changes = input.get('changes') if isinstance(input.get('changes'), list) else []
         count = self.limits['limits']['proposalChanges']['max']
@@ -620,7 +670,7 @@ class Contract:
             if found: refuse(where, found)
             if sorted(item) != sorted(LINE): refuse(where, f'`{item["id"]}`\'s line, whose fields are not §5.1\'s default')
             if item['id'] not in nodes or not nodes[item['id']]['present']: refuse(where, f'a step `{item["id"]}` the roadmap does not hold')
-            check_projection(item, nodes[item['id']], where)
+            check_projection(item, nodes[item['id']], checklist_of(case['given'], tree['id'], item['id']), where)
         told = canonical(result, where)
         if whole and len(result['steps']) != len(present): refuse(where, f'{len(result["steps"])} lines of a roadmap given whole, where it holds {len(present)} steps')
         if whole and len(present) > self.bound('steps'): refuse(where, f'a roadmap of {len(present)} steps given whole, past {self.bound("steps")}')
@@ -643,10 +693,10 @@ class Contract:
         if shown != ('step' in result): refuse(where, 'a step in full where the conversation started from no step the roadmap shows' if not shown else 'no step in full, where the conversation started from a step the roadmap shows')
         if shown:
             step, cap = result['step'], self.bound('prerequisites')
-            if sorted(set(step) - {'prerequisitesOmitted'}) != sorted(IN_FULL) or step['id'] != case['step']: refuse(where, 'a step in full that is not the step started from with every field of §5.1 but its summary')
+            if sorted(set(step) - {'prerequisitesOmitted'}) != sorted(IN_FULL) or step['id'] != case['step']: refuse(where, 'a step in full that is not the step started from with every field of §5.1 but its summary and its subtasks')
             left = step.get('prerequisitesOmitted')
             if len(step['prerequisites']) > cap or left is not None and (type(left) is not int or left < 1 or len(step['prerequisites']) < cap): refuse(where, f'a step in full whose prerequisites are not their first {cap} ids and a count of the rest from one')
-            check_projection(step, nodes[case['step']], where)
+            check_projection(step, nodes[case['step']], checklist_of(case['given'], tree['id'], case['step']), where)
 
     # The guides Coach reads, as the server's get_tree gives them: each `{treeId, title, text, yours}`; on a roadmap the
     # person owns, at most eight, farthest first, so its own last where it has one; on one they only read, its own alone.

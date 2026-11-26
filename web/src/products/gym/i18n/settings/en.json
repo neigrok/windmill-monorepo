@@ -3,6 +3,12 @@
   "gym.settings.typedInKg": "A backfill, a correction, a routine target — typed in kg.",
   "gym.settings.units": "Units",
   "gym.settings.unitsLabel": "Weight units",
-  "gym.settings.restOff": "off",
-  "gym.settings.notSaved": "that setting didn’t save — {reason}"
+  "gym.settings.restOff": "Off",
+  "gym.settings.notSaved": "That setting didn’t save — {reason}.",
+  "gym.settings.restDefault": "Default rest",
+  "gym.settings.restDefaultMeta": "For movements on Default",
+  "gym.settings.restDefaultFollowed": "For movements on Default · {workout} follows it",
+  "gym.settings.restSound": "Rest sound",
+  "gym.settings.restSoundMeta": "A tone and a buzz when rest is up",
+  "gym.settings.saved": "Saved."
 }
