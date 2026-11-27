@@ -61,9 +61,11 @@ export function checkStaticPage(page, html) {
   if (!look.box.test(html)) {
     throw new Error(`public/${page} does not ${look.boxPlace} — /appearance.js mounts into that box, and reserving it in the HTML is what keeps the page from sliding when the script lands`);
   }
-  const named = /<html\b[^>]*\sdata-page="([^"]*)"/.exec(html)?.[1];
-  if (look.tellsEvents && !(LABELS.page.includes(named) && html.includes('<script defer src="/events.js"></script>'))) {
-    throw new Error(`public/${page} wears the ${lookName} look but does not name its page on <html data-page> (${LABELS.page.join(' or ')}) and link /events.js deferred — it would tell none of the site's events`);
+  if (look.tellsEvents) {
+    const named = /<html\b[^>]*\sdata-page="([^"]*)"/.exec(html)?.[1];
+    if (!LABELS.page.includes(named) || !html.includes('<script defer src="/events.js"></script>')) {
+      throw new Error(`public/${page} wears the ${lookName} look but does not name its page on <html data-page> (${LABELS.page.join(' or ')}) and link /events.js deferred — it would tell none of the site's events`);
+    }
   }
 
   const canonical = /<link rel="canonical" href="([^"]+)"/.exec(html)?.[1];
