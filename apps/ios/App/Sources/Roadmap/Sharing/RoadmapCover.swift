@@ -26,12 +26,12 @@ final class RoadmapCover: Identifiable {
     let credential: () -> SessionToken?
     let requests: any RoadmapSharing
     let site: URL?
-  }
 
-  // Fork at the foot (09.7): at rest, asked of the server and waiting for its copy to arrive, or come to nothing, which the
-  // band slot says.
-  enum Forking: Equatable {
-    case idle, running, failed
+    // A roadmap's share address on the site (§4), or a step's in it.
+    func address(of tree: String, step: String? = nil) -> URL? {
+      guard let address = RoadmapAddress(tree: tree, step: step), let site else { return nil }
+      return URL(string: address.shared, relativeTo: site)?.absoluteURL
+    }
   }
 
   // What a sign-in the cover asked for is for: Fork (09.9a), or Sign In on a link it could not open (09.10b).
@@ -58,14 +58,13 @@ final class RoadmapCover: Identifiable {
   // The person's own room, and what links raise over it, where the copy a fork made opens.
   weak var owner: RoadmapModel?
   weak var links: RoadmapLinks?
-  private(set) var forking = Forking.idle
+  // Fork at the foot (09.7), one a cover: asked again after a failure, the server answers the same copy.
+  let forking: RoadmapFork
   // The sign-in the cover asked for, which the screen raises, and the session it was asked under.
   private(set) var signingIn: SignIn?
   @ObservationIgnored var askedWith: SessionToken?
   // A fork a fresh sign-in asked for, which runs once the link, followed again, finds the roadmap still someone else's.
   @ObservationIgnored var forksOnceFollowed = false
-  // One fork a cover: asked again after a failure, the server answers the same copy.
-  @ObservationIgnored let forkRequest = UUID().uuidString.lowercased()
   @ObservationIgnored var arrival: Task<Void, Never>?
   @ObservationIgnored private(set) var closed = false
 
@@ -77,6 +76,7 @@ final class RoadmapCover: Identifiable {
     self.links = links
     sources = links.sources
     read = SharedRead(address, sources: links.sources, telemetry: owner.telemetry)
+    forking = RoadmapFork(address.tree, mode: .cover, sources: links.sources, telemetry: owner.telemetry)
     room = RoadmapModel(records: owner.records, runner: owner.runner, phone: owner.phone, telemetry: owner.telemetry, wait: owner.wait,
                         graph: RoadmapGraph(telemetry: owner.telemetry), role: .reader(read))
   }
@@ -89,10 +89,7 @@ final class RoadmapCover: Identifiable {
   var forks: Bool { room.shown?.tree.parent == nil }
 
   // The roadmap's address the cover hands out, the share's, on the site, whatever step the link named.
-  var shared: URL? {
-    guard let roadmap = RoadmapAddress(tree: address.tree), let site = sources.site else { return nil }
-    return URL(string: roadmap.shared, relativeTo: site)?.absoluteURL
-  }
+  var shared: URL? { sources.address(of: address.tree) }
 
   // The cover rose: its owner's progress is asked for, and its roadmap followed and read.
   func open() {
@@ -120,38 +117,21 @@ final class RoadmapCover: Identifiable {
     fork()
   }
 
-  // Fork Roadmap (09.7, 09.9a): the server copies the roadmap, every step with its progress cleared, into the person's own
-  // list, so it needs a connection and a session the phone can send as, and it asks for a sign-in otherwise. The copy
-  // arrives by sync and opens on its Board, and the cover closes once it has, or once it has waited for it long enough.
+  // Fork Roadmap (09.7, 09.9a): the copy arrives by sync and opens on its Board, and the cover closes once it has, or once
+  // it has waited for it long enough.
   func fork() {
-    guard online, forks, forking != .running else { return }
-    room.telemetry.event("fork_attempt", properties: ["mode": "instant"])
-    guard let credential = sources.credential() else {
-      room.telemetry.event("fork_attempt", properties: ["mode": "instant", "outcome": "signed_out"])
-      return ask(.fork, under: nil)
-    }
-    forking = .running
-    Task { [requests = sources.requests, tree = address.tree, request = forkRequest] in
-      do throws(SharingFailure) {
-        let copy = try await requests.fork(tree, request: request)
-        room.telemetry.event("fork_claim", properties: ["mode": "instant"])
+    guard online, forks else { return }
+    forking.run { [self] answer in
+      switch answer {
+      case .copy(let copy):
         guard !closed, let owner, let links else { return }
         links.forked(copy, in: owner)
         arrival = Task { [wait = room.wait] in
           guard (try? await wait(Self.arrivalWait)) != nil else { return }
           close(.copyLate)
         }
-      } catch {
-        forking = error == .signedOut ? .idle : .failed
-        let outcome = switch error {
-        case .offline: "offline"
-        case .signedOut: "unauthenticated"
-        case .refused: "refused"
-        case .busy: "busy"
-        case .failed, .cancelled: "failed"
-        }
-        room.telemetry.event("fork_attempt", properties: ["mode": "instant", "outcome": outcome])
-        if error == .signedOut { ask(.fork, under: credential) }
+      case .signIn(let credential): ask(.fork, under: credential)
+      case .nothing: break
       }
     }
   }
@@ -178,8 +158,7 @@ final class RoadmapCover: Identifiable {
 
   // Copy Link in a step's … menu (09.5b): the step's share address on the pasteboard.
   func copyLink(of step: String) {
-    guard let address = RoadmapAddress(tree: address.tree, step: step), let site = sources.site,
-          let url = URL(string: address.shared, relativeTo: site)?.absoluteURL else { return }
+    guard let url = sources.address(of: address.tree, step: step) else { return }
     UIPasteboard.general.url = url
     room.telemetry.event("roadmap_board_step_action", properties: ["surface": "document", "action": "copyLink"])
   }

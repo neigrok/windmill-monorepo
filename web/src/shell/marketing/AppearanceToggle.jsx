@@ -1,4 +1,4 @@
-// The landing nav's Light · Dark bar — the one place appearance is chosen on a marketing page. The
+// The product landings' Light · Dark bar in the nav, the one place appearance is chosen on those pages. The
 // checked segment is the RESOLVED appearance, so with nothing stored it reads the system's side and
 // moves with a system flip; a pick stores an explicit choice. There is no System segment here: the
 // way back to following the device lives in the app's seat. Under 480px the word hides and the

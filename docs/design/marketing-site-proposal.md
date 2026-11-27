@@ -1,13 +1,13 @@
-# Marketing site proposal
+# Marketing site
 
-A proposal for the public pages of windmill.works: their structure, the sitemap, how search engines
-read them, their wording and their look. Nothing here is built. Wording is built only after the owner
-approves it, and layout only from a Figma flow the owner marks ✅ Ready for dev. The drawings go in the
-[Windmill · Marketing](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81) file.
+The public pages of windmill.works: the sitemap, the rules, the Instrument look, what is built, what
+is approved and waiting, how search engines read the pages, and the strings still false. The drawings
+are on the Marketing file's page [Site redesign · 2026-11-21](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=260-2508).
+A page is built only from its section marked ✅ Ready for dev. Its wording is on that section's boards;
+each page's title, which the boards do not draw, is recorded here.
 
-The pages speak from [the idea](brand-foundations.md#the-idea) and keep every rule in
-[Honesty](brand-foundations.md#honesty) and in
-[what every channel keeps](../marketing/strategy.md#what-every-channel-keeps).
+The pages speak from [the idea](brand-foundations.md#the-idea) and keep every rule in [Honesty](brand-foundations.md#honesty)
+and in [what every channel keeps](../marketing/strategy.md#what-every-channel-keeps).
 
 ## What the pages are for
 
@@ -18,143 +18,181 @@ A visitor should learn four things, in this order, and each page owns one of the
 3. That the AI is theirs to choose: the page about using your own assistant.
 4. How Windmill is paid for: the pricing page.
 
-The pages built today open with three product bands. No sentence says what Windmill is: the front
-page's main heading, "Three tools. One account.", is hidden in the rendered page.
-
 ## Sitemap
 
-| Address | Its one job | Today |
+| Address | Its one job | State |
 |---|---|---|
-| `/` | Say what Windmill is, name its three tools with the feature that leads each, and send the visitor to a room | Exists; opens with product bands |
-| `/roadmap` | Any goal as a skill tree | Exists |
-| `/gym` | A training log that remembers | Exists |
-| `/journal` | A place to notice what happened | Exists |
-| `/connect` | Use the assistant you already have | Exists as `/connect.html`, linked from footers only |
-| `/pricing` | What is free, what One is, where the money goes | Exists as `/pricing.html` |
-| `/about` | Why Windmill exists, what the name means, what it will not do | New |
-| `/changelog` | What changed, with real dates | Exists as `/changelog.html`; Roadmap only, last entry July 2026 |
+| `/` | Say what Windmill is, name its three tools with the feature that leads each, and send the visitor to a room | Built in the Instrument look |
+| `/roadmap` | Any goal as a skill tree | Built in the older landing look; the Instrument page is approved and not built |
+| `/journal` | A daily journal you can search by meaning | As `/roadmap` |
+| `/gym` | A workout log that remembers what you lifted | As `/roadmap` |
+| `/pricing` | What is free, what One is, where the money goes | Exists as `/pricing.html` in the older look; the Instrument page is approved and not built |
+| `/connect` | Use the assistant you already have | Exists as `/connect.html`; linked from the front page and the footers |
+| `/about` | Why Windmill exists, what the name means, what it will not do | Proposed; no page and no link |
+| `/changelog` | What changed, with real dates | Exists as `/changelog.html`; Roadmap only, every entry July 2026 |
 | `/gallery` | Roadmaps their owners listed in public | Exists |
-| `/t/<id>` | One published roadmap, readable before any script runs | Exists; body and structured data are the front page's |
+| `/t/<id>` | One published roadmap, readable before any script runs | Exists; its no-script body and structured data are the front page's |
 | `/privacy`, `/terms`, `/refunds` | Legal | Exist as `.html` |
 
-- Addresses lose `.html`. The short address becomes the canonical one and the `.html` address
-  redirects to it. Today it is the other way round.
 - A page for guides is added only when the first real guide exists. A page without a useful artifact
   of its own stays unpublished.
-- The header carries: Roadmap, Gym, Journal, Pricing, About. On the right: a quiet Sign in and one
-  action. The light and dark switch moves to the footer.
-- The footer is the whole sitemap in columns: Rooms · Your own assistant · Windmill (About, Pricing,
-  Changelog, Gallery) · Legal, then Feedback and the appearance switch with three positions: Auto,
-  Light, Dark.
-- The front page's action is a choice of room. Today "Start free" opens Roadmap's start picker on a
-  page about three rooms, and static pages send "Start your tree" to a different place than landings do.
+- The static pages send "Start your tree" to `/#/app`; the front page's pill "Open Windmill" goes to
+  `/app` signed out and to the last room signed in.
 
-## Wording
-
-Rules for every string on these pages:
+## Rules every public page keeps
 
 - It describes what a visitor can do today on the surface named. A number appears only when the code
   or a document that states it has been checked.
-- The person is the subject and does the work. The AI guides: it gives clarity and guidance, helps
-  keep the record and helps a person past what blocks them. No string says the AI "works for you" or
-  "does it for you". Nothing frightens or belittles.
-- Plain words, sentence case, short sentences. One idea per heading.
-- Each room is named in full at first mention: Windmill Roadmap, Windmill Gym, Windmill Journal.
-- One description per page, used for search and for social cards alike.
+- The AI guides and the person does the work: it gives clarity and guidance, helps keep the record and
+  helps a person past what blocks them. No public string says the AI "works for you" or "does it for
+  you". Nothing frightens or belittles.
+- Gym is called a workout log.
+- The phone apps are not offered to strangers. A page says they are in beta and not public yet, and
+  links to no download or beta.
+- Windmill One is named as a plain sentence that says it is not on sale. It has no badge and no
+  button, and no page but `/pricing` gives its price.
+- Plain words, sentence case, short sentences, one idea per heading, one description per page. Each
+  room is named in full at first mention: Windmill Roadmap, Windmill Gym, Windmill Journal.
 
-### Front page `/`
+## The Instrument look
 
-A stranger with no context reads, in the first screen, what Windmill is, what its three tools are and
-the one feature that leads each.
+Every rebuilt public page wears it. Its tokens are `web/src/styles/tokens/looks.css`, read through the
+page frame's `data-look="instrument"`.
+
+- Inter for all page type, self-hosted and fetched by these pages only, with few sizes and tight
+  display type ([Fonts](brand-foundations.md#fonts)).
+- One ground per page: warm paper by day, near-black by night. Day, night and Auto; a first visit
+  follows the device, and the footer's switch has the three positions.
+- Hairlines in place of shadows and card outlines. Terracotta is the one accent, and a room's hue
+  appears only inside its own picture.
+- The header carries the approved mark, unchanged, with the word "Windmill" set in the page's type;
+  on a night ground it carries the night mark, the same shapes with a lighter hub and door
+  ([Logo](brand-foundations.md#logo)).
+- Product pictures are still compositions of the product's own components, tokens and type, each
+  labelled as composed. Nothing inside a picture is live, and the page has no infinite motion.
+  Controls are small and quiet, and the footer is the sitemap.
+
+## Built: the front page `/`
+
+Drawn in section [C · Front page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=272-2508) and
+built in `web/src/shell/marketing/BrandLanding.jsx` with `brandLanding.css`. Its words live in
+`web/src/shell/i18n/entry/en.json` (`shell.landingHead.*`, `shell.brandLanding.*`, `shell.site.*`)
+and, for each room's row and section, in that product's `web/src/products/<product>/i18n/entry/en.json`
+under `<product>.root.*`, which the product's `routes.js` hands the page as `landing.root`. Each room's
+picture is its `marketing/RootPicture.jsx`. The head and the no-script body are
+`web/src/shell/marketing/landingHeads.js`, copied into `web/index.html`. Its events are in
+[web/OBSERVABILITY.md](../../web/OBSERVABILITY.md#front-page).
 
 | Part | Wording |
 |---|---|
-| Title | Windmill — a skill tree, a training log and a journal |
-| Description | Windmill is where a person keeps growing in body, skill and mind. An AI-native training log, skill tree and journal. Use your own AI or ours. |
+| Title | Windmill — a skill tree, a workout log and a journal |
+| Description | Windmill is where a person keeps growing in body, skill and mind. An AI-native workout log, skill tree and journal. Use your own AI or ours. |
 | Main heading | Windmill is where a person keeps growing in body, skill and mind. |
-| Under the heading | An AI-native training log, skill tree and journal. · The AI guides. The work stays yours. Use your own AI or ours. |
-| Strip · Windmill Roadmap | A skill tree for any goal. · Tell an AI your goal, get a skill tree. |
-| Strip · Windmill Journal | A daily journal. · Your own words, echoed back. |
-| Strip · Windmill Gym | A training log. · A coach that has read every set. |
-| Roadmap section | Tell an AI your goal, get a skill tree. / Describe what you want to learn or build. Your own assistant, or Windmill's, writes the plan as a tree of steps. You edit it, and you do the steps. / Finish a step, the next unlocks · Start without an account · Share and fork → Start a tree |
-| Journal section | Your own words, echoed back. / As you write, passages you wrote before appear beside the page when they speak to the same thing. Nothing is interpreted and nothing is graded. / Search by meaning · One page a night · Never graded → Write tonight |
-| Gym section | A coach that has read every set. / Ask about your training and the answer comes from your whole log. It proposes a change to your routine, and nothing changes until you apply it. Use Windmill's Coach or connect your own assistant: the same log and the same rules. / It remembers last time · Honest progress · On your phone → Open the log |
-| Your AI, or ours. | Either way the AI guides, and the work stays yours. |
-| Your AI, or ours. · Yours | Connect the assistant you already have to Roadmap and Gym. It asks for the access it needs, and you approve it. → How to connect |
-| Your AI, or ours. · Ours | Windmill's own AI is built in, with a free allowance. Windmill One raises the ceiling for one price. It is not on sale yet. → Pricing |
-| Where it runs | Web: Roadmap, Gym and Journal. Android: Gym. iPhone: Journal and Gym, in beta. |
+| Under it | An AI-native workout log, skill tree and journal. · The AI guides. The work stays yours. Use your own AI or ours. |
 
-The page runs in that order: the heading with the two lines under it, the strip of three, one section
-per room in the order Roadmap, Journal, Gym, then "Your AI, or ours.", where it runs, and the footer,
-which is the sitemap. Each room section holds its heading, one paragraph, the picture that shows that
-feature and three named features. The page carries no price number. Windmill One's line reads "It is
-not on sale yet" until One can be bought, and becomes the offer on that day.
+The page runs in this order:
 
-Before build, check each of these against the product, on every surface the page names:
+1. **Header.** The mark and the word "Windmill"; Roadmap, Gym, Journal, Pricing; Sign in, or the
+   account seat signed in; the pill "Open Windmill".
+2. **The first screen.** The heading and the two lines under it.
+3. **The three tools**, a row per open room with its full name, what it is ("skill-tree planner",
+   "daily journal", "workout log"), its line and a link: Start a tree · Write tonight · See Windmill Gym.
+4. **A section per open room**, Roadmap, Journal, Gym: a two-line heading, one paragraph and its
+   link, the composed picture ("Composed tree", "Composed page", "Composed session") and three named
+   features.
+5. **Your AI, or ours.** Yours → How to connect. Ours: built in, and a free account includes some each
+   month; "Windmill One raises the ceiling for one price. It is not on sale yet." → See pricing.
+6. **Where it runs.** "Web: Roadmap, Gym and Journal. The phone apps are in beta and not public yet."
+7. **Footer.** Rooms (Roadmap, Gym, Journal) · Your own assistant (Connect) · Windmill (Pricing,
+   Changelog, Gallery) · Legal (Privacy, Terms, Refunds); then Feedback and Auto · Light · Dark.
 
-- Windmill's own AI writing a tree. The pricing page says Roadmap's AI assistance is being redesigned,
-  so "or Windmill's" may hold only at release. Until it holds, the Roadmap paragraph says "Your own
-  assistant writes the plan as a tree of steps."
-- Echoes appearing beside the page as a person writes.
-- Where Coach is available.
-- That "built in, with a free allowance" matches the allowance enabled.
-- How a visitor gets the Android app and the iPhone beta, so "On your phone" and "Where it runs" can
-  link to something that works.
+A room that holds itself shut brings no row and no section, and keeps its place in the header and
+footer. The boards also draw About in the header and footer; it is not built, because the page does
+not exist.
 
-### About page `/about`
+## Approved, waiting to be built
 
-| Part | Wording |
-|---|---|
-| Title | About Windmill — why it exists and what the name means |
-| Main heading | Why Windmill exists |
-| Statement | Machines can now do much of the work people do. In Windmill the AI gives clarity and guidance, helps keep the record and helps you past what blocks you. It does not do the work for you: the growing stays yours. |
-| The AI guides, you decide | In Gym, Coach proposes a change and you apply it. After its first greeting it waits to be asked. |
-| Yours and open | Bring your own assistant. It connects to Roadmap and Gym and asks for the access it needs. Journal has no door for one. |
-| Never graded | No streaks, no scores, no countdowns. A day you skip is not coloured as a failure. |
-| The name | A mill takes its time and grinds the grain into flour anyway. |
+Each section below is marked ✅ Ready for dev. Its pictures are composed from the room's own scenes and
+screens, and labelled.
 
-The page also holds what Windmill will not do, a public list drawn from the honesty rules, and how
-Windmill is paid for. It has no section on who makes Windmill. A founder note appears only if the owner
-writes one.
+### Pricing `/pricing`
 
-### Room pages
+[C · Pricing](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=284-2508). Title "Pricing —
+Windmill". Main heading "Windmill is free." Sections in order:
 
-| Page | Keep | Proposed sections, heading / line |
-|---|---|---|
-| `/roadmap` | Title "Windmill Roadmap — any goal, as a skill tree"; heading "Any goal, as a skill tree" | See what comes first / Every step names what must be done before it. Finish one and what depended on it opens. · Start from a real path / the starter paths, with the roadmap.sh attribution · Your assistant builds it with you / Connect your own assistant and ask it for a plan. It writes the tree and you decide what stays. · Share a tree, or keep it / A tree is private until you publish it. Anyone with the link can view a published tree and fork it, and it can appear in the public gallery. · Plant your first tree |
-| `/gym` | Title "Windmill Gym — a training log that remembers what you lifted"; heading "It remembers what you lifted." | Log the set. The rest is remembered. · Built for the barbell · Your own assistant can read your log / with a link to `/connect` · Coach proposes. You apply. / Coach is the room in the app for a lifter without an assistant of their own. It reads your log when you ask and proposes changes. Nothing changes until you apply it. · Where it runs · Log the next one |
-| `/journal` | Title and heading "A place to notice what happened." | Write. Look back. Hear it back. · Find the feeling, not the word / Search understands meaning and runs on your device. · No share button / There is no way to share a page: the control does not exist. Echoes are found by a hosted AI model as you write, and the privacy page names it. · Echoes / Related passages from your own pages, in your own words. · Never graded / No streaks, no score, no count of missed days. · Write tonight |
+1. **Three equal columns:** by hand, free · with your own AI, free here · with Windmill's AI, $0.50
+   of AI a month on a free account.
+2. **Counted in dollars, at the provider's price.** The amounts: $0.25 once, signed out in the phone
+   app; $0.50 each calendar month on a free account; $7 each paid month with Windmill One. Free AI also
+   draws on one shared pool, named without its size.
+3. **Windmill One.** $12 a month, "Not on sale yet." beside the price in plain text. Where the $12
+   goes, as a bar in three parts: the AI you use, $7.00 · store and payment fees, about $1.80 ·
+   Windmill, about $3.20.
+4. **Questions**, a visible list that is also the page's structured data.
 
-Descriptions: `/roadmap` "Turn a goal or a learning plan into a skill tree with real prerequisites.
-Finish a step and the next one opens. Free, and your first tree needs no account." · `/gym` "A training
-log for barbell programs. Two taps between sets, and the next session opens with last time’s numbers."
-· `/journal` keeps today's.
+The split names no store: its middle part is "store and payment fees". The page promises nothing
+about refunds: it says the store you buy from takes the payment and handles cancelling and refunds.
+No other page gives a price.
 
-### Other pages
+### Windmill Roadmap `/roadmap`
+
+[C · Roadmap page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=290-2508). Title "Skill
+Tree Maker for Real-Life Goals | Windmill Roadmap". Main heading "A skill tree for real-life goals".
+Sections: Tell an AI your goal. Get a skill tree. · What comes first, and what opens next · Three ways
+to start a tree · One step at a time · Publish a tree, or keep it · No account to begin · What it will
+not do · What stays in your browser, and what does not · Where it runs · seven questions · "Plant your
+first tree." Windmill One does not appear on it.
+
+### Windmill Journal `/journal`
+
+[C · Journal page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=294-2508). Title "Journal
+App With Search by Meaning | Windmill Journal". Main heading "A daily journal you can search by
+meaning". Sections: Your own words, echoed back · Find what you wrote, without the exact words · One
+page a night · Look back without a score · Nothing writes back · What stays on your device, and what
+does not · Yours to keep, and where it runs · seven questions · "Tonight's page is waiting."
+
+### Windmill Gym `/gym`
+
+[C · Gym page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=293-2508). Title "Workout Log
+for Lifters on a Program | Windmill Gym". Main heading "A workout log that remembers what you lifted".
+Sections: A coach that answers from your log · Or bring your own assistant · Your target, or last
+time's numbers, before every set · How to track progressive overload · For the program you already
+run · What it will not do · What stays on your phone, and what does not · Where it runs · eight
+questions · "Bring the program you already run." Its first link goes to Where it runs, because a set
+cannot be logged on the web. Its structured data names "Web browser" until an app has a public listing.
+
+### Before build
+
+- Echoes do not draw on a person's AI amount: Windmill's background budgets pay for them
+  ([AI allowances](../../backend/AI_ALLOWANCES.md)). The pricing page's answer and the Journal page's
+  echoes section say so.
+
+## Proposed, not drawn
 
 | Page | Proposed |
 |---|---|
-| `/connect` | Title keeps "Windmill Roadmap & Gym MCP server". Main heading "Bring your own assistant", replacing "Build Windmill with your AI tools". One exchange shown end to end: the request, the access asked for, the result, how to disconnect. Linked from the header's rooms, the front page and `/gym`. |
-| `/pricing` | Main heading stays "Windmill is free." Sections: Everything you do by hand is free · Bring your own assistant and pay us nothing · Windmill One: our AI, one price · Where the $12 goes, in dollars: the AI allowance, the store's fee, running Windmill and the work · The fine print. The dollar split waits on the release's final AI allowance amount. A visible list of questions, with the matching structured data, lives here and nowhere else. |
-| `/changelog` | Covers all three rooms. The front page shows the three latest entries, and shows the strip only while the newest entry is under 60 days old. |
+| `/about` | Title "About Windmill — why it exists and what the name means"; main heading "Why Windmill exists". The statement from [the idea](brand-foundations.md#the-idea); The AI guides, you decide · Yours and open · Never graded · The name; what Windmill will not do; how it is paid for. No section on who makes Windmill. A founder note appears only if the owner writes one. |
+| `/connect` | Title keeps "Windmill Roadmap & Gym MCP server". Main heading "Bring your own assistant". One exchange shown end to end: the request, the access asked for, the result, how to disconnect. |
+| `/changelog` | Covers all three rooms. |
 | `/t/<id>` | Title "<tree title> — a skill tree on Windmill Roadmap". The tree's own heading, summary and first steps are in the first HTML. |
 
-### Strings to remove or correct
+## Strings to remove or correct
 
-These are false or unproven today, whatever the design becomes.
+These are false, unproven or against the rules above today, whatever the design becomes. Correcting
+them does not wait for the rebuild.
 
 | Where | Says | Problem | Do |
 |---|---|---|---|
-| `/` description | "One account, one subscription." | Nothing is on sale | Remove |
-| `/` structured data | Six questions and answers, one with "$12 a month" | No visible questions on the page; all six are about trees; landings carry no price | Remove from `/`; move questions to `/pricing` |
 | `/roadmap` | "It can’t share roadmaps, delete them…" | `/connect` lists delete as a level an assistant can be granted | Say what each level allows |
 | `/roadmap` | "Starter quests and paste-a-list are growing in" | Both ship | Remove |
 | `/roadmap` | "The tree keeps score" | Reads against "never graded" | "keeps track" |
-| `/gym` | Coach is "ten questions a day" | Pricing says allowance amounts are not announced; the allowance document describes dollar budgets | Remove the number until checked |
-| `/gym` structured data | "Web browser" | The room also runs on Android | Name the true platforms |
-| `/journal`, `/` | "kept only for you", "Nothing you write teaches anything" | The privacy page says pages go to a hosted model for echoes | Replace with the "No share button" lines above; keep the second only if a no-training term is verified |
-| Pricing, refunds, terms, privacy | Paddle is the seller | One sells first in the App Store; the web sells nothing | Name the store a person will buy through |
-| `404` page | A private tree link "now 404s" | The backend answers 200 with the front page | Make the answer a real 404 |
+| `/gym` | "Two taps between sets" | Not established; the approved page leaves it out | Remove |
+| `/gym`, `/404`, `/connect`, `/privacy`, `/terms` | "training log" | Public pages call Gym a workout log | "workout log" |
+| `/journal` | "Nothing you write teaches anything" | The privacy page says signed-in pages go to a hosted model for echoes | Remove unless a no-training term is verified |
+| `/refunds` | "what will cost money is the AI doing the work" | The AI guides; the person does the work | Rewrite |
+| `/pricing`, `/refunds` | A 30-day money-back guarantee | The approved pricing page promises nothing about refunds | Remove with the rebuild |
+| `/pricing`, `/refunds`, `/terms`, `/privacy` | Paddle is the seller | One is sold first in the App Store, and the web sells nothing | Say the store a person buys from takes the payment |
+| `/404` | A private tree link "now 404s" | The backend answers an unknown or private tree with the front page | Make the answer a real 404 |
 | Status badges | "Now in public beta", "Now open", none, and Terms' "public beta" | Four vocabularies | One true status per room, same words everywhere |
 | Roadmap social cards | Three different descriptions | One page, three stories | One description |
 
@@ -162,104 +200,27 @@ These are false or unproven today, whatever the design becomes.
 
 In order of weight:
 
-1. **Render the landings at build time.** A crawler that runs no script gets a badge, a heading, one
-   paragraph and links. The whole page should be in the first HTML, with the live scenes mounting over it.
+1. **Render the landings whole at build time.** A crawler that runs no script gets, on `/`, the
+   heading, the two lines, the three tools with their links and two shelves of links; on a room landing,
+   a badge, a heading, one paragraph and links. The whole page should be in the first HTML, with the
+   live parts mounting over it.
 2. **One visible main heading per page**, equal to what the title promises.
 3. **A published tree is its own page.** Its heading, summary and first steps in the first HTML; its own
    structured data or none; an unknown or private tree answers 404. Listed trees join the sitemap with a
    last-changed date.
-4. **Structured data says only what is true.** Organization and WebSite on `/`. One SoftwareApplication
-   per room with its real platforms and no offer until something is on sale. Questions only on `/pricing`.
+4. **Structured data says only what is true.** `/` carries `WebSite`, `Organization` and `WebPage`, and
+   no questions. One `SoftwareApplication` per room with its real platforms and no offer until
+   something is on sale: `/roadmap` still carries a free offer. Questions only on `/pricing` and on
+   each room page, matching the visible list.
 5. **A social card per page**, drawn with the page: front page, each room, connect, pricing, about.
-6. **Short canonical addresses** and one description per page.
-7. **Links.** Every public page is reachable from the footer. `/connect` and `/gallery` gain links from
-   the pages that talk about them.
+6. **Short canonical addresses**, with the `.html` address redirecting to the short one; today it is
+   the other way round. One description per page.
+7. **Links.** Every public page is reachable from the footer. The front page links `/connect` and
+   `/gallery`; the room pages gain links to them when they are rebuilt.
 8. **Naming.** "Windmill Roadmap", "Windmill Gym", "Windmill Journal" and windmill.works at first
    mention, so a search does not confuse Windmill with the unrelated developer automation platform.
 9. **Small repairs.** The `robots.txt` comment names a route that does not exist; the web manifest and
    `package.json` describe the product in two more ways.
 
-No keyword volumes are claimed here. Candidate terms (skill tree planner, workout log, journal) are
-checked against real search results before a title changes for their sake.
-
-## The look
-
-The owner's reference is [Linear's homepage](https://linear.app/homepage): clean, thin lines, good
-colour choices, professional and artisanal. Measured on that page and on ours on 2026-11-21:
-
-| | Linear | windmill.works today |
-|---|---|---|
-| Opening | One sentence, one quiet line, then the product itself | Three product bands; no sentence about Windmill |
-| Grounds | One for the whole page | Three in the first screen |
-| Type | One family, two weights, headings 64 and 48px set tight | Baloo 2 headings, Nunito text, many 10 to 11px bold labels |
-| Lines | 0.5px and 1px, white at 5 to 12% | 1, 2 and 2.5px |
-| Shadows | Almost none | 22 on the front page |
-| Text colours | Four greys; colour only inside the product pictures | Six, plus a hue per room in labels and links |
-| Buttons | Small pills, 32px tall | Large terracotta pill, plus six other header controls |
-| Section | Two-line heading left, one paragraph right, the product below, 128px of air | Eyebrow, heading, paragraph, link, picture beside |
-| Proof of work | Changelog on the homepage | Changelog stops in July |
-| Product pictures | Drawn as real interface | Live scenes, labelled as composed: already right |
-
-**What to take.** The opening sentence. One ground per page, with each room's hue only inside its own
-picture. Hairlines in place of shadows and card outlines. A four-step ink scale. Few type sizes and
-tight display type. One job per section. Small, quiet controls. A footer that is the sitemap.
-
-**The look is Instrument.** One typeface, Inter, for all page type, with few sizes and tight display
-type. Day and night are both drawn, and a first visit follows the visitor's device. The footer's
-appearance switch has three positions, Auto, Light and Dark, so a person can return to following the
-device. The header carries
-the approved mark, unchanged, with the word "Windmill" set in Inter; the full rounded logo stays for the
-app icon and social cards. A night version of the mark, with the same shapes and a lighter hub and door,
-is drawn for the owner's approval and is not used before it. The product pictures keep the product's own
-typefaces, because they show the product as it is.
-
-**What stays Windmill.** Warm paper by day and near-black by night, never Linear's cold grey. Terracotta
-as the one accent. The pictures built from the product's own vocabulary, and their "composed" labels.
-Every honesty rule.
-
-**What it changes from brand foundations.** Inter in place of Baloo 2 and Nunito on the public pages.
-The word "Windmill" in Inter beside the mark. A night mark. Hairlines and one ground in place of card
-outlines, shadows and a ground per room. A first screen with no live scene. Brand foundations still
-describe the pages as built; the [ledger](consistency.md#marketing-and-email) holds the difference until
-the flow is marked Ready for dev.
-
-**The drawings** are 🧪 proposal boards on the Marketing file's page
-[Site redesign · 2026-11-21](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=260-2508).
-
-## Owner rulings and open decisions
-
-Ruled:
-
-- The AI guides and the person does the work. No string says the AI "works for you" or "does it for
-  you".
-- The front page's main heading: "Windmill is where a person keeps growing in body, skill and mind."
-  Under it: "An AI-native training log, skill tree and journal." and "The AI guides. The work stays
-  yours. Use your own AI or ours."
-- The feature that leads each room: Roadmap, "Tell an AI your goal, get a skill tree."; Journal, "Your
-  own words, echoed back."; Gym, "A coach that has read every set."
-- The front page's order: the heading and its two lines, the strip of three, a section per room in the
-  order Roadmap, Journal, Gym, "Your AI, or ours.", where it runs, the footer.
-- The appearance switch has three positions: Auto, Light, Dark.
-- Windmill One on the front page is a plain statement that it is not on sale yet, with a link to pricing
-  and no price number.
-- `/about` has no section on who makes Windmill.
-- `/pricing` states where the $12 goes, in dollars.
-- The look is Instrument, and a first visit follows the visitor's device.
-- The header carries the mark with the word "Windmill" in Inter.
-
-Open:
-
-- Approval of the front page, which is being redrawn with the wording above.
-- Approval of the night version of the mark.
-
-## Order of work
-
-1. Correct the false strings. They do not wait for the design.
-2. Search repairs that change no layout: structured data, the tree page's first HTML and its 404,
-   one description per page, short addresses.
-3. The designer redraws the front page in the Instrument look with the ruled wording: the first
-   screen names the three tools and each room leads with one feature. The owner reviews it and the
-   night mark.
-4. After that approval the designer draws the other pages, and the owner marks the flow.
-5. Build from the marked flow, with the landings rendered at build time. Brand foundations' Fonts, Logo
-   and Landings sections are updated when the flow is marked Ready for dev.
+No keyword volumes are claimed here. A title changes for a search term only after the term is checked
+against real search results.

@@ -68,8 +68,9 @@ wins.
   is designed in both. An account adopts what is already on the device; it is never a gate in front
   of making it.
 - **Everything done by hand works signed out** — writing, logging sets, building routines, planting
-  steps, editing and every read. Nothing is disabled, dimmed or countdown-limited. Windmill One is
-  never shown signed out.
+  steps, editing and every read. Nothing is disabled, dimmed or countdown-limited. Inside the product,
+  Windmill One is never shown signed out. A public page names it as a plain sentence that says it is
+  not on sale, with no badge and no button; only the pricing page gives its price.
 - **The only unprompted mentions of signing in** are the quiet Sign in where a person starts (iOS
   Where to start?, the web's seat menu), the Keep offer after the first real thing, and You. An
   account verb the person starts — Share, Connect, Notes, a Coach question past the allowance —
@@ -118,10 +119,13 @@ says **can appear**, never a promise of placement.
 6. Brick never appears on a landing; gold is flourish, never a state.
 7. Brand-scope copy counts only open rooms as fact.
 
-**The moat rule.** A landing's hero is a live, self-playing vignette built from the product's real
-vocabulary — never a screenshot, stock or a static illustration. It autoplays only in the viewport
-of a visible tab, mounts off the critical path, settles to a legible end state under reduced motion,
-and is the page's one infinite-motion budget.
+**The moat rule.** A product's picture on a public page is built from the product's real vocabulary
+— never a screenshot, stock or an invented illustration. On a page in the Instrument look (the front page)
+each picture is a still composition of the product's own components, tokens and type, labelled as
+composed, and the page carries no infinite motion. A product landing not yet rebuilt (`/roadmap`,
+`/journal`, `/gym`) opens on a live, self-playing vignette: it autoplays only in the viewport of a
+visible tab, mounts off the critical path, settles to a legible end state under reduced motion, and is
+the page's one infinite-motion budget.
 
 ## Visual foundations
 
@@ -143,6 +147,10 @@ and is the page's one infinite-motion budget.
   (rounded, readable) for body/UI text. **JetBrains Mono** for count readouts ("6/17 done") and
   item IDs only — never for prose. **Caveat** is the ink-notes hand, used only for Journal's ink
   notes (the first-run notes under Product principles) and bundled in the app under the SIL Open Font License.
+  The public front page wears the Instrument look (`web/src/styles/tokens/looks.css`): its page type
+  is **Inter**, on one ground, with hairlines in place of shadows and card outlines, and a room's hue
+  only inside its own picture. The pictures keep the product's own type. The product and the public
+  pages not yet rebuilt keep the families above.
 - **Spacing**: 4px base unit, scale runs 4→128px (`--space-1`…`--space-32`). Generous padding
   throughout — nothing feels cramped.
 - **Backgrounds**: flat color, no photography, no gradients as backgrounds. The one gradient
@@ -194,7 +202,12 @@ and is the page's one infinite-motion budget.
 
 **Baloo 2**, **Nunito** and **JetBrains Mono** are Google-Fonts stand-ins, not licensed brand
 fonts. They are self-hosted via `@fontsource`, imported in `web/src/styles/fonts.js`; the stacks
-live in `web/src/styles/tokens/fonts.css`.
+live in `web/src/styles/tokens/fonts.css`. The product and the public pages not yet rebuilt use them.
+
+**Inter** is the typeface of the public front page in the Instrument look. It is self-hosted from
+`@fontsource-variable/inter`, declared in `web/src/shell/marketing/brandLanding.css` and named by
+`--look-font` in `web/src/styles/tokens/looks.css`. Only that page fetches it: the service worker
+leaves it out of the precache.
 
 ## Logo
 
@@ -206,19 +219,25 @@ Bold. Child node `9:108` is the standalone mark.
 |---|---|
 | `web/public/brand-logo.svg` | Stacked lockup, wordmark outlined; native bounds 512 × 620. |
 | `web/public/brand-mark.svg` | Compact mark, viewBox tightened around the artwork. |
+| `web/public/brand-mark-night.svg` | [Night mark](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=267-3491) for night grounds: the compact mark with the hub `#211B13` → `#E8D9C5` and the door `#4D2E12` → `#8A5A34`; every other shape and colour is the same. |
 | `web/public/favicon.svg`, `favicon-32.png`, `favicon.ico` | Browser identity derived from the mark. |
 | `web/public/icon-192.png`, `icon-512.png`, `apple-touch-icon.png` | Install icons derived from the mark on a cream ground. |
 | `apps/android/app/src/main/res/drawable/ic_launcher_foreground.xml` | Adaptive-icon foreground keeping the mark's seven paths, colours and circular hub. |
 | `apps/android/app/src/main/res/values/colors.xml` | Launcher background `ic_launcher_background = #F9F5EB`. |
 
 - Use the exact Figma-exported vectors; preserve their shapes, colours and aspect ratio. Never
-  redraw, recolour or animate the sails independently. There is no approved monochrome or
-  alternative wordmark variant.
-- `web/src/design-system/Brand.jsx` owns the web renderers: `BrandMark` (decorative mark),
+  redraw, recolour or animate the sails independently. The night mark is the one approved variant;
+  there is no monochrome one.
+- `web/src/design-system/Brand.jsx` owns the shared web renderers: `BrandMark` (decorative mark),
   `BrandWordmark` (mark with readable brand text, for navigation) and `BrandLogo` (the stacked
   lockup, for standalone branding). Give each image explicit width and height; the full export
   keeps Figma's whitespace, so size the visible artwork deliberately.
-- Keep the artwork's own colours on light and dark surfaces; the logo has no background of its own.
+- The public front page's header and footer set the word "Windmill" in the page's type (Inter 600)
+  beside the approved mark, and draw the night mark on a night ground, falling back to the day mark
+  if it fails to load (`web/src/shell/marketing/BrandLanding.jsx`). The Inter word belongs to that
+  page; elsewhere the assets above apply, the stacked lockup with its Baloo 2 wordmark included.
+- Outside the night mark, keep the artwork's own colours on light and dark surfaces; the logo has no
+  background of its own.
 - Derive every raster icon from the compact SVG so geometry cannot drift between sizes.
 - Email keeps a real-text wordmark so the header reads with images blocked.
 - Android's adaptive icon is a 108 × 108dp vector foreground over a full-bleed cream background, one
@@ -313,7 +332,8 @@ re-onboarding. The first run's only job is to get one page written and be worth 
 - **The phone owns the open workout.** The web never finishes a live session; one workout is open
   per account.
 - **Vocabulary.** Never *tracker*, *fitness*, XP, levels, badges or streaks. *Coach* names the room
-  and nothing else; the link handed to a human coach is *Share this workout*.
+  and nothing else; the link handed to a human coach is *Share this workout*. The public pages call
+  Gym a *workout log*.
 
 ---
 

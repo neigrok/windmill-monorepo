@@ -4,6 +4,15 @@ import { API_BASE } from '../apiBase.js';
 
 export const MESSAGE_MAX = 2000;
 
+// A send that did not land, with the status it was answered with: 0 when nothing answered.
+export class FeedbackError extends Error {
+  constructor(status) {
+    super('Feedback failed to send');
+    this.name = 'FeedbackError';
+    this.status = status;
+  }
+}
+
 export function isSendableMessage(message) {
   const trimmed = (message ?? '').trim();
   return trimmed.length >= 1 && trimmed.length <= MESSAGE_MAX;
@@ -27,9 +36,7 @@ export async function sendFeedback({ message, email }) {
       credentials: 'include',
     });
   } catch {
-    throw new Error('Network request failed');
+    throw new FeedbackError(0);
   }
-  if (response.ok) return;
-  const detail = await response.json().catch(() => ({}));
-  throw new Error(detail.error ?? 'Feedback failed to send');
+  if (!response.ok) throw new FeedbackError(response.status);
 }

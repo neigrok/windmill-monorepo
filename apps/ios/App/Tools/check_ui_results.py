@@ -17,6 +17,8 @@ EXPECTED_SKIPS = {
         "requires the verify skill's isolated backend",
     ("RoadmapFlowTests", "testPasteStepsReadsACopiedListBackAddsItWithItsMarkAndUndoTakesItBack"):
         "the iOS 27.0 simulator cannot ask before a paste, so nothing can allow one",
+    ("RoadmapIntegrationFlowTests", "testARoadmapMadePublicIsExportedAndAnotherAccountForksItFromTheGallery"):
+        "requires the verify skill's isolated backend",
 }
 
 

@@ -18,6 +18,7 @@ const prefersReducedMotion = () =>
 // `mine` — { label, count, onSelect } — is the row back to a visitor's own work; omit it for no row. `offered` are the rows
 // product sessions offer a member, each `{ label, count, onSelect }` and read as the label and its count; choosing one
 // hands focus to the seat first, so what it opens returns focus there.
+// `display` is how the seat itself is drawn: the member's `avatar`, the neutral `glyph` signed in too, or the `label` word.
 export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSettings, onConnect, mine, offered = [], footer, appearance = true, display = 'avatar' }) {
   const [open, setOpen] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -111,7 +112,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
             border: '1px solid var(--border-subtle)',
             boxShadow: 'var(--shadow-xs)',
             color: 'var(--text-tertiary)',
-            opacity: signedIn ? 0 : 1,
+            opacity: signedIn && display !== 'glyph' ? 0 : 1,
             transition: crossfade,
           }}
         >
@@ -121,7 +122,7 @@ export function AccountSeat({ user, status, size = 36, onSignIn, onSignOut, onSe
           </svg>
         </span>
 
-        {user && (
+        {user && display !== 'glyph' && (
           <span
             style={{
               position: 'absolute',

@@ -76,7 +76,7 @@ import SyncTesting
     #expect(open.guidesAbove.map(\.tree) == (nearest + [spanish.tree]).map(\.description))
     #expect(open.guidesAbove.map(\.distance) == [1, 1, 2])
     #expect(open.guidesAbove.last.map { "\($0.title): \($0.text)" } == "Spanish B1: Order dinner in Spanish by May.")
-    #expect(GuideSheet.menuTitle(above: open.guidesAbove.count) == "Guide · +3 from above")
+    #expect(GuideSheet.spoken(above: open.guidesAbove.count) == "Guides, +3 from above")
 
     model.openGuide()
     let sheet = try #require(model.guide)
@@ -87,7 +87,7 @@ import SyncTesting
     model.open(skipper.tree.description, from: .menu)
     await shows(model, guide: RoadmapFixture.Guides.skipper, on: engine)
     #expect(model.guide == nil)
-    #expect(model.shown.map { GuideSheet.menuTitle(above: $0.guidesAbove.count) } == "Guide · +1 from above")
+    #expect(model.shown.map { GuideSheet.spoken(above: $0.guidesAbove.count) } == "Guides, +1 from above")
     #expect(told(telemetry) == [
       "roadmap_room_opened ", "roadmap_guide above=some door=menu step=open view=board", "roadmap_sheet door=menu step=switch",
     ])
@@ -104,7 +104,7 @@ import SyncTesting
     let model = room(engine, runner, memory, telemetry: telemetry)
     model.roomOpened()
     await shows(model, guide: "", on: engine)
-    #expect(model.shown.map { GuideSheet.menuTitle(above: $0.guidesAbove.count) } == "Guide")
+    #expect(model.shown?.guidesAbove.isEmpty == true)
 
     model.openGuide()
     let sheet = try #require(model.guide)

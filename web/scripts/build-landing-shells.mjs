@@ -19,8 +19,9 @@ const PRODUCT_SHELF = [
   ...SURFACE_LINKS.map((link) => [link.href, link.label]),
 ];
 
-// Catalog text is escaped for where it lands; an & that cannot open a character reference stays itself.
-const htmlText = (value) => String(value).replace(/&(?=[#A-Za-z0-9])/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// Catalog text is escaped for where it lands; an & that cannot open a character reference stays itself,
+// and a no-break space is written as its reference so the source shows it.
+const htmlText = (value) => String(value).replace(/&(?=[#A-Za-z0-9])/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\u00A0/g, '&nbsp;');
 const htmlAttribute = (value) => htmlText(value).replace(/"/g, '&quot;');
 
 function swapOnce(text, from, to, where) {
@@ -55,7 +56,9 @@ function renderSchema(head) {
   return `<script type="application/ld+json">\n${json}\n    </script>`;
 }
 
-// Replaced on mount; inline-styled so it reads before the CSS bundle.
+const shelf = (rows) => rows.map(([href, label]) => `<a href="${htmlAttribute(href)}" style="color: #6B5D4A; margin: 0 10px;">${htmlText(label)}</a>`).join('\n          ');
+
+// A product landing's body. Replaced on mount; inline-styled so it reads before the CSS bundle.
 function renderFallback(head) {
   const page = head.fallback;
   const missing = ['accent', 'badge', 'h1', 'sub', 'actions', 'trust', 'notes'].filter((field) => !page?.[field]);
@@ -64,7 +67,6 @@ function renderFallback(head) {
     ? `<a href="${htmlAttribute(action.href)}" style="display: inline-block; background: ${htmlAttribute(page.accent)}; color: #F9F5EB; font-weight: 700; padding: 12px 22px; border-radius: 12px; text-decoration: none;">${htmlText(action.label)}</a>`
     : `<a href="${htmlAttribute(action.href)}" style="display: inline-block; color: #211B13; font-weight: 700; padding: 12px 22px; text-decoration: none;">${htmlText(action.label)}</a>`));
   const notes = page.notes.map((note) => `        <p style="font-size: 15px; color: #4A4034; line-height: 1.6; margin: 0 0 20px;">${htmlText(note)}</p>`);
-  const shelf = (rows) => rows.map(([href, label]) => `<a href="${htmlAttribute(href)}" style="color: #6B5D4A; margin: 0 10px;">${htmlText(label)}</a>`).join('\n          ');
 
   return `<div id="root">
       <main style="max-width: 720px; margin: 0 auto; padding: 72px 24px; text-align: center; font-family: system-ui, -apple-system, 'Nunito', sans-serif; color: #211B13;">
@@ -86,6 +88,31 @@ ${notes.join('\n')}
     </div>`;
 }
 
+// The brand root's body: its heading, the two lines under it, the three tools and the site's links.
+function renderRootFallback(head) {
+  const page = head.fallback;
+  const missing = ['h1', 'what', 'stance', 'tools'].filter((field) => !page?.[field]?.length);
+  if (missing.length) throw new Error(`build-landing-shells: the / row is missing its fallback ${missing.join(', ')} — the front page would reach a visitor who never runs it with no words of its own`);
+  const tools = page.tools.map((tool) => `        <h2 style="font-weight: 500; font-size: 22px; line-height: 28px; margin: 0;">${htmlText(tool.name)}</h2>
+        <p style="font-size: 14px; line-height: 20px; color: #766C5E; margin: 2px 0 8px;">${htmlText(tool.kind)}</p>
+        <p style="font-size: 17px; line-height: 26px; margin: 0 0 28px;">${htmlText(tool.line)} <a href="${htmlAttribute(tool.link.href)}" style="color: #211B13; font-weight: 500;">${htmlText(tool.link.label)}</a></p>`);
+
+  return `<div id="root">
+      <main style="max-width: 720px; margin: 0 auto; padding: 72px 24px; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #211B13;">
+        <h1 style="font-weight: 500; font-size: 40px; line-height: 42px; letter-spacing: -0.022em; margin: 0 0 16px;">${htmlText(page.h1)}</h1>
+        <p style="font-size: 22px; line-height: 30px; margin: 0 0 6px;">${htmlText(page.what)}</p>
+        <p style="font-size: 16px; line-height: 24px; color: #5C5246; margin: 0 0 40px;">${htmlText(page.stance)}</p>
+${tools.join('\n')}
+        <nav aria-label="${htmlAttribute(LEGAL_SHELF_LABEL)}" style="font-size: 14px; color: #6B5D4A; margin: 0 -10px;">
+          ${shelf(LEGAL_SHELF)}
+        </nav>
+        <nav aria-label="${htmlAttribute(PRODUCT_SHELF_LABEL)}" style="font-size: 14px; color: #6B5D4A; margin: 8px -10px 0;">
+          ${shelf(PRODUCT_SHELF)}
+        </nav>
+      </main>
+    </div>`;
+}
+
 // windmill_server rewrites everything between these when it serves a share page (/t/:id).
 const UNFURL_SENTINELS = ['<!-- meta:unfurl:start -->', '<!-- meta:unfurl:end -->'];
 
@@ -100,7 +127,7 @@ function preloadTags(head) {
 }
 
 const rootSchema = renderSchema(root);
-const rootFallback = renderFallback(root);
+const rootFallback = renderRootFallback(root);
 
 const shells = [];
 for (const head of LANDING_HEADS) {

@@ -328,6 +328,33 @@ unexpectedly reports `gym-workout-proposal-apply` or `gym-workout-proposal-dismi
 the copy's or the log's, is the card's sentence and no Issue. A decision on a workout proposal the log refused is the card's
 to say, so the room voices no notice and tells no `refusal` step for it.
 
+## Front page
+
+The brand root (`/`, `src/shell/marketing/BrandLanding.jsx`) tells one event for each link and control a person uses, through
+`track` in `src/telemetry/beacon.js`. Properties are allowlisted, bounded labels: no address, link text, account or email
+enters them. `product` is a product's registry id. Nothing inside a picture frame is a control, so a picture tells nothing.
+`test/shell/marketing/BrandLanding.test.js` drives every link and control, signed out, signed in and with a link already sent,
+and holds the events to this table.
+
+| Step | Event | Allowlisted props |
+|---|---|---|
+| The page opened, once per mount, at its first paint without waiting on the network; the intake tells a signed-in person from a stranger by the session the beacon carries | `front_open` | none |
+| A link followed. `area` is where it stands: the header, the three tools, a room's section, "Your AI, or ours." or the footer's sitemap. `to` is what it opens: the page's own top (`home`, the mark), a product's landing or room, the app (`app`, the pill: `/app` signed out, the last room signed in) or a named page | `front_link` | `area: header/tools/room/ai/sitemap`, `to: home/landing/room/app/pricing/connect/changelog/gallery/privacy/terms/refunds`, `product?: roadmap/journal/gym` |
+| A control used: Sign in, the Link sent reminder that reopens the door, Feedback, the footer's Auto · Light · Dark switch (a segment already in use tells nothing), and the account seat's Settings and Sign out. Only `appearance` carries `choice` | `front_control` | `control: sign_in/link_sent/feedback/appearance/settings/sign_out`, `choice?: auto/light/dark` |
+
+A room's picture whose chunk fails leaves the page whole and its frame at its height, and reports `front-picture-roadmap`,
+`front-picture-journal` or `front-picture-gym` once, with kind `render` and no stack (`BrandLanding.browser.test.js`). Any
+other render crash reaches `client_error` under the route family `/`. The sign-in door and the feedback dialog it opens tell
+and report their own sends:
+
+| Step | Event | Allowlisted props |
+|---|---|---|
+| A sign-in link asked for at the shared door, on any page | `sign_in_link` | `outcome: sent/refused/failed`, `reason?: invalid_email/rate_limited` when refused, `network/server/request` when failed |
+| Feedback sent from the shared dialog | `feedback_send` | `outcome: sent/refused/failed`, `reason?: refused` (a 400 or 429), `network/server/request` when failed |
+
+A failed send, not a refusal, also reports to Sentry with no stack: `auth-magic-link` (kind `auth`) and `feedback-send`
+(kind `feedback`), each tagged with its `reason`. Neither carries the address, the message or the server's words.
+
 ## Roadmap
 
 The Board is the only path into a roadmap and nothing stands in front of it: every event and Sentry operation below fires

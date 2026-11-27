@@ -1,7 +1,7 @@
 // The journal's route table. A position is a URL: #/journal is today, #/journal/<iso> is that day —
 // except on an entry an in-canvas hop stamped, which opens on today (openPosition.js).
 
-import { lazy } from 'react';
+import { createElement, lazy } from 'react';
 import { journalLandingHead } from './marketing/landingHead.js';
 import { CarryOver, forgetClosedAccount, forgetUnclaimedPages, settleSeat } from './carry.js';
 import { adoptDeviceRows, isWritten, onSyncResult, pagesOf, pendingClaimWork, recoveredDrafts, watchClaims } from './pages.js';
@@ -93,29 +93,24 @@ export const journalRoutes = {
     Component: JournalLanding,
     preload: importJournalLanding,
     tagline: t('journal.product.tagline'),
+    // What the brand root shows of the journal: its row among the three tools and its section.
     root: {
-      platforms: t('journal.product.platforms'),
-      // A card of prose, so its height steps with where the text wraps rather than scaling with the
-      // frame: it settles at these once the words stop rewrapping, and stands taller on a phone.
-      // Holding the settled height is strictly better than holding nothing at every width.
-      reserve: { band: '170px', section: '322px' },
-      band: {
-        title: t('journal.product.band.title'),
-        sub: t('journal.product.band.sub'),
+      kind: t('journal.root.kind'),
+      line: t('journal.root.line'),
+      link: { href: home(), label: t('journal.root.link'), to: 'room' },
+      title: t('journal.root.title', { break: createElement('br') }),
+      paragraph: t('journal.root.paragraph'),
+      features: [
+        { title: t('journal.root.searchTitle'), text: t('journal.root.searchText') },
+        { title: t('journal.root.pageTitle'), text: t('journal.root.pageText') },
+        { title: t('journal.root.gradedTitle'), text: t('journal.root.gradedText') },
+      ],
+      // Each stage is the picture's own drawn size; the shell holds the frame to one before the picture's chunk arrives.
+      picture: {
+        label: t('journal.root.composed'),
+        stages: [{ name: 'narrow', width: 356, height: 814 }, { name: 'column', width: 632, height: 659 }, { name: 'wide', width: 1033, height: 472 }],
+        Picture: lazy(() => import('./marketing/RootPicture.jsx').then((m) => ({ default: m.JournalPicture }))),
       },
-      section: {
-        title: t('journal.product.section.title'),
-        sub: t('journal.product.section.sub'),
-        trust: t('journal.product.section.trust'),
-        cta: { href: '#/journal', label: t('journal.product.section.cta') },
-        proof: [
-          { title: t('journal.product.proof.pageTitle'), copy: t('journal.product.proof.pageCopy') },
-          { title: t('journal.product.proof.searchTitle'), copy: t('journal.product.proof.searchCopy') },
-          { title: t('journal.product.proof.privateTitle'), copy: t('journal.product.proof.privateCopy') },
-        ],
-      },
-      Glimpse: lazy(() => import('./marketing/RootScenes.jsx').then((m) => ({ default: m.JournalGlimpse }))),
-      Illustration: lazy(() => import('./marketing/RootScenes.jsx').then((m) => ({ default: m.JournalIllustration }))),
     },
   },
   shell: {
