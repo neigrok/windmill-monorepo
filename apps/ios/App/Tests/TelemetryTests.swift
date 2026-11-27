@@ -375,13 +375,17 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
       #expect(TelemetryPrivacy.properties(["operation": operation, "failure_kind": kind, "refusal": "invalid", "file": "Sailing plan.md"]) ==
               ["operation": .label(operation), "failure_kind": .label(kind), "refusal": .label("invalid")])
     }
-    for (domain, code) in [("cocoa", "missing"), ("posix", "permission"), ("other", "unreadable"), ("cocoa", "cancelled"), ("other", "other")] {
+    for (domain, code) in [("cocoa", "missing"), ("posix", "permission"), ("cocoa", "space"), ("other", "unreadable"), ("cocoa", "cancelled"), ("other", "other")] {
       #expect(TelemetryPrivacy.properties(["operation": "roadmap_file", "error_domain": domain, "error_code": code, "message": "private-marker"]) ==
               ["operation": .label("roadmap_file"), "error_domain": .label(domain), "error_code": .label(code)])
     }
     #expect(NewRoadmapDraft.labels(of: CocoaError(.fileReadNoSuchFile)) == ["error_domain": "cocoa", "error_code": "missing"])
     #expect(NewRoadmapDraft.labels(of: POSIXError(.EACCES)) == ["error_domain": "posix", "error_code": "permission"])
     #expect(NewRoadmapDraft.labels(of: URLError(.badURL)) == ["error_domain": "other", "error_code": "other"])
+    // An export the system could not write reads apart by why: no permission where it was put, or no space left.
+    #expect(NewRoadmapDraft.labels(of: CocoaError(.fileWriteNoPermission)) == ["error_domain": "cocoa", "error_code": "permission"])
+    #expect(NewRoadmapDraft.labels(of: CocoaError(.fileWriteOutOfSpace)) == ["error_domain": "cocoa", "error_code": "space"])
+    #expect(NewRoadmapDraft.labels(of: POSIXError(.ENOSPC)) == ["error_domain": "posix", "error_code": "space"])
   }
 
   @Test func theStepFormTellsItsStepsByKindAndNothingOfTheStep() {
