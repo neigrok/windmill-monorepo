@@ -248,7 +248,11 @@ With the switch on, every room reads through `ReplicaReading`, the demo's among 
   Discard takes all of it, in the order the browser first changed them, a subtree's work its root's: the browser's own by
   name, and another's, such as one whose step the person marked as a reader, as "{roadmap} · N changes", named as the
   anon replica holds it and never from another replica. A roadmap made and deleted signed out goes unnamed; work that
-  changes no roadmap of the browser's own is added without asking. At sign-out, where every unsent change is roadmap's,
+  changes no roadmap of the browser's own is added without asking, its Coach conversations with it. Coach's conversations
+  and proposals are records of the same work, in the anon replica's `self/roadmap`, so one answer takes them with the
+  roadmaps they name, whose ids they keep. Where the work holds conversations the question is *Add to your account?*
+  (Roadmap Coach 10.4) instead, one sentence counting the browser's own roadmaps, its conversations that still stand and
+  the changes to another's roadmaps, which its Discard asks again in the same count. At sign-out, where every unsent change is roadmap's,
   the shell asks *Keep unsent changes?* with each roadmap they change and how many, and with the account's roadmaps the
   old stores still hold (§8.2) and their changes, asked where only those wait; any other sign-out keeps the shell's words.
   A change is one act of the person's, the engine's entries of one gesture: making a roadmap, which writes its record and

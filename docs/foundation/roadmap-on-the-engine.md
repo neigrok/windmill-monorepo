@@ -249,13 +249,19 @@ Every gesture is an action on the domain kit, the same in each language.
   engine's lineage rule decides: added without asking to an account that holds no roadmaps, and
   otherwise by the person's Add or Discard. At sign-out it asks Keep or Discard for what is unsent.
   The silent adoption and the silent wipe the web does today both end. A Discard covers exactly the
-  work its question names (engine §7.10). The sign-in question names every roadmap the signed-out
-  work changes: the browser's own by name, and another's by its changes ("{roadmap} · N changes"),
-  each by the name the browser showed it signed out and never by one another account's replica
-  holds; its Discard takes all of it, and the old stores (§8.2) of each roadmap the carry-over
-  carried into it, while their entries hold what they held as the question was asked. A roadmap made
-  and deleted signed out stays deleted either way and goes unnamed, and work that changes no roadmap
-  of the browser's own is added without asking.
+  work its question names or counts (engine §7.10). Where the work holds no conversation, the sign-in
+  question names every roadmap the signed-out work changes: the browser's own by name, and another's
+  by its changes ("{roadmap} · N changes"), each by the name the browser showed it signed out and
+  never by one another account's replica holds. Where the work holds [Roadmap
+  Coach](roadmap-coach.md)'s conversations, it names none: it counts, in one sentence, the device's own
+  roadmaps, its conversations that still stand and, on the web, the changes to another's roadmaps, and
+  its Discard asks again in the same count (Roadmap Coach 10.4 on the web, Roadmap · iOS 10.7 on the
+  iPhone). Either way its Discard takes all of the work, and the old stores (§8.2) of each roadmap the
+  carry-over carried into it, while their entries hold what they held as the question was asked.
+  Conversations and proposals are records of that work, so one answer takes them with the roadmaps
+  they name, which keep their ids. A roadmap or a conversation made
+  and deleted signed out stays deleted either way and goes uncounted, and work that changes no roadmap
+  of the browser's own is added without asking, its conversations with it.
   The sign-out question names, beside the replica's unsent changes, the account's roadmaps the
   browser's old stores still hold (§8.2), each with its changes, and is asked where only those wait;
   its Discard takes exactly those, while their entries hold what it counted. Work a question did not

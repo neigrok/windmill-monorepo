@@ -82,6 +82,20 @@ import RoadmapDomain
             == "This phone has 3 changes from before you signed in. Your account already has roadmaps. Add them, or discard them from this phone.")
   }
 
+  // Roadmap · iOS 10.7: Coach's conversations made signed out are named after the roadmaps, their messages and proposals
+  // with them, unnamed.
+  @Test func conversationsAreNamedAfterTheRoadmaps() {
+    let made = [RoadmapEntry.type: 2, RoadmapMeta.type: 2, RoadmapDomain.CoachThread.type: 3, RoadmapDomain.CoachMessage.type: 6, RoadmapDomain.CoachProposal.type: 1]
+    #expect(words([.roadmap: made]) == [
+      "Add to your account?",
+      "This phone has 2 roadmaps and 3 conversations from before you signed in. Your account already has roadmaps. Add them, or discard them from this phone.",
+      "Discard 2 roadmaps and 3 conversations?",
+      "They are deleted from this phone. You can’t undo this.",
+    ])
+    #expect(words([.roadmap: [RoadmapEntry.type: 1, RoadmapDomain.CoachThread.type: 1]])[1]
+            == "This phone has 1 roadmap and 1 conversation from before you signed in. Your account already has roadmaps. Add them, or discard them from this phone.")
+  }
+
   // A room holding only unnamed kinds is still named when it shares the question, so Discard covers only what was named.
   @Test func aRoomOfUnnamedKindsBesideAnotherCountsItsChanges() {
     #expect(words([.gym: [GymPreferences.type: 1, Proposal.type: 2], .journal: [Page.type: 3]]) == [
