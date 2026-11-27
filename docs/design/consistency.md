@@ -570,10 +570,6 @@ four-screen introduction was decided on 2026-10-04 — direction A · Three room
 Where to start?, About Windmill in You and the account sheet, and the four screens are the accepted
 exception to opening on a choice. Both phones draw it (`Onboarding.swift`, `OnboardingPager.kt`).
 
-- **9a · Platform lines.** The Marketing superapp landing boards (`98:2538`) print *Web · iOS* for
-  journal and *Web · iOS · Android* for gym; the shipped `landing.root.platforms` in each product's
-  `routes.js` reads *Web* and *Web · Android*, and the onboarding's per-phone tags follow the code.
-  Redraw the boards from the code, or change the code when the iOS app ships.
 - **9c · The roadmap glimpse.** `_Glimpse / Roadmap` (`210:2`) fans the sail tree from the root to
   the right, like the landing boards; the product renders radially (0k). The glimpse is an
   illustration, not a layout specimen; if it is ever drawn from the product, draw it from a live
@@ -2307,15 +2303,27 @@ bought in a store are drawn at 🚧 in the Shell file, section `302:361`.
 
 ## Marketing and email
 
-- **Marketing site proposal against brand foundations.** The [proposal](marketing-site-proposal.md)
-  sets Inter in place of Baloo 2 and Nunito on the public pages, the word “Windmill” in Inter beside the
-  unchanged mark, a night version of the mark, hairlines and one ground in place of card outlines,
-  shadows and a ground per room, and a first screen with no live scene. Brand foundations' Fonts, Logo
-  and Landings sections describe the pages as built. Update them when the flow is marked ✅ Ready for dev.
+- **The public pages not yet rebuilt.** The front page is built in the Instrument look
+  ([marketing site](marketing-site-proposal.md#the-instrument-look)). Pricing and the three room
+  pages are drawn in it and ✅ Ready for dev (sections `284:2508`, `290:2508`, `294:2508`, `293:2508`),
+  and are still built in the older look: Baloo 2 and Nunito (the room landings through
+  `web/src/shell/marketing/landing.css`, pricing in `web/public/pricing.html`), with a live vignette as
+  each room landing's hero. Brand foundations' Fonts, Logo and moat rule name both looks until each
+  page is rebuilt. Connect, the legal pages, the changelog, the gallery and 404 are not drawn in the
+  Instrument look.
+- **Approved wording that says echoes spend the AI amount.** The ✅ pricing section lists echoes in its
+  Windmill's AI column and answers *Do echoes use the AI amount?* with *Yes. A hosted model finds them,
+  and each one counts.*; the ✅ Journal page's echoes section carries *It uses your AI amount*. Echoes
+  are paid from Windmill's background budgets and never debit a person's allowance
+  (`backend/AI_ALLOWANCES.md`). Correct both boards, with the owner, before those pages are built.
+- **Front page marks.** The front page is built from section `272:2508`
+  (`web/src/shell/marketing/BrandLanding.jsx`), whose layer name reads 🔨, and the night mark from
+  `267:3491` (`web/public/brand-mark-night.svg`), whose layer name reads ✅. Mark both 🚀 In production when the page is live.
+- **Superseded root boards.** The Marketing file's superapp landing boards, among them `98:2538`
+  (three product bands with per-room platform lines), describe the root the front page replaced. Archive
+  them (🗄 Archived prefix and tag).
 - **0g / 0h · Landing colour rules.** Clarify whether several product-skin windows are allowed
   and whether a roadmap kind may use brick when brick is excluded from landing chrome.
-- **0i · Brand-root anatomy.** Reconcile the common landing roles with the root's product-band
-  layout, including a useful loop, truthful limitations and the role of static scenes.
 - **0m · First paint.** `appBoot.js` does not reset the browser's body margin before the main
   stylesheet arrives. Check and remove the resulting landing layout shift.
 - **F23 / F24 · Email templates.** `magic-link-fork.html` lacks the light-only CSS rule used by

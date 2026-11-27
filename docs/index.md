@@ -2,7 +2,7 @@
 
 Where each user flow is drawn. Each section reads left to right; every board's caption names the code
 that ships it. Status lives in the Figma layer names. Roadmap on web, Journal on iOS and Gym on the web, iOS and
-Android are indexed here, with the proposal for the public pages.
+Android are indexed here, with the public pages.
 
 ## Roadmap · Web
 
@@ -210,9 +210,18 @@ full-width 56 dp stock pill button at their foot under a ✕ Close head, as thei
 
 Sign in, You, sign out and Delete account: Shell file, page [Android](https://www.figma.com/design/tkI7GnS6TcZvQSDi9lwrBf?node-id=1-6), section `33:1568`; deletion recovery D1–D6, section `116:754`.
 
-## Marketing site · 🧪 Proposal
+## Marketing site
 
 Figma: Marketing file, page [Site redesign · 2026-11-21](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=260-2508).
-Written half: [marketing site proposal](design/marketing-site-proposal.md), which holds the sitemap, the
-wording, the search repairs, the Instrument look and the owner's rulings. The boards are 🧪 proposals;
-none is marked ✅ Ready for dev and nothing is built from them.
+Written half: [marketing site](design/marketing-site-proposal.md), which holds the sitemap, the rules
+every public page keeps, the Instrument look, what is built and what waits, the search repairs and the
+strings still false.
+
+| Section | Page | State |
+|---|---|---|
+| [C · Front page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=272-2508) | `/` | Built on `main`: `web/src/shell/marketing/BrandLanding.jsx` |
+| [Mark · night version](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=267-3491) | header and footer on night grounds | Built on `main`: `web/public/brand-mark-night.svg` |
+| [✅ C · Pricing](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=284-2508) | `/pricing` | Ready for dev; not built |
+| [✅ C · Roadmap page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=290-2508) | `/roadmap` | Ready for dev; not built |
+| [✅ C · Journal page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=294-2508) | `/journal` | Ready for dev; not built |
+| [✅ C · Gym page](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=293-2508) | `/gym` | Ready for dev; not built |
