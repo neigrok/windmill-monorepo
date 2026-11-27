@@ -229,6 +229,22 @@ class CaddyfileRoutesTest(unittest.TestCase):
             located[page] = result.stdout
         self.assertEqual(located, {page: f"301 https://app.localhost:{port}/{page}.html" for page in pages})
 
+    def test_unhashed_root_scripts_and_styles_revalidate_and_hashed_assets_are_kept_for_good(self):
+        (self.web / "assets").mkdir()
+        for name in ("sw.js", "appearance.js", "chrome.css", "assets/app-1a2b3c.js", "pricing.html"):
+            (self.web / name).write_text("file\n")
+        port = self.edge("0.0.0.0/0 ::/0")
+        policy = {}
+        for path in ("/sw.js", "/appearance.js", "/chrome.css", "/assets/app-1a2b3c.js", "/pricing.html"):
+            result = subprocess.run(["curl", "-sk", "--max-time", "5", "--resolve", f"app.localhost:{port}:127.0.0.1",
+                                     "-H", "CF-Connecting-IP: 17.58.0.1", "-o", "/dev/null",
+                                     "-w", "%{http_code} %header{cache-control}", f"https://app.localhost:{port}{path}"],
+                                    capture_output=True, text=True, timeout=30)
+            policy[path] = result.stdout
+        self.assertEqual(policy, {"/sw.js": "200 no-cache", "/appearance.js": "200 no-cache", "/chrome.css": "200 no-cache",
+                                  "/assets/app-1a2b3c.js": "200 public, max-age=31536000, immutable",
+                                  "/pricing.html": "200 "})
+
     def test_the_app_store_door_answers_apple_s_subnet_alone(self):
         port = self.edge("0.0.0.0/0 ::/0")
         path = "/v1/stores/app-store/notifications"
