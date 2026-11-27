@@ -17,6 +17,18 @@ test('the pricing page offers no purchase and says Windmill One is not on sale b
   assert.ok(body.includes('<p class="price-row"><span class="price-amount">$12 a month</span> <span class="price-status">Not on sale yet.</span></p>'));
 });
 
+// The three ways are the pricing contract's words, and the one that names Windmill One says it is not on sale.
+test('the three ways to use Windmill say what the pricing contract says, column by column', () => {
+  const start = body.indexOf('<ul class="site-wrap site-rule price-ways"');
+  const ways = body.slice(start, body.indexOf('</ul>', start));
+  const columns = [...ways.matchAll(/<h2>([^<]*)<\/h2>\s*<p class="price-tier">([^<]*)<\/p>\s*<p class="price-text">([^<]*)<\/p>/g)].map((column) => column.slice(1));
+  assert.deepEqual(columns, [
+    ['By hand', 'Free', 'Trees, steps, sharing and forking in Roadmap. Writing and search by meaning in Journal. Logging, routines and progress in Gym. A tree or a journal page needs no account.'],
+    ['With your own AI', 'Free here', 'Connect the assistant you already have to Roadmap and Gym. You pay whoever provides it. Windmill charges nothing.'],
+    ['With Windmill’s AI', '$0.50 of AI a month on a free account', 'Coach in Gym answers from your log and proposes changes you apply. Echoes in Journal show passages you wrote before, and Windmill pays for those. Windmill One, which is not on sale yet, raises the amount to $7 a month and adds Talk.'],
+  ]);
+});
+
 // Every number the page states was read off production's settings for the pricing contract; the page adds none.
 test('the page states exactly the amounts the pricing contract names', () => {
   const amounts = [...new Set(text(body).match(/\$\d+(\.\d+)?/g))].sort();
