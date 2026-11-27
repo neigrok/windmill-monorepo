@@ -492,7 +492,7 @@ or a required one left out, is `invalid-input`.
 | `set_kind` | `nodeId`, `kind` | | The step takes the kind's hue |
 | `connect` | `nodeId`, `prerequisiteId` | | A link added: `nodeId` is the step that waits, `prerequisiteId` the step it waits on |
 | `disconnect` | `nodeId`, `prerequisiteId` | | That link removed |
-| `merge` | `nodeId`, `removeId` | `label`, `description` | `removeId` folds into `nodeId`, which keeps its own mark and web links and takes `label` and `description` where sent. Each prerequisite link into or out of `removeId` moves to `nodeId`, a link between the two is dropped, and two links that meet become one. `removeId` is removed, its web links with it |
+| `merge` | `nodeId`, `removeId` | `label`, `description` | `removeId` folds into `nodeId`, which keeps its own mark and web links and takes `label` and `description` where sent. Each prerequisite link into or out of `removeId` moves to `nodeId`, a link between the two is dropped, and two links that meet become one. `removeId` is removed, its web links with it. A link is between the two as the follow graph reads one, through deleted steps ([Roadmap on the sync engine](roadmap-on-the-engine.md) D-5): one that would have `nodeId` follow itself through deleted steps alone is dropped, as a direct one is |
 | `split` | `nodeId`, `parts` | | The step becomes its parts, two or more, each `{ref, label}` and optionally `description`, `kind` and `links`, side by side (R-9): each follows the old step's prerequisites, precedes each step that followed it, takes its mark, and takes its kind unless it names one. A part's description and web links are empty unless sent. The old step is removed, and its links with it |
 | `set_progress` | `nodeId`, `status` | | The step marked `complete` or `none` |
 | `add_kind` | `ref`, `label`, `hue` | `description` | A new kind |
@@ -530,9 +530,10 @@ or a required one left out, is `invalid-input`.
         `merge`, a `split` or a `connect`, whose link the step already follows closes nothing and
         changes nothing; and `hue-taken` for a kind, checked at each change as the room's recolour
         checks it, so two kinds do not swap hues in one proposal;
-     8. `roadmap-changed`: a register it touches that the turn read at another stamp than the copy
-        holds now (§5), so the model reads again and never proposes over an edit it has not seen. A
-        register the turn never read is taken at the copy's stamp;
+     8. `roadmap-changed`: a register it touches, whether it writes it or only names it, as a
+        `disconnect` names its link, that the turn read at another stamp than the copy holds now (§5), so
+        the model reads again and never proposes over an edit it has not seen. A register the turn never
+        read is taken at the copy's stamp;
      9. the marks, `opens-roadmap` and `step-locked`, as `set_progress` checks them;
      10. `no-change`, where it writes nothing over the scratch;
   5. the record's size.
@@ -554,7 +555,8 @@ A proposal is a record (§9): `{id, treeId, threadId, messageId, base, changes[]
 
 - `base` is a list of registers, `{t, id, register, stamp}`, in the order the changes first touch
   them: for every step a change mentions, the stamp of its being there, its `life`; for every register
-  a change writes, that register's stamp; and for `set_progress`, the mark's. `t` is `node`, `edge`,
+  a change writes, that register's stamp; for a `disconnect`, its link's, whether or not it writes it;
+  and for `set_progress`, the mark's. `t` is `node`, `edge`,
   `kind` or `progress`, `id` the record's id (`[from, to]` for a link), `register` `life` or a field,
   and `stamp` the copy's, null for a record the copy does not hold. A new step or kind records its
   id's life unheld, and the records it makes are its alone. A recolour's base is the kind's hue: the

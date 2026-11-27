@@ -229,10 +229,12 @@ struct ProposalRemoval {
   }
 }
 
-// What folding one change writes, and what it asks of the copy before it writes: the check that is the op's own, of its links
-// or hues; the marks it keeps; whether it changes nothing; and the step it removes.
+// What folding one change writes, and what it asks of the copy before it writes: the registers it names without writing them,
+// which the turn may have read; the check that is the op's own, of its links or hues; the marks it keeps; whether it changes
+// nothing; and the step it removes.
 struct ProposalFolding {
   var writes: [ProposalWrite]
+  var names: [ProposalWrite] = []
   var check: (() -> CoachRefusal?)? = nil
   var marks: (() -> CoachRefusal?)? = nil
   var unchanged: Bool? = nil
@@ -436,7 +438,7 @@ public final class ProposalFold {
     let folding = self.folding(change)
     if passesCaps(folding.writes) { return CoachRefusal(.overLimit, original.id) }
     if let own = folding.check?() { return own }
-    let touching = registers(named, folding.writes, giving: Set(giving.map { Array($0.id.utf8) }))
+    let touching = registers(named, folding.writes + folding.names, giving: Set(giving.map { Array($0.id.utf8) }))
     if let moved = touching.first(where: \.moved) { return CoachRefusal(.roadmapChanged, moved.owner) }
     if let marks = folding.marks?() { return marks }
     if folding.unchanged ?? folding.writes.allSatisfy({ records.value($0) == $0.value }) { return CoachRefusal(.noChange, change.subject) }
@@ -507,27 +509,31 @@ public final class ProposalFold {
   }
 
   // A link removed, as the room's own removes one: the step's direct link, or, of a prerequisite it follows through removed
-  // steps alone, each link by which it reaches it.
+  // steps alone, each link by which it reaches it. The direct link is named either way, so one the turn read that is gone
+  // since is a roadmap changed, not a change of nothing.
   func disconnecting(_ nodeId: String, _ prerequisiteId: String) -> ProposalFolding {
-    if records.edge(prerequisiteId, nodeId)?.present == true {
-      return ProposalFolding(writes: [.link(prerequisiteId, nodeId, false)])
-    }
+    let direct = ProposalWrite.link(prerequisiteId, nodeId, false)
+    if records.edge(prerequisiteId, nodeId)?.present == true { return ProposalFolding(writes: [direct]) }
     let followed = roadmap.graph.followed(nodeId).first { $0.id.utf8.elementsEqual(prerequisiteId.utf8) }
-    return ProposalFolding(writes: (followed?.incoming ?? []).map { .link($0.from, $0.to, false) })
+    return ProposalFolding(writes: (followed?.incoming ?? []).map { .link($0.from, $0.to, false) }, names: [direct])
   }
 
   // R-9: `removeId` folds into `nodeId`, which keeps its mark and web links and takes the words sent. Each live link into or
   // out of `removeId` dies and its like is made to or from `nodeId`, one that already stands made once; a link between the
-  // two dies with them. `removeId` is removed, its web links with it.
+  // two dies with them. `removeId` is removed, its web links with it. A link is between the two as the follow graph reads
+  // one, through deleted steps (Roadmap on the sync engine D-5): directly, or through deleted steps alone.
   func merging(_ change: ProposalChange) -> ProposalFolding {
     let (nodeId, removeId) = (change.text("nodeId") ?? "", change.text("removeId") ?? "")
     let touching = tree.edges.filter { $0.present && ($0.from.utf8.elementsEqual(removeId.utf8) || $0.to.utf8.elementsEqual(removeId.utf8)) }
     var made: [(from: String, to: String)] = []
+    var making = Set<[UInt8]>()
     for edge in touching {
-      let (from, to) = edge.from.utf8.elementsEqual(removeId.utf8) ? (nodeId, edge.to) : (edge.from, nodeId)
-      let key = ScratchRecords.linkKey(from, to)
-      if from.utf8.elementsEqual(to.utf8) || edge.from.utf8.elementsEqual(edge.to.utf8) || records.edge(from, to)?.present == true
-        || made.contains(where: { ScratchRecords.linkKey($0.from, $0.to) == key }) { continue }
+      let out = edge.from.utf8.elementsEqual(removeId.utf8)
+      let between = out ? edge.to.utf8.elementsEqual(nodeId.utf8) || reachesThroughAbsent(edge.to, onward: true, nodeId)
+        : edge.from.utf8.elementsEqual(nodeId.utf8) || reachesThroughAbsent(edge.from, onward: false, nodeId)
+      let (from, to) = out ? (nodeId, edge.to) : (edge.from, nodeId)
+      if between || edge.from.utf8.elementsEqual(edge.to.utf8) || records.edge(from, to)?.present == true
+        || !making.insert(ScratchRecords.linkKey(from, to)).inserted { continue }
       made.append((from, to))
     }
     let others = (change.text("label").map { [ProposalWrite.node(nodeId, "label", .string($0))] } ?? [])
@@ -626,7 +632,8 @@ public final class ProposalFold {
   }
 
   // §7 The registers a change touches, each with the base entry it adds and whether the turn saw it at another stamp than the
-  // copy's: the being there of every step it names, then every register it writes but the room's command's, each once. A
+  // copy's: the being there of every step it names, then every register it writes but the room's command's, and every
+  // register it names without writing, each once. A
   // record of a new step or kind of the set is that id's alone: only the life of each the change itself gives joins the base,
   // unheld.
   func registers(_ named: [String], _ writes: [ProposalWrite], giving: Set<[UInt8]>) -> [(key: String, register: BaseRegister, moved: Bool, owner: String)] {
@@ -658,6 +665,23 @@ public final class ProposalFold {
     guard let record else { return (false, nil) }
     if register == "life" { return (record.life != nil, record.life) }
     return (record.f[register] != nil, record.f[register])
+  }
+
+  // Whether `start`, a step the scratch holds no present step of, reaches `target` over live links onward or back through
+  // such steps alone, as the follow graph reads a link through absent steps.
+  func reachesThroughAbsent(_ start: String, onward: Bool, _ target: String) -> Bool {
+    let index = tree.index
+    guard let begin = index.vertices[start], begin >= index.ids.count, let goal = index.slot(of: target) else { return false }
+    var passed: Set<Int> = [begin]
+    var pending = [begin]
+    while let vertex = pending.popLast() {
+      for next in onward ? index.children[vertex] : index.parents[vertex] {
+        if next == goal { return true }
+        if next < index.ids.count || !passed.insert(next).inserted { continue }
+        pending.append(next)
+      }
+    }
+    return false
   }
 
   // A tree of scratch records, the roadmap's own in every other part.

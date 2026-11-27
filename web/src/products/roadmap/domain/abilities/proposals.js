@@ -37,9 +37,10 @@ import { RoadmapCaps, StandingRoadmaps } from './standing.js';
 /** @typedef {{ t: string, id: string | string[], register: string, value: Json, base?: false }} Write one register a change writes; a write the room's own command makes is no part of the base */
 /** @typedef {{ nodeId: string, label: string, descriptionChars: number, links: number, done: boolean }} Removal */
 /**
- * What folding one change writes, and what it asks of the copy before it writes: the check that is the op's own, of
- * its links or hues; the marks it keeps; whether it changes nothing; and the step it removes.
- * @typedef {{ writes: Write[], check?: () => Refused | null, marks?: () => Refused | null, unchanged?: boolean, removes?: string }} Folding
+ * What folding one change writes, and what it asks of the copy before it writes: the registers it names without writing
+ * them, which the turn may have read; the check that is the op's own, of its links or hues; the marks it keeps; whether it
+ * changes nothing; and the step it removes.
+ * @typedef {{ writes: Write[], names?: Write[], check?: () => Refused | null, marks?: () => Refused | null, unchanged?: boolean, removes?: string }} Folding
  */
 
 // §7 Each op of a change, by the fields its row names, required and then optional.
@@ -363,7 +364,7 @@ export class ProposalFold {
     if (this.passesCaps(folding.writes)) return refusal(AbilityCodes.overLimit, this.id, at);
     const own = folding.check?.();
     if (own) return refusal(own.refused.code, own.refused.id, at);
-    const touched = this.touched(named, folding.writes, new Set(giving.map(({ id }) => id)));
+    const touched = this.touched(named, [...folding.writes, ...folding.names ?? []], new Set(giving.map(({ id }) => id)));
     const moved = touched.find((each) => each.moved);
     if (moved) return refusal(AbilityCodes.roadmapChanged, moved.owner, at);
     const marks = folding.marks?.();
@@ -424,25 +425,30 @@ export class ProposalFold {
   }
 
   // A link removed, as the room's own removes one: the step's direct link, or, of a prerequisite it follows through
-  // removed steps alone, each link by which it reaches it.
+  // removed steps alone, each link by which it reaches it. The direct link is named either way, so one the turn read that
+  // is gone since is a roadmap changed, not a change of nothing.
   /** @param {string} nodeId @param {string} prerequisiteId @returns {Folding} */
   disconnecting(nodeId, prerequisiteId) {
-    if (this.#records.edges.get(linkKey(prerequisiteId, nodeId))?.present) return { writes: [linkLife(prerequisiteId, nodeId, false)] };
+    const direct = linkLife(prerequisiteId, nodeId, false);
+    if (this.#records.edges.get(linkKey(prerequisiteId, nodeId))?.present) return { writes: [direct] };
     const followed = this.roadmap.graph.followed(nodeId).find((entry) => entry.id === prerequisiteId);
-    return { writes: (followed?.incoming ?? []).map(([from = '', to = '']) => linkLife(from, to, false)) };
+    return { writes: (followed?.incoming ?? []).map(([from = '', to = '']) => linkLife(from, to, false)), names: [direct] };
   }
 
   // R-9: `removeId` folds into `nodeId`, which keeps its mark and web links and takes the words sent. Each live link into
   // or out of `removeId` dies and its like is made to or from `nodeId`, one that already stands made once; a link between
-  // the two dies with them. `removeId` is removed, its web links with it.
+  // the two dies with them. `removeId` is removed, its web links with it. A link is between the two as the follow graph
+  // reads one, through deleted steps (Roadmap on the sync engine D-5): directly, or through deleted steps alone.
   /** @param {Change} change @returns {Folding} */
   merging({ nodeId, removeId, label, description }) {
     const touching = this.tree.edges.filter((edge) => edge.present && (edge.from === removeId || edge.to === removeId));
     /** @type {Map<string, string[]>} */
     const made = new Map();
     for (const { from, to } of touching) {
+      const between = from === removeId ? to === nodeId || this.reachesThroughAbsent(to, 'children', nodeId)
+        : from === nodeId || this.reachesThroughAbsent(from, 'parents', nodeId);
       const [madeFrom = '', madeTo = ''] = from === removeId ? [nodeId, to] : [from, nodeId];
-      if (madeFrom === madeTo || from === to || this.#records.edges.get(linkKey(madeFrom, madeTo))?.present) continue;
+      if (between || from === to || this.#records.edges.get(linkKey(madeFrom, madeTo))?.present) continue;
       made.set(linkKey(madeFrom, madeTo), [madeFrom, madeTo]);
     }
     const others = [...(label === undefined ? [] : [nodeField(nodeId, 'label', label)]), ...(description === undefined ? [] : [nodeField(nodeId, 'description', description)]),
@@ -544,7 +550,7 @@ export class ProposalFold {
 
   // §7 The registers a change touches, each with the base entry it adds and whether the turn saw it at another stamp
   // than the copy's: the being there of every step it names, then every register it writes but the room's command's,
-  // each once. A record of a new step or kind of the set is that id's alone: only the life of each the change itself
+  // and every register it names without writing, each once. A record of a new step or kind of the set is that id's alone: only the life of each the change itself
   // gives joins the base, unheld.
   /** @param {string[]} named @param {Write[]} writes @param {Set<string>} giving */
   touched(named, writes, giving) {
@@ -566,6 +572,26 @@ export class ProposalFold {
       touched.set(key, { key, entry: { t, id, register, stamp: copy.stamp }, moved: seen.held && seen.stamp !== copy.stamp, owner: ids.at(-1) ?? '' });
     }
     return [...touched.values()];
+  }
+
+  // Whether `start`, a step the scratch holds no present step of, reaches `target` over live links onward (`children`) or
+  // back (`parents`) through such steps alone, as the follow graph reads a link through absent steps.
+  /** @param {string} start @param {'children' | 'parents'} way @param {string} target */
+  reachesThroughAbsent(start, way, target) {
+    const { index } = this.tree;
+    const begin = index.rawSlot.get(start);
+    const goal = index.slot.get(target);
+    if (begin === undefined || begin < index.ids.length || goal === undefined) return false;
+    const passed = new Set([begin]);
+    for (const pending = [begin]; pending.length;) {
+      for (const next of index[way][/** @type {number} */ (pending.pop())] ?? []) {
+        if (next === goal) return true;
+        if (next < index.ids.length || passed.has(next)) continue;
+        passed.add(next);
+        pending.push(next);
+      }
+    }
+    return false;
   }
 
   // A tree of scratch records.

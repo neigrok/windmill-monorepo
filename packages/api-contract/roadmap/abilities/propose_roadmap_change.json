@@ -6814,6 +6814,15 @@
             ],
             "register": "life",
             "stamp": "3001:0:r_aaaaaaaaaaaa"
+          },
+          {
+            "t": "edge",
+            "id": [
+              "a",
+              "c"
+            ],
+            "register": "life",
+            "stamp": null
           }
         ]
       },
@@ -13602,6 +13611,4884 @@
       "refused": {
         "code": "roadmap-not-ready",
         "id": "b",
+        "at": 0
+      }
+    }
+  },
+  {
+    "case": "a merge of a step into the one it leads to drops the link between them",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Step a",
+              "icon": "",
+              "color": "olive",
+              "ord": "aa",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Step c",
+              "icon": "",
+              "color": "olive",
+              "ord": "ac",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "",
+              "ord": "a0"
+            }
+          ],
+          "marks": [],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ],
+      "stamps": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "c"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        }
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "merge",
+            "nodeId": "c",
+            "removeId": "a"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": [
+          {
+            "nodeId": "a",
+            "label": "Step a",
+            "descriptionChars": 0,
+            "links": 0,
+            "done": false
+          }
+        ]
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "merge",
+            "nodeId": "c",
+            "removeId": "a"
+          }
+        ],
+        "base": [
+          {
+            "t": "node",
+            "id": "c",
+            "register": "life",
+            "stamp": "1001:0:r_aaaaaaaaaaaa"
+          },
+          {
+            "t": "node",
+            "id": "a",
+            "register": "life",
+            "stamp": "1000:0:r_aaaaaaaaaaaa"
+          },
+          {
+            "t": "edge",
+            "id": [
+              "a",
+              "c"
+            ],
+            "register": "life",
+            "stamp": "3000:0:r_aaaaaaaaaaaa"
+          }
+        ]
+      },
+      "folded": {
+        "kinds": [
+          {
+            "id": "learn",
+            "label": "Learn",
+            "hue": "olive",
+            "description": ""
+          }
+        ],
+        "steps": [
+          {
+            "id": "c",
+            "label": "Step c",
+            "color": "olive",
+            "description": "",
+            "links": [],
+            "prerequisites": [],
+            "state": "available"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "a merge of a step into one it leads to through a deleted step drops the link between them, as the follow graph reads it",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Step a",
+              "icon": "",
+              "color": "olive",
+              "ord": "aa",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": false,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Step d",
+              "icon": "",
+              "color": "olive",
+              "ord": "ad",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Step c",
+              "icon": "",
+              "color": "olive",
+              "ord": "ac",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            },
+            {
+              "from": "d",
+              "to": "c",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "",
+              "ord": "a0"
+            }
+          ],
+          "marks": [],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ],
+      "stamps": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "d",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1002:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2002:0:r_aaaaaaaaaaaa",
+            "icon": "2002:1:r_aaaaaaaaaaaa",
+            "color": "2002:2:r_aaaaaaaaaaaa",
+            "ord": "2002:3:r_aaaaaaaaaaaa",
+            "description": "2002:4:r_aaaaaaaaaaaa",
+            "links": "2002:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "d"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "d",
+            "c"
+          ],
+          "life": "3001:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        }
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "merge",
+            "nodeId": "c",
+            "removeId": "a"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": [
+          {
+            "nodeId": "a",
+            "label": "Step a",
+            "descriptionChars": 0,
+            "links": 0,
+            "done": false
+          }
+        ]
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "merge",
+            "nodeId": "c",
+            "removeId": "a"
+          }
+        ],
+        "base": [
+          {
+            "t": "node",
+            "id": "c",
+            "register": "life",
+            "stamp": "1002:0:r_aaaaaaaaaaaa"
+          },
+          {
+            "t": "node",
+            "id": "a",
+            "register": "life",
+            "stamp": "1000:0:r_aaaaaaaaaaaa"
+          },
+          {
+            "t": "edge",
+            "id": [
+              "a",
+              "d"
+            ],
+            "register": "life",
+            "stamp": "3000:0:r_aaaaaaaaaaaa"
+          }
+        ]
+      },
+      "folded": {
+        "kinds": [
+          {
+            "id": "learn",
+            "label": "Learn",
+            "hue": "olive",
+            "description": ""
+          }
+        ],
+        "steps": [
+          {
+            "id": "c",
+            "label": "Step c",
+            "color": "olive",
+            "description": "",
+            "links": [],
+            "prerequisites": [],
+            "state": "available"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "a merge of a step into one that leads to it through a deleted step drops the link between them",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Step a",
+              "icon": "",
+              "color": "olive",
+              "ord": "aa",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": false,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Step d",
+              "icon": "",
+              "color": "olive",
+              "ord": "ad",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Step c",
+              "icon": "",
+              "color": "olive",
+              "ord": "ac",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            },
+            {
+              "from": "d",
+              "to": "c",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "",
+              "ord": "a0"
+            }
+          ],
+          "marks": [],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ],
+      "stamps": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "d",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1002:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2002:0:r_aaaaaaaaaaaa",
+            "icon": "2002:1:r_aaaaaaaaaaaa",
+            "color": "2002:2:r_aaaaaaaaaaaa",
+            "ord": "2002:3:r_aaaaaaaaaaaa",
+            "description": "2002:4:r_aaaaaaaaaaaa",
+            "links": "2002:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "d"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "d",
+            "c"
+          ],
+          "life": "3001:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        }
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "merge",
+            "nodeId": "a",
+            "removeId": "c"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": [
+          {
+            "nodeId": "c",
+            "label": "Step c",
+            "descriptionChars": 0,
+            "links": 0,
+            "done": false
+          }
+        ]
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "merge",
+            "nodeId": "a",
+            "removeId": "c"
+          }
+        ],
+        "base": [
+          {
+            "t": "node",
+            "id": "a",
+            "register": "life",
+            "stamp": "1000:0:r_aaaaaaaaaaaa"
+          },
+          {
+            "t": "node",
+            "id": "c",
+            "register": "life",
+            "stamp": "1002:0:r_aaaaaaaaaaaa"
+          },
+          {
+            "t": "edge",
+            "id": [
+              "d",
+              "c"
+            ],
+            "register": "life",
+            "stamp": "3001:0:r_aaaaaaaaaaaa"
+          }
+        ]
+      },
+      "folded": {
+        "kinds": [
+          {
+            "id": "learn",
+            "label": "Learn",
+            "hue": "olive",
+            "description": ""
+          }
+        ],
+        "steps": [
+          {
+            "id": "a",
+            "label": "Step a",
+            "color": "olive",
+            "description": "",
+            "links": [],
+            "prerequisites": [],
+            "state": "available"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "a set that removes a step and then merges the two it stood between drops the link between them",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Step a",
+              "icon": "",
+              "color": "olive",
+              "ord": "aa",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Step d",
+              "icon": "",
+              "color": "olive",
+              "ord": "ad",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Step c",
+              "icon": "",
+              "color": "olive",
+              "ord": "ac",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            },
+            {
+              "from": "d",
+              "to": "c",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "",
+              "ord": "a0"
+            }
+          ],
+          "marks": [],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ],
+      "stamps": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "d",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1002:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2002:0:r_aaaaaaaaaaaa",
+            "icon": "2002:1:r_aaaaaaaaaaaa",
+            "color": "2002:2:r_aaaaaaaaaaaa",
+            "ord": "2002:3:r_aaaaaaaaaaaa",
+            "description": "2002:4:r_aaaaaaaaaaaa",
+            "links": "2002:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "d"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "d",
+            "c"
+          ],
+          "life": "3001:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        }
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "remove_step",
+            "nodeId": "d"
+          },
+          {
+            "op": "merge",
+            "nodeId": "c",
+            "removeId": "a"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": [
+          {
+            "nodeId": "d",
+            "label": "Step d",
+            "descriptionChars": 0,
+            "links": 0,
+            "done": false
+          },
+          {
+            "nodeId": "a",
+            "label": "Step a",
+            "descriptionChars": 0,
+            "links": 0,
+            "done": false
+          }
+        ]
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "remove_step",
+            "nodeId": "d"
+          },
+          {
+            "op": "merge",
+            "nodeId": "c",
+            "removeId": "a"
+          }
+        ],
+        "base": [
+          {
+            "t": "node",
+            "id": "d",
+            "register": "life",
+            "stamp": "1001:0:r_aaaaaaaaaaaa"
+          },
+          {
+            "t": "node",
+            "id": "c",
+            "register": "life",
+            "stamp": "1002:0:r_aaaaaaaaaaaa"
+          },
+          {
+            "t": "node",
+            "id": "a",
+            "register": "life",
+            "stamp": "1000:0:r_aaaaaaaaaaaa"
+          },
+          {
+            "t": "edge",
+            "id": [
+              "a",
+              "d"
+            ],
+            "register": "life",
+            "stamp": "3000:0:r_aaaaaaaaaaaa"
+          }
+        ]
+      },
+      "folded": {
+        "kinds": [
+          {
+            "id": "learn",
+            "label": "Learn",
+            "hue": "olive",
+            "description": ""
+          }
+        ],
+        "steps": [
+          {
+            "id": "c",
+            "label": "Step c",
+            "color": "olive",
+            "description": "",
+            "links": [],
+            "prerequisites": [],
+            "state": "available"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "a loop that only an earlier change of the set makes is refused at the change that closes it",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ],
+      "stamps": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "b",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "build",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1501:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4001:0:r_aaaaaaaaaaaa",
+            "label": "4001:1:r_aaaaaaaaaaaa",
+            "description": "4001:2:r_aaaaaaaaaaaa",
+            "ord": "4001:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "milestone",
+          "life": "1502:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4002:0:r_aaaaaaaaaaaa",
+            "label": "4002:1:r_aaaaaaaaaaaa",
+            "description": "4002:2:r_aaaaaaaaaaaa",
+            "ord": "4002:3:r_aaaaaaaaaaaa"
+          }
+        }
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "connect",
+            "nodeId": "b",
+            "prerequisiteId": "a"
+          },
+          {
+            "op": "connect",
+            "nodeId": "a",
+            "prerequisiteId": "b"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "closes-cycle",
+        "id": "a",
+        "at": 1
+      }
+    }
+  },
+  {
+    "case": "removing the roadmap's starting steps one at a time is refused at the last",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ],
+      "stamps": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "b",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1002:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2002:0:r_aaaaaaaaaaaa",
+            "icon": "2002:1:r_aaaaaaaaaaaa",
+            "color": "2002:2:r_aaaaaaaaaaaa",
+            "ord": "2002:3:r_aaaaaaaaaaaa",
+            "description": "2002:4:r_aaaaaaaaaaaa",
+            "links": "2002:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "c"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "b",
+            "c"
+          ],
+          "life": "3001:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "build",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1501:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4001:0:r_aaaaaaaaaaaa",
+            "label": "4001:1:r_aaaaaaaaaaaa",
+            "description": "4001:2:r_aaaaaaaaaaaa",
+            "ord": "4001:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "milestone",
+          "life": "1502:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4002:0:r_aaaaaaaaaaaa",
+            "label": "4002:1:r_aaaaaaaaaaaa",
+            "description": "4002:2:r_aaaaaaaaaaaa",
+            "ord": "4002:3:r_aaaaaaaaaaaa"
+          }
+        }
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "remove_step",
+            "nodeId": "a"
+          },
+          {
+            "op": "remove_step",
+            "nodeId": "b"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "takes-every-start",
+        "id": "b",
+        "at": 1
+      }
+    }
+  },
+  {
+    "case": "a merge of the only starting step into the step it leads to is accepted: the step that stays starts the roadmap",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "b",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ],
+      "stamps": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "b",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1002:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2002:0:r_aaaaaaaaaaaa",
+            "icon": "2002:1:r_aaaaaaaaaaaa",
+            "color": "2002:2:r_aaaaaaaaaaaa",
+            "ord": "2002:3:r_aaaaaaaaaaaa",
+            "description": "2002:4:r_aaaaaaaaaaaa",
+            "links": "2002:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "b"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "b",
+            "c"
+          ],
+          "life": "3001:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "build",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1501:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4001:0:r_aaaaaaaaaaaa",
+            "label": "4001:1:r_aaaaaaaaaaaa",
+            "description": "4001:2:r_aaaaaaaaaaaa",
+            "ord": "4001:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "milestone",
+          "life": "1502:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4002:0:r_aaaaaaaaaaaa",
+            "label": "4002:1:r_aaaaaaaaaaaa",
+            "description": "4002:2:r_aaaaaaaaaaaa",
+            "ord": "4002:3:r_aaaaaaaaaaaa"
+          }
+        }
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "merge",
+            "nodeId": "b",
+            "removeId": "a"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": [
+          {
+            "nodeId": "a",
+            "label": "Leave the dock",
+            "descriptionChars": 0,
+            "links": 0,
+            "done": false
+          }
+        ]
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "merge",
+            "nodeId": "b",
+            "removeId": "a"
+          }
+        ],
+        "base": [
+          {
+            "t": "node",
+            "id": "b",
+            "register": "life",
+            "stamp": "1001:0:r_aaaaaaaaaaaa"
+          },
+          {
+            "t": "node",
+            "id": "a",
+            "register": "life",
+            "stamp": "1000:0:r_aaaaaaaaaaaa"
+          },
+          {
+            "t": "edge",
+            "id": [
+              "a",
+              "b"
+            ],
+            "register": "life",
+            "stamp": "3000:0:r_aaaaaaaaaaaa"
+          }
+        ]
+      },
+      "folded": {
+        "kinds": [
+          {
+            "id": "build",
+            "label": "Build",
+            "hue": "terracotta",
+            "description": "Things you make"
+          },
+          {
+            "id": "learn",
+            "label": "Learn",
+            "hue": "olive",
+            "description": "Things you figure out"
+          },
+          {
+            "id": "milestone",
+            "label": "Milestone",
+            "hue": "gold",
+            "description": "Moments that matter"
+          }
+        ],
+        "steps": [
+          {
+            "id": "b",
+            "label": "Tie a bowline",
+            "color": "terracotta",
+            "description": "",
+            "links": [],
+            "prerequisites": [],
+            "state": "available"
+          },
+          {
+            "id": "c",
+            "label": "Sail with an instructor",
+            "color": "terracotta",
+            "description": "",
+            "links": [],
+            "prerequisites": [
+              "b"
+            ],
+            "state": "locked"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "a split of the only starting step is accepted: its parts start the roadmap",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "b",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T",
+        "k1x9q2m7p4z8w3r5",
+        "t6v2n8c4j1b9h7d3"
+      ],
+      "stamps": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "b",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1002:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2002:0:r_aaaaaaaaaaaa",
+            "icon": "2002:1:r_aaaaaaaaaaaa",
+            "color": "2002:2:r_aaaaaaaaaaaa",
+            "ord": "2002:3:r_aaaaaaaaaaaa",
+            "description": "2002:4:r_aaaaaaaaaaaa",
+            "links": "2002:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "b"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "b",
+            "c"
+          ],
+          "life": "3001:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "build",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1501:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4001:0:r_aaaaaaaaaaaa",
+            "label": "4001:1:r_aaaaaaaaaaaa",
+            "description": "4001:2:r_aaaaaaaaaaaa",
+            "ord": "4001:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "milestone",
+          "life": "1502:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4002:0:r_aaaaaaaaaaaa",
+            "label": "4002:1:r_aaaaaaaaaaaa",
+            "description": "4002:2:r_aaaaaaaaaaaa",
+            "ord": "4002:3:r_aaaaaaaaaaaa"
+          }
+        }
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "split",
+            "nodeId": "a",
+            "parts": [
+              {
+                "ref": "new:untie",
+                "label": "Untie the lines"
+              },
+              {
+                "ref": "new:push",
+                "label": "Push off"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": [
+          {
+            "nodeId": "a",
+            "label": "Leave the dock",
+            "descriptionChars": 0,
+            "links": 0,
+            "done": false
+          }
+        ]
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "split",
+            "nodeId": "a",
+            "parts": [
+              {
+                "nodeId": "k1x9q2m7p4z8w3r5",
+                "label": "Untie the lines"
+              },
+              {
+                "nodeId": "t6v2n8c4j1b9h7d3",
+                "label": "Push off"
+              }
+            ]
+          }
+        ],
+        "base": [
+          {
+            "t": "node",
+            "id": "a",
+            "register": "life",
+            "stamp": "1000:0:r_aaaaaaaaaaaa"
+          },
+          {
+            "t": "edge",
+            "id": [
+              "a",
+              "b"
+            ],
+            "register": "life",
+            "stamp": "3000:0:r_aaaaaaaaaaaa"
+          },
+          {
+            "t": "node",
+            "id": "k1x9q2m7p4z8w3r5",
+            "register": "life",
+            "stamp": null
+          },
+          {
+            "t": "node",
+            "id": "t6v2n8c4j1b9h7d3",
+            "register": "life",
+            "stamp": null
+          }
+        ]
+      },
+      "folded": {
+        "kinds": [
+          {
+            "id": "build",
+            "label": "Build",
+            "hue": "terracotta",
+            "description": "Things you make"
+          },
+          {
+            "id": "learn",
+            "label": "Learn",
+            "hue": "olive",
+            "description": "Things you figure out"
+          },
+          {
+            "id": "milestone",
+            "label": "Milestone",
+            "hue": "gold",
+            "description": "Moments that matter"
+          }
+        ],
+        "steps": [
+          {
+            "id": "b",
+            "label": "Tie a bowline",
+            "color": "terracotta",
+            "description": "",
+            "links": [],
+            "prerequisites": [
+              "k1x9q2m7p4z8w3r5",
+              "t6v2n8c4j1b9h7d3"
+            ],
+            "state": "locked"
+          },
+          {
+            "id": "k1x9q2m7p4z8w3r5",
+            "label": "Untie the lines",
+            "color": "terracotta",
+            "description": "",
+            "links": [],
+            "prerequisites": [],
+            "state": "available"
+          },
+          {
+            "id": "c",
+            "label": "Sail with an instructor",
+            "color": "terracotta",
+            "description": "",
+            "links": [],
+            "prerequisites": [
+              "b"
+            ],
+            "state": "locked"
+          },
+          {
+            "id": "t6v2n8c4j1b9h7d3",
+            "label": "Push off",
+            "color": "terracotta",
+            "description": "",
+            "links": [],
+            "prerequisites": [],
+            "state": "available"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "a text holding U+0000 is refused as one the domain cannot store",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ],
+      "stamps": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "b",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1002:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2002:0:r_aaaaaaaaaaaa",
+            "icon": "2002:1:r_aaaaaaaaaaaa",
+            "color": "2002:2:r_aaaaaaaaaaaa",
+            "ord": "2002:3:r_aaaaaaaaaaaa",
+            "description": "2002:4:r_aaaaaaaaaaaa",
+            "links": "2002:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "d",
+          "life": "1003:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2003:0:r_aaaaaaaaaaaa",
+            "icon": "2003:1:r_aaaaaaaaaaaa",
+            "color": "2003:2:r_aaaaaaaaaaaa",
+            "ord": "2003:3:r_aaaaaaaaaaaa",
+            "description": "2003:4:r_aaaaaaaaaaaa",
+            "links": "2003:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "c"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "b",
+            "c"
+          ],
+          "life": "3001:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "d"
+          ],
+          "life": "3002:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "build",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1501:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4001:0:r_aaaaaaaaaaaa",
+            "label": "4001:1:r_aaaaaaaaaaaa",
+            "description": "4001:2:r_aaaaaaaaaaaa",
+            "ord": "4001:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "milestone",
+          "life": "1502:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4002:0:r_aaaaaaaaaaaa",
+            "label": "4002:1:r_aaaaaaaaaaaa",
+            "description": "4002:2:r_aaaaaaaaaaaa",
+            "ord": "4002:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "self/overlay/t_0000000000000001",
+          "t": "progress",
+          "id": "a",
+          "life": null,
+          "f": {
+            "mark": "5000:0:r_aaaaaaaaaaaa"
+          }
+        }
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast\u0000off"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "invalid-input",
+        "id": "a",
+        "at": 0
+      }
+    }
+  },
+  {
+    "case": "a describe that sends neither field is malformed",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ],
+      "stamps": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "b",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1002:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2002:0:r_aaaaaaaaaaaa",
+            "icon": "2002:1:r_aaaaaaaaaaaa",
+            "color": "2002:2:r_aaaaaaaaaaaa",
+            "ord": "2002:3:r_aaaaaaaaaaaa",
+            "description": "2002:4:r_aaaaaaaaaaaa",
+            "links": "2002:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "d",
+          "life": "1003:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2003:0:r_aaaaaaaaaaaa",
+            "icon": "2003:1:r_aaaaaaaaaaaa",
+            "color": "2003:2:r_aaaaaaaaaaaa",
+            "ord": "2003:3:r_aaaaaaaaaaaa",
+            "description": "2003:4:r_aaaaaaaaaaaa",
+            "links": "2003:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "c"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "b",
+            "c"
+          ],
+          "life": "3001:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "d"
+          ],
+          "life": "3002:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "build",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1501:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4001:0:r_aaaaaaaaaaaa",
+            "label": "4001:1:r_aaaaaaaaaaaa",
+            "description": "4001:2:r_aaaaaaaaaaaa",
+            "ord": "4001:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "milestone",
+          "life": "1502:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4002:0:r_aaaaaaaaaaaa",
+            "label": "4002:1:r_aaaaaaaaaaaa",
+            "description": "4002:2:r_aaaaaaaaaaaa",
+            "ord": "4002:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "self/overlay/t_0000000000000001",
+          "t": "progress",
+          "id": "a",
+          "life": null,
+          "f": {
+            "mark": "5000:0:r_aaaaaaaaaaaa"
+          }
+        }
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "describe",
+            "nodeId": "d"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "invalid-input",
+        "id": "d",
+        "at": 0
+      }
+    }
+  },
+  {
+    "case": "a split into one part is malformed",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T",
+        "k1x9q2m7p4z8w3r5"
+      ],
+      "stamps": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "b",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1002:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2002:0:r_aaaaaaaaaaaa",
+            "icon": "2002:1:r_aaaaaaaaaaaa",
+            "color": "2002:2:r_aaaaaaaaaaaa",
+            "ord": "2002:3:r_aaaaaaaaaaaa",
+            "description": "2002:4:r_aaaaaaaaaaaa",
+            "links": "2002:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "d",
+          "life": "1003:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2003:0:r_aaaaaaaaaaaa",
+            "icon": "2003:1:r_aaaaaaaaaaaa",
+            "color": "2003:2:r_aaaaaaaaaaaa",
+            "ord": "2003:3:r_aaaaaaaaaaaa",
+            "description": "2003:4:r_aaaaaaaaaaaa",
+            "links": "2003:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "c"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "b",
+            "c"
+          ],
+          "life": "3001:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "d"
+          ],
+          "life": "3002:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "build",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1501:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4001:0:r_aaaaaaaaaaaa",
+            "label": "4001:1:r_aaaaaaaaaaaa",
+            "description": "4001:2:r_aaaaaaaaaaaa",
+            "ord": "4001:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "milestone",
+          "life": "1502:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4002:0:r_aaaaaaaaaaaa",
+            "label": "4002:1:r_aaaaaaaaaaaa",
+            "description": "4002:2:r_aaaaaaaaaaaa",
+            "ord": "4002:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "self/overlay/t_0000000000000001",
+          "t": "progress",
+          "id": "a",
+          "life": null,
+          "f": {
+            "mark": "5000:0:r_aaaaaaaaaaaa"
+          }
+        }
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "split",
+            "nodeId": "b",
+            "parts": [
+              {
+                "ref": "new:loop",
+                "label": "Make the loop"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "invalid-input",
+        "id": "b",
+        "at": 0
+      }
+    }
+  },
+  {
+    "case": "a conversation about another of the person's roadmaps proposes to this one",
+    "about": "t_0000000000000002",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        },
+        {
+          "id": "t_0000000000000002",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to cook",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000002",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ],
+      "stamps": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "b",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1002:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2002:0:r_aaaaaaaaaaaa",
+            "icon": "2002:1:r_aaaaaaaaaaaa",
+            "color": "2002:2:r_aaaaaaaaaaaa",
+            "ord": "2002:3:r_aaaaaaaaaaaa",
+            "description": "2002:4:r_aaaaaaaaaaaa",
+            "links": "2002:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "d",
+          "life": "1003:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2003:0:r_aaaaaaaaaaaa",
+            "icon": "2003:1:r_aaaaaaaaaaaa",
+            "color": "2003:2:r_aaaaaaaaaaaa",
+            "ord": "2003:3:r_aaaaaaaaaaaa",
+            "description": "2003:4:r_aaaaaaaaaaaa",
+            "links": "2003:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "c"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "b",
+            "c"
+          ],
+          "life": "3001:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "d"
+          ],
+          "life": "3002:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "build",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1501:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4001:0:r_aaaaaaaaaaaa",
+            "label": "4001:1:r_aaaaaaaaaaaa",
+            "description": "4001:2:r_aaaaaaaaaaaa",
+            "ord": "4001:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "milestone",
+          "life": "1502:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4002:0:r_aaaaaaaaaaaa",
+            "label": "4002:1:r_aaaaaaaaaaaa",
+            "description": "4002:2:r_aaaaaaaaaaaa",
+            "ord": "4002:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "self/overlay/t_0000000000000001",
+          "t": "progress",
+          "id": "a",
+          "life": null,
+          "f": {
+            "mark": "5000:0:r_aaaaaaaaaaaa"
+          }
+        }
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "result": {
+        "proposalId": "Pq7Rk2Xw9Lm4Nb6T",
+        "removes": []
+      },
+      "proposal": {
+        "changes": [
+          {
+            "op": "rename",
+            "nodeId": "a",
+            "label": "Cast off"
+          }
+        ],
+        "base": [
+          {
+            "t": "node",
+            "id": "a",
+            "register": "life",
+            "stamp": "1000:0:r_aaaaaaaaaaaa"
+          },
+          {
+            "t": "node",
+            "id": "a",
+            "register": "label",
+            "stamp": "2000:0:r_aaaaaaaaaaaa"
+          }
+        ]
+      },
+      "folded": {
+        "kinds": [
+          {
+            "id": "build",
+            "label": "Build",
+            "hue": "terracotta",
+            "description": "Things you make"
+          },
+          {
+            "id": "learn",
+            "label": "Learn",
+            "hue": "olive",
+            "description": "Things you figure out"
+          },
+          {
+            "id": "milestone",
+            "label": "Milestone",
+            "hue": "gold",
+            "description": "Moments that matter"
+          }
+        ],
+        "steps": [
+          {
+            "id": "a",
+            "label": "Cast off",
+            "color": "olive",
+            "description": "",
+            "links": [],
+            "prerequisites": [],
+            "state": "complete"
+          },
+          {
+            "id": "b",
+            "label": "Tie a bowline",
+            "color": "olive",
+            "description": "",
+            "links": [],
+            "prerequisites": [],
+            "state": "available"
+          },
+          {
+            "id": "c",
+            "label": "Sail with an instructor",
+            "color": "terracotta",
+            "description": "",
+            "links": [],
+            "prerequisites": [
+              "a",
+              "b"
+            ],
+            "state": "locked"
+          },
+          {
+            "id": "d",
+            "label": "Sail with a friend",
+            "color": "terracotta",
+            "description": "Any calm Sunday, with someone who has sailed before.",
+            "links": [
+              {
+                "url": "https://example.org/crew",
+                "label": "Find crew"
+              }
+            ],
+            "prerequisites": [
+              "a"
+            ],
+            "state": "available"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "case": "a link the turn read and the person removed since is a roadmap changed: a connect over it is refused",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": false
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ],
+      "stamps": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "b",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1002:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2002:0:r_aaaaaaaaaaaa",
+            "icon": "2002:1:r_aaaaaaaaaaaa",
+            "color": "2002:2:r_aaaaaaaaaaaa",
+            "ord": "2002:3:r_aaaaaaaaaaaa",
+            "description": "2002:4:r_aaaaaaaaaaaa",
+            "links": "2002:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "d",
+          "life": "1003:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2003:0:r_aaaaaaaaaaaa",
+            "icon": "2003:1:r_aaaaaaaaaaaa",
+            "color": "2003:2:r_aaaaaaaaaaaa",
+            "ord": "2003:3:r_aaaaaaaaaaaa",
+            "description": "2003:4:r_aaaaaaaaaaaa",
+            "links": "2003:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "c"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "b",
+            "c"
+          ],
+          "life": "3101:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "d"
+          ],
+          "life": "3002:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "build",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1501:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4001:0:r_aaaaaaaaaaaa",
+            "label": "4001:1:r_aaaaaaaaaaaa",
+            "description": "4001:2:r_aaaaaaaaaaaa",
+            "ord": "4001:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "milestone",
+          "life": "1502:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4002:0:r_aaaaaaaaaaaa",
+            "label": "4002:1:r_aaaaaaaaaaaa",
+            "description": "4002:2:r_aaaaaaaaaaaa",
+            "ord": "4002:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "self/overlay/t_0000000000000001",
+          "t": "progress",
+          "id": "a",
+          "life": null,
+          "f": {
+            "mark": "5000:0:r_aaaaaaaaaaaa"
+          }
+        }
+      ],
+      "seen": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "b",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1002:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2002:0:r_aaaaaaaaaaaa",
+            "icon": "2002:1:r_aaaaaaaaaaaa",
+            "color": "2002:2:r_aaaaaaaaaaaa",
+            "ord": "2002:3:r_aaaaaaaaaaaa",
+            "description": "2002:4:r_aaaaaaaaaaaa",
+            "links": "2002:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "d",
+          "life": "1003:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2003:0:r_aaaaaaaaaaaa",
+            "icon": "2003:1:r_aaaaaaaaaaaa",
+            "color": "2003:2:r_aaaaaaaaaaaa",
+            "ord": "2003:3:r_aaaaaaaaaaaa",
+            "description": "2003:4:r_aaaaaaaaaaaa",
+            "links": "2003:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "c"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "b",
+            "c"
+          ],
+          "life": "3001:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "d"
+          ],
+          "life": "3002:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "build",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1501:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4001:0:r_aaaaaaaaaaaa",
+            "label": "4001:1:r_aaaaaaaaaaaa",
+            "description": "4001:2:r_aaaaaaaaaaaa",
+            "ord": "4001:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "milestone",
+          "life": "1502:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4002:0:r_aaaaaaaaaaaa",
+            "label": "4002:1:r_aaaaaaaaaaaa",
+            "description": "4002:2:r_aaaaaaaaaaaa",
+            "ord": "4002:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "self/overlay/t_0000000000000001",
+          "t": "progress",
+          "id": "a",
+          "life": null,
+          "f": {
+            "mark": "5000:0:r_aaaaaaaaaaaa"
+          }
+        }
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "connect",
+            "nodeId": "c",
+            "prerequisiteId": "b"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "roadmap-changed",
+        "id": "c",
+        "at": 0
+      }
+    }
+  },
+  {
+    "case": "a disconnect of a link the turn read and the person removed since is a roadmap changed, not a change of nothing",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": false
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ],
+      "stamps": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "b",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1002:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2002:0:r_aaaaaaaaaaaa",
+            "icon": "2002:1:r_aaaaaaaaaaaa",
+            "color": "2002:2:r_aaaaaaaaaaaa",
+            "ord": "2002:3:r_aaaaaaaaaaaa",
+            "description": "2002:4:r_aaaaaaaaaaaa",
+            "links": "2002:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "d",
+          "life": "1003:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2003:0:r_aaaaaaaaaaaa",
+            "icon": "2003:1:r_aaaaaaaaaaaa",
+            "color": "2003:2:r_aaaaaaaaaaaa",
+            "ord": "2003:3:r_aaaaaaaaaaaa",
+            "description": "2003:4:r_aaaaaaaaaaaa",
+            "links": "2003:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "c"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "b",
+            "c"
+          ],
+          "life": "3101:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "d"
+          ],
+          "life": "3002:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "build",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1501:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4001:0:r_aaaaaaaaaaaa",
+            "label": "4001:1:r_aaaaaaaaaaaa",
+            "description": "4001:2:r_aaaaaaaaaaaa",
+            "ord": "4001:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "milestone",
+          "life": "1502:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4002:0:r_aaaaaaaaaaaa",
+            "label": "4002:1:r_aaaaaaaaaaaa",
+            "description": "4002:2:r_aaaaaaaaaaaa",
+            "ord": "4002:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "self/overlay/t_0000000000000001",
+          "t": "progress",
+          "id": "a",
+          "life": null,
+          "f": {
+            "mark": "5000:0:r_aaaaaaaaaaaa"
+          }
+        }
+      ],
+      "seen": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "b",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1002:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2002:0:r_aaaaaaaaaaaa",
+            "icon": "2002:1:r_aaaaaaaaaaaa",
+            "color": "2002:2:r_aaaaaaaaaaaa",
+            "ord": "2002:3:r_aaaaaaaaaaaa",
+            "description": "2002:4:r_aaaaaaaaaaaa",
+            "links": "2002:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "d",
+          "life": "1003:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2003:0:r_aaaaaaaaaaaa",
+            "icon": "2003:1:r_aaaaaaaaaaaa",
+            "color": "2003:2:r_aaaaaaaaaaaa",
+            "ord": "2003:3:r_aaaaaaaaaaaa",
+            "description": "2003:4:r_aaaaaaaaaaaa",
+            "links": "2003:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "c"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "b",
+            "c"
+          ],
+          "life": "3001:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "d"
+          ],
+          "life": "3002:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "build",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1501:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4001:0:r_aaaaaaaaaaaa",
+            "label": "4001:1:r_aaaaaaaaaaaa",
+            "description": "4001:2:r_aaaaaaaaaaaa",
+            "ord": "4001:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "milestone",
+          "life": "1502:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4002:0:r_aaaaaaaaaaaa",
+            "label": "4002:1:r_aaaaaaaaaaaa",
+            "description": "4002:2:r_aaaaaaaaaaaa",
+            "ord": "4002:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "self/overlay/t_0000000000000001",
+          "t": "progress",
+          "id": "a",
+          "life": null,
+          "f": {
+            "mark": "5000:0:r_aaaaaaaaaaaa"
+          }
+        }
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "disconnect",
+            "nodeId": "c",
+            "prerequisiteId": "b"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "roadmap-changed",
+        "id": "c",
+        "at": 0
+      }
+    }
+  },
+  {
+    "case": "a step the person deleted and brought back after the turn read it is a roadmap changed",
+    "about": "t_0000000000000001",
+    "given": {
+      "trees": [
+        {
+          "id": "t_0000000000000001",
+          "present": true,
+          "read": "loaded",
+          "own": true,
+          "updatedAt": null,
+          "parent": null,
+          "meta": {
+            "title": "Learn to sail",
+            "guide": "",
+            "guideInherited": false,
+            "root": "t_0000000000000001",
+            "depth": 0,
+            "visibility": "private",
+            "reach": "private"
+          },
+          "nodes": [
+            {
+              "id": "a",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Leave the dock",
+              "icon": "",
+              "color": "olive",
+              "ord": "a0",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "b",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Tie a bowline",
+              "icon": "",
+              "color": "olive",
+              "ord": "a1",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "c",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with an instructor",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a2",
+              "status": "none",
+              "description": "",
+              "links": [],
+              "branch": null
+            },
+            {
+              "id": "d",
+              "present": true,
+              "born": null,
+              "rc": null,
+              "ru": null,
+              "label": "Sail with a friend",
+              "icon": "",
+              "color": "terracotta",
+              "ord": "a3",
+              "status": "none",
+              "description": "Any calm Sunday, with someone who has sailed before.",
+              "links": [
+                {
+                  "url": "https://example.org/crew",
+                  "label": "Find crew"
+                }
+              ],
+              "branch": null
+            }
+          ],
+          "edges": [
+            {
+              "from": "a",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "b",
+              "to": "c",
+              "present": true
+            },
+            {
+              "from": "a",
+              "to": "d",
+              "present": true
+            }
+          ],
+          "kinds": [
+            {
+              "id": "build",
+              "present": true,
+              "born": null,
+              "hue": "terracotta",
+              "label": "Build",
+              "description": "Things you make",
+              "ord": "a0"
+            },
+            {
+              "id": "learn",
+              "present": true,
+              "born": null,
+              "hue": "olive",
+              "label": "Learn",
+              "description": "Things you figure out",
+              "ord": "a1"
+            },
+            {
+              "id": "milestone",
+              "present": true,
+              "born": null,
+              "hue": "gold",
+              "label": "Milestone",
+              "description": "Moments that matter",
+              "ord": "a2"
+            }
+          ],
+          "marks": [
+            {
+              "node": "a",
+              "status": "complete",
+              "outOfOrder": false,
+              "recordedAt": 1800000000000,
+              "deviceAt": 1800000000000
+            }
+          ],
+          "pointers": []
+        }
+      ],
+      "ids": [
+        "Pq7Rk2Xw9Lm4Nb6T"
+      ],
+      "stamps": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "b",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1002:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2002:0:r_aaaaaaaaaaaa",
+            "icon": "2002:1:r_aaaaaaaaaaaa",
+            "color": "2002:2:r_aaaaaaaaaaaa",
+            "ord": "2002:3:r_aaaaaaaaaaaa",
+            "description": "2002:4:r_aaaaaaaaaaaa",
+            "links": "2002:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "d",
+          "life": "1103:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2003:0:r_aaaaaaaaaaaa",
+            "icon": "2003:1:r_aaaaaaaaaaaa",
+            "color": "2003:2:r_aaaaaaaaaaaa",
+            "ord": "2003:3:r_aaaaaaaaaaaa",
+            "description": "2003:4:r_aaaaaaaaaaaa",
+            "links": "2003:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "c"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "b",
+            "c"
+          ],
+          "life": "3001:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "d"
+          ],
+          "life": "3002:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "build",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1501:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4001:0:r_aaaaaaaaaaaa",
+            "label": "4001:1:r_aaaaaaaaaaaa",
+            "description": "4001:2:r_aaaaaaaaaaaa",
+            "ord": "4001:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "milestone",
+          "life": "1502:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4002:0:r_aaaaaaaaaaaa",
+            "label": "4002:1:r_aaaaaaaaaaaa",
+            "description": "4002:2:r_aaaaaaaaaaaa",
+            "ord": "4002:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "self/overlay/t_0000000000000001",
+          "t": "progress",
+          "id": "a",
+          "life": null,
+          "f": {
+            "mark": "5000:0:r_aaaaaaaaaaaa"
+          }
+        }
+      ],
+      "seen": [
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "a",
+          "life": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2000:0:r_aaaaaaaaaaaa",
+            "icon": "2000:1:r_aaaaaaaaaaaa",
+            "color": "2000:2:r_aaaaaaaaaaaa",
+            "ord": "2000:3:r_aaaaaaaaaaaa",
+            "description": "2000:4:r_aaaaaaaaaaaa",
+            "links": "2000:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "b",
+          "life": "1001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2001:0:r_aaaaaaaaaaaa",
+            "icon": "2001:1:r_aaaaaaaaaaaa",
+            "color": "2001:2:r_aaaaaaaaaaaa",
+            "ord": "2001:3:r_aaaaaaaaaaaa",
+            "description": "2001:4:r_aaaaaaaaaaaa",
+            "links": "2001:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "c",
+          "life": "1002:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2002:0:r_aaaaaaaaaaaa",
+            "icon": "2002:1:r_aaaaaaaaaaaa",
+            "color": "2002:2:r_aaaaaaaaaaaa",
+            "ord": "2002:3:r_aaaaaaaaaaaa",
+            "description": "2002:4:r_aaaaaaaaaaaa",
+            "links": "2002:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "node",
+          "id": "d",
+          "life": "1003:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": "2003:0:r_aaaaaaaaaaaa",
+            "icon": "2003:1:r_aaaaaaaaaaaa",
+            "color": "2003:2:r_aaaaaaaaaaaa",
+            "ord": "2003:3:r_aaaaaaaaaaaa",
+            "description": "2003:4:r_aaaaaaaaaaaa",
+            "links": "2003:5:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "c"
+          ],
+          "life": "3000:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "b",
+            "c"
+          ],
+          "life": "3001:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "edge",
+          "id": [
+            "a",
+            "d"
+          ],
+          "life": "3002:0:r_aaaaaaaaaaaa",
+          "f": {}
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "build",
+          "life": "1500:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4000:0:r_aaaaaaaaaaaa",
+            "label": "4000:1:r_aaaaaaaaaaaa",
+            "description": "4000:2:r_aaaaaaaaaaaa",
+            "ord": "4000:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "learn",
+          "life": "1501:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4001:0:r_aaaaaaaaaaaa",
+            "label": "4001:1:r_aaaaaaaaaaaa",
+            "description": "4001:2:r_aaaaaaaaaaaa",
+            "ord": "4001:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "tree/t_0000000000000001",
+          "t": "kind",
+          "id": "milestone",
+          "life": "1502:0:r_aaaaaaaaaaaa",
+          "f": {
+            "hue": "4002:0:r_aaaaaaaaaaaa",
+            "label": "4002:1:r_aaaaaaaaaaaa",
+            "description": "4002:2:r_aaaaaaaaaaaa",
+            "ord": "4002:3:r_aaaaaaaaaaaa"
+          }
+        },
+        {
+          "scope": "self/overlay/t_0000000000000001",
+          "t": "progress",
+          "id": "a",
+          "life": null,
+          "f": {
+            "mark": "5000:0:r_aaaaaaaaaaaa"
+          }
+        }
+      ]
+    },
+    "call": {
+      "name": "propose_roadmap_change",
+      "input": {
+        "treeId": "t_0000000000000001",
+        "changes": [
+          {
+            "op": "rename",
+            "nodeId": "d",
+            "label": "Crew for a friend"
+          }
+        ]
+      }
+    },
+    "expect": {
+      "refused": {
+        "code": "roadmap-changed",
+        "id": "d",
         "at": 0
       }
     }
