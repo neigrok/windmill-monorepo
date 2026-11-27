@@ -8,7 +8,7 @@ The scale is **eight owner hours a week**. Eight hours is a ceiling on the owner
 
 > Windmill is where a person keeps growing in body, skill and mind. Bring your own AI or use ours at a fair price. Nothing is locked and nothing is graded.
 
-[Brand foundations](../design/brand-foundations.md#the-idea) is the one home of this sentence, the reason behind it, the meaning of the name and what Windmill never says. Marketing claims a pillar only as far as the rule or fact behind it reaches.
+[The communication guide](../design/communication.md#the-idea) is the one home of this sentence, the reason behind it, the meaning of the name and what Windmill never says. Marketing claims a pillar only as far as the rule or fact behind it reaches.
 
 | Pillar | Standing rule or fact |
 |---|---|
@@ -16,15 +16,6 @@ The scale is **eight owner hours a week**. Eight hours is a ceiling on the owner
 | Yours and open | Everything done by hand works signed out. A person's own assistant reaches Roadmap and Gym through MCP; Journal has no MCP door, and Windmill takes no provider key or token from a person. [Accounts and sign-in](../design/brand-foundations.md#accounts-and-sign-in) · [Connect](https://windmill.works/connect.html) |
 | Never graded | Journal has no streaks or scores and praises no value. Gym has no grades or streaks. The honesty rules allow no urgency on any surface. [Journal principles](../design/brand-foundations.md#journal) · [Numbers and money](../design/brand-foundations.md#numbers-and-money) |
 | A fair price, shown | Not shown yet. The [pricing page](../../web/public/pricing.html) names $12 a month and no allowance amount, so it does not say where the money goes. When the page is rebuilt it states the split in dollars. [Owner rulings](#owner-rulings-and-open-decisions) |
-
-## What every channel keeps
-
-- **Nothing that frightens or belittles.** No "AI will replace you", no "don't fall behind", no "fix yourself".
-- **Publish only when there is something to say.** There is no posting cadence, and nothing is made to keep activity. Every piece shows real work or a real idea.
-- **Work follows readiness.** No campaign is timed to a season or a launch date. Observation windows are measurement, not deadlines.
-- **Brand-led, with at most one founder note.** Writing and publishing it are the owner's alone, and no agent drafts it. If it is published, it is in the first person under a pseudonym, tells why Windmill exists and what the name means, appears once, and is posted only where disclosed self-posts are allowed. Public creative and posts do not name or show the founder; a post still discloses that its author builds Windmill.
-- **A master is paid for their time, never their verdict.** [Masters](reports/09-creator-campaign.md)
-- **The honesty rules hold in every channel.** [Honesty](../design/brand-foundations.md#honesty)
 
 ## Where Windmill stands today
 
@@ -34,7 +25,7 @@ The scale is **eight owner hours a week**. Eight hours is a ceiling on the owner
 | iPhone | A TestFlight beta carries Journal and Gym. There is no App Store listing and no release date. Roadmap on the iPhone and live Talk are release requirements, not things to show yet. | [Launch contract](#launch-contract) |
 | Android | Gym only, as a signed APK a person installs by hand. It is not on Google Play. | [Access checks](reports/01-store-readiness.md) |
 | Windmill One | It cannot be bought on any surface. The pricing page names $12 a month and says nothing is on sale yet. | [Paid line](../../AGENTS.md) · [Pricing page](../../web/public/pricing.html) |
-| A person's own assistant | It connects to Roadmap and Gym. Journal has no such door. | [The idea](../design/brand-foundations.md#the-idea) · [Connect](https://windmill.works/connect.html) |
+| A person's own assistant | It connects to Roadmap and Gym. Journal has no such door. | [The idea](../design/communication.md#the-idea) · [Connect](https://windmill.works/connect.html) |
 | Search | Read on November 21, 2026: Google has indexed the six main pages (the homepage, Roadmap, Gym, Journal, the gallery and Connect), last crawled on November 12, and has not yet crawled the changelog, pricing, privacy, refunds and terms. Bing's Site Explorer shows no indexed page. Neither engine shows a click. | [Search record](reports/06-brand-search-identity.md) |
 | Public examples | The gallery lists one tree, “Learn to sail”. On November 17, 2026 its page still carried the homepage's heading and description in the HTML a search engine reads first. | [Search record](reports/06-brand-search-identity.md) |
 | Guides | None is published. The pages that would hold them are neither designed nor built. | [Topic inventory](reports/17-distribution-and-editorial.md#six-topic-inventory) |
@@ -81,7 +72,7 @@ Each invitation has one job, one thing shown and one place to go. Say **Windmill
 
 ## How people find Windmill
 
-Every route below passes the rules in [What every channel keeps](#what-every-channel-keeps). A route is worth repeating only when a person it brought does something useful and later does it again. Views, likes, replies and link counts do not show that.
+Every route below passes the rules in [the communication guide](../design/communication.md#channels). A route is worth repeating only when a person it brought does something useful and later does it again. Views, likes, replies and link counts do not show that.
 
 | Route | What it needs first | What shows it works |
 |---|---|---|
@@ -142,7 +133,7 @@ People who accept join one of the [two groups](#two-behavior-experiments-at-a-ti
 
 ## What the owner does and what agents do
 
-Agents write and speak on behalf of the product. They never write, send or publish the owner's own story, or anything signed as the owner.
+Agents write and speak on behalf of the product, as [the communication guide](../design/communication.md#who-speaks) rules.
 
 The product speaks from `hello@windmill.works`, the contact address the public pages give. A Reddit product account is opened only when an approved place allows a product to answer. There is no X or Bluesky account.
 
@@ -174,7 +165,7 @@ Ruled:
 - **The pricing page states where the $12 goes, in dollars**: the AI you use, $7.00; store and payment fees, about $1.80, naming no store; and Windmill, about $3.20. That page is approved and not built; the live pricing page states none of this.
 - **A master's fee.** There is no standing ceiling: each fee is its own spending proposal. Whether it is owed when the master publishes nothing is agreed in writing with each master before they start. No fee benchmark is recorded in [the evidence](benchmarks.md).
 - **A person's own provider key or token.** Windmill accepts one for Gym and Roadmap once Windmill One has 1,000 subscribers. It takes none today.
-- **The public pages.** Their rules, look and approved wording are in [the marketing site](../design/marketing-site-proposal.md#rules-every-public-page-keeps).
+- **The public pages.** Their wording rules are in [the communication guide](../design/communication.md), and their look and approved wording in [the marketing site](../design/marketing-site-proposal.md).
 - **App Store countries.** Every country, the EU included, with one check still open. [Access and release checks](reports/01-store-readiness.md)
 
 Open:

@@ -1,34 +1,11 @@
 # Brand foundations
 
-The brand-level canon: the idea, the direction, the voice, the honesty rules, the visual foundations,
-iconography, the standing policies on fonts and the logo, and the principles each product keeps.
+The brand-level canon: the direction, the honesty rules, the visual foundations, iconography, the
+standing policies on fonts and the logo, and the principles each product keeps. How Windmill speaks,
+from the idea to what may be claimed, is the [communication guide](communication.md).
 Visual foundations live on the Foundations page of the Windmill · Design System Figma file; the
 shipped token values are `web/src/styles/tokens/`. Product behaviour is the code's, and product
 drawings are the Figma files'.
-
-## The idea
-
-**The idea.** Windmill is where a person keeps growing in body, skill and mind. Bring your own AI or
-use ours at a fair price. Nothing is locked and nothing is graded.
-
-**Why.** Machines can now do much of the work people do. In Windmill the AI gives clarity and
-guidance, helps keep the record and helps a person past what blocks them. It does not do the work for
-them: the growing stays the person's.
-
-**The name.** A mill takes its time and grinds the grain into flour anyway. It takes nothing by
-force. The grain is yours, and so is the bread.
-
-**The mill, not the wind.** Windmill is where a person's growth is kept. The AI that helps can be
-ours or their own. Their own is an assistant they connect through MCP, which reaches Roadmap and
-Gym; Journal has no MCP door, and Windmill takes no provider key or token from a person.
-
-**Respect.** People are not a problem to fix. Being human needs no proving. Windmill grades no one
-and hurries no one.
-
-**What we never say.** Nothing that frightens or belittles: no "AI will replace you", no "don't fall
-behind", no "fix yourself". The AI never "works for you" or "does it for you": it guides, and the
-person does the work. Journal is reflection, never therapy. One is a fair price for the AI and the
-work, never "at cost".
 
 ## Direction
 - Minimalistic, animation-rich
@@ -37,25 +14,6 @@ work, never "at cost".
 - Warm, rounded, friendly typography
 - Soft, glowy motion (pulses, fades) rather than mechanical or bouncy
 - Simple line icons (Lucide)
-
-## Content fundamentals
-
-- **Voice**: encouraging and a little playful, but not jokey. Copy stays domain-neutral — it
-  works for a room makeover, a fitness goal, or a product launch alike.
-- **Person**: second person ("your roadmap", "you unlock") in the product; first-person
-  plural ("we") only in about/company copy. First-person singular has one place: a founder note,
-  should the owner publish one. The owner writes it and nobody drafts it for them. It is a single
-  piece signed with a pseudonym that tells why Windmill exists and what the name means.
-- **Casing**: sentence case everywhere — headings, buttons, nav. No ALL-CAPS except tiny
-  badge/eyebrow labels, which use small-caps-style letter-spacing instead of visual shouting.
-- **Emoji**: not used. The metaphor is carried by icons and glow, not emoji.
-- **How much**: `guidelines/text-budget.md` is canon for how many words an element may spend. The
-  short of it — budget the chrome, never the content; a permanent caption is a design failure wearing
-  a sentence; a long true notice is *less* honest than a short true one, because almost nobody reads
-  it; and **salience and concreteness beat brevity**, so make the one fact that matters impossible to
-  miss before you start cutting.
-- **Sentence length**: short. One idea per sentence in UI copy; marketing copy allows one
-  longer sentence per paragraph, max two clauses.
 
 ## Honesty
 
@@ -333,8 +291,8 @@ re-onboarding. The first run's only job is to get one page written and be worth 
 - **The phone owns the open workout.** The web never finishes a live session; one workout is open
   per account.
 - **Vocabulary.** Never *tracker*, *fitness*, XP, levels, badges or streaks. *Coach* names the room
-  and nothing else; the link handed to a human coach is *Share this workout*. The public pages call
-  Gym a *workout log*.
+  and nothing else; the link handed to a human coach is *Share this workout*. Its public name is in
+  the [communication guide](communication.md#names).
 
 ---
 

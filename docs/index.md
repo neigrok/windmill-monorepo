@@ -213,8 +213,7 @@ Sign in, You, sign out and Delete account: Shell file, page [Android](https://ww
 ## Marketing site
 
 Figma: Marketing file, page [Site redesign · 2026-11-21](https://www.figma.com/design/uWLMdVmzTcobOh8hbeem81?node-id=260-2508).
-Written half: [marketing site](design/marketing-site-proposal.md), which holds the sitemap, the rules
-every public page keeps, the Instrument look, what is built and what is proposed, how search engines
+Written half: [marketing site](design/marketing-site-proposal.md), which holds the sitemap, the Instrument look, what is built and what is proposed, how search engines
 read the pages and the strings still false.
 
 | Section | Page | State |

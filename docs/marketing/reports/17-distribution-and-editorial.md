@@ -34,7 +34,7 @@ These queries are hypotheses, not keyword-volume findings. Use actual Search Con
 
 ## Weekly time allocation and cap
 
-The hours are a budget, not a publishing schedule. A piece is published when it has something to say, and a week may publish nothing. [Channel rules](../strategy.md#what-every-channel-keeps)
+The hours are a budget, not a publishing schedule. A piece is published when it has something to say, and a week may publish nothing. [Channel rules](../../design/communication.md#channels)
 
 | Founder block | Hours | Output |
 |---|---|---|
