@@ -1,6 +1,6 @@
 // Roadmap on the device's copy as the account changes (roadmap-on-the-engine.md §5 Signed out, §8.2, flow 50, Roadmap
-// Coach 10.4): the words of the shell's sign-in question, Add or Discard, where the account already holds roadmaps, and of its sign-out question,
-// Keep or Discard, where every unsent change is roadmap's, each naming every roadmap its Discard takes, so a Discard
+// Coach 10.4): the words of the shell's sign-in question, Add or Discard, where the account already holds roadmaps, and
+// of its sign-out question, Keep or Discard, where every unsent change is roadmap's, each naming every roadmap its Discard takes, so a Discard
 // covers exactly the work it named (engine.md §7.10); what the browser kept beside the roadmaps a sign-in's Discard takes,
 // and the old stores the carry-over carried into them; and what an explicit sign-out, an account replacement and an account closure take from the browser: every replica's
 // landing notes, a dormant one's included, the told notice ids, what the browser kept of every roadmap but the anonymous
@@ -151,17 +151,22 @@ export async function signInWords(engine, due, track = beacon, { stores = new Ol
   const talked = countBucket(conversations);
   const carried = await carriedInto(engine, due.counted, stores);
   return {
-    ...(conversations > 0 ? countedWords(roadmaps, count, conversations) : {
-      title: t('roadmap.accountChoice.addTitle'),
-      lead: t('roadmap.accountChoice.addLead', { count, shown: formatted(count) }),
-      items: roadmaps.map((roadmap) => (roadmap.listed ? roadmap.name : changedRow(roadmap.name, roadmap.changes))),
-      note: t('roadmap.accountChoice.addNote', { count }),
-    }),
+    ...(conversations > 0 ? countedWords(roadmaps, count, conversations) : namedWords(roadmaps, count)),
     onStep: (step) => {
       if (SIGN_IN_STEPS.has(step)) track('roadmap_signin', { step, roadmaps: asked, conversations: talked });
       if (step === 'discard') return forgetDiscarded(engine, due.counted, { carried, stores, track, report });
       return undefined;
     },
+  };
+}
+
+// Flow 50's words: the browser's own roadmaps by name, and another's by its changes.
+function namedWords(roadmaps, count) {
+  return {
+    title: t('roadmap.accountChoice.addTitle'),
+    lead: t('roadmap.accountChoice.addLead', { count, shown: formatted(count) }),
+    items: roadmaps.map((roadmap) => (roadmap.listed ? roadmap.name : changedRow(roadmap.name, roadmap.changes))),
+    note: t('roadmap.accountChoice.addNote', { count }),
   };
 }
 
