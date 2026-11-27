@@ -80,8 +80,8 @@ final class RoadmapModel {
   // A screen on the room's stack over the Board: All Roadmaps; a roadmap's Activity; a step's page with what opened it as
   // its event names it, a Board row, the web's card, a row of another step's page, the Graph's bar of the selected step,
   // a row of Activity, or the band's Show of a line told once; a step's note over its page; a step's History; the list a
-  // roadmap is attached to a step from; or the roadmap a step opens, gone into by a Board row's swipe, the step page's
-  // Roadmap row or its foot's button.
+  // roadmap is attached to a step from; the roadmap a step opens, gone into by a Board row's swipe, the step page's
+  // Roadmap row or its foot's button; or the public gallery, from All Roadmaps.
   enum Visit: Hashable {
     enum Door: String {
       case card, step, graph, activity, link, swipe, foot, band
@@ -94,11 +94,12 @@ final class RoadmapModel {
     case history(of: String)
     case attach(to: String)
     case roadmap(String, by: Door)
+    case gallery
 
     // The step whose page, note, History or attach list the screen is.
     var step: String? {
       switch self {
-      case .roadmaps, .activity, .roadmap: nil
+      case .roadmaps, .activity, .roadmap, .gallery: nil
       case .step(let step, _), .note(let step), .history(let step), .attach(let step): step
       }
     }
@@ -113,7 +114,7 @@ final class RoadmapModel {
     // their step, and a roadmap gone into a step that still leads into it.
     func stands(in open: OpenRoadmap) -> Bool {
       switch self {
-      case .roadmaps: true
+      case .roadmaps, .gallery: true
       case .activity(let roadmap): open.listed.id.utf8.elementsEqual(roadmap.utf8)
       case .step(let step, _), .note(let step), .history(let step), .attach(let step): open.step(step) != nil
       case .roadmap(let roadmap, _): open.rows.values.contains { $0.opening.map { $0.leads && $0.tree.utf8.elementsEqual(roadmap.utf8) } == true }
@@ -240,10 +241,10 @@ final class RoadmapModel {
     }
   }
 
-  // Where a gesture on a roadmap is made, as its event names it: the title menu, All Roadmaps, or the room that holds
-  // no roadmap.
+  // Where a gesture on a roadmap is made, as its event names it: the title menu, All Roadmaps, the room that holds no
+  // roadmap, or the public gallery's Open Your Copy.
   enum Place: String {
-    case menu, list, empty
+    case menu, list, empty, gallery
   }
 
   // What else a roadmap's delete takes: the server deletes each step of the person's other roadmaps whose pointer opens
@@ -290,6 +291,8 @@ final class RoadmapModel {
       case deletedRoadmap(String?)
       // The copy a fork made, opened once it arrived, by how many steps it planted.
       case forked(steps: Int)
+      // A gallery row's fork that forked nothing, with no connection or for another reason.
+      case unforked(offline: Bool)
       // A subtask checked, by its words.
       case checked(ID<Subtask>, label: String)
       // A subtask or a link of a step's workspace deleted, by its words or its title.
@@ -396,8 +399,10 @@ final class RoadmapModel {
   let wait: Wait
   // Where Paste Steps reads the copied text from.
   let clipboard: Clipboard
-  // The file a launch hands New Roadmap's A File in place of the system's importer, none in the app.
+  // The file a launch hands New Roadmap's A File in place of the system's importer, and the one Export writes in place of
+  // the system's exporter, none in the app.
   let handedFile: @MainActor () -> URL?
+  let exportFile: @MainActor () -> URL?
   // The Graph of the open roadmap: its picture, its camera and its captions.
   let graph: RoadmapGraph
   // What the Board measures of itself, where a launch asks for it.
@@ -412,6 +417,8 @@ final class RoadmapModel {
     didSet {
       if let draft, draft.open == nil { self.draft = nil }
       if let guide, guide.open == nil { self.guide = nil }
+      if share?.gone == true { share = nil }
+      share?.follow()
       if let selected, shown?.step(selected) == nil { self.selected = nil }
       note?.follow()
       guide?.follow()
@@ -438,6 +445,7 @@ final class RoadmapModel {
       case .roadmap(let tree, let door): wentIn(tree, by: door)
       case .attach: telemetry.event("roadmap_tree_attach", properties: ["step": "open", "door": "page"])
       case .roadmaps: telemetry.event("roadmap_sheet", properties: ["step": "open"])
+      case .gallery: telemetry.event("roadmap_gallery", properties: ["step": "open"])
       case .step(let step, let door):
         guard case .open(let open) = phase, let row = open.step(step) else { return }
         telemetry.event("roadmap_board_step_open", properties: ["surface": "document", "column": row.card.column.rawValue, "door": door.rawValue])
@@ -479,6 +487,9 @@ final class RoadmapModel {
   private(set) var note: StepNoteDraft?
   // The Guide sheet stands open over the open roadmap, reading its guide or writing a draft of it.
   var guide: GuideSheet?
+  // The Share sheet stands open over the open root, and the system's exporter over the open roadmap with its file.
+  var share: ShareSheet?
+  var exporting: RoadmapMarkdown?
   // The Board's groups that stand folded: Done at rest, until every step is done.
   var folded: Set<BoardRead.Column.Name> = [.done]
   // What the Board asks of the open roadmap: its order, the kinds it shows, a branch and Find's words.
@@ -528,9 +539,10 @@ final class RoadmapModel {
 
   init(records: @escaping Records, runner: ActionRunner, phone: UserDefaults, telemetry: any Telemetry = NoopTelemetry(),
        wait: @escaping Wait = { try await Task.sleep(for: $0) }, graph: RoadmapGraph? = nil, boardFrames: BoardFrames = BoardFrames(),
-       role: Role = .owner(nil), sync: Sync = .none, clipboard: Clipboard = .system, handedFile: @escaping @MainActor () -> URL? = { nil }) {
+       role: Role = .owner(nil), sync: Sync = .none, clipboard: Clipboard = .system, handedFile: @escaping @MainActor () -> URL? = { nil },
+       exportFile: @escaping @MainActor () -> URL? = { nil }) {
     self.records = records; self.runner = runner; self.phone = phone; self.telemetry = telemetry; self.wait = wait
-    self.role = role; self.sync = sync; self.clipboard = clipboard; self.handedFile = handedFile
+    self.role = role; self.sync = sync; self.clipboard = clipboard; self.handedFile = handedFile; self.exportFile = exportFile
     self.graph = graph ?? RoadmapGraph(telemetry: telemetry)
     self.boardFrames = boardFrames
     reading = BoardReading(telemetry: telemetry)
@@ -609,11 +621,11 @@ final class RoadmapModel {
     !away && (inSheet || !root.raisesSheet)
   }
 
-  // The room raises a sheet or a cover over its screens: New Roadmap, Set Aside, a shared roadmap's cover, and of any room
-  // on the stack Paste Steps, the step form, Kinds or the Guide.
+  // The room raises a sheet or a cover over its screens: New Roadmap, Share, Set Aside, a shared roadmap's cover, and of
+  // any room on the stack Paste Steps, the step form, Kinds, the Guide or the system's exporter.
   var raisesSheet: Bool {
-    newRoadmap != nil || landed.listOpen || links?.cover != nil
-      || rooms.contains { $0.pasting != nil || $0.draft != nil || $0.kindsDoor != nil || $0.guide != nil }
+    newRoadmap != nil || share != nil || landed.listOpen || links?.cover != nil
+      || rooms.contains { $0.pasting != nil || $0.draft != nil || $0.kindsDoor != nil || $0.guide != nil || $0.exporting != nil }
   }
 
   // The bar's subtitle: the roadmap's progress, and Offline joined to it while the phone has no connection (10.1), the
@@ -705,7 +717,10 @@ final class RoadmapModel {
     }
     if !listed.id.utf8.elementsEqual(last.utf8) { phone.set(listed.id, forKey: Self.lastOpen) }
     present(open, in: (phone.dictionary(forKey: Self.lastLens)?[listed.id] as? String).flatMap { Lens(rawValue: $0) } ?? .board)
-    if links?.arrived(listed.id) == true { show(Band(forked: open.board.overall.total)) }
+    if links?.arrived(listed.id) == true {
+      path = []
+      show(Band(forked: open.board.overall.total))
+    }
   }
 
   // A roadmap gone into, as the room it was gone into from last read the phone's copy: the room shows it while it stands

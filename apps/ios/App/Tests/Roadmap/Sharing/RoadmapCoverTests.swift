@@ -36,10 +36,12 @@ import SyncTesting
       return try progress.get()
     }
 
-    func fork(_ tree: String, request: String) async throws(SharingFailure) -> String {
+    func fork(_ tree: String, request: String, from mode: RoadmapFork.Mode) async throws(SharingFailure) -> String {
       asked.append("fork \(tree) \(request)")
       return try copy.get()
     }
+
+    func gallery(after cursor: String?) async throws(SharingFailure) -> GalleryPage { throw .offline }
   }
 
   func room(_ engine: SteppedEngine, _ memory: UserDefaults, phone: Phone, sharing: Sharing, telemetry: TelemetryRecorder,
@@ -251,11 +253,11 @@ import SyncTesting
     let cover = try cover("/t/t_00000000000000aa", over: owner)
     sharing.copy = .failure(.signedOut)
     cover.fork()
-    await settle(engine, []) { cover.forking != .running }
-    #expect(cover.signingIn == .fork && cover.forking == .idle)
+    await settle(engine, []) { cover.forking.state != .running }
+    #expect(cover.signingIn == .fork && cover.forking.state == .idle)
     cover.signInEnded()
-    #expect(cover.signingIn == nil && cover.forking == .idle)
-    #expect(sharing.asked == ["fork t_00000000000000aa \(cover.forkRequest)"])
+    #expect(cover.signingIn == nil && cover.forking.state == .idle)
+    #expect(sharing.asked == ["fork t_00000000000000aa \(cover.forking.request)"])
     #expect(told(telemetry, ["fork_attempt"]) == ["fork_attempt mode=instant", "fork_attempt mode=instant outcome=unauthenticated"])
   }
 
@@ -288,13 +290,13 @@ import SyncTesting
     cover.fork()
     phone.credential = SessionToken("session-2")
     cover.signInEnded()
-    #expect(cover.forking == .running)
+    #expect(cover.forking.state == .running)
     await settle(engine, [owner]) { cover.closed }
 
     #expect(cover.closed && owner.links?.cover == nil)
     #expect(owner.shown?.listed.id == copy.tree.description && owner.lens == .board)
     #expect(owner.band?.says == .forked(steps: 2) && owner.band?.undo == nil)
-    #expect(sharing.asked == ["fork t_00000000000000aa \(cover.forkRequest)"])
+    #expect(sharing.asked == ["fork t_00000000000000aa \(cover.forking.request)"])
     #expect(owner.roadmaps.map(\.id).contains(sail.tree.description))
     #expect(told(telemetry, ["fork_attempt", "fork_claim", "roadmap_cover"]) == [
       "fork_attempt mode=instant", "fork_attempt mode=instant outcome=signed_out", "fork_attempt mode=instant",
@@ -331,12 +333,12 @@ import SyncTesting
     for answer: SharingFailure in [.refused, .busy] {
       sharing.copy = .failure(answer)
       cover.fork()
-      await settle(engine, []) { cover.forking != .running }
-      #expect(cover.forking == .failed)
+      await settle(engine, []) { cover.forking.state != .running }
+      #expect(cover.forking.state == .failed)
     }
     phone.online = false
     cover.fork()
-    #expect(sharing.asked == ["fork t_00000000000000aa \(cover.forkRequest)", "fork t_00000000000000aa \(cover.forkRequest)"])
+    #expect(sharing.asked == ["fork t_00000000000000aa \(cover.forking.request)", "fork t_00000000000000aa \(cover.forking.request)"])
     #expect(told(telemetry, ["fork_attempt"]) == [
       "fork_attempt mode=instant", "fork_attempt mode=instant outcome=refused", "fork_attempt mode=instant", "fork_attempt mode=instant outcome=busy",
     ])
@@ -426,7 +428,7 @@ import SyncTesting
     }
     for (status, expected): (Int, SharingFailure) in [(401, .signedOut), (404, .refused), (503, .busy), (500, .failed)] {
       do throws(SharingFailure) {
-        _ = try await requests("https://status.invalid/\(status)/").fork("t_00000000000000aa", request: "r")
+        _ = try await requests("https://status.invalid/\(status)/").fork("t_00000000000000aa", request: "r", from: .cover)
         Issue.record("a \(status) forked")
       } catch {
         #expect(error == expected)
@@ -441,10 +443,10 @@ import SyncTesting
     }
     #expect(given as? SharingFailure == .cancelled)
     #expect(told(telemetry, ["api_request_failed", "client_error"]) == [
-      "api_request_failed failure_kind=http method=POST operation=roadmap_fork route=/v1/trees status=401",
-      "api_request_failed failure_kind=http method=POST operation=roadmap_fork route=/v1/trees status=404",
-      "api_request_failed failure_kind=http method=POST operation=roadmap_fork route=/v1/trees status=503",
-      "api_request_failed failure_kind=http method=POST operation=roadmap_fork route=/v1/trees status=500",
+      "api_request_failed failure_kind=http method=POST mode=cover operation=roadmap_fork route=/v1/trees status=401",
+      "api_request_failed failure_kind=http method=POST mode=cover operation=roadmap_fork route=/v1/trees status=404",
+      "api_request_failed failure_kind=http method=POST mode=cover operation=roadmap_fork route=/v1/trees status=503",
+      "api_request_failed failure_kind=http method=POST mode=cover operation=roadmap_fork route=/v1/trees status=500",
       "client_error failure_kind=http operation=roadmap_fork",
     ])
   }

@@ -6,14 +6,17 @@ import SyncEngine
 
 // The requests the room makes of the backend (Roadmap on iOS §3, INV-1), all of them sharing and named as the backend's HTTP
 // surface names them, each with the account's token where the phone is signed in: the owner's progress a cover shows
-// (`GET /v1/trees/{id}/progress`) and Fork (`POST /v1/trees/{id}/fork`). Every other read and change of a roadmap goes
-// through the sync engine.
+// (`GET /v1/trees/{id}/progress`), Fork (`POST /v1/trees/{id}/fork`) and the public gallery (`GET /v1/gallery`). Every
+// other read and change of a roadmap goes through the sync engine.
 protocol RoadmapSharing {
   // The owner's progress on a roadmap someone else owns, as the server shows it to a reader.
   func progress(of tree: String) async throws(SharingFailure) -> OwnersProgress
   // A copy of the roadmap in the person's own list, which arrives by sync: the copy's id. `request` names the fork, so the
-  // same fork asked again, after an answer that was lost, answers the same copy.
-  func fork(_ tree: String, request: String) async throws(SharingFailure) -> String
+  // same fork asked again, after an answer that was lost, answers the same copy; `mode` is where it was asked, which a
+  // failure's report names.
+  func fork(_ tree: String, request: String, from mode: RoadmapFork.Mode) async throws(SharingFailure) -> String
+  // One page of the public gallery in the server's order, from its start or after the page before it.
+  func gallery(after cursor: String?) async throws(SharingFailure) -> GalleryPage
 }
 
 // Why a sharing request came to nothing: no connection; no session the phone can send as, or one the server no longer
@@ -25,15 +28,21 @@ enum SharingFailure: Error, Equatable {
 }
 
 // The requests over HTTP to the site the app syncs with. Each failure is told as an `api_request_failed` under its
-// operation, `roadmap_progress` or `roadmap_fork`, and reported where nobody expects it: neither no connection, a status
-// the server answers on purpose, nor the server busy. A request given up is no failure and tells nothing.
+// operation, `roadmap_progress`, `roadmap_fork` or `roadmap_gallery`, and reported where nobody expects it: neither no
+// connection, a status the server answers on purpose, nor the server busy. A request given up is no failure and tells
+// nothing.
 final class SharingRequests: RoadmapSharing {
+  // How many rows a page of the gallery asks for, as the web asks; the server holds a page to 60.
+  static let galleryPage = 24
+
   let baseURL: URL?
   // The signed-in account's token; none signed out, or while the session waits to be renewed.
   let credential: () -> SessionToken?
   let online: () -> Bool
   let telemetry: any Telemetry
   let session: URLSession
+  // A gallery row the room could not read has been reported this launch.
+  private var unreadReported = false
 
   init(baseURL: URL?, credential: @escaping () -> SessionToken?, online: @escaping () -> Bool, telemetry: any Telemetry,
        session: URLSession = NativeAuth.nativeSession()) {
@@ -41,7 +50,7 @@ final class SharingRequests: RoadmapSharing {
   }
 
   func progress(of tree: String) async throws(SharingFailure) -> OwnersProgress {
-    let answer = try await request("v1/trees/\(tree)/progress", method: "GET", operation: "roadmap_progress", token: credential())
+    let answer = try await request("v1/trees/\(tree)/progress", method: "GET", operation: "roadmap_progress", route: "/v1/trees", token: credential())
     guard let progress = try? OwnersProgress(answer: answer) else {
       telemetry.failure("roadmap_progress", kind: "decode", properties: ["method": "GET", "route": "/v1/trees"])
       throw .failed
@@ -50,24 +59,50 @@ final class SharingRequests: RoadmapSharing {
     return progress
   }
 
-  func fork(_ tree: String, request id: String) async throws(SharingFailure) -> String {
+  func fork(_ tree: String, request id: String, from mode: RoadmapFork.Mode) async throws(SharingFailure) -> String {
     guard let token = credential() else { throw .signedOut }
-    let answer = try await request("v1/trees/\(tree)/fork", method: "POST", operation: "roadmap_fork", token: token, body: ["requestId": id])
+    let answer = try await request("v1/trees/\(tree)/fork", method: "POST", operation: "roadmap_fork", route: "/v1/trees", token: token,
+                                   body: ["requestId": id], told: ["mode": mode.rawValue])
     guard case .string(let copy)? = (try? JSON(parsing: Array(answer)))?["data"]?["id"] else {
-      telemetry.failure("roadmap_fork", kind: "decode", properties: ["method": "POST", "route": "/v1/trees"])
+      telemetry.failure("roadmap_fork", kind: "decode", properties: ["method": "POST", "route": "/v1/trees", "mode": mode.rawValue])
       throw .failed
     }
     return copy
   }
 
+  // The gallery asks no account; a session adds whether each row is the person's own. A session the server no longer
+  // takes is asked again with none, so the gallery is read whatever the phone's session.
+  func gallery(after cursor: String?) async throws(SharingFailure) -> GalleryPage {
+    let query = [URLQueryItem(name: "limit", value: String(Self.galleryPage))] + (cursor.map { [URLQueryItem(name: "cursor", value: $0)] } ?? [])
+    let token = credential()
+    let answer: Data
+    do throws(SharingFailure) {
+      answer = try await request("v1/gallery", query: query, method: "GET", operation: "roadmap_gallery", route: "/v1/gallery", token: token)
+    } catch .signedOut where token != nil {
+      answer = try await request("v1/gallery", query: query, method: "GET", operation: "roadmap_gallery", route: "/v1/gallery", token: nil)
+    }
+    guard let page = try? GalleryPage(answer: answer) else {
+      telemetry.failure("roadmap_gallery", kind: "decode", properties: ["method": "GET", "route": "/v1/gallery"])
+      throw .failed
+    }
+    // A row the room cannot read reports once a launch, as a page is read again and again.
+    if page.unread > 0 && !unreadReported {
+      unreadReported = true
+      telemetry.failure("roadmap_gallery", kind: "decode", properties: ["method": "GET", "route": "/v1/gallery"])
+    }
+    return page
+  }
+
   // One request and its answer's body; a status other than success is the server's refusal where it answers it on purpose.
-  func request(_ path: String, method: String, operation: String, token: SessionToken?, body: [String: String]? = nil) async throws(SharingFailure) -> Data {
+  // `told` adds bounded labels to what its failure tells.
+  func request(_ path: String, query: [URLQueryItem] = [], method: String, operation: String, route: String, token: SessionToken?,
+               body: [String: String]? = nil, told: [String: String] = [:]) async throws(SharingFailure) -> Data {
     let started = ContinuousClock.now
     var kind = "offline"
     var status: Int?
     do {
       guard let baseURL, online() else { throw URLError(.notConnectedToInternet) }
-      var request = URLRequest(url: baseURL.appending(path: path))
+      var request = URLRequest(url: baseURL.appending(path: path).appending(queryItems: query))
       request.httpMethod = method
       request.httpShouldHandleCookies = false
       request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -93,7 +128,7 @@ final class SharingRequests: RoadmapSharing {
       }
       let elapsed = started.duration(to: .now).components
       let ms = elapsed.seconds * 1_000 + elapsed.attoseconds / 1_000_000_000_000_000
-      var properties = ["method": method, "route": "/v1/trees", "operation": operation, "failure_kind": kind]
+      var properties = told.merging(["method": method, "route": route, "operation": operation, "failure_kind": kind]) { _, set in set }
       if let status { properties["status"] = String(status) }
       telemetry.event("api_request_failed", properties: properties, durationMs: ms)
       if kind != "offline", status != 503, !ExpectedStatuses.contains(status) { telemetry.failure(operation, kind: kind, properties: properties, durationMs: ms) }
@@ -145,5 +180,43 @@ struct OwnersProgress {
     self.marks = marks
     self.subtrees = subtrees
     unread = rows.count - marks.count + counted.count - subtrees.count
+  }
+}
+
+// One page of the public gallery as the server ranks it: each row's roadmap, its title and how many steps it holds, which is
+// all a row shows (R-8), and whether it is the person's own; and where the next page starts, none after the last.
+struct GalleryPage: Equatable {
+  struct Row: Equatable, Identifiable {
+    let id: String
+    let title: String
+    let steps: Int
+    let mine: Bool
+  }
+
+  let rows: [Row]
+  let next: String?
+  // The rows of the server's answer the room could not read, left out.
+  let unread: Int
+
+  init(rows: [Row], next: String? = nil) {
+    self.rows = rows
+    self.next = next
+    unread = 0
+  }
+
+  // The server's gallery answer, `{entries: [{id, title, total, mine, …}], count, nextCursor?}`. A row that names no roadmap
+  // the phone can address or holds no count is left out and counted; a title it lacks reads empty. Throws where the answer is
+  // no such object.
+  init(answer: Data) throws {
+    let body = try JSON(parsing: Array(answer))
+    let entries = try body.member("entries").asArray()
+    rows = entries.compactMap { (entry: JSON) -> Row? in
+      guard case .string(let id)? = entry["id"], RoadmapAddress(tree: id) != nil, let total = try? entry["total"]?.asInteger(), total >= 0 else { return nil }
+      let title: String = if case .string(let title)? = entry["title"] { title } else { "" }
+      let mine: Bool = if case .bool(true)? = entry["mine"] { true } else { false }
+      return Row(id: id, title: title, steps: Int(total), mine: mine)
+    }
+    next = if case .string(let cursor)? = body["nextCursor"], !cursor.isEmpty { cursor } else { nil }
+    unread = entries.count - rows.count
   }
 }

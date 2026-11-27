@@ -48,10 +48,7 @@ final class RoadmapLinks {
   }
 
   func followPending(in room: RoadmapModel) {
-    guard let (link, tells) = pending else { return }
-    if case .unread = room.phase { return }
-    let list = try? room.snapshot(RoadmapEntry.scope, RoadmapEntry.type)
-    guard list?.firstPullComplete == true || !sources.online() else { return }
+    guard let (link, tells) = pending, room.listArrived else { return }
     pending = nil
     let target = link.address.map { $0.step == nil ? "roadmap" : "step" } ?? "none"
     guard let address = link.address else {
@@ -93,5 +90,14 @@ final class RoadmapLinks {
     forkArriving = nil
     cover?.close(.forked)
     return true
+  }
+}
+
+extension RoadmapModel {
+  // The room has read the phone's copy and the person's list has arrived, or no connection can bring it: what says whose a
+  // roadmap is.
+  var listArrived: Bool {
+    if case .unread = phase { return false }
+    return (try? snapshot(RoadmapEntry.scope, RoadmapEntry.type))?.firstPullComplete == true || links?.sources.online() == false
   }
 }
